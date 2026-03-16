@@ -52,6 +52,9 @@ next-env.d.ts
 .idea
 .vscode
 
+# worktrees
+.worktrees
+
 # generated data
 /data
 /logs
