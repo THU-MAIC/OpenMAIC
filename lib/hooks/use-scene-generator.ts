@@ -32,7 +32,7 @@ interface SceneActionsResult {
   error?: string;
 }
 
-function splitLongSpeechText(text: string, maxLength: number): string[] {
+export function splitLongSpeechText(text: string, maxLength: number): string[] {
   const normalized = text.trim();
   if (!normalized || normalized.length <= maxLength) return [normalized];
 
@@ -88,53 +88,30 @@ function splitLongSpeechText(text: string, maxLength: number): string[] {
   return chunks;
 }
 
-function expandSpeechActionsForTTS(scene: Scene, providerId: TTSProviderId): SpeechAction[] {
+function splitLongSpeechActions(actions: Action[], providerId: TTSProviderId): Action[] {
   const maxLength = TTS_MAX_TEXT_LENGTH[providerId];
-  const actions = scene.actions || [];
+  if (!maxLength) return actions;
 
-  if (!maxLength) {
-    return actions.filter(
-      (action): action is SpeechAction => action.type === 'speech' && !!action.text,
-    );
-  }
-
-  let expanded = false;
-  const nextActions: Action[] = [];
-
-  for (const action of actions) {
-    if (action.type !== 'speech' || !action.text || action.text.length <= maxLength) {
-      nextActions.push(action);
-      continue;
-    }
+  let didSplit = false;
+  const nextActions: Action[] = actions.flatMap((action) => {
+    if (action.type !== 'speech' || !action.text || action.text.length <= maxLength)
+      return [action];
 
     const chunks = splitLongSpeechText(action.text, maxLength);
-    if (chunks.length === 1) {
-      nextActions.push(action);
-      continue;
-    }
-
-    expanded = true;
-    chunks.forEach((chunk, index) => {
-      nextActions.push({
-        ...action,
-        id: `${action.id}_tts_${index + 1}`,
-        text: chunk,
-        audioId: undefined,
-      });
-    });
+    if (chunks.length <= 1) return [action];
+    didSplit = true;
+    const { audioId: _audioId, ...baseAction } = action;
 
     log.info(
-      `Split long speech action for ${providerId}: action=${action.id}, originalLen=${action.text.length}, chunks=${chunks.length}`,
+      `Split speech for ${providerId}: action=${action.id}, len=${action.text.length}, chunks=${chunks.length}`,
     );
-  }
-
-  if (expanded) {
-    scene.actions = nextActions;
-  }
-
-  return (scene.actions || []).filter(
-    (action): action is SpeechAction => action.type === 'speech' && !!action.text,
-  );
+    return chunks.map((chunk, i) => ({
+      ...baseAction,
+      id: `${action.id}_tts_${i + 1}`,
+      text: chunk,
+    }));
+  });
+  return didSplit ? nextActions : actions;
 }
 
 function getApiHeaders(): HeadersInit {
@@ -256,7 +233,11 @@ export async function generateAndStoreTTS(
     .json()
     .catch(() => ({ success: false, error: response.statusText || 'Invalid TTS response' }));
   if (!response.ok || !data.success || !data.base64 || !data.format) {
-    throw new Error(data.details || data.error || `TTS request failed: HTTP ${response.status}`);
+    const err = new Error(
+      data.details || data.error || `TTS request failed: HTTP ${response.status}`,
+    );
+    log.warn('TTS failed for', audioId, ':', err);
+    throw err;
   }
 
   const binary = atob(data.base64);
@@ -279,7 +260,10 @@ async function generateTTSForScene(
   signal?: AbortSignal,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
   const providerId = useSettingsStore.getState().ttsProviderId;
-  const speechActions = expandSpeechActionsForTTS(scene, providerId);
+  scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
+  const speechActions = scene.actions.filter(
+    (a): a is SpeechAction => a.type === 'speech' && !!a.text,
+  );
   if (speechActions.length === 0) return { success: true, failedCount: 0 };
 
   let failedCount = 0;
