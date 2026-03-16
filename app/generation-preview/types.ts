@@ -25,6 +25,8 @@ export interface GenerationSessionState {
   // Web search context
   researchContext?: string;
   researchSources?: Array<{ title: string; url: string }>;
+  // Question bank reference context
+  questionBankContext?: string;
 }
 
 export type GenerationStep = {

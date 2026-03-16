@@ -32,6 +32,10 @@ Please generate scene outlines based on the following course requirements.
 
 {{researchContext}}
 
+### Question Bank Reference
+
+{{questionBankContext}}
+
 {{teacherContext}}
 
 ---
@@ -76,6 +80,7 @@ Then output a JSON array containing all scene outlines. Each scene must include:
 6. **Language**: Strictly output all content in the specified course language
 7. **If no suitable PDF images exist** for a slide scene that would benefit from visuals, add `mediaGenerations` array with image generation prompts. Write prompts in English. Use `elementId` format like "gen_img_1", "gen_img_2" — IDs must be **globally unique across all scenes** (do NOT restart numbering per scene). To reuse a generated image in a different scene, reference the same elementId without re-declaring it in mediaGenerations. Each generated image should be visually distinct — avoid near-identical media across slides.
 8. **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
+9. **If a question bank reference is provided**, use it to inform quiz scene generation. You may either include original questions directly from the bank, or generate new questions that follow the same style, format, difficulty, and topic coverage. Ensure quiz scenes reflect the patterns and standards found in the reference material.
 
 {{mediaGenerationPolicy}}
 
