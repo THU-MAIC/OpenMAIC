@@ -25,6 +25,16 @@ import { MediaPopover } from '@/components/generation/media-popover';
 // ─── Constants ───────────────────────────────────────────────
 const MAX_PDF_SIZE_MB = 50;
 const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
+const ACCEPTED_EXTENSIONS = '.pdf,.md,.txt,.markdown';
+
+/** Check whether a File is one of our supported document types */
+function isSupportedFile(file: File): boolean {
+  const ext = file.name.split('.').pop()?.toLowerCase() ?? '';
+  if (['md', 'txt', 'markdown'].includes(ext)) return true;
+  if (ext === 'pdf' || file.type === 'application/pdf') return true;
+  if (file.type.startsWith('text/')) return true;
+  return false;
+}
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
@@ -98,7 +108,7 @@ export function GenerationToolbar({
 
   // PDF handler
   const handleFileSelect = (file: File) => {
-    if (file.type !== 'application/pdf') return;
+    if (!isSupportedFile(file)) return;
     if (file.size > MAX_PDF_SIZE_BYTES) {
       onPdfError(t('upload.fileTooLarge'));
       return;
@@ -212,7 +222,7 @@ export function GenerationToolbar({
               type="file"
               ref={fileInputRef}
               className="hidden"
-              accept=".pdf"
+              accept={ACCEPTED_EXTENSIONS}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) handleFileSelect(f);
@@ -261,7 +271,7 @@ export function GenerationToolbar({
                 }}
               >
                 <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
-                <p className="text-xs font-medium">{t('toolbar.pdfUpload')}</p>
+                <p className="text-xs font-medium">{t('toolbar.docUpload')}</p>
                 <p className="text-[10px] text-muted-foreground/60 mt-0.5">
                   {t('upload.pdfSizeLimit')}
                 </p>

@@ -263,26 +263,42 @@ function HomePage() {
       let pdfFileName: string | undefined;
       let pdfProviderId: string | undefined;
       let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
+      let directText = '';
 
       if (form.pdfFile) {
-        pdfStorageKey = await storePdfBlob(form.pdfFile);
-        pdfFileName = form.pdfFile.name;
+        const ext = form.pdfFile.name.split('.').pop()?.toLowerCase() ?? '';
+        const isTextFile = ['md', 'txt', 'markdown'].includes(ext);
 
-        const settings = useSettingsStore.getState();
-        pdfProviderId = settings.pdfProviderId;
-        const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
-        if (providerCfg) {
-          pdfProviderConfig = {
-            apiKey: providerCfg.apiKey,
-            baseUrl: providerCfg.baseUrl,
-          };
+        if (isTextFile) {
+          // Text-based files: read content directly, skip OCR pipeline
+          directText = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result as string);
+            reader.onerror = () => reject(new Error('Failed to read file'));
+            reader.readAsText(form.pdfFile!);
+          });
+          pdfFileName = form.pdfFile.name;
+        } else {
+          // PDF files: store blob for later OCR parsing
+          pdfStorageKey = await storePdfBlob(form.pdfFile);
+          pdfFileName = form.pdfFile.name;
+
+          const settings = useSettingsStore.getState();
+          pdfProviderId = settings.pdfProviderId;
+          const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
+          if (providerCfg) {
+            pdfProviderConfig = {
+              apiKey: providerCfg.apiKey,
+              baseUrl: providerCfg.baseUrl,
+            };
+          }
         }
       }
 
       const sessionState = {
         sessionId: nanoid(),
         requirements,
-        pdfText: '',
+        pdfText: directText,
         pdfImages: [],
         imageStorageIds: [],
         pdfStorageKey,
