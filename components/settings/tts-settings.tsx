@@ -21,12 +21,19 @@ interface TTSSettingsProps {
 export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const { t } = useI18n();
 
+  const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
 
   const ttsProvider = TTS_PROVIDERS[selectedProviderId] ?? TTS_PROVIDERS['openai-tts'];
+
+  // Use the store voice only if it belongs to the selected provider; otherwise use the provider's default voice
+  const effectiveVoice =
+    selectedProviderId === ttsProviderId
+      ? ttsVoice
+      : ttsProvider.voices[0]?.id || 'default';
   const isServerConfigured = !!ttsProvidersConfig[selectedProviderId]?.isServerConfigured;
 
   const [showApiKey, setShowApiKey] = useState(false);
@@ -65,7 +72,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         const utterance = new SpeechSynthesisUtterance(testText);
         utterance.rate = ttsSpeed;
         const voices = window.speechSynthesis.getVoices();
-        const selectedVoice = voices.find((v) => v.name === ttsVoice || v.lang === ttsVoice);
+        const selectedVoice = voices.find((v) => v.name === effectiveVoice || v.lang === effectiveVoice);
         if (selectedVoice) utterance.voice = selectedVoice;
         utterance.onend = () => {
           setTestStatus('success');
@@ -85,7 +92,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         text: testText,
         audioId: 'tts-test',
         ttsProviderId: selectedProviderId,
-        ttsVoice: ttsVoice,
+        ttsVoice: effectiveVoice,
         ttsSpeed: ttsSpeed,
       };
       const apiKeyValue = ttsProvidersConfig[selectedProviderId]?.apiKey;
