@@ -5,8 +5,65 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement, PPTLineElement } from '@/lib/types/slides';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { getElementRange } from '@/lib/utils/element';
+
+type ElementBounds = {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+};
+
+function getLineBounds(element: PPTLineElement): ElementBounds {
+  const originX = element.left ?? 0;
+  const originY = element.top ?? 0;
+  const points: Array<[number, number]> = [element.start, element.end];
+
+  if (element.broken) {
+    points.push(element.broken);
+  }
+
+  if (element.broken2) {
+    const horizontalFirst =
+      Math.abs(element.end[0] - element.start[0]) >= Math.abs(element.end[1] - element.start[1]);
+    if (horizontalFirst) {
+      points.push([element.broken2[0], element.start[1]], [element.broken2[0], element.end[1]]);
+    } else {
+      points.push([element.start[0], element.broken2[1]], [element.end[0], element.broken2[1]]);
+    }
+  }
+
+  if (element.curve) {
+    points.push(element.curve);
+  }
+
+  if (element.cubic) {
+    points.push(...element.cubic);
+  }
+
+  const xs = points.map(([x]) => originX + x);
+  const ys = points.map(([, y]) => originY + y);
+  const strokePad = Math.max(element.width ?? 0, 1) / 2;
+  const markerPad = element.points.some(Boolean) ? Math.max(element.width ?? 0, 1) * 1.5 : 0;
+  const pad = strokePad + markerPad;
+
+  return {
+    minX: Math.min(...xs) - pad,
+    minY: Math.min(...ys) - pad,
+    maxX: Math.max(...xs) + pad,
+    maxY: Math.max(...ys) + pad,
+  };
+}
+
+function getWhiteboardElementBounds(element: PPTElement): ElementBounds {
+  if (element.type === 'line') {
+    return getLineBounds(element);
+  }
+
+  return getElementRange(element);
+}
 
 /**
  * Animated element wrapper
@@ -132,14 +189,11 @@ export function WhiteboardCanvas() {
       maxX = -Infinity,
       maxY = -Infinity;
     for (const el of elements) {
-      const left = el.left ?? 0;
-      const top = el.top ?? 0;
-      const width = el.width ?? 0;
-      const height = 'height' in el && el.height != null ? el.height : 0;
-      minX = Math.min(minX, left);
-      minY = Math.min(minY, top);
-      maxX = Math.max(maxX, left + width);
-      maxY = Math.max(maxY, top + height);
+      const bounds = getWhiteboardElementBounds(el);
+      minX = Math.min(minX, bounds.minX);
+      minY = Math.min(minY, bounds.minY);
+      maxX = Math.max(maxX, bounds.maxX);
+      maxY = Math.max(maxY, bounds.maxY);
     }
 
     const contentWidth = maxX - minX;
@@ -168,14 +222,24 @@ export function WhiteboardCanvas() {
   const [viewZoom, setViewZoom] = useState(1); // user zoom (relative to auto-fit)
   const [panX, setPanX] = useState(0); // user pan offset in canvas-space px
   const [panY, setPanY] = useState(0);
-  const isPanningRef = useRef(false);
+  const [isPanning, setIsPanning] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const [isResetting, setIsResetting] = useState(false);
+  const resetTimerRef = useRef<number | null>(null);
+  const isViewModified = viewZoom !== 1 || panX !== 0 || panY !== 0;
+  const hasOverflow = autoFitTransform.scale < 1;
+  const canPan = elements.length > 0 && (hasOverflow || isViewModified);
 
   // Reset view only when whiteboard content actually changes (not on every re-render).
   // Use a stable string key from element IDs instead of object reference.
   const elementsKey = useMemo(() => elements.map((e) => e.id).join(','), [elements]);
   useEffect(() => {
+    if (resetTimerRef.current) {
+      window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+    setIsPanning(false);
+    setIsResetting(false);
     setViewZoom(1);
     setPanX(0);
     setPanY(0);
@@ -187,19 +251,18 @@ export function WhiteboardCanvas() {
     (e: React.PointerEvent) => {
       // Only pan with left mouse button or single touch
       if (e.button !== 0) return;
-      // Don't pan when whiteboard is empty
-      if (elementsLenRef.current === 0) return;
+      if (!canPan) return;
       e.preventDefault(); // prevent text selection
-      isPanningRef.current = true;
+      setIsPanning(true);
       panStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
       (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     },
-    [panX, panY],
+    [canPan, panX, panY],
   );
 
   const handlePointerMove = useCallback(
     (e: React.PointerEvent) => {
-      if (!isPanningRef.current) return;
+      if (!isPanning) return;
       const dx = e.clientX - panStartRef.current.x;
       const dy = e.clientY - panStartRef.current.y;
       // Divide by containerScale so pan distance is consistent regardless of container size
@@ -208,11 +271,14 @@ export function WhiteboardCanvas() {
       setPanX(panStartRef.current.panX + dx / effectiveScale);
       setPanY(panStartRef.current.panY + dy / effectiveScale);
     },
-    [containerScale],
+    [containerScale, isPanning],
   );
 
-  const handlePointerUp = useCallback(() => {
-    isPanningRef.current = false;
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if ((e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+    setIsPanning(false);
   }, []);
 
   // ---- Scroll-to-zoom: must use native listener for { passive: false } ----
@@ -232,14 +298,29 @@ export function WhiteboardCanvas() {
     return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
   // ---- Double-click to reset (with smooth animation) ----
   const handleDoubleClick = useCallback((e?: React.MouseEvent) => {
     e?.preventDefault(); // prevent text selection
+    setIsPanning(false);
     setIsResetting(true);
     setViewZoom(1);
     setPanX(0);
     setPanY(0);
-    setTimeout(() => setIsResetting(false), 250);
+    if (resetTimerRef.current) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+    resetTimerRef.current = window.setTimeout(() => {
+      setIsResetting(false);
+      resetTimerRef.current = null;
+    }, 250);
   }, []);
 
   // ==================== Computed content transform ====================
@@ -250,11 +331,6 @@ export function WhiteboardCanvas() {
     const ty = autoFitTransform.ty + panY;
     return `translate(${tx}px, ${ty}px) scale(${s})`;
   }, [autoFitTransform, viewZoom, panX, panY]);
-
-  // Whether the user has modified the view (show reset hint)
-  const isViewModified = viewZoom !== 1 || panX !== 0 || panY !== 0;
-  // Whether content overflows (auto-fit is active)
-  const hasOverflow = autoFitTransform.scale < 1;
 
   return (
     <div
@@ -271,11 +347,7 @@ export function WhiteboardCanvas() {
             height: canvasHeight,
             transform: `scale(${containerScale})`,
             transformOrigin: 'top left',
-            cursor: isPanningRef.current
-              ? 'grabbing'
-              : elements.length > 0 && (hasOverflow || isViewModified)
-                ? 'grab'
-                : undefined,
+            cursor: isPanning ? 'grabbing' : canPan ? 'grab' : undefined,
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
