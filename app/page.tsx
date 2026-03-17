@@ -190,9 +190,7 @@ function HomePage() {
   const handleRename = async (id: string, newName: string) => {
     try {
       await renameStage(id, newName);
-      setClassrooms((prev) =>
-        prev.map((c) => (c.id === id ? { ...c, name: newName } : c)),
-      );
+      setClassrooms((prev) => prev.map((c) => (c.id === id ? { ...c, name: newName } : c)));
     } catch (err) {
       log.error('Failed to rename classroom:', err);
       toast.error('Failed to rename classroom');
