@@ -1,0 +1,87 @@
+# OpenMAIC Infrastructure Services
+# PostgreSQL + pgvector, Redis, and observability stack
+#
+# Usage:
+#   docker compose -f infra/docker-compose.infra.yml up -d
+#
+# This file is separate from the main docker-compose.yml to allow
+# running infrastructure services independently during development.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg17
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-openmaic}
+      POSTGRES_USER: ${POSTGRES_USER:-openmaic}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-openmaic_dev}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./migrations/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-openmaic}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # OpenTelemetry Collector (optional - for observability)
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8889:8889"   # Prometheus metrics
+    volumes:
+      - ./otel-collector-config.yml:/etc/otel/config.yaml:ro
+    command: ["--config=/etc/otel/config.yaml"]
+    restart: unless-stopped
+    profiles:
+      - observability
+
+  # Prometheus (optional - for metrics)
+  prometheus:
+    image: prom/prometheus:v2.50.1
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+    profiles:
+      - observability
+
+  # Grafana (optional - for dashboards)
+  grafana:
+    image: grafana/grafana:10.3.3
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    restart: unless-stopped
+    profiles:
+      - observability
+
+volumes:
+  postgres-data:
+  redis-data:
+  prometheus-data:
+  grafana-data:
