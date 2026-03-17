@@ -81,7 +81,7 @@ function AnimatedElement({
  * - Auto-fit: when elements overflow the canvas, content is scaled & centered
  *   so nothing is clipped
  * - Drag-to-pan: hold mouse and drag to pan around the whiteboard
- * - Scroll-to-zoom: use the scroll wheel to zoom in/out (centered on cursor)
+ * - Scroll-to-zoom: use the scroll wheel to zoom in/out (anchored to top-left)
  * - Double-click to reset view to auto-fit
  */
 export function WhiteboardCanvas() {
@@ -199,7 +199,8 @@ export function WhiteboardCanvas() {
       const dx = e.clientX - panStartRef.current.x;
       const dy = e.clientY - panStartRef.current.y;
       // Divide by containerScale so pan distance is consistent regardless of container size
-      const effectiveScale = containerScale;
+      // Guard against zero to prevent NaN when container is hidden or has zero dimensions
+      const effectiveScale = Math.max(containerScale, 0.001);
       setPanX(panStartRef.current.panX + dx / effectiveScale);
       setPanY(panStartRef.current.panY + dy / effectiveScale);
     },
