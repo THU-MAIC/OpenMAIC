@@ -94,6 +94,8 @@ export function WhiteboardCanvas() {
   // Get whiteboard elements
   const whiteboard = stage?.whiteboard?.[0];
   const elements = useMemo(() => whiteboard?.elements || [], [whiteboard?.elements]);
+  const elementsLenRef = useRef(elements.length);
+  elementsLenRef.current = elements.length;
 
   // Whiteboard fixed size: 1000 x 562.5 (16:9)
   const canvasWidth = 1000;
@@ -133,7 +135,7 @@ export function WhiteboardCanvas() {
       const left = el.left ?? 0;
       const top = el.top ?? 0;
       const width = el.width ?? 0;
-      const height = 'height' in el ? (el.height ?? 0) : 0;
+      const height = 'height' in el && el.height != null ? el.height : 0;
       minX = Math.min(minX, left);
       minY = Math.min(minY, top);
       maxX = Math.max(maxX, left + width);
@@ -172,7 +174,7 @@ export function WhiteboardCanvas() {
 
   // Reset view only when whiteboard content actually changes (not on every re-render).
   // Use a stable string key from element IDs instead of object reference.
-  const elementsKey = elements.map((e) => e.id).join(',');
+  const elementsKey = useMemo(() => elements.map((e) => e.id).join(','), [elements]);
   useEffect(() => {
     setViewZoom(1);
     setPanX(0);
@@ -185,6 +187,8 @@ export function WhiteboardCanvas() {
     (e: React.PointerEvent) => {
       // Only pan with left mouse button or single touch
       if (e.button !== 0) return;
+      // Don't pan when whiteboard is empty
+      if (elementsLenRef.current === 0) return;
       e.preventDefault(); // prevent text selection
       isPanningRef.current = true;
       panStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
@@ -219,6 +223,8 @@ export function WhiteboardCanvas() {
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
+      // Don't zoom when whiteboard is empty
+      if (elementsLenRef.current === 0) return;
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
       setViewZoom((prev) => Math.min(5, Math.max(0.2, prev * zoomFactor)));
     };
@@ -267,7 +273,7 @@ export function WhiteboardCanvas() {
             transformOrigin: 'top left',
             cursor: isPanningRef.current
               ? 'grabbing'
-              : hasOverflow || isViewModified
+              : elements.length > 0 && (hasOverflow || isViewModified)
                 ? 'grab'
                 : undefined,
           }}
@@ -323,7 +329,7 @@ export function WhiteboardCanvas() {
 
           {/* Reset hint — shown when view is modified */}
           <AnimatePresence>
-            {isViewModified && (
+            {isViewModified && elements.length > 0 && (
               <motion.button
                 initial={{ opacity: 0, y: 4 }}
                 animate={{ opacity: 0.7 }}
@@ -338,7 +344,7 @@ export function WhiteboardCanvas() {
                   bg-black/60 text-white text-xs backdrop-blur-sm
                   hover:bg-black/80 transition-colors cursor-pointer select-none"
               >
-                {t('whiteboard.resetView') ?? 'Reset View'}
+                {t('whiteboard.resetView')}
               </motion.button>
             )}
           </AnimatePresence>
