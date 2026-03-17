@@ -159,6 +159,7 @@ function InteractiveWhiteboardCanvas({
   const [isPanning, setIsPanning] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
+  const prevElementsLengthRef = useRef(elements.length);
   const resetTimerRef = useRef<number | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
 
@@ -201,6 +202,28 @@ function InteractiveWhiteboardCanvas({
     setIsPanning(false);
   }, []);
 
+  const resetView = useCallback((animate: boolean) => {
+    setIsPanning(false);
+    setIsResetting(animate);
+    setViewZoom(1);
+    setPanX(0);
+    setPanY(0);
+
+    if (resetTimerRef.current) {
+      window.clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+
+    if (!animate) {
+      return;
+    }
+
+    resetTimerRef.current = window.setTimeout(() => {
+      setIsResetting(false);
+      resetTimerRef.current = null;
+    }, 250);
+  }, []);
+
   useEffect(() => {
     const el = canvasRef.current;
     if (!el) return;
@@ -225,23 +248,36 @@ function InteractiveWhiteboardCanvas({
     };
   }, []);
 
-  const handleDoubleClick = useCallback((e?: React.MouseEvent) => {
-    e?.preventDefault();
-    setIsPanning(false);
-    setIsResetting(true);
-    setViewZoom(1);
-    setPanX(0);
-    setPanY(0);
+  useEffect(() => {
+    const prevLength = prevElementsLengthRef.current;
+    const nextLength = elements.length;
+    prevElementsLengthRef.current = nextLength;
 
-    if (resetTimerRef.current) {
-      window.clearTimeout(resetTimerRef.current);
+    const clearedBoard = prevLength > 0 && nextLength === 0;
+    const firstContentLoaded = prevLength === 0 && nextLength > 0;
+    if (!clearedBoard && !firstContentLoaded) {
+      return;
     }
 
-    resetTimerRef.current = window.setTimeout(() => {
-      setIsResetting(false);
-      resetTimerRef.current = null;
-    }, 250);
-  }, []);
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) {
+        resetView(false);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [elements.length, resetView]);
+
+  const handleDoubleClick = useCallback(
+    (e?: React.MouseEvent) => {
+      e?.preventDefault();
+      resetView(true);
+    },
+    [resetView],
+  );
 
   const contentTransform = useMemo(() => {
     const scale = autoFitTransform.scale * viewZoom;
@@ -344,7 +380,6 @@ export function WhiteboardCanvas() {
 
   const whiteboard = stage?.whiteboard?.[0];
   const elements = useMemo(() => whiteboard?.elements || [], [whiteboard?.elements]);
-  const elementsKey = useMemo(() => elements.map((e) => e.id).join(','), [elements]);
 
   const canvasWidth = 1000;
   const canvasHeight = 562.5;
@@ -416,7 +451,6 @@ export function WhiteboardCanvas() {
     >
       <div style={{ width: canvasWidth * containerScale, height: canvasHeight * containerScale }}>
         <InteractiveWhiteboardCanvas
-          key={elementsKey}
           autoFitTransform={autoFitTransform}
           canvasHeight={canvasHeight}
           canvasWidth={canvasWidth}
