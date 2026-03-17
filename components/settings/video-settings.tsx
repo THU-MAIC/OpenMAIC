@@ -153,7 +153,12 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Input
+              name={`video-api-key-${selectedProviderId}`}
               type={showApiKey ? 'text' : 'password'}
+              autoComplete="new-password"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder={
                 isServerConfigured
                   ? t('settings.optionalOverride')
@@ -213,7 +218,12 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
       <div className="space-y-2">
         <Label>Base URL</Label>
         <Input
+          name={`video-base-url-${selectedProviderId}`}
           type="url"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           value={currentConfig?.baseUrl || ''}
           onChange={(e) => handleBaseUrlChange(e.target.value)}
           placeholder={
