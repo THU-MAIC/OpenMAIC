@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "license": "AGPL-3.0",
+  "engines": {
+    "node": ">=20.9.0"
+  },
   "scripts": {
     "postinstall": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build",
     "dev": "next dev",
