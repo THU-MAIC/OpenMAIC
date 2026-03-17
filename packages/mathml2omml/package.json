@@ -1,0 +1,44 @@
+{
+  "name": "mathml2omml",
+  "version": "0.5.0",
+  "description": "a MathML to OMML converter ",
+  "main": "./dist/index.js",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    "types": "./dist/index.d.ts",
+    "import": "./dist/index.js",
+    "require": "./dist/index.cjs"
+  },
+  "scripts": {
+    "build": "rollup -c && node -e \"require('fs').copyFileSync('src/index.d.ts','dist/index.d.ts')\""
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fiduswriter/mathml2omml.git"
+  },
+  "keywords": [
+    "mml",
+    "mathml",
+    "omml"
+  ],
+  "author": "Johannes Wilm",
+  "license": "LGPL-3.0-or-later",
+  "bugs": {
+    "url": "https://github.com/fiduswriter/mathml2omml/issues"
+  },
+  "homepage": "https://github.com/fiduswriter/mathml2omml#readme",
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@biomejs/biome": "1.9.4",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "entities": "^6.0.0",
+    "husky": "^9.1.7",
+    "jest": "^29.7.0",
+    "lint-staged": "^15.5.0",
+    "rollup": "^4.35.0",
+    "xml-formatter": "^3.6.4"
+  }
+}

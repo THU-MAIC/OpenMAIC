@@ -1,0 +1,15 @@
+services:
+  openmaic:
+    build: .
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local
+    volumes:
+      # Optional: mount server-providers.yml for provider config
+      # - ./server-providers.yml:/app/server-providers.yml:ro
+      - openmaic-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  openmaic-data:

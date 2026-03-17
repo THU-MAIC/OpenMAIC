@@ -1,0 +1,23 @@
+# Dependencies & lock files
+pnpm-lock.yaml
+node_modules/
+
+# Vendor packages
+packages/pptxgenjs/
+packages/mathml2omml/
+
+# Build output
+.next/
+out/
+
+# Generated files
+*.min.js
+*.min.css
+
+# Markdown & YAML
+*.md
+*.yml
+*.yaml
+
+# SVG arc helper (vendored declaration)
+lib/export/svg-arc-to-cubic-bezier.d.ts

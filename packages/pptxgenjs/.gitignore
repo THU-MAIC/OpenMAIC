@@ -1,0 +1,5 @@
+node_modules/
+dist/
+src/bld/
+out/
+package-lock.json
