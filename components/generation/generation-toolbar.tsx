@@ -1,7 +1,19 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2, BookOpen, Upload, Trash2 } from 'lucide-react';
+import {
+  Bot,
+  Check,
+  ChevronLeft,
+  Globe,
+  Paperclip,
+  FileText,
+  X,
+  Globe2,
+  BookOpen,
+  Upload,
+  Trash2,
+} from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -368,9 +380,7 @@ export function GenerationToolbar({
         <PopoverTrigger asChild>
           <button className={questionBankText ? pillActive : pillMuted}>
             <BookOpen className="size-3.5" />
-            {questionBankText && (
-              <span>{t('toolbar.questionBankActive')}</span>
-            )}
+            {questionBankText && <span>{t('toolbar.questionBankActive')}</span>}
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-80 p-3 space-y-3">

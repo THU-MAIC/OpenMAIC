@@ -72,7 +72,8 @@ export const commonEnUS = {
     enterClassroom: 'Enter Classroom',
     advancedSettings: 'Advanced Settings',
     questionBank: 'Question Bank',
-    questionBankHint: 'Upload or paste reference questions. AI can draw original questions or generate new ones in the same style.',
+    questionBankHint:
+      'Upload or paste reference questions. AI can draw original questions or generate new ones in the same style.',
     questionBankPlaceholder: 'Paste reference questions...',
     questionBankClear: 'Clear',
     questionBankUpload: 'Import file',
