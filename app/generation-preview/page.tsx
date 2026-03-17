@@ -28,6 +28,7 @@ import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
 import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
 import { StepVisualizer } from './components/visualizers';
+import { summarizePdfContent } from '@/lib/generation/summarize-pdf';
 
 const log = createLogger('GenerationPreview');
 
@@ -207,9 +208,54 @@ function GenerationPreviewContent() {
 
         let pdfText = parseResult.data.text as string;
 
-        // Truncate if needed
+        // Summarize or truncate if content exceeds limit
         if (pdfText.length > MAX_PDF_CONTENT_CHARS) {
-          pdfText = pdfText.substring(0, MAX_PDF_CONTENT_CHARS);
+          const originalLength = pdfText.length;
+          
+          // Try to summarize first to preserve more information
+          try {
+            const modelConfig = getCurrentModelConfig();
+            const aiCall = async (system: string, user: string, images?: any[]) => {
+              // This is a simplified version - in production you'd use the actual LLM client
+              const response = await fetch('/api/generate/ai-call', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  ...getApiHeaders(),
+                },
+                body: JSON.stringify({ system, user, model: modelConfig.modelString }),
+              });
+              const result = await response.json();
+              return result.text || result.response || '';
+            };
+            
+            const summarized = await summarizePdfContent(
+              pdfText,
+              aiCall,
+              {
+                maxChunkChars: Math.floor(MAX_PDF_CONTENT_CHARS * 0.8),
+                language: currentSession.language || 'zh-CN',
+              },
+              (msg) => setStatusMessage(msg),
+            );
+            
+            pdfText = summarized;
+            
+            setTruncationWarnings((prev) => [
+              ...prev,
+              currentSession.language === 'zh-CN'
+                ? `文档已自动总结（${originalLength} → ${pdfText.length} 字符）`
+                : `Document automatically summarized (${originalLength} → ${pdfText.length} chars)`,
+            ]);
+          } catch (summaryError) {
+            // If summarization fails, fall back to truncation
+            log.warn('PDF summarization failed, falling back to truncation:', summaryError);
+            pdfText = pdfText.substring(0, MAX_PDF_CONTENT_CHARS);
+            setTruncationWarnings((prev) => [
+              ...prev,
+              t('generation.textTruncated').replace('{n}', String(MAX_PDF_CONTENT_CHARS)),
+            ]);
+          }
         }
 
         // Create image metadata and store images
