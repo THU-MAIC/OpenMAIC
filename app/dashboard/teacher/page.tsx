@@ -5,6 +5,8 @@
  * student analytics, one-click publishing.
  */
 
+import Link from 'next/link';
+
 export default function TeacherDashboardPage() {
   return (
     <div className="p-6 lg:p-8">
@@ -13,12 +15,12 @@ export default function TeacherDashboardPage() {
           <h1 className="text-2xl font-bold tracking-tight">Teacher Dashboard</h1>
           <p className="text-muted-foreground">Manage your courses and classrooms</p>
         </div>
-        <a
+        <Link
           href="/"
           className="inline-flex items-center rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
         >
           Create Lesson
-        </a>
+        </Link>
       </header>
 
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -60,12 +62,12 @@ export default function TeacherDashboardPage() {
           <h2 className="mb-4 text-lg font-semibold">Quick Actions</h2>
           <ul className="space-y-3">
             <li>
-              <a
+              <Link
                 href="/"
                 className="block rounded-lg border border-border p-3 text-sm hover:bg-accent"
               >
                 Generate a lesson with AI
-              </a>
+              </Link>
             </li>
             <li>
               <button

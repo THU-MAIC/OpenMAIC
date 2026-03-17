@@ -5,6 +5,8 @@
  * "continue learning" cards, and recent activity.
  */
 
+import Link from 'next/link';
+
 export default function StudentDashboardPage() {
   return (
     <div className="p-6 lg:p-8">
@@ -56,20 +58,20 @@ export default function StudentDashboardPage() {
           <h2 className="mb-4 text-lg font-semibold">Quick Start</h2>
           <ul className="space-y-3">
             <li>
-              <a
+              <Link
                 href="/"
                 className="block rounded-lg border border-border p-3 text-sm hover:bg-accent"
               >
                 Generate a lesson with AI
-              </a>
+              </Link>
             </li>
             <li>
-              <a
+              <Link
                 href="/dashboard/student"
                 className="block rounded-lg border border-border p-3 text-sm hover:bg-accent"
               >
                 Browse courses
-              </a>
+              </Link>
             </li>
           </ul>
         </div>

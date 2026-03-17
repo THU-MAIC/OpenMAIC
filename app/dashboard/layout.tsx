@@ -5,6 +5,7 @@
  * Provides navigation sidebar, header, and assistant bubble.
  */
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Dashboard - OpenMAIC',
@@ -22,28 +23,28 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         <nav className="p-4">
           <ul className="space-y-1">
             <li>
-              <a
+              <Link
                 href="/dashboard/student"
                 className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 Student
-              </a>
+              </Link>
             </li>
             <li>
-              <a
+              <Link
                 href="/dashboard/teacher"
                 className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 Teacher
-              </a>
+              </Link>
             </li>
             <li>
-              <a
+              <Link
                 href="/dashboard/admin"
                 className="block rounded-md px-3 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
               >
                 Admin
-              </a>
+              </Link>
             </li>
           </ul>
         </nav>
