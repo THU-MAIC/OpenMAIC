@@ -56,12 +56,37 @@ export function TtsConfigPopover() {
     if (previewing) {
       audioRef.current?.pause();
       audioRef.current = null;
+      window.speechSynthesis?.cancel();
       setPreviewing(false);
       return;
     }
 
     setPreviewing(true);
     try {
+      // Handle browser native TTS separately
+      if (ttsProviderId === 'browser-native-tts') {
+        if (!('speechSynthesis' in window)) {
+          setPreviewing(false);
+          return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance('你好，欢迎来到AI课堂！让我们一起学习吧。');
+        const voices = window.speechSynthesis.getVoices();
+        const selectedVoice = voices.find(
+          (v) => v.name === ttsVoice || v.lang === ttsVoice,
+        );
+        if (selectedVoice) utterance.voice = selectedVoice;
+
+        utterance.onend = () => {
+          setPreviewing(false);
+        };
+        utterance.onerror = () => {
+          setPreviewing(false);
+        };
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+
       const providerConfig = ttsProvidersConfig[ttsProviderId];
       const res = await fetch('/api/generate/tts', {
         method: 'POST',

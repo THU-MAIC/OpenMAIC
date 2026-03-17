@@ -33,7 +33,7 @@ import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { TTS_PROVIDERS, getTTSVoices } from '@/lib/audio/constants';
 import { ASR_PROVIDERS, getASRSupportedLanguages } from '@/lib/audio/constants';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
-import type { ASRProviderId } from '@/lib/audio/types';
+import type { ASRProviderId, TTSProviderId } from '@/lib/audio/types';
 import type { SettingsSection } from '@/lib/types/settings';
 
 interface MediaPopoverProps {
@@ -104,6 +104,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
+  const setTTSProvider = useSettingsStore((s) => s.setTTSProvider);
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
   const setTTSSpeed = useSettingsStore((s) => s.setTTSSpeed);
 
@@ -170,14 +171,22 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     [videoProvidersConfig],
   );
 
-  // TTS: flat voice list from current provider, localized
-  const ttsVoices = useMemo(
+  // TTS: grouped by provider (only available providers)
+  const ttsGroups = useMemo(
     () =>
-      getTTSVoices(ttsProviderId).map((v) => ({
-        id: v.id,
-        name: getVoiceDisplayName(v.name, locale),
-      })),
-    [ttsProviderId, locale],
+      Object.values(TTS_PROVIDERS)
+        .filter((p) => cfgOk(ttsProvidersConfig, p.id, p.requiresApiKey))
+        .map((p) => ({
+          groupId: p.id,
+          groupName: p.name,
+          groupIcon: p.icon,
+          available: true,
+          items: getTTSVoices(p.id).map((v) => ({
+            id: v.id,
+            name: getVoiceDisplayName(v.name, locale),
+          })),
+        })),
+    [ttsProvidersConfig, locale],
   );
 
   // TTS preview
@@ -185,11 +194,37 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     if (previewing) {
       audioRef.current?.pause();
       audioRef.current = null;
+      window.speechSynthesis?.cancel();
       setPreviewing(false);
       return;
     }
     setPreviewing(true);
     try {
+      // Handle browser native TTS separately
+      if (ttsProviderId === 'browser-native-tts') {
+        if (!('speechSynthesis' in window)) {
+          setPreviewing(false);
+          return;
+        }
+
+        const utterance = new SpeechSynthesisUtterance('你好，欢迎来到AI课堂！让我们一起学习吧。');
+        utterance.rate = ttsSpeed;
+        const voices = window.speechSynthesis.getVoices();
+        const selectedVoice = voices.find(
+          (v) => v.name === ttsVoice || v.lang === ttsVoice,
+        );
+        if (selectedVoice) utterance.voice = selectedVoice;
+
+        utterance.onend = () => {
+          setPreviewing(false);
+        };
+        utterance.onerror = () => {
+          setPreviewing(false);
+        };
+        window.speechSynthesis.speak(utterance);
+        return;
+      }
+
       const providerConfig = ttsProvidersConfig[ttsProviderId];
       const res = await fetch('/api/generate/tts', {
         method: 'POST',
@@ -221,7 +256,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     } catch {
       setPreviewing(false);
     }
-  }, [ttsProviderId, ttsVoice, ttsProvidersConfig, previewing]);
+  }, [ttsProviderId, ttsVoice, ttsProvidersConfig, previewing, ttsSpeed]);
 
   // ASR: only available providers
   const asrGroups = useMemo(
@@ -348,29 +383,15 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
             >
               {/* Voice select + preview */}
               <div className="flex items-center gap-2">
-                <Select value={ttsVoice} onValueChange={setTTSVoice}>
-                  <SelectTrigger className="h-8 rounded-lg border-border/40 bg-background/80 hover:bg-muted/40 shadow-none text-xs focus:ring-1 focus:ring-ring/30 px-2.5 flex-1 min-w-0">
-                    <span className="flex items-center gap-2 min-w-0 flex-1 overflow-hidden">
-                      {TTS_PROVIDERS[ttsProviderId]?.icon && (
-                        <img
-                          src={TTS_PROVIDERS[ttsProviderId].icon}
-                          alt=""
-                          className="size-4 rounded-sm shrink-0"
-                        />
-                      )}
-                      <span className="truncate">
-                        <SelectValue />
-                      </span>
-                    </span>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ttsVoices.map((v) => (
-                      <SelectItem key={v.id} value={v.id} className="text-xs">
-                        {v.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <GroupedSelect
+                  groups={ttsGroups}
+                  selectedGroupId={ttsProviderId}
+                  selectedItemId={ttsVoice}
+                  onSelect={(gid, iid) => {
+                    setTTSProvider(gid as TTSProviderId);
+                    setTTSVoice(iid);
+                  }}
+                />
                 <button
                   onClick={handlePreview}
                   className={cn(

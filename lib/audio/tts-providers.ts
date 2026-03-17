@@ -89,8 +89,8 @@
  * - URL-based: For providers returning audio URL (download in second step)
  */
 
-import type { TTSModelConfig } from './types';
 import { TTS_PROVIDERS } from './constants';
+import type { TTSModelConfig } from './types';
 
 /**
  * Result of TTS generation
@@ -279,7 +279,7 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
       model: 'qwen3-tts-flash',
       input: {
         text,
-        voice: config.voice,
+        voice: config.voice || "Cherry",
         language_type: 'Chinese', // Default to Chinese, can be made configurable
       },
       parameters: {

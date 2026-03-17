@@ -456,6 +456,12 @@ export function Stage({
     audioPlayerRef.current.setPlaybackRate(playbackSpeed);
   }, [playbackSpeed]);
 
+  // Sync browser TTS setting to audio player
+  const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
+  useEffect(() => {
+    audioPlayerRef.current.setBrowserTTSEnabled(ttsProviderId === 'browser-native-tts');
+  }, [ttsProviderId]);
+
   /**
    * Handle discussion SSE — POST /api/chat and push events to engine
    */

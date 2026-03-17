@@ -30,6 +30,7 @@ import type {
 } from '@/lib/types/action';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
+import { useSettingsStore } from '@/lib/store/settings';
 
 const log = createLogger('ActionEngine');
 
@@ -165,9 +166,28 @@ export class ActionEngine {
   private async executeSpeech(action: SpeechAction): Promise<void> {
     if (!this.audioPlayer) return;
 
+    const settings = useSettingsStore.getState();
+    const isBrowserNativeTTS = settings.ttsProviderId === 'browser-native-tts';
+
+    // Enable browser TTS fallback in AudioPlayer if using browser native TTS
+    if (isBrowserNativeTTS) {
+      this.audioPlayer.setBrowserTTSEnabled(true);
+    }
+
     return new Promise<void>((resolve) => {
       this.audioPlayer!.onEnded(() => resolve());
-      this.audioPlayer!.play(action.audioId || '')
+
+      // Prepare browser TTS options if using browser native TTS
+      const browserTTSOptions = isBrowserNativeTTS
+        ? {
+            text: action.text,
+            voice: settings.ttsVoice,
+            rate: settings.ttsSpeed,
+            lang: settings.ttsVoice?.startsWith('zh') ? 'zh-CN' : 'en-US',
+          }
+        : undefined;
+
+      this.audioPlayer!.play(action.audioId || '', browserTTSOptions)
         .then((audioStarted) => {
           if (!audioStarted) resolve();
         })

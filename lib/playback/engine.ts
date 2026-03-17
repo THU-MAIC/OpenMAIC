@@ -33,9 +33,10 @@ import type {
   TriggerEvent,
   Effect,
 } from './types';
-import type { AudioPlayer } from '@/lib/utils/audio-player';
+import type { AudioPlayer, BrowserTTSOptions } from '@/lib/utils/audio-player';
 import { ActionEngine } from '@/lib/action/engine';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useSettingsStore } from '@/lib/store/settings';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('PlaybackEngine');
@@ -433,8 +434,25 @@ export class PlaybackEngine {
           }, readingMs);
         };
 
+        // Prepare browser TTS options if using browser native TTS
+        const settings = useSettingsStore.getState();
+        const browserTTSOptions: BrowserTTSOptions | undefined =
+          settings.ttsProviderId === 'browser-native-tts'
+            ? {
+                text: speechAction.text,
+                voice: settings.ttsVoice,
+                rate: settings.ttsSpeed,
+                lang: settings.ttsVoice?.startsWith('zh') ? 'zh-CN' : 'en-US',
+              }
+            : undefined;
+
+        // Enable browser TTS fallback in AudioPlayer if using browser native TTS
+        if (browserTTSOptions) {
+          this.audioPlayer.setBrowserTTSEnabled(true);
+        }
+
         this.audioPlayer
-          .play(speechAction.audioId || '')
+          .play(speechAction.audioId || '', browserTTSOptions)
           .then((audioStarted) => {
             if (!audioStarted) scheduleReadingTimer();
           })

@@ -1,16 +1,16 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
-import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { useI18n } from '@/lib/hooks/use-i18n';
-import { useSettingsStore } from '@/lib/store/settings';
-import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
-import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
+import { useSettingsStore } from '@/lib/store/settings';
+import { cn } from '@/lib/utils';
+import { CheckCircle2, Eye, EyeOff, Loader2, Volume2, XCircle } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
 
 const log = createLogger('TTSSettings');
 
@@ -265,9 +265,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           className={cn(
             'rounded-lg p-3 text-sm overflow-hidden',
             testStatus === 'success' &&
-              'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
+            'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
             testStatus === 'error' &&
-              'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
+            'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
           )}
         >
           <div className="flex items-start gap-2 min-w-0">
