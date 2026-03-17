@@ -161,7 +161,10 @@ export function WhiteboardCanvas() {
     if (elements.length === 0) return { scale: 1, tx: 0, ty: 0 };
 
     // Compute bounding box of all elements
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    let minX = Infinity,
+      minY = Infinity,
+      maxX = -Infinity,
+      maxY = -Infinity;
     for (const el of elements) {
       const left = el.left ?? 0;
       const top = el.top ?? 0;
@@ -296,7 +299,11 @@ export function WhiteboardCanvas() {
             height: canvasHeight,
             transform: `scale(${containerScale})`,
             transformOrigin: 'top left',
-            cursor: isPanningRef.current ? 'grabbing' : (hasOverflow || isViewModified ? 'grab' : undefined),
+            cursor: isPanningRef.current
+              ? 'grabbing'
+              : hasOverflow || isViewModified
+                ? 'grab'
+                : undefined,
           }}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}

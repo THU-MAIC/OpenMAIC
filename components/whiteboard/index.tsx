@@ -40,10 +40,9 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
 
     // Save snapshot before clearing
     if (whiteboard.elements && whiteboard.elements.length > 0) {
-      useWhiteboardHistoryStore.getState().pushSnapshot(
-        whiteboard.elements,
-        t('whiteboard.beforeClear'),
-      );
+      useWhiteboardHistoryStore
+        .getState()
+        .pushSnapshot(whiteboard.elements, t('whiteboard.beforeClear'));
     }
 
     // Trigger cascade exit animation
@@ -151,10 +150,7 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
               <WhiteboardCanvas />
 
               {/* History panel */}
-              <WhiteboardHistory
-                isOpen={historyOpen}
-                onClose={() => setHistoryOpen(false)}
-              />
+              <WhiteboardHistory isOpen={historyOpen} onClose={() => setHistoryOpen(false)} />
 
               {/* Test panel */}
               {/* <WhiteboardTestPanel /> */}
