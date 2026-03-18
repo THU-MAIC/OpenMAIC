@@ -1,10 +1,12 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
+import { elementFingerprint } from '@/lib/utils/element-fingerprint';
 import type { PPTElement } from '@/lib/types/slides';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
@@ -74,7 +76,14 @@ function AnimatedElement({
 }
 
 /**
- * Whiteboard canvas
+ * Whiteboard canvas — renders the current whiteboard elements and handles
+ * auto-snapshotting so the user can browse/restore previous states.
+ *
+ * The auto-snapshot logic watches for "content replacement" events —
+ * i.e. when AI replaces the whiteboard content with new elements.  It
+ * debounces by 2 seconds so that one-by-one element additions don't
+ * spam the history store.  The `restoredKey` one-shot guard prevents a
+ * restore action from itself triggering a new snapshot.
  */
 export function WhiteboardCanvas() {
   const { t } = useI18n();
@@ -85,13 +94,59 @@ export function WhiteboardCanvas() {
 
   // Get whiteboard elements
   const whiteboard = stage?.whiteboard?.[0];
-  const elements = whiteboard?.elements || [];
+  const rawElements = whiteboard?.elements;
+  const elements = useMemo(() => rawElements ?? [], [rawElements]);
 
-  // Whiteboard fixed size: 1000 x 562.5 (16:9)
+  // ── Auto-snapshot logic ──────────────────────────────────────────
+  // Saves a snapshot of the CURRENT state after elements have been stable
+  // (unchanged) for 2 seconds.  This ensures the complete "finished" result
+  // appears in history, not just intermediate build-up states.
+  const elementsKey = useMemo(() => elementFingerprint(elements), [elements]);
+  const elementsRef = useRef(elements);
+  useEffect(() => {
+    elementsRef.current = elements;
+  }, [elements]);
+  const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    // Cancel any pending timer whenever elements change
+    if (snapshotTimerRef.current) {
+      clearTimeout(snapshotTimerRef.current);
+      snapshotTimerRef.current = null;
+    }
+
+    // Don't snapshot empty states or during clearing animation
+    if (elements.length === 0 || isClearing) return;
+
+    // If this state matches a just-restored snapshot, skip and clear the flag.
+    // This check uses fingerprint comparison (reviewer point #5) rather than
+    // a fragile boolean flag, eliminating timing dependencies entirely.
+    const { restoredKey } = useWhiteboardHistoryStore.getState();
+    if (restoredKey && elementsKey === restoredKey) {
+      useWhiteboardHistoryStore.getState().setRestoredKey(null);
+      return;
+    }
+
+    snapshotTimerRef.current = setTimeout(() => {
+      // Save the CURRENT stable state (not the previous one)
+      const current = elementsRef.current;
+      if (current.length > 0) {
+        useWhiteboardHistoryStore.getState().pushSnapshot(current);
+      }
+    }, 2000);
+
+    return () => {
+      if (snapshotTimerRef.current) {
+        clearTimeout(snapshotTimerRef.current);
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elementsKey, isClearing]);
+
+  // ── Layout: whiteboard fixed size 1000 x 562.5 (16:9) ─────────
   const canvasWidth = 1000;
   const canvasHeight = 562.5;
 
-  // Responsive scaling: scale canvas proportionally to fill container
   const updateScale = useCallback(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -110,6 +165,7 @@ export function WhiteboardCanvas() {
     return () => observer.disconnect();
   }, [updateScale]);
 
+  // ── Render ──────────────────────────────────────────────────────
   return (
     <div
       ref={containerRef}
