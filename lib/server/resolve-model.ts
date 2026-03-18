@@ -41,6 +41,9 @@ export function resolveModel(params: {
   const apiKey = clientBaseUrl
     ? params.apiKey || ''
     : resolveApiKey(providerId, params.apiKey || '');
+  if (clientBaseUrl && !apiKey) {
+    throw new Error(`API key is required when using a custom base URL for provider: ${providerId}`);
+  }
   const baseUrl = clientBaseUrl ? clientBaseUrl : resolveBaseUrl(providerId, params.baseUrl);
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({

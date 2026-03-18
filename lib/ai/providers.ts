@@ -848,30 +848,6 @@ function getProviderConfig(providerId: ProviderId): ProviderConfig | null {
     return PROVIDERS[providerId];
   }
 
-  // Check unified providersConfig in localStorage (browser only)
-  if (typeof window !== 'undefined') {
-    try {
-      const storedConfig = localStorage.getItem('providersConfig');
-      if (storedConfig) {
-        const config = JSON.parse(storedConfig);
-        const providerSettings = config[providerId];
-        if (providerSettings) {
-          return {
-            id: providerId,
-            name: providerSettings.name,
-            type: providerSettings.type,
-            defaultBaseUrl: providerSettings.defaultBaseUrl,
-            icon: providerSettings.icon,
-            requiresApiKey: providerSettings.requiresApiKey,
-            models: providerSettings.models,
-          };
-        }
-      }
-    } catch (e) {
-      log.error('Failed to load provider config:', e);
-    }
-  }
-
   return null;
 }
 

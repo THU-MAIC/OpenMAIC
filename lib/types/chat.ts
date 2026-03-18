@@ -279,6 +279,8 @@ export interface StatelessChatRequest {
   apiKey: string;
   baseUrl?: string;
   model?: string;
+  /** Optional thinking/reasoning config (default: disabled) */
+  thinking?: { enabled?: boolean; budgetTokens?: number };
 }
 
 /**

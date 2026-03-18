@@ -132,6 +132,9 @@ export async function POST(req: NextRequest) {
       try {
         startHeartbeat();
 
+        // Resolve thinking config: from request body or default to disabled
+        const thinkingConfig: ThinkingConfig = body.thinking ?? { enabled: false };
+
         const generator = statelessGenerate(
           {
             ...body,
@@ -139,7 +142,7 @@ export async function POST(req: NextRequest) {
           },
           signal,
           languageModel,
-          { enabled: false } satisfies ThinkingConfig,
+          thinkingConfig,
         );
 
         for await (const event of generator) {

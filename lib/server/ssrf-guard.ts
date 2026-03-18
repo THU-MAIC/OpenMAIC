@@ -12,6 +12,17 @@ function isPrivate172(hostname: string): boolean {
   return second >= 16 && second <= 31;
 }
 
+/** Check if hostname is an IPv6 Unique Local Address (fd00::/8) */
+function isIPv6ULA(hostname: string): boolean {
+  // ULA range: fd00:: - fdff::
+  return /^fd[0-9a-f]{2}:/.test(hostname);
+}
+
+/** Check if hostname contains IPv4-mapped IPv6 address (::ffff:x.x.x.x) */
+function isIPv4MappedIPv6(hostname: string): boolean {
+  return hostname.startsWith('::ffff:');
+}
+
 /**
  * Validate a URL against SSRF attacks.
  * Returns null if the URL is safe, or an error message string if blocked.
@@ -28,7 +39,9 @@ export function validateUrlForSSRF(url: string): string | null {
     return 'Only HTTP(S) URLs are allowed';
   }
 
-  const hostname = parsed.hostname.toLowerCase();
+  // Strip square brackets from IPv6 hostnames (URL parser keeps them)
+  const hostname = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, '');
+
   if (
     hostname === 'localhost' ||
     hostname === '127.0.0.1' ||
@@ -39,8 +52,9 @@ export function validateUrlForSSRF(url: string): string | null {
     hostname.startsWith('169.254.') ||
     isPrivate172(hostname) ||
     hostname.endsWith('.local') ||
-    hostname.startsWith('fd') ||
-    hostname.startsWith('fe80')
+    isIPv6ULA(hostname) ||
+    hostname.startsWith('fe80') ||
+    isIPv4MappedIPv6(hostname)
   ) {
     return 'Local/private network URLs are not allowed';
   }
