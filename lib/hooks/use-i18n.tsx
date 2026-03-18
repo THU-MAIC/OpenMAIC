@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Locale, translations, defaultLocale } from '@/lib/i18n';
+import { Locale, translate, defaultLocale } from '@/lib/i18n';
 
 type I18nContextType = {
   locale: Locale;
@@ -40,14 +40,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     localStorage.setItem(LOCALE_STORAGE_KEY, newLocale);
   };
 
-  const t = (key: string): string => {
-    const keys = key.split('.');
-    let value: unknown = translations[locale];
-    for (const k of keys) {
-      value = (value as Record<string, unknown>)?.[k];
-    }
-    return (typeof value === 'string' ? value : undefined) ?? key;
-  };
+  const t = (key: string): string => translate(locale, key);
 
   return <I18nContext.Provider value={{ locale, setLocale, t }}>{children}</I18nContext.Provider>;
 }

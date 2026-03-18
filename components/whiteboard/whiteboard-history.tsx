@@ -5,7 +5,9 @@ import { motion, AnimatePresence } from 'motion/react';
 import { RotateCcw } from 'lucide-react';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useStageStore } from '@/lib/store';
+import { useCanvasStore } from '@/lib/store/canvas';
 import { createStageAPI } from '@/lib/api/stage-api';
+import { elementFingerprint } from '@/lib/utils/element-fingerprint';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
@@ -22,6 +24,7 @@ interface WhiteboardHistoryProps {
 export function WhiteboardHistory({ isOpen, onClose }: WhiteboardHistoryProps) {
   const { t } = useI18n();
   const snapshots = useWhiteboardHistoryStore((s) => s.snapshots);
+  const isClearing = useCanvasStore.use.whiteboardClearing();
   const panelRef = useRef<HTMLDivElement>(null);
 
   // Close on outside click
@@ -41,11 +44,15 @@ export function WhiteboardHistory({ isOpen, onClose }: WhiteboardHistoryProps) {
   }, [isOpen, onClose]);
 
   const handleRestore = (index: number) => {
+    // P1: Block restore while a clear animation is in flight — the pending
+    // delete/update would overwrite the restored content moments later.
+    if (isClearing) {
+      toast.error(t('whiteboard.restoreError'));
+      return;
+    }
+
     const snapshot = useWhiteboardHistoryStore.getState().getSnapshot(index);
     if (!snapshot) return;
-
-    // Suppress auto-snapshot during restore
-    useWhiteboardHistoryStore.getState().setRestoring(true);
 
     const stageStore = useStageStore;
     const stageAPI = createStageAPI(stageStore);
@@ -53,26 +60,36 @@ export function WhiteboardHistory({ isOpen, onClose }: WhiteboardHistoryProps) {
     // Get or create whiteboard
     const wbResult = stageAPI.whiteboard.get();
     if (!wbResult.success || !wbResult.data) {
-      useWhiteboardHistoryStore.getState().setRestoring(false);
       return;
     }
     const whiteboardId = wbResult.data.id;
 
-    // Clear existing elements
-    const currentElements = wbResult.data.elements || [];
-    for (const el of currentElements) {
-      stageAPI.whiteboard.deleteElement(el.id, whiteboardId);
+    // P2a: Skip no-op restores — if the snapshot matches what's already
+    // on screen, applying it would not change elementsKey, leaving
+    // restoredKey armed indefinitely and suppressing a future snapshot.
+    const restoredElementsKey = snapshot.fingerprint;
+    const currentKey = elementFingerprint(wbResult.data.elements ?? []);
+    if (restoredElementsKey === currentKey) {
+      toast.success(t('whiteboard.restored'));
+      onClose();
+      return;
     }
 
-    // Add snapshot elements
-    for (const el of snapshot.elements) {
-      stageAPI.whiteboard.addElement(el, whiteboardId);
-    }
+    // Set restoredKey so auto-snapshot skips the incoming change
+    useWhiteboardHistoryStore.getState().setRestoredKey(restoredElementsKey);
 
-    // Re-enable auto-snapshot after a tick (let the effect run and skip)
-    setTimeout(() => {
-      useWhiteboardHistoryStore.getState().setRestoring(false);
-    }, 100);
+    // Transactional restore: replace all elements in one update() call
+    // instead of looping delete/add which produces intermediate states.
+    const result = stageAPI.whiteboard.update({ elements: snapshot.elements }, whiteboardId);
+
+    if (!result.success) {
+      // Restore failed — clear restoredKey so auto-snapshot isn't stuck
+      useWhiteboardHistoryStore.getState().setRestoredKey(null);
+      console.error('Failed to restore whiteboard snapshot:', result.error);
+      // P3: Dedicated restoreError key (not clearError)
+      toast.error(t('whiteboard.restoreError') + (result.error ?? ''));
+      return;
+    }
 
     toast.success(t('whiteboard.restored'));
     onClose();
@@ -134,7 +151,8 @@ export function WhiteboardHistory({ isOpen, onClose }: WhiteboardHistoryProps) {
                       <button
                         type="button"
                         onClick={() => handleRestore(realIdx)}
-                        className="ml-2 px-2 py-1 text-xs text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-md opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1"
+                        disabled={isClearing}
+                        className="ml-2 px-2 py-1 text-xs text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-md opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                       >
                         <RotateCcw className="w-3 h-3" />
                         {t('whiteboard.restore')}
