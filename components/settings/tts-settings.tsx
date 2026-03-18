@@ -410,9 +410,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="font-mono text-sm font-medium">{model.name}</div>
-                    <div className="text-xs text-muted-foreground font-mono mt-0.5">
-                      {model.id}
-                    </div>
+                    <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
                   </div>
                 </button>
                 <div className="flex items-center gap-1">
