@@ -167,7 +167,12 @@ export function ProviderConfigPanel({
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Input
+              name={`llm-api-key-${provider.id}`}
               type={showApiKey ? 'text' : 'password'}
+              autoComplete="new-password"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               placeholder={isServerConfigured ? t('settings.optionalOverride') : 'sk-...'}
               value={apiKey}
               onChange={(e) => handleApiKeyChange(e.target.value)}
@@ -240,7 +245,12 @@ export function ProviderConfigPanel({
       <div className="space-y-2">
         <Label>{t('settings.apiHost')}</Label>
         <Input
+          name={`llm-base-url-${provider.id}`}
           type="url"
+          autoComplete="off"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           placeholder={provider.defaultBaseUrl || 'https://api.example.com/v1'}
           value={baseUrl}
           onChange={(e) => handleBaseUrlChange(e.target.value)}

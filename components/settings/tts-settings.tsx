@@ -155,7 +155,12 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
               <div className="relative">
                 <Input
+                  name={`tts-api-key-${selectedProviderId}`}
                   type={showApiKey ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder={
                     isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
                   }
@@ -179,6 +184,11 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
               <Input
+                name={`tts-base-url-${selectedProviderId}`}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
                 value={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
