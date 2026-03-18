@@ -275,7 +275,9 @@ export async function generateTTSForClassroom(
         // WAV/OGG/AAC have container headers that break on naive concatenation.
         const canConcatenate = format === 'mp3';
         const textChunks =
-          maxLen && canConcatenate ? splitTextForTTS(speechAction.text, maxLen) : [speechAction.text];
+          maxLen && canConcatenate
+            ? splitTextForTTS(speechAction.text, maxLen)
+            : [speechAction.text];
 
         const audioParts: Uint8Array[] = [];
         for (const chunk of textChunks) {
@@ -300,11 +302,7 @@ export async function generateTTSForClassroom(
 
         // Set audioUrl on the action for playback
         speechAction.audioId = audioId;
-        speechAction.audioUrl = mediaServingUrl(
-          baseUrl,
-          classroomId,
-          `audio/${filename}`,
-        );
+        speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
         log.info(`Generated TTS: ${filename} (${combined.length} bytes)`);
       } catch (err) {
         log.warn(`TTS generation failed for action ${action.id}:`, err);

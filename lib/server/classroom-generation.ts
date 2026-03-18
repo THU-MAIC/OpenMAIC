@@ -137,7 +137,9 @@ Return a JSON object with this exact structure:
 
   const response = await aiCall(systemPrompt, userPrompt);
   const rawText = stripCodeFences(response);
-  const parsed = JSON.parse(rawText) as { agents: Array<{ name: string; role: string; persona: string }> };
+  const parsed = JSON.parse(rawText) as {
+    agents: Array<{ name: string; role: string; persona: string }>;
+  };
 
   if (!parsed.agents || !Array.isArray(parsed.agents) || parsed.agents.length < 2) {
     throw new Error(`Expected at least 2 agents, got ${parsed.agents?.length ?? 0}`);
@@ -317,7 +319,16 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    const content = await generateSceneContent(safeOutline, aiCall, undefined, undefined, undefined, undefined, undefined, agents);
+    const content = await generateSceneContent(
+      safeOutline,
+      aiCall,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      agents,
+    );
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;
