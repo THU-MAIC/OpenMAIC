@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Volume2, Play, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -16,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { getTTSVoices } from '@/lib/audio/constants';
+import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 
 /** Extract the English name from voice name format "ChineseName (English)" */
 function getVoiceDisplayName(name: string, lang: string): string {
@@ -29,13 +31,13 @@ function getVoiceDisplayName(name: string, lang: string): string {
 export function TtsConfigPopover() {
   const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
-  const [previewing, setPreviewing] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { previewing, startPreview, stopPreview } = useTTSPreview();
 
   const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
   const setTTSEnabled = useSettingsStore((s) => s.setTTSEnabled);
   const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
+  const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
 
@@ -54,51 +56,47 @@ export function TtsConfigPopover() {
 
   const handlePreview = useCallback(async () => {
     if (previewing) {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      setPreviewing(false);
+      stopPreview();
       return;
     }
-
-    setPreviewing(true);
     try {
       const providerConfig = ttsProvidersConfig[ttsProviderId];
-      const res = await fetch('/api/generate/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: '你好，欢迎来到AI课堂！让我们一起学习吧。',
-          audioId: 'preview',
-          ttsProviderId: ttsProviderId,
-          ttsVoice: ttsVoice,
-          ttsApiKey: providerConfig?.apiKey,
-          ttsBaseUrl: providerConfig?.baseUrl,
-        }),
+      await startPreview({
+        text: t('settings.ttsTestTextDefault'),
+        providerId: ttsProviderId,
+        voice: ttsVoice,
+        speed: ttsSpeed,
+        apiKey: providerConfig?.apiKey,
+        baseUrl: providerConfig?.baseUrl,
       });
-
-      if (!res.ok) throw new Error('TTS failed');
-
-      const data = await res.json();
-      if (data.base64) {
-        const audio = new Audio(`data:audio/${data.format || 'mp3'};base64,${data.base64}`);
-        audioRef.current = audio;
-        audio.onended = () => {
-          setPreviewing(false);
-          audioRef.current = null;
-        };
-        audio.onerror = () => {
-          setPreviewing(false);
-          audioRef.current = null;
-        };
-        await audio.play();
-      }
-    } catch {
-      setPreviewing(false);
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message ? error.message : t('settings.ttsTestFailed');
+      toast.error(message);
     }
-  }, [ttsProviderId, ttsVoice, ttsProvidersConfig, previewing]);
+  }, [
+    previewing,
+    startPreview,
+    stopPreview,
+    t,
+    ttsProviderId,
+    ttsProvidersConfig,
+    ttsSpeed,
+    ttsVoice,
+  ]);
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        stopPreview();
+      }
+      setOpen(nextOpen);
+    },
+    [stopPreview],
+  );
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>

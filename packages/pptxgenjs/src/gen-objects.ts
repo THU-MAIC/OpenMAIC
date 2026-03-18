@@ -77,14 +77,14 @@ export function createSlideMaster(props: SlideMasterProps, target: SlideLayout):
 			else if (MASTER_OBJECTS[key] && key === 'placeholder') {
 				// TODO: 20180820: Check for existing `name`?
 				object[key].options.placeholder = object[key].options.name
-				delete object[key].options.name // remap name for earier handling internally
+				delete object[key].options.name // remap name for earlier handling internally
 				object[key].options._placeholderType = object[key].options.type
-				delete object[key].options.type // remap name for earier handling internally
+				delete object[key].options.type // remap name for earlier handling internally
 				object[key].options._placeholderIdx = 100 + idx
 				addTextDefinition(tgt, [{ text: object[key].text }], object[key].options, true)
-				// TODO: ISSUE#599 - only text is suported now (add more below)
+				// TODO: ISSUE#599 - only text is supported now (add more below)
 				// else if (object[key].image) addImageDefinition(tgt, object[key].image)
-				/* 20200120: So... image placeholders go into the "slideLayoutN.xml" file and addImage doesnt do this yet...
+				/* 20200120: So... image placeholders go into the "slideLayoutN.xml" file and addImage doesn't do this yet...
 					<p:sp>
 				  <p:nvSpPr>
 					<p:cNvPr id="7" name="Picture Placeholder 6">

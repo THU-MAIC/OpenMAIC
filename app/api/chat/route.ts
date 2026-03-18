@@ -20,6 +20,7 @@ import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 const log = createLogger('Chat API');
 
 // Allow streaming responses up to 60 seconds
@@ -63,8 +64,21 @@ export async function POST(req: NextRequest) {
     // Resolve API key: client > server > empty
     const modelString = body.model || 'gpt-4o-mini';
     const { providerId, modelId } = parseModelString(modelString);
-    const effectiveApiKey = resolveApiKey(providerId, body.apiKey);
-    const effectiveBaseUrl = resolveBaseUrl(providerId, body.baseUrl);
+
+    const clientBaseUrl = body.baseUrl || undefined;
+    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+      const ssrfError = validateUrlForSSRF(clientBaseUrl);
+      if (ssrfError) {
+        return apiError('INVALID_URL', 403, ssrfError);
+      }
+    }
+
+    const effectiveApiKey = clientBaseUrl
+      ? body.apiKey || ''
+      : resolveApiKey(providerId, body.apiKey);
+    const effectiveBaseUrl = clientBaseUrl
+      ? clientBaseUrl
+      : resolveBaseUrl(providerId, body.baseUrl);
     const proxy = resolveProxy(providerId);
 
     if (!effectiveApiKey) {

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo, Fragment } from 'react';
+import { useState, useCallback, useMemo, Fragment } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Image as ImageIcon,
@@ -12,6 +12,7 @@ import {
   Play,
   Loader2,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -28,6 +29,7 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { TTS_PROVIDERS, getTTSVoices } from '@/lib/audio/constants';
@@ -75,8 +77,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('image');
-  const [previewing, setPreviewing] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { previewing, startPreview, stopPreview } = useTTSPreview();
 
   // ─── Store ───
   const imageGenerationEnabled = useSettingsStore((s) => s.imageGenerationEnabled);
@@ -183,45 +184,34 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   // TTS preview
   const handlePreview = useCallback(async () => {
     if (previewing) {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      setPreviewing(false);
+      stopPreview();
       return;
     }
-    setPreviewing(true);
     try {
       const providerConfig = ttsProvidersConfig[ttsProviderId];
-      const res = await fetch('/api/generate/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: '你好，欢迎来到AI课堂！让我们一起学习吧。',
-          audioId: 'preview',
-          ttsProviderId,
-          ttsVoice,
-          ttsApiKey: providerConfig?.apiKey,
-          ttsBaseUrl: providerConfig?.baseUrl,
-        }),
+      await startPreview({
+        text: t('settings.ttsTestTextDefault'),
+        providerId: ttsProviderId,
+        voice: ttsVoice,
+        speed: ttsSpeed,
+        apiKey: providerConfig?.apiKey,
+        baseUrl: providerConfig?.baseUrl,
       });
-      if (!res.ok) throw new Error('TTS failed');
-      const data = await res.json();
-      if (data.base64) {
-        const audio = new Audio(`data:audio/${data.format || 'mp3'};base64,${data.base64}`);
-        audioRef.current = audio;
-        audio.onended = () => {
-          setPreviewing(false);
-          audioRef.current = null;
-        };
-        audio.onerror = () => {
-          setPreviewing(false);
-          audioRef.current = null;
-        };
-        await audio.play();
-      }
-    } catch {
-      setPreviewing(false);
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message ? error.message : t('settings.ttsTestFailed');
+      toast.error(message);
     }
-  }, [ttsProviderId, ttsVoice, ttsProvidersConfig, previewing]);
+  }, [
+    previewing,
+    startPreview,
+    stopPreview,
+    t,
+    ttsProviderId,
+    ttsProvidersConfig,
+    ttsSpeed,
+    ttsVoice,
+  ]);
 
   // ASR: only available providers
   const asrGroups = useMemo(
@@ -243,6 +233,9 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
 
   // Auto-select first enabled tab on open
   const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      stopPreview();
+    }
     setOpen(isOpen);
     if (isOpen) {
       const first = (['image', 'video', 'tts', 'asr'] as TabId[]).find((id) => enabledMap[id]);
