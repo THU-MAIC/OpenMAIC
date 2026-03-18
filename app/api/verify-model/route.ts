@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   let model: string | undefined;
   try {
     const body = await req.json();
-    const { apiKey, baseUrl, providerType, requiresApiKey } = body;
+    const { apiKey, baseUrl, providerType } = body;
     model = body.model;
 
     if (!model) {
@@ -24,7 +24,6 @@ export async function POST(req: NextRequest) {
         apiKey: apiKey || '',
         baseUrl: baseUrl || undefined,
         providerType,
-        requiresApiKey,
       });
       languageModel = result.model;
     } catch (error) {

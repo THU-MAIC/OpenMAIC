@@ -89,6 +89,8 @@ export const settingsZhCN = {
       minimax: 'MiniMax',
       glm: 'GLM',
       siliconflow: '硅基流动',
+      doubao: '豆包',
+      ollama: 'Ollama（本地模型）',
     },
     providerTypes: {
       openai: 'OpenAI 协议',
@@ -684,6 +686,8 @@ export const settingsEnUS = {
       minimax: 'MiniMax',
       glm: 'GLM',
       siliconflow: 'SiliconFlow',
+      doubao: 'Doubao',
+      ollama: 'Ollama (Local)',
     },
     providerTypes: {
       openai: 'OpenAI Protocol',
