@@ -30,6 +30,7 @@ type InteractiveWhiteboardCanvasProps = {
   readyHintText: string;
   readyText: string;
   resetViewText: string;
+  zoomHintText: string;
 };
 
 function getLineBounds(element: PPTLineElement): ElementBounds {
@@ -152,12 +153,14 @@ function InteractiveWhiteboardCanvas({
   readyHintText,
   readyText,
   resetViewText,
+  zoomHintText,
 }: InteractiveWhiteboardCanvasProps) {
   const [viewZoom, setViewZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  const [showHint, setShowHint] = useState(true);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const prevElementsLengthRef = useRef(elements.length);
   const resetTimerRef = useRef<number | null>(null);
@@ -166,6 +169,20 @@ function InteractiveWhiteboardCanvas({
   const isViewModified = viewZoom !== 1 || panX !== 0 || panY !== 0;
   const hasOverflow = autoFitTransform.scale < 1;
   const canPan = elements.length > 0 && (hasOverflow || isViewModified);
+
+  // Auto-hide hint after 3s or on first interaction
+  useEffect(() => {
+    if (elements.length === 0) {
+      setShowHint(true);
+      return;
+    }
+    if (isViewModified) {
+      setShowHint(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShowHint(false), 3000);
+    return () => window.clearTimeout(timer);
+  }, [elements.length, isViewModified]);
 
   const handlePointerDown = useCallback(
     (e: React.PointerEvent) => {
@@ -345,6 +362,21 @@ function InteractiveWhiteboardCanvas({
       </div>
 
       <AnimatePresence>
+        {showHint && !isViewModified && elements.length > 0 && (
+          <motion.div
+            key="zoom-hint"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 0.5, transition: { delay: 0.6, duration: 0.4 } }}
+            exit={{ opacity: 0, transition: { duration: 0.3 } }}
+            className="absolute bottom-3 left-3 z-50 px-2.5 py-1 rounded-md
+              bg-black/40 text-white text-xs backdrop-blur-sm select-none pointer-events-none"
+          >
+            {zoomHintText}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {isViewModified && elements.length > 0 && (
           <motion.button
             initial={{ opacity: 0, y: 4 }}
@@ -460,6 +492,7 @@ export function WhiteboardCanvas() {
           readyHintText={t('whiteboard.readyHint')}
           readyText={t('whiteboard.ready')}
           resetViewText={t('whiteboard.resetView')}
+          zoomHintText={t('whiteboard.zoomHint')}
         />
       </div>
     </div>

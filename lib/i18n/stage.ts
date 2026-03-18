@@ -18,6 +18,7 @@ export const stageZhCN = {
     clearSuccess: '白板已清空',
     clearError: '清空白板失败：',
     resetView: '重置视图',
+    zoomHint: '滚轮缩放 · 拖拽平移',
   },
   quiz: {
     title: '随堂测验',
@@ -155,6 +156,7 @@ export const stageEnUS = {
     clearSuccess: 'Whiteboard cleared successfully',
     clearError: 'Failed to clear whiteboard: ',
     resetView: 'Reset View',
+    zoomHint: 'Scroll to zoom · Drag to pan',
   },
   quiz: {
     title: 'Quiz',
