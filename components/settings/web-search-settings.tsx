@@ -47,7 +47,12 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
               <Label className="text-sm">{t('settings.webSearchApiKey')}</Label>
               <div className="relative">
                 <Input
+                  name={`web-search-api-key-${selectedProviderId}`}
                   type={showApiKey ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder={
                     isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
                   }
@@ -73,6 +78,11 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.webSearchBaseUrl')}</Label>
               <Input
+                name={`web-search-base-url-${selectedProviderId}`}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder={provider.defaultBaseUrl || 'https://api.tavily.com'}
                 value={webSearchProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
