@@ -10,7 +10,7 @@ type I18nContextType = {
 };
 
 const LOCALE_STORAGE_KEY = 'locale';
-const VALID_LOCALES: Locale[] = ['zh-CN', 'en-US'];
+const VALID_LOCALES: Locale[] = ['zh-CN', 'zh-TW', 'en-US'];
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 

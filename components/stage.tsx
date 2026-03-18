@@ -13,7 +13,7 @@ import { Roundtable } from '@/components/roundtable';
 import { PlaybackEngine, computePlaybackView } from '@/lib/playback';
 import type { EngineMode, TriggerEvent, Effect } from '@/lib/playback';
 import { ActionEngine } from '@/lib/action/engine';
-import { createAudioPlayer } from '@/lib/utils/audio-player';
+import { createAudioPlayer, type BrowserTTSConfig } from '@/lib/utils/audio-player';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 // Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
@@ -455,6 +455,23 @@ export function Stage({
   useEffect(() => {
     audioPlayerRef.current.setPlaybackRate(playbackSpeed);
   }, [playbackSpeed]);
+
+  // Sync TTS config to audio player (for browser-native-tts support)
+  const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
+  const ttsVoice = useSettingsStore((s) => s.ttsVoice);
+  const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
+  useEffect(() => {
+    if (ttsProviderId === 'browser-native-tts') {
+      const browserTTSConfig: BrowserTTSConfig = {
+        providerId: 'browser-native-tts',
+        voice: ttsVoice,
+        speed: ttsSpeed,
+      };
+      audioPlayerRef.current.setBrowserTTSConfig(browserTTSConfig);
+    } else {
+      audioPlayerRef.current.setBrowserTTSConfig(null);
+    }
+  }, [ttsProviderId, ttsVoice, ttsSpeed]);
 
   /**
    * Handle discussion SSE — POST /api/chat and push events to engine

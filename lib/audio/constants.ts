@@ -177,6 +177,18 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
         gender: 'male',
       },
       {
+        id: 'zh-HK-HiuGaNeural',
+        name: '曉佳 (女)',
+        language: 'zh-HK',
+        gender: 'female',
+      },
+      {
+        id: 'zh-HK-HiuManNeural',
+        name: '曉曼 (女)',
+        language: 'zh-HK',
+        gender: 'female',
+      },
+      {
         id: 'en-US-JennyNeural',
         name: 'Jenny',
         language: 'en-US',
@@ -614,7 +626,10 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     voices: [
       // Note: Actual voices are determined by the browser and OS
       // These are placeholder - real voices are fetched dynamically via speechSynthesis.getVoices()
-      { id: 'default', name: '默认', language: 'zh-CN', gender: 'neutral' },
+      // Default to Cantonese (zh-HK) or user system preference
+      { id: 'zh-HK', name: '粤语 (默认)', language: 'zh-HK', gender: 'neutral' },
+      { id: 'zh-CN', name: '普通话', language: 'zh-CN', gender: 'neutral' },
+      { id: 'zh-TW', name: '繁体中文', language: 'zh-TW', gender: 'neutral' },
     ],
     supportedFormats: ['browser'], // Browser native audio
     speedRange: { min: 0.1, max: 10.0, default: 1.0 },
@@ -833,8 +848,48 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
-  'browser-native-tts': 'default',
+  'browser-native-tts': 'zh-HK', // Default to Cantonese
 };
+
+/**
+ * Map course generation language to appropriate TTS voice for each provider.
+ * When generating course in Traditional Chinese (zh-TW), use Cantonese (zh-HK) voice.
+ */
+export const LANGUAGE_TO_TTS_VOICE: Record<string, Record<TTSProviderId, string>> = {
+  'zh-CN': {
+    'openai-tts': 'alloy',
+    'azure-tts': 'zh-CN-XiaoxiaoNeural',
+    'glm-tts': 'tongtong',
+    'qwen-tts': 'Cherry',
+    'browser-native-tts': 'zh-CN',
+  },
+  'zh-TW': {
+    'openai-tts': 'alloy', // OpenAI TTS doesn't support Chinese, will fallback
+    'azure-tts': 'zh-HK-HiuGaNeural', // Cantonese voice for Traditional Chinese content
+    'glm-tts': 'tongtong',
+    'qwen-tts': 'Tingting',
+    'browser-native-tts': 'zh-HK',
+  },
+  'en-US': {
+    'openai-tts': 'alloy',
+    'azure-tts': 'en-US-JennyNeural',
+    'glm-tts': 'tongtong',
+    'qwen-tts': 'Amy',
+    'browser-native-tts': 'en-US',
+  },
+};
+
+/**
+ * Get the appropriate TTS voice for a given course language and provider.
+ */
+export function getVoiceForLanguage(courseLanguage: string, providerId: TTSProviderId): string {
+  const languageMap = LANGUAGE_TO_TTS_VOICE[courseLanguage];
+  if (languageMap && languageMap[providerId]) {
+    return languageMap[providerId];
+  }
+  // Fallback to default voice
+  return DEFAULT_TTS_VOICES[providerId] || 'alloy';
+}
 
 /**
  * Get voices for a specific TTS provider

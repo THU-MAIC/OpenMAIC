@@ -1085,7 +1085,11 @@ export function useExportPPTX() {
   // Shared guard + state wrapper for export actions
   const withExportGuard = useCallback(
     (action: () => Promise<void>) => {
-      if (exportingRef.current || slides.length === 0) return;
+      if (exportingRef.current) return;
+      if (slides.length === 0) {
+        toast.warning(t('export.noSlidesToExport'));
+        return;
+      }
       exportingRef.current = true;
       setExporting(true);
       setTimeout(async () => {

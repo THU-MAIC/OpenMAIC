@@ -69,6 +69,77 @@ export const chatZhCN = {
   },
 } as const;
 
+export const chatZhTW = {
+  chat: {
+    lecture: '授課',
+    noConversations: '暫無對話',
+    startConversation: '輸入訊息開始對話',
+    noMessages: '暫無訊息',
+    ended: '已結束',
+    unknown: '未知',
+    stopDiscussion: '結束討論',
+    endQA: '結束問答',
+    tabs: {
+      lecture: '筆記',
+      chat: '對話',
+    },
+    lectureNotes: {
+      empty: '播放課程後，筆記將在此顯示',
+      emptyHint: '點擊播放按鈕開始授課',
+      pageLabel: '第 {n} 頁',
+      currentPage: '目前頁',
+    },
+    badge: {
+      qa: 'Q&A',
+      discussion: '討論',
+      lecture: '授課',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: '聚光燈',
+      laser: '雷射筆',
+      wb_open: '打開白板',
+      wb_draw_text: '白板文字',
+      wb_draw_shape: '白板形狀',
+      wb_draw_chart: '白板圖表',
+      wb_draw_latex: '白板公式',
+      wb_draw_table: '白板表格',
+      wb_draw_line: '白板線條',
+      wb_clear: '清空白板',
+      wb_delete: '刪除元素',
+      wb_close: '關閉白板',
+      discussion: '課堂討論',
+    },
+    status: {
+      inputStreaming: '等待中',
+      inputAvailable: '執行中',
+      outputAvailable: '已完成',
+      outputError: '錯誤',
+      outputDenied: '已拒絕',
+      running: '執行中',
+      result: '已完成',
+      error: '錯誤',
+    },
+  },
+  agentBar: {
+    readyToLearn: '準備好一起學習了嗎？',
+    expandedTitle: '課堂角色配置',
+    configTooltip: '點擊配置課堂角色',
+  },
+  proactiveCard: {
+    discussion: '討論',
+    join: '加入討論',
+    skip: '跳過',
+    pause: '暫停',
+    resume: '繼續',
+  },
+  voice: {
+    startListening: '語音輸入',
+    stopListening: '停止錄音',
+  },
+} as const;
+
 export const chatEnUS = {
   chat: {
     lecture: 'Lecture',

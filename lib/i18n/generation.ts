@@ -62,6 +62,70 @@ export const generationZhCN = {
   },
 } as const;
 
+export const generationZhTW = {
+  classroom: {
+    recentClassrooms: '最近學習',
+    today: '今天',
+    yesterday: '昨天',
+    daysAgo: '天前',
+    slides: '頁',
+    nameCopied: '課堂名稱已複製',
+    deleteConfirmTitle: '刪除課堂',
+    delete: '刪除',
+  },
+  upload: {
+    pdfSizeLimit: '支援最大50MB的PDF檔案',
+    generateFailed: '生成課堂失敗，請重試',
+    requirementPlaceholder:
+      '輸入你想學的任何內容，例如：\n「從零學 Python，30 分鐘寫出第一個程式」\n「用白板給我講解傅里葉轉換」\n「阿瓦隆桌遊怎麼玩」',
+    requirementRequired: '請輸入課程需求',
+    fileTooLarge: '檔案過大，請選擇小於50MB的PDF檔案',
+  },
+  generation: {
+    // Progress steps (used dynamically via activeStep)
+    analyzingPdf: '解析 PDF 檔案',
+    analyzingPdfDesc: '正在提取檔案結構和內容...',
+    generatingOutlines: '生成課程大綱',
+    generatingOutlinesDesc: '正在建構學習路徑...',
+    generatingSlideContent: '生成頁面內容',
+    generatingSlideContentDesc: '正在建立投影片、測驗和互動內容...',
+    generatingActions: '生成教學動作',
+    generatingActionsDesc: '正在編排講解、聚焦和互動流程...',
+    generationComplete: '生成完成！',
+    generationFailed: '生成失敗',
+    generatingCourse: '正在生成課程',
+    openingClassroom: '即將打開課堂...',
+    outlineReady: '課程大綱已生成',
+    generatingFirstPage: '首頁內容生成中...',
+    firstPageReady: '首頁已就緒！正在打開課堂...',
+    speechFailed: '語音合成失敗',
+    retryScene: '重試生成',
+    retryingScene: '正在重新生成...',
+    backToHome: '返回首頁',
+    sessionNotFound: '未找到生成會話',
+    sessionNotFoundDesc: '請先填寫課程需求開始生成流程。',
+    goBackAndRetry: '返回重試',
+    classroomReady: '你的個人化AI學習環境已成功生成。',
+    aiWorking: 'AI智慧體工作中...',
+    textTruncated: '文檔文字較長，已擷取前 {n} 字元用於生成',
+    imageTruncated: '文檔含 {total} 張圖片，超出上限 {max} 張，多餘圖片將僅以文字描述傳遞',
+    // Agent generation
+    agentGeneration: '生成課堂角色',
+    agentGenerationDesc: '正在根據課程內容生成角色...',
+    agentRevealTitle: '你的課堂角色',
+    viewAgents: '查看角色',
+    continue: '繼續',
+    // Outline errors
+    outlineRetrying: '大綱生成異常，正在重試...',
+    outlineEmptyResponse: '模型未回傳有效的大綱內容，請檢查模型配置後重試',
+    outlineGenerateFailed: '大綱生成失敗，請稍後重試',
+    // Web Search
+    webSearching: '網路搜尋',
+    webSearchingDesc: '正在搜尋網路獲取最新資料',
+    webSearchFailed: '網路搜尋失敗',
+  },
+} as const;
+
 export const generationEnUS = {
   classroom: {
     recentClassrooms: 'Recent',
