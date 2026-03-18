@@ -265,6 +265,9 @@ async function transcribeQwenASR(
             {
               audio: `data:audio/wav;base64,${base64Audio}`,
             },
+            {
+              text: "Please transcribe the audio into text exactly as spoken without any other comments.",
+            },
           ],
         },
       ],
