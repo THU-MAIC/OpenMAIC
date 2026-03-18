@@ -20,6 +20,7 @@ import { resolveVideoApiKey, resolveVideoBaseUrl } from '@/lib/server/provider-c
 import type { VideoProviderId } from '@/lib/media/types';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('VerifyVideoProvider');
 
@@ -30,8 +31,17 @@ export async function POST(request: NextRequest) {
     const clientApiKey = request.headers.get('x-api-key') || undefined;
     const clientBaseUrl = request.headers.get('x-base-url') || undefined;
 
-    const apiKey = resolveVideoApiKey(providerId, clientApiKey);
-    const baseUrl = resolveVideoBaseUrl(providerId, clientBaseUrl);
+    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+      const ssrfError = validateUrlForSSRF(clientBaseUrl);
+      if (ssrfError) {
+        return apiError('INVALID_URL', 403, ssrfError);
+      }
+    }
+
+    const apiKey = clientBaseUrl
+      ? clientApiKey || ''
+      : resolveVideoApiKey(providerId, clientApiKey);
+    const baseUrl = clientBaseUrl ? clientBaseUrl : resolveVideoBaseUrl(providerId, clientBaseUrl);
 
     if (!apiKey) {
       return apiError('MISSING_API_KEY', 400, 'No API key configured');
