@@ -1,0 +1,13 @@
+# OpenMAIC LLM Provider Configuration
+# Routes all LLM calls to local Ollama via its OpenAI-compatible API.
+# Add/remove models from the list below to control what is available in the UI.
+
+providers:
+  openai:
+    apiKey: "ollama"
+    baseUrl: "http://host.docker.internal:11434/v1"
+    models:
+      - "qwen3:8b"
+      - "qwen3.5:9b"
+      - "qwen3-optimized:latest"
+      - "qwen3.5-optimized:latest"

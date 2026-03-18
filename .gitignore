@@ -61,3 +61,14 @@ next-env.d.ts
 
 # docs
 /docs
+
+# deploy secrets — never commit
+deploy/.env
+deploy/keycloak/realm-export.json
+deploy/cloudflared/config.yml
+deploy/cloudflared/tunnel.pid
+deploy/cloudflared/tunnel.log
+
+# deploy templates and config ARE safe to commit
+!deploy/.env.template
+!deploy/server-providers.yml

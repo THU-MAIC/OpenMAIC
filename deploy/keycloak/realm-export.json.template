@@ -1,0 +1,143 @@
+{
+  "realm": "openmaic",
+  "displayName": "OpenMAIC Learning Platform",
+  "displayNameHtml": "<b>OpenMAIC</b> Learning Platform",
+  "enabled": true,
+  "sslRequired": "external",
+  "registrationAllowed": false,
+  "registrationEmailAsUsername": true,
+  "rememberMe": true,
+  "verifyEmail": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "permanentLockout": false,
+  "maxFailureWaitSeconds": 900,
+  "minimumQuickLoginWaitSeconds": 60,
+  "waitIncrementSeconds": 60,
+  "quickLoginCheckMilliSeconds": 1000,
+  "maxDeltaTimeSeconds": 43200,
+  "failureFactor": 10,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "ssoSessionIdleTimeoutRememberMe": 0,
+  "ssoSessionMaxLifespanRememberMe": 0,
+  "offlineSessionIdleTimeout": 2592000,
+  "offlineSessionMaxLifespanEnabled": false,
+  "offlineSessionMaxLifespan": 5184000,
+  "smtpServer": {
+    "host": "${SMTP_HOST}",
+    "port": "${SMTP_PORT}",
+    "from": "${SMTP_FROM}",
+    "fromDisplayName": "OpenMAIC",
+    "auth": "true",
+    "user": "${SMTP_USER}",
+    "password": "${SMTP_PASSWORD}",
+    "ssl": "false",
+    "starttls": "true"
+  },
+  "roles": {
+    "realm": [
+      {
+        "name": "superadmin",
+        "description": "Super administrator with full platform access",
+        "composite": false
+      },
+      {
+        "name": "user",
+        "description": "Standard platform user",
+        "composite": false
+      }
+    ]
+  },
+  "defaultRoles": ["user"],
+  "clients": [
+    {
+      "clientId": "openmaic-client",
+      "name": "OpenMAIC Client",
+      "description": "OAuth2 proxy client for OpenMAIC",
+      "enabled": true,
+      "clientAuthenticatorType": "client-secret",
+      "secret": "${OAUTH2_CLIENT_SECRET}",
+      "redirectUris": [
+        "https://my-learning.amtocbot.com/oauth2/callback"
+      ],
+      "webOrigins": [
+        "https://my-learning.amtocbot.com"
+      ],
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "bearerOnly": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "fullScopeAllowed": true,
+      "attributes": {
+        "post.logout.redirect.uris": "https://my-learning.amtocbot.com/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "email",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "user.attribute": "email",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "email",
+            "jsonType.label": "String"
+          }
+        },
+        {
+          "name": "roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "consentRequired": false,
+          "config": {
+            "userinfo.token.claim": "true",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "roles",
+            "jsonType.label": "String",
+            "multivalued": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin@amtocbot.com",
+      "email": "admin@amtocbot.com",
+      "firstName": "Admin",
+      "lastName": "Amtocbot",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${ADMIN_PASSWORD}",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["superadmin", "user"],
+      "clientRoles": {
+        "realm-management": [
+          "realm-admin",
+          "manage-users",
+          "manage-clients",
+          "view-users",
+          "query-users",
+          "create-client"
+        ]
+      }
+    }
+  ]
+}

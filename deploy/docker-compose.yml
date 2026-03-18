@@ -1,0 +1,140 @@
+# OpenMAIC Self-Hosted Stack
+# Access: https://my-learning.amtocbot.com (via Cloudflare Tunnel → nginx:8088)
+#
+# Services:
+#   postgres     — Keycloak database
+#   keycloak     — Identity provider (OIDC)
+#   oauth2-proxy — Auth gateway in front of OpenMAIC
+#   openmaic     — The learning platform
+#   nginx        — Reverse proxy (listens on 127.0.0.1:8088)
+#
+# Before starting: run ./setup.sh
+
+services:
+
+  # ── Database ──────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── Identity Provider ─────────────────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_HOSTNAME: my-learning.amtocbot.com
+      KC_HOSTNAME_STRICT: "false"
+      KC_HTTP_RELATIVE_PATH: /auth
+      KC_HTTP_ENABLED: "true"
+      KC_HTTPS_ENABLED: "false"
+      KC_PROXY_HEADERS: xforwarded
+      KEYCLOAK_ADMIN: ${KEYCLOAK_MASTER_ADMIN:-kc-master-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_MASTER_PASSWORD}
+    volumes:
+      - ./keycloak:/opt/keycloak/data/import:ro
+    networks:
+      - internal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/9000 && echo -e 'GET /auth/health/ready HTTP/1.0\\r\\nHost: localhost\\r\\n\\r\\n' >&3 && timeout 2 cat <&3 | grep -q '\"status\": \"UP\"' || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 15
+      start_period: 120s
+
+  # ── Auth Proxy ────────────────────────────────────────────────────────────
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.7.1
+    command:
+      - --http-address=0.0.0.0:4180
+      - --upstream=http://openmaic:3000
+      - --provider=keycloak-oidc
+      - --client-id=${OAUTH2_CLIENT_ID:-openmaic-client}
+      - --client-secret=${OAUTH2_CLIENT_SECRET}
+      - --cookie-secret=${OAUTH2_COOKIE_SECRET}
+      - --oidc-issuer-url=https://my-learning.amtocbot.com/auth/realms/openmaic
+      - --redirect-url=https://my-learning.amtocbot.com/oauth2/callback
+      - --email-domain=*
+      - --cookie-secure=true
+      - --cookie-domain=my-learning.amtocbot.com
+      - --cookie-name=_openmaic_session
+      - --skip-provider-button=true
+      - --upstream-timeout=300s
+      - --cookie-expire=24h
+      - --pass-access-token=true
+      - --pass-user-headers=true
+      - --set-xauthrequest=true
+      - --reverse-proxy=true
+      - --skip-auth-route=^/api/health$
+    networks:
+      - internal
+    depends_on:
+      - openmaic
+      - keycloak
+    restart: unless-stopped
+
+  # ── Application ───────────────────────────────────────────────────────────
+  openmaic:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    volumes:
+      - openmaic-data:/app/data
+      - ./server-providers.yml:/app/server-providers.yml:ro
+    environment:
+      DEFAULT_MODEL: openai:qwen3:8b
+      NODE_ENV: production
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - internal
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health 2>/dev/null | grep -q ok || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ── Reverse Proxy ─────────────────────────────────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:8088:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - internal
+    depends_on:
+      - keycloak
+      - oauth2-proxy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  openmaic-data:
+
+networks:
+  internal:
+    driver: bridge
