@@ -115,8 +115,7 @@ export function Header({ currentSceneTitle }: HeaderProps) {
             >
               {locale === 'zh-CN' ? 'CN' : 'EN'}
             </button>
-            {languageOpen && (
-              <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[120px]">
+            <div className={cn("absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[120px]", !languageOpen && 'hidden')}>
                 <button
                   onClick={() => {
                     setLocale('zh-CN');
@@ -144,7 +143,6 @@ export function Header({ currentSceneTitle }: HeaderProps) {
                   English
                 </button>
               </div>
-            )}
           </div>
 
           <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
@@ -162,8 +160,7 @@ export function Header({ currentSceneTitle }: HeaderProps) {
               <Moon className={cn('w-4 h-4', theme !== 'dark' && 'hidden')} />
               <Monitor className={cn('w-4 h-4', theme !== 'system' && 'hidden')} />
             </button>
-            {themeOpen && (
-              <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[140px]">
+            <div className={cn("absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[140px]", !themeOpen && 'hidden')}>
                 <button
                   onClick={() => {
                     setTheme('light');
@@ -207,7 +204,6 @@ export function Header({ currentSceneTitle }: HeaderProps) {
                   {t('settings.themeOptions.system')}
                 </button>
               </div>
-            )}
           </div>
 
           <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
