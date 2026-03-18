@@ -575,6 +575,8 @@ export const settingsZhCN = {
     voice: '音色',
     speed: '语速',
     language: '语言',
+    noProviderConfigured: '未配置可用服务商',
+    ttsPreviewText: '你好，欢迎来到AI课堂！让我们一起学习吧。',
   },
 } as const;
 
@@ -1165,5 +1167,7 @@ export const settingsEnUS = {
     voice: 'Voice',
     speed: 'Speed',
     language: 'Language',
+    noProviderConfigured: 'No provider configured',
+    ttsPreviewText: 'Hello, welcome to AI Classroom! Let us learn together.',
   },
 } as const;

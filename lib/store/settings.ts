@@ -9,7 +9,7 @@ import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
 import type { TTSProviderId, ASRProviderId } from '@/lib/audio/types';
-import { ASR_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
@@ -420,7 +420,7 @@ const migrateFromOldStorage = () => {
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => {
+    (set, get) => {
       // Try to migrate from old storage
       const migratedData = migrateFromOldStorage();
       const defaultAudioConfig = getDefaultAudioConfig();
@@ -611,7 +611,26 @@ export const useSettingsStore = create<SettingsState>()(
         // Media generation toggle actions
         setImageGenerationEnabled: (enabled) => set({ imageGenerationEnabled: enabled }),
         setVideoGenerationEnabled: (enabled) => set({ videoGenerationEnabled: enabled }),
-        setTTSEnabled: (enabled) => set({ ttsEnabled: enabled }),
+        setTTSEnabled: (enabled) => {
+          if (enabled) {
+            const state = get();
+            const cfg = state.ttsProvidersConfig[state.ttsProviderId];
+            const providerNeedsKey = TTS_PROVIDERS[state.ttsProviderId]?.requiresApiKey;
+            const available = !providerNeedsKey || cfg?.apiKey || cfg?.isServerConfigured;
+            if (!available) {
+              log.info(
+                `TTS provider "${state.ttsProviderId}" not configured, falling back to browser-native-tts`,
+              );
+              set({
+                ttsEnabled: true,
+                ttsProviderId: 'browser-native-tts',
+                ttsVoice: DEFAULT_TTS_VOICES['browser-native-tts'],
+              });
+              return;
+            }
+          }
+          set({ ttsEnabled: enabled });
+        },
         setASREnabled: (enabled) => set({ asrEnabled: enabled }),
 
         // Web Search actions
@@ -662,10 +681,21 @@ export const useSettingsStore = create<SettingsState>()(
                 const key = pid as ProviderId;
                 if (newProvidersConfig[key]) {
                   const currentModels = newProvidersConfig[key].models;
-                  // When server specifies allowed models, filter the models list
-                  const filteredModels = info.models?.length
-                    ? currentModels.filter((m) => info.models!.includes(m.id))
-                    : currentModels;
+                  // When server specifies allowed models, keep matching built-in
+                  // entries and append server-only models with basic info
+                  let filteredModels = currentModels;
+                  if (info.models?.length) {
+                    const builtInMatched = currentModels.filter((m) => info.models!.includes(m.id));
+                    const builtInIds = new Set(currentModels.map((m) => m.id));
+                    const serverOnly = info.models
+                      .filter((id) => !builtInIds.has(id))
+                      .map((id) => ({
+                        id,
+                        name: id.split('/').pop() || id,
+                        capabilities: { streaming: true, tools: true, vision: false },
+                      }));
+                    filteredModels = [...builtInMatched, ...serverOnly];
+                  }
                   newProvidersConfig[key] = {
                     ...newProvidersConfig[key],
                     isServerConfigured: true,

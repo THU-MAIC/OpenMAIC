@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -183,19 +184,62 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   // TTS preview
   const handlePreview = useCallback(async () => {
     if (previewing) {
-      audioRef.current?.pause();
-      audioRef.current = null;
+      // Stop either audio or browser TTS
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      if (ttsProviderId === 'browser-native-tts' && window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
       setPreviewing(false);
       return;
     }
+
     setPreviewing(true);
+
+    // Handle browser-native TTS separately
+    if (ttsProviderId === 'browser-native-tts') {
+      try {
+        if (!window.speechSynthesis) {
+          throw new Error('Browser does not support Web Speech API');
+        }
+        const previewText = t('media.ttsPreviewText');
+        const utterance = new SpeechSynthesisUtterance(previewText);
+        utterance.lang = locale === 'en-US' ? 'en-US' : 'zh-CN';
+        utterance.rate = ttsSpeed;
+
+        // Set voice if not default
+        if (ttsVoice && ttsVoice !== 'default') {
+          const voices = window.speechSynthesis.getVoices();
+          const voice = voices.find((v) => v.voiceURI === ttsVoice || v.name === ttsVoice);
+          if (voice) {
+            utterance.voice = voice;
+          }
+        }
+
+        utterance.onend = () => {
+          setPreviewing(false);
+        };
+        utterance.onerror = () => {
+          setPreviewing(false);
+        };
+
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        setPreviewing(false);
+      }
+      return;
+    }
+
+    // Server-based TTS providers
     try {
       const providerConfig = ttsProvidersConfig[ttsProviderId];
       const res = await fetch('/api/generate/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: '你好，欢迎来到AI课堂！让我们一起学习吧。',
+          text: t('media.ttsPreviewText'),
           audioId: 'preview',
           ttsProviderId,
           ttsVoice,
@@ -221,7 +265,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     } catch {
       setPreviewing(false);
     }
-  }, [ttsProviderId, ttsVoice, ttsProvidersConfig, previewing]);
+  }, [t, locale, ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig, previewing]);
 
   // ASR: only available providers
   const asrGroups = useMemo(
@@ -307,6 +351,8 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               label={t('media.imageCapability')}
               enabled={imageGenerationEnabled}
               onToggle={setImageGenerationEnabled}
+              disabled={imageGroups.length === 0}
+              disabledReason={t('media.noProviderConfigured')}
             >
               <GroupedSelect
                 groups={imageGroups}
@@ -326,6 +372,8 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               label={t('media.videoCapability')}
               enabled={videoGenerationEnabled}
               onToggle={setVideoGenerationEnabled}
+              disabled={videoGroups.length === 0}
+              disabledReason={t('media.noProviderConfigured')}
             >
               <GroupedSelect
                 groups={videoGroups}
@@ -415,6 +463,8 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               label={t('media.asrCapability')}
               enabled={asrEnabled}
               onToggle={setASREnabled}
+              disabled={asrGroups.length === 0}
+              disabledReason={t('media.noProviderConfigured')}
             >
               <GroupedSelect
                 groups={asrGroups}
@@ -453,38 +503,58 @@ function TabPanel({
   label,
   enabled,
   onToggle,
+  disabled,
+  disabledReason,
   children,
 }: {
   icon: LucideIcon;
   label: string;
   enabled: boolean;
   onToggle: (v: boolean) => void;
+  disabled?: boolean;
+  disabledReason?: string;
   children?: React.ReactNode;
 }) {
+  const switchEl = (
+    <Switch
+      checked={enabled}
+      onCheckedChange={onToggle}
+      disabled={disabled}
+      className="scale-[0.85] origin-right"
+    />
+  );
+
   return (
     <div className="space-y-2.5">
       <div className="flex items-center gap-2.5">
         <Icon
           className={cn(
             'size-4 shrink-0 transition-colors',
-            enabled ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground/50',
+            disabled
+              ? 'text-muted-foreground/30'
+              : enabled
+                ? 'text-violet-600 dark:text-violet-400'
+                : 'text-muted-foreground/50',
           )}
         />
         <span
           className={cn(
             'flex-1 text-sm font-medium transition-colors',
-            !enabled && 'text-muted-foreground',
+            (disabled || !enabled) && 'text-muted-foreground',
           )}
         >
           {label}
         </span>
-        <Switch
-          checked={enabled}
-          onCheckedChange={onToggle}
-          className="scale-[0.85] origin-right"
-        />
+        {disabled && disabledReason ? (
+          <Tooltip>
+            <TooltipTrigger asChild>{switchEl}</TooltipTrigger>
+            <TooltipContent side="top">{disabledReason}</TooltipContent>
+          </Tooltip>
+        ) : (
+          switchEl
+        )}
       </div>
-      {enabled && children}
+      {enabled && !disabled && children}
     </div>
   );
 }
