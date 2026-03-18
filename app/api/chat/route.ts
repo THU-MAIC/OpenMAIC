@@ -14,6 +14,7 @@
 
 import { NextRequest } from 'next/server';
 import { statelessGenerate } from '@/lib/orchestration/stateless-generate';
+import { isProviderKeyRequired } from '@/lib/ai/providers';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { apiError } from '@/lib/server/api-response';
@@ -63,15 +64,18 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
     }
 
-    const { model: languageModel, apiKey: resolvedApiKey } = resolveModel({
+    const {
+      model: languageModel,
+      apiKey: resolvedApiKey,
+      providerId,
+    } = resolveModel({
       modelString: body.model,
       apiKey: body.apiKey,
       baseUrl: body.baseUrl,
       providerType: body.providerType,
-      requiresApiKey: body.requiresApiKey,
     });
 
-    if (!resolvedApiKey && body.requiresApiKey !== false) {
+    if (isProviderKeyRequired(providerId) && !resolvedApiKey) {
       return apiError('MISSING_API_KEY', 401, 'API Key is required');
     }
 
