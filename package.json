@@ -13,7 +13,9 @@
     "start": "next start",
     "lint": "eslint",
     "check": "prettier . --check",
-    "format": "prettier . --write"
+    "format": "prettier . --write",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",
@@ -106,6 +108,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/tinycolor2": "^1.4.6",
+    "@vitest/coverage-v8": "^4.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.2",
     "prettier": "3.8.1",
@@ -114,6 +117,7 @@
     "tailwindcss": "^4",
     "tslib": "^2.8.0",
     "typescript": "^5",
+    "vitest": "^4.1.0",
     "vue-to-react": "^1.0.0"
   },
   "pnpm": {
