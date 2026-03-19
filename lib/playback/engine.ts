@@ -316,8 +316,7 @@ export class PlaybackEngine {
    * the playback engine to a coherent non-live state.
    */
   handleDiscussionError(): void {
-    const hasSavedLectureState =
-      this.savedSceneIndex !== null && this.savedActionIndex !== null;
+    const hasSavedLectureState = this.savedSceneIndex !== null && this.savedActionIndex !== null;
     const isLiveTopic =
       this.mode === 'live' || (this.mode === 'paused' && this.currentTopicState === 'pending');
 
