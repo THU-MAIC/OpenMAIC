@@ -13,6 +13,7 @@ import { resolveTTSApiKey, resolveTTSBaseUrl } from '@/lib/server/provider-confi
 import type { TTSProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('TTS API');
 
@@ -45,9 +46,20 @@ export async function POST(req: NextRequest) {
       return apiError('INVALID_REQUEST', 400, 'browser-native-tts must be handled client-side');
     }
 
-    // Resolve API key and base URL (server-side fallback)
-    const apiKey = resolveTTSApiKey(ttsProviderId, ttsApiKey || undefined);
-    const baseUrl = resolveTTSBaseUrl(ttsProviderId, ttsBaseUrl || undefined);
+    const clientBaseUrl = ttsBaseUrl || undefined;
+    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+      const ssrfError = validateUrlForSSRF(clientBaseUrl);
+      if (ssrfError) {
+        return apiError('INVALID_URL', 403, ssrfError);
+      }
+    }
+
+    const apiKey = clientBaseUrl
+      ? ttsApiKey || ''
+      : resolveTTSApiKey(ttsProviderId, ttsApiKey || undefined);
+    const baseUrl = clientBaseUrl
+      ? clientBaseUrl
+      : resolveTTSBaseUrl(ttsProviderId, ttsBaseUrl || undefined);
 
     // Build TTS config
     const config = {

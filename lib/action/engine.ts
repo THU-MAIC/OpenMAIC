@@ -12,7 +12,9 @@
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
+import { getClientTranslation } from '@/lib/i18n';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 import type {
   Action,
@@ -167,7 +169,7 @@ export class ActionEngine {
 
     return new Promise<void>((resolve) => {
       this.audioPlayer!.onEnded(() => resolve());
-      this.audioPlayer!.play(action.audioId || '')
+      this.audioPlayer!.play(action.audioId || '', action.audioUrl)
         .then((audioStarted) => {
           if (!audioStarted) resolve();
         })
@@ -497,6 +499,11 @@ export class ActionEngine {
 
     const elementCount = wb.data.elements?.length || 0;
     if (elementCount === 0) return;
+
+    // Save snapshot before AI clear (mirrors UI handleClear in index.tsx)
+    useWhiteboardHistoryStore
+      .getState()
+      .pushSnapshot(wb.data.elements!, getClientTranslation('whiteboard.beforeAIClear'));
 
     // Trigger cascade exit animation
     useCanvasStore.getState().setWhiteboardClearing(true);

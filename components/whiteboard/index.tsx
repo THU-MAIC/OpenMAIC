@@ -1,11 +1,13 @@
 'use client';
 
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Eraser, Minimize2, PencilLine } from 'lucide-react';
+import { Eraser, History, Minimize2, PencilLine } from 'lucide-react';
 import { WhiteboardCanvas } from './whiteboard-canvas';
+import { WhiteboardHistory } from './whiteboard-history';
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -23,6 +25,8 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
   const stage = useStageStore.use.stage();
   const isClearing = useCanvasStore.use.whiteboardClearing();
   const clearingRef = useRef(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const snapshotCount = useWhiteboardHistoryStore((s) => s.snapshots.length);
 
   // Get element count for indicator
   const whiteboard = stage?.whiteboard?.[0];
@@ -33,6 +37,13 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
   const handleClear = async () => {
     if (!whiteboard || elementCount === 0 || clearingRef.current) return;
     clearingRef.current = true;
+
+    // Save snapshot before clearing
+    if (whiteboard.elements && whiteboard.elements.length > 0) {
+      useWhiteboardHistoryStore
+        .getState()
+        .pushSnapshot(whiteboard.elements, t('whiteboard.beforeClear'));
+    }
 
     // Trigger cascade exit animation
     useCanvasStore.getState().setWhiteboardClearing(true);
@@ -108,6 +119,20 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
                     <Eraser className="w-4 h-4" />
                   </motion.div>
                 </motion.button>
+                <motion.button
+                  type="button"
+                  onClick={() => setHistoryOpen(!historyOpen)}
+                  whileTap={{ scale: 0.9 }}
+                  className="relative p-2 text-gray-400 dark:text-gray-500 hover:text-purple-500 dark:hover:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded-lg transition-colors"
+                  title={t('whiteboard.history')}
+                >
+                  <History className="w-4 h-4" />
+                  {snapshotCount > 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-purple-500 text-white text-[10px] font-bold flex items-center justify-center">
+                      {snapshotCount}
+                    </span>
+                  )}
+                </motion.button>
                 <div className="w-px h-4 bg-gray-200 dark:bg-gray-700 mx-1" />
                 <button
                   type="button"
@@ -123,6 +148,9 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
             {/* Whiteboard Content Area */}
             <div className="flex-1 relative bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] dark:bg-[radial-gradient(#374151_1px,transparent_1px)] [background-size:24px_24px] overflow-hidden">
               <WhiteboardCanvas />
+
+              {/* History panel */}
+              <WhiteboardHistory isOpen={historyOpen} onClose={() => setHistoryOpen(false)} />
 
               {/* Test panel */}
               {/* <WhiteboardTestPanel /> */}

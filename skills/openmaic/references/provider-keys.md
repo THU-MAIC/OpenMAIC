@@ -144,3 +144,36 @@ Avoid as the first move:
 - Wait for the user to confirm they finished editing before continuing.
 - Do not request the literal key.
 - If provider/model/auth errors happen later, tell the user exactly which config entry to fix and wait for confirmation before retrying.
+
+## Optional Features
+
+These features require additional provider keys beyond the core LLM provider. Ask the user if they want to enable any of these after the core LLM key is configured.
+
+| Feature | Env Variable(s) | Description |
+|---------|-----------------|-------------|
+| Web Search | `TAVILY_API_KEY` | Enriches outlines with real-time web research |
+| Image Generation | `IMAGE_SEEDREAM_API_KEY`, `IMAGE_QWEN_IMAGE_API_KEY`, `IMAGE_NANO_BANANA_API_KEY` | Generates images for slides (any one suffices) |
+| Video Generation | `VIDEO_SEEDANCE_API_KEY`, `VIDEO_KLING_API_KEY`, `VIDEO_VEO_API_KEY`, `VIDEO_SORA_API_KEY` | Generates short videos (any one suffices) |
+| TTS | `TTS_OPENAI_API_KEY`, `TTS_AZURE_API_KEY`, `TTS_GLM_API_KEY`, `TTS_QWEN_API_KEY` | Text-to-speech narration (any one suffices) |
+
+These are all optional. The classroom generation works without them — they only unlock richer content.
+
+Alternatively, configure via `server-providers.yml`:
+
+```yaml
+web-search:
+  tavily:
+    apiKey: tvly-...
+
+image:
+  seedream:
+    apiKey: ...
+
+video:
+  seedance:
+    apiKey: ...
+
+tts:
+  openai-tts:
+    apiKey: sk-...
+```

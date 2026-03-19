@@ -9,7 +9,7 @@ import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
 import type { TTSProviderId, ASRProviderId } from '@/lib/audio/types';
-import { DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import { ASR_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
@@ -528,7 +528,17 @@ export const useSettingsStore = create<SettingsState>()(
 
         setTTSSpeed: (speed) => set({ ttsSpeed: speed }),
 
-        setASRProvider: (providerId) => set({ asrProviderId: providerId }),
+        // Reset language when switching providers, since language code formats differ
+        // (e.g. browser-native uses BCP-47 "en-US", OpenAI Whisper uses ISO 639-1 "en")
+        setASRProvider: (providerId) =>
+          set((state) => {
+            const supportedLanguages = ASR_PROVIDERS[providerId]?.supportedLanguages || [];
+            const isLanguageValid = supportedLanguages.includes(state.asrLanguage);
+            return {
+              asrProviderId: providerId,
+              ...(isLanguageValid ? {} : { asrLanguage: supportedLanguages[0] || 'auto' }),
+            };
+          }),
 
         setASRLanguage: (language) => set({ asrLanguage: language }),
 
