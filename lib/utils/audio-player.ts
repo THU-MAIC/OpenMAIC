@@ -45,7 +45,7 @@ export class AudioPlayer {
   public async play(audioId: string, audioUrl?: string): Promise<boolean> {
     try {
       // 1. Try audioUrl first (server-generated TTS)
-      if (audioUrl) {
+      if (audioUrl && !this.browserTTSConfig) {
         this.stop();
         this.audio = new Audio();
         this.audio.src = audioUrl;
