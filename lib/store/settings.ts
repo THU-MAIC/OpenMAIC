@@ -549,10 +549,17 @@ export const useSettingsStore = create<SettingsState>()(
 
         setTTSSpeed: (speed) => set({ ttsSpeed: speed }),
 
+        // Reset language when switching providers, since language code formats differ
+        // (e.g. browser-native uses BCP-47 "en-US", OpenAI Whisper uses ISO 639-1 "en")
         setASRProvider: (providerId) =>
-          set({
-            asrProviderId: providerId,
-            asrModelId: ASR_PROVIDERS[providerId]?.models[0]?.id || '',
+          set((state) => {
+            const supportedLanguages = ASR_PROVIDERS[providerId]?.supportedLanguages || [];
+            const isLanguageValid = supportedLanguages.includes(state.asrLanguage);
+            return {
+              asrProviderId: providerId,
+              asrModelId: ASR_PROVIDERS[providerId]?.models[0]?.id || '',
+              ...(isLanguageValid ? {} : { asrLanguage: supportedLanguages[0] || 'auto' }),
+            };
           }),
 
         setASRModelId: (modelId) => set({ asrModelId: modelId }),

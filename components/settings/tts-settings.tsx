@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
+import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 
 const log = createLogger('TTSSettings');
 
@@ -42,8 +43,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const setTTSModelId = useSettingsStore((state) => state.setTTSModelId);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
 
-  // When testing a non-active provider, use that provider's default voice
-  // instead of the active provider's voice (which may be incompatible)
   const effectiveVoice =
     selectedProviderId === activeProviderId
       ? ttsVoice
@@ -58,26 +57,24 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const isServerConfigured = !!ttsProvidersConfig[selectedProviderId]?.isServerConfigured;
 
   const [showApiKey, setShowApiKey] = useState(false);
-  const [testingTTS, setTestingTTS] = useState(false);
   const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [showModelDialog, setShowModelDialog] = useState(false);
   const [editingModelIndex, setEditingModelIndex] = useState<number | null>(null);
   const [modelForm, setModelForm] = useState({ id: '', name: '' });
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
 
-  // Update test text when language changes
   useEffect(() => {
     setTestText(t('settings.ttsTestTextDefault'));
   }, [t]);
 
-  // Reset state when provider changes
   useEffect(() => {
+    stopPreview();
     setShowApiKey(false);
     setTestStatus('idle');
     setTestMessage('');
-  }, [selectedProviderId]);
+  }, [selectedProviderId, stopPreview]);
 
   useEffect(() => {
     const availableModelIds = new Set([
@@ -138,74 +135,22 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   const handleTestTTS = async () => {
     if (!testText.trim()) return;
-    setTestingTTS(true);
+
     setTestStatus('testing');
     setTestMessage('');
 
     try {
-      if (selectedProviderId === 'browser-native-tts') {
-        if (!('speechSynthesis' in window)) {
-          setTestStatus('error');
-          setTestMessage(t('settings.browserTTSNotSupported'));
-          return;
-        }
-
-        const utterance = new SpeechSynthesisUtterance(testText);
-        utterance.rate = ttsSpeed;
-        const voices = window.speechSynthesis.getVoices();
-        const selectedVoice = voices.find(
-          (v) => v.name === effectiveVoice || v.lang === effectiveVoice,
-        );
-        if (selectedVoice) utterance.voice = selectedVoice;
-
-        await new Promise<void>((resolve, reject) => {
-          utterance.onend = () => resolve();
-          utterance.onerror = (event) => reject(new Error(event.error));
-          window.speechSynthesis.speak(utterance);
-        });
-
-        setTestStatus('success');
-        setTestMessage(t('settings.ttsTestSuccess'));
-        return;
-      }
-
-      const requestBody: Record<string, unknown> = {
+      await startPreview({
         text: testText,
-        audioId: 'tts-test',
-        ttsProviderId: selectedProviderId,
-        ttsModelId,
-        ttsVoice: effectiveVoice,
-        ttsSpeed: ttsSpeed,
-      };
-      const apiKeyValue = ttsProvidersConfig[selectedProviderId]?.apiKey;
-      if (apiKeyValue?.trim()) requestBody.ttsApiKey = apiKeyValue;
-      const baseUrlValue = ttsProvidersConfig[selectedProviderId]?.baseUrl;
-      if (baseUrlValue?.trim()) requestBody.ttsBaseUrl = baseUrlValue;
-
-      const response = await fetch('/api/generate/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        providerId: selectedProviderId,
+        modelId: ttsModelId,
+        voice: effectiveVoice,
+        speed: ttsSpeed,
+        apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
+        baseUrl: ttsProvidersConfig[selectedProviderId]?.baseUrl,
       });
-      const data = await response
-        .json()
-        .catch(() => ({ success: false, error: response.statusText }));
-      if (response.ok && data.success) {
-        const binaryStr = atob(data.base64);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-        const audioBlob = new Blob([bytes], { type: `audio/${data.format}` });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        if (audioRef.current) {
-          audioRef.current.src = audioUrl;
-          await audioRef.current.play();
-        }
-        setTestStatus('success');
-        setTestMessage(t('settings.ttsTestSuccess'));
-      } else {
-        setTestStatus('error');
-        setTestMessage(data.error || t('settings.ttsTestFailed'));
-      }
+      setTestStatus('success');
+      setTestMessage(t('settings.ttsTestSuccess'));
     } catch (error) {
       log.error('TTS test failed:', error);
       setTestStatus('error');
@@ -214,21 +159,17 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           ? `${t('settings.ttsTestFailed')}: ${error.message}`
           : t('settings.ttsTestFailed'),
       );
-    } finally {
-      setTestingTTS(false);
     }
   };
 
   return (
     <div className="space-y-6 max-w-3xl">
-      {/* Server-configured notice */}
       {isServerConfigured && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">
           {t('settings.serverConfiguredNotice')}
         </div>
       )}
 
-      {/* API Key & Base URL */}
       {(ttsProvider.requiresApiKey || isServerConfigured) && (
         <>
           <div className="grid grid-cols-2 gap-4">
@@ -236,7 +177,12 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
               <div className="relative">
                 <Input
+                  name={`tts-api-key-${selectedProviderId}`}
                   type={showApiKey ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder={
                     isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
                   }
@@ -260,6 +206,11 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
               <Input
+                name={`tts-base-url-${selectedProviderId}`}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
                 value={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
@@ -271,7 +222,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               />
             </div>
           </div>
-          {/* Request URL Preview */}
           {(() => {
             const effectiveBaseUrl =
               ttsProvidersConfig[selectedProviderId]?.baseUrl || ttsProvider.defaultBaseUrl || '';
@@ -299,7 +249,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         </>
       )}
 
-      {/* Test TTS */}
       <div className="space-y-2">
         <Label className="text-sm">{t('settings.testTTS')}</Label>
         <div className="flex gap-2">
@@ -477,8 +426,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           </div>
         </DialogContent>
       </Dialog>
-
-      <audio ref={audioRef} className="hidden" />
     </div>
   );
 }

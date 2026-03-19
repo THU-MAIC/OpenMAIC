@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import {
@@ -26,6 +26,11 @@ import { Volume2, Mic, MicOff, Loader2, CheckCircle2, XCircle, Eye, EyeOff } fro
 import { cn } from '@/lib/utils';
 import azureVoicesData from '@/lib/audio/azure.json';
 import { createLogger } from '@/lib/logger';
+import {
+  ensureVoicesLoaded,
+  isBrowserTTSAbortError,
+  playBrowserTTSPreview,
+} from '@/lib/audio/browser-tts-preview';
 
 const log = createLogger('AudioSettings');
 
@@ -157,6 +162,9 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
   );
   const [asrTestMessage, setASRTestMessage] = useState('');
   const audioRef = useRef<HTMLAudioElement>(null);
+  const audioUrlRef = useRef<string | null>(null);
+  const browserPreviewCancelRef = useRef<(() => void) | null>(null);
+  const ttsTestRequestIdRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
   const asrProvider = ASR_PROVIDERS[asrProviderId] ?? ASR_PROVIDERS['openai-whisper'];
@@ -177,6 +185,23 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
     }
   }
 
+  const stopTTSPreview = useCallback((resetState = true) => {
+    ttsTestRequestIdRef.current += 1;
+    browserPreviewCancelRef.current?.();
+    browserPreviewCancelRef.current = null;
+    audioRef.current?.pause();
+    if (audioRef.current) {
+      audioRef.current.src = '';
+    }
+    if (audioUrlRef.current) {
+      URL.revokeObjectURL(audioUrlRef.current);
+      audioUrlRef.current = null;
+    }
+    if (resetState) {
+      setTestingTTS(false);
+    }
+  }, []);
+
   // Update voice selection when locale filter changes
   useEffect(() => {
     if (ttsProviderId === 'azure-tts' && selectedLocale !== 'all') {
@@ -194,6 +219,12 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
     // Intentionally exclude ttsVoice from dependencies to avoid infinite loop
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedLocale, ttsProviderId, azureVoices, setTTSVoice]);
+
+  useEffect(() => {
+    stopTTSPreview(false);
+    setTTSTestStatus('idle');
+    setTTSTestMessage('');
+  }, [ttsProviderId, stopTTSPreview]);
 
   // Initialize and reset TTS voice when provider changes
   useEffect(() => {
@@ -241,6 +272,12 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
     }
   }, [asrProviderId, asrLanguage, setASRLanguage]);
 
+  useEffect(() => {
+    return () => {
+      stopTTSPreview(false);
+    };
+  }, [stopTTSPreview]);
+
   // Clear ASR test status when provider changes (derived state pattern)
   const [prevASRProviderId, setPrevASRProviderId] = useState(asrProviderId);
   if (asrProviderId !== prevASRProviderId) {
@@ -256,48 +293,48 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
       return;
     }
 
+    const requestId = ttsTestRequestIdRef.current + 1;
+    ttsTestRequestIdRef.current = requestId;
+
     setTestingTTS(true);
     setTTSTestStatus('testing');
     setTTSTestMessage('');
 
     try {
-      // Handle Browser Native TTS with Web Speech API
       if (ttsProviderId === 'browser-native-tts') {
         if (!('speechSynthesis' in window)) {
           setTTSTestStatus('error');
           setTTSTestMessage(t('settings.browserTTSNotSupported'));
-          setTestingTTS(false);
           return;
         }
 
-        const utterance = new SpeechSynthesisUtterance(testText);
-        utterance.rate = ttsSpeed;
-
-        // Try to find matching voice
-        const voices = window.speechSynthesis.getVoices();
-        const selectedVoice = voices.find((v) => v.name === ttsVoice || v.lang === ttsVoice);
-        if (selectedVoice) {
-          utterance.voice = selectedVoice;
+        const voices = await ensureVoicesLoaded();
+        if (ttsTestRequestIdRef.current !== requestId) {
+          return;
+        }
+        if (voices.length === 0) {
+          setTTSTestStatus('error');
+          setTTSTestMessage(t('settings.browserTTSNoVoices'));
+          return;
         }
 
-        utterance.onend = () => {
-          setTTSTestStatus('success');
-          setTTSTestMessage(t('settings.ttsTestSuccess'));
-          setTestingTTS(false);
-        };
+        const controller = playBrowserTTSPreview({
+          text: testText,
+          voice: ttsVoice,
+          rate: ttsSpeed,
+          voices,
+        });
+        browserPreviewCancelRef.current = controller.cancel;
+        await controller.promise;
 
-        utterance.onerror = (event) => {
-          log.error('Browser TTS error:', event);
-          setTTSTestStatus('error');
-          setTTSTestMessage(t('settings.ttsTestFailed') + ': ' + event.error);
-          setTestingTTS(false);
-        };
-
-        window.speechSynthesis.speak(utterance);
+        if (ttsTestRequestIdRef.current !== requestId) {
+          return;
+        }
+        setTTSTestStatus('success');
+        setTTSTestMessage(t('settings.ttsTestSuccess'));
         return;
       }
 
-      // Server-side TTS for other providers
       const requestBody: Record<string, unknown> = {
         text: testText,
         audioId: 'tts-test',
@@ -325,15 +362,22 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
       const data = await response
         .json()
         .catch(() => ({ success: false, error: response.statusText }));
+      if (ttsTestRequestIdRef.current !== requestId) {
+        return;
+      }
       if (response.ok && data.success) {
         const binaryStr = atob(data.base64);
         const bytes = new Uint8Array(binaryStr.length);
         for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
         const audioBlob = new Blob([bytes], { type: `audio/${data.format}` });
+        if (audioUrlRef.current) {
+          URL.revokeObjectURL(audioUrlRef.current);
+        }
         const audioUrl = URL.createObjectURL(audioBlob);
+        audioUrlRef.current = audioUrl;
         if (audioRef.current) {
           audioRef.current.src = audioUrl;
-          audioRef.current.play();
+          await audioRef.current.play();
         }
         setTTSTestStatus('success');
         setTTSTestMessage(t('settings.ttsTestSuccess'));
@@ -342,11 +386,21 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
         setTTSTestMessage(data.error || t('settings.ttsTestFailed'));
       }
     } catch (error) {
+      if (ttsTestRequestIdRef.current !== requestId || isBrowserTTSAbortError(error)) {
+        return;
+      }
       log.error('TTS test failed:', error);
       setTTSTestStatus('error');
-      setTTSTestMessage(t('settings.ttsTestFailed'));
+      setTTSTestMessage(
+        error instanceof Error && error.message
+          ? `${t('settings.ttsTestFailed')}: ${error.message}`
+          : t('settings.ttsTestFailed'),
+      );
     } finally {
-      setTestingTTS(false);
+      if (ttsTestRequestIdRef.current === requestId) {
+        browserPreviewCancelRef.current = null;
+        setTestingTTS(false);
+      }
     }
   };
 

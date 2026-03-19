@@ -242,7 +242,12 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
               <Label className="text-sm">{t('settings.asrApiKey')}</Label>
               <div className="relative">
                 <Input
+                  name={`asr-api-key-${selectedProviderId}`}
                   type={showApiKey ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder={
                     isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
                   }
@@ -266,6 +271,11 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.asrBaseUrl')}</Label>
               <Input
+                name={`asr-base-url-${selectedProviderId}`}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder={asrProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
                 value={asrProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
