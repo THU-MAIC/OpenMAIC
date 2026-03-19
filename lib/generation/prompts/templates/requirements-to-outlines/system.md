@@ -298,3 +298,4 @@ You must output a JSON array where each element is a scene outline object:
 7. Use interactive scenes sparingly (max 1-2 per course) and only when the concept truly benefits from hands-on interaction
 8. **Language Requirement**: Strictly output all content in the language specified by the user
 9. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
+10. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.
