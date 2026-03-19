@@ -519,7 +519,12 @@ export function Roundtable({
                         </div>
                         {teacherConfig?.persona && (
                           <p className="text-xs text-muted-foreground mt-2 leading-relaxed whitespace-pre-line">
-                            {teacherConfig.persona}
+                            {(() => {
+                              const i18nDesc = t(`settings.agentDescriptions.${teacherConfig.id}`);
+                              return i18nDesc !== `settings.agentDescriptions.${teacherConfig.id}`
+                                ? i18nDesc
+                                : teacherConfig.persona;
+                            })()}
                           </p>
                         )}
                       </>
