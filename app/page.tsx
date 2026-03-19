@@ -32,6 +32,7 @@ import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
 import type { UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
   StageListItem,
@@ -245,6 +246,20 @@ function HomePage() {
     if (!form.requirement.trim()) {
       setError(t('upload.requirementRequired'));
       return;
+    }
+
+    // Block if web search is enabled but the selected provider is unusable
+    if (form.webSearch) {
+      const settings = useSettingsStore.getState();
+      const wsProvider = WEB_SEARCH_PROVIDERS[settings.webSearchProviderId];
+      const wsCfg = settings.webSearchProvidersConfig[settings.webSearchProviderId];
+      const isUsable =
+        wsProvider &&
+        (!wsProvider.requiresApiKey || !!wsCfg?.apiKey || !!wsCfg?.isServerConfigured);
+      if (!isUsable) {
+        toast.warning(t('toolbar.webSearchProviderUnavailable'));
+        return;
+      }
     }
 
     setError(null);

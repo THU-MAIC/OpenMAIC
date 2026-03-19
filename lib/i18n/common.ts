@@ -19,6 +19,7 @@ export const commonZhCN = {
     webSearchDesc: '生成前搜索网络获取最新资料，让内容更丰富准确',
     webSearchProvider: '搜索引擎',
     webSearchNoProvider: '请在设置中配置搜索引擎 API Key',
+    webSearchProviderUnavailable: '当前搜索引擎不可用，请先切换到可用的搜索引擎',
     selectProvider: '选择模型服务商',
     configureProvider: '配置模型',
     configureProviderHint: '请先配置至少一个模型服务商才能生成课程',
@@ -60,6 +61,8 @@ export const commonEnUS = {
     webSearchDesc: 'Search the web for up-to-date information before generation',
     webSearchProvider: 'Search engine',
     webSearchNoProvider: 'Configure search API key in Settings',
+    webSearchProviderUnavailable:
+      'Selected search provider is unavailable. Please switch to an available one.',
     selectProvider: 'Select provider',
     configureProvider: 'Set up model',
     configureProviderHint: 'Configure at least one model provider to generate courses',

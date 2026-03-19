@@ -82,6 +82,8 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
+  BRAVE: 'brave',
+  BAIDU: 'baidu',
 };
 
 // ---------------------------------------------------------------------------
@@ -374,7 +376,7 @@ export function resolveVideoBaseUrl(
 }
 
 // ---------------------------------------------------------------------------
-// Public API — Web Search (Tavily)
+// Public API — Web Search
 // ---------------------------------------------------------------------------
 
 /** Returns server-configured web search providers (no apiKeys exposed) */
@@ -388,10 +390,17 @@ export function getServerWebSearchProviders(): Record<string, { baseUrl?: string
   return result;
 }
 
-/** Resolve Tavily API key: client key > server key > TAVILY_API_KEY env > empty */
-export function resolveWebSearchApiKey(clientKey?: string): string {
+/** Provider-specific env var fallbacks for web search API keys */
+const WEB_SEARCH_ENV_FALLBACKS: Record<string, string> = {
+  tavily: 'TAVILY_API_KEY',
+  baidu: 'BAIDU_API_KEY',
+};
+
+/** Resolve web search API key: client key > server key > env var > empty */
+export function resolveWebSearchApiKey(providerId: string = 'tavily', clientKey?: string): string {
   if (clientKey) return clientKey;
-  const serverKey = getConfig().webSearch.tavily?.apiKey;
+  const serverKey = getConfig().webSearch[providerId]?.apiKey;
   if (serverKey) return serverKey;
-  return process.env.TAVILY_API_KEY || '';
+  const envVar = WEB_SEARCH_ENV_FALLBACKS[providerId];
+  return (envVar && process.env[envVar]) || '';
 }

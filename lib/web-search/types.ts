@@ -5,7 +5,16 @@
 /**
  * Web Search Provider IDs
  */
-export type WebSearchProviderId = 'tavily';
+export type WebSearchProviderId = 'tavily' | 'brave' | 'baidu';
+
+/**
+ * Baidu sub-source toggles
+ */
+export interface BaiduSubSources {
+  webSearch: boolean;
+  baike: boolean;
+  scholar: boolean;
+}
 
 /**
  * Web Search Provider Configuration

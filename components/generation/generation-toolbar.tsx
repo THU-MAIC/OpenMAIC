@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
+import { toast } from 'sonner';
 import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -64,14 +65,19 @@ export function GenerationToolbar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Check if the selected web search provider has a valid config (API key or server-configured)
-  const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
-  const webSearchConfig = webSearchProvidersConfig[webSearchProviderId];
-  const webSearchAvailable = webSearchProvider
-    ? !webSearchProvider.requiresApiKey ||
-      !!webSearchConfig?.apiKey ||
-      !!webSearchConfig?.isServerConfigured
-    : false;
+  // Check if ANY web search provider is usable (has API key, server-configured, or doesn't need key)
+  const webSearchAvailable = Object.values(WEB_SEARCH_PROVIDERS).some((provider) => {
+    const cfg = webSearchProvidersConfig[provider.id];
+    return !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
+  });
+
+  // Check if the *selected* provider can actually execute a search
+  const isSelectedProviderUsable = (() => {
+    const provider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
+    if (!provider) return false;
+    const cfg = webSearchProvidersConfig[provider.id];
+    return !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
+  })();
 
   // Configured LLM providers (only those with valid credentials + models + endpoint)
   const configuredProviders = providersConfig
@@ -276,7 +282,15 @@ export function GenerationToolbar({
         <Popover>
           <PopoverTrigger asChild>
             <button className={webSearch ? pillActive : pillMuted}>
-              <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
+              {webSearch && WEB_SEARCH_PROVIDERS[webSearchProviderId]?.icon ? (
+                <img
+                  src={WEB_SEARCH_PROVIDERS[webSearchProviderId].icon}
+                  alt=""
+                  className="size-3.5 rounded-sm object-contain"
+                />
+              ) : (
+                <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
+              )}
               {webSearch && (
                 <span>{WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || 'Search'}</span>
               )}
@@ -285,7 +299,13 @@ export function GenerationToolbar({
           <PopoverContent align="start" className="w-64 p-3 space-y-3">
             {/* Toggle */}
             <button
-              onClick={() => onWebSearchChange(!webSearch)}
+              onClick={() => {
+                if (!webSearch && !isSelectedProviderUsable) {
+                  toast.warning(t('toolbar.webSearchProviderUnavailable'));
+                  return;
+                }
+                onWebSearchChange(!webSearch);
+              }}
               className={cn(
                 'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
                 webSearch
@@ -331,6 +351,15 @@ export function GenerationToolbar({
                         <div
                           className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
                         >
+                          {provider.icon ? (
+                            <img
+                              src={provider.icon}
+                              alt=""
+                              className="size-4 rounded-sm object-contain"
+                            />
+                          ) : (
+                            <Globe2 className="size-4" />
+                          )}
                           {provider.name}
                           {cfg?.isServerConfigured && (
                             <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
