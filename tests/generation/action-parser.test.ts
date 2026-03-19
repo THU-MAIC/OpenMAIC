@@ -13,6 +13,7 @@ describe('parseActionsFromStructuredOutput', () => {
       expect(actions).toHaveLength(1);
       expect(actions[0].type).toBe('speech');
       expect((actions[0] as { text: string }).text).toBe('hello');
+      expect(actions[0].id).toBe('action_testid00');
     });
 
     it('converts action item (new format)', () => {

@@ -78,12 +78,12 @@ describe('tryParseJson', () => {
     });
   });
 
-  describe('all layers fail', () => {
+  describe('edge cases', () => {
     it('returns null for empty string', () => {
       expect(tryParseJson('')).toBeNull();
     });
 
-    it('handles bare text gracefully', () => {
+    it('handles bare text gracefully (jsonrepair wraps as string)', () => {
       const result = tryParseJson('not json at all');
       expect(result).toBe('not json at all');
     });
@@ -146,7 +146,7 @@ describe('parseJsonResponse', () => {
     });
   });
 
-  describe('all strategies fail', () => {
+  describe('edge cases', () => {
     it('returns plain text string when no JSON found (jsonrepair wraps it)', () => {
       // jsonrepair turns bare text into a quoted JSON string; Strategy 3 returns that string.
       expect(parseJsonResponse('just plain text')).toBe('just plain text');
