@@ -15,9 +15,7 @@
     "test:watch": "vitest",
     "lint": "eslint",
     "check": "prettier . --check",
-    "format": "prettier . --write",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "format": "prettier . --write"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",
@@ -110,7 +108,6 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "@types/tinycolor2": "^1.4.6",
-    "@vitest/coverage-v8": "^4.1.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.2",
     "prettier": "3.8.1",

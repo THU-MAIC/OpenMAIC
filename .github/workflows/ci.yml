@@ -36,4 +36,4 @@ jobs:
         run: npx tsc --noEmit
 
       - name: Run Tests
-        run : pnpm test
+        run: pnpm test
