@@ -606,6 +606,52 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'pcm'],
   },
 
+  'minimax-tts': {
+    id: 'minimax-tts',
+    name: 'MiniMax TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.minimax.com',
+    icon: '/logos/minimax.svg',
+    voices: [
+      {
+        id: 'Chinese (Mandarin)_Warm_Girl',
+        name: '普通话 - Warm Girl',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'Chinese (Mandarin)_Radio_Host',
+        name: '普通话 - Radio Host',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'Chinese (Mandarin)_Gentleman',
+        name: '普通话 - Gentleman',
+        language: 'zh-CN',
+        gender: 'male',
+      },
+      {
+        id: 'Chinese (Mandarin)_Male_Announcer',
+        name: '普通话 - Male Announcer',
+        language: 'zh-CN',
+        gender: 'male',
+      },
+      {
+        id: 'English_expressive_narrator',
+        name: 'English - Expressive Narrator',
+        language: 'en-US',
+        gender: 'neutral',
+      },
+    ],
+    supportedFormats: ['mp3', 'wav', 'flac', 'pcm'],
+    speedRange: {
+      min: 0.5,
+      max: 2.0,
+      default: 1.0,
+    },
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -833,6 +879,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
+  'minimax-tts': 'Chinese (Mandarin)_Warm_Girl',
   'browser-native-tts': 'default',
 };
 
