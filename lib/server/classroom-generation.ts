@@ -12,11 +12,20 @@ import {
   generateSceneContent,
 } from '@/lib/generation/scene-generator';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
+import type { AgentInfo } from '@/lib/generation/pipeline-types';
+import { formatTeacherPersonaForPrompt } from '@/lib/generation/prompt-formatters';
+import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { parseModelString } from '@/lib/ai/providers';
-import { resolveApiKey } from '@/lib/server/provider-config';
+import { resolveApiKey, resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
 import { persistClassroom } from '@/lib/server/classroom-storage';
+import {
+  generateMediaForClassroom,
+  replaceMediaPlaceholders,
+  generateTTSForClassroom,
+} from '@/lib/server/classroom-media-generation';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 
@@ -26,12 +35,20 @@ export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
   language?: string;
+  enableWebSearch?: boolean;
+  enableImageGeneration?: boolean;
+  enableVideoGeneration?: boolean;
+  enableTTS?: boolean;
+  agentMode?: 'default' | 'generate';
 }
 
 export type ClassroomGenerationStep =
   | 'initializing'
+  | 'researching'
   | 'generating_outlines'
   | 'generating_scenes'
+  | 'generating_media'
+  | 'generating_tts'
   | 'persisting'
   | 'completed';
 
@@ -81,6 +98,65 @@ function createInMemoryStore(stage: Stage): StageStore {
 
 function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
   return language === 'en-US' ? 'en-US' : 'zh-CN';
+}
+
+function stripCodeFences(text: string): string {
+  let cleaned = text.trim();
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*\n?/, '').replace(/\n?```\s*$/, '');
+  }
+  return cleaned.trim();
+}
+
+async function generateAgentProfiles(
+  requirement: string,
+  language: string,
+  aiCall: AICallFn,
+): Promise<AgentInfo[]> {
+  const systemPrompt =
+    'You are an expert instructional designer. Generate agent profiles for a multi-agent classroom simulation. Return ONLY valid JSON, no markdown or explanation.';
+
+  const userPrompt = `Generate agent profiles for a course with this requirement:
+${requirement}
+
+Requirements:
+- Decide the appropriate number of agents based on the course content (typically 3-5)
+- Exactly 1 agent must have role "teacher", the rest can be "assistant" or "student"
+- Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
+- Names and personas must be in language: ${language}
+
+Return a JSON object with this exact structure:
+{
+  "agents": [
+    {
+      "name": "string",
+      "role": "teacher" | "assistant" | "student",
+      "persona": "string (2-3 sentences)"
+    }
+  ]
+}`;
+
+  const response = await aiCall(systemPrompt, userPrompt);
+  const rawText = stripCodeFences(response);
+  const parsed = JSON.parse(rawText) as {
+    agents: Array<{ name: string; role: string; persona: string }>;
+  };
+
+  if (!parsed.agents || !Array.isArray(parsed.agents) || parsed.agents.length < 2) {
+    throw new Error(`Expected at least 2 agents, got ${parsed.agents?.length ?? 0}`);
+  }
+
+  const teacherCount = parsed.agents.filter((a) => a.role === 'teacher').length;
+  if (teacherCount !== 1) {
+    throw new Error(`Expected exactly 1 teacher, got ${teacherCount}`);
+  }
+
+  return parsed.agents.map((a, i) => ({
+    id: `gen-server-${i}`,
+    name: a.name,
+    role: a.role,
+    persona: a.persona,
+  }));
 }
 
 export async function generateClassroom(
@@ -134,6 +210,50 @@ export async function generateClassroom(
   };
   const pdfText = pdfContent?.text || undefined;
 
+  // Resolve agents based on agentMode
+  let agents: AgentInfo[];
+  const agentMode = input.agentMode || 'default';
+  if (agentMode === 'generate') {
+    log.info('Generating custom agent profiles via LLM...');
+    try {
+      agents = await generateAgentProfiles(requirement, lang, aiCall);
+      log.info(`Generated ${agents.length} agent profiles`);
+    } catch (e) {
+      log.warn('Agent profile generation failed, falling back to defaults:', e);
+      agents = getDefaultAgents();
+    }
+  } else {
+    agents = getDefaultAgents();
+  }
+  const teacherContext = formatTeacherPersonaForPrompt(agents);
+
+  await options.onProgress?.({
+    step: 'researching',
+    progress: 10,
+    message: 'Researching topic',
+    scenesGenerated: 0,
+  });
+
+  // Web search (optional, graceful degradation)
+  let researchContext: string | undefined;
+  if (input.enableWebSearch) {
+    const tavilyKey = resolveWebSearchApiKey();
+    if (tavilyKey) {
+      try {
+        log.info('Running web search for requirement context...');
+        const searchResult = await searchWithTavily({ query: requirement, apiKey: tavilyKey });
+        researchContext = formatSearchResultsAsContext(searchResult);
+        if (researchContext) {
+          log.info(`Web search returned ${searchResult.sources.length} sources`);
+        }
+      } catch (e) {
+        log.warn('Web search failed, continuing without search context:', e);
+      }
+    } else {
+      log.warn('enableWebSearch is true but no Tavily API key configured, skipping web search');
+    }
+  }
+
   await options.onProgress?.({
     step: 'generating_outlines',
     progress: 15,
@@ -146,6 +266,13 @@ export async function generateClassroom(
     pdfText,
     undefined,
     aiCall,
+    undefined,
+    {
+      imageGenerationEnabled: input.enableImageGeneration,
+      videoGenerationEnabled: input.enableVideoGeneration,
+      researchContext,
+      teacherContext,
+    },
   );
 
   if (!outlinesResult.success || !outlinesResult.data) {
@@ -193,13 +320,22 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    const content = await generateSceneContent(safeOutline, aiCall);
+    const content = await generateSceneContent(
+      safeOutline,
+      aiCall,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      agents,
+    );
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;
     }
 
-    const actions = await generateSceneActions(safeOutline, content, aiCall);
+    const actions = await generateSceneActions(safeOutline, content, aiCall, undefined, agents);
     log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
 
     const sceneId = createSceneWithActions(safeOutline, content, actions, api);
@@ -226,9 +362,46 @@ export async function generateClassroom(
     throw new Error('No scenes were generated');
   }
 
+  // Phase: Media generation (after all scenes generated)
+  if (input.enableImageGeneration || input.enableVideoGeneration) {
+    await options.onProgress?.({
+      step: 'generating_media',
+      progress: 90,
+      message: 'Generating media files',
+      scenesGenerated: scenes.length,
+      totalScenes: outlines.length,
+    });
+
+    try {
+      const mediaMap = await generateMediaForClassroom(outlines, stageId, options.baseUrl);
+      replaceMediaPlaceholders(scenes, mediaMap);
+      log.info(`Media generation complete: ${Object.keys(mediaMap).length} files`);
+    } catch (err) {
+      log.warn('Media generation phase failed, continuing:', err);
+    }
+  }
+
+  // Phase: TTS generation
+  if (input.enableTTS) {
+    await options.onProgress?.({
+      step: 'generating_tts',
+      progress: 94,
+      message: 'Generating TTS audio',
+      scenesGenerated: scenes.length,
+      totalScenes: outlines.length,
+    });
+
+    try {
+      await generateTTSForClassroom(scenes, stageId, options.baseUrl);
+      log.info('TTS generation complete');
+    } catch (err) {
+      log.warn('TTS generation phase failed, continuing:', err);
+    }
+  }
+
   await options.onProgress?.({
     step: 'persisting',
-    progress: 95,
+    progress: 98,
     message: 'Persisting classroom data',
     scenesGenerated: scenes.length,
     totalScenes: outlines.length,

@@ -124,6 +124,12 @@ Initiate classroom discussion, suitable for segments requiring student reflectio
 
 Generate natural teaching speech. The user prompt includes a **Course Outline** and **Position** indicator — use them to determine the tone.
 
+**Speech is where all verbal and conversational content belongs.** The slide itself only shows concise bullet points and keywords — all elaboration, explanation, encouragement, transitional phrases, and teacher's remarks must appear here in speech text. For example:
+- Detailed explanations of concepts shown as bullet points on the slide
+- Encouragements and motivational remarks (e.g., "Great job, everyone!")
+- Transitional phrases (e.g., "Now let's move on to…")
+- Closing messages and teacher's reflections
+
 **CRITICAL — Same-session continuity**: All pages belong to the **same class session** happening right now. This is NOT a series of separate classes.
 
 - **First page**: Open with a greeting and course introduction. This is the ONLY page that should greet.

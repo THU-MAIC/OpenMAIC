@@ -22,13 +22,31 @@ export class AudioPlayer {
   private playbackRate: number = 1;
 
   /**
-   * Play audio (from IndexedDB pre-generated cache)
+   * Play audio (from URL or IndexedDB pre-generated cache)
    * @param audioId Audio ID
+   * @param audioUrl Optional server-generated audio URL (takes priority over IndexedDB)
    * @returns true if audio started playing, false if no audio (TTS disabled or not generated)
    */
-  public async play(audioId: string): Promise<boolean> {
+  public async play(audioId: string, audioUrl?: string): Promise<boolean> {
     try {
-      // Get audio from database
+      // 1. Try audioUrl first (server-generated TTS)
+      if (audioUrl) {
+        this.stop();
+        this.audio = new Audio();
+        this.audio.src = audioUrl;
+        if (this.muted) this.audio.volume = 0;
+        else this.audio.volume = this.volume;
+        this.audio.defaultPlaybackRate = this.playbackRate;
+        this.audio.playbackRate = this.playbackRate;
+        this.audio.addEventListener('ended', () => {
+          this.onEndedCallback?.();
+        });
+        await this.audio.play();
+        this.audio.playbackRate = this.playbackRate;
+        return true;
+      }
+
+      // 2. Fall back to IndexedDB (client-generated TTS)
       const audioRecord = await db.audioFiles.get(audioId);
 
       if (!audioRecord) {
