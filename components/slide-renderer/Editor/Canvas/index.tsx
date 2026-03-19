@@ -24,11 +24,13 @@ import { ElementCreateSelection } from './ElementCreateSelection';
 import { ShapeCreateCanvas } from './ShapeCreateCanvas';
 import { Ruler } from './Ruler';
 import { GridLines } from './GridLines';
-import type { PPTElement } from '@/lib/types/slides';
+import { LinkDialog } from './LinkDialog';
+import type { PPTElement, PPTTextElement, PPTShapeElement } from '@/lib/types/slides';
 import type { AlignmentLineProps } from '@/lib/types/edit';
 import type { ContextmenuItem } from './EditableElement';
 import type { SlideContent } from '@/lib/types/stage';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
+import { nanoid } from 'nanoid';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -158,20 +160,41 @@ export function Canvas(_props: CanvasProps) {
     }
   };
 
+  const {
+    addElement: addNewElement,
+    pasteElement,
+    selectAllElements,
+    deleteAllElements,
+    updateElement: updateElementProps,
+  } = useCanvasOperations();
+
   // Double-click blank area to insert text
-  const handleDblClick = (_e: React.MouseEvent) => {
+  const handleDblClick = (e: React.MouseEvent) => {
     if (activeElementIdList.length || creatingElement || creatingCustomShape) return;
     if (!viewportRef.current) return;
 
-    const _viewportRect = viewportRef.current.getBoundingClientRect();
-    // TODO: implement createTextElement (use _viewportRect + e.pageX/Y + canvasScale)
+    const viewportRect = viewportRef.current.getBoundingClientRect();
+    const left = (e.pageX - viewportRect.left) / canvasScale;
+    const top = (e.pageY - viewportRect.top) / canvasScale;
+
+    const textElement: PPTTextElement = {
+      id: nanoid(10),
+      type: 'text',
+      left,
+      top,
+      width: 300,
+      height: 50,
+      rotate: 0,
+      content: '<p><br></p>',
+      defaultFontName: 'Microsoft YaHei',
+      defaultColor: '#333333',
+    };
+    addNewElement(textElement);
   };
 
   const openLinkDialog = () => {
     setLinkDialogVisible(true);
   };
-
-  const { pasteElement, selectAllElements, deleteAllElements } = useCanvasOperations();
 
   const contextmenus = (): ContextmenuItem[] => {
     return [
@@ -240,8 +263,28 @@ export function Canvas(_props: CanvasProps) {
           {/* Custom shape creation canvas */}
           {creatingCustomShape && (
             <ShapeCreateCanvas
-              onCreated={(_data) => {
-                // TODO: implement insertCustomShape
+              onCreated={(data) => {
+                const left = Math.min(data.start[0], data.end[0]) / canvasScale;
+                const top = Math.min(data.start[1], data.end[1]) / canvasScale;
+                const width = Math.abs(data.end[0] - data.start[0]) / canvasScale;
+                const height = Math.abs(data.end[1] - data.start[1]) / canvasScale;
+
+                const shapeElement: PPTShapeElement = {
+                  id: nanoid(10),
+                  type: 'shape',
+                  left,
+                  top,
+                  width: Math.max(width, 30),
+                  height: Math.max(height, 30),
+                  rotate: 0,
+                  viewBox: data.viewBox,
+                  path: data.path,
+                  fill: data.fill || '#5b9bd5',
+                  fixedRatio: false,
+                  outline: data.outline,
+                  special: true,
+                };
+                addNewElement(shapeElement);
               }}
             />
           )}
@@ -347,8 +390,21 @@ export function Canvas(_props: CanvasProps) {
           {/* Drag mask when space key is pressed */}
           {spaceKeyState && <div className="drag-mask absolute inset-0 cursor-grab" />}
 
-          {/* TODO: Add LinkDialog modal */}
-          {linkDialogVisible && <div>LinkDialog placeholder</div>}
+          {linkDialogVisible && (() => {
+            const targetEl = elementList.find((el) => el.id === handleElementId);
+            return (
+              <LinkDialog
+                currentLink={targetEl?.link || undefined}
+                onConfirm={(link) => {
+                  if (handleElementId) {
+                    updateElementProps({ id: handleElementId, props: { link } });
+                  }
+                  setLinkDialogVisible(false);
+                }}
+                onClose={() => setLinkDialogVisible(false)}
+              />
+            );
+          })()}
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
@@ -372,7 +428,7 @@ export function Canvas(_props: CanvasProps) {
                     ) : (
                       <ContextMenuItem
                         key={childIndex}
-                        onClick={(e) => {
+                        onClick={(e: React.MouseEvent) => {
                           e.stopPropagation();
                           child.handler?.();
                         }}
@@ -395,7 +451,7 @@ export function Canvas(_props: CanvasProps) {
           return (
             <ContextMenuItem
               key={index}
-              onClick={(e) => {
+              onClick={(e: React.MouseEvent) => {
                 e.stopPropagation();
                 item.handler?.();
               }}

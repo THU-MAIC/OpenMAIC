@@ -1,6 +1,8 @@
 'use client';
 
+import { useMemo } from 'react';
 import type { PPTTextElement } from '@/lib/types/slides';
+import { sanitizeHtml } from '@/lib/utils/sanitize-html';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { ElementOutline } from '../ElementOutline';
 
@@ -15,6 +17,7 @@ export interface BaseTextElementProps {
  */
 export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
+  const safeContent = useMemo(() => sanitizeHtml(elementInfo.content), [elementInfo.content]);
 
   return (
     <div
@@ -54,7 +57,7 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
           />
           <div
             className={`text ProseMirror-static relative ${target === 'thumbnail' ? 'pointer-events-none' : ''}`}
-            dangerouslySetInnerHTML={{ __html: elementInfo.content }}
+            dangerouslySetInnerHTML={{ __html: safeContent }}
           />
         </div>
       </div>

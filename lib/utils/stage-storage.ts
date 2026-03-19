@@ -7,9 +7,9 @@
 
 import { Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
-import { db } from './database';
-import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
-import { clearPlaybackState } from './playback-storage';
+import { db, deleteStageWithRelatedData } from './database';
+import type { MediaFileRecord, StageRecord } from './database';
+import { saveChatSessions, loadChatSessions } from './chat-storage';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('StageStorage');
@@ -110,20 +110,15 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 }
 
 /**
- * Delete stage and all related data
+ * Delete stage and all related data.
+ *
+ * Delegates to the transactional `deleteStageWithRelatedData` in database.ts
+ * which covers all stage-scoped tables (stages, scenes, chatSessions,
+ * playbackState, stageOutlines, mediaFiles, generatedAgents).
  */
 export async function deleteStageData(stageId: string): Promise<void> {
   try {
-    // Delete stage
-    await db.stages.delete(stageId);
-
-    // Delete scenes
-    await db.scenes.where('stageId').equals(stageId).delete();
-
-    // Delete chat sessions and playback state
-    await deleteChatSessions(stageId);
-    await clearPlaybackState(stageId);
-
+    await deleteStageWithRelatedData(stageId);
     log.info(`Deleted stage: ${stageId}`);
   } catch (error) {
     log.error('Failed to delete stage:', error);
@@ -139,7 +134,7 @@ export async function listStages(): Promise<StageListItem[]> {
     const stages = await db.stages.orderBy('updatedAt').reverse().toArray();
 
     const stageList: StageListItem[] = await Promise.all(
-      stages.map(async (stage) => {
+      stages.map(async (stage: StageRecord) => {
         const sceneCount = await db.scenes.where('stageId').equals(stage.id).count();
 
         return {
@@ -173,7 +168,7 @@ export async function getFirstSlideByStages(
     await Promise.all(
       stageIds.map(async (stageId) => {
         const scenes = await db.scenes.where('stageId').equals(stageId).sortBy('order');
-        const firstSlide = scenes.find((s) => s.content?.type === 'slide');
+        const firstSlide = scenes.find((s: Scene) => s.content?.type === 'slide');
         if (firstSlide && firstSlide.content.type === 'slide') {
           const slide = structuredClone(firstSlide.content.canvas);
 
@@ -185,7 +180,7 @@ export async function getFirstSlideByStages(
           if (placeholderEls.length > 0) {
             const mediaRecords = await db.mediaFiles.where('stageId').equals(stageId).toArray();
             const mediaMap = new Map(
-              mediaRecords.map((r) => {
+              mediaRecords.map((r: MediaFileRecord) => {
                 // Key format: stageId:elementId → extract elementId
                 const elementId = r.id.includes(':') ? r.id.split(':').slice(1).join(':') : r.id;
                 return [elementId, r.blob] as const;

@@ -28,10 +28,31 @@ export async function writeJsonFileAtomic(filePath: string, data: unknown) {
   await fs.rename(tempFilePath, filePath);
 }
 
+/**
+ * Derive the public-facing origin for URL construction.
+ *
+ * Prefers the explicit NEXT_PUBLIC_BASE_URL env var (always safe).
+ * Falls back to x-forwarded-host/proto only when running behind a
+ * trusted reverse proxy (Vercel sets these automatically).
+ * As a last resort, uses the request's own origin.
+ */
 export function buildRequestOrigin(req: NextRequest): string {
-  return req.headers.get('x-forwarded-host')
-    ? `${req.headers.get('x-forwarded-proto') || 'http'}://${req.headers.get('x-forwarded-host')}`
-    : req.nextUrl.origin;
+  if (process.env.NEXT_PUBLIC_BASE_URL) {
+    return process.env.NEXT_PUBLIC_BASE_URL.replace(/\/+$/, '');
+  }
+
+  const forwardedHost = req.headers.get('x-forwarded-host');
+  if (forwardedHost) {
+    // Basic sanity: host must look like a hostname (no path, no whitespace)
+    if (/^[\w.:-]+$/.test(forwardedHost)) {
+      const proto = req.headers.get('x-forwarded-proto') || 'https';
+      if (proto === 'http' || proto === 'https') {
+        return `${proto}://${forwardedHost}`;
+      }
+    }
+  }
+
+  return req.nextUrl.origin;
 }
 
 export interface PersistedClassroomData {
@@ -46,7 +67,13 @@ export function isValidClassroomId(id: string): boolean {
 }
 
 export async function readClassroom(id: string): Promise<PersistedClassroomData | null> {
-  const filePath = path.join(CLASSROOMS_DIR, `${id}.json`);
+  if (!isValidClassroomId(id)) return null;
+
+  const filePath = path.resolve(CLASSROOMS_DIR, `${id}.json`);
+  if (!filePath.startsWith(path.resolve(CLASSROOMS_DIR) + path.sep)) {
+    return null;
+  }
+
   try {
     const content = await fs.readFile(filePath, 'utf-8');
     return JSON.parse(content) as PersistedClassroomData;
@@ -66,6 +93,10 @@ export async function persistClassroom(
   },
   baseUrl: string,
 ): Promise<PersistedClassroomData & { url: string }> {
+  if (!isValidClassroomId(data.id)) {
+    throw new Error(`Invalid classroom id: ${data.id}`);
+  }
+
   const classroomData: PersistedClassroomData = {
     id: data.id,
     stage: data.stage,
@@ -74,7 +105,13 @@ export async function persistClassroom(
   };
 
   await ensureClassroomsDir();
-  const filePath = path.join(CLASSROOMS_DIR, `${data.id}.json`);
+  const filePath = path.resolve(CLASSROOMS_DIR, `${data.id}.json`);
+
+  // Defense-in-depth: ensure resolved path stays under the classrooms directory
+  if (!filePath.startsWith(path.resolve(CLASSROOMS_DIR) + path.sep)) {
+    throw new Error('Path traversal detected');
+  }
+
   await writeJsonFileAtomic(filePath, classroomData);
 
   return {

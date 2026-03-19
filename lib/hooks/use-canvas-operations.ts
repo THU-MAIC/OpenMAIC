@@ -180,32 +180,53 @@ export function useCanvasOperations() {
 
   // Copy selected element data to clipboard
   const copyElement = () => {
-    // if (!activeElementIdList.length) return
+    if (!activeElementIdList.length) return;
 
-    // const text = JSON.stringify({
-    //   type: 'elements',
-    //   data: activeElementList,
-    // })
+    const payload = JSON.stringify({
+      type: 'elements',
+      data: activeElementList,
+    });
 
-    // copyText(text).then(() => {
-    //   setEditorareaFocus(true)
-    // })
-    toast.warning('Not implemented');
+    navigator.clipboard
+      .writeText(payload)
+      .catch(() => toast.warning('Failed to copy to clipboard'));
   };
 
   // Copy and delete selected elements (cut)
   const cutElement = () => {
-    // copyElement()
-    // deleteElement()
-    toast.warning('Not implemented');
+    if (!activeElementIdList.length) return;
+    copyElement();
+    deleteElement();
   };
 
   // Attempt to paste element data from clipboard
   const pasteElement = () => {
-    // readClipboard().then(text => {
-    //   pasteTextClipboardData(text)
-    // }).catch(err => toast.warning(err))
-    toast.warning('Not implemented');
+    navigator.clipboard
+      .readText()
+      .then((text) => {
+        try {
+          const parsed = JSON.parse(text);
+          if (parsed?.type !== 'elements' || !Array.isArray(parsed.data)) return;
+
+          const elements = parsed.data as PPTElement[];
+          const PASTE_OFFSET = 20;
+
+          const newElements = elements.map((el) => ({
+            ...el,
+            id: nanoid(10),
+            left: (el.left ?? 0) + PASTE_OFFSET,
+            top: (el.top ?? 0) + PASTE_OFFSET,
+          }));
+
+          const newSlideElements = [...currentSlide.elements, ...newElements];
+          updateSlide({ elements: newSlideElements });
+          setActiveElementIdList(newElements.map((el) => el.id));
+          addHistorySnapshot();
+        } catch {
+          // Clipboard content is not valid element JSON — ignore silently
+        }
+      })
+      .catch(() => toast.warning('Failed to read clipboard'));
   };
 
   // Copy and immediately paste selected elements

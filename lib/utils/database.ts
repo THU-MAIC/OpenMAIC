@@ -124,9 +124,16 @@ export interface PlaybackStateRecord {
 /**
  * StageOutlines table - Persisted outlines for resume-on-refresh
  */
+export interface GenerationParamsData {
+  pdfImages?: Array<{ storageId?: string; [key: string]: unknown }>;
+  agents?: unknown[];
+  userProfile?: unknown;
+}
+
 export interface StageOutlinesRecord {
   stageId: string; // Primary key (FK -> stages.id)
   outlines: SceneOutline[];
+  generationParams?: GenerationParamsData;
   createdAt: number;
   updatedAt: number;
 }

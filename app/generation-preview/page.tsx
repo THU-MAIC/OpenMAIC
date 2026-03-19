@@ -711,15 +711,18 @@ function GenerationPreviewContent() {
       const remaining = outlines.filter((o) => o.order !== data.scene.order);
       store.setGeneratingOutlines(remaining);
 
-      // Store generation params for classroom to continue generation
-      sessionStorage.setItem(
-        'generationParams',
-        JSON.stringify({
-          pdfImages: currentSession.pdfImages,
-          agents,
-          userProfile,
-        }),
-      );
+      // Persist generation params to IndexedDB so generation can resume
+      // even if the tab is closed and reopened (sessionStorage is ephemeral)
+      const genParams = {
+        pdfImages: currentSession.pdfImages,
+        agents,
+        userProfile,
+      };
+
+      await db.stageOutlines.update(stage.id, {
+        generationParams: genParams,
+        updatedAt: Date.now(),
+      });
 
       sessionStorage.removeItem('generationSession');
       await store.saveToStorage();

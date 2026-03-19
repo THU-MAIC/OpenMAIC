@@ -22,7 +22,7 @@ export function InteractiveRenderer({ content, mode: _mode, sceneId }: Interacti
         src={patchedHtml ? undefined : content.url}
         className="absolute inset-0 w-full h-full border-0"
         title={`Interactive Scene ${sceneId}`}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+        sandbox="allow-scripts allow-forms allow-popups"
       />
     </div>
   );

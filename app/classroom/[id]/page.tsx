@@ -4,6 +4,8 @@ import { Stage } from '@/components/stage';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
 import { loadImageMapping } from '@/lib/utils/image-storage';
+import { db } from '@/lib/utils/database';
+import type { GenerationParamsData } from '@/lib/utils/database';
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
@@ -114,16 +116,28 @@ export default function ClassroomDetailPage() {
     if (hasPending && stage) {
       generationStartedRef.current = true;
 
-      // Load generation params from sessionStorage (stored by generation-preview before navigating)
-      const genParamsStr = sessionStorage.getItem('generationParams');
-      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+      void (async () => {
+        let params: GenerationParamsData = {};
+        try {
+          // Load generation params from IndexedDB (persisted by generation-preview)
+          const record = await db.stageOutlines.get(stage.id);
+          params = record?.generationParams || {};
+        } catch (err) {
+          log.warn('[Classroom] Failed to load persisted generation params:', err);
+        }
 
-      // Reconstruct imageMapping from IndexedDB using pdfImages storageIds
-      const storageIds = (params.pdfImages || [])
-        .map((img: { storageId?: string }) => img.storageId)
-        .filter(Boolean);
+        // Reconstruct imageMapping from IndexedDB using pdfImages storageIds
+        const storageIds = (params.pdfImages || [])
+          .map((img: { storageId?: string }) => img.storageId)
+          .filter(Boolean) as string[];
 
-      loadImageMapping(storageIds).then((imageMapping) => {
+        let imageMapping: Record<string, string> = {};
+        try {
+          imageMapping = await loadImageMapping(storageIds);
+        } catch (err) {
+          log.warn('[Classroom] Failed to rebuild PDF image mapping for resume:', err);
+        }
+
         generateRemaining({
           pdfImages: params.pdfImages,
           imageMapping,
@@ -135,8 +149,10 @@ export default function ClassroomDetailPage() {
           },
           agents: params.agents,
           userProfile: params.userProfile,
+        }).catch((err) => {
+          log.warn('[Classroom] Scene generation resume error:', err);
         });
-      });
+      })();
     } else if (outlines.length > 0 && stage) {
       // All scenes are generated, but some media may not have finished.
       // Resume media generation for any tasks not yet in IndexedDB.
