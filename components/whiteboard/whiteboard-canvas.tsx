@@ -462,7 +462,10 @@ export function WhiteboardCanvas() {
     snapshotTimerRef.current = setTimeout(() => {
       const current = elementsRef.current;
       if (current.length > 0) {
-        useWhiteboardHistoryStore.getState().pushSnapshot(current);
+        const stageId = useStageStore.getState().stage?.id;
+        if (stageId) {
+          useWhiteboardHistoryStore.getState().pushSnapshot(stageId, current);
+        }
       }
     }, 2000);
 

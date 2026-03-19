@@ -47,6 +47,7 @@ export interface StageRecord {
   language?: string;
   style?: string;
   currentSceneId?: string;
+  whiteboard?: Whiteboard[]; // Whiteboard data (non-indexed)
 }
 
 /**

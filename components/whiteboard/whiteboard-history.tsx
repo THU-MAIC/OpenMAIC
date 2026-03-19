@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useRef, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { RotateCcw } from 'lucide-react';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
@@ -23,7 +23,12 @@ interface WhiteboardHistoryProps {
  */
 export function WhiteboardHistory({ isOpen, onClose }: WhiteboardHistoryProps) {
   const { t } = useI18n();
-  const snapshots = useWhiteboardHistoryStore((s) => s.snapshots);
+  const stage = useStageStore.use.stage();
+  const stageId = stage?.id;
+  const rawSnapshots = useWhiteboardHistoryStore((s) =>
+    stageId ? s.snapshotsByStage[stageId] : undefined,
+  );
+  const snapshots = useMemo(() => rawSnapshots ?? [], [rawSnapshots]);
   const isClearing = useCanvasStore.use.whiteboardClearing();
   const panelRef = useRef<HTMLDivElement>(null);
 
@@ -51,7 +56,9 @@ export function WhiteboardHistory({ isOpen, onClose }: WhiteboardHistoryProps) {
       return;
     }
 
-    const snapshot = useWhiteboardHistoryStore.getState().getSnapshot(index);
+    if (!stageId) return;
+
+    const snapshot = useWhiteboardHistoryStore.getState().getSnapshot(stageId, index);
     if (!snapshot) return;
 
     const stageStore = useStageStore;
