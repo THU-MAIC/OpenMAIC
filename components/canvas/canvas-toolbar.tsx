@@ -35,6 +35,10 @@ export interface CanvasToolbarProps {
   readonly onWhiteboardClose: () => void;
   readonly showStopDiscussion?: boolean;
   readonly onStopDiscussion?: () => void;
+  readonly isDiscussionPaused?: boolean;
+  readonly isThinking?: boolean;
+  readonly onDiscussionPause?: () => void;
+  readonly onDiscussionResume?: () => void;
   readonly className?: string;
   // Audio/playback controls
   readonly ttsEnabled?: boolean;
@@ -92,6 +96,10 @@ export function CanvasToolbar({
   onWhiteboardClose,
   showStopDiscussion,
   onStopDiscussion,
+  isDiscussionPaused,
+  isThinking,
+  onDiscussionPause,
+  onDiscussionResume,
   className,
   ttsEnabled,
   ttsMuted,
@@ -275,25 +283,65 @@ export function CanvasToolbar({
 
           {/* Play / Pause / Stop Discussion */}
           {showStopDiscussion && onStopDiscussion ? (
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onStopDiscussion();
-              }}
-              className={cn(
-                'flex items-center gap-1.5 h-6 px-2.5 rounded-md',
-                'bg-red-500/10 dark:bg-red-400/10 text-red-600 dark:text-red-400',
-                'text-[11px] font-semibold whitespace-nowrap',
-                'hover:bg-red-500/20 dark:hover:bg-red-400/20 active:scale-95 transition-all cursor-pointer',
-              )}
-              title={t('roundtable.stopDiscussion')}
-            >
-              <span className="relative flex h-1.5 w-1.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
-              </span>
-              {t('roundtable.stopDiscussion')}
-            </button>
+            <>
+              {/* Buffer-level pause/resume toggle */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isDiscussionPaused) {
+                    onDiscussionResume?.();
+                  } else {
+                    onDiscussionPause?.();
+                  }
+                }}
+                disabled={!isDiscussionPaused && isThinking}
+                className={cn(
+                  ctrlBtn,
+                  'w-7 h-6',
+                  !isDiscussionPaused && isThinking
+                    ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                    : isDiscussionPaused
+                      ? 'text-amber-500 dark:text-amber-400'
+                      : 'text-gray-500 dark:text-gray-400',
+                )}
+                aria-label={
+                  isDiscussionPaused
+                    ? t('roundtable.resumeDiscussion')
+                    : t('roundtable.pauseDiscussion')
+                }
+                title={
+                  isDiscussionPaused
+                    ? t('roundtable.resumeDiscussion')
+                    : t('roundtable.pauseDiscussion')
+                }
+              >
+                {isDiscussionPaused ? (
+                  <Play className="w-3.5 h-3.5 ml-px" />
+                ) : (
+                  <Pause className="w-3.5 h-3.5" />
+                )}
+              </button>
+              {/* Stop discussion button */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onStopDiscussion();
+                }}
+                className={cn(
+                  'flex items-center gap-1.5 h-6 px-2.5 rounded-md',
+                  'bg-red-500/10 dark:bg-red-400/10 text-red-600 dark:text-red-400',
+                  'text-[11px] font-semibold whitespace-nowrap',
+                  'hover:bg-red-500/20 dark:hover:bg-red-400/20 active:scale-95 transition-all cursor-pointer',
+                )}
+                title={t('roundtable.stopDiscussion')}
+              >
+                <span className="relative flex h-1.5 w-1.5 shrink-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-red-500" />
+                </span>
+                {t('roundtable.stopDiscussion')}
+              </button>
+            </>
           ) : showPlayPause ? (
             <button
               onClick={onPlayPause}

@@ -61,6 +61,9 @@ interface RoundtableProps {
   readonly onSoftPause?: () => void;
   readonly onResumeTopic?: () => void;
   readonly onPlayPause?: () => void;
+  readonly isDiscussionPaused?: boolean;
+  readonly onDiscussionPause?: () => void;
+  readonly onDiscussionResume?: () => void;
   readonly totalActions?: number;
   readonly currentActionIndex?: number;
   // Toolbar props (merged from CanvasArea)
@@ -118,9 +121,12 @@ export function Roundtable({
   onDiscussionSkip,
   onStopDiscussion,
   onInputActivate,
-  onSoftPause,
+  onSoftPause: _onSoftPause,
   onResumeTopic,
   onPlayPause,
+  isDiscussionPaused,
+  onDiscussionPause,
+  onDiscussionResume,
   currentSceneIndex = 0,
   scenesCount = 1,
   whiteboardOpen = false,
@@ -412,6 +418,10 @@ export function Roundtable({
         onWhiteboardClose={onWhiteboardClose ?? (() => {})}
         showStopDiscussion={showStopButton}
         onStopDiscussion={onStopDiscussion}
+        isDiscussionPaused={isDiscussionPaused}
+        isThinking={!!thinkingState || !currentSpeech}
+        onDiscussionPause={onDiscussionPause}
+        onDiscussionResume={onDiscussionResume}
         ttsEnabled={ttsEnabled}
         ttsMuted={ttsMuted}
         ttsVolume={ttsVolume}
@@ -919,9 +929,14 @@ export function Roundtable({
                           onResumeTopic?.();
                           return;
                         }
-                        // QA/Discussion: soft pause (interrupt agent but keep session active)
+                        // QA/Discussion: buffer-level pause/resume (freeze text reveal, SSE continues)
                         if (isInLiveFlow) {
-                          onSoftPause?.();
+                          if (isDiscussionPaused) {
+                            onDiscussionResume?.();
+                          } else if (!thinkingState && currentSpeech) {
+                            // Don't allow pause during thinking or before text arrives
+                            onDiscussionPause?.();
+                          }
                           return;
                         }
                         // Lecture playback: toggle play/pause
