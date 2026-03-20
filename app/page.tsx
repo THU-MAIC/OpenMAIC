@@ -521,15 +521,28 @@ function HomePage() {
             stiffness: 200,
             damping: 20,
           }}
-          className="h-12 md:h-16 mb-2 -ml-2 md:-ml-3"
+          className="h-12 md:h-16 mb-3 -ml-2 md:-ml-3"
         />
+
+        {/* ── Headline ── */}
+        <motion.h1
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="text-2xl md:text-3xl font-bold text-center tracking-tight text-foreground/90 mb-2"
+        >
+          AI Classroom for{' '}
+          <span className="bg-gradient-to-r from-sky-500 to-emerald-500 bg-clip-text text-transparent">
+            Every Student
+          </span>
+        </motion.h1>
 
         {/* ── Slogan ── */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          transition={{ delay: 0.25 }}
-          className="text-sm text-muted-foreground/60 mb-8"
+          transition={{ delay: 0.3 }}
+          className="text-sm text-muted-foreground/75 mb-8 text-center"
         >
           {t('home.slogan')}
         </motion.p>
@@ -722,8 +735,10 @@ function HomePage() {
       )}
 
       {/* Footer — flows with content, at the very end */}
-      <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
-        OpenMAIC Open Source Project
+      <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/50 flex items-center justify-center gap-1.5">
+        <span>OpenMAIC Open Source Project</span>
+        <span className="text-muted-foreground/30">·</span>
+        <span>AI Classroom for Every Student</span>
       </div>
     </div>
   );
