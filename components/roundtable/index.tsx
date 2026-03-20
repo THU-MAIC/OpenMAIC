@@ -58,7 +58,7 @@ interface RoundtableProps {
   readonly onDiscussionSkip?: () => void;
   readonly onStopDiscussion?: () => void;
   readonly onInputActivate?: () => void;
-  readonly onSoftPause?: () => void;
+
   readonly onResumeTopic?: () => void;
   readonly onPlayPause?: () => void;
   readonly isDiscussionPaused?: boolean;
@@ -121,7 +121,7 @@ export function Roundtable({
   onDiscussionSkip,
   onStopDiscussion,
   onInputActivate,
-  onSoftPause: _onSoftPause,
+
   onResumeTopic,
   onPlayPause,
   isDiscussionPaused,
@@ -419,7 +419,7 @@ export function Roundtable({
         showStopDiscussion={showStopButton}
         onStopDiscussion={onStopDiscussion}
         isDiscussionPaused={isDiscussionPaused}
-        isThinking={!!thinkingState || !currentSpeech}
+        isPauseDisabled={!!thinkingState || !currentSpeech}
         onDiscussionPause={onDiscussionPause}
         onDiscussionResume={onDiscussionResume}
         ttsEnabled={ttsEnabled}

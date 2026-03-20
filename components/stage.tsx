@@ -813,7 +813,6 @@ export function Stage({
                 engineRef.current.pause();
               }
             }}
-            onSoftPause={doSoftPause}
             onResumeTopic={doResumeTopic}
             onPlayPause={handlePlayPause}
             isDiscussionPaused={isDiscussionPaused}

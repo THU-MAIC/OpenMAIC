@@ -36,7 +36,7 @@ export interface CanvasToolbarProps {
   readonly showStopDiscussion?: boolean;
   readonly onStopDiscussion?: () => void;
   readonly isDiscussionPaused?: boolean;
-  readonly isThinking?: boolean;
+  readonly isPauseDisabled?: boolean;
   readonly onDiscussionPause?: () => void;
   readonly onDiscussionResume?: () => void;
   readonly className?: string;
@@ -97,7 +97,7 @@ export function CanvasToolbar({
   showStopDiscussion,
   onStopDiscussion,
   isDiscussionPaused,
-  isThinking,
+  isPauseDisabled,
   onDiscussionPause,
   onDiscussionResume,
   className,
@@ -294,11 +294,11 @@ export function CanvasToolbar({
                     onDiscussionPause?.();
                   }
                 }}
-                disabled={!isDiscussionPaused && isThinking}
+                disabled={!isDiscussionPaused && isPauseDisabled}
                 className={cn(
                   ctrlBtn,
                   'w-7 h-6',
-                  !isDiscussionPaused && isThinking
+                  !isDiscussionPaused && isPauseDisabled
                     ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
                     : isDiscussionPaused
                       ? 'text-amber-500 dark:text-amber-400'

@@ -1079,6 +1079,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const startDiscussion = useCallback(
     async (request: DiscussionRequest): Promise<void> => {
       log.info(`[ChatArea] Starting discussion: "${request.topic}"`);
+      // Explicitly clear buffer-pause intent (also cleared transitively via endSession,
+      // but being explicit guards against future refactors)
+      livePausedRef.current = false;
 
       // Validate model configuration before starting discussion
       const modelConfig = getCurrentModelConfig();
