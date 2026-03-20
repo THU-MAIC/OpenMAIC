@@ -111,7 +111,7 @@ export function GenerationToolbar({
   const pillCls =
     'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
   const pillMuted = `${pillCls} border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60`;
-  const pillActive = `${pillCls} border-violet-200/60 dark:border-violet-700/50 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300`;
+  const pillActive = `${pillCls} border-sky-200/60 dark:border-sky-700/50 bg-sky-100 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300`;
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
@@ -156,7 +156,7 @@ export function GenerationToolbar({
               <span className="max-w-[100px] truncate">{pdfFile.name}</span>
               <span
                 role="button"
-                className="size-4 rounded-full inline-flex items-center justify-center hover:bg-violet-200 dark:hover:bg-violet-800 transition-colors"
+                className="size-4 rounded-full inline-flex items-center justify-center hover:bg-sky-200 dark:hover:bg-sky-800 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   onPdfFileChange(null);
@@ -222,8 +222,8 @@ export function GenerationToolbar({
             {pdfFile ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                    <FileText className="size-4 text-violet-600 dark:text-violet-400" />
+                  <div className="size-8 rounded-lg bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center shrink-0">
+                    <FileText className="size-4 text-sky-600 dark:text-sky-400" />
                   </div>
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{pdfFile.name}</p>
@@ -244,8 +244,8 @@ export function GenerationToolbar({
                 className={cn(
                   'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
                   isDragging
-                    ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
-                    : 'border-muted-foreground/20 hover:border-violet-300',
+                    ? 'border-sky-400 bg-sky-50 dark:bg-sky-950/20'
+                    : 'border-muted-foreground/20 hover:border-sky-300',
                 )}
                 onClick={() => fileInputRef.current?.click()}
                 onDragOver={(e) => {
@@ -289,14 +289,14 @@ export function GenerationToolbar({
               className={cn(
                 'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
                 webSearch
-                  ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
+                  ? 'bg-sky-50 dark:bg-sky-950/20 border-sky-200 dark:border-sky-800'
                   : 'border-border hover:bg-muted/50',
               )}
             >
               <Globe2
                 className={cn(
                   'size-4 shrink-0',
-                  webSearch ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground',
+                  webSearch ? 'text-sky-600 dark:text-sky-400' : 'text-muted-foreground',
                 )}
               />
               <div className="flex-1 min-w-0">
@@ -433,7 +433,7 @@ function ModelSelectorPopover({
                 'inline-flex items-center justify-center size-7 rounded-full transition-all cursor-pointer select-none',
                 'ring-1 ring-border/60 hover:ring-border hover:bg-muted/60',
                 currentModelId &&
-                  'ring-violet-300 dark:ring-violet-700 bg-violet-50 dark:bg-violet-950/20',
+                  'ring-sky-300 dark:ring-sky-700 bg-sky-50 dark:bg-sky-950/20',
               )}
             >
               {currentProviderConfig?.icon ? (
@@ -472,7 +472,7 @@ function ModelSelectorPopover({
                   onClick={() => setDrillProvider(provider.id)}
                   className={cn(
                     'w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors border-b border-border/30',
-                    isActive ? 'bg-violet-50/50 dark:bg-violet-950/10' : 'hover:bg-muted/50',
+                    isActive ? 'bg-sky-50/50 dark:bg-sky-950/10' : 'hover:bg-muted/50',
                   )}
                 >
                   {provider.icon ? (
@@ -539,13 +539,13 @@ function ModelSelectorPopover({
                   className={cn(
                     'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border-b border-border/30',
                     isSelected
-                      ? 'bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-300'
+                      ? 'bg-sky-50 dark:bg-sky-950/20 text-sky-700 dark:text-sky-300'
                       : 'hover:bg-muted/50',
                   )}
                 >
                   <span className="flex-1 truncate font-mono text-xs">{model.name}</span>
                   {isSelected && (
-                    <Check className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+                    <Check className="size-3.5 shrink-0 text-sky-600 dark:text-sky-400" />
                   )}
                 </button>
               );

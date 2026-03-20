@@ -135,7 +135,7 @@ export function AgentSettings({
                   ? 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
                   : selectedAgentIds.length === 1
                     ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                    : 'bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                    : 'bg-sky-50 dark:bg-sky-900/20 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
               }`}
             >
               {selectedAgentIds.length === 0 && (
@@ -169,7 +169,7 @@ export function AgentSettings({
 
             {/* Max turns config - only show for multi-agent */}
             {selectedAgentIds.length > 1 && (
-              <div className="space-y-2 border-l-4 border-purple-500 pl-4">
+              <div className="space-y-2 border-l-4 border-sky-500 pl-4">
                 <Label>{t('settings.maxTurns')}</Label>
                 <p className="text-xs text-muted-foreground">{t('settings.maxTurnsDesc')}</p>
                 <Input

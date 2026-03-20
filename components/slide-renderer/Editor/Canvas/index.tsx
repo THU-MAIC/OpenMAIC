@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState, useEffect } from 'react';
+import { nanoid } from 'nanoid';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { useKeyboardStore } from '@/lib/store/keyboard';
@@ -24,11 +25,13 @@ import { ElementCreateSelection } from './ElementCreateSelection';
 import { ShapeCreateCanvas } from './ShapeCreateCanvas';
 import { Ruler } from './Ruler';
 import { GridLines } from './GridLines';
-import type { PPTElement } from '@/lib/types/slides';
-import type { AlignmentLineProps } from '@/lib/types/edit';
+import { LinkDialog } from './LinkDialog';
+import type { PPTElement, PPTTextElement, PPTShapeElement, SlideTheme } from '@/lib/types/slides';
+import type { AlignmentLineProps, CreateCustomShapeData } from '@/lib/types/edit';
 import type { ContextmenuItem } from './EditableElement';
 import type { SlideContent } from '@/lib/types/stage';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
+import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -159,19 +162,37 @@ export function Canvas(_props: CanvasProps) {
   };
 
   // Double-click blank area to insert text
-  const handleDblClick = (_e: React.MouseEvent) => {
+  const handleDblClick = (e: React.MouseEvent) => {
     if (activeElementIdList.length || creatingElement || creatingCustomShape) return;
     if (!viewportRef.current) return;
 
-    const _viewportRect = viewportRef.current.getBoundingClientRect();
-    // TODO: implement createTextElement (use _viewportRect + e.pageX/Y + canvasScale)
+    const viewportRect = viewportRef.current.getBoundingClientRect();
+    const left = (e.pageX - viewportRect.x) / canvasScale;
+    const top = (e.pageY - viewportRect.y) / canvasScale;
+
+    const newElement: PPTTextElement = {
+      type: 'text',
+      id: nanoid(10),
+      left: left - 150,
+      top: top - 25,
+      width: 300,
+      height: 50,
+      rotate: 0,
+      content: '<p><br/></p>',
+      defaultFontName: theme?.fontName ?? 'Microsoft YaHei',
+      defaultColor: theme?.fontColor ?? '#333333',
+    };
+    addElement(newElement);
+    addHistorySnapshot();
   };
 
   const openLinkDialog = () => {
     setLinkDialogVisible(true);
   };
 
-  const { pasteElement, selectAllElements, deleteAllElements } = useCanvasOperations();
+  const { pasteElement, selectAllElements, deleteAllElements, addElement } = useCanvasOperations();
+  const { addHistorySnapshot } = useHistorySnapshot();
+  const theme = useSceneSelector<SlideContent, SlideTheme>((content) => content.canvas.theme);
 
   const contextmenus = (): ContextmenuItem[] => {
     return [
@@ -240,8 +261,26 @@ export function Canvas(_props: CanvasProps) {
           {/* Custom shape creation canvas */}
           {creatingCustomShape && (
             <ShapeCreateCanvas
-              onCreated={(_data) => {
-                // TODO: implement insertCustomShape
+              onCreated={(data: CreateCustomShapeData) => {
+                const w = Math.abs(data.end[0] - data.start[0]);
+                const h = Math.abs(data.end[1] - data.start[1]);
+                const newElement: PPTShapeElement = {
+                  type: 'shape',
+                  id: nanoid(10),
+                  left: data.start[0],
+                  top: data.start[1],
+                  width: Math.max(w, 20),
+                  height: Math.max(h, 20),
+                  rotate: 0,
+                  viewBox: data.viewBox,
+                  path: data.path,
+                  fixedRatio: false,
+                  fill: data.fill ?? theme?.themeColors?.[0] ?? '#4B9CDC',
+                  outline: data.outline,
+                  special: true,
+                };
+                addElement(newElement);
+                addHistorySnapshot();
               }}
             />
           )}
@@ -347,8 +386,7 @@ export function Canvas(_props: CanvasProps) {
           {/* Drag mask when space key is pressed */}
           {spaceKeyState && <div className="drag-mask absolute inset-0 cursor-grab" />}
 
-          {/* TODO: Add LinkDialog modal */}
-          {linkDialogVisible && <div>LinkDialog placeholder</div>}
+          <LinkDialog visible={linkDialogVisible} onClose={() => setLinkDialogVisible(false)} />
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>

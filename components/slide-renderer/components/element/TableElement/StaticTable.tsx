@@ -1,19 +1,29 @@
 'use client';
 
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import type { PPTTableElement } from '@/lib/types/slides';
 import { getTableSubThemeColor } from '@/lib/utils/element';
 import { getTextStyle, formatText, getHiddenCells } from './tableUtils';
 
 interface StaticTableProps {
   elementInfo: PPTTableElement;
+  editingCell?: { rowIdx: number; colIdx: number } | null;
+  onCellDblClick?: (rowIdx: number, colIdx: number) => void;
+  onCellChange?: (rowIdx: number, colIdx: number, text: string) => void;
+  onCellBlur?: () => void;
 }
 
 /**
  * Static table rendering component, ported from PPTist StaticTable.vue.
  * Renders table data with theme colors, outline borders, and merged cells.
  */
-export function StaticTable({ elementInfo }: StaticTableProps) {
+export function StaticTable({
+  elementInfo,
+  editingCell,
+  onCellDblClick,
+  onCellChange,
+  onCellBlur,
+}: StaticTableProps) {
   const { width, data, colWidths, cellMinHeight, outline, theme } = elementInfo;
 
   const hiddenCells = useMemo(() => getHiddenCells(data), [data]);
@@ -100,6 +110,9 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
                 textStyle.color = headerColor;
               }
 
+              const isEditing =
+                editingCell?.rowIdx === rowIdx && editingCell?.colIdx === colIdx;
+
               return (
                 <td
                   key={cell.id}
@@ -108,13 +121,47 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
                   style={{
                     border: borderStyle,
                     backgroundColor: bgColor,
-                    padding: '5px',
+                    padding: isEditing ? '0' : '5px',
                     verticalAlign: 'middle',
                     wordBreak: 'break-word',
+                    position: 'relative',
                     ...textStyle,
                   }}
-                  dangerouslySetInnerHTML={{ __html: formatText(cell.text) }}
-                />
+                  onDoubleClick={
+                    onCellDblClick ? () => onCellDblClick(rowIdx, colIdx) : undefined
+                  }
+                >
+                  {isEditing ? (
+                    <textarea
+                      autoFocus
+                      defaultValue={cell.text}
+                      style={{
+                        width: '100%',
+                        height: '100%',
+                        minHeight: `${cellMinHeight}px`,
+                        border: 'none',
+                        outline: '2px solid #4B9CDC',
+                        background: bgColor ?? 'transparent',
+                        padding: '5px',
+                        resize: 'none',
+                        fontWeight: textStyle.fontWeight,
+                        fontStyle: textStyle.fontStyle,
+                        textDecoration: textStyle.textDecoration,
+                        color: textStyle.color,
+                        fontSize: textStyle.fontSize,
+                        fontFamily: textStyle.fontFamily,
+                        textAlign: textStyle.textAlign as React.CSSProperties['textAlign'],
+                        boxSizing: 'border-box',
+                      }}
+                      onChange={(e) => onCellChange?.(rowIdx, colIdx, e.target.value)}
+                      onBlur={onCellBlur}
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span dangerouslySetInnerHTML={{ __html: formatText(cell.text) }} />
+                  )}
+                </td>
               );
             })}
           </tr>

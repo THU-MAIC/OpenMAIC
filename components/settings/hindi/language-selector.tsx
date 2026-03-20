@@ -48,7 +48,7 @@ export function LanguageSelector() {
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 text-sm font-medium">
-        <Globe className="w-4 h-4 text-violet-500" />
+        <Globe className="w-4 h-4 text-sky-500" />
         <Label>{t('settings.language')}</Label>
       </div>
       <p className="text-xs text-muted-foreground">{t('settings.languageDesc')}</p>

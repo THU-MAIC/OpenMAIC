@@ -285,7 +285,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
                   <Icon className="size-3.5" />
                   <span className="hidden sm:inline">{tab.label}</span>
                   {isEnabled && !isActive && (
-                    <span className="absolute top-1 right-1 size-1.5 rounded-full bg-violet-500" />
+                    <span className="absolute top-1 right-1 size-1.5 rounded-full bg-sky-500" />
                   )}
                 </button>
               );
@@ -370,7 +370,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
                   className={cn(
                     'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all shrink-0',
                     previewing
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+                      ? 'bg-sky-100 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300'
                       : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
                   )}
                 >
@@ -461,7 +461,7 @@ function TabPanel({
         <Icon
           className={cn(
             'size-4 shrink-0 transition-colors',
-            enabled ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground/50',
+            enabled ? 'text-sky-600 dark:text-sky-400' : 'text-muted-foreground/50',
           )}
         />
         <span

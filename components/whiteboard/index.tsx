@@ -88,12 +88,12 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
               y: 16,
               transition: { duration: 0.5, ease: [0.4, 0, 0.2, 1] },
             }}
-            className="absolute inset-4 pointer-events-auto bg-white/95 dark:bg-gray-800/95 backdrop-blur-2xl rounded-3xl shadow-[0_32px_80px_-20px_rgba(0,0,0,0.25)] border-2 border-purple-200/60 dark:border-purple-700/60 flex flex-col overflow-hidden z-[120] ring-4 ring-purple-100/40 dark:ring-purple-800/40"
+            className="absolute inset-4 pointer-events-auto bg-white/95 dark:bg-gray-800/95 backdrop-blur-2xl rounded-3xl shadow-[0_32px_80px_-20px_rgba(0,0,0,0.25)] border-2 border-sky-200/60 dark:border-sky-700/60 flex flex-col overflow-hidden z-[120] ring-4 ring-sky-100/40 dark:ring-sky-800/40"
           >
             {/* Header */}
             <div className="h-14 px-6 border-b border-gray-100 dark:border-gray-700 flex items-center justify-between shrink-0 bg-white/50 dark:bg-gray-800/50">
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center text-purple-600 dark:text-purple-400">
+                <div className="w-8 h-8 rounded-xl bg-sky-100 dark:bg-sky-900/30 flex items-center justify-center text-sky-600 dark:text-sky-400">
                   <PencilLine className="w-4 h-4" />
                 </div>
                 <span className="font-bold text-gray-800 dark:text-gray-200 tracking-tight">
