@@ -837,11 +837,42 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
-};
 
-/**
- * Get provider config (from built-in or unified config in localStorage)
- */
+  qn: {
+    id: 'qn',
+    name: 'QN (七牛云)',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.qnaigc.com/v1',
+    requiresApiKey: true,
+    icon: '/logos/qwen.svg',
+    models: [
+      {
+        id: 'gemini-3.1-pro-preview',
+        name: 'Gemini 3.1 Pro Preview',
+        contextWindow: 1048576,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'deepseek-v3.1',
+        name: 'DeepSeek V3.1',
+        contextWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'qwen3-max',
+        name: 'Qwen3 Max',
+        contextWindow: 262144,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'kimi-k2',
+        name: 'Kimi K2',
+        contextWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+    ],
+  },
+};
 function getProviderConfig(providerId: ProviderId): ProviderConfig | null {
   // Check built-in providers first
   if (PROVIDERS[providerId]) {
