@@ -2,9 +2,9 @@ import { defaultLocale, type Locale } from './types';
 export { type Locale, defaultLocale } from './types';
 import { commonZhCN, commonEnUS, commonRuRU } from './common';
 import { stageZhCN, stageEnUS } from './stage';
-import { chatZhCN, chatEnUS } from './chat';
+import { chatZhCN, chatEnUS, chatRuRU } from './chat';
 import { generationZhCN, generationEnUS, generationRuRU } from './generation';
-import { settingsZhCN, settingsEnUS } from './settings';
+import { settingsZhCN, settingsEnUS, settingsRuRU } from './settings';
 
 export const translations = {
   'zh-CN': {
@@ -24,9 +24,9 @@ export const translations = {
   'ru-RU': {
     ...commonRuRU,
     ...stageEnUS,
-    ...chatEnUS,
+    ...chatRuRU,
     ...generationRuRU,
-    ...settingsEnUS,
+    ...settingsRuRU,
   },
 } as const;
 

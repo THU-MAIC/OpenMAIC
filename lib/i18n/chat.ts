@@ -69,6 +69,77 @@ export const chatZhCN = {
   },
 } as const;
 
+export const chatRuRU = {
+  chat: {
+    lecture: 'Лекция',
+    noConversations: 'Пока нет диалогов',
+    startConversation: 'Напиши сообщение, чтобы начать диалог',
+    noMessages: 'Пока нет сообщений',
+    ended: 'завершено',
+    unknown: 'Неизвестно',
+    stopDiscussion: 'Остановить обсуждение',
+    endQA: 'Завершить Q&A',
+    tabs: {
+      lecture: 'Заметки',
+      chat: 'Чат',
+    },
+    lectureNotes: {
+      empty: 'Заметки появятся здесь после запуска лекции',
+      emptyHint: 'Нажми play, чтобы начать лекцию',
+      pageLabel: 'Страница {n}',
+      currentPage: 'Текущая',
+    },
+    badge: {
+      qa: 'Q&A',
+      discussion: 'ОБС',
+      lecture: 'ЛЕК',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: 'Фокус',
+      laser: 'Лазер',
+      wb_open: 'Открыть доску',
+      wb_draw_text: 'Текст на доске',
+      wb_draw_shape: 'Фигура на доске',
+      wb_draw_chart: 'График на доске',
+      wb_draw_latex: 'Формула на доске',
+      wb_draw_table: 'Таблица на доске',
+      wb_draw_line: 'Линия на доске',
+      wb_clear: 'Очистить доску',
+      wb_delete: 'Удалить элемент',
+      wb_close: 'Закрыть доску',
+      discussion: 'Обсуждение',
+    },
+    status: {
+      inputStreaming: 'Ожидание',
+      inputAvailable: 'Выполняется',
+      outputAvailable: 'Готово',
+      outputError: 'Ошибка',
+      outputDenied: 'Отклонено',
+      running: 'Выполняется',
+      result: 'Готово',
+      error: 'Ошибка',
+    },
+  },
+  agentBar: {
+    readyToLearn: 'Готов учиться вместе?',
+    expandedTitle: 'Настройка ролей classroom',
+    configTooltip: 'Нажми, чтобы настроить роли classroom',
+  },
+  proactiveCard: {
+    discussion: 'Обсуждение',
+    join: 'Войти',
+    skip: 'Пропустить',
+    pause: 'Пауза',
+    resume: 'Продолжить',
+  },
+  voice: {
+    startListening: 'Голосовой ввод',
+    stopListening: 'Остановить запись',
+  },
+} as const;
+
 export const chatEnUS = {
   chat: {
     lecture: 'Lecture',

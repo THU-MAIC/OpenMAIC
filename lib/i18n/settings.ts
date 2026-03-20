@@ -579,6 +579,58 @@ export const settingsZhCN = {
   },
 } as const;
 
+export const settingsRuRU = {
+  settings: {
+    agentSettings: 'Настройки агентов',
+    agentSettingsDesc:
+      'Выбери агентов для участия в разговоре. Один агент даёт одиночный режим, несколько агентов включают совместное обсуждение.',
+    agentMode: 'Режим агентов',
+    agentModePreset: 'Готовый набор',
+    agentModeAuto: 'Автогенерация',
+    agentModeAutoDesc: 'AI сам сгенерирует подходящие роли',
+    autoAgentCount: 'Количество агентов',
+    autoAgentCountDesc: 'Сколько агентов сгенерировать автоматически, включая преподавателя',
+    atLeastOneAgent: 'Выбери хотя бы 1 агента',
+    singleAgentMode: 'Одиночный режим',
+    directAnswer: 'Прямой ответ',
+    multiAgentMode: 'Мультиагентный режим',
+    agentsCollaborating: 'Совместное обсуждение',
+    agentsCollaboratingCount: 'Для совместного обсуждения выбрано {count} агентов',
+    maxTurns: 'Макс. число ходов обсуждения',
+    maxTurnsDesc:
+      'Максимальное число ходов между агентами, где один завершённый цикл действий и ответа считается одним ходом',
+    priority: 'Приоритет',
+    actions: 'Действия',
+    actionCount: '{count} действий',
+    selectedAgent: 'Выбранный агент',
+    selectedAgents: 'Выбранные агенты',
+    required: 'Обязательно',
+    agentNames: {
+      'default-1': 'AI Преподаватель',
+      'default-2': 'AI Ассистент',
+      'default-3': 'Шутник',
+      'default-4': 'Любопытный исследователь',
+      'default-5': 'Конспектолог',
+      'default-6': 'Глубокий мыслитель',
+    },
+    agentRoles: {
+      teacher: 'Преподаватель',
+      assistant: 'Ассистент',
+      student: 'Студент',
+    },
+    agentDescriptions: {
+      'default-1': 'Главный преподаватель с ясными и структурными объяснениями',
+      'default-2': 'Поддерживает обучение и помогает прояснять ключевые моменты',
+      'default-3': 'Добавляет юмор и энергию в classroom',
+      'default-4': 'Постоянно задаёт вопросы почему и как',
+      'default-5': 'Аккуратно записывает и упорядочивает заметки занятия',
+      'default-6': 'Думает глубоко и ищет суть темы',
+    },
+    close: 'Закрыть',
+    save: 'Сохранить',
+  },
+} as const;
+
 export const settingsEnUS = {
   settings: {
     title: 'Settings',
