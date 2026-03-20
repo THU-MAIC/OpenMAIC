@@ -8,6 +8,7 @@
 import { nanoid } from 'nanoid';
 import katex from 'katex';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { sortPdfImagesForVision } from '@/lib/pdf/document-aggregator';
 import type {
   SceneOutline,
   GeneratedSlideContent,
@@ -474,12 +475,13 @@ async function generateSlideContent(
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
+    const prioritizedImages = sortPdfImagesForVision(assignedImages);
     if (visionEnabled && imageMapping) {
       // Vision mode: split into vision images and text-only
-      const withSrc = assignedImages.filter((img) => imageMapping[img.id]);
+      const withSrc = prioritizedImages.filter((img) => imageMapping[img.id]);
       const visionSlice = withSrc.slice(0, MAX_VISION_IMAGES);
       const textOnlySlice = withSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = assignedImages.filter((img) => !imageMapping[img.id]);
+      const noSrcImages = prioritizedImages.filter((img) => !imageMapping[img.id]);
 
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img, lang));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
@@ -494,7 +496,7 @@ async function generateSlideContent(
         height: img.height,
       }));
     } else {
-      assignedImagesText = assignedImages
+      assignedImagesText = prioritizedImages
         .map((img) => formatImageDescription(img, lang))
         .join('\n');
     }

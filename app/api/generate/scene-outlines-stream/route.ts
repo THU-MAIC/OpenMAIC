@@ -23,6 +23,7 @@ import {
 } from '@/lib/generation/generation-pipeline';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { sortPdfImagesForVision } from '@/lib/pdf/document-aggregator';
 import { nanoid } from 'nanoid';
 import type {
   UserRequirements,
@@ -125,12 +126,13 @@ export async function POST(req: NextRequest) {
     let visionImages: Array<{ id: string; src: string }> | undefined;
 
     if (pdfImages && pdfImages.length > 0) {
+      const prioritizedImages = sortPdfImagesForVision(pdfImages);
       if (hasVision && imageMapping) {
         // Vision mode: split into vision images (first N) and text-only (rest)
-        const allWithSrc = pdfImages.filter((img) => imageMapping[img.id]);
+        const allWithSrc = prioritizedImages.filter((img) => imageMapping[img.id]);
         const visionSlice = allWithSrc.slice(0, MAX_VISION_IMAGES);
         const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
-        const noSrcImages = pdfImages.filter((img) => !imageMapping[img.id]);
+        const noSrcImages = prioritizedImages.filter((img) => !imageMapping[img.id]);
 
         const visionDescriptions = visionSlice.map((img) =>
           formatImagePlaceholder(img, requirements.language),
@@ -148,7 +150,7 @@ export async function POST(req: NextRequest) {
         }));
       } else {
         // Text-only mode: full descriptions
-        availableImagesText = pdfImages
+        availableImagesText = prioritizedImages
           .map((img) => formatImageDescription(img, requirements.language))
           .join('\n');
       }

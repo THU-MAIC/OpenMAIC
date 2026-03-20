@@ -5,6 +5,7 @@ import type {
   UserRequirements,
   PdfImage,
   ImageMapping,
+  SessionPdfSource,
 } from '@/lib/types/generation';
 
 // Session state stored in sessionStorage
@@ -12,6 +13,7 @@ export interface GenerationSessionState {
   sessionId: string;
   requirements: UserRequirements;
   pdfText: string;
+  pdfSources?: SessionPdfSource[];
   pdfImages?: PdfImage[];
   imageStorageIds?: string[];
   imageMapping?: ImageMapping;
@@ -82,7 +84,11 @@ export const ALL_STEPS: GenerationStep[] = [
 
 export const getActiveSteps = (session: GenerationSessionState | null) => {
   return ALL_STEPS.filter((step) => {
-    if (step.id === 'pdf-analysis') return !!session?.pdfStorageKey;
+    if (step.id === 'pdf-analysis') {
+      return Boolean(
+        session?.pdfStorageKey || ((session?.pdfSources?.length ?? 0) > 0 && !session?.pdfText),
+      );
+    }
     if (step.id === 'web-search') return !!session?.requirements?.webSearch;
     if (step.id === 'agent-generation') return useSettingsStore.getState().agentMode === 'auto';
     return true;

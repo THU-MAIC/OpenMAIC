@@ -11,6 +11,8 @@ export const generationZhCN = {
   },
   upload: {
     pdfSizeLimit: '支持最大50MB的PDF文件',
+    pdfCountLimit: '最多可选择 {n} 个 PDF',
+    pdfTotalSizeLimit: '所选 PDF 总大小需不超过 {n}MB',
     generateFailed: '生成课堂失败，请重试',
     requirementPlaceholder:
       '输入你想学的任何内容，例如：\n「从零学 Python，30 分钟写出第一个程序」\n「用白板给我讲解傅里叶变换」\n「阿瓦隆桌游怎么玩」',
@@ -21,6 +23,15 @@ export const generationZhCN = {
     // Progress steps (used dynamically via activeStep)
     analyzingPdf: '解析 PDF 文档',
     analyzingPdfDesc: '正在提取文档结构和内容...',
+    pdfParsingProgress: '正在解析 {done}/{total} 份 PDF...',
+    pdfFilePending: '等待中',
+    pdfFileParsing: '解析中',
+    pdfFileSuccess: '已完成',
+    pdfFileFailed: '失败',
+    pdfParseAllFailed: '所有已选 PDF 都解析失败了，请重试。',
+    pdfPartialFailed: '{failed} 份 PDF 解析失败，当前可基于 {success} 份成功文件继续。',
+    continueWithSuccessfulFiles: '使用成功文件继续',
+    retryFailedPdfs: '重试失败文件',
     generatingOutlines: '生成课程大纲',
     generatingOutlinesDesc: '正在构建学习路径...',
     generatingSlideContent: '生成页面内容',
@@ -75,6 +86,8 @@ export const generationEnUS = {
   },
   upload: {
     pdfSizeLimit: 'Supports PDF files up to 50MB',
+    pdfCountLimit: 'Up to {n} PDF files',
+    pdfTotalSizeLimit: 'Total selected PDFs must stay within {n}MB',
     generateFailed: 'Failed to generate classroom, please try again',
     requirementPlaceholder:
       'Tell me anything you want to learn, e.g.\n"Teach me Python from scratch in 30 minutes"\n"Explain Fourier Transform on the whiteboard"\n"How to play the board game Avalon"',
@@ -85,6 +98,16 @@ export const generationEnUS = {
     // Progress steps (used dynamically via activeStep)
     analyzingPdf: 'Analyzing PDF Document',
     analyzingPdfDesc: 'Extracting document structure and content...',
+    pdfParsingProgress: 'Parsing {done}/{total} PDFs...',
+    pdfFilePending: 'Pending',
+    pdfFileParsing: 'Parsing',
+    pdfFileSuccess: 'Parsed',
+    pdfFileFailed: 'Failed',
+    pdfParseAllFailed: 'All selected PDFs failed to parse. Please try again.',
+    pdfPartialFailed:
+      '{failed} PDFs failed to parse. You can retry or continue with {success} successful files.',
+    continueWithSuccessfulFiles: 'Continue with successful files',
+    retryFailedPdfs: 'Retry failed files',
     generatingOutlines: 'Drafting Course Outline',
     generatingOutlinesDesc: 'Structuring the learning path...',
     generatingSlideContent: 'Generating Page Content',

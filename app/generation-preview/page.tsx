@@ -23,13 +23,30 @@ import { db } from '@/lib/utils/database';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
 import type { Stage } from '@/lib/types/stage';
-import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
+import type {
+  SceneOutline,
+  PdfImage,
+  ImageMapping,
+  SessionPdfSource,
+} from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
 import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
 import { StepVisualizer } from './components/visualizers';
+import {
+  aggregateParsedPdfs,
+  PDF_PARSE_CONCURRENCY,
+  type ParsedPdfPart,
+  type ParsedPdfAsset,
+} from '@/lib/pdf/document-aggregator';
 
 const log = createLogger('GenerationPreview');
+
+type PdfFailureSummary = {
+  failedNames: string[];
+  successCount: number;
+  totalCount: number;
+};
 
 function GenerationPreviewContent() {
   const router = useRouter();
@@ -45,6 +62,7 @@ function GenerationPreviewContent() {
   const [statusMessage, setStatusMessage] = useState('');
   const [streamingOutlines, setStreamingOutlines] = useState<SceneOutline[] | null>(null);
   const [truncationWarnings, setTruncationWarnings] = useState<string[]>([]);
+  const [pdfFailureSummary, setPdfFailureSummary] = useState<PdfFailureSummary | null>(null);
   const [webSearchSources, setWebSearchSources] = useState<Array<{ title: string; url: string }>>(
     [],
   );
@@ -65,6 +83,297 @@ function GenerationPreviewContent() {
   // Compute active steps based on session state
   const activeSteps = getActiveSteps(session);
 
+  const persistSession = (nextSession: GenerationSessionState) => {
+    setSession(nextSession);
+    sessionStorage.setItem('generationSession', JSON.stringify(nextSession));
+  };
+
+  const getSessionPdfSources = (currentSession: GenerationSessionState): SessionPdfSource[] => {
+    if ((currentSession.pdfSources?.length ?? 0) > 0) {
+      return currentSession.pdfSources!;
+    }
+
+    if (currentSession.pdfStorageKey && !currentSession.pdfText) {
+      return [
+        {
+          id: currentSession.pdfStorageKey,
+          name: currentSession.pdfFileName || 'document.pdf',
+          size: 0,
+          storageKey: currentSession.pdfStorageKey,
+          order: 1,
+          status: 'pending',
+        },
+      ];
+    }
+
+    return [];
+  };
+
+  const buildPdfFailureSummary = (
+    currentSession: GenerationSessionState,
+  ): PdfFailureSummary | null => {
+    const pdfSources = getSessionPdfSources(currentSession);
+    const failedSources = pdfSources.filter((source) => source.status === 'failed');
+    const successCount = pdfSources.filter((source) => source.status === 'success').length;
+    if (!currentSession.pdfText || failedSources.length === 0 || successCount === 0) {
+      return null;
+    }
+
+    return {
+      failedNames: failedSources.map((source) => source.name),
+      successCount,
+      totalCount: pdfSources.length,
+    };
+  };
+
+  const hasPendingPdfFailureGate = (currentSession: GenerationSessionState): boolean =>
+    buildPdfFailureSummary(currentSession) !== null;
+
+  const getPdfSourceStatusLabel = (status: SessionPdfSource['status']) => {
+    switch (status) {
+      case 'parsing':
+        return t('generation.pdfFileParsing');
+      case 'success':
+        return t('generation.pdfFileSuccess');
+      case 'failed':
+        return t('generation.pdfFileFailed');
+      default:
+        return t('generation.pdfFilePending');
+    }
+  };
+
+  const parseSinglePdfSource = async (
+    source: SessionPdfSource,
+    currentSession: GenerationSessionState,
+    signal: AbortSignal,
+  ): Promise<ParsedPdfPart> => {
+    const pdfBlob = await loadPdfBlob(source.storageKey);
+    if (!pdfBlob || !(pdfBlob instanceof Blob) || pdfBlob.size === 0) {
+      throw new Error(t('generation.pdfLoadFailed'));
+    }
+
+    const pdfFile = new File([pdfBlob], source.name || 'document.pdf', {
+      type: 'application/pdf',
+    });
+
+    const parseFormData = new FormData();
+    parseFormData.append('pdf', pdfFile);
+
+    if (currentSession.pdfProviderId) {
+      parseFormData.append('providerId', currentSession.pdfProviderId);
+    }
+    if (currentSession.pdfProviderConfig?.apiKey?.trim()) {
+      parseFormData.append('apiKey', currentSession.pdfProviderConfig.apiKey);
+    }
+    if (currentSession.pdfProviderConfig?.baseUrl?.trim()) {
+      parseFormData.append('baseUrl', currentSession.pdfProviderConfig.baseUrl);
+    }
+
+    const parseResponse = await fetch('/api/parse-pdf', {
+      method: 'POST',
+      body: parseFormData,
+      signal,
+    });
+
+    if (!parseResponse.ok) {
+      const errorData = await parseResponse.json().catch(() => ({
+        error: t('generation.pdfParseFailed'),
+      }));
+      throw new Error(errorData.error || t('generation.pdfParseFailed'));
+    }
+
+    const parseResult = await parseResponse.json();
+    if (!parseResult.success || !parseResult.data) {
+      throw new Error(t('generation.pdfParseFailed'));
+    }
+
+    const text = String(parseResult.data.text || '');
+    const rawPdfImages = parseResult.data.metadata?.pdfImages;
+    const images: ParsedPdfAsset[] = rawPdfImages
+      ? rawPdfImages.map(
+          (img: {
+            id: string;
+            src?: string;
+            pageNumber?: number;
+            description?: string;
+            width?: number;
+            height?: number;
+          }) => ({
+            id: img.id,
+            src: img.src || '',
+            pageNumber: img.pageNumber || 1,
+            description: img.description,
+            width: img.width,
+            height: img.height,
+          }),
+        )
+      : (parseResult.data.images as string[]).map((src: string, index: number) => ({
+          id: `img_${index + 1}`,
+          src,
+          pageNumber: 1,
+        }));
+
+    return {
+      source,
+      text,
+      rawTextLength: text.length,
+      pageCount: Number(parseResult.data.metadata?.pageCount || 0),
+      images,
+    };
+  };
+
+  const parsePdfSources = async (
+    currentSession: GenerationSessionState,
+    signal: AbortSignal,
+  ): Promise<{ nextSession: GenerationSessionState; haltedForFailure: boolean }> => {
+    const pdfSources: SessionPdfSource[] = getSessionPdfSources(currentSession)
+      .slice()
+      .sort((a, b) => a.order - b.order)
+      .map((source) => ({
+        ...source,
+        status:
+          source.status === 'success' && currentSession.pdfText
+            ? ('success' as const)
+            : ('pending' as const),
+        error: undefined,
+        pageCount: undefined,
+        extractedChars: undefined,
+        extractedImages: undefined,
+      }));
+
+    let workingSession: GenerationSessionState = {
+      ...currentSession,
+      pdfSources,
+      pdfText: '',
+      pdfImages: [],
+      imageStorageIds: [],
+      sceneOutlines: null,
+    };
+
+    persistSession(workingSession);
+    setStatusMessage(
+      t('generation.pdfParsingProgress')
+        .replace('{done}', '0')
+        .replace('{total}', String(pdfSources.length)),
+    );
+
+    const updatePdfSource = (
+      sourceId: string,
+      patch: Partial<SessionPdfSource>,
+      options?: { setProgress?: boolean },
+    ) => {
+      const nextSources: SessionPdfSource[] = (workingSession.pdfSources || []).map((source) =>
+        source.id === sourceId ? { ...source, ...patch } : source,
+      );
+      workingSession = {
+        ...workingSession,
+        pdfSources: nextSources,
+      };
+      if (options?.setProgress !== false) {
+        const doneCount = nextSources.filter(
+          (source) => source.status === 'success' || source.status === 'failed',
+        ).length;
+        setStatusMessage(
+          t('generation.pdfParsingProgress')
+            .replace('{done}', String(doneCount))
+            .replace('{total}', String(nextSources.length)),
+        );
+      }
+      persistSession(workingSession);
+    };
+
+    const queue = [...pdfSources];
+    const parsedResults: ParsedPdfPart[] = [];
+    const workerCount = Math.min(PDF_PARSE_CONCURRENCY, queue.length);
+
+    await Promise.all(
+      Array.from({ length: workerCount }, async () => {
+        while (queue.length > 0) {
+          const source = queue.shift();
+          if (!source) break;
+
+          updatePdfSource(source.id, {
+            status: 'parsing',
+            error: undefined,
+          });
+
+          try {
+            const result = await parseSinglePdfSource(source, currentSession, signal);
+            parsedResults.push(result);
+            updatePdfSource(source.id, {
+              status: 'success',
+              pageCount: result.pageCount,
+              extractedChars: result.rawTextLength,
+              extractedImages: result.images.length,
+            });
+          } catch (parseError) {
+            updatePdfSource(source.id, {
+              status: 'failed',
+              error: parseError instanceof Error ? parseError.message : String(parseError),
+            });
+          }
+        }
+      }),
+    );
+
+    const successfulParts = parsedResults.sort((a, b) => a.source.order - b.source.order);
+    if (successfulParts.length === 0) {
+      throw new Error(t('generation.pdfParseAllFailed'));
+    }
+
+    const aggregated = aggregateParsedPdfs(successfulParts, {
+      maxChars: MAX_PDF_CONTENT_CHARS,
+      maxVisionImages: MAX_VISION_IMAGES,
+    });
+    const imageStorageIds = await storeImages(aggregated.pdfImages);
+    const pdfImages: PdfImage[] = aggregated.pdfImages.map((image, index) => ({
+      ...image,
+      src: '',
+      storageId: imageStorageIds[index],
+    }));
+
+    const nextSession: GenerationSessionState = {
+      ...workingSession,
+      pdfText: aggregated.pdfText,
+      pdfImages,
+      imageStorageIds,
+      pdfStorageKey: undefined,
+      pdfFileName: undefined,
+    };
+
+    persistSession(nextSession);
+
+    const warnings: string[] = [];
+    if (aggregated.totalRawTextLength > aggregated.textContentBudget) {
+      warnings.push(
+        t('generation.textTruncated').replace('{n}', String(aggregated.textContentBudget)),
+      );
+    }
+    if (aggregated.totalImageCount > MAX_VISION_IMAGES) {
+      warnings.push(
+        t('generation.imageTruncated')
+          .replace('{total}', String(aggregated.totalImageCount))
+          .replace('{max}', String(MAX_VISION_IMAGES)),
+      );
+    }
+    setTruncationWarnings(warnings);
+
+    const failureSummary = buildPdfFailureSummary(nextSession);
+    setPdfFailureSummary(failureSummary);
+    if (failureSummary) {
+      setStatusMessage(
+        t('generation.pdfPartialFailed')
+          .replace('{failed}', String(failureSummary.failedNames.length))
+          .replace('{success}', String(failureSummary.successCount)),
+      );
+    }
+
+    return {
+      nextSession,
+      haltedForFailure: failureSummary !== null,
+    };
+  };
+
   // Load session from sessionStorage
   useEffect(() => {
     cleanupOldImages(24).catch((e) => log.error(e));
@@ -73,7 +382,20 @@ function GenerationPreviewContent() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as GenerationSessionState;
-        setSession(parsed);
+        const normalizedSession =
+          !parsed.pdfText &&
+          (!parsed.pdfSources || parsed.pdfSources.length === 0) &&
+          parsed.pdfStorageKey
+            ? {
+                ...parsed,
+                pdfSources: getSessionPdfSources(parsed),
+              }
+            : parsed;
+
+        setSession(normalizedSession);
+        if (normalizedSession !== parsed) {
+          sessionStorage.setItem('generationSession', JSON.stringify(normalizedSession));
+        }
       } catch (e) {
         log.error('Failed to parse generation session:', e);
       }
@@ -119,16 +441,35 @@ function GenerationPreviewContent() {
 
   // Auto-start generation when session is loaded
   useEffect(() => {
-    if (session && !hasStartedRef.current) {
+    if (session && !hasStartedRef.current && !hasPendingPdfFailureGate(session)) {
       hasStartedRef.current = true;
       startGeneration();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
-  // Main generation flow
-  const startGeneration = async () => {
+  useEffect(() => {
     if (!session) return;
+    const failureSummary = buildPdfFailureSummary(session);
+    setPdfFailureSummary(failureSummary);
+    if (failureSummary) {
+      setStatusMessage(
+        t('generation.pdfPartialFailed')
+          .replace('{failed}', String(failureSummary.failedNames.length))
+          .replace('{success}', String(failureSummary.successCount)),
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // Main generation flow
+  const startGeneration = async (options?: {
+    retryFailed?: boolean;
+    bypassPdfFailureGate?: boolean;
+    sessionOverride?: GenerationSessionState;
+  }) => {
+    const baseSession = options?.sessionOverride ?? session;
+    if (!baseSession) return;
 
     // Create AbortController for this generation run
     abortControllerRef.current?.abort();
@@ -137,17 +478,46 @@ function GenerationPreviewContent() {
     const signal = controller.signal;
 
     // Use a local mutable copy so we can update it after PDF parsing
-    let currentSession = session;
+    let currentSession = baseSession;
+
+    if (options?.retryFailed) {
+      currentSession = {
+        ...currentSession,
+        pdfSources: getSessionPdfSources(currentSession).map((source) => ({
+          ...source,
+          status: 'pending',
+          pageCount: undefined,
+          extractedChars: undefined,
+          extractedImages: undefined,
+          error: undefined,
+        })),
+        pdfText: '',
+        pdfImages: [],
+        imageStorageIds: [],
+        sceneOutlines: null,
+      };
+      persistSession(currentSession);
+    }
 
     setError(null);
     setCurrentStepIndex(0);
+    setStatusMessage('');
+    setTruncationWarnings([]);
+    if (options?.retryFailed || options?.bypassPdfFailureGate) {
+      setPdfFailureSummary(null);
+    }
 
     try {
+      if (hasPendingPdfFailureGate(currentSession) && !options?.bypassPdfFailureGate) {
+        return;
+      }
+
       // Compute active steps for this session (recomputed after session mutations)
       let activeSteps = getActiveSteps(currentSession);
 
       // Determine if we need the PDF analysis step
-      const hasPdfToAnalyze = !!currentSession.pdfStorageKey && !currentSession.pdfText;
+      const hasPdfToAnalyze =
+        getSessionPdfSources(currentSession).length > 0 && !currentSession.pdfText;
       // If no PDF to analyze, skip to the next available step
       if (!hasPdfToAnalyze) {
         const firstNonPdfIdx = activeSteps.findIndex((s) => s.id !== 'pdf-analysis');
@@ -156,145 +526,14 @@ function GenerationPreviewContent() {
 
       // Step 0: Parse PDF if needed
       if (hasPdfToAnalyze) {
-        log.debug('=== Generation Preview: Parsing PDF ===');
-        const pdfBlob = await loadPdfBlob(currentSession.pdfStorageKey!);
-        if (!pdfBlob) {
-          throw new Error(t('generation.pdfLoadFailed'));
-        }
-
-        // Ensure pdfBlob is a valid Blob with content
-        if (!(pdfBlob instanceof Blob) || pdfBlob.size === 0) {
-          log.error('Invalid PDF blob:', {
-            type: typeof pdfBlob,
-            size: pdfBlob instanceof Blob ? pdfBlob.size : 'N/A',
-          });
-          throw new Error(t('generation.pdfLoadFailed'));
-        }
-
-        // Wrap as a File to guarantee multipart/form-data with correct content-type
-        const pdfFile = new File([pdfBlob], currentSession.pdfFileName || 'document.pdf', {
-          type: 'application/pdf',
-        });
-
-        const parseFormData = new FormData();
-        parseFormData.append('pdf', pdfFile);
-
-        if (currentSession.pdfProviderId) {
-          parseFormData.append('providerId', currentSession.pdfProviderId);
-        }
-        if (currentSession.pdfProviderConfig?.apiKey?.trim()) {
-          parseFormData.append('apiKey', currentSession.pdfProviderConfig.apiKey);
-        }
-        if (currentSession.pdfProviderConfig?.baseUrl?.trim()) {
-          parseFormData.append('baseUrl', currentSession.pdfProviderConfig.baseUrl);
-        }
-
-        const parseResponse = await fetch('/api/parse-pdf', {
-          method: 'POST',
-          body: parseFormData,
-          signal,
-        });
-
-        if (!parseResponse.ok) {
-          const errorData = await parseResponse.json();
-          throw new Error(errorData.error || t('generation.pdfParseFailed'));
-        }
-
-        const parseResult = await parseResponse.json();
-        if (!parseResult.success || !parseResult.data) {
-          throw new Error(t('generation.pdfParseFailed'));
-        }
-
-        let pdfText = parseResult.data.text as string;
-
-        // Truncate if needed
-        if (pdfText.length > MAX_PDF_CONTENT_CHARS) {
-          pdfText = pdfText.substring(0, MAX_PDF_CONTENT_CHARS);
-        }
-
-        // Create image metadata and store images
-        // Prefer metadata.pdfImages (both parsers now return this)
-        const rawPdfImages = parseResult.data.metadata?.pdfImages;
-        const images = rawPdfImages
-          ? rawPdfImages.map(
-              (img: {
-                id: string;
-                src?: string;
-                pageNumber?: number;
-                description?: string;
-                width?: number;
-                height?: number;
-              }) => ({
-                id: img.id,
-                src: img.src || '',
-                pageNumber: img.pageNumber || 1,
-                description: img.description,
-                width: img.width,
-                height: img.height,
-              }),
-            )
-          : (parseResult.data.images as string[]).map((src: string, i: number) => ({
-              id: `img_${i + 1}`,
-              src,
-              pageNumber: 1,
-            }));
-
-        const imageStorageIds = await storeImages(images);
-
-        const pdfImages: PdfImage[] = images.map(
-          (
-            img: {
-              id: string;
-              src: string;
-              pageNumber: number;
-              description?: string;
-              width?: number;
-              height?: number;
-            },
-            i: number,
-          ) => ({
-            id: img.id,
-            src: '',
-            pageNumber: img.pageNumber,
-            description: img.description,
-            width: img.width,
-            height: img.height,
-            storageId: imageStorageIds[i],
-          }),
-        );
-
-        // Update session with parsed PDF data
-        const updatedSession = {
-          ...currentSession,
-          pdfText,
-          pdfImages,
-          imageStorageIds,
-          pdfStorageKey: undefined, // Clear so we don't re-parse
-        };
-        setSession(updatedSession);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
-
-        // Truncation warnings
-        const warnings: string[] = [];
-        if ((parseResult.data.text as string).length > MAX_PDF_CONTENT_CHARS) {
-          warnings.push(
-            t('generation.textTruncated').replace('{n}', String(MAX_PDF_CONTENT_CHARS)),
-          );
-        }
-        if (images.length > MAX_VISION_IMAGES) {
-          warnings.push(
-            t('generation.imageTruncated')
-              .replace('{total}', String(images.length))
-              .replace('{max}', String(MAX_VISION_IMAGES)),
-          );
-        }
-        if (warnings.length > 0) {
-          setTruncationWarnings(warnings);
-        }
-
-        // Reassign local reference for subsequent steps
-        currentSession = updatedSession;
+        log.debug('=== Generation Preview: Parsing PDFs ===');
+        const parseOutcome = await parsePdfSources(currentSession, signal);
+        currentSession = parseOutcome.nextSession;
         activeSteps = getActiveSteps(currentSession);
+        if (parseOutcome.haltedForFailure) {
+          return;
+        }
+        setStatusMessage('');
       }
 
       // Step: Web Search (if enabled)
@@ -333,8 +572,7 @@ function GenerationPreviewContent() {
           researchContext: searchData.context || '',
           researchSources: sources,
         };
-        setSession(updatedSessionWithSearch);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSessionWithSearch));
+        persistSession(updatedSessionWithSearch);
         currentSession = updatedSessionWithSearch;
         activeSteps = getActiveSteps(currentSession);
       }
@@ -545,8 +783,7 @@ function GenerationPreviewContent() {
         });
 
         const updatedSession = { ...currentSession, sceneOutlines: outlines };
-        setSession(updatedSession);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        persistSession(updatedSession);
 
         // Outline generation succeeded — clear homepage draft cache
         try {
@@ -748,6 +985,37 @@ function GenerationPreviewContent() {
     router.push('/');
   };
 
+  const handleRetryFailedPdfs = () => {
+    if (!session) return;
+    void startGeneration({
+      retryFailed: true,
+      sessionOverride: session,
+    });
+  };
+
+  const handleContinueWithSuccessfulFiles = () => {
+    if (!session) return;
+
+    const successfulSources = getSessionPdfSources(session)
+      .filter((source) => source.status === 'success')
+      .map((source, index) => ({
+        ...source,
+        order: index + 1,
+      }));
+
+    const nextSession: GenerationSessionState = {
+      ...session,
+      pdfSources: successfulSources,
+    };
+
+    setPdfFailureSummary(null);
+    persistSession(nextSession);
+    void startGeneration({
+      bypassPdfFailureGate: true,
+      sessionOverride: nextSession,
+    });
+  };
+
   // Still loading session from sessionStorage
   if (!sessionLoaded) {
     return (
@@ -782,6 +1050,11 @@ function GenerationPreviewContent() {
     activeSteps.length > 0
       ? activeSteps[Math.min(currentStepIndex, activeSteps.length - 1)]
       : ALL_STEPS[0];
+  const pdfSourcesForDisplay = getSessionPdfSources(session)
+    .slice()
+    .sort((a, b) => a.order - b.order);
+  const showPdfSourceStatus =
+    pdfSourcesForDisplay.length > 0 && (activeStep.id === 'pdf-analysis' || pdfFailureSummary);
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden text-center">
@@ -959,6 +1232,42 @@ function GenerationPreviewContent() {
                     </motion.div>
                   )}
                 </AnimatePresence>
+
+                {showPdfSourceStatus && (
+                  <div className="rounded-xl border border-border/60 bg-background/60 px-3 py-3 text-left backdrop-blur-sm">
+                    <div className="space-y-2">
+                      {pdfSourcesForDisplay.map((source) => (
+                        <div
+                          key={source.id}
+                          className="flex items-start justify-between gap-3 rounded-lg border border-border/40 px-3 py-2"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">
+                              {source.order}. {source.name}
+                            </p>
+                            {source.error && (
+                              <p className="mt-1 text-xs text-red-500">{source.error}</p>
+                            )}
+                          </div>
+                          <span
+                            className={cn(
+                              'shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium',
+                              source.status === 'success' &&
+                                'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+                              source.status === 'failed' &&
+                                'bg-red-500/10 text-red-600 dark:text-red-400',
+                              source.status === 'parsing' &&
+                                'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+                              source.status === 'pending' && 'bg-muted text-muted-foreground',
+                            )}
+                          >
+                            {getPdfSourceStatusLabel(source.status)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </Card>
@@ -975,6 +1284,28 @@ function GenerationPreviewContent() {
               >
                 <Button size="lg" variant="outline" className="w-full h-12" onClick={goBackToHome}>
                   {t('generation.goBackAndRetry')}
+                </Button>
+              </motion.div>
+            ) : pdfFailureSummary ? (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="flex w-full max-w-md gap-3"
+              >
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="h-12 flex-1"
+                  onClick={handleRetryFailedPdfs}
+                >
+                  {t('generation.retryFailedPdfs')}
+                </Button>
+                <Button
+                  size="lg"
+                  className="h-12 flex-1"
+                  onClick={handleContinueWithSuccessfulFiles}
+                >
+                  {t('generation.continueWithSuccessfulFiles')}
                 </Button>
               </motion.div>
             ) : !isComplete ? (

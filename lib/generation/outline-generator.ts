@@ -11,6 +11,7 @@ import type {
   PdfImage,
   ImageMapping,
 } from '@/lib/types/generation';
+import { sortPdfImagesForVision } from '@/lib/pdf/document-aggregator';
 import { buildPrompt, PROMPT_IDS } from './prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
 import { parseJsonResponse } from './json-repair';
@@ -44,12 +45,13 @@ export async function generateSceneOutlinesFromRequirements(
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (pdfImages && pdfImages.length > 0) {
+    const prioritizedImages = sortPdfImagesForVision(pdfImages);
     if (options?.visionEnabled && options?.imageMapping) {
       // Vision mode: split into vision images (first N) and text-only (rest)
-      const allWithSrc = pdfImages.filter((img) => options.imageMapping![img.id]);
+      const allWithSrc = prioritizedImages.filter((img) => options.imageMapping![img.id]);
       const visionSlice = allWithSrc.slice(0, MAX_VISION_IMAGES);
       const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = pdfImages.filter((img) => !options.imageMapping![img.id]);
+      const noSrcImages = prioritizedImages.filter((img) => !options.imageMapping![img.id]);
 
       const visionDescriptions = visionSlice.map((img) =>
         formatImagePlaceholder(img, requirements.language),
@@ -67,7 +69,7 @@ export async function generateSceneOutlinesFromRequirements(
       }));
     } else {
       // Text-only mode: full descriptions
-      availableImagesText = pdfImages
+      availableImagesText = prioritizedImages
         .map((img) => formatImageDescription(img, requirements.language))
         .join('\n');
     }

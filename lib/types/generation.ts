@@ -18,9 +18,13 @@ export interface PdfImage {
   src: string; // base64 data URL (empty when stored in IndexedDB)
   pageNumber: number; // Page number in PDF
   description?: string; // Optional description for AI context
+  originalId?: string; // Original per-file image ID before aggregation
+  sourceFileId?: string; // Source PDF ID for multi-file uploads
+  sourceFileName?: string; // Source PDF filename for multi-file uploads
   storageId?: string; // Reference to IndexedDB (session_xxx_img_1)
   width?: number; // Image width (px or normalized)
   height?: number; // Image height (px or normalized)
+  visionPriority?: number; // Higher priority images should be used first in vision mode
 }
 
 /**
@@ -68,6 +72,30 @@ export interface UserRequirements {
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
+}
+
+export interface SelectedPdf {
+  id: string;
+  name: string;
+  size: number;
+  lastModified: number;
+  storageKey: string;
+  order: number;
+}
+
+export type PdfParseStatus = 'pending' | 'parsing' | 'success' | 'failed';
+
+export interface SessionPdfSource {
+  id: string;
+  name: string;
+  size: number;
+  storageKey: string;
+  order: number;
+  status: PdfParseStatus;
+  pageCount?: number;
+  extractedChars?: number;
+  extractedImages?: number;
+  error?: string;
 }
 
 /**

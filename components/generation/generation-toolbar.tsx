@@ -20,7 +20,9 @@ import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { SettingsSection } from '@/lib/types/settings';
+import type { SelectedPdf } from '@/lib/types/generation';
 import { MediaPopover } from '@/components/generation/media-popover';
+import { MAX_PDF_FILES, MAX_TOTAL_PDF_SIZE_BYTES } from '@/lib/pdf/document-aggregator';
 
 // ─── Constants ───────────────────────────────────────────────
 const MAX_PDF_SIZE_MB = 50;
@@ -34,8 +36,9 @@ export interface GenerationToolbarProps {
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
   // PDF
-  pdfFile: File | null;
-  onPdfFileChange: (file: File | null) => void;
+  pdfFiles: SelectedPdf[];
+  onPdfFilesAdd: (files: File[]) => void;
+  onPdfFileRemove: (id: string) => void;
   onPdfError: (error: string | null) => void;
 }
 
@@ -46,8 +49,9 @@ export function GenerationToolbar({
   webSearch,
   onWebSearchChange,
   onSettingsOpen,
-  pdfFile,
-  onPdfFileChange,
+  pdfFiles,
+  onPdfFilesAdd,
+  onPdfFileRemove,
   onPdfError,
 }: GenerationToolbarProps) {
   const { t } = useI18n();
@@ -97,14 +101,48 @@ export function GenerationToolbar({
   const currentProviderConfig = providersConfig?.[currentProviderId];
 
   // PDF handler
-  const handleFileSelect = (file: File) => {
-    if (file.type !== 'application/pdf') return;
-    if (file.size > MAX_PDF_SIZE_BYTES) {
+  const handleFileSelect = (incomingFiles: File[]) => {
+    const validPdfFiles = incomingFiles.filter((file) => file.type === 'application/pdf');
+    if (validPdfFiles.length === 0) return;
+
+    if (validPdfFiles.some((file) => file.size > MAX_PDF_SIZE_BYTES)) {
       onPdfError(t('upload.fileTooLarge'));
       return;
     }
+
+    const existingSignatures = new Set(
+      pdfFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
+    );
+    const dedupedFiles = validPdfFiles.filter((file) => {
+      const signature = `${file.name}:${file.size}:${file.lastModified}`;
+      return !existingSignatures.has(signature);
+    });
+
+    if (dedupedFiles.length === 0) {
+      return;
+    }
+
+    if (pdfFiles.length + dedupedFiles.length > MAX_PDF_FILES) {
+      onPdfError(t('upload.pdfCountLimit').replace('{n}', String(MAX_PDF_FILES)));
+      return;
+    }
+
+    const totalSize =
+      pdfFiles.reduce((sum, file) => sum + file.size, 0) +
+      dedupedFiles.reduce((sum, file) => sum + file.size, 0);
+
+    if (totalSize > MAX_TOTAL_PDF_SIZE_BYTES) {
+      onPdfError(
+        t('upload.pdfTotalSizeLimit').replace(
+          '{n}',
+          String(Math.floor(MAX_TOTAL_PDF_SIZE_BYTES / 1024 / 1024)),
+        ),
+      );
+      return;
+    }
+
     onPdfError(null);
-    onPdfFileChange(file);
+    onPdfFilesAdd(dedupedFiles);
   };
 
   // ─── Pill button helper ─────────────────────────────
@@ -150,19 +188,13 @@ export function GenerationToolbar({
       {/* ── PDF (parser + upload) combined Popover ── */}
       <Popover>
         <PopoverTrigger asChild>
-          {pdfFile ? (
+          {pdfFiles.length > 0 ? (
             <button className={pillActive}>
               <Paperclip className="size-3.5" />
-              <span className="max-w-[100px] truncate">{pdfFile.name}</span>
-              <span
-                role="button"
-                className="size-4 rounded-full inline-flex items-center justify-center hover:bg-violet-200 dark:hover:bg-violet-800 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onPdfFileChange(null);
-                }}
-              >
-                <X className="size-2.5" />
+              <span className="max-w-[140px] truncate">
+                {pdfFiles.length === 1
+                  ? pdfFiles[0].name
+                  : t('toolbar.pdfFilesSelected').replace('{n}', String(pdfFiles.length))}
               </span>
             </button>
           ) : (
@@ -213,33 +245,14 @@ export function GenerationToolbar({
               ref={fileInputRef}
               className="hidden"
               accept=".pdf"
+              multiple
               onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFileSelect(f);
+                const files = Array.from(e.target.files ?? []);
+                if (files.length > 0) handleFileSelect(files);
                 e.target.value = '';
               }}
             />
-            {pdfFile ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                    <FileText className="size-4 text-violet-600 dark:text-violet-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{pdfFile.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => onPdfFileChange(null)}
-                  className="w-full text-xs text-destructive hover:underline text-left"
-                >
-                  {t('toolbar.removePdf')}
-                </button>
-              </div>
-            ) : (
+            <div className="space-y-3">
               <div
                 className={cn(
                   'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
@@ -256,17 +269,58 @@ export function GenerationToolbar({
                 onDrop={(e) => {
                   e.preventDefault();
                   setIsDragging(false);
-                  const f = e.dataTransfer.files?.[0];
-                  if (f) handleFileSelect(f);
+                  const files = Array.from(e.dataTransfer.files ?? []);
+                  if (files.length > 0) handleFileSelect(files);
                 }}
               >
                 <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
                 <p className="text-xs font-medium">{t('toolbar.pdfUpload')}</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                <p className="text-[10px] text-muted-foreground/60 mt-0.5 text-center">
                   {t('upload.pdfSizeLimit')}
                 </p>
+                <p className="text-[10px] text-muted-foreground/60 text-center">
+                  {t('upload.pdfCountLimit').replace('{n}', String(MAX_PDF_FILES))}
+                </p>
               </div>
-            )}
+
+              {pdfFiles.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-[10px] text-muted-foreground/70">
+                    {t('toolbar.pdfMergeOrder')}
+                  </p>
+                  <div className="max-h-44 space-y-2 overflow-y-auto pr-1">
+                    {pdfFiles
+                      .slice()
+                      .sort((a, b) => a.order - b.order)
+                      .map((file) => (
+                        <div
+                          key={file.id}
+                          className="flex items-center gap-2 rounded-lg border border-border/50 px-2 py-2"
+                        >
+                          <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                            <FileText className="size-4 text-violet-600 dark:text-violet-400" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">
+                              {file.order}. {file.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {(file.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => onPdfFileRemove(file.id)}
+                            className="size-6 rounded-full inline-flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+                            aria-label={t('toolbar.removePdf')}
+                          >
+                            <X className="size-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </PopoverContent>
       </Popover>

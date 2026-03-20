@@ -29,8 +29,8 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { storePdfBlob } from '@/lib/utils/image-storage';
-import type { UserRequirements } from '@/lib/types/generation';
+import { storePdfFiles } from '@/lib/utils/image-storage';
+import type { SelectedPdf, SessionPdfSource, UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -54,14 +54,14 @@ const LANGUAGE_STORAGE_KEY = 'generationLanguage';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 
 interface FormState {
-  pdfFile: File | null;
+  pdfFiles: SelectedPdf[];
   requirement: string;
   language: 'zh-CN' | 'en-US';
   webSearch: boolean;
 }
 
 const initialFormState: FormState = {
-  pdfFile: null,
+  pdfFiles: [],
   requirement: '',
   language: 'zh-CN',
   webSearch: false,
@@ -134,6 +134,7 @@ function HomePage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pdfFileMapRef = useRef<Record<string, File>>({});
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -200,6 +201,49 @@ function HomePage() {
     }
   };
 
+  const handlePdfFilesAdd = (files: File[]) => {
+    setForm((prev) => {
+      const existingSignatures = new Set(
+        prev.pdfFiles.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
+      );
+      const nextFiles = [...prev.pdfFiles];
+
+      for (const file of files) {
+        const signature = `${file.name}:${file.size}:${file.lastModified}`;
+        if (existingSignatures.has(signature)) {
+          continue;
+        }
+
+        const id = nanoid();
+        pdfFileMapRef.current[id] = file;
+        nextFiles.push({
+          id,
+          name: file.name,
+          size: file.size,
+          lastModified: file.lastModified,
+          storageKey: '',
+          order: nextFiles.length + 1,
+        });
+        existingSignatures.add(signature);
+      }
+
+      return { ...prev, pdfFiles: nextFiles };
+    });
+  };
+
+  const handlePdfFileRemove = (id: string) => {
+    delete pdfFileMapRef.current[id];
+    setForm((prev) => ({
+      ...prev,
+      pdfFiles: prev.pdfFiles
+        .filter((file) => file.id !== id)
+        .map((file, index) => ({
+          ...file,
+          order: index + 1,
+        })),
+    }));
+  };
+
   const showSetupToast = (icon: React.ReactNode, title: string, desc: string) => {
     toast.custom(
       (id) => (
@@ -259,15 +303,11 @@ function HomePage() {
         webSearch: form.webSearch || undefined,
       };
 
-      let pdfStorageKey: string | undefined;
-      let pdfFileName: string | undefined;
       let pdfProviderId: string | undefined;
       let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
+      let pdfSources: SessionPdfSource[] | undefined;
 
-      if (form.pdfFile) {
-        pdfStorageKey = await storePdfBlob(form.pdfFile);
-        pdfFileName = form.pdfFile.name;
-
+      if (form.pdfFiles.length > 0) {
         const settings = useSettingsStore.getState();
         pdfProviderId = settings.pdfProviderId;
         const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
@@ -277,6 +317,30 @@ function HomePage() {
             baseUrl: providerCfg.baseUrl,
           };
         }
+
+        const orderedFiles = form.pdfFiles
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map((meta) => {
+            const file = pdfFileMapRef.current[meta.id];
+            if (!file) {
+              throw new Error(`Missing selected PDF file: ${meta.name}`);
+            }
+            return { meta, file };
+          });
+
+        const storedFiles = await storePdfFiles(orderedFiles.map((entry) => entry.file));
+        pdfSources = storedFiles.map(({ file, storageKey }, index) => {
+          const meta = orderedFiles[index].meta;
+          return {
+            id: meta.id,
+            name: file.name,
+            size: file.size,
+            storageKey,
+            order: meta.order,
+            status: 'pending',
+          };
+        });
       }
 
       const sessionState = {
@@ -285,8 +349,7 @@ function HomePage() {
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
-        pdfStorageKey,
-        pdfFileName,
+        pdfSources,
         pdfProviderId,
         pdfProviderConfig,
         sceneOutlines: null,
@@ -556,8 +619,9 @@ function HomePage() {
                     setSettingsSection(section);
                     setSettingsOpen(true);
                   }}
-                  pdfFile={form.pdfFile}
-                  onPdfFileChange={(f) => updateForm('pdfFile', f)}
+                  pdfFiles={form.pdfFiles}
+                  onPdfFilesAdd={handlePdfFilesAdd}
+                  onPdfFileRemove={handlePdfFileRemove}
                   onPdfError={setError}
                 />
               </div>

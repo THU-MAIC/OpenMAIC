@@ -169,6 +169,25 @@ export async function storePdfBlob(file: File): Promise<string> {
 }
 
 /**
+ * Store multiple PDF files as blobs in IndexedDB.
+ * Preserves input order in the returned array.
+ */
+export async function storePdfFiles(
+  files: File[],
+): Promise<Array<{ file: File; storageKey: string }>> {
+  const stored: Array<{ file: File; storageKey: string }> = [];
+
+  for (const file of files) {
+    stored.push({
+      file,
+      storageKey: await storePdfBlob(file),
+    });
+  }
+
+  return stored;
+}
+
+/**
  * Load a PDF Blob from IndexedDB by its storage key.
  */
 export async function loadPdfBlob(key: string): Promise<Blob | null> {
