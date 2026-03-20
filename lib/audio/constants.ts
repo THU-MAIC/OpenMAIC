@@ -606,6 +606,34 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'pcm'],
   },
 
+  'google-tts': {
+    id: 'google-tts',
+    name: 'Google Cloud TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://texttospeech.googleapis.com/v1',
+    icon: '/logos/gemini.svg',
+    voices: [
+      {
+        id: 'hi-IN-Neural2-A',
+        name: 'Hindi Neural2-A',
+        language: 'hi-IN',
+        localeName: 'हिन्दी (भारत)',
+        gender: 'female',
+        description: 'voiceGoogleHindiNeural2A',
+      },
+      {
+        id: 'hi-IN-Wavenet-A',
+        name: 'Hindi Wavenet-A',
+        language: 'hi-IN',
+        localeName: 'हिन्दी (भारत)',
+        gender: 'female',
+        description: 'voiceGoogleHindiWavenetA',
+      },
+    ],
+    supportedFormats: ['mp3'],
+    speedRange: { min: 0.25, max: 4.0, default: 1.0 },
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -833,6 +861,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
+  'google-tts': 'hi-IN-Neural2-A',
   'browser-native-tts': 'default',
 };
 

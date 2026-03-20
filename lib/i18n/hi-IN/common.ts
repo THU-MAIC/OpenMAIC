@@ -1,0 +1,47 @@
+import { commonEnUS } from '../common';
+
+export const commonHiIN = {
+  ...commonEnUS,
+  common: {
+    ...commonEnUS.common,
+    you: 'आप',
+    confirm: 'पुष्टि करें',
+    cancel: 'रद्द करें',
+    loading: 'लोड हो रहा है...',
+  },
+  home: {
+    ...commonEnUS.home,
+    slogan: 'Generative Learning in Multi-Agent Interactive Classroom',
+    greeting: 'नमस्ते, ',
+  },
+  toolbar: {
+    ...commonEnUS.toolbar,
+    languageHint: 'कोर्स इसी भाषा में जनरेट होगा',
+    pdfParser: 'पार्सर',
+    pdfUpload: 'PDF अपलोड करें',
+    removePdf: 'फ़ाइल हटाएँ',
+    webSearchOn: 'चालू',
+    webSearchOff: 'चालू करने के लिए क्लिक करें',
+    webSearchDesc: 'जनरेशन से पहले ताज़ा जानकारी के लिए वेब सर्च करें',
+    webSearchProvider: 'सर्च इंजन',
+    webSearchNoProvider: 'सेटिंग्स में search API key कॉन्फ़िगर करें',
+    selectProvider: 'प्रोवाइडर चुनें',
+    configureProvider: 'मॉडल सेट करें',
+    configureProviderHint: 'कोर्स जनरेट करने के लिए कम से कम एक मॉडल प्रोवाइडर सेट करें',
+    enterClassroom: 'क्लासरूम खोलें',
+    advancedSettings: 'एडवांस सेटिंग्स',
+    ttsTitle: 'टेक्स्ट-टू-स्पीच',
+    ttsHint: 'AI टीचर के लिए आवाज़ चुनें',
+    ttsPreview: 'प्रिव्यू',
+    ttsPreviewing: 'चल रहा है...',
+  },
+  export: {
+    ...commonEnUS.export,
+    pptx: 'PPTX एक्सपोर्ट करें',
+    resourcePack: 'रिसोर्स पैक एक्सपोर्ट करें',
+    resourcePackDesc: 'PPTX + इंटरैक्टिव पेज',
+    exporting: 'एक्सपोर्ट हो रहा है...',
+    exportSuccess: 'एक्सपोर्ट सफल',
+    exportFailed: 'एक्सपोर्ट विफल',
+  },
+} as const;

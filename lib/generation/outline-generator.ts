@@ -13,6 +13,7 @@ import type {
 } from '@/lib/types/generation';
 import { buildPrompt, PROMPT_IDS } from './prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
+import { isChineseLanguage, isHindiLanguage } from '@/lib/utils/language';
 import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
 import type { AICallFn, GenerationResult, GenerationCallbacks } from './pipeline-types';
@@ -39,8 +40,11 @@ export async function generateSceneOutlinesFromRequirements(
   },
 ): Promise<GenerationResult<SceneOutline[]>> {
   // Build available images description for the prompt
-  let availableImagesText =
-    requirements.language === 'zh-CN' ? '无可用图片' : 'No images available';
+  let availableImagesText = isChineseLanguage(requirements.language)
+    ? '无可用图片'
+    : isHindiLanguage(requirements.language)
+      ? 'कोई image उपलब्ध नहीं है'
+      : 'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (pdfImages && pdfImages.length > 0) {
@@ -101,14 +105,21 @@ export async function generateSceneOutlinesFromRequirements(
     language: requirements.language,
     pdfContent: pdfText
       ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-      : requirements.language === 'zh-CN'
+      : isChineseLanguage(requirements.language)
         ? '无'
-        : 'None',
+        : isHindiLanguage(requirements.language)
+          ? 'कोई नहीं'
+          : 'None',
     availableImages: availableImagesText,
     userProfile: userProfileText,
     mediaGenerationPolicy,
     researchContext:
-      options?.researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+      options?.researchContext ||
+      (isChineseLanguage(requirements.language)
+        ? '无'
+        : isHindiLanguage(requirements.language)
+          ? 'कोई नहीं'
+          : 'None'),
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
   });

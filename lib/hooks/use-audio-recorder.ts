@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { createLogger } from '@/lib/logger';
+import { getAsrLanguageForLocale } from '@/lib/utils/language';
 
 const log = createLogger('AudioRecorder');
 
@@ -45,12 +46,17 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         if (typeof window !== 'undefined') {
           const { useSettingsStore } = await import('@/lib/store/settings');
           const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
+          const effectiveProviderId = asrProviderId === 'browser-native' ? 'openai-whisper' : asrProviderId;
+          const effectiveLanguage =
+            asrProviderId === 'browser-native'
+              ? getAsrLanguageForLocale(asrLanguage || 'en-US', 'openai-whisper')
+              : asrLanguage;
 
-          formData.append('providerId', asrProviderId);
-          formData.append('language', asrLanguage);
+          formData.append('providerId', effectiveProviderId);
+          formData.append('language', effectiveLanguage);
 
           // Append API key and base URL if configured
-          const providerConfig = asrProvidersConfig?.[asrProviderId];
+          const providerConfig = asrProvidersConfig?.[effectiveProviderId] || asrProvidersConfig?.[asrProviderId];
           if (providerConfig?.apiKey?.trim()) {
             formData.append('apiKey', providerConfig.apiKey);
           }
@@ -92,80 +98,76 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
         // Use browser native ASR if configured
         if (asrProviderId === 'browser-native') {
-          // Check if Speech Recognition is supported
-          if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-            onError?.('您的浏览器不支持语音识别功能');
+          // Check if Speech Recognition is supported. If not, fall through to server-side Whisper fallback.
+          if (window.SpeechRecognition || window.webkitSpeechRecognition) {
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            const recognition = new SpeechRecognition();
+
+            recognition.lang = asrLanguage || 'zh-CN';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+              setIsRecording(true);
+              setRecordingTime(0);
+
+              timerRef.current = setInterval(() => {
+                setRecordingTime((prev) => prev + 1);
+              }, 1000);
+            };
+
+            recognition.onresult = (event: {
+              results: {
+                [index: number]: { [index: number]: { transcript: string } };
+              };
+            }) => {
+              const transcript = event.results[0][0].transcript;
+              onTranscription?.(transcript);
+            };
+
+            recognition.onerror = (event: { error: string }) => {
+              log.error('Speech recognition error:', event.error);
+              let errorMessage = '语音识别失败';
+
+              switch (event.error) {
+                case 'no-speech':
+                  errorMessage = '未检测到语音输入';
+                  break;
+                case 'audio-capture':
+                  errorMessage = '无法访问麦克风';
+                  break;
+                case 'not-allowed':
+                  errorMessage = '麦克风权限被拒绝';
+                  break;
+                case 'network':
+                  errorMessage = '网络错误，正在尝试后备识别';
+                  break;
+                default:
+                  errorMessage = `语音识别错误: ${event.error}`;
+              }
+
+              onError?.(errorMessage);
+              setIsRecording(false);
+              setRecordingTime(0);
+              if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+              }
+            };
+
+            recognition.onend = () => {
+              setIsRecording(false);
+              setRecordingTime(0);
+              if (timerRef.current) {
+                clearInterval(timerRef.current);
+                timerRef.current = null;
+              }
+            };
+
+            recognition.start();
+            speechRecognitionRef.current = recognition;
             return;
           }
-
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          const recognition = new SpeechRecognition();
-
-          recognition.lang = asrLanguage || 'zh-CN';
-          recognition.continuous = false;
-          recognition.interimResults = false;
-
-          recognition.onstart = () => {
-            setIsRecording(true);
-            setRecordingTime(0);
-
-            // Start timer
-            timerRef.current = setInterval(() => {
-              setRecordingTime((prev) => prev + 1);
-            }, 1000);
-          };
-
-          recognition.onresult = (event: {
-            results: {
-              [index: number]: { [index: number]: { transcript: string } };
-            };
-          }) => {
-            const transcript = event.results[0][0].transcript;
-            onTranscription?.(transcript);
-          };
-
-          recognition.onerror = (event: { error: string }) => {
-            log.error('Speech recognition error:', event.error);
-            let errorMessage = '语音识别失败';
-
-            switch (event.error) {
-              case 'no-speech':
-                errorMessage = '未检测到语音输入';
-                break;
-              case 'audio-capture':
-                errorMessage = '无法访问麦克风';
-                break;
-              case 'not-allowed':
-                errorMessage = '麦克风权限被拒绝';
-                break;
-              case 'network':
-                errorMessage = '网络错误';
-                break;
-              default:
-                errorMessage = `语音识别错误: ${event.error}`;
-            }
-
-            onError?.(errorMessage);
-            setIsRecording(false);
-            setRecordingTime(0);
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-              timerRef.current = null;
-            }
-          };
-
-          recognition.onend = () => {
-            setIsRecording(false);
-            setRecordingTime(0);
-            if (timerRef.current) {
-              clearInterval(timerRef.current);
-              timerRef.current = null;
-            }
-          };
-
-          recognition.start();
-          speechRecognitionRef.current = recognition;
-          return;
         }
       }
 

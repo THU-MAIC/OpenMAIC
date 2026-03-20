@@ -5,6 +5,8 @@ import { stageZhCN, stageEnUS } from './stage';
 import { chatZhCN, chatEnUS } from './chat';
 import { generationZhCN, generationEnUS } from './generation';
 import { settingsZhCN, settingsEnUS } from './settings';
+import { commonHiIN, stageHiIN, chatHiIN, generationHiIN, settingsHiIN } from './hi-IN';
+import { isSupportedLocale } from '@/lib/utils/language';
 
 export const translations = {
   'zh-CN': {
@@ -20,6 +22,13 @@ export const translations = {
     ...chatEnUS,
     ...generationEnUS,
     ...settingsEnUS,
+  },
+  'hi-IN': {
+    ...commonHiIN,
+    ...stageHiIN,
+    ...chatHiIN,
+    ...generationHiIN,
+    ...settingsHiIN,
   },
 } as const;
 
@@ -40,7 +49,7 @@ export function getClientTranslation(key: string): string {
   if (typeof window !== 'undefined') {
     try {
       const storedLocale = localStorage.getItem('locale');
-      if (storedLocale === 'zh-CN' || storedLocale === 'en-US') {
+      if (isSupportedLocale(storedLocale)) {
         locale = storedLocale;
       }
     } catch {

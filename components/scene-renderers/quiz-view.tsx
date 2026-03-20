@@ -130,7 +130,9 @@ async function gradeShortAnswerQuestion(
       aiComment:
         language === 'zh-CN'
           ? '评分服务暂时不可用，已给予基础分。'
-          : 'Grading service unavailable. Base score given.',
+          : language === 'hi-IN'
+            ? 'ग्रेडिंग सेवा अभी उपलब्ध नहीं है। बेस स्कोर दे दिया गया है।'
+            : 'Grading service unavailable. Base score given.',
     };
   }
 }

@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
     // Ensure outline has language from stageInfo (fallback for older outlines)
     const outline: SceneOutline = {
       ...rawOutline,
-      language: rawOutline.language || (stageInfo?.language as 'zh-CN' | 'en-US') || 'zh-CN',
+      language: rawOutline.language || (stageInfo?.language as 'zh-CN' | 'en-US' | 'hi-IN') || 'zh-CN',
     };
 
     // ── Model resolution from request headers ──

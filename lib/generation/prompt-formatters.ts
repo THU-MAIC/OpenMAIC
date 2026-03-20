@@ -3,6 +3,7 @@
  */
 
 import type { PdfImage } from '@/lib/types/generation';
+import { isChineseLanguage, isHindiLanguage } from '@/lib/utils/language';
 import type { AgentInfo, SceneGenerationContext } from './pipeline-types';
 
 /** Build a course context string for injection into action prompts */
@@ -82,9 +83,13 @@ export function formatImageDescription(img: PdfImage, language: string): string 
     dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
   }
   const desc = img.description ? ` | ${img.description}` : '';
-  return language === 'zh-CN'
-    ? `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`
-    : `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
+  if (isChineseLanguage(language)) {
+    return `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`;
+  }
+  if (isHindiLanguage(language)) {
+    return `- **${img.id}**: PDF के पेज ${img.pageNumber} से${dimInfo}${desc}`;
+  }
+  return `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
 }
 
 /**
@@ -97,9 +102,13 @@ export function formatImagePlaceholder(img: PdfImage, language: string): string 
     const ratio = (img.width / img.height).toFixed(2);
     dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
   }
-  return language === 'zh-CN'
-    ? `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`
-    : `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
+  if (isChineseLanguage(language)) {
+    return `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`;
+  }
+  if (isHindiLanguage(language)) {
+    return `- **${img.id}**: PDF पेज ${img.pageNumber} की image${dimInfo} [attached image देखें]`;
+  }
+  return `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
 }
 
 /**

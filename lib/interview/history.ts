@@ -1,0 +1,1 @@
+export const INTERVIEW_HISTORY_LIMIT = 20;

@@ -55,6 +55,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_AZURE: 'azure-tts',
   TTS_GLM: 'glm-tts',
   TTS_QWEN: 'qwen-tts',
+  TTS_GOOGLE: 'google-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {

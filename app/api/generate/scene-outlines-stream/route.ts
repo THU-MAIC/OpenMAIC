@@ -24,6 +24,7 @@ import {
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
+import { isChineseLanguage, isHindiLanguage } from '@/lib/utils/language';
 import type {
   UserRequirements,
   PdfImage,
@@ -121,7 +122,11 @@ export async function POST(req: NextRequest) {
 
     // Build prompt (same logic as generateSceneOutlinesFromRequirements)
     let availableImagesText =
-      requirements.language === 'zh-CN' ? '无可用图片' : 'No images available';
+      isChineseLanguage(requirements.language)
+        ? '无可用图片'
+        : isHindiLanguage(requirements.language)
+          ? 'कोई image उपलब्ध नहीं है'
+          : 'No images available';
     let visionImages: Array<{ id: string; src: string }> | undefined;
 
     if (pdfImages && pdfImages.length > 0) {
@@ -177,11 +182,13 @@ export async function POST(req: NextRequest) {
       language: requirements.language,
       pdfContent: pdfText
         ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-        : requirements.language === 'zh-CN'
+        : isChineseLanguage(requirements.language)
           ? '无'
-          : 'None',
+          : isHindiLanguage(requirements.language)
+            ? 'कोई नहीं'
+            : 'None',
       availableImages: availableImagesText,
-      researchContext: researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+      researchContext: researchContext || (isChineseLanguage(requirements.language) ? '无' : isHindiLanguage(requirements.language) ? 'कोई नहीं' : 'None'),
       mediaGenerationPolicy,
       teacherContext,
     });

@@ -64,7 +64,7 @@ export interface UploadedDocument {
  */
 export interface UserRequirements {
   requirement: string; // Single free-form text for all user input
-  language: 'zh-CN' | 'en-US'; // Course language - critical for generation
+  language: 'zh-CN' | 'en-US' | 'hi-IN'; // Course language - critical for generation
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
@@ -100,7 +100,7 @@ export interface SceneOutline {
   teachingObjective?: string;
   estimatedDuration?: number; // seconds
   order: number;
-  language?: 'zh-CN' | 'en-US'; // Generation language (inherited from requirements)
+  language?: 'zh-CN' | 'en-US' | 'hi-IN'; // Generation language (inherited from requirements)
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)
@@ -124,7 +124,7 @@ export interface SceneOutline {
     projectDescription: string;
     targetSkills: string[];
     issueCount?: number;
-    language: 'zh-CN' | 'en-US';
+    language: 'zh-CN' | 'en-US' | 'hi-IN';
   };
 }
 

@@ -130,6 +130,9 @@ export async function generateTTS(
     case 'qwen-tts':
       return await generateQwenTTS(config, text);
 
+    case 'google-tts':
+      return await generateGoogleTTS(config, text);
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -187,9 +190,10 @@ async function generateAzureTTS(
 
   // Build SSML
   const rate = config.speed ? `${((config.speed - 1) * 100).toFixed(0)}%` : '0%';
+  const voiceLocale = inferVoiceLocale(config.voice);
   const ssml = `
-    <speak version='1.0' xml:lang='zh-CN'>
-      <voice xml:lang='zh-CN' name='${config.voice}'>
+    <speak version='1.0' xml:lang='${voiceLocale}'>
+      <voice xml:lang='${voiceLocale}' name='${config.voice}'>
         <prosody rate='${rate}'>${escapeXml(text)}</prosody>
       </voice>
     </speak>
@@ -316,6 +320,47 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
   };
 }
 
+
+
+async function generateGoogleTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['google-tts'].defaultBaseUrl;
+  const response = await fetch(`${baseUrl}/text:synthesize?key=${encodeURIComponent(config.apiKey!)}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      input: { text },
+      voice: {
+        languageCode: inferVoiceLocale(config.voice),
+        name: config.voice,
+      },
+      audioConfig: {
+        audioEncoding: 'MP3',
+        speakingRate: config.speed || 1.0,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Google TTS API error: ${errorText}`);
+  }
+
+  const data = await response.json();
+  if (!data.audioContent) {
+    throw new Error('Google TTS API error: Missing audioContent');
+  }
+
+  return {
+    audio: Uint8Array.from(Buffer.from(data.audioContent, 'base64')),
+    format: 'mp3',
+  };
+}
+
 /**
  * Get current TTS configuration from settings store
  * Note: This function should only be called in browser context
@@ -346,6 +391,13 @@ export { getAllTTSProviders, getTTSProvider, getTTSVoices } from './constants';
 /**
  * Escape XML special characters for SSML
  */
+function inferVoiceLocale(voice: string): string {
+  if (voice.startsWith('hi-IN')) return 'hi-IN';
+  if (voice.startsWith('en-US')) return 'en-US';
+  if (voice.startsWith('zh-CN')) return 'zh-CN';
+  return 'en-US';
+}
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, '&amp;')

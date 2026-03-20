@@ -18,6 +18,8 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { clearDatabase } from '@/lib/utils/database';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
+import { LanguageSelector } from './hindi/language-selector';
+import { HindiAudioHints } from './hindi/hindi-audio-hints';
 
 const log = createLogger('GeneralSettings');
 
@@ -63,6 +65,9 @@ export function GeneralSettings() {
 
   return (
     <div className="flex flex-col gap-8">
+      <LanguageSelector />
+      <HindiAudioHints />
+
       {/* Danger Zone - Clear Cache */}
       <div className="relative rounded-xl border border-destructive/30 bg-destructive/[0.03] dark:bg-destructive/[0.06] overflow-hidden">
         {/* Subtle diagonal stripe pattern for danger emphasis */}

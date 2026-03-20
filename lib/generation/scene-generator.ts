@@ -45,6 +45,7 @@ import type {
   GenerationCallbacks,
 } from './pipeline-types';
 import { createLogger } from '@/lib/logger';
+import { isChineseLanguage, isHindiLanguage } from '@/lib/utils/language';
 const log = createLogger('Generation');
 
 // ==================== Stage 2: Full Scenes (Two-Step) ====================
@@ -470,7 +471,11 @@ async function generateSlideContent(
   const lang = outline.language || 'zh-CN';
 
   // Build assigned images description for the prompt
-  let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
+  let assignedImagesText = isChineseLanguage(lang)
+    ? '无可用图片，禁止插入任何 image 元素'
+    : isHindiLanguage(lang)
+      ? 'कोई image उपलब्ध नहीं है, कोई image element insert न करें'
+      : 'No images available. Do not insert any image element';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
@@ -735,7 +740,7 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  language: 'zh-CN' | 'en-US' = 'zh-CN',
+  language: 'zh-CN' | 'en-US' | 'hi-IN' = 'zh-CN',
 ): Promise<GeneratedInteractiveContent | null> {
   const config = outline.interactiveConfig!;
 

@@ -1,3 +1,5 @@
-export type Locale = 'zh-CN' | 'en-US';
+import type { AppLocale } from '@/lib/utils/language';
+
+export type Locale = AppLocale;
 
 export const defaultLocale: Locale = 'zh-CN';
