@@ -657,6 +657,9 @@ export class PlaybackEngine {
       // On 'canceled': do nothing — pause handler already saved state
     };
 
+    // Chrome bug workaround: cancel() before speak() to clear stale synthesis
+    // state that can produce garbled/broken audio output.
+    window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   }
 
