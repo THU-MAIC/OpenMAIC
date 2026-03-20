@@ -61,3 +61,6 @@ next-env.d.ts
 
 # docs
 /docs
+
+# local deploy guide (contains machine-specific config)
+CLAUDE_DEPLOY_GUIDE.md
