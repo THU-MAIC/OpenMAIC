@@ -481,15 +481,69 @@ export const useSettingsStore = create<SettingsState>()(
         setModel: (providerId, modelId) => set({ providerId, modelId }),
 
         setProviderConfig: (providerId, config) =>
-          set((state) => ({
-            providersConfig: {
+          set((state) => {
+            const updatedProvidersConfig = {
               ...state.providersConfig,
               [providerId]: {
                 ...state.providersConfig[providerId],
                 ...config,
               },
-            },
-          })),
+            };
+
+            // When the user enters/updates an API key for a provider, automatically
+            // switch TTS and ASR to the matching provider if they're still on defaults.
+            // This lets one API key power all workflows out of the box.
+            const newApiKey = (config as { apiKey?: string }).apiKey?.trim();
+            let ttsUpdate: Partial<typeof state> = {};
+            let asrUpdate: Partial<typeof state> = {};
+
+            if (newApiKey) {
+              const TTS_FOR_PROVIDER: Record<string, string> = {
+                openai: 'openai-tts',
+                glm: 'glm-tts',
+                qwen: 'qwen-tts',
+                google: 'google-tts',
+              };
+              const ASR_FOR_PROVIDER: Record<string, string> = {
+                openai: 'openai-whisper',
+                qwen: 'qwen-asr',
+              };
+
+              const suggestedTTS = TTS_FOR_PROVIDER[providerId as string];
+              const suggestedASR = ASR_FOR_PROVIDER[providerId as string];
+
+              // Only auto-switch if the user hasn't explicitly chosen a non-default provider
+              const onDefaultTTS =
+                state.ttsProviderId === 'browser-native-tts' ||
+                !state.ttsProvidersConfig[state.ttsProviderId]?.apiKey?.trim();
+              const onDefaultASR =
+                state.asrProviderId === 'browser-native' ||
+                !state.asrProvidersConfig[state.asrProviderId]?.apiKey?.trim();
+
+              if (suggestedTTS && onDefaultTTS) {
+                ttsUpdate = {
+                  ttsProviderId: suggestedTTS as typeof state.ttsProviderId,
+                  ttsVoice: DEFAULT_TTS_VOICES[suggestedTTS as typeof state.ttsProviderId] ?? state.ttsVoice,
+                };
+              }
+              if (suggestedASR && onDefaultASR) {
+                const supportedLanguages =
+                  ASR_PROVIDERS[suggestedASR as keyof typeof ASR_PROVIDERS]?.supportedLanguages || [];
+                asrUpdate = {
+                  asrProviderId: suggestedASR as typeof state.asrProviderId,
+                  ...(supportedLanguages.length && !supportedLanguages.includes(state.asrLanguage)
+                    ? { asrLanguage: supportedLanguages[0] }
+                    : {}),
+                };
+              }
+            }
+
+            return {
+              providersConfig: updatedProvidersConfig,
+              ...ttsUpdate,
+              ...asrUpdate,
+            };
+          }),
 
         setProvidersConfig: (config) => set({ providersConfig: config }),
 

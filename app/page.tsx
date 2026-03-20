@@ -538,13 +538,13 @@ function HomePage() {
         >
           <button
             onClick={() => router.push('/quiz')}
-            className="rounded-full border border-violet-200 bg-white/80 px-4 py-2 text-sm font-medium text-violet-700 shadow-sm transition hover:bg-violet-50 dark:border-violet-800 dark:bg-gray-900/80 dark:text-violet-300"
+            className="rounded-full border border-slate-300 bg-white/90 px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-50 dark:border-slate-700 dark:bg-gray-900/80 dark:text-slate-200 dark:hover:border-slate-600 dark:hover:bg-slate-900"
           >
             /quiz — Placement + Coding
           </button>
           <button
             onClick={() => router.push('/interview')}
-            className="rounded-full border border-fuchsia-200 bg-white/80 px-4 py-2 text-sm font-medium text-fuchsia-700 shadow-sm transition hover:bg-fuchsia-50 dark:border-fuchsia-800 dark:bg-gray-900/80 dark:text-fuchsia-300"
+            className="rounded-full border border-emerald-200 bg-white/90 px-4 py-2 text-sm font-medium text-emerald-800 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 dark:border-emerald-900 dark:bg-gray-900/80 dark:text-emerald-300 dark:hover:border-emerald-800 dark:hover:bg-emerald-950/20"
           >
             /interview — Interview Prep
           </button>

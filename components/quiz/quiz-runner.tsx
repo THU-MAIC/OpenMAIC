@@ -87,14 +87,22 @@ export function QuizRunner({ session, onBack }: { session: PlacementQuizSession 
           }),
         );
         setCodeReviews(reviews);
-        const weakAreas = session.problems.map((problem) => problem.topic);
+        const passed = reviews.filter((r) => r.review.verdict === 'pass').length;
+        const total = session.problems.length;
+        const percentage = total ? Math.round((passed / total) * 100) : 0;
+        const weakAreas = session.problems
+          .filter((p) => {
+            const r = reviews.find((rv) => rv.id === p.id);
+            return !r || r.review.verdict === 'fail' || (r.review.score ?? 10) < 5;
+          })
+          .map((p) => p.topic);
         saveQuizHistoryItem({
           id: crypto.randomUUID(),
           track: session.track,
           title: session.title,
-          score: reviews.length,
-          total: session.problems.length,
-          percentage: 100,
+          score: passed,
+          total,
+          percentage,
           weakAreas,
           createdAt: Date.now(),
           metadata: { language: session.language, difficulty: session.difficulty },
@@ -112,7 +120,7 @@ export function QuizRunner({ session, onBack }: { session: PlacementQuizSession 
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900 md:flex-row md:items-center md:justify-between">
+      <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-5 dark:border-gray-800 dark:bg-gray-900 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-xl font-semibold">{session.title}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -124,7 +132,7 @@ export function QuizRunner({ session, onBack }: { session: PlacementQuizSession 
         <div className="flex items-center gap-3">
           <QuizTimer durationMinutes={session.durationMinutes} onExpire={handleSubmit} running={!submitted} />
           <button onClick={onBack} className="rounded-xl border border-gray-200 px-4 py-2 text-sm dark:border-gray-700">Back</button>
-          <button onClick={handleSubmit} disabled={loading} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{loading ? 'Submitting...' : 'Submit'}</button>
+          <button onClick={handleSubmit} disabled={loading} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60 dark:bg-slate-100 dark:text-slate-900">{loading ? 'Submitting...' : 'Submit'}</button>
         </div>
       </div>
 
@@ -138,7 +146,7 @@ export function QuizRunner({ session, onBack }: { session: PlacementQuizSession 
                   <button
                     key={option.id}
                     onClick={() => setPlacementAnswers((prev) => ({ ...prev, [question.id]: option.id }))}
-                    className={`rounded-xl border px-4 py-3 text-left text-sm ${placementAnswers[question.id] === option.id ? 'border-violet-500 bg-violet-50 dark:bg-violet-950/30' : 'border-gray-200 dark:border-gray-700'}`}
+                    className={`rounded-xl border px-4 py-3 text-left text-sm transition ${placementAnswers[question.id] === option.id ? 'border-slate-400 bg-slate-100 dark:border-slate-600 dark:bg-slate-800/60' : 'border-gray-200 hover:border-slate-300 dark:border-gray-700 dark:hover:border-slate-600'}`}
                   >
                     <span className="font-medium">{option.id}.</span> {option.text}
                   </button>
@@ -183,7 +191,12 @@ export function QuizRunner({ session, onBack }: { session: PlacementQuizSession 
       ) : null}
 
       {submitted && session.track === 'coding-examination' ? (
-        <QuizResults title="Coding Examination" score={codeReviews.length} total={session.problems.length} debrief={debrief}>
+        <QuizResults
+          title="Coding Examination"
+          score={codeReviews.filter((r) => r.review.verdict === 'pass').length}
+          total={session.problems.length}
+          debrief={debrief}
+        >
           <CodeReviewPanel reviews={codeReviews} />
         </QuizResults>
       ) : null}

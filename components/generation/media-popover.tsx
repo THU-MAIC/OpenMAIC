@@ -29,6 +29,7 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { getEffectiveTTSApiKey } from '@/lib/utils/model-config';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -194,7 +195,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
         providerId: ttsProviderId,
         voice: ttsVoice,
         speed: ttsSpeed,
-        apiKey: providerConfig?.apiKey,
+        apiKey: getEffectiveTTSApiKey(ttsProviderId),
         baseUrl: providerConfig?.baseUrl,
       });
     } catch (error) {

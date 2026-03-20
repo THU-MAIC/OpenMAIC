@@ -9,6 +9,13 @@ import type { InterviewConfig, InterviewSessionSummary, InterviewTurn } from '@/
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 
+function createId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `interview-history-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 function modelHeaders() {
   const modelConfig = getCurrentModelConfig();
   const headers: Record<string, string> = {
@@ -32,10 +39,12 @@ export function InterviewDashboard() {
   });
   const [loading, setLoading] = useState(false);
   const [openingQuestion, setOpeningQuestion] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const history = getInterviewHistory();
 
   const startInterview = async () => {
     setLoading(true);
+    setError(null);
     try {
       const response = await fetch('/api/interview/session', {
         method: 'POST',
@@ -43,7 +52,12 @@ export function InterviewDashboard() {
         body: JSON.stringify({ ...config, language: locale }),
       });
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error?.message || 'Failed to start interview');
+      }
       setOpeningQuestion((data.data || data).question || 'Tell me about yourself.');
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Failed to start interview');
     } finally {
       setLoading(false);
     }
@@ -51,7 +65,7 @@ export function InterviewDashboard() {
 
   const handleComplete = (summary: InterviewSessionSummary, _turns: InterviewTurn[]) => {
     saveInterviewHistory({
-      id: crypto.randomUUID(),
+      id: createId(),
       config: { ...config, language: locale },
       createdAt: Date.now(),
       summary,
@@ -63,7 +77,14 @@ export function InterviewDashboard() {
       {openingQuestion ? (
         <InterviewSession config={{ ...config, language: locale }} openingQuestion={openingQuestion} onComplete={handleComplete} />
       ) : (
-        <InterviewConfigForm config={{ ...config, language: locale }} onChange={setConfig} onStart={startInterview} loading={loading} />
+        <div className="space-y-3">
+          {error ? (
+            <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
+              {error}
+            </p>
+          ) : null}
+          <InterviewConfigForm config={{ ...config, language: locale }} onChange={setConfig} onStart={startInterview} loading={loading} />
+        </div>
       )}
       <InterviewHistory items={history} />
     </div>

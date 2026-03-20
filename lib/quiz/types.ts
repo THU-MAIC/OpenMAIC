@@ -87,11 +87,15 @@ export interface PlacementDebrief {
 }
 
 export interface CodeReviewResult {
+  score: number;
+  verdict: 'pass' | 'fail';
   summary: string;
   strengths: string[];
   missingPoints: string[];
   optimalApproach: string;
   timeComplexity: string;
   spaceComplexity: string;
+  score: number;
+  verdict: 'strong' | 'partial' | 'incorrect';
   cleanerVersion?: string;
 }

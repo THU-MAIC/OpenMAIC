@@ -2,14 +2,13 @@
 
 import { useCallback, useRef } from 'react';
 import { useStageStore } from '@/lib/store/stage';
-import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import { getCurrentModelConfig, getEffectiveTTSApiKey } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
 import { db } from '@/lib/utils/database';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
-import type { Action, SpeechAction } from '@/lib/types/action';
-import type { TTSProviderId } from '@/lib/audio/types';
+import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
@@ -139,7 +138,8 @@ export async function generateAndStoreTTS(
       ttsProviderId: settings.ttsProviderId,
       ttsVoice: settings.ttsVoice,
       ttsSpeed: settings.ttsSpeed,
-      ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+      // Fall back to the main LLM provider key when no TTS-specific key is set
+      ttsApiKey: getEffectiveTTSApiKey(settings.ttsProviderId),
       ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
     }),
     signal,

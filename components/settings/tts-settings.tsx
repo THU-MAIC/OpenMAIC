@@ -8,6 +8,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
+import { getEffectiveTTSApiKey } from '@/lib/utils/model-config';
 import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
@@ -57,6 +58,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     setTestMessage('');
   }, [selectedProviderId, stopPreview]);
 
+  const effectiveApiKey = getEffectiveTTSApiKey(selectedProviderId);
+
   const handleTestTTS = async () => {
     if (!testText.trim()) return;
 
@@ -69,7 +72,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         providerId: selectedProviderId,
         voice: effectiveVoice,
         speed: ttsSpeed,
-        apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
+        apiKey: effectiveApiKey,
         baseUrl: ttsProvidersConfig[selectedProviderId]?.baseUrl,
       });
       setTestStatus('success');
@@ -93,6 +96,16 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           {t('settings.serverConfiguredNotice')}
         </div>
       )}
+
+      {/* Unified key notice: show when no TTS-specific key is set but a main provider key will be used */}
+      {!isServerConfigured &&
+        ttsProvider.requiresApiKey &&
+        !ttsProvidersConfig[selectedProviderId]?.apiKey?.trim() &&
+        effectiveApiKey && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
+            Using your main API key for this provider. Add a separate key below to override.
+          </div>
+        )}
 
       {/* API Key & Base URL */}
       {(ttsProvider.requiresApiKey || isServerConfigured) && (
@@ -193,9 +206,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             disabled={
               testingTTS ||
               !testText.trim() ||
-              (ttsProvider.requiresApiKey &&
-                !ttsProvidersConfig[selectedProviderId]?.apiKey?.trim() &&
-                !isServerConfigured)
+              (ttsProvider.requiresApiKey && !effectiveApiKey && !isServerConfigured)
             }
             size="default"
             className="gap-2 w-32"

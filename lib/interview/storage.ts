@@ -7,13 +7,18 @@ export function getInterviewHistory(): InterviewHistoryItem[] {
     const raw = localStorage.getItem(INTERVIEW_HISTORY_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     return Array.isArray(parsed) ? parsed : [];
-  } catch {
+  } catch (error) {
+    console.warn('Failed to read interview history from localStorage.', error);
     return [];
   }
 }
 
 export function saveInterviewHistory(item: InterviewHistoryItem) {
   if (typeof window === 'undefined') return;
-  const next = [item, ...getInterviewHistory()].slice(0, 20);
-  localStorage.setItem(INTERVIEW_HISTORY_STORAGE_KEY, JSON.stringify(next));
+  try {
+    const next = [item, ...getInterviewHistory()].slice(0, 20);
+    localStorage.setItem(INTERVIEW_HISTORY_STORAGE_KEY, JSON.stringify(next));
+  } catch (error) {
+    console.warn('Failed to save interview history to localStorage.', error);
+  }
 }

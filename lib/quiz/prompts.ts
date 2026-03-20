@@ -81,7 +81,17 @@ export function buildCodeReviewPrompt(input: {
   code: string;
   language: CodingLanguage;
 }) {
-  return `You are reviewing a coding interview submission. Return JSON only with keys summary, strengths, missingPoints, optimalApproach, timeComplexity, spaceComplexity, cleanerVersion.
+  return `You are reviewing a coding interview submission. Return JSON only with these exact keys:
+- score: integer 0-10 reflecting correctness and quality (0 = blank/completely wrong, 10 = optimal)
+- verdict: "pass" if score >= 5, otherwise "fail"
+- summary: one or two sentences describing the submission
+- strengths: array of strings (empty array if none)
+- missingPoints: array of strings describing what is wrong or missing
+- optimalApproach: string describing the best solution
+- timeComplexity: string (e.g. "O(n)")
+- spaceComplexity: string (e.g. "O(1)")
+- cleanerVersion: improved code string, or null if submission is already optimal
+
 Problem title: ${input.title}
 Language: ${input.language}
 Problem:

@@ -10,6 +10,7 @@ import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { parseFirstJsonObject } from '@/lib/server/json-parser';
 const log = createLogger('Quiz Grade');
 
 interface GradeRequest {
@@ -75,30 +76,24 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
 
     // Parse the LLM response as JSON
     const text = result.text.trim();
-    let gradeResult: GradeResponse;
-
     try {
-      // Try to extract JSON from the response
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error('No JSON found');
-      const parsed = JSON.parse(jsonMatch[0]);
-      gradeResult = {
+      const parsed = parseFirstJsonObject<Record<string, unknown>>(text);
+      const gradeResult: GradeResponse = {
         score: Math.max(0, Math.min(points, Math.round(Number(parsed.score)))),
         comment: String(parsed.comment || ''),
       };
+      return apiSuccess({ ...gradeResult });
     } catch {
-      // Fallback: give partial credit with a generic comment
-      gradeResult = {
-        score: Math.round(points * 0.5),
-        comment: isZh
-          ? '已作答，请参考标准答案。'
+      return apiError(
+        'INVALID_LLM_RESPONSE',
+        502,
+        isZh
+          ? '评分服务返回了无效数据。'
           : isHi
-            ? 'उत्तर प्राप्त हुआ। कृपया standard answer देखें।'
-            : 'Answer received. Please refer to the standard answer.',
-      };
+            ? 'ग्रेडिंग सेवा ने अमान्य डेटा लौटाया।'
+            : 'The grading service returned invalid data.',
+      );
     }
-
-    return apiSuccess({ ...gradeResult });
   } catch (error) {
     log.error('Error:', error);
     return apiError('INTERNAL_ERROR', 500, 'Failed to grade answer');

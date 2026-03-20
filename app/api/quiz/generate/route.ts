@@ -3,6 +3,21 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { buildCodingQuizPrompt, buildPlacementQuizPrompt } from '@/lib/quiz/prompts';
 import { parseQuizSession } from '@/lib/quiz/question-parser';
 import { callQuizLLM } from '@/lib/quiz/llm';
+import type { QuizSession } from '@/lib/quiz/types';
+
+function validateQuizSession(session: QuizSession) {
+  if (session.track === 'placement-aptitude') {
+    if (!Array.isArray(session.questions) || session.questions.length === 0) {
+      throw new Error('Quiz generation returned no placement questions');
+    }
+    return session;
+  }
+
+  if (!Array.isArray(session.problems) || session.problems.length === 0) {
+    throw new Error('Quiz generation returned no coding problems');
+  }
+  return session;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,7 +43,7 @@ export async function POST(req: NextRequest) {
       'quiz-generate',
     );
 
-    const session = parseQuizSession(result.text.trim());
+    const session = validateQuizSession(parseQuizSession(result.text.trim()));
     return apiSuccess({ ...session });
   } catch (error) {
     return apiError(

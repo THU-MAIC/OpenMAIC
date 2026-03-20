@@ -17,7 +17,17 @@ export async function POST(req: NextRequest) {
       buildCodeReviewPrompt(body),
       'quiz-review-code',
     );
-    return apiSuccess(JSON.parse(result.text.trim().match(/\{[\s\S]*\}/)?.[0] || '{}'));
+    const jsonMatch = result.text.trim().match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      return apiError('INVALID_RESPONSE', 502, 'Reviewer returned no JSON');
+    }
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (typeof parsed.score !== 'number' || !parsed.verdict) {
+      return apiError('INVALID_RESPONSE', 502, 'Reviewer response missing required fields');
+    }
+    parsed.score = Math.max(0, Math.min(10, Math.round(parsed.score)));
+    parsed.verdict = parsed.score >= 5 ? 'pass' : 'fail';
+    return apiSuccess(parsed);
   } catch (error) {
     return apiError(
       'INTERNAL_ERROR',

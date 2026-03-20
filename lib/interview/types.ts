@@ -1,3 +1,5 @@
+import type { AppLocale } from '@/lib/utils/language';
+
 export type InterviewType = 'technical' | 'hr' | 'both';
 export type InterviewRole = 'software-engineer' | 'data-analyst' | 'product-manager' | 'general';
 export type InterviewDifficulty = 'fresher' | '2-3-years' | 'senior';
@@ -6,7 +8,7 @@ export interface InterviewConfig {
   interviewType: InterviewType;
   role: InterviewRole;
   difficulty: InterviewDifficulty;
-  language: string;
+  language: AppLocale;
 }
 
 export interface InterviewTurn {

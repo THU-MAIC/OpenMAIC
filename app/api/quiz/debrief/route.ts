@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { buildPlacementDebriefPrompt } from '@/lib/quiz/prompts';
 import { callQuizLLM } from '@/lib/quiz/llm';
+import { parseFirstJsonObject } from '@/lib/server/json-parser';
 
 export async function POST(req: NextRequest) {
   try {
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
       buildPlacementDebriefPrompt(body.summary),
       'quiz-debrief',
     );
-    return apiSuccess(JSON.parse(result.text.trim().match(/\{[\s\S]*\}/)?.[0] || '{}'));
+    return apiSuccess(parseFirstJsonObject<Record<string, unknown>>(result.text));
   } catch (error) {
     return apiError(
       'INTERNAL_ERROR',

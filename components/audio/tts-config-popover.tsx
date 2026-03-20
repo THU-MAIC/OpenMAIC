@@ -16,6 +16,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { getEffectiveTTSApiKey } from '@/lib/utils/model-config';
 import { getTTSVoices } from '@/lib/audio/constants';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 
@@ -66,7 +67,7 @@ export function TtsConfigPopover() {
         providerId: ttsProviderId,
         voice: ttsVoice,
         speed: ttsSpeed,
-        apiKey: providerConfig?.apiKey,
+        apiKey: getEffectiveTTSApiKey(ttsProviderId),
         baseUrl: providerConfig?.baseUrl,
       });
     } catch (error) {

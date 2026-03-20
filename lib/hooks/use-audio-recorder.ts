@@ -45,6 +45,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         // Note: This requires importing useSettingsStore in browser context
         if (typeof window !== 'undefined') {
           const { useSettingsStore } = await import('@/lib/store/settings');
+          const { getEffectiveASRApiKey } = await import('@/lib/utils/model-config');
           const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
           const effectiveProviderId = asrProviderId === 'browser-native' ? 'openai-whisper' : asrProviderId;
           const effectiveLanguage =
@@ -55,11 +56,12 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           formData.append('providerId', effectiveProviderId);
           formData.append('language', effectiveLanguage);
 
-          // Append API key and base URL if configured
-          const providerConfig = asrProvidersConfig?.[effectiveProviderId] || asrProvidersConfig?.[asrProviderId];
-          if (providerConfig?.apiKey?.trim()) {
-            formData.append('apiKey', providerConfig.apiKey);
+          // Use effective API key — falls back to the matching LLM provider's key
+          const effectiveApiKey = getEffectiveASRApiKey(effectiveProviderId);
+          if (effectiveApiKey) {
+            formData.append('apiKey', effectiveApiKey);
           }
+          const providerConfig = asrProvidersConfig?.[effectiveProviderId] || asrProvidersConfig?.[asrProviderId];
           if (providerConfig?.baseUrl?.trim()) {
             formData.append('baseUrl', providerConfig.baseUrl);
           }
