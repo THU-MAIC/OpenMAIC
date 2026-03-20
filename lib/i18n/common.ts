@@ -28,7 +28,7 @@ export const commonZhCN = {
     ttsHint: '选择 AI 教师的朗读音色',
     ttsPreview: '试听',
     ttsPreviewing: '播放中...',
-    ttsDemoVoice: '你好，欢迎来到AI课堂！让我们一起学习吧。'
+    ttsDemoVoice: '你好，欢迎来到AI课堂！让我们一起学习吧。',
   },
   export: {
     pptx: '导出 PPTX',
@@ -70,7 +70,7 @@ export const commonEnUS = {
     ttsHint: 'Choose a voice for the AI teacher',
     ttsPreview: 'Preview',
     ttsPreviewing: 'Playing...',
-    ttsDemoVoice: 'Hello, welcome to the AI classroom! Let\'s learn together.',
+    ttsDemoVoice: "Hello, welcome to the AI classroom! Let's learn together.",
   },
   export: {
     pptx: 'Export PPTX',
