@@ -80,6 +80,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
   VIDEO_KLING: 'kling',
   VIDEO_VEO: 'veo',
   VIDEO_SORA: 'sora',
+  VIDEO_MINIMAX: 'minimax-video',
 };
 
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {

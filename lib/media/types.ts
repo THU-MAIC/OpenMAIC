@@ -178,7 +178,7 @@ export interface ImageGenerationResult {
  * Add new video providers here as union members.
  * Keep in sync with VIDEO_PROVIDERS registry in constants.ts
  */
-export type VideoProviderId = 'seedance' | 'kling' | 'veo' | 'sora';
+export type VideoProviderId = 'seedance' | 'kling' | 'veo' | 'sora' | 'minimax-video';
 // Add new video providers below (uncomment and modify):
 // | 'runway'
 // | 'pika'
