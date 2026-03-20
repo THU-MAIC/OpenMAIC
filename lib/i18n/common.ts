@@ -70,6 +70,7 @@ export const commonEnUS = {
     ttsHint: 'Choose a voice for the AI teacher',
     ttsPreview: 'Preview',
     ttsPreviewing: 'Playing...',
+    ttsDemoVoice: 'Hello, welcome to the AI classroom! Let\'s learn together.',
   },
   export: {
     pptx: 'Export PPTX',
