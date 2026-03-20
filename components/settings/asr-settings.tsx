@@ -89,6 +89,9 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         setIsRecording(true);
       } else {
         try {
+          if (!navigator.mediaDevices?.getUserMedia) {
+            throw new Error('mediaDevices API not available (requires HTTPS or localhost)');
+          }
           const stream = await navigator.mediaDevices.getUserMedia({
             audio: true,
           });
