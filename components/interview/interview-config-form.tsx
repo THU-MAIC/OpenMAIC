@@ -8,7 +8,7 @@ const difficulties: InterviewDifficulty[] = ['fresher', '2-3-years', 'senior'];
 
 export function InterviewConfigForm({ config, onChange, onStart, loading }: { config: InterviewConfig; onChange: (config: InterviewConfig) => void; onStart: () => void; loading?: boolean }) {
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm dark:border-gray-800 dark:bg-gray-900">
       <h2 className="text-xl font-semibold">Interview Prep Mode</h2>
       <p className="mt-2 text-sm text-muted-foreground">Practice with a natural AI interviewer using text, voice, live feedback, and a final debrief.</p>
       <div className="mt-6 grid gap-4 md:grid-cols-3">
@@ -31,7 +31,7 @@ export function InterviewConfigForm({ config, onChange, onStart, loading }: { co
           </select>
         </label>
       </div>
-      <button onClick={onStart} disabled={loading} className="mt-6 rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">
+      <button onClick={onStart} disabled={loading} className="mt-6 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60 dark:bg-emerald-600 dark:hover:bg-emerald-500">
         {loading ? 'Starting...' : 'Start Interview'}
       </button>
     </div>

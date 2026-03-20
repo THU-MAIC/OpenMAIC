@@ -14,7 +14,7 @@ export function InterviewHistory({ items }: { items: InterviewHistoryItem[] }) {
             <div key={item.id} className="rounded-xl border border-gray-100 p-4 dark:border-gray-800">
               <div className="flex items-center justify-between gap-3 text-sm">
                 <span className="font-medium">{item.config.role.replace(/-/g, ' ')}</span>
-                <span>{item.summary.overallScore}</span>
+                <span>{item.summary?.overallScore ?? '—'}</span>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</p>
             </div>

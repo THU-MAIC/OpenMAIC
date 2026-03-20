@@ -81,11 +81,19 @@ export function buildCodeReviewPrompt(input: {
   code: string;
   language: CodingLanguage;
 }) {
-  return `You are reviewing a coding interview submission. Return JSON only with keys summary, strengths, missingPoints, optimalApproach, timeComplexity, spaceComplexity, cleanerVersion.
+  return `You are reviewing a coding interview submission. Return JSON only with keys summary, strengths, missingPoints, optimalApproach, timeComplexity, spaceComplexity, cleanerVersion, score, verdict.
 Problem title: ${input.title}
 Language: ${input.language}
 Problem:
 ${input.prompt}
 Candidate code:
-${input.code}`;
+${input.code}
+
+Scoring rules:
+- score must be an integer from 0 to 100
+- verdict must be one of: "strong", "partial", "incorrect"
+- give a very low score for empty, placeholder, non-functional, or clearly incomplete solutions
+- only use "strong" when the candidate substantially solves the problem correctly
+- use "partial" for incomplete but meaningfully correct progress
+- use "incorrect" for missing, broken, placeholder, or fundamentally wrong solutions`;
 }

@@ -10,6 +10,17 @@ import { InterviewScoreBreakdown } from './interview-score-breakdown';
 import { buildInterviewWhiteboardNotes } from '@/lib/interview/session';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 
+function createId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return `interview-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function toErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : 'Something went wrong. Please try again.';
+}
+
 function modelHeaders() {
   const modelConfig = getCurrentModelConfig();
   const headers: Record<string, string> = {
@@ -24,17 +35,20 @@ function modelHeaders() {
 }
 
 export function InterviewSession({ config, openingQuestion, onComplete }: { config: InterviewConfig; openingQuestion: string; onComplete: (summary: InterviewSessionSummary, turns: InterviewTurn[]) => void }) {
-  const [turns, setTurns] = useState<InterviewTurn[]>([{ id: crypto.randomUUID(), question: openingQuestion }]);
+  const [turns, setTurns] = useState<InterviewTurn[]>([{ id: createId(), question: openingQuestion }]);
   const [answer, setAnswer] = useState('');
   const [loading, setLoading] = useState(false);
   const [summary, setSummary] = useState<InterviewSessionSummary | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const activeTurn = turns[turns.length - 1];
   const questionCount = turns.length;
+  const latestFeedbackTurn = [...turns].reverse().find((turn) => turn.feedback);
 
   const submitAnswer = async () => {
     if (!answer.trim() || !activeTurn) return;
     setLoading(true);
+    setError(null);
     try {
       const history = turns.map((turn) => ({ question: turn.question, answer: turn.answer }));
       const response = await fetch('/api/interview/turn', {
@@ -43,7 +57,13 @@ export function InterviewSession({ config, openingQuestion, onComplete }: { conf
         body: JSON.stringify({ config, history, answer }),
       });
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error?.message || 'Failed to submit interview answer');
+      }
       const payload = data.data || data;
+      if (!payload?.feedback || !payload?.nextQuestion) {
+        throw new Error('Interview turn response was incomplete');
+      }
       const updatedTurns = turns.map((turn) =>
         turn.id === activeTurn.id
           ? {
@@ -54,10 +74,12 @@ export function InterviewSession({ config, openingQuestion, onComplete }: { conf
           : turn,
       );
       const nextTurns = payload.nextQuestion
-        ? [...updatedTurns, { id: crypto.randomUUID(), question: payload.nextQuestion }]
+        ? [...updatedTurns, { id: createId(), question: payload.nextQuestion }]
         : updatedTurns;
       setTurns(nextTurns);
       setAnswer('');
+    } catch (error) {
+      setError(toErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -65,19 +87,40 @@ export function InterviewSession({ config, openingQuestion, onComplete }: { conf
 
   const finishInterview = async () => {
     setLoading(true);
+    setError(null);
     try {
+      const finalTurns = turns.map((turn) =>
+        turn.id === activeTurn?.id && answer.trim()
+          ? { question: turn.question, answer: answer.trim() }
+          : { question: turn.question, answer: turn.answer }
+      );
       const response = await fetch('/api/interview/debrief', {
         method: 'POST',
         headers: modelHeaders(),
         body: JSON.stringify({
           config,
-          turns: turns.map((turn) => ({ question: turn.question, answer: turn.answer })),
+          turns: finalTurns,
         }),
       });
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data?.message || data?.error?.message || 'Failed to finish interview');
+      }
       const payload = data.data || data;
+      if (!payload?.summary) {
+        throw new Error('Interview debrief response was incomplete');
+      }
       setSummary(payload);
-      onComplete(payload, turns);
+      onComplete(
+        payload,
+        turns.map((turn) =>
+          turn.id === activeTurn?.id && answer.trim()
+            ? { ...turn, answer: answer.trim() }
+            : turn,
+        ),
+      );
+    } catch (error) {
+      setError(toErrorMessage(error));
     } finally {
       setLoading(false);
     }
@@ -88,9 +131,14 @@ export function InterviewSession({ config, openingQuestion, onComplete }: { conf
       <div className="grid gap-5 xl:grid-cols-[1.2fr,0.8fr]">
         <InterviewChatPanel turns={turns} />
         <div className="space-y-5">
-          <InterviewFeedbackCard turn={turns.find((turn) => turn.feedback && turn.id !== activeTurn?.id) || turns.at(-2)} />
-          <div className="rounded-2xl border border-gray-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
+          <InterviewFeedbackCard turn={latestFeedbackTurn} />
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-gray-800 dark:bg-gray-900">
             <h3 className="text-base font-semibold">Answer the current question</h3>
+            {error ? (
+              <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-900/60 dark:bg-rose-950/20 dark:text-rose-300">
+                {error}
+              </p>
+            ) : null}
             <textarea
               value={answer}
               onChange={(event) => setAnswer(event.target.value)}
@@ -101,7 +149,7 @@ export function InterviewSession({ config, openingQuestion, onComplete }: { conf
               <SpeechButton size="md" onTranscription={(text) => setAnswer((current) => current + (current ? ' ' : '') + text)} />
               <div className="flex gap-3">
                 <button onClick={finishInterview} disabled={loading} className="rounded-xl border border-gray-200 px-4 py-2 text-sm dark:border-gray-700">Finish</button>
-                <button onClick={submitAnswer} disabled={loading || !answer.trim()} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-semibold text-white disabled:opacity-60">{loading ? 'Working...' : questionCount >= 6 ? 'Submit & Continue' : 'Submit Answer'}</button>
+                <button onClick={submitAnswer} disabled={loading || !answer.trim()} className="rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800 disabled:opacity-60 dark:bg-emerald-600 dark:hover:bg-emerald-500">{loading ? 'Working...' : questionCount >= 6 ? 'Submit & Continue' : 'Submit Answer'}</button>
               </div>
             </div>
           </div>

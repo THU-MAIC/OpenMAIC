@@ -93,5 +93,7 @@ export interface CodeReviewResult {
   optimalApproach: string;
   timeComplexity: string;
   spaceComplexity: string;
+  score: number;
+  verdict: 'strong' | 'partial' | 'incorrect';
   cleanerVersion?: string;
 }
