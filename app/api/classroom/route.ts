@@ -7,9 +7,15 @@ import {
   persistClassroom,
   readClassroom,
 } from '@/lib/server/classroom-storage';
+import { requireStudyApiBearerAuth } from '@/lib/server/study-api-auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const authError = requireStudyApiBearerAuth(request);
+    if (authError) {
+      return authError;
+    }
+
     const body = await request.json();
     const { stage, scenes } = body;
 
@@ -39,6 +45,11 @@ export async function POST(request: NextRequest) {
 
 export async function GET(request: NextRequest) {
   try {
+    const authError = requireStudyApiBearerAuth(request);
+    if (authError) {
+      return authError;
+    }
+
     const id = request.nextUrl.searchParams.get('id');
 
     if (!id) {

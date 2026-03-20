@@ -5,11 +5,17 @@ import {
   readClassroomGenerationJob,
 } from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
+import { requireStudyApiBearerAuth } from '@/lib/server/study-api-auth';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest, context: { params: Promise<{ jobId: string }> }) {
   try {
+    const authError = requireStudyApiBearerAuth(req);
+    if (authError) {
+      return authError;
+    }
+
     const { jobId } = await context.params;
 
     if (!isValidClassroomJobId(jobId)) {
