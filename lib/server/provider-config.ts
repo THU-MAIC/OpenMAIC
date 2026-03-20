@@ -23,6 +23,11 @@ interface ServerProviderEntry {
   proxy?: string;
 }
 
+function hasProviderConfig(entry: Partial<ServerProviderEntry> | undefined): boolean {
+  if (!entry) return false;
+  return Boolean(entry.apiKey || entry.baseUrl || entry.proxy || entry.models?.length);
+}
+
 interface ServerConfig {
   providers: Record<string, ServerProviderEntry>;
   tts: Record<string, ServerProviderEntry>;
@@ -126,9 +131,9 @@ function loadEnvSection(
   // First, add everything from YAML as defaults
   if (yamlSection) {
     for (const [id, entry] of Object.entries(yamlSection)) {
-      if (entry?.apiKey) {
+      if (hasProviderConfig(entry)) {
         result[id] = {
-          apiKey: entry.apiKey,
+          apiKey: entry.apiKey || '',
           baseUrl: entry.baseUrl,
           models: entry.models,
           proxy: entry.proxy,
@@ -157,9 +162,9 @@ function loadEnvSection(
       continue;
     }
 
-    if (!envApiKey) continue;
+    if (!envApiKey && !envBaseUrl && !envModels) continue;
     result[providerId] = {
-      apiKey: envApiKey,
+      apiKey: envApiKey || '',
       baseUrl: envBaseUrl,
       models: envModels,
     };
