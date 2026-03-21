@@ -71,7 +71,7 @@ export function latexToOmml(latex: string, fontSize?: number): string | null {
   try {
     const mathml = temml.renderToString(latex);
     const cleaned = stripUnsupportedMathML(mathml);
-    const omml = mml2omml(cleaned);
+    const omml = String(mml2omml(cleaned));
     const szHundredths = fontSize ? Math.round(fontSize * 100) : undefined;
     return postProcessOmml(omml, szHundredths);
   } catch {
