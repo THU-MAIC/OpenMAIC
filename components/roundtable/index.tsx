@@ -81,6 +81,10 @@ interface RoundtableProps {
   readonly onPrevSlide?: () => void;
   readonly onNextSlide?: () => void;
   readonly onWhiteboardClose?: () => void;
+  readonly isPresenting?: boolean;
+  readonly controlsVisible?: boolean;
+  readonly onTogglePresentation?: () => void;
+  readonly onPresentationInteractionChange?: (active: boolean) => void;
 }
 
 const DEFAULT_TEACHER_AVATAR = '/avatars/teacher.png';
@@ -143,6 +147,10 @@ export function Roundtable({
   onPrevSlide,
   onNextSlide,
   onWhiteboardClose,
+  isPresenting,
+  controlsVisible,
+  onTogglePresentation,
+  onPresentationInteractionChange,
 }: RoundtableProps) {
   const { t } = useI18n();
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -355,6 +363,18 @@ export function Roundtable({
     }
   };
 
+  const isPresentationInteractionActive = isInputOpen || isVoiceOpen || isRecording || isProcessing;
+
+  useEffect(() => {
+    onPresentationInteractionChange?.(isPresentationInteractionActive);
+
+    return () => {
+      if (isPresentationInteractionActive) {
+        onPresentationInteractionChange?.(false);
+      }
+    };
+  }, [isPresentationInteractionActive, onPresentationInteractionChange]);
+
   // Determine active speaking state and bubble ownership
   // Check if current speaker is a student agent (not teacher)
   const speakingStudent = speakingAgentId
@@ -434,49 +454,66 @@ export function Roundtable({
   }, [playbackSpeed, setPlaybackSpeed]);
 
   return (
-    <div className="h-[192px] w-full flex flex-col relative z-10 border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md">
+    <div
+      className={cn(
+        'h-[192px] w-full flex flex-col relative z-10 transition-all duration-300',
+        isPresenting && !controlsVisible
+          ? 'border-t border-transparent bg-transparent backdrop-blur-none'
+          : 'border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
+      )}
+    >
       {/* ── Toolbar strip — merged from CanvasArea ── */}
-      <CanvasToolbar
-        className="shrink-0 h-8 px-3 border-b border-gray-100/40 dark:border-gray-700/30"
-        currentSceneIndex={currentSceneIndex}
-        scenesCount={scenesCount}
-        engineState={
-          engineMode === 'playing' || engineMode === 'live'
-            ? 'playing'
-            : engineMode === 'paused'
-              ? 'paused'
-              : 'idle'
-        }
-        isLiveSession={isStreaming || isTopicPending || engineMode === 'live'}
-        whiteboardOpen={whiteboardOpen}
-        sidebarCollapsed={sidebarCollapsed}
-        chatCollapsed={chatCollapsed}
-        onToggleSidebar={onToggleSidebar}
-        onToggleChat={onToggleChat}
-        onPrevSlide={onPrevSlide ?? (() => {})}
-        onNextSlide={onNextSlide ?? (() => {})}
-        onPlayPause={onPlayPause ?? (() => {})}
-        onWhiteboardClose={onWhiteboardClose ?? (() => {})}
-        showStopDiscussion={showStopButton}
-        onStopDiscussion={onStopDiscussion}
-        ttsEnabled={ttsEnabled}
-        ttsMuted={ttsMuted}
-        ttsVolume={ttsVolume}
-        onToggleMute={() => {
-          if (!ttsEnabled) return;
-          setTTSMuted(!ttsMuted);
-        }}
-        onVolumeChange={(v) => setTTSVolume(v)}
-        autoPlayLecture={autoPlayLecture}
-        onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}
-        playbackSpeed={playbackSpeed}
-        onCycleSpeed={handleCycleSpeed}
-      />
-
+      <div
+        className={cn(
+          'transition-opacity duration-300',
+          isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
+        )}
+      >
+        <CanvasToolbar
+          className="shrink-0 h-8 px-3 border-b border-gray-100/40 dark:border-gray-700/30"
+          currentSceneIndex={currentSceneIndex}
+          scenesCount={scenesCount}
+          engineState={
+            engineMode === 'playing' || engineMode === 'live'
+              ? 'playing'
+              : engineMode === 'paused'
+                ? 'paused'
+                : 'idle'
+          }
+          isLiveSession={isStreaming || isTopicPending || engineMode === 'live'}
+          whiteboardOpen={whiteboardOpen}
+          sidebarCollapsed={sidebarCollapsed}
+          chatCollapsed={chatCollapsed}
+          onToggleSidebar={onToggleSidebar}
+          onToggleChat={onToggleChat}
+          onPrevSlide={onPrevSlide ?? (() => {})}
+          onNextSlide={onNextSlide ?? (() => {})}
+          onPlayPause={onPlayPause ?? (() => {})}
+          onWhiteboardClose={onWhiteboardClose ?? (() => {})}
+          isPresenting={isPresenting}
+          onTogglePresentation={onTogglePresentation}
+          showStopDiscussion={showStopButton}
+          onStopDiscussion={onStopDiscussion}
+          ttsEnabled={ttsEnabled}
+          ttsMuted={ttsMuted}
+          ttsVolume={ttsVolume}
+          onToggleMute={() => ttsEnabled && setTTSMuted(!ttsMuted)}
+          onVolumeChange={(v) => setTTSVolume(v)}
+          autoPlayLecture={autoPlayLecture}
+          onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}
+          playbackSpeed={playbackSpeed}
+          onCycleSpeed={handleCycleSpeed}
+        />
+      </div>
       {/* ── Interaction area — three-column layout ── */}
       <div className="flex-1 flex items-stretch min-h-0">
         {/* Left: Teacher identity */}
-        <div className="w-[90px] shrink-0 flex flex-col border-r border-gray-100/50 dark:border-gray-700/50 bg-white/40 dark:bg-gray-900/40 overflow-visible relative">
+        <div
+          className={cn(
+            'w-[90px] shrink-0 flex flex-col border-r border-gray-100/50 dark:border-gray-700/50 bg-white/40 dark:bg-gray-900/40 overflow-visible relative transition-opacity duration-300',
+            isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
+          )}
+        >
           {/* Decorative Element (Top) */}
           <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-purple-50/50 dark:from-purple-900/10 to-transparent pointer-events-none" />
           <div className="absolute top-3 inset-x-0 flex flex-col items-center justify-center gap-1 opacity-10 pointer-events-none">
@@ -1184,7 +1221,12 @@ export function Roundtable({
         </div>
 
         {/* Right: Participants area */}
-        <div className="w-[140px] shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible">
+        <div
+          className={cn(
+            'w-[140px] shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300',
+            isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
+          )}
+        >
           {/* Companion agent avatars — horizontal row, scrollable on overflow, arrows on hover */}
           <div className="flex-none relative group/scroll">
             {/* Left arrow */}

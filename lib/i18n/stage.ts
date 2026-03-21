@@ -7,6 +7,8 @@ export const stageZhCN = {
     confirmSwitchTitle: '切换页面',
     confirmSwitchMessage: '当前话题正在进行中，切换页面将结束当前话题。确定要切换吗？',
     generatingNextPage: '场景正在生成，请稍候...',
+    fullscreen: '全屏',
+    exitFullscreen: '退出全屏',
   },
   whiteboard: {
     title: '互动白板',
@@ -155,6 +157,8 @@ export const stageEnUS = {
     confirmSwitchMessage:
       'A topic is currently in progress. Switching scenes will end the current topic. Are you sure?',
     generatingNextPage: 'Scene is being generated, please wait...',
+    fullscreen: 'Fullscreen',
+    exitFullscreen: 'Exit Fullscreen',
   },
   whiteboard: {
     title: 'Interactive Whiteboard',

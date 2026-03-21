@@ -13,6 +13,8 @@ import {
   Volume2,
   VolumeX,
   Repeat,
+  Maximize2,
+  Minimize2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store';
@@ -35,6 +37,8 @@ export interface CanvasToolbarProps {
   readonly onWhiteboardClose: () => void;
   readonly showStopDiscussion?: boolean;
   readonly onStopDiscussion?: () => void;
+  readonly isPresenting?: boolean;
+  readonly onTogglePresentation?: () => void;
   readonly className?: string;
   // Audio/playback controls
   readonly ttsEnabled?: boolean;
@@ -92,6 +96,8 @@ export function CanvasToolbar({
   onWhiteboardClose,
   showStopDiscussion,
   onStopDiscussion,
+  isPresenting,
+  onTogglePresentation,
   className,
   ttsEnabled,
   ttsMuted,
@@ -131,6 +137,7 @@ export function CanvasToolbar({
 
   // Effective volume for display
   const effectiveVolume = ttsMuted ? 0 : ttsVolume;
+  const presentationLabel = isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen');
 
   return (
     <div className={cn('flex items-center', className)}>
@@ -382,6 +389,26 @@ export function CanvasToolbar({
 
       {/* ── Right: chat toggle ── */}
       <div className="flex items-center justify-end gap-px shrink-0 pr-1">
+        {onTogglePresentation && (
+          <button
+            onClick={onTogglePresentation}
+            className={cn(
+              ctrlBtn,
+              'w-6 h-6',
+              isPresenting
+                ? 'text-violet-600 dark:text-violet-400'
+                : 'text-gray-600 dark:text-gray-300',
+            )}
+            aria-label={presentationLabel}
+            title={presentationLabel}
+          >
+            {isPresenting ? (
+              <Minimize2 className="w-3.5 h-3.5" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5" />
+            )}
+          </button>
+        )}
         {onToggleChat && (
           <button
             onClick={onToggleChat}
