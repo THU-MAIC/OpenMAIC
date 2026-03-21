@@ -47,7 +47,7 @@ export function AgentBar() {
   const providerVoices = TTS_PROVIDERS[ttsProviderId]?.voices ?? [];
   const getVoiceDisplayName = (voiceId: string) =>
     providerVoices.find((v) => v.id === voiceId)?.name ?? voiceId;
-  const showVoice = voiceList.length > 0 && !ttsMuted;
+  const showVoice = voiceList.length > 0;
 
   // Click-outside to collapse
   useEffect(() => {
@@ -273,10 +273,15 @@ export function AgentBar() {
                           }}
                         >
                           <SelectTrigger
-                            className="h-5 w-auto min-w-0 max-w-[80px] shrink-0 rounded-full border-0 bg-muted/60 px-2 text-[10px] text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground shadow-none focus:ring-0 [&>svg]:size-2.5 [&>svg]:text-muted-foreground/40"
+                            className="h-5 w-auto min-w-0 shrink-0 rounded-full border-0 bg-muted/60 px-2 text-[10px] text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground shadow-none focus:ring-0 [&>svg]:size-2.5 [&>svg]:text-muted-foreground/40"
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <SelectValue />
+                            <span className="truncate">
+                              {t('agentBar.voiceLabel')}:{' '}
+                              {getVoiceDisplayName(
+                                resolveVoice(teacherAgent, ttsProviderId, 0, voiceList),
+                              )}
+                            </span>
                           </SelectTrigger>
                           <SelectContent>
                             {voiceList.map((voiceId) => (
@@ -349,10 +354,15 @@ export function AgentBar() {
                               }}
                             >
                               <SelectTrigger
-                                className="h-5 w-auto min-w-0 max-w-[80px] shrink-0 rounded-full border-0 bg-muted/60 px-2 text-[10px] text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground shadow-none focus:ring-0 [&>svg]:size-2.5 [&>svg]:text-muted-foreground/40"
+                                className="h-5 w-auto min-w-0 shrink-0 rounded-full border-0 bg-muted/60 px-2 text-[10px] text-muted-foreground/70 hover:bg-muted hover:text-muted-foreground shadow-none focus:ring-0 [&>svg]:size-2.5 [&>svg]:text-muted-foreground/40"
                                 onClick={(e) => e.stopPropagation()}
                               >
-                                <SelectValue />
+                                <span className="truncate">
+                                  {t('agentBar.voiceLabel')}:{' '}
+                                  {getVoiceDisplayName(
+                                    resolveVoice(agent, ttsProviderId, agentIndex, voiceList),
+                                  )}
+                                </span>
                               </SelectTrigger>
                               <SelectContent>
                                 {voiceList.map((voiceId) => (
