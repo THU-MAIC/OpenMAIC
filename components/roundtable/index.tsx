@@ -661,7 +661,7 @@ export function Roundtable({
                 className="w-[min(480px,calc(100vw-3rem))] pointer-events-auto"
               >
                 <div className="flex items-center gap-3 bg-black/50 dark:bg-black/60 backdrop-blur-xl rounded-full px-4 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-white/10">
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-0 flex items-center">
                     <textarea
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
@@ -674,7 +674,7 @@ export function Roundtable({
                       placeholder={t('roundtable.inputPlaceholder')}
                       autoFocus
                       rows={1}
-                      className="w-full resize-none bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-white text-sm placeholder:text-gray-400 min-h-[32px] max-h-[80px]"
+                      className="w-full resize-none bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-white text-sm placeholder:text-gray-400 py-0 leading-[40px] max-h-[80px]"
                       style={{ fieldSizing: 'content' } as Record<string, string>}
                     />
                   </div>
