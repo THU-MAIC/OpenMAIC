@@ -416,7 +416,7 @@ export function Roundtable({
       }
       setIsVoiceOpen(false);
     } else {
-      if (isSendCooldown) return;
+      if (isSendCooldown || isProcessing) return;
       onInputActivate?.();
       setIsVoiceOpen(true);
       setIsInputOpen(false);
