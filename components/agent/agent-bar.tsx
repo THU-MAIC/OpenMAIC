@@ -17,7 +17,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { resolveVoice, getServerVoiceList } from '@/lib/audio/voice-resolver';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
-import { Sparkles, ChevronDown, ChevronUp, Shuffle } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronUp, Shuffle, Volume2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function AgentBar() {
@@ -154,6 +154,9 @@ export function AgentBar() {
             </div>
           )}
         </>
+      )}
+      {showVoice && (
+        <Volume2 className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors" />
       )}
     </div>
   );
