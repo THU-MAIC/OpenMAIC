@@ -8,6 +8,8 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { resolveVoice, getServerVoiceList } from '@/lib/audio/voice-resolver';
+import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { Sparkles, ChevronDown, ChevronUp, Shuffle } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -20,6 +22,8 @@ export function AgentBar() {
   const setMaxTurns = useSettingsStore((s) => s.setMaxTurns);
   const agentMode = useSettingsStore((s) => s.agentMode);
   const setAgentMode = useSettingsStore((s) => s.setAgentMode);
+  const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
+  const updateAgent = useAgentRegistry((s) => s.updateAgent);
 
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,6 +34,11 @@ export function AgentBar() {
   const teacherAgent = agents.find((a) => a.role === 'teacher');
   const selectedAgents = agents.filter((a) => selectedAgentIds.includes(a.id));
   const nonTeacherSelected = selectedAgents.filter((a) => a.role !== 'teacher');
+
+  const voiceList = getServerVoiceList(ttsProviderId);
+  const providerVoices = TTS_PROVIDERS[ttsProviderId]?.voices ?? [];
+  const getVoiceDisplayName = (voiceId: string) =>
+    providerVoices.find((v) => v.id === voiceId)?.name ?? voiceId;
 
   // Click-outside to collapse
   useEffect(() => {
@@ -214,12 +223,69 @@ export function AgentBar() {
               </div>
 
               {agentMode === 'preset' ? (
-                /* Agent list — teacher is always selected, no need to show */
+                /* Agent list — teacher first (always selected), then others */
                 <div className="max-h-72 overflow-y-auto -mx-1">
+                  {/* Teacher row — always selected, checkbox disabled */}
+                  {teacherAgent && (
+                    <div
+                      className={cn(
+                        'w-full flex items-center gap-3 px-3 py-2 text-left transition-colors rounded-lg bg-primary/5',
+                      )}
+                    >
+                      <Checkbox checked disabled className="pointer-events-none opacity-50" />
+                      <div
+                        className="size-8 rounded-full overflow-hidden shrink-0 ring-1 ring-border/40"
+                        style={{ boxShadow: `0 0 0 2px ${teacherAgent.color}30` }}
+                      >
+                        <img
+                          src={teacherAgent.avatar}
+                          alt={getAgentName(teacherAgent)}
+                          className="size-full object-cover"
+                        />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium flex items-center gap-1.5">
+                          {getAgentName(teacherAgent)}
+                          <span className="text-[10px] text-muted-foreground/50 font-normal">
+                            {getAgentRole(teacherAgent)}
+                          </span>
+                        </div>
+                      </div>
+                      {voiceList.length > 0 ? (
+                        <select
+                          value={resolveVoice(teacherAgent, ttsProviderId, 0, voiceList)}
+                          onChange={(e) => {
+                            updateAgent(teacherAgent.id, {
+                              voiceOverrides: {
+                                ...teacherAgent.voiceOverrides,
+                                [ttsProviderId]: e.target.value,
+                              },
+                            });
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="h-6 text-[11px] rounded border border-border/60 bg-background px-1 pr-5 text-foreground shrink-0 max-w-[90px] truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                        >
+                          {voiceList.map((voiceId) => (
+                            <option key={voiceId} value={voiceId}>
+                              {getVoiceDisplayName(voiceId)}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <span className="text-[11px] text-muted-foreground/50 shrink-0">
+                          {t('agentBar.voiceLoading')}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Non-teacher agents */}
                   {agents
                     .filter((a) => a.role !== 'teacher')
-                    .map((agent) => {
+                    .map((agent, idx) => {
                       const isSelected = selectedAgentIds.includes(agent.id);
+                      // agentIndex: teacher=0, then non-teachers start at 1
+                      const agentIndex = idx + 1;
                       return (
                         <div
                           key={agent.id}
@@ -259,6 +325,31 @@ export function AgentBar() {
                               ) : null;
                             })()}
                           </div>
+                          {voiceList.length > 0 ? (
+                            <select
+                              value={resolveVoice(agent, ttsProviderId, agentIndex, voiceList)}
+                              onChange={(e) => {
+                                updateAgent(agent.id, {
+                                  voiceOverrides: {
+                                    ...agent.voiceOverrides,
+                                    [ttsProviderId]: e.target.value,
+                                  },
+                                });
+                              }}
+                              onClick={(e) => e.stopPropagation()}
+                              className="h-6 text-[11px] rounded border border-border/60 bg-background px-1 pr-5 text-foreground shrink-0 max-w-[90px] truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+                            >
+                              {voiceList.map((voiceId) => (
+                                <option key={voiceId} value={voiceId}>
+                                  {getVoiceDisplayName(voiceId)}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground/50 shrink-0">
+                              {t('agentBar.voiceLoading')}
+                            </span>
+                          )}
                         </div>
                       );
                     })}
@@ -277,6 +368,9 @@ export function AgentBar() {
                   </div>
                   <p className="text-xs text-muted-foreground text-center">
                     {t('settings.agentModeAutoDesc')}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground/50 text-center -mt-4">
+                    {t('agentBar.voiceAutoAssign')}
                   </p>
                 </div>
               )}
