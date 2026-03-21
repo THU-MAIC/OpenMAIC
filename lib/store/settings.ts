@@ -9,18 +9,20 @@ import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
 import type { TTSProviderId, ASRProviderId } from '@/lib/audio/types';
-import { ASR_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
+import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('Settings');
 
 /** Available playback speed tiers */
-export const PLAYBACK_SPEEDS = [1, 1.5, 2] as const;
+export const PLAYBACK_SPEEDS = [1, 1.25, 1.5, 2] as const;
 export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
 
 export interface SettingsState {
@@ -312,6 +314,50 @@ const getDefaultWebSearchConfig = () => ({
     tavily: { apiKey: '', baseUrl: '', enabled: true },
   } as Record<WebSearchProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
+
+/**
+ * Check whether a provider ID exists in the given provider registry.
+ */
+function hasProviderId(providerMap: Record<string, unknown>, providerId?: string): boolean {
+  return typeof providerId === 'string' && providerId in providerMap;
+}
+
+/**
+ * Validate all persisted provider IDs against their registries.
+ * Reset any stale / removed ID back to its default value.
+ * Called during both migrate and merge to cover all rehydration paths.
+ */
+function ensureValidProviderSelections(state: Partial<SettingsState>): void {
+  const defaultAudioConfig = getDefaultAudioConfig();
+  const defaultPdfConfig = getDefaultPDFConfig();
+  const defaultImageConfig = getDefaultImageConfig();
+  const defaultVideoConfig = getDefaultVideoConfig();
+  const defaultWebSearchConfig = getDefaultWebSearchConfig();
+
+  if (!hasProviderId(PDF_PROVIDERS, state.pdfProviderId)) {
+    state.pdfProviderId = defaultPdfConfig.pdfProviderId;
+  }
+
+  if (!hasProviderId(WEB_SEARCH_PROVIDERS, state.webSearchProviderId)) {
+    state.webSearchProviderId = defaultWebSearchConfig.webSearchProviderId;
+  }
+
+  if (!hasProviderId(IMAGE_PROVIDERS, state.imageProviderId)) {
+    state.imageProviderId = defaultImageConfig.imageProviderId;
+  }
+
+  if (!hasProviderId(VIDEO_PROVIDERS, state.videoProviderId)) {
+    state.videoProviderId = defaultVideoConfig.videoProviderId;
+  }
+
+  if (!hasProviderId(TTS_PROVIDERS, state.ttsProviderId)) {
+    state.ttsProviderId = defaultAudioConfig.ttsProviderId;
+  }
+
+  if (!hasProviderId(ASR_PROVIDERS, state.asrProviderId)) {
+    state.asrProviderId = defaultAudioConfig.asrProviderId;
+  }
+}
 
 /**
  * Ensure providersConfig includes all built-in providers and their latest models.
@@ -1048,6 +1094,8 @@ export const useSettingsStore = create<SettingsState>()(
           delete stateRecord.webSearchIsServerConfigured;
         }
 
+        ensureValidProviderSelections(state);
+
         return state;
       },
       // Custom merge: always sync built-in providers on every rehydrate,
@@ -1055,6 +1103,7 @@ export const useSettingsStore = create<SettingsState>()(
       merge: (persistedState, currentState) => {
         const merged = { ...currentState, ...(persistedState as object) };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
+        ensureValidProviderSelections(merged as Partial<SettingsState>);
         return merged as SettingsState;
       },
     },
