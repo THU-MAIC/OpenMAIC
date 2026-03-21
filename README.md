@@ -159,7 +159,7 @@ Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 OpenMAIC supports both OpenAI Chat Completions (`openai`) and the newer Responses API (`openai-responses`). These are explicit provider types (no auto-fallback).
 
 - Configure: `OPENAI_RESPONSES_API_KEY`, `OPENAI_RESPONSES_BASE_URL`
-- Select model: `openai-responses:<modelId>` (e.g. `DEFAULT_MODEL=openai-responses:gpt-5.4`)
+- Select model: `openai-responses:<modelId>` (e.g. `DEFAULT_MODEL=openai-responses:gpt-5.2`)
 
 ### Running as a Protected Study API (Public Host)
 

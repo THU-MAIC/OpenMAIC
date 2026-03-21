@@ -159,7 +159,7 @@ docker compose up --build
 OpenMAIC 同时支持 OpenAI Chat Completions（`openai`）与新版 Responses API（`openai-responses`）。这两者是**显式分流**（不会自动猜协议 / 自动 fallback）。
 
 - 配置：`OPENAI_RESPONSES_API_KEY`、`OPENAI_RESPONSES_BASE_URL`
-- 选择模型：`openai-responses:<modelId>`（例如 `DEFAULT_MODEL=openai-responses:gpt-5.4`）
+- 选择模型：`openai-responses:<modelId>`（例如 `DEFAULT_MODEL=openai-responses:gpt-5.2`）
 
 ### 作为受保护的 Study API 对外暴露（公网 host）
 
