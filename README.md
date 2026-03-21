@@ -154,6 +154,23 @@ docker compose up --build
 
 Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 
+### Optional: OpenAI Responses API
+
+OpenMAIC supports both OpenAI Chat Completions (`openai`) and the newer Responses API (`openai-responses`). These are explicit provider types (no auto-fallback).
+
+- Configure: `OPENAI_RESPONSES_API_KEY`, `OPENAI_RESPONSES_BASE_URL`
+- Select model: `openai-responses:<modelId>` (e.g. `DEFAULT_MODEL=openai-responses:gpt-5.4`)
+
+### Running as a Protected Study API (Public Host)
+
+If you expose this server on a public hostname (e.g. `study-api.papertok.ai`), protect it so AI costs are not open to the internet:
+
+- Non-`/api/*` paths return `404`
+- `/api/*` requires `Authorization: Bearer <token>`
+
+Set `STUDY_API_BEARER_TOKEN` and (optionally) `STUDY_API_PUBLIC_HOSTS`.
+Local `localhost/127.0.0.1` is not restricted.
+
 ---
 
 ## ✨ Features

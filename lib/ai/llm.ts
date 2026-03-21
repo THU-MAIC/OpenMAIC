@@ -4,8 +4,8 @@
  * All LLM interactions should go through callLLM / streamLLM.
  */
 
-import { generateText, streamText } from 'ai';
-import type { GenerateTextResult, StreamTextResult } from 'ai';
+import { generateText, streamText, Output } from 'ai';
+import type { GenerateTextResult, StreamTextResult, ToolSet } from 'ai';
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
@@ -18,6 +18,8 @@ export type { ThinkingConfig } from '@/lib/types/provider';
 // Re-export the parameter types accepted by AI SDK
 type GenerateTextParams = Parameters<typeof generateText>[0];
 type StreamTextParams = Parameters<typeof streamText>[0];
+
+type AISDKOutput = Output.Output;
 
 function _extractRequestInfo(params: GenerateTextParams | StreamTextParams) {
   const tools = params.tools ? Object.keys(params.tools as Record<string, unknown>) : undefined;
@@ -51,12 +53,10 @@ function shouldMaterializeFromStream(params: GenerateTextParams): boolean {
   return getModelProvider(params) === 'openai.responses';
 }
 
-async function materializeStreamTextResult(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  result: StreamTextResult<any, any>,
+async function materializeStreamTextResult<TTools extends ToolSet, TOutput extends AISDKOutput>(
+  result: StreamTextResult<TTools, TOutput>,
   getStreamError?: () => unknown,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-): Promise<GenerateTextResult<any, any>> {
+): Promise<GenerateTextResult<TTools, TOutput>> {
   let consumeError: unknown;
   await result.consumeStream({
     onError: (error) => {
@@ -148,7 +148,7 @@ async function materializeStreamTextResult(
     steps,
     output,
     experimental_output: output,
-  } as GenerateTextResult<any, any>;
+  } as GenerateTextResult<TTools, TOutput>;
 }
 
 // ---------------------------------------------------------------------------

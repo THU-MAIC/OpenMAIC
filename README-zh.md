@@ -154,6 +154,23 @@ docker compose up --build
 
 在 `.env.local` 中设置 `PDF_MINERU_BASE_URL`（如需认证则同时设置 `PDF_MINERU_API_KEY`）。
 
+### 可选：OpenAI Responses 协议
+
+OpenMAIC 同时支持 OpenAI Chat Completions（`openai`）与新版 Responses API（`openai-responses`）。这两者是**显式分流**（不会自动猜协议 / 自动 fallback）。
+
+- 配置：`OPENAI_RESPONSES_API_KEY`、`OPENAI_RESPONSES_BASE_URL`
+- 选择模型：`openai-responses:<modelId>`（例如 `DEFAULT_MODEL=openai-responses:gpt-5.4`）
+
+### 作为受保护的 Study API 对外暴露（公网 host）
+
+如果你把该服务暴露到公网域名（例如 `study-api.papertok.ai`），建议开启 Bearer 保护，避免生成接口被互联网直接调用：
+
+- 非 `/api/*` 路径返回 `404`
+- `/api/*` 需要 `Authorization: Bearer <token>`
+
+设置 `STUDY_API_BEARER_TOKEN`，并可选设置 `STUDY_API_PUBLIC_HOSTS`。
+本机 `localhost/127.0.0.1` 不受此限制。
+
 ---
 
 ## ✨ 功能特性
