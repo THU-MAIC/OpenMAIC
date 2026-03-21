@@ -252,30 +252,29 @@ export function AgentBar() {
                         </div>
                       </div>
                       {voiceList.length > 0 ? (
-                        <select
-                          value={resolveVoice(teacherAgent, ttsProviderId, 0, voiceList)}
-                          onChange={(e) => {
-                            updateAgent(teacherAgent.id, {
-                              voiceOverrides: {
-                                ...teacherAgent.voiceOverrides,
-                                [ttsProviderId]: e.target.value,
-                              },
-                            });
-                          }}
-                          onClick={(e) => e.stopPropagation()}
-                          className="h-6 text-[11px] rounded border border-border/60 bg-background px-1 pr-5 text-foreground shrink-0 max-w-[90px] truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-                        >
-                          {voiceList.map((voiceId) => (
-                            <option key={voiceId} value={voiceId}>
-                              {getVoiceDisplayName(voiceId)}
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <span className="text-[11px] text-muted-foreground/50 shrink-0">
-                          {t('agentBar.voiceLoading')}
-                        </span>
-                      )}
+                        <div className="relative shrink-0">
+                          <select
+                            value={resolveVoice(teacherAgent, ttsProviderId, 0, voiceList)}
+                            onChange={(e) => {
+                              updateAgent(teacherAgent.id, {
+                                voiceOverrides: {
+                                  ...teacherAgent.voiceOverrides,
+                                  [ttsProviderId]: e.target.value,
+                                },
+                              });
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="appearance-none h-5 text-[10px] rounded-full bg-muted/60 hover:bg-muted pl-2 pr-5 text-muted-foreground/70 hover:text-muted-foreground shrink-0 max-w-[80px] truncate cursor-pointer focus:outline-none transition-colors border-0"
+                          >
+                            {voiceList.map((voiceId) => (
+                              <option key={voiceId} value={voiceId}>
+                                {getVoiceDisplayName(voiceId)}
+                              </option>
+                            ))}
+                          </select>
+                          <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 size-2.5 text-muted-foreground/40" />
+                        </div>
+                      ) : null}
                     </div>
                   )}
 
@@ -326,30 +325,29 @@ export function AgentBar() {
                             })()}
                           </div>
                           {voiceList.length > 0 ? (
-                            <select
-                              value={resolveVoice(agent, ttsProviderId, agentIndex, voiceList)}
-                              onChange={(e) => {
-                                updateAgent(agent.id, {
-                                  voiceOverrides: {
-                                    ...agent.voiceOverrides,
-                                    [ttsProviderId]: e.target.value,
-                                  },
-                                });
-                              }}
-                              onClick={(e) => e.stopPropagation()}
-                              className="h-6 text-[11px] rounded border border-border/60 bg-background px-1 pr-5 text-foreground shrink-0 max-w-[90px] truncate cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
-                            >
-                              {voiceList.map((voiceId) => (
-                                <option key={voiceId} value={voiceId}>
-                                  {getVoiceDisplayName(voiceId)}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span className="text-[11px] text-muted-foreground/50 shrink-0">
-                              {t('agentBar.voiceLoading')}
-                            </span>
-                          )}
+                            <div className="relative shrink-0">
+                              <select
+                                value={resolveVoice(agent, ttsProviderId, agentIndex, voiceList)}
+                                onChange={(e) => {
+                                  updateAgent(agent.id, {
+                                    voiceOverrides: {
+                                      ...agent.voiceOverrides,
+                                      [ttsProviderId]: e.target.value,
+                                    },
+                                  });
+                                }}
+                                onClick={(e) => e.stopPropagation()}
+                                className="appearance-none h-5 text-[10px] rounded-full bg-muted/60 hover:bg-muted pl-2 pr-5 text-muted-foreground/70 hover:text-muted-foreground shrink-0 max-w-[80px] truncate cursor-pointer focus:outline-none transition-colors border-0"
+                              >
+                                {voiceList.map((voiceId) => (
+                                  <option key={voiceId} value={voiceId}>
+                                    {getVoiceDisplayName(voiceId)}
+                                  </option>
+                                ))}
+                              </select>
+                              <ChevronDown className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 size-2.5 text-muted-foreground/40" />
+                            </div>
+                          ) : null}
                         </div>
                       );
                     })}
