@@ -76,6 +76,11 @@ export const stageZhCN = {
     autoPlay: '自动播放',
     autoPlayOff: '关闭自动播放',
     speed: '倍速',
+    voiceInput: '语音输入',
+    voiceInputDisabled: '语音输入已禁用',
+    textInput: '文字输入',
+    stopRecording: '停止录音',
+    startRecording: '开始录音',
   },
   pbl: {
     legacyFormat: '此PBL场景使用旧格式，请重新生成课程',
@@ -226,6 +231,11 @@ export const stageEnUS = {
     autoPlay: 'Auto-play',
     autoPlayOff: 'Stop auto-play',
     speed: 'Speed',
+    voiceInput: 'Voice input',
+    voiceInputDisabled: 'Voice input disabled',
+    textInput: 'Text input',
+    stopRecording: 'Stop recording',
+    startRecording: 'Start recording',
   },
   pbl: {
     legacyFormat: 'This PBL scene uses a legacy format. Please regenerate the course.',

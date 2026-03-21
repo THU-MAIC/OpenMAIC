@@ -140,7 +140,7 @@ export function CanvasToolbar({
   const presentationLabel = isPresenting ? t('stage.exitFullscreen') : t('stage.fullscreen');
 
   return (
-    <div className={cn('flex items-center', className)}>
+    <div className={cn('flex items-center gap-2', className)}>
       {/* ── Left: sidebar toggle + page indicator ── */}
       <div className="flex items-center gap-1 shrink-0 pl-1">
         {onToggleSidebar && (

@@ -24,6 +24,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { toast } from 'sonner';
 import { useSettingsStore, PLAYBACK_SPEEDS } from '@/lib/store/settings';
 import { ProactiveCard } from '@/components/chat/proactive-card';
+import { PresentationSpeechOverlay } from '@/components/roundtable/presentation-speech-overlay';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import type { DiscussionAction } from '@/lib/types/action';
@@ -186,6 +187,7 @@ export function Roundtable({
 
   // Stable ref object for the current discussion agent's avatar
   const discussionAnchorRef = useRef<HTMLDivElement>(null);
+  const presentationActionAnchorRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!discussionRequest) {
       discussionAnchorRef.current = null;
@@ -223,6 +225,13 @@ export function Roundtable({
     if (scrollableHeight <= 0) return;
     el.scrollTo({ top: scrollableHeight, behavior: 'smooth' });
   }, [sourceText, isInLiveFlow]);
+
+  // Clear user message early when agent starts responding
+  useEffect(() => {
+    if (userMessage && (playbackView?.sourceText || thinkingState)) {
+      setUserMessage(null);
+    }
+  }, [playbackView?.sourceText, thinkingState]);
 
   // End flash effect (Issue 3)
   useEffect(() => {
@@ -345,7 +354,10 @@ export function Roundtable({
       onInputActivate?.();
     }
     setIsInputOpen(!isInputOpen);
-    setIsVoiceOpen(false);
+    if (isVoiceOpen) {
+      if (isRecording) stopRecording();
+      setIsVoiceOpen(false);
+    }
   };
 
   const handleToggleVoice = () => {
@@ -441,6 +453,19 @@ export function Roundtable({
           ? 'teacher'
           : 'idle';
 
+  // Enriched playbackView that includes userMessage overlay for bubbleRole/sourceText
+  const enrichedPlaybackView: PlaybackView = playbackView
+    ? { ...playbackView, bubbleRole, sourceText, activeRole: activeRole ?? playbackView.activeRole }
+    : {
+        phase: 'idle' as const,
+        sourceText,
+        bubbleRole,
+        activeRole,
+        buttonState: 'none' as const,
+        isInLiveFlow: false,
+        isTopicActive: false,
+      };
+
   // Show stop button whenever there's an active QA/discussion session or live mode.
   // sessionType is only cleared in doSessionCleanup, so this stays stable through
   // brief loading gaps (e.g. between user message and agent SSE response).
@@ -452,6 +477,425 @@ export function Roundtable({
     const nextIndex = (currentIndex + 1) % PLAYBACK_SPEEDS.length;
     setPlaybackSpeed(PLAYBACK_SPEEDS[nextIndex]);
   }, [playbackSpeed, setPlaybackSpeed]);
+
+  const presentationDiscussionParticipant = discussionRequest
+    ? discussionRequest.agentId === teacherParticipant?.id
+      ? teacherParticipant || null
+      : studentParticipants.find((student) => student.id === discussionRequest.agentId) || null
+    : null;
+  const presentationDiscussionAgentConfig = discussionRequest
+    ? useAgentRegistry.getState().getAgent(discussionRequest.agentId || '')
+    : null;
+  const showPresentationDock =
+    !!controlsVisible ||
+    !!discussionRequest ||
+    isCueUser ||
+    isInputOpen ||
+    isVoiceOpen ||
+    isRecording ||
+    isProcessing;
+  const toolbar = (
+    <CanvasToolbar
+      className="shrink-0 h-8 px-3 border-b border-gray-100/40 dark:border-gray-700/30"
+      currentSceneIndex={currentSceneIndex}
+      scenesCount={scenesCount}
+      engineState={
+        engineMode === 'playing' || engineMode === 'live'
+          ? 'playing'
+          : engineMode === 'paused'
+            ? 'paused'
+            : 'idle'
+      }
+      isLiveSession={isStreaming || isTopicPending || engineMode === 'live'}
+      whiteboardOpen={whiteboardOpen}
+      sidebarCollapsed={sidebarCollapsed}
+      chatCollapsed={chatCollapsed}
+      onToggleSidebar={onToggleSidebar}
+      onToggleChat={onToggleChat}
+      onPrevSlide={onPrevSlide ?? (() => {})}
+      onNextSlide={onNextSlide ?? (() => {})}
+      onPlayPause={onPlayPause ?? (() => {})}
+      onWhiteboardClose={onWhiteboardClose ?? (() => {})}
+      isPresenting={isPresenting}
+      onTogglePresentation={onTogglePresentation}
+      showStopDiscussion={showStopButton}
+      onStopDiscussion={onStopDiscussion}
+      ttsEnabled={ttsEnabled}
+      ttsMuted={ttsMuted}
+      ttsVolume={ttsVolume}
+      onToggleMute={() => ttsEnabled && setTTSMuted(!ttsMuted)}
+      onVolumeChange={(v) => setTTSVolume(v)}
+      autoPlayLecture={autoPlayLecture}
+      onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}
+      playbackSpeed={playbackSpeed}
+      onCycleSpeed={handleCycleSpeed}
+    />
+  );
+
+  if (isPresenting) {
+    return (
+      <div className="h-0 w-full relative z-10 overflow-visible">
+        {/* Speech overlay — fills the full stage area via absolute positioning */}
+        <PresentationSpeechOverlay
+          playbackView={enrichedPlaybackView}
+          participants={initialParticipants}
+          speakingAgentId={speakingAgentId ?? null}
+          isTopicPending={!!isTopicPending}
+          side="left"
+        />
+
+        {/* Click-outside backdrop to dismiss input/voice */}
+        {(isInputOpen || isVoiceOpen) && (
+          <div
+            className="fixed top-0 left-0 right-0 bottom-14 z-[45] pointer-events-auto"
+            onClick={() => {
+              setIsInputOpen(false);
+              setIsVoiceOpen(false);
+              stopRecording?.();
+            }}
+          />
+        )}
+
+        {/* ── Toolbar — pinned to bottom of screen ── */}
+        <div
+          className={cn(
+            'fixed bottom-0 inset-x-0 z-[40] pointer-events-auto flex items-center justify-center transition-all duration-300',
+            controlsVisible
+              ? 'opacity-100 translate-y-0'
+              : 'opacity-0 translate-y-2 pointer-events-none',
+          )}
+        >
+          <div className="mb-3 px-2 py-1 rounded-full bg-black/50 dark:bg-black/60 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+            {toolbar}
+          </div>
+        </div>
+
+        {/* ── End flash notification ── */}
+        <AnimatePresence>
+          {endFlashVisible && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.9 }}
+              animate={{
+                opacity: [0, 1, 1, 0],
+                y: [10, 0, 0, 6],
+                scale: [0.9, 1, 1, 0.95],
+              }}
+              transition={{
+                duration: 1.8,
+                times: [0, 0.15, 0.7, 1],
+                ease: 'easeOut',
+              }}
+              className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[50] bg-gray-800/80 backdrop-blur-md text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none"
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block mr-1.5" />
+              {endFlashSessionType === 'discussion'
+                ? t('roundtable.discussionEnded')
+                : t('roundtable.qaEnded')}
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* ── Center stack: input / voice / thinking — anchored above toolbar ── */}
+        <div className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[50] flex flex-col items-center gap-3 pointer-events-none">
+          {/* Input panel */}
+          <AnimatePresence>
+            {isInputOpen && (
+              <motion.div
+                key="presentation-input-stage"
+                initial={{ opacity: 0, scale: 0.95, y: 15, filter: 'blur(4px)' }}
+                animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, scale: 0.95, y: 15, filter: 'blur(4px)' }}
+                className="w-[min(480px,calc(100vw-3rem))] pointer-events-auto"
+              >
+                <div className="flex items-center gap-3 bg-black/50 dark:bg-black/60 backdrop-blur-xl rounded-full px-4 py-2 shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-white/10">
+                  <div className="flex-1 min-w-0">
+                    <textarea
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          handleSendMessage();
+                        }
+                      }}
+                      placeholder={t('roundtable.inputPlaceholder')}
+                      autoFocus
+                      rows={1}
+                      className="w-full resize-none bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-white text-sm placeholder:text-gray-400 min-h-[32px] max-h-[80px]"
+                      style={{ fieldSizing: 'content' } as Record<string, string>}
+                    />
+                  </div>
+                  <button
+                    onClick={handleSendMessage}
+                    disabled={isSendCooldown}
+                    className={cn(
+                      'w-10 h-10 rounded-full flex items-center justify-center transition-all shrink-0',
+                      isSendCooldown
+                        ? 'bg-gray-500/50 cursor-not-allowed'
+                        : 'bg-purple-600 hover:bg-purple-700 shadow-[0_4px_16px_rgba(147,51,234,0.3)]',
+                    )}
+                  >
+                    {isSendCooldown ? (
+                      <Loader2 className="w-4 h-4 text-white animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4 text-white" />
+                    )}
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Voice panel */}
+          <AnimatePresence>
+            {isVoiceOpen && (
+              <motion.div
+                key="presentation-voice-stage"
+                initial={{ opacity: 0, scale: 0.9, y: 20, filter: 'blur(4px)' }}
+                animate={{ opacity: 1, scale: 1, y: 0, filter: 'blur(0px)' }}
+                exit={{ opacity: 0, scale: 0.9, y: 20, filter: 'blur(4px)' }}
+                className="pointer-events-auto"
+              >
+                <div className="flex items-center gap-4 bg-black/50 dark:bg-black/60 backdrop-blur-xl rounded-full px-5 py-3 shadow-[0_8px_32px_rgba(0,0,0,0.4)] border border-white/10">
+                  {/* Waveform bars */}
+                  <div className="flex items-center gap-0.5 h-8">
+                    {[...Array(12)].map((_, i) => (
+                      <motion.div
+                        key={i}
+                        animate={{
+                          height: [4, 16 + Math.random() * 12, 4],
+                          opacity: [0.3, 1, 0.3],
+                        }}
+                        transition={{
+                          repeat: Infinity,
+                          duration: 0.5 + Math.random() * 0.5,
+                          delay: i * 0.05,
+                          ease: 'easeInOut',
+                        }}
+                        className="w-1 bg-gradient-to-t from-purple-400 to-indigo-400 rounded-full"
+                      />
+                    ))}
+                  </div>
+                  <span className="text-[11px] font-semibold tracking-wider text-purple-300 uppercase">
+                    {isProcessing ? t('roundtable.processing') : t('roundtable.listening')}
+                  </span>
+                  {/* Mic button */}
+                  <button
+                    type="button"
+                    aria-label={
+                      isRecording ? t('roundtable.stopRecording') : t('roundtable.startRecording')
+                    }
+                    className="relative group cursor-pointer bg-transparent border-none p-0"
+                    onClick={handleToggleVoice}
+                  >
+                    <div className="relative w-12 h-12 rounded-full bg-gradient-to-br from-purple-600 to-indigo-700 shadow-[0_4px_20px_rgba(147,51,234,0.3)] flex items-center justify-center group-hover:scale-105 transition-transform duration-300 border border-white/20">
+                      <Mic className="w-5 h-5 text-white" />
+                    </div>
+                    <div className="absolute inset-0 rounded-full border-2 border-purple-500 opacity-40 animate-[ping_2s_ease-in-out_infinite]" />
+                  </button>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* "Your turn" cue prompt — clickable, opens input panel */}
+          <AnimatePresence>
+            {isCueUser && !bubbleRole && !thinkingState && !isInputOpen && !isVoiceOpen && (
+              <motion.div
+                key="presentation-cue-user"
+                initial={{ opacity: 0, scale: 0.92, y: 8 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.92, y: 8 }}
+                transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
+                className="pointer-events-auto"
+              >
+                <button
+                  onClick={() => (asrEnabled ? handleToggleVoice() : handleToggleInput())}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-black/50 backdrop-blur-xl border border-amber-500/50 shadow-[0_0_16px_rgba(245,158,11,0.25),0_8px_32px_rgba(0,0,0,0.4)] text-amber-400 text-sm font-semibold tracking-wide hover:bg-black/60 hover:border-amber-400/70 hover:shadow-[0_0_24px_rgba(245,158,11,0.35)] transition-all active:scale-95 animate-pulse"
+                >
+                  {asrEnabled ? <Mic className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
+                  {t('roundtable.yourTurn')}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Director thinking indicator */}
+          <AnimatePresence>
+            {thinkingState?.stage === 'director' && !currentSpeech && !userMessage && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                className="flex items-center gap-2 px-4 py-2 bg-black/50 backdrop-blur-xl rounded-full border border-white/10"
+              >
+                <div className="flex gap-1">
+                  {[0, 0.2, 0.4].map((delay) => (
+                    <motion.div
+                      key={delay}
+                      animate={{ opacity: [0.3, 1, 0.3] }}
+                      transition={{ repeat: Infinity, duration: 1.2, delay }}
+                      className="w-1.5 h-1.5 rounded-full bg-purple-400"
+                    />
+                  ))}
+                </div>
+                <span className="text-[10px] text-gray-400 font-medium">
+                  {t('roundtable.thinking')}
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* ── Right-side stack: bubble + dock — flex column, no hardcoded px ── */}
+        <div className="fixed right-5 bottom-5 z-[48] flex flex-col items-end gap-3 pointer-events-none">
+          {/* Right-side speech bubble (flows above dock via flex) */}
+          <PresentationSpeechOverlay
+            playbackView={enrichedPlaybackView}
+            participants={initialParticipants}
+            speakingAgentId={speakingAgentId ?? null}
+            isTopicPending={!!isTopicPending}
+            userAvatar={userAvatar}
+            side="right"
+          />
+
+          {/* Dock */}
+          <AnimatePresence>
+            {showPresentationDock && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.92 }}
+                transition={{ duration: 0.2, ease: 'easeOut' }}
+                className="pointer-events-auto"
+              >
+                <div
+                  ref={presentationActionAnchorRef}
+                  className="flex items-center gap-2.5 rounded-full bg-black/50 dark:bg-black/60 backdrop-blur-xl border border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.4)] px-2.5 py-2"
+                >
+                  {isSendCooldown ? (
+                    <div className="flex items-center justify-center w-8 h-8">
+                      <div className="flex items-center gap-[3px]">
+                        {[0, 1, 2].map((i) => (
+                          <motion.div
+                            key={i}
+                            animate={{ y: [0, -3, 0], opacity: [0.35, 0.9, 0.35] }}
+                            transition={{
+                              repeat: Infinity,
+                              duration: 0.9,
+                              delay: i * 0.12,
+                              ease: 'easeInOut',
+                            }}
+                            className="w-[3px] h-[3px] rounded-full bg-purple-400"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <button
+                        aria-label={
+                          asrEnabled
+                            ? t('roundtable.voiceInput')
+                            : t('roundtable.voiceInputDisabled')
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (asrEnabled) handleToggleVoice();
+                        }}
+                        disabled={!asrEnabled}
+                        className={cn(
+                          'w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95',
+                          !asrEnabled
+                            ? 'text-gray-500 cursor-not-allowed'
+                            : isVoiceOpen
+                              ? 'bg-purple-600 text-white'
+                              : 'text-gray-300 hover:text-white hover:bg-white/10',
+                        )}
+                      >
+                        {asrEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
+                      </button>
+                      <button
+                        aria-label={t('roundtable.textInput')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleInput();
+                        }}
+                        className={cn(
+                          'w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95',
+                          isInputOpen
+                            ? 'bg-purple-600 text-white'
+                            : 'text-gray-300 hover:text-white hover:bg-white/10',
+                        )}
+                      >
+                        <MessageSquare className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    aria-label={t('roundtable.you')}
+                    className="relative group cursor-pointer shrink-0 bg-transparent border-none p-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleToggleInput();
+                    }}
+                  >
+                    <div
+                      className={cn(
+                        'relative w-10 h-10 rounded-full transition-all duration-300 flex items-center justify-center',
+                        activeRole === 'user' || isInputOpen || isCueUser
+                          ? 'scale-105'
+                          : 'opacity-70 group-hover:opacity-100 group-hover:scale-100',
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          'absolute inset-0 rounded-full border-2 transition-all duration-300',
+                          isCueUser
+                            ? 'border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.4)] animate-pulse'
+                            : activeRole === 'user' || isInputOpen
+                              ? 'border-purple-500 shadow-[0_0_6px_rgba(168,85,247,0.3)]'
+                              : 'border-white/20 group-hover:border-purple-400/50',
+                        )}
+                      />
+                      <div className="w-8 h-8 rounded-full bg-gray-800 overflow-hidden relative z-10 text-lg">
+                        <AvatarDisplay src={userAvatar} alt={t('roundtable.you')} />
+                      </div>
+                    </div>
+                  </button>
+                </div>
+
+                <AnimatePresence>
+                  {discussionRequest && (
+                    <ProactiveCard
+                      action={discussionRequest}
+                      mode={engineMode === 'paused' ? 'paused' : 'playback'}
+                      anchorRef={presentationActionAnchorRef}
+                      align="left"
+                      agentName={
+                        presentationDiscussionParticipant?.name ||
+                        presentationDiscussionAgentConfig?.name
+                      }
+                      agentAvatar={
+                        presentationDiscussionParticipant?.avatar ||
+                        presentationDiscussionAgentConfig?.avatar
+                      }
+                      agentColor={presentationDiscussionAgentConfig?.color}
+                      onSkip={() => onDiscussionSkip?.()}
+                      onListen={() => onDiscussionStart?.(discussionRequest)}
+                      onTogglePause={() => onPlayPause?.()}
+                    />
+                  )}
+                </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -469,41 +913,7 @@ export function Roundtable({
           isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
         )}
       >
-        <CanvasToolbar
-          className="shrink-0 h-8 px-3 border-b border-gray-100/40 dark:border-gray-700/30"
-          currentSceneIndex={currentSceneIndex}
-          scenesCount={scenesCount}
-          engineState={
-            engineMode === 'playing' || engineMode === 'live'
-              ? 'playing'
-              : engineMode === 'paused'
-                ? 'paused'
-                : 'idle'
-          }
-          isLiveSession={isStreaming || isTopicPending || engineMode === 'live'}
-          whiteboardOpen={whiteboardOpen}
-          sidebarCollapsed={sidebarCollapsed}
-          chatCollapsed={chatCollapsed}
-          onToggleSidebar={onToggleSidebar}
-          onToggleChat={onToggleChat}
-          onPrevSlide={onPrevSlide ?? (() => {})}
-          onNextSlide={onNextSlide ?? (() => {})}
-          onPlayPause={onPlayPause ?? (() => {})}
-          onWhiteboardClose={onWhiteboardClose ?? (() => {})}
-          isPresenting={isPresenting}
-          onTogglePresentation={onTogglePresentation}
-          showStopDiscussion={showStopButton}
-          onStopDiscussion={onStopDiscussion}
-          ttsEnabled={ttsEnabled}
-          ttsMuted={ttsMuted}
-          ttsVolume={ttsVolume}
-          onToggleMute={() => ttsEnabled && setTTSMuted(!ttsMuted)}
-          onVolumeChange={(v) => setTTSVolume(v)}
-          autoPlayLecture={autoPlayLecture}
-          onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}
-          playbackSpeed={playbackSpeed}
-          onCycleSpeed={handleCycleSpeed}
-        />
+        {toolbar}
       </div>
       {/* ── Interaction area — three-column layout ── */}
       <div className="flex-1 flex items-stretch min-h-0">
