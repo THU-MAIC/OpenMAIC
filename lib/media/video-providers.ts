@@ -80,9 +80,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     name: 'Grok Video (xAI)',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.x.ai/v1',
-    models: [
-      { id: 'grok-imagine-video', name: 'Grok Imagine Video' },
-    ],
+    models: [{ id: 'grok-imagine-video', name: 'Grok Imagine Video' }],
     supportedAspectRatios: ['16:9', '1:1', '9:16'],
     supportedDurations: [6],
     maxDuration: 6,
