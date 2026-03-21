@@ -524,6 +524,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         return null;
       case 'pdf': {
         const pdfProvider = PDF_PROVIDERS[selectedPdfProviderId];
+        if (!pdfProvider) return null;
         return (
           <>
             {pdfProvider.icon ? (
@@ -544,6 +545,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
       }
       case 'web-search': {
         const wsProvider = WEB_SEARCH_PROVIDERS[selectedWebSearchProviderId];
+        if (!wsProvider) return null;
         return (
           <>
             {wsProvider.icon ? (
