@@ -41,6 +41,7 @@ const LLM_ENV_MAP: Record<string, string> = {
   OPENAI: 'openai',
   ANTHROPIC: 'anthropic',
   GOOGLE: 'google',
+  MIMO: 'xiaomi',
   DEEPSEEK: 'deepseek',
   QWEN: 'qwen',
   KIMI: 'kimi',
@@ -55,6 +56,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_AZURE: 'azure-tts',
   TTS_GLM: 'glm-tts',
   TTS_QWEN: 'qwen-tts',
+  TTS_MIMO: 'mimo-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {

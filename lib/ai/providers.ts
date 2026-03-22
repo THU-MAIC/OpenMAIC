@@ -6,6 +6,7 @@
  * - Anthropic Claude (native)
  * - Google Gemini (native)
  * - MiniMax (Anthropic-compatible, recommended by official)
+ * - Xiaomi MiMo (OpenAI-compatible)
  * - OpenAI-compatible providers (DeepSeek, Kimi, GLM, SiliconFlow, Doubao, etc.)
  *
  * Sources:
@@ -400,6 +401,49 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           thinking: {
             toggleable: false,
             budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+    ],
+  },
+
+  xiaomi: {
+    id: 'xiaomi',
+    name: 'Xiaomi MiMo',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
+    requiresApiKey: true,
+    icon: '/logos/mi-site.png',
+    models: [
+      {
+        id: 'mimo-v2-pro',
+        name: 'MiMo-V2-Pro',
+        contextWindow: 1000000,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'mimo-v2-omni',
+        name: 'MiMo-V2-Omni',
+        contextWindow: 256000,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
             defaultEnabled: true,
           },
         },
@@ -897,6 +941,7 @@ function getCompatThinkingBodyParams(
       case 'kimi':
       case 'deepseek':
       case 'glm':
+      case 'xiaomi':
         return { thinking: { type: 'disabled' } };
       // Qwen / SiliconFlow use { enable_thinking: false }
       case 'qwen':
@@ -911,6 +956,7 @@ function getCompatThinkingBodyParams(
       case 'kimi':
       case 'deepseek':
       case 'glm':
+      case 'xiaomi':
         return { thinking: { type: 'enabled' } };
       case 'qwen':
       case 'siliconflow':

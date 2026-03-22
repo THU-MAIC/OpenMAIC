@@ -9,6 +9,7 @@
  * - Azure TTS (https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech)
  * - GLM TTS (https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts)
  * - Qwen TTS (https://bailian.console.aliyun.com/)
+ * - Xiaomi MiMo TTS (https://platform.xiaomimimo.com/docs/usage-guide/speech-synthesis.md)
  * - Browser Native TTS (Web Speech API, client-side only)
  *
  * Currently Supported ASR Providers:
@@ -82,6 +83,7 @@ export type TTSProviderId =
   | 'azure-tts'
   | 'glm-tts'
   | 'qwen-tts'
+  | 'mimo-tts'
   | 'browser-native-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'elevenlabs-tts'

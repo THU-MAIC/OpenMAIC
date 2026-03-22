@@ -266,6 +266,7 @@ const getDefaultAudioConfig = () => ({
     'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
     'glm-tts': { apiKey: '', baseUrl: '', enabled: false },
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
+    'mimo-tts': { apiKey: '', baseUrl: '', enabled: false },
     'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
   } as Record<TTSProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
   asrProvidersConfig: {
@@ -394,6 +395,36 @@ function ensureBuiltInProviders(state: Partial<SettingsState>): void {
       };
     }
   });
+}
+
+/**
+ * Ensure audio provider config maps always include all built-in providers.
+ * This keeps persisted settings compatible when new TTS/ASR providers ship.
+ */
+function ensureBuiltInAudioProviders(state: Partial<SettingsState>): void {
+  const defaultAudioConfig = getDefaultAudioConfig();
+
+  if (state.ttsProvidersConfig) {
+    for (const providerId of Object.keys(
+      defaultAudioConfig.ttsProvidersConfig,
+    ) as TTSProviderId[]) {
+      state.ttsProvidersConfig[providerId] = {
+        ...defaultAudioConfig.ttsProvidersConfig[providerId],
+        ...state.ttsProvidersConfig[providerId],
+      };
+    }
+  }
+
+  if (state.asrProvidersConfig) {
+    for (const providerId of Object.keys(
+      defaultAudioConfig.asrProvidersConfig,
+    ) as ASRProviderId[]) {
+      state.asrProvidersConfig[providerId] = {
+        ...defaultAudioConfig.asrProvidersConfig[providerId],
+        ...state.asrProvidersConfig[providerId],
+      };
+    }
+  }
 }
 
 // Migrate from old localStorage format
@@ -1022,6 +1053,7 @@ export const useSettingsStore = create<SettingsState>()(
           const defaultAudioConfig = getDefaultAudioConfig();
           Object.assign(state, defaultAudioConfig);
         }
+        ensureBuiltInAudioProviders(state);
 
         // Add default PDF config if missing
         if (!state.pdfProvidersConfig) {
@@ -1103,6 +1135,7 @@ export const useSettingsStore = create<SettingsState>()(
       merge: (persistedState, currentState) => {
         const merged = { ...currentState, ...(persistedState as object) };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
+        ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
         return merged as SettingsState;
       },

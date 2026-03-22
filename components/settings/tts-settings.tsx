@@ -164,6 +164,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               case 'qwen-tts':
                 endpointPath = '/services/aigc/multimodal-generation/generation';
                 break;
+              case 'mimo-tts':
+                endpointPath = '/chat/completions';
+                break;
             }
             if (!endpointPath) return null;
             return (

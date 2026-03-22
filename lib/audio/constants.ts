@@ -606,6 +606,35 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'pcm'],
   },
 
+  'mimo-tts': {
+    id: 'mimo-tts',
+    name: 'Xiaomi MiMo TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
+    icon: '/logos/mi-site.png',
+    voices: [
+      {
+        id: 'mimo_default',
+        name: 'MiMo-Default',
+        language: 'multilingual',
+        gender: 'neutral',
+      },
+      {
+        id: 'default_zh',
+        name: 'MiMo-Chinese Female Voice',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'default_en',
+        name: 'MiMo-English Female Voice',
+        language: 'en-US',
+        gender: 'female',
+      },
+    ],
+    supportedFormats: ['wav'],
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -833,6 +862,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
+  'mimo-tts': 'default_zh',
   'browser-native-tts': 'default',
 };
 

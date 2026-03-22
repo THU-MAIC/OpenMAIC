@@ -9,6 +9,7 @@
  * - Azure TTS: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech
  * - GLM TTS: https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts
  * - Qwen TTS: https://bailian.console.aliyun.com/
+ * - Xiaomi MiMo TTS: https://platform.xiaomimimo.com/docs/usage-guide/speech-synthesis.md
  * - Browser Native: Web Speech API (client-side only)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -129,6 +130,9 @@ export async function generateTTS(
 
     case 'qwen-tts':
       return await generateQwenTTS(config, text);
+
+    case 'mimo-tts':
+      return await generateMiMoTTS(config, text);
 
     case 'browser-native-tts':
       throw new Error(
@@ -313,6 +317,65 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
   return {
     audio: new Uint8Array(arrayBuffer),
     format: 'wav', // Qwen3 TTS returns WAV format
+  };
+}
+
+/**
+ * Xiaomi MiMo TTS implementation.
+ *
+ * MiMo-V2-TTS uses the OpenAI-compatible chat completions endpoint instead of
+ * /audio/speech. The synthesized audio is returned as base64 in
+ * choices[0].message.audio.data.
+ */
+async function generateMiMoTTS(config: TTSModelConfig, text: string): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['mimo-tts'].defaultBaseUrl;
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      'api-key': config.apiKey!,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      model: 'mimo-v2-tts',
+      messages: [
+        {
+          role: 'assistant',
+          content: text,
+        },
+      ],
+      audio: {
+        format: 'wav',
+        voice: config.voice,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    let errorMessage = `MiMo TTS API error: ${errorText}`;
+    try {
+      const errorJson = JSON.parse(errorText);
+      const providerMessage =
+        errorJson?.error?.message || errorJson?.message || errorJson?.error || errorJson;
+      if (providerMessage) {
+        errorMessage = `MiMo TTS API error: ${String(providerMessage)}`;
+      }
+    } catch {
+      // Keep raw text fallback.
+    }
+    throw new Error(errorMessage);
+  }
+
+  const data = await response.json();
+  const audioBase64 = data?.choices?.[0]?.message?.audio?.data;
+  if (!audioBase64 || typeof audioBase64 !== 'string') {
+    throw new Error(`MiMo TTS error: No audio data in response. Response: ${JSON.stringify(data)}`);
+  }
+
+  return {
+    audio: new Uint8Array(Buffer.from(audioBase64, 'base64')),
+    format: 'wav',
   };
 }
 

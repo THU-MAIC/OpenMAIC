@@ -226,7 +226,6 @@ export async function generateTTSForClassroom(
   }
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || TTS_PROVIDERS[providerId]?.defaultBaseUrl;
   const voice = DEFAULT_TTS_VOICES[providerId] || 'default';
-  const format = TTS_PROVIDERS[providerId]?.supportedFormats?.[0] || 'mp3';
 
   for (const scene of scenes) {
     if (!scene.actions) continue;
@@ -246,7 +245,7 @@ export async function generateTTSForClassroom(
           speechAction.text,
         );
 
-        const filename = `${audioId}.${format}`;
+        const filename = `${audioId}.${result.format}`;
         await fs.writeFile(path.join(audioDir, filename), result.audio);
 
         speechAction.audioId = audioId;
