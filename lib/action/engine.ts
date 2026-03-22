@@ -284,7 +284,8 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     const fontSize = action.fontSize ?? 18;
-    let htmlContent = action.content;
+    let htmlContent = action.content ?? '';
+    if (!htmlContent) return; // nothing to draw
     if (!htmlContent.startsWith('<')) {
       htmlContent = `<p style="font-size: ${fontSize}px;">${htmlContent}</p>`;
     }

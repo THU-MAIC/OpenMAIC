@@ -837,6 +837,114 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
+
+  grok: {
+    id: 'grok',
+    name: 'Grok',
+    type: 'openai',
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    requiresApiKey: true,
+    icon: '/logos/grok.svg',
+    models: [
+      {
+        id: 'grok-4.20-beta-0309-reasoning',
+        name: 'Grok 4.20 Reasoning',
+        contextWindow: 2000000,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'grok-4.20-beta-0309-non-reasoning',
+        name: 'Grok 4.20',
+        contextWindow: 2000000,
+        outputWindow: 131072,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'grok-code-fast-1',
+        name: 'Grok Code Fast',
+        contextWindow: 256000,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'grok-4-fast-reasoning',
+        name: 'Grok 4 Fast Reasoning',
+        contextWindow: 2000000,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'grok-4-fast-non-reasoning',
+        name: 'Grok 4 Fast',
+        contextWindow: 2000000,
+        outputWindow: 131072,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'grok-4-1-fast-reasoning',
+        name: 'Grok 4.1 Fast Reasoning',
+        contextWindow: 2000000,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'grok-4-1-fast-non-reasoning',
+        name: 'Grok 4.1 Fast',
+        contextWindow: 2000000,
+        outputWindow: 131072,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'grok-4-0709',
+        name: 'Grok 4',
+        contextWindow: 256000,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'grok-3',
+        name: 'Grok 3',
+        contextWindow: 131072,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'grok-3-mini',
+        name: 'Grok 3 Mini',
+        contextWindow: 131072,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+    ],
+  },
 };
 
 /**

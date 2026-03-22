@@ -12,6 +12,7 @@ import type {
 import { generateWithSeedream, testSeedreamConnectivity } from './adapters/seedream-adapter';
 import { generateWithQwenImage, testQwenImageConnectivity } from './adapters/qwen-image-adapter';
 import { generateWithNanoBanana, testNanoBananaConnectivity } from './adapters/nano-banana-adapter';
+import { generateWithGrokImage, testGrokImageConnectivity } from './adapters/grok-image-adapter';
 
 export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   seedream: {
@@ -66,6 +67,17 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1'],
   },
+  'grok-image': {
+    id: 'grok-image',
+    name: 'Grok Image (xAI)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    models: [
+      { id: 'grok-imagine-image', name: 'Grok Imagine Image' },
+      { id: 'grok-imagine-image-pro', name: 'Grok Imagine Image Pro' },
+    ],
+    supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
+  },
 };
 
 export async function testImageConnectivity(
@@ -78,6 +90,8 @@ export async function testImageConnectivity(
       return testQwenImageConnectivity(config);
     case 'nano-banana':
       return testNanoBananaConnectivity(config);
+    case 'grok-image':
+      return testGrokImageConnectivity(config);
     default:
       return {
         success: false,
@@ -97,6 +111,8 @@ export async function generateImage(
       return generateWithQwenImage(config, options);
     case 'nano-banana':
       return generateWithNanoBanana(config, options);
+    case 'grok-image':
+      return generateWithGrokImage(config, options);
     default:
       throw new Error(`Unsupported image provider: ${config.providerId}`);
   }
