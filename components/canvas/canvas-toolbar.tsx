@@ -165,9 +165,18 @@ export function CanvasToolbar({
         </span>
       </div>
 
+      <CtrlDivider />
+
       {/* ── Center: unified playback controls ── */}
       <div className="flex-1 flex items-center justify-center min-w-0">
-        <div className="inline-flex items-center gap-0.5 bg-gray-100/60 dark:bg-gray-800/60 rounded-lg px-1 h-7">
+        <div
+          className={cn(
+            'inline-flex items-center gap-0.5 px-1 h-7',
+            isPresenting
+              ? '' /* Single visual layer in fullscreen — buttons sit inside outer pill directly */
+              : 'bg-gray-100/60 dark:bg-gray-800/60 rounded-lg',
+          )}
+        >
           {/* Volume with vertical popover slider */}
           {onToggleMute && (
             <div
@@ -384,32 +393,32 @@ export function CanvasToolbar({
               <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-violet-500 dark:bg-violet-400 rounded-full" />
             )}
           </button>
-
-          {onTogglePresentation && (
-            <button
-              onClick={onTogglePresentation}
-              className={cn(
-                ctrlBtn,
-                'w-6 h-6',
-                isPresenting
-                  ? 'text-violet-600 dark:text-violet-400'
-                  : 'text-gray-500 dark:text-gray-400',
-              )}
-              aria-label={presentationLabel}
-              title={presentationLabel}
-            >
-              {isPresenting ? (
-                <Minimize2 className="w-3.5 h-3.5" />
-              ) : (
-                <Maximize2 className="w-3.5 h-3.5" />
-              )}
-            </button>
-          )}
         </div>
       </div>
 
-      {/* ── Right: chat toggle ── */}
+      {/* ── Right: fullscreen + chat toggle ── */}
       <div className="flex items-center justify-end gap-px shrink-0 pr-1">
+        <CtrlDivider />
+        {onTogglePresentation && (
+          <button
+            onClick={onTogglePresentation}
+            className={cn(
+              ctrlBtn,
+              'w-6 h-6',
+              isPresenting
+                ? 'text-violet-600 dark:text-violet-400'
+                : 'text-gray-500 dark:text-gray-400',
+            )}
+            aria-label={presentationLabel}
+            title={presentationLabel}
+          >
+            {isPresenting ? (
+              <Minimize2 className="w-3.5 h-3.5" />
+            ) : (
+              <Maximize2 className="w-3.5 h-3.5" />
+            )}
+          </button>
+        )}
         {onToggleChat && (
           <button
             onClick={onToggleChat}

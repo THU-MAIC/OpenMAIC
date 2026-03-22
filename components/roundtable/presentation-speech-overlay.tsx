@@ -120,10 +120,10 @@ export function PresentationBubbleCard({ bubble }: { readonly bubble: Presentati
       className={cn(
         'w-full min-w-0 rounded-3xl border backdrop-blur-xl shadow-[0_18px_50px_-20px_rgba(0,0,0,0.45)] overflow-hidden',
         bubble.role === 'user'
-          ? 'bg-violet-50/90 dark:bg-violet-950/55 border-violet-200/70 dark:border-violet-800/60'
+          ? 'bg-violet-50/60 dark:bg-violet-950/55 border-violet-200/70 dark:border-violet-800/60'
           : bubble.role === 'agent'
-            ? 'bg-blue-50/90 dark:bg-blue-950/55 border-blue-200/70 dark:border-blue-800/60'
-            : 'bg-white/92 dark:bg-gray-900/82 border-gray-200/70 dark:border-gray-700/70',
+            ? 'bg-blue-50/60 dark:bg-blue-950/55 border-blue-200/70 dark:border-blue-800/60'
+            : 'bg-white/62 dark:bg-gray-900/82 border-gray-200/70 dark:border-gray-700/70',
       )}
     >
       <div className="flex items-center gap-3 px-4 pt-3 pb-2">
