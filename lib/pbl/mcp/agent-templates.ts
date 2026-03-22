@@ -8,12 +8,24 @@ export function getQuestionAgentPrompt(language: string = 'en-US'): string {
   if (language === 'zh-CN') {
     return QUESTION_AGENT_TEMPLATE_PROMPT_ZH;
   }
+  if (language === 'de-DE') {
+    return (
+      QUESTION_AGENT_TEMPLATE_PROMPT +
+      '\n\n**IMPORTANT: All interactions MUST be in German (Alle Interaktionen müssen auf Deutsch sein).**'
+    );
+  }
   return QUESTION_AGENT_TEMPLATE_PROMPT;
 }
 
 export function getJudgeAgentPrompt(language: string = 'en-US'): string {
   if (language === 'zh-CN') {
     return JUDGE_AGENT_TEMPLATE_PROMPT_ZH;
+  }
+  if (language === 'de-DE') {
+    return (
+      JUDGE_AGENT_TEMPLATE_PROMPT +
+      '\n\n**IMPORTANT: All interactions MUST be in German (Alle Interaktionen müssen auf Deutsch sein).**'
+    );
   }
   return JUDGE_AGENT_TEMPLATE_PROMPT;
 }

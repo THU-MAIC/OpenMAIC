@@ -40,7 +40,11 @@ export async function generateSceneOutlinesFromRequirements(
 ): Promise<GenerationResult<SceneOutline[]>> {
   // Build available images description for the prompt
   let availableImagesText =
-    requirements.language === 'zh-CN' ? '无可用图片' : 'No images available';
+    requirements.language === 'zh-CN'
+      ? '无可用图片'
+      : requirements.language === 'de-DE'
+        ? 'Keine Bilder verfügbar'
+        : 'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (pdfImages && pdfImages.length > 0) {
@@ -103,12 +107,19 @@ export async function generateSceneOutlinesFromRequirements(
       ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
       : requirements.language === 'zh-CN'
         ? '无'
-        : 'None',
+        : requirements.language === 'de-DE'
+          ? 'Keine'
+          : 'None',
     availableImages: availableImagesText,
     userProfile: userProfileText,
     mediaGenerationPolicy,
     researchContext:
-      options?.researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+      options?.researchContext ||
+      (requirements.language === 'zh-CN'
+        ? '无'
+        : requirements.language === 'de-DE'
+          ? 'Keine'
+          : 'None'),
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
   });
