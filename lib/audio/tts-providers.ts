@@ -9,6 +9,7 @@
  * - Azure TTS: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech
  * - GLM TTS: https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts
  * - Qwen TTS: https://bailian.console.aliyun.com/
+ * - Gemini TTS: https://ai.google.dev/gemini-api/docs/speech-generation
  * - Browser Native: Web Speech API (client-side only)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -129,6 +130,9 @@ export async function generateTTS(
 
     case 'qwen-tts':
       return await generateQwenTTS(config, text);
+
+    case 'gemini-tts':
+      return await generateGeminiTTS(config, text);
 
     case 'browser-native-tts':
       throw new Error(
@@ -314,6 +318,122 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
     audio: new Uint8Array(arrayBuffer),
     format: 'wav', // Qwen3 TTS returns WAV format
   };
+}
+
+/**
+ * Gemini TTS implementation (Gemini generateContent API with audio modality)
+ */
+async function generateGeminiTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['gemini-tts'].defaultBaseUrl;
+
+  const response = await fetch(
+    `${baseUrl}/v1beta/models/gemini-2.5-flash-preview-tts:generateContent`,
+    {
+      method: 'POST',
+      headers: {
+        'x-goog-api-key': config.apiKey!,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text }] }],
+        generationConfig: {
+          responseModalities: ['AUDIO'],
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: config.voice,
+              },
+            },
+          },
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    let errorMessage = `Gemini TTS API error: ${errorText}`;
+    try {
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.error?.message) {
+        errorMessage = `Gemini TTS API error: ${errorJson.error.message}`;
+      }
+    } catch {
+      // If not JSON, use the text as is
+    }
+    throw new Error(errorMessage);
+  }
+
+  const data = await response.json();
+
+  const pcmBase64 = data.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
+  if (!pcmBase64) {
+    throw new Error(`Gemini TTS error: No audio data in response. Response: ${JSON.stringify(data)}`);
+  }
+
+  // Decode base64 PCM data
+  const pcmBytes = new Uint8Array(Buffer.from(pcmBase64, 'base64'));
+
+  // Wrap raw PCM in WAV header (24kHz, 16-bit, mono)
+  const wavBytes = wrapPcmInWav(pcmBytes, 24000, 1, 16);
+
+  return {
+    audio: wavBytes,
+    format: 'wav',
+  };
+}
+
+/**
+ * Wrap raw PCM data in a WAV file header
+ */
+function wrapPcmInWav(
+  pcmData: Uint8Array,
+  sampleRate: number,
+  channels: number,
+  bitsPerSample: number,
+): Uint8Array {
+  const byteRate = sampleRate * channels * (bitsPerSample / 8);
+  const blockAlign = channels * (bitsPerSample / 8);
+  const dataSize = pcmData.length;
+  const headerSize = 44;
+  const fileSize = headerSize + dataSize;
+
+  const buffer = new ArrayBuffer(fileSize);
+  const view = new DataView(buffer);
+
+  // RIFF header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, fileSize - 8, true); // File size minus RIFF header
+  writeString(view, 8, 'WAVE');
+
+  // fmt sub-chunk
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // Sub-chunk size (16 for PCM)
+  view.setUint16(20, 1, true); // Audio format (1 = PCM)
+  view.setUint16(22, channels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, byteRate, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitsPerSample, true);
+
+  // data sub-chunk
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataSize, true);
+
+  // Copy PCM data
+  const wavArray = new Uint8Array(buffer);
+  wavArray.set(pcmData, headerSize);
+
+  return wavArray;
+}
+
+function writeString(view: DataView, offset: number, str: string): void {
+  for (let i = 0; i < str.length; i++) {
+    view.setUint8(offset + i, str.charCodeAt(i));
+  }
 }
 
 /**

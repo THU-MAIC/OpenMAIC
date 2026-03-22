@@ -164,6 +164,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               case 'qwen-tts':
                 endpointPath = '/services/aigc/multimodal-generation/generation';
                 break;
+              case 'gemini-tts':
+                endpointPath = '/v1beta/models/gemini-2.5-flash-preview-tts:generateContent';
+                break;
             }
             if (!endpointPath) return null;
             return (

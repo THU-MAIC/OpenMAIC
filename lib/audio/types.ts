@@ -9,6 +9,7 @@
  * - Azure TTS (https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech)
  * - GLM TTS (https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts)
  * - Qwen TTS (https://bailian.console.aliyun.com/)
+ * - Gemini TTS (https://ai.google.dev/gemini-api/docs/speech-generation)
  * - Browser Native TTS (Web Speech API, client-side only)
  *
  * Currently Supported ASR Providers:
@@ -82,6 +83,7 @@ export type TTSProviderId =
   | 'azure-tts'
   | 'glm-tts'
   | 'qwen-tts'
+  | 'gemini-tts'
   | 'browser-native-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'elevenlabs-tts'
