@@ -188,6 +188,9 @@ function GenerationPreviewContent() {
         if (currentSession.pdfProviderConfig?.baseUrl?.trim()) {
           parseFormData.append('baseUrl', currentSession.pdfProviderConfig.baseUrl);
         }
+        if (currentSession.pdfProviderConfig?.customPrompt?.trim()) {
+          parseFormData.append('prompt', currentSession.pdfProviderConfig.customPrompt);
+        }
 
         const parseResponse = await fetch('/api/parse-pdf', {
           method: 'POST',

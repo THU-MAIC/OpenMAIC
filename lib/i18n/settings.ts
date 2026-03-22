@@ -225,6 +225,7 @@ export const settingsZhCN = {
     providerOpenAIWhisper: 'OpenAI ASR (gpt-4o-mini-transcribe)',
     providerBrowserNative: '浏览器原生 ASR',
     providerQwenASR: 'Qwen ASR（阿里云百炼）',
+    providerWiseOCR: 'WiseOCR（智诊科技）',
     providerUnpdf: 'unpdf（内置）',
     providerMinerU: 'MinerU',
     browserNativeTTSNote: '浏览器原生 TTS 无需配置，完全免费，使用系统内置语音',
@@ -453,6 +454,15 @@ export const settingsZhCN = {
     pdfFeatures: '支持功能',
     pdfApiKey: 'API Key',
     pdfBaseUrl: 'Base URL',
+    wiseocrDescription:
+      'WiseOCR 是智诊科技提供的商用 OCR 服务，基于视觉大模型对文档进行智能识别，支持 PDF 和图片，输出结构化 Markdown。',
+    wiseocrApiKeyRequired: '使用前需要在 WiseDiag 官网申请 API Key。',
+    wiseocrWarning: '注意',
+    wiseocrCostWarning: 'WiseOCR 为商用服务，使用可能产生费用。请查看 WiseDiag 官网了解定价详情。',
+    enterWiseocrApiKey: '输入 WiseOCR API Key',
+    wiseocrServerAddress: 'WiseOCR 服务器地址（如：https://openapi.wisediag.com）',
+    wiseocrApiKeyOptional: '仅在私有部署服务器启用认证时需要',
+    wiseocrCustomPrompt: '自定义 OCR 提示词',
     mineruDescription:
       'MinerU 是一个商用 PDF 解析服务，支持高级功能如表格提取、公式识别和布局分析。',
     mineruApiKeyRequired: '使用前需要在 MinerU 官网申请 API Key。',
@@ -810,6 +820,7 @@ export const settingsEnUS = {
     providerOpenAIWhisper: 'OpenAI ASR (gpt-4o-mini-transcribe)',
     providerBrowserNative: 'Browser Native ASR',
     providerQwenASR: 'Qwen ASR (Alibaba Cloud Bailian)',
+    providerWiseOCR: 'WiseOCR (WiseDiag)',
     providerUnpdf: 'unpdf (Built-in)',
     providerMinerU: 'MinerU',
     browserNativeTTSNote:
@@ -1039,6 +1050,16 @@ export const settingsEnUS = {
     pdfFeatures: 'Supported Features',
     pdfApiKey: 'API Key',
     pdfBaseUrl: 'Base URL',
+    wiseocrDescription:
+      'WiseOCR is a commercial OCR service provided by WiseDiag, based on vision large model for intelligent document recognition. Supports PDF and images, outputs structured Markdown.',
+    wiseocrApiKeyRequired: 'You need to apply for an API Key on the WiseDiag website before use.',
+    wiseocrWarning: 'Warning',
+    wiseocrCostWarning:
+      'WiseOCR is a commercial service and may incur fees. Please check the WiseDiag website for pricing details.',
+    enterWiseocrApiKey: 'Enter WiseOCR API Key',
+    wiseocrServerAddress: 'WiseOCR server address (e.g., https://openapi.wisediag.com)',
+    wiseocrApiKeyOptional: 'Only required if private deployment server has authentication enabled',
+    wiseocrCustomPrompt: 'Custom OCR Prompt',
     mineruDescription:
       'MinerU is a commercial PDF parsing service that supports advanced features such as table extraction, formula recognition, and layout analysis.',
     mineruApiKeyRequired: 'You need to apply for an API Key on the MinerU website before use.',

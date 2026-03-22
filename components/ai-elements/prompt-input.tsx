@@ -1042,7 +1042,7 @@ export const PromptInputSpeechButton = ({
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const { useSettingsStore } = require('@/lib/store/settings');
-  const asrLanguage = useSettingsStore((state) => state.asrLanguage);
+  const asrLanguage = useSettingsStore((state: { asrLanguage: string }) => state.asrLanguage);
 
   useEffect(() => {
     if (

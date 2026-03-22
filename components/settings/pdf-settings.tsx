@@ -44,7 +44,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
   const isServerConfigured = !!pdfProvidersConfig[selectedProviderId]?.isServerConfigured;
   const providerConfig = pdfProvidersConfig[selectedProviderId];
   const hasBaseUrl = !!providerConfig?.baseUrl;
-  const needsRemoteConfig = selectedProviderId === 'mineru';
+  const needsRemoteConfig = selectedProviderId === 'wiseocr' || selectedProviderId === 'mineru';
 
   // Reset state when provider changes
   const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
@@ -172,7 +172,33 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
                 </button>
               </div>
             </div>
+
           </div>
+
+          {/* Custom OCR prompt (for WiseOCR) */}
+          {selectedProviderId === 'wiseocr' && (
+            <div className="col-span-2 space-y-2 mt-2">
+              <Label className="text-sm">
+                {t('settings.wiseocrCustomPrompt')}
+                <span className="text-muted-foreground ml-1 font-normal">
+                  ({t('settings.optional')})
+                </span>
+              </Label>
+              <Input
+                name={`pdf-custom-prompt-${selectedProviderId}`}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck="false"
+                placeholder="自定义 OCR 提示词（不传则使用内置默认值）"
+                value={providerConfig?.customPrompt || ''}
+                onChange={(e) =>
+                  setPDFProviderConfig(selectedProviderId, { customPrompt: e.target.value })
+                }
+                className="text-sm"
+              />
+            </div>
+          )}
 
           {/* Test result message */}
           {testMessage && (
