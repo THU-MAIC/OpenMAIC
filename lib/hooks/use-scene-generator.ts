@@ -283,7 +283,12 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
       // Launch media generation in parallel — does not block content/action generation
       mediaAbortRef.current = new AbortController();
-      generateMediaForOutlines(outlines, stage.id, mediaAbortRef.current.signal).catch((err) => {
+      generateMediaForOutlines(
+        outlines,
+        stage.id,
+        mediaAbortRef.current.signal,
+        params.imageMapping,
+      ).catch((err) => {
         log.warn('Media generation error:', err);
       });
 

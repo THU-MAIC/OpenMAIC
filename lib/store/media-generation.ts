@@ -63,9 +63,9 @@ interface MediaGenerationState {
 
 // ==================== Helper ====================
 
-/** Check if a src string is a generated media placeholder ID */
+/** Check if a src string is a generated media placeholder ID or uploaded image ID */
 export function isMediaPlaceholder(src: string): boolean {
-  return /^gen_(img|vid)_[\w-]+$/i.test(src);
+  return /^(gen_(img|vid)_|uploaded_img_)[\w-]+$/i.test(src);
 }
 
 // ==================== Store ====================
