@@ -10,7 +10,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { resolveAgentVoice, getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
-import { Sparkles, ChevronDown, ChevronUp, Shuffle, Volume2 } from 'lucide-react';
+import { Sparkles, ChevronDown, ChevronUp, Shuffle, Volume2, VolumeX } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
@@ -20,10 +20,12 @@ function AgentVoicePill({
   agent,
   agentIndex,
   availableProviders,
+  disabled,
 }: {
   agent: AgentConfig;
   agentIndex: number;
   availableProviders: ProviderWithVoices[];
+  disabled?: boolean;
 }) {
   const updateAgent = useAgentRegistry((s) => s.updateAgent);
   const resolved = resolveAgentVoice(agent, agentIndex, availableProviders);
@@ -37,6 +39,19 @@ function AgentVoicePill({
     }
     return resolved.voiceId;
   })();
+
+  if (disabled) {
+    return (
+      <div
+        onClick={(e) => e.stopPropagation()}
+        onPointerDown={(e) => e.stopPropagation()}
+        className="flex items-center gap-1 h-5 w-[88px] rounded-full bg-muted/40 px-2 text-[10px] text-muted-foreground/30 shrink-0 cursor-not-allowed"
+      >
+        <VolumeX className="size-2.5 shrink-0" />
+        <span className="truncate flex-1 text-left">{displayName}</span>
+      </div>
+    );
+  }
 
   return (
     <Popover>
@@ -105,6 +120,7 @@ export function AgentBar() {
   const agentMode = useSettingsStore((s) => s.agentMode);
   const setAgentMode = useSettingsStore((s) => s.setAgentMode);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
+  const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
 
   const [open, setOpen] = useState(false);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
@@ -242,9 +258,12 @@ export function AgentBar() {
           )}
         </>
       )}
-      {showVoice && (
-        <Volume2 className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors" />
-      )}
+      {showVoice &&
+        (ttsEnabled ? (
+          <Volume2 className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors" />
+        ) : (
+          <VolumeX className="size-3.5 text-muted-foreground/30" />
+        ))}
     </div>
   );
 
@@ -283,6 +302,7 @@ export function AgentBar() {
             agent={agent}
             agentIndex={agentIndex}
             availableProviders={availableProviders}
+            disabled={!ttsEnabled}
           />
         )}
       </div>

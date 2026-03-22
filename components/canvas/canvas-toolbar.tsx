@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -94,10 +93,7 @@ export function CanvasToolbar({
   onStopDiscussion,
   className,
   ttsEnabled,
-  ttsMuted,
-  ttsVolume = 1,
   onToggleMute,
-  onVolumeChange,
   autoPlayLecture,
   onToggleAutoPlay,
   playbackSpeed = 1,
@@ -111,26 +107,6 @@ export function CanvasToolbar({
   const whiteboardElementCount = useStageStore(
     (s) => s.stage?.whiteboard?.[0]?.elements?.length || 0,
   );
-
-  // Volume slider hover state
-  const [volumeHover, setVolumeHover] = useState(false);
-  const volumeTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-  const volumeContainerRef = useRef<HTMLDivElement>(null);
-
-  const handleVolumeEnter = useCallback(() => {
-    clearTimeout(volumeTimerRef.current);
-    setVolumeHover(true);
-  }, []);
-
-  const handleVolumeLeave = useCallback(() => {
-    volumeTimerRef.current = setTimeout(() => setVolumeHover(false), 300);
-  }, []);
-
-  // Cleanup volume hover timer on unmount
-  useEffect(() => () => clearTimeout(volumeTimerRef.current), []);
-
-  // Effective volume for display
-  const effectiveVolume = ttsMuted ? 0 : ttsVolume;
 
   return (
     <div className={cn('flex items-center', className)}>
@@ -161,71 +137,30 @@ export function CanvasToolbar({
       {/* ── Center: unified playback controls ── */}
       <div className="flex-1 flex items-center justify-center min-w-0">
         <div className="inline-flex items-center gap-0.5 bg-gray-100/60 dark:bg-gray-800/60 rounded-lg px-1 h-7">
-          {/* Volume with vertical popover slider */}
+          {/* TTS on/off toggle */}
           {onToggleMute && (
-            <div
-              ref={volumeContainerRef}
-              className="relative flex items-center"
-              onMouseEnter={handleVolumeEnter}
-              onMouseLeave={handleVolumeLeave}
-            >
-              <button
-                onClick={onToggleMute}
-                disabled={!ttsEnabled}
-                className={cn(
-                  ctrlBtn,
-                  'w-6 h-6',
-                  !ttsEnabled
-                    ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                    : ttsMuted
-                      ? 'text-red-500 dark:text-red-400'
-                      : 'text-gray-500 dark:text-gray-400',
-                )}
-                aria-label={ttsMuted ? 'Unmute' : 'Mute'}
-              >
-                <VolumeIcon muted={!!ttsMuted} volume={ttsVolume} disabled={!ttsEnabled} />
-              </button>
-
-              {/* Vertical volume slider (pops up above) */}
-              <div
-                className={cn(
-                  'absolute bottom-full left-1/2 -translate-x-1/2 mb-2 flex flex-col items-center',
-                  'transition-all duration-200 ease-out pointer-events-none opacity-0',
-                  volumeHover && ttsEnabled && 'pointer-events-auto opacity-100',
-                )}
-              >
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg px-2 py-2.5 flex flex-col items-center gap-1.5">
-                  <span className="text-[10px] text-gray-400 dark:text-gray-500 tabular-nums font-medium select-none">
-                    {Math.round(effectiveVolume * 100)}
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={effectiveVolume}
-                    onChange={(e) => {
-                      const v = parseFloat(e.target.value);
-                      onVolumeChange?.(v);
-                      if (v > 0 && ttsMuted) onToggleMute?.();
-                    }}
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={onToggleMute}
                     className={cn(
-                      'appearance-none cursor-pointer',
-                      'h-16 w-1 rounded-full',
-                      'bg-gray-200 dark:bg-gray-600',
-                      '[writing-mode:vertical-lr] [direction:rtl]',
-                      '[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3',
-                      '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-violet-500 [&::-webkit-slider-thumb]:dark:bg-violet-400',
-                      '[&::-webkit-slider-thumb]:shadow-sm [&::-webkit-slider-thumb]:cursor-pointer',
-                      '[&::-moz-range-thumb]:w-3 [&::-moz-range-thumb]:h-3',
-                      '[&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-violet-500 [&::-moz-range-thumb]:border-0',
+                      ctrlBtn,
+                      'w-6 h-6',
+                      !ttsEnabled
+                        ? 'text-gray-300 dark:text-gray-600'
+                        : 'text-gray-500 dark:text-gray-400',
                     )}
-                  />
-                </div>
-                {/* Arrow pointing down */}
-                <div className="w-2 h-2 bg-white dark:bg-gray-800 border-b border-r border-gray-200 dark:border-gray-700 rotate-45 -mt-[5px]" />
-              </div>
-            </div>
+                    aria-label={ttsEnabled ? 'Disable TTS' : 'Enable TTS'}
+                  >
+                    <VolumeIcon muted={!ttsEnabled} volume={1} disabled={!ttsEnabled} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {ttsEnabled ? 'TTS On' : 'TTS Off'}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
 
           {/* Speed */}
