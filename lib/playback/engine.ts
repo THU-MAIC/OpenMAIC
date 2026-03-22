@@ -634,7 +634,15 @@ export class PlaybackEngine {
       // auto-selects an appropriate voice.
       const cjkRatio =
         (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / chunkText.length;
-      utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
+
+      if (cjkRatio > CJK_LANG_THRESHOLD) {
+        utterance.lang = 'zh-CN';
+      } else {
+        // Simple German detection: check for umlauts or common words
+        const germanPattern =
+          /[äöüß]|(\b(der|die|das|und|ist|nicht|für|mit|den|dem|des|ein|eine|einer|eines|daß|dass|was|wenn|so|wie|bei|an|aus|auf|nach|über|vor|zu)\b)/i;
+        utterance.lang = germanPattern.test(chunkText) ? 'de-DE' : 'en-US';
+      }
     }
 
     utterance.onend = () => {
