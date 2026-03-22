@@ -629,7 +629,7 @@ export class PlaybackEngine {
         voiceFound = true;
       }
     }
-    if (!voiceFound) {
+    if (!voiceFound && settings.ttsVoice && settings.ttsVoice !== 'default') { utterance.lang = settings.ttsVoice; } if (!voiceFound && (!settings.ttsVoice || settings.ttsVoice === 'default')) {
       // No usable voice configured — detect text language so the browser
       // auto-selects an appropriate voice.
       const cjkRatio =

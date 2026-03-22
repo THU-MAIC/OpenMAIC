@@ -56,7 +56,7 @@ const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 interface FormState {
   pdfFile: File | null;
   requirement: string;
-  language: 'zh-CN' | 'en-US';
+  language: 'zh-CN' | 'zh-TW' | 'en-US';
   webSearch: boolean;
 }
 
@@ -101,7 +101,7 @@ function HomePage() {
       const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
-      if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US') {
+      if (savedLanguage === 'zh-CN' || savedLanguage === 'zh-TW' || savedLanguage === 'en-US') {
         updates.language = savedLanguage;
       } else {
         const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
@@ -338,7 +338,7 @@ function HomePage() {
             }}
             className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
           >
-            {locale === 'zh-CN' ? 'CN' : 'EN'}
+            {locale === 'zh-CN' ? '简' : locale === 'zh-TW' ? '繁' : 'EN'}
           </button>
           {languageOpen && (
             <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[120px]">
@@ -354,6 +354,19 @@ function HomePage() {
                 )}
               >
                 简体中文
+              </button>
+              <button
+                onClick={() => {
+                  setLocale('zh-TW');
+                  setLanguageOpen(false);
+                }}
+                className={cn(
+                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
+                  locale === 'zh-TW' &&
+                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+                )}
+              >
+                繁體中文
               </button>
               <button
                 onClick={() => {
