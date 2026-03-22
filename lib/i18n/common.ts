@@ -79,3 +79,45 @@ export const commonEnUS = {
     exportFailed: 'Export failed',
   },
 } as const;
+
+export const commonDeDE = {
+  common: {
+    you: 'Du',
+    confirm: 'Bestätigen',
+    cancel: 'Abbrechen',
+    loading: 'Laden...',
+  },
+  home: {
+    slogan: 'Generatives Lernen im interaktiven Klassenzimmer mit mehreren Agenten',
+    greeting: 'Hallo, ',
+  },
+  toolbar: {
+    languageHint: 'Der Kurs wird in dieser Sprache erstellt',
+    pdfParser: 'Parser',
+    pdfUpload: 'PDF hochladen',
+    removePdf: 'Datei entfernen',
+    webSearchOn: 'Aktiviert',
+    webSearchOff: 'Klicken zum Aktivieren',
+    webSearchDesc: 'Vor der Erstellung im Web nach aktuellen Informationen suchen',
+    webSearchProvider: 'Suchmaschine',
+    webSearchNoProvider: 'Suchmaschinen-API-Key in den Einstellungen konfigurieren',
+    selectProvider: 'Anbieter auswählen',
+    configureProvider: 'Modell einrichten',
+    configureProviderHint:
+      'Konfigurieren Sie mindestens einen Modellanbieter, um Kurse zu erstellen',
+    enterClassroom: 'Klassenzimmer betreten',
+    advancedSettings: 'Erweiterte Einstellungen',
+    ttsTitle: 'Text-zu-Sprache',
+    ttsHint: 'Wählen Sie eine Stimme für den KI-Lehrer',
+    ttsPreview: 'Vorschau',
+    ttsPreviewing: 'Wiedergabe...',
+  },
+  export: {
+    pptx: 'PPTX exportieren',
+    resourcePack: 'Ressourcenpaket exportieren',
+    resourcePackDesc: 'PPTX + interaktive Seiten',
+    exporting: 'Exportieren...',
+    exportSuccess: 'Export erfolgreich',
+    exportFailed: 'Export fehlgeschlagen',
+  },
+} as const;

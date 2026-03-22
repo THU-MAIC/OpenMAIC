@@ -139,3 +139,74 @@ export const chatEnUS = {
     stopListening: 'Stop recording',
   },
 } as const;
+
+export const chatDeDE = {
+  chat: {
+    lecture: 'Vortrag',
+    noConversations: 'Keine Unterhaltungen',
+    startConversation: 'Geben Sie unten eine Nachricht ein, um den Chat zu beginnen',
+    noMessages: 'Noch keine Nachrichten',
+    ended: 'beendet',
+    unknown: 'Unbekannt',
+    stopDiscussion: 'Diskussion beenden',
+    endQA: 'Fragen & Antworten beenden',
+    tabs: {
+      lecture: 'Notizen',
+      chat: 'Chat',
+    },
+    lectureNotes: {
+      empty: 'Notizen erscheinen hier nach der Wiedergabe des Vortrags',
+      emptyHint: 'Drücken Sie Play, um den Vortrag zu starten',
+      pageLabel: 'Seite {n}',
+      currentPage: 'Aktuell',
+    },
+    badge: {
+      qa: 'F&A',
+      discussion: 'DISK',
+      lecture: 'VOR',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: 'Spotlight',
+      laser: 'Laserpointer',
+      wb_open: 'Whiteboard öffnen',
+      wb_draw_text: 'Whiteboard-Text',
+      wb_draw_shape: 'Whiteboard-Form',
+      wb_draw_chart: 'Whiteboard-Diagramm',
+      wb_draw_latex: 'Whiteboard-Formel',
+      wb_draw_table: 'Whiteboard-Tabelle',
+      wb_draw_line: 'Whiteboard-Linie',
+      wb_clear: 'Whiteboard löschen',
+      wb_delete: 'Element löschen',
+      wb_close: 'Whiteboard schließen',
+      discussion: 'Diskussion',
+    },
+    status: {
+      inputStreaming: 'Warten',
+      inputAvailable: 'Ausführen',
+      outputAvailable: 'Abgeschlossen',
+      outputError: 'Fehler',
+      outputDenied: 'Abgelehnt',
+      running: 'Ausführen',
+      result: 'Abgeschlossen',
+      error: 'Fehler',
+    },
+  },
+  agentBar: {
+    readyToLearn: 'Bereit, gemeinsam zu lernen?',
+    expandedTitle: 'Konfiguration der Klassenzimmer-Rollen',
+    configTooltip: 'Klicken, um Klassenzimmer-Rollen zu konfigurieren',
+  },
+  proactiveCard: {
+    discussion: 'Diskussion',
+    join: 'Beitreten',
+    skip: 'Überspringen',
+    pause: 'Pause',
+    resume: 'Fortsetzen',
+  },
+  voice: {
+    startListening: 'Spracheingabe',
+    stopListening: 'Aufnahme stoppen',
+  },
+} as const;

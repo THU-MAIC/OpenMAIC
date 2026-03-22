@@ -133,3 +133,75 @@ export const generationEnUS = {
     webSearchFailed: 'Web search failed',
   },
 } as const;
+
+export const generationDeDE = {
+  classroom: {
+    recentClassrooms: 'Zuletzt',
+    today: 'Heute',
+    yesterday: 'Gestern',
+    daysAgo: 'vor {n} Tagen',
+    slides: 'Folien',
+    nameCopied: 'Name kopiert',
+    deleteConfirmTitle: 'Löschen',
+    delete: 'Löschen',
+  },
+  upload: {
+    pdfSizeLimit: 'Unterstützt PDF-Dateien bis zu 50 MB',
+    generateFailed: 'Klassenzimmer konnte nicht erstellt werden, bitte versuchen Sie es erneut',
+    requirementPlaceholder:
+      'Sagen Sie mir, was Sie lernen möchten, z. B.\n„Bring mir Python von Grund auf in 30 Minuten bei“\n„Erkläre mir die Fourier-Transformation am Whiteboard“\n„Wie spielt man das Brettspiel Avalon“',
+    requirementRequired: 'Bitte geben Sie die Kursanforderungen ein',
+    fileTooLarge: 'Datei zu groß. Bitte wählen Sie eine PDF-Datei kleiner als 50 MB',
+  },
+  generation: {
+    // Progress steps (used dynamically via activeStep)
+    analyzingPdf: 'PDF-Dokument analysieren',
+    analyzingPdfDesc: 'Dokumentstruktur und -inhalt extrahieren...',
+    pdfLoadFailed: 'PDF-Datei konnte nicht geladen werden, bitte versuchen Sie es erneut',
+    pdfParseFailed: 'PDF-Parsing fehlgeschlagen',
+    streamNotReadable: 'Generationsstream konnte nicht gelesen werden',
+    generatingOutlines: 'Kursübersicht entwerfen',
+    generatingOutlinesDesc: 'Lernpfad strukturieren...',
+    generatingSlideContent: 'Seiteninhalt generieren',
+    generatingSlideContentDesc: 'Folien, Quiz und interaktive Inhalte erstellen...',
+    generatingActions: 'Unterrichtsaktionen generieren',
+    generatingActionsDesc: 'Erzählung, Spotlights und Interaktionen orchestrieren...',
+    generationComplete: 'Generierung abgeschlossen!',
+    generationFailed: 'Generierung fehlgeschlagen',
+    generatingCourse: 'Kurs wird generiert',
+    openingClassroom: 'Klassenzimmer wird geöffnet...',
+    outlineReady: 'Kursübersicht generiert',
+    generatingFirstPage: 'Erste Seite wird generiert...',
+    firstPageReady: 'Erste Seite bereit! Klassenzimmer wird geöffnet...',
+    speechFailed: 'Sprachgenerierung fehlgeschlagen',
+    retryScene: 'Wiederholen',
+    retryingScene: 'Wird neu generiert...',
+    backToHome: 'Zurück zur Startseite',
+    sessionNotFound: 'Sitzung nicht gefunden',
+    sessionNotFoundDesc:
+      'Bitte füllen Sie die Kursanforderungen aus, um den Generierungsprozess zu starten.',
+    goBackAndRetry: 'Zurückgehen und erneut versuchen',
+    classroomReady: 'Ihre personalisierte KI-Lernumgebung wurde erfolgreich erstellt.',
+    aiWorking: 'KI-Agenten arbeiten...',
+    textTruncated:
+      'Dokumenttext ist lang, die ersten {n} Zeichen werden für die Generierung verwendet',
+    imageTruncated:
+      '{total} Bilder gefunden, das Limit von {max} Bildern wurde überschritten. Zusätzliche Bilder verwenden nur Textbeschreibungen',
+    // Agent generation
+    agentGeneration: 'Klassenzimmer-Rollen generieren',
+    agentGenerationDesc: 'Rollen basierend auf dem Kursinhalt generieren...',
+    agentRevealTitle: 'Ihre Klassenzimmer-Rollen',
+    viewAgents: 'Rollen anzeigen',
+    continue: 'Weiter',
+    // Outline errors
+    outlineRetrying: 'Problem bei der Übersichtserstellung, Wiederholung...',
+    outlineEmptyResponse:
+      'Modell gab keine gültigen Übersichten zurück. Bitte überprüfen Sie die Modellkonfiguration und versuchen Sie es erneut',
+    outlineGenerateFailed:
+      'Übersichtserstellung fehlgeschlagen, bitte versuchen Sie es später erneut',
+    // Web Search
+    webSearching: 'Websuche',
+    webSearchingDesc: 'Websuche nach aktuellen Informationen',
+    webSearchFailed: 'Websuche fehlgeschlagen',
+  },
+} as const;
