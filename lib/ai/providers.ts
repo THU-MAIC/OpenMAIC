@@ -847,13 +847,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/grok.svg',
     models: [
       {
-        id: 'grok-4.20-multi-agent-beta-0309',
-        name: 'Grok 4.20 Multi-Agent',
-        contextWindow: 2000000,
-        outputWindow: 131072,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
         id: 'grok-4.20-beta-0309-reasoning',
         name: 'Grok 4.20 Reasoning',
         contextWindow: 2000000,

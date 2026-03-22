@@ -199,7 +199,7 @@ export async function generateWithGrokVideo(
     }
 
     if (result.status === 'failed') {
-      throw new Error('Grok video generation failed');
+      throw new Error(`Grok video generation failed: ${JSON.stringify(result)}`);
     }
   }
 
