@@ -34,7 +34,7 @@ Only send supported content fields:
 
 - `requirement` (required)
 - optional `pdfContent`
-- optional `language`
+- optional `language` (`"zh-CN"` | `"en-US"`, defaults to `"zh-CN"`) — any other value silently falls back to `"zh-CN"`
 - optional `enableWebSearch` (boolean) — include web search context in outline generation
 - optional `enableImageGeneration` (boolean) — allow image generation metadata in outlines
 - optional `enableVideoGeneration` (boolean) — allow video generation metadata in outlines

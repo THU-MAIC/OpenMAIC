@@ -9,6 +9,7 @@
  * - Azure TTS: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech
  * - GLM TTS: https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts
  * - Qwen TTS: https://bailian.console.aliyun.com/
+ * - ElevenLabs TTS: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
  * - Browser Native: Web Speech API (client-side only)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -23,7 +24,7 @@
  *      name: 'ElevenLabs',
  *      requiresApiKey: true,
  *      defaultBaseUrl: 'https://api.elevenlabs.io/v1',
- *      icon: '/elevenlabs.svg',
+ *      icon: '/logos/elevenlabs.svg',
  *      voices: [...],
  *      supportedFormats: ['mp3', 'pcm'],
  *      speedRange: { min: 0.5, max: 2.0, default: 1.0 }
@@ -51,10 +52,10 @@
  *        },
  *        body: JSON.stringify({
  *          text,
- *          model_id: 'eleven_monolingual_v1',
+ *          model_id: 'eleven_multilingual_v2',
  *          voice_settings: {
  *            stability: 0.5,
- *            similarity_boost: 0.5,
+ *            similarity_boost: 0.75,
  *          }
  *        }),
  *      });
@@ -129,6 +130,9 @@ export async function generateTTS(
 
     case 'qwen-tts':
       return await generateQwenTTS(config, text);
+
+    case 'elevenlabs-tts':
+      return await generateElevenLabsTTS(config, text);
 
     case 'browser-native-tts':
       throw new Error(
@@ -313,6 +317,58 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
   return {
     audio: new Uint8Array(arrayBuffer),
     format: 'wav', // Qwen3 TTS returns WAV format
+  };
+}
+
+/**
+ * ElevenLabs TTS implementation (direct API call with voice-specific endpoint)
+ */
+async function generateElevenLabsTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['elevenlabs-tts'].defaultBaseUrl;
+  const requestedFormat = config.format || 'mp3';
+  const clampedSpeed = Math.min(1.2, Math.max(0.7, config.speed || 1.0));
+  const outputFormatMap: Record<string, string> = {
+    mp3: 'mp3_44100_128',
+    opus: 'opus_48000_96',
+    pcm: 'pcm_44100',
+    wav: 'wav_44100',
+    ulaw: 'ulaw_8000',
+    alaw: 'alaw_8000',
+  };
+  const outputFormat = outputFormatMap[requestedFormat] || outputFormatMap.mp3;
+
+  const response = await fetch(
+    `${baseUrl}/text-to-speech/${encodeURIComponent(config.voice)}?output_format=${outputFormat}`,
+    {
+      method: 'POST',
+      headers: {
+        'xi-api-key': config.apiKey!,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+          speed: clampedSpeed,
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`ElevenLabs TTS API error: ${errorText || response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    audio: new Uint8Array(arrayBuffer),
+    format: requestedFormat,
   };
 }
 
