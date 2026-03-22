@@ -13,7 +13,9 @@
     "start": "next start",
     "lint": "eslint",
     "check": "prettier . --check",
-    "format": "prettier . --write"
+    "format": "prettier . --write",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",
