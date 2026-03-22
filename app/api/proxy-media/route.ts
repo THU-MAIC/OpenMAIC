@@ -34,10 +34,30 @@ export async function POST(request: NextRequest) {
       return apiError('INVALID_URL', 403, ssrfError);
     }
 
-    // Disable redirect following to prevent redirect-to-internal attacks
-    const response = await fetch(url, { redirect: 'manual' });
-    if (response.status >= 300 && response.status < 400) {
-      return apiError('REDIRECT_NOT_ALLOWED', 403, 'Redirects are not allowed');
+    // Follow redirects manually with SSRF validation on each hop
+    let currentUrl = url;
+    const MAX_REDIRECTS = 5;
+    let response: Response | undefined;
+    for (let i = 0; i <= MAX_REDIRECTS; i++) {
+      response = await fetch(currentUrl, { redirect: 'manual' });
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get('location');
+        if (!location) {
+          return apiError('REDIRECT_NOT_ALLOWED', 403, 'Redirect without Location header');
+        }
+        // Resolve relative redirects
+        const redirectUrl = new URL(location, currentUrl).toString();
+        const redirectSsrfError = validateUrlForSSRF(redirectUrl);
+        if (redirectSsrfError) {
+          return apiError('INVALID_URL', 403, `Redirect target blocked: ${redirectSsrfError}`);
+        }
+        currentUrl = redirectUrl;
+        continue;
+      }
+      break;
+    }
+    if (!response || (response.status >= 300 && response.status < 400)) {
+      return apiError('REDIRECT_NOT_ALLOWED', 403, 'Too many redirects');
     }
     if (!response.ok) {
       return apiError('UPSTREAM_ERROR', 502, `Upstream returned ${response.status}`);

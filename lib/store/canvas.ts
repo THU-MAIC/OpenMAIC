@@ -131,7 +131,7 @@ interface CanvasState {
   setGridLineSize: (size: number) => void;
 
   // ----- Toolbar and panels -----
-  setToolbarState: (state: 'design' | 'ai') => void;
+  setToolbarState: (state: 'design' | 'ai' | 'elAnimation') => void;
   setSelectPanelState: (show: boolean) => void;
   setSearchPanelState: (show: boolean) => void;
 

@@ -66,7 +66,8 @@ export async function generateFullScenes(
 ): Promise<GenerationResult<string[]>> {
   const api = createStageAPI(store);
   const totalScenes = sceneOutlines.length;
-  let completedCount = 0;
+  let successCount = 0;
+  let processedCount = 0;
 
   callbacks?.onProgress?.({
     currentStage: 3,
@@ -83,20 +84,21 @@ export async function generateFullScenes(
       try {
         const sceneId = await generateSingleScene(outline, api, aiCall);
 
-        // Update progress (not atomic, but sufficient for UI display)
-        completedCount++;
+        // Update progress
+        successCount++;
+        processedCount++;
         callbacks?.onProgress?.({
           currentStage: 3,
-          overallProgress: 66 + Math.floor((completedCount / totalScenes) * 34),
-          stageProgress: Math.floor((completedCount / totalScenes) * 100),
-          statusMessage: `已完成 ${completedCount}/${totalScenes} 个场景`,
-          scenesGenerated: completedCount,
+          overallProgress: 66 + Math.floor((processedCount / totalScenes) * 34),
+          stageProgress: Math.floor((processedCount / totalScenes) * 100),
+          statusMessage: `已完成 ${successCount}/${totalScenes} 个场景`,
+          scenesGenerated: successCount,
           totalScenes,
         });
 
         return { success: true, sceneId, index };
       } catch (error) {
-        completedCount++;
+        processedCount++;
         callbacks?.onError?.(`Failed to generate scene ${outline.title}: ${error}`);
         return { success: false, sceneId: null, index };
       }
@@ -471,7 +473,7 @@ async function generateSlideContent(
 
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
-  let visionImages: Array<{ id: string; src: string }> | undefined;
+  let visionImages: Array<{ id: string; src: string; width?: number; height?: number }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
     if (visionEnabled && imageMapping) {
@@ -1079,7 +1081,9 @@ function formatElementsForPrompt(elements: PPTElement[]): string {
 function formatQuestionsForPrompt(questions: QuizQuestion[]): string {
   return questions
     .map((q, i) => {
-      const optionsText = q.options ? `Options: ${q.options.join(', ')}` : '';
+      const optionsText = q.options
+        ? `Options: ${q.options.map((o) => (typeof o === 'string' ? o : o.label)).join(', ')}`
+        : '';
       return `Q${i + 1} (${q.type}): ${q.question}\n${optionsText}`;
     })
     .join('\n\n');

@@ -192,10 +192,8 @@ export async function generateClassroom(
     const result = await callLLM(
       {
         model: languageModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
+        system: systemPrompt,
+        prompt: userPrompt,
         maxOutputTokens: modelInfo?.outputWindow,
       },
       'generate-classroom',
