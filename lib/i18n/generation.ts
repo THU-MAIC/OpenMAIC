@@ -11,6 +11,7 @@ export const generationZhCN = {
   },
   upload: {
     pdfSizeLimit: '支持最大50MB的PDF文件',
+    pdfAndImages: 'PDF 或图片 (最大 50MB)',
     generateFailed: '生成课堂失败，请重试',
     requirementPlaceholder:
       '输入你想学的任何内容，例如：\n「从零学 Python，30 分钟写出第一个程序」\n「用白板给我讲解傅里叶变换」\n「阿瓦隆桌游怎么玩」',
@@ -78,6 +79,7 @@ export const generationEnUS = {
   },
   upload: {
     pdfSizeLimit: 'Supports PDF files up to 50MB',
+    pdfAndImages: 'PDF or Images up to 50MB',
     generateFailed: 'Failed to generate classroom, please try again',
     requirementPlaceholder:
       'Tell me anything you want to learn, e.g.\n"Teach me Python from scratch in 30 minutes"\n"Explain Fourier Transform on the whiteboard"\n"How to play the board game Avalon"',
@@ -147,6 +149,7 @@ export const generationDeDE = {
   },
   upload: {
     pdfSizeLimit: 'Unterstützt PDF-Dateien bis zu 50 MB',
+    pdfAndImages: 'PDF oder Bilder (max. 50 MB)',
     generateFailed: 'Klassenzimmer konnte nicht erstellt werden, bitte versuchen Sie es erneut',
     requirementPlaceholder:
       'Sagen Sie mir, was Sie lernen möchten, z. B.\n„Bring mir Python von Grund auf in 30 Minuten bei“\n„Erkläre mir die Fourier-Transformation am Whiteboard“\n„Wie spielt man das Brettspiel Avalon“',

@@ -55,6 +55,7 @@ const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 
 interface FormState {
   pdfFile: File | null;
+  imageFiles: File[];
   requirement: string;
   language: 'zh-CN' | 'en-US' | 'de-DE';
   webSearch: boolean;
@@ -62,6 +63,7 @@ interface FormState {
 
 const initialFormState: FormState = {
   pdfFile: null,
+  imageFiles: [],
   requirement: '',
   language: 'zh-CN',
   webSearch: false,
@@ -256,13 +258,6 @@ function HomePage() {
 
     try {
       const userProfile = useUserProfileStore.getState();
-      const requirements: UserRequirements = {
-        requirement: form.requirement,
-        language: form.language,
-        userNickname: userProfile.nickname || undefined,
-        userBio: userProfile.bio || undefined,
-        webSearch: form.webSearch || undefined,
-      };
 
       let pdfStorageKey: string | undefined;
       let pdfFileName: string | undefined;
@@ -284,12 +279,31 @@ function HomePage() {
         }
       }
 
+      // Store manually uploaded images
+      const uploadedImageStorageIds: string[] = [];
+      for (const imageFile of form.imageFiles) {
+        const key = await storePdfBlob(imageFile); // use storePdfBlob for any binary data
+        uploadedImageStorageIds.push(key);
+      }
+
+      const requirements: UserRequirements = {
+        requirement: form.requirement,
+        language: form.language,
+        userNickname: userProfile.nickname || undefined,
+        userBio: userProfile.bio || undefined,
+        webSearch: form.webSearch || undefined,
+        uploadedImageStorageIds:
+          uploadedImageStorageIds.length > 0 ? uploadedImageStorageIds : undefined,
+      };
+
       const sessionState = {
         sessionId: nanoid(),
         requirements,
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
+        uploadedImageStorageIds:
+          uploadedImageStorageIds.length > 0 ? uploadedImageStorageIds : undefined,
         pdfStorageKey,
         pdfFileName,
         pdfProviderId,
@@ -576,6 +590,8 @@ function HomePage() {
                   }}
                   pdfFile={form.pdfFile}
                   onPdfFileChange={(f) => updateForm('pdfFile', f)}
+                  imageFiles={form.imageFiles}
+                  onImageFilesChange={(fs) => updateForm('imageFiles', fs)}
                   onPdfError={setError}
                 />
               </div>

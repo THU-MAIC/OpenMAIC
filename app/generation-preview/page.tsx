@@ -267,8 +267,8 @@ function GenerationPreviewContent() {
         const updatedSession = {
           ...currentSession,
           pdfText,
-          pdfImages,
-          imageStorageIds,
+          pdfImages: [...(currentSession.pdfImages || []), ...pdfImages],
+          imageStorageIds: [...(currentSession.imageStorageIds || []), ...imageStorageIds],
           pdfStorageKey: undefined, // Clear so we don't re-parse
         };
         setSession(updatedSession);
@@ -339,11 +339,49 @@ function GenerationPreviewContent() {
         activeSteps = getActiveSteps(currentSession);
       }
 
+      // ── Handle manually uploaded images ──
+      const manualPdfImages: PdfImage[] = [];
+
+      if (
+        currentSession.uploadedImageStorageIds &&
+        currentSession.uploadedImageStorageIds.length > 0
+      ) {
+        log.debug('Loading manually uploaded images');
+        currentSession.uploadedImageStorageIds.forEach((storageId, i) => {
+          const uploadedId = `uploaded_img_${i + 1}`;
+          manualPdfImages.push({
+            id: uploadedId,
+            src: '',
+            pageNumber: 1,
+            description: 'Manually uploaded image',
+            storageId,
+          });
+        });
+
+        // Add them to the session's pdfImages if not already there
+        const existingUploaded = (currentSession.pdfImages || []).some((img) =>
+          img.id.startsWith('uploaded_img_'),
+        );
+        if (!existingUploaded) {
+          currentSession = {
+            ...currentSession,
+            pdfImages: [...(currentSession.pdfImages || []), ...manualPdfImages],
+          };
+          setSession(currentSession);
+          sessionStorage.setItem('generationSession', JSON.stringify(currentSession));
+        }
+      }
+
       // Load imageMapping early (needed for both outline and scene generation)
       let imageMapping: ImageMapping = {};
-      if (currentSession.imageStorageIds && currentSession.imageStorageIds.length > 0) {
+      const allImageStorageIds = [
+        ...(currentSession.imageStorageIds || []),
+        ...(currentSession.uploadedImageStorageIds || []),
+      ];
+
+      if (allImageStorageIds.length > 0) {
         log.debug('Loading images from IndexedDB');
-        imageMapping = await loadImageMapping(currentSession.imageStorageIds);
+        imageMapping = await loadImageMapping(allImageStorageIds);
       } else if (
         currentSession.imageMapping &&
         Object.keys(currentSession.imageMapping).length > 0
