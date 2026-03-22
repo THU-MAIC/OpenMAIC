@@ -142,6 +142,7 @@ const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'qwen-image': 'providerQwenImage',
   'nano-banana': 'providerNanoBanana',
   'minimax-image': 'providerMiniMaxImage',
+  'grok-image': 'providerGrokImage',
 };
 
 const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
@@ -149,6 +150,7 @@ const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
   'qwen-image': '/logos/bailian.svg',
   'nano-banana': '/logos/gemini.svg',
   'minimax-image': '/logos/minimax.svg',
+  'grok-image': '/logos/grok.svg',
 };
 
 const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
@@ -157,6 +159,7 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   veo: 'providerVeo',
   sora: 'providerSora',
   'minimax-video': 'providerMiniMaxVideo',
+  'grok-video': 'providerGrokVideo',
 };
 
 const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
@@ -165,6 +168,7 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   veo: '/logos/gemini.svg',
   sora: '/logos/openai.svg',
   'minimax-video': '/logos/minimax.svg',
+  'grok-video': '/logos/grok.svg',
 };
 
 interface SettingsDialogProps {

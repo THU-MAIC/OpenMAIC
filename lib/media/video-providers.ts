@@ -16,6 +16,7 @@ import {
   generateWithMiniMaxVideo,
   testMiniMaxVideoConnectivity,
 } from './adapters/minimax-video-adapter';
+import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
@@ -95,6 +96,16 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedResolutions: ['720p', '1080p'],
     maxDuration: 10,
   },
+  'grok-video': {
+    id: 'grok-video',
+    name: 'Grok Video (xAI)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    models: [{ id: 'grok-imagine-video', name: 'Grok Imagine Video' }],
+    supportedAspectRatios: ['16:9', '1:1', '9:16'],
+    supportedDurations: [6],
+    maxDuration: 6,
+  },
 };
 
 export async function testVideoConnectivity(
@@ -109,6 +120,8 @@ export async function testVideoConnectivity(
       return testVeoConnectivity(config);
     case 'minimax-video':
       return testMiniMaxVideoConnectivity(config);
+    case 'grok-video':
+      return testGrokVideoConnectivity(config);
     default:
       return {
         success: false,
@@ -174,6 +187,8 @@ export async function generateVideo(
       return generateWithVeo(config, options);
     case 'minimax-video':
       return generateWithMiniMaxVideo(config, options);
+    case 'grok-video':
+      return generateWithGrokVideo(config, options);
     default:
       throw new Error(`Unsupported video provider: ${config.providerId}`);
   }
