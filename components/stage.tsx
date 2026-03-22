@@ -564,7 +564,7 @@ export function Stage({
       }
       clearPresentationIdleTimer();
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup, clearPresentationIdleTimer is stable
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup, clearPresentationIdleTimer is stable
   }, []);
 
   // Sync mute state from settings store to audioPlayer

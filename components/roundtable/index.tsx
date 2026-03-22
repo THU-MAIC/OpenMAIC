@@ -90,7 +90,6 @@ interface RoundtableProps {
   readonly onPresentationInteractionChange?: (active: boolean) => void;
 }
 
-
 const VOICE_WAVE_BARS = [
   { peak: 18, duration: 0.55 },
   { peak: 24, duration: 0.72 },
