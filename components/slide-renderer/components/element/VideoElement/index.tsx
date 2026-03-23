@@ -1,6 +1,7 @@
 'use client';
 
 import type { PPTVideoElement } from '@/lib/types/slides';
+import { isMediaPlaceholder } from '@/lib/store/media-generation';
 
 export interface VideoElementProps {
   elementInfo: PPTVideoElement;
@@ -47,7 +48,7 @@ export function VideoElement({ elementInfo, selectElement }: VideoElementProps) 
               draggable={false}
               onDragStart={(e) => e.preventDefault()}
             />
-          ) : elementInfo.src ? (
+          ) : elementInfo.src && !isMediaPlaceholder(elementInfo.src) ? (
             <video
               className="w-full h-full"
               style={{ objectFit: 'contain', pointerEvents: 'none' }}

@@ -21,6 +21,9 @@ export const generationZhCN = {
     // Progress steps (used dynamically via activeStep)
     analyzingPdf: '解析 PDF 文档',
     analyzingPdfDesc: '正在提取文档结构和内容...',
+    pdfLoadFailed: '无法加载 PDF 文件，请重试',
+    pdfParseFailed: 'PDF 解析失败',
+    streamNotReadable: '无法读取生成数据流',
     generatingOutlines: '生成课程大纲',
     generatingOutlinesDesc: '正在构建学习路径...',
     generatingSlideContent: '生成页面内容',
@@ -85,6 +88,9 @@ export const generationEnUS = {
     // Progress steps (used dynamically via activeStep)
     analyzingPdf: 'Analyzing PDF Document',
     analyzingPdfDesc: 'Extracting document structure and content...',
+    pdfLoadFailed: 'Failed to load PDF file, please try again',
+    pdfParseFailed: 'PDF parsing failed',
+    streamNotReadable: 'Unable to read generation stream',
     generatingOutlines: 'Drafting Course Outline',
     generatingOutlinesDesc: 'Structuring the learning path...',
     generatingSlideContent: 'Generating Page Content',
