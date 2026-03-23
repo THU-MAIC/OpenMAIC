@@ -206,9 +206,9 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
             className={cn(
               'rounded-lg p-3 text-sm overflow-hidden',
               testStatus === 'success' &&
-              'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
+                'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
               testStatus === 'error' &&
-              'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
+                'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
             )}
           >
             <div className="flex items-start gap-2 min-w-0">

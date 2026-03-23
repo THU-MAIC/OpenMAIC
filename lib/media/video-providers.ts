@@ -90,7 +90,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedAspectRatios: ['16:9', '1:1', '9:16'],
     supportedDurations: [6],
     maxDuration: 6,
-  }
+  },
 };
 
 export async function testVideoConnectivity(
