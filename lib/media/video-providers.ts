@@ -77,7 +77,8 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
       { id: 'sora-2-pro', name: 'Sora 2 Pro' },
     ],
     supportedAspectRatios: ['16:9', '1:1', '9:16'],
-    maxDuration: 20,
+    supportedDurations: [4, 8, 12],
+    maxDuration: 12,
   },
 };
 

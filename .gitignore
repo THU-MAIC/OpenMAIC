@@ -61,3 +61,5 @@ next-env.d.ts
 
 # docs
 /docs
+
+.npm-cache
