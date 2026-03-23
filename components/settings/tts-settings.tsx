@@ -43,6 +43,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const setTTSModelId = useSettingsStore((state) => state.setTTSModelId);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
 
+  // When testing a non-active provider, use that provider's default voice
+  // instead of the active provider's voice (which may be incompatible).
   const effectiveVoice =
     selectedProviderId === activeProviderId
       ? ttsVoice
@@ -70,10 +72,12 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const [modelForm, setModelForm] = useState({ id: '', name: '' });
   const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
 
+  // Keep the sample text in sync with locale changes.
   useEffect(() => {
     setTestText(t('settings.ttsTestTextDefault'));
   }, [t]);
 
+  // Reset transient UI state when switching providers.
   useEffect(() => {
     stopPreview();
     setShowApiKey(false);
@@ -173,12 +177,14 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   return (
     <div className="space-y-6 max-w-3xl">
+      {/* Server-configured notice */}
       {isServerConfigured && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">
           {t('settings.serverConfiguredNotice')}
         </div>
       )}
 
+      {/* API Key & Base URL */}
       {(ttsProvider.requiresApiKey || isServerConfigured) && (
         <>
           <div className="grid grid-cols-2 gap-4">
@@ -231,6 +237,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               />
             </div>
           </div>
+          {/* Request URL Preview */}
           {(() => {
             const effectiveBaseUrl =
               ttsProvidersConfig[selectedProviderId]?.baseUrl || ttsProvider.defaultBaseUrl || '';
@@ -261,6 +268,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         </>
       )}
 
+      {/* Test TTS */}
       <div className="space-y-2">
         <Label className="text-sm">{t('settings.testTTS')}</Label>
         <div className="flex gap-2">
@@ -310,6 +318,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         </div>
       )}
 
+      {/* Model Management */}
       {supportsModelSelection && (
         <div className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -352,7 +361,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               const selected = ttsModelId === model.id;
               return (
                 <div
-                  key={`custom-${index}`}
+                  key={`custom-${model.id}`}
                   className={cn(
                     'flex items-center gap-3 p-3 rounded-lg border transition-colors',
                     selected

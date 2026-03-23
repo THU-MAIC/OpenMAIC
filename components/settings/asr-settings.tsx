@@ -372,6 +372,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         </div>
       )}
 
+      {/* Model Management */}
       {supportsModelSelection && (
         <div className="space-y-3">
           <div className="flex items-center justify-between flex-wrap gap-2">
@@ -414,7 +415,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
               const selected = asrModelId === model.id;
               return (
                 <div
-                  key={`custom-${index}`}
+                  key={`custom-${model.id}`}
                   className={cn(
                     'flex items-center gap-3 p-3 rounded-lg border transition-colors',
                     selected
