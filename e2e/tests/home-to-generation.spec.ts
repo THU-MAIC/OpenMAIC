@@ -1,18 +1,9 @@
 import { test, expect } from '../fixtures/base';
 import { HomePage } from '../pages/home.page';
+import { createSettingsStorage } from '../fixtures/test-data/settings';
 
 // Inject settings with modelId so the "enter classroom" button works
-const SETTINGS_STORAGE = JSON.stringify({
-  state: {
-    modelId: 'gpt-4o',
-    providerId: 'openai',
-    agentMode: 'preset',
-    selectedAgentIds: [],
-    ttsEnabled: false,
-    autoConfigApplied: true,
-  },
-  version: 2,
-});
+const SETTINGS_STORAGE = createSettingsStorage();
 
 test.describe('Home → Generation', () => {
   test.beforeEach(async ({ page }) => {

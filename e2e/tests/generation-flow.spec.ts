@@ -1,17 +1,8 @@
 import { test, expect } from '../fixtures/base';
 import { GenerationPreviewPage } from '../pages/generation-preview.page';
+import { createSettingsStorage } from '../fixtures/test-data/settings';
 
-const SETTINGS_STORAGE = JSON.stringify({
-  state: {
-    modelId: 'gpt-4o',
-    providerId: 'openai',
-    agentMode: 'preset',
-    selectedAgentIds: [],
-    ttsEnabled: false,
-    autoConfigApplied: true,
-  },
-  version: 2,
-});
+const SETTINGS_STORAGE = createSettingsStorage();
 
 const GENERATION_SESSION = JSON.stringify({
   sessionId: 'e2e-test-session',

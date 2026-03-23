@@ -1,5 +1,7 @@
+import type { SceneOutline } from '../../../lib/types/generation';
+
 /** Mock SceneOutline data matching lib/types/generation.ts:SceneOutline */
-export const mockOutlines = [
+export const mockOutlines: SceneOutline[] = [
   {
     id: 'outline-0',
     type: 'slide' as const,

@@ -66,11 +66,10 @@ export class MockApi {
     });
   }
 
-  /** Set up all default mocks for the generation flow */
+  /** Set up API mocks for the generation flow. Note: server-providers is already mocked by the base fixture. */
   async setupGenerationMocks(stageId = 'test-stage') {
     await this.mockSceneOutlinesStream();
     await this.mockSceneContent();
     await this.mockSceneActions(stageId);
-    await this.mockServerProviders();
   }
 }

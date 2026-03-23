@@ -1,27 +1,11 @@
 import { test, expect } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
+import { createSettingsStorage } from '../fixtures/test-data/settings';
+import { defaultTheme } from '../fixtures/test-data/scene-content';
 
 const TEST_STAGE_ID = 'e2e-test-stage';
 
-const SETTINGS_STORAGE = JSON.stringify({
-  state: {
-    modelId: 'gpt-4o',
-    providerId: 'openai',
-    agentMode: 'preset',
-    selectedAgentIds: [],
-    ttsEnabled: false,
-    autoConfigApplied: true,
-    sidebarCollapsed: false,
-  },
-  version: 2,
-});
-
-const defaultTheme = {
-  backgroundColor: '#ffffff',
-  themeColors: ['#5b9bd5', '#ed7d31', '#a5a5a5', '#ffc000', '#4472c4'],
-  fontColor: '#333333',
-  fontName: 'Microsoft Yahei',
-};
+const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 
 /** Seed IndexedDB with stage + 3 scenes using raw IndexedDB API */
 async function seedDatabase(page: import('@playwright/test').Page) {

@@ -8,7 +8,7 @@ export class ClassroomPage {
   constructor(page: Page) {
     this.page = page;
     this.loadingText = page.getByText('Loading classroom...');
-    this.sidebarScenes = page.locator('.overflow-y-auto.space-y-2 > div');
+    this.sidebarScenes = page.locator('[data-testid="scene-item"]');
   }
 
   async goto(stageId: string) {
@@ -25,6 +25,6 @@ export class ClassroomPage {
 
   /** Get scene title — it's the second span (first is the number badge) */
   getSceneTitle(index: number) {
-    return this.sidebarScenes.nth(index).locator('span.truncate');
+    return this.sidebarScenes.nth(index).locator('[data-testid="scene-title"]');
   }
 }
