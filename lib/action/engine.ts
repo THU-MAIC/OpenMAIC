@@ -169,7 +169,7 @@ export class ActionEngine {
 
     return new Promise<void>((resolve) => {
       this.audioPlayer!.onEnded(() => resolve());
-      this.audioPlayer!.play(action.audioId || '')
+      this.audioPlayer!.play(action.audioId || '', action.audioUrl)
         .then((audioStarted) => {
           if (!audioStarted) resolve();
         })
@@ -284,7 +284,8 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     const fontSize = action.fontSize ?? 18;
-    let htmlContent = action.content;
+    let htmlContent = action.content ?? '';
+    if (!htmlContent) return; // nothing to draw
     if (!htmlContent.startsWith('<')) {
       htmlContent = `<p style="font-size: ${fontSize}px;">${htmlContent}</p>`;
     }

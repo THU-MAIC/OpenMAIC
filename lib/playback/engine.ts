@@ -465,7 +465,7 @@ export class PlaybackEngine {
         };
 
         this.audioPlayer
-          .play(speechAction.audioId || '')
+          .play(speechAction.audioId || '', speechAction.audioUrl)
           .then((audioStarted) => {
             if (!audioStarted) {
               // No pre-generated audio — try browser-native TTS if selected
@@ -657,6 +657,9 @@ export class PlaybackEngine {
       // On 'canceled': do nothing — pause handler already saved state
     };
 
+    // Chrome bug workaround: cancel() before speak() to clear stale synthesis
+    // state that can produce garbled/broken audio output.
+    window.speechSynthesis.cancel();
     window.speechSynthesis.speak(utterance);
   }
 

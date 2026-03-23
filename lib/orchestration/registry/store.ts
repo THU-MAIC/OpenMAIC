@@ -10,6 +10,7 @@ import { getActionsForRole } from './types';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
+import type { AgentInfo } from '@/lib/generation/pipeline-types';
 
 interface AgentRegistryState {
   agents: Record<string, AgentConfig>; // Map of agentId -> config
@@ -185,6 +186,19 @@ Tone: Thoughtful, measured, intellectually curious. You pause before speaking. Y
     isDefault: true,
   },
 };
+
+/**
+ * Return the built-in default agents as lightweight AgentInfo objects
+ * suitable for the generation pipeline (no UI-only fields like avatar/color).
+ */
+export function getDefaultAgents(): AgentInfo[] {
+  return Object.values(DEFAULT_AGENTS).map((a) => ({
+    id: a.id,
+    name: a.name,
+    role: a.role,
+    persona: a.persona,
+  }));
+}
 
 export const useAgentRegistry = create<AgentRegistryState>()(
   persist(

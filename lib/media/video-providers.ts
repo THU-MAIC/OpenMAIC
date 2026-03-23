@@ -13,6 +13,7 @@ import { generateWithSeedance, testSeedanceConnectivity } from './adapters/seeda
 import { generateWithKling, testKlingConnectivity } from './adapters/kling-adapter';
 import { generateWithVeo, testVeoConnectivity } from './adapters/veo-adapter';
 import { generateWithSora, testSoraConnectivity } from './adapters/sora-adapter';
+import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
@@ -80,6 +81,16 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedDurations: [4, 8, 12],
     maxDuration: 12,
   },
+  'grok-video': {
+    id: 'grok-video',
+    name: 'Grok Video (xAI)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.x.ai/v1',
+    models: [{ id: 'grok-imagine-video', name: 'Grok Imagine Video' }],
+    supportedAspectRatios: ['16:9', '1:1', '9:16'],
+    supportedDurations: [6],
+    maxDuration: 6,
+  }
 };
 
 export async function testVideoConnectivity(
@@ -94,6 +105,8 @@ export async function testVideoConnectivity(
       return testVeoConnectivity(config);
     case 'sora':
       return testSoraConnectivity(config);
+    case 'grok-video':
+      return testGrokVideoConnectivity(config);
     default:
       return {
         success: false,
@@ -159,6 +172,8 @@ export async function generateVideo(
       return generateWithVeo(config, options);
     case 'sora':
       return generateWithSora(config, options);
+    case 'grok-video':
+      return generateWithGrokVideo(config, options);
     default:
       throw new Error(`Unsupported video provider: ${config.providerId}`);
   }
