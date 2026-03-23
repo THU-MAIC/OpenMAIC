@@ -756,7 +756,7 @@ export const useSettingsStore = create<SettingsState>()(
               }
 
               // Validate current LLM selection against updated provider config
-              let clearedProviderId: string | undefined;
+              let clearedProviderId: ProviderId | undefined;
               let clearedModelId: string | undefined;
               if (state.providerId) {
                 const selectedCfg = newProvidersConfig[state.providerId as ProviderId];
@@ -766,7 +766,7 @@ export const useSettingsStore = create<SettingsState>()(
                     !!selectedCfg.apiKey ||
                     !!selectedCfg.isServerConfigured);
                 if (!isUsable) {
-                  clearedProviderId = '';
+                  clearedProviderId = '' as ProviderId;
                   clearedModelId = '';
                 } else if (
                   state.modelId &&
