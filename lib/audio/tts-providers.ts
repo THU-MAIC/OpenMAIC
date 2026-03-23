@@ -134,7 +134,7 @@ export async function generateTTS(
 
     case 'mimo-tts':
       return await generateMiMoTTS(config, text);
-      
+
     case 'elevenlabs-tts':
       return await generateElevenLabsTTS(config, text);
 

@@ -634,7 +634,7 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     ],
     supportedFormats: ['wav'],
   },
-  
+
   'elevenlabs-tts': {
     id: 'elevenlabs-tts',
     name: 'ElevenLabs TTS',
