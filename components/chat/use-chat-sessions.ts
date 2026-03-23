@@ -518,7 +518,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    * Create a new chat session
    */
   const createSession = useCallback(async (type: SessionType, title: string): Promise<string> => {
-    const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const sessionId = `session-${crypto.randomUUID()}`;
     const now = Date.now();
 
     const newSession: ChatSession = {
@@ -1110,7 +1110,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         await endSession(session.id);
       }
 
-      const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const sessionId = `session-${crypto.randomUUID()}`;
       const now = Date.now();
       const agentId = request.agentId || 'default-1';
 
@@ -1291,7 +1291,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         return existing.id;
       }
 
-      const sessionId = `session-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const sessionId = `session-${crypto.randomUUID()}`;
       const now = Date.now();
       const messageId = `lecture-msg-${now}`;
 
