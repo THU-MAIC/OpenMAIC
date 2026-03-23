@@ -110,6 +110,8 @@ export interface TTSProviderConfig {
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   icon?: string;
+  supportsModelSelection: boolean;
+  // Use an empty array when the provider does not expose a selectable model concept.
   models: Array<{ id: string; name: string }>;
   voices: TTSVoiceInfo[];
   supportedFormats: string[]; // ['mp3', 'wav', 'opus', etc.]
@@ -159,6 +161,8 @@ export interface ASRProviderConfig {
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   icon?: string;
+  supportsModelSelection: boolean;
+  // Use an empty array when the provider does not expose a selectable model concept.
   models: Array<{ id: string; name: string }>;
   supportedLanguages: string[];
   supportedFormats: string[];

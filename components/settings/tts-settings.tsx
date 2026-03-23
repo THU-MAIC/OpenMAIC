@@ -49,10 +49,15 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       : DEFAULT_TTS_VOICES[selectedProviderId] || 'default';
 
   const ttsProvider = TTS_PROVIDERS[selectedProviderId] ?? TTS_PROVIDERS['openai-tts'];
-  const builtInModels = useMemo(() => ttsProvider.models || [], [ttsProvider.models]);
+  const supportsModelSelection = ttsProvider.supportsModelSelection;
+  const builtInModels = useMemo(
+    () => (supportsModelSelection ? ttsProvider.models : []),
+    [supportsModelSelection, ttsProvider.models],
+  );
   const customModels = useMemo(
-    () => ttsProvidersConfig[selectedProviderId]?.customModels || [],
-    [selectedProviderId, ttsProvidersConfig],
+    () =>
+      supportsModelSelection ? ttsProvidersConfig[selectedProviderId]?.customModels || [] : [],
+    [selectedProviderId, supportsModelSelection, ttsProvidersConfig],
   );
   const isServerConfigured = !!ttsProvidersConfig[selectedProviderId]?.isServerConfigured;
 
@@ -77,6 +82,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   }, [selectedProviderId, stopPreview]);
 
   useEffect(() => {
+    if (!supportsModelSelection) {
+      if (ttsModelId) setTTSModelId('');
+      return;
+    }
     const availableModelIds = new Set([
       ...builtInModels.map((model) => model.id),
       ...customModels.map((model) => model.id),
@@ -85,7 +94,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       const nextModelId = builtInModels[0]?.id || customModels[0]?.id || '';
       if (nextModelId) setTTSModelId(nextModelId);
     }
-  }, [builtInModels, customModels, ttsModelId, setTTSModelId]);
+  }, [builtInModels, customModels, supportsModelSelection, ttsModelId, setTTSModelId]);
 
   const handleOpenAddModel = () => {
     setEditingModelIndex(null);
@@ -301,59 +310,30 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         </div>
       )}
 
-      <div className="space-y-3">
-        <div className="flex items-center justify-between flex-wrap gap-2">
-          <Label className="text-base">{t('settings.models')}</Label>
-          <Button variant="outline" size="sm" onClick={handleOpenAddModel} className="gap-1.5">
-            <Plus className="h-3.5 w-3.5" />
-            {t('settings.addNewModel')}
-          </Button>
-        </div>
+      {supportsModelSelection && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <Label className="text-base">{t('settings.models')}</Label>
+            <Button variant="outline" size="sm" onClick={handleOpenAddModel} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {t('settings.addNewModel')}
+            </Button>
+          </div>
 
-        <div className="space-y-1.5">
-          {builtInModels.map((model) => {
-            const selected = ttsModelId === model.id;
-            return (
-              <button
-                key={model.id}
-                type="button"
-                onClick={() => setTTSModelId(model.id)}
-                className={cn(
-                  'w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors',
-                  selected
-                    ? 'border-primary/50 bg-primary/5'
-                    : 'border-border/50 bg-card hover:bg-muted/40',
-                )}
-              >
-                {selected ? (
-                  <CircleDot className="h-4 w-4 shrink-0 text-primary" />
-                ) : (
-                  <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="font-mono text-sm font-medium">{model.name}</div>
-                  <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
-                </div>
-              </button>
-            );
-          })}
-
-          {customModels.map((model, index) => {
-            const selected = ttsModelId === model.id;
-            return (
-              <div
-                key={`custom-${index}`}
-                className={cn(
-                  'flex items-center gap-3 p-3 rounded-lg border transition-colors',
-                  selected
-                    ? 'border-primary/50 bg-primary/5'
-                    : 'border-border/50 bg-card hover:bg-muted/40',
-                )}
-              >
+          <div className="space-y-1.5">
+            {builtInModels.map((model) => {
+              const selected = ttsModelId === model.id;
+              return (
                 <button
+                  key={model.id}
                   type="button"
                   onClick={() => setTTSModelId(model.id)}
-                  className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  className={cn(
+                    'w-full flex items-center gap-3 p-3 rounded-lg border text-left transition-colors',
+                    selected
+                      ? 'border-primary/50 bg-primary/5'
+                      : 'border-border/50 bg-card hover:bg-muted/40',
+                  )}
                 >
                   {selected ? (
                     <CircleDot className="h-4 w-4 shrink-0 text-primary" />
@@ -365,70 +345,105 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                     <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
                   </div>
                 </button>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2"
-                    onClick={() => handleOpenEditModel(index)}
-                    title={t('settings.editModel')}
-                  >
-                    <Settings2 className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => handleDeleteModel(index)}
-                    title={t('settings.deleteModel')}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+              );
+            })}
 
-      <Dialog open={showModelDialog} onOpenChange={setShowModelDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogTitle>
-            {editingModelIndex !== null ? t('settings.editModel') : t('settings.addNewModel')}
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            {editingModelIndex !== null ? t('settings.editModel') : t('settings.addNewModel')}
-          </DialogDescription>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label>{t('settings.modelId')}</Label>
-              <Input
-                value={modelForm.id}
-                onChange={(e) => setModelForm((prev) => ({ ...prev, id: e.target.value }))}
-                placeholder="e.g. my-custom-tts-model"
-                className="h-8 font-mono text-sm"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('settings.modelName')}</Label>
-              <Input
-                value={modelForm.name}
-                onChange={(e) => setModelForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g. My Custom TTS Model"
-                className="h-8 text-sm"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowModelDialog(false)}>
-                {t('common.cancel')}
-              </Button>
-              <Button size="sm" onClick={handleSaveModel} disabled={!modelForm.id.trim()}>
-                {t('common.save')}
-              </Button>
-            </div>
+            {customModels.map((model, index) => {
+              const selected = ttsModelId === model.id;
+              return (
+                <div
+                  key={`custom-${index}`}
+                  className={cn(
+                    'flex items-center gap-3 p-3 rounded-lg border transition-colors',
+                    selected
+                      ? 'border-primary/50 bg-primary/5'
+                      : 'border-border/50 bg-card hover:bg-muted/40',
+                  )}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setTTSModelId(model.id)}
+                    className="flex items-center gap-3 flex-1 min-w-0 text-left"
+                  >
+                    {selected ? (
+                      <CircleDot className="h-4 w-4 shrink-0 text-primary" />
+                    ) : (
+                      <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="font-mono text-sm font-medium">{model.name}</div>
+                      <div className="text-xs text-muted-foreground font-mono mt-0.5">
+                        {model.id}
+                      </div>
+                    </div>
+                  </button>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => handleOpenEditModel(index)}
+                      title={t('settings.editModel')}
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => handleDeleteModel(index)}
+                      title={t('settings.deleteModel')}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
+
+      {supportsModelSelection && (
+        <Dialog open={showModelDialog} onOpenChange={setShowModelDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogTitle>
+              {editingModelIndex !== null ? t('settings.editModel') : t('settings.addNewModel')}
+            </DialogTitle>
+            <DialogDescription className="sr-only">
+              {editingModelIndex !== null ? t('settings.editModel') : t('settings.addNewModel')}
+            </DialogDescription>
+            <div className="space-y-4 pt-2">
+              <div className="space-y-2">
+                <Label>{t('settings.modelId')}</Label>
+                <Input
+                  value={modelForm.id}
+                  onChange={(e) => setModelForm((prev) => ({ ...prev, id: e.target.value }))}
+                  placeholder="e.g. my-custom-tts-model"
+                  className="h-8 font-mono text-sm"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>{t('settings.modelName')}</Label>
+                <Input
+                  value={modelForm.name}
+                  onChange={(e) => setModelForm((prev) => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g. My Custom TTS Model"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" size="sm" onClick={() => setShowModelDialog(false)}>
+                  {t('common.cancel')}
+                </Button>
+                <Button size="sm" onClick={handleSaveModel} disabled={!modelForm.id.trim()}>
+                  {t('common.save')}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

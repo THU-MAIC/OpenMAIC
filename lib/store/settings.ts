@@ -270,14 +270,26 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
   return config;
 };
 
+const getDefaultTTSModelId = (providerId: TTSProviderId): string => {
+  const provider = TTS_PROVIDERS[providerId];
+  if (!provider?.supportsModelSelection) return '';
+  return provider.models[0]?.id || '';
+};
+
+const getDefaultASRModelId = (providerId: ASRProviderId): string => {
+  const provider = ASR_PROVIDERS[providerId];
+  if (!provider?.supportsModelSelection) return '';
+  return provider.models[0]?.id || '';
+};
+
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
   ttsProviderId: 'browser-native-tts' as TTSProviderId,
-  ttsModelId: 'browser-native-tts',
+  ttsModelId: getDefaultTTSModelId('browser-native-tts'),
   ttsVoice: 'default',
   ttsSpeed: 1.0,
   asrProviderId: 'browser-native' as ASRProviderId,
-  asrModelId: 'browser-native-asr',
+  asrModelId: getDefaultASRModelId('browser-native'),
   asrLanguage: 'zh',
   ttsProvidersConfig: {
     'openai-tts': { apiKey: '', baseUrl: '', enabled: true },
@@ -617,7 +629,7 @@ export const useSettingsStore = create<SettingsState>()(
             const shouldUpdateVoice = state.ttsProviderId !== providerId;
             return {
               ttsProviderId: providerId,
-              ttsModelId: TTS_PROVIDERS[providerId]?.models[0]?.id || '',
+              ttsModelId: getDefaultTTSModelId(providerId),
               ...(shouldUpdateVoice && { ttsVoice: DEFAULT_TTS_VOICES[providerId] }),
             };
           }),
@@ -636,7 +648,7 @@ export const useSettingsStore = create<SettingsState>()(
             const isLanguageValid = supportedLanguages.includes(state.asrLanguage);
             return {
               asrProviderId: providerId,
-              asrModelId: ASR_PROVIDERS[providerId]?.models[0]?.id || '',
+              asrModelId: getDefaultASRModelId(providerId),
               ...(isLanguageValid ? {} : { asrLanguage: supportedLanguages[0] || 'auto' }),
             };
           }),
@@ -1086,12 +1098,12 @@ export const useSettingsStore = create<SettingsState>()(
 
         if (!state.ttsModelId) {
           const providerId = state.ttsProviderId || ('browser-native-tts' as TTSProviderId);
-          state.ttsModelId = TTS_PROVIDERS[providerId]?.models[0]?.id || '';
+          state.ttsModelId = getDefaultTTSModelId(providerId);
         }
 
         if (!state.asrModelId) {
           const providerId = state.asrProviderId || ('browser-native' as ASRProviderId);
-          state.asrModelId = ASR_PROVIDERS[providerId]?.models[0]?.id || '';
+          state.asrModelId = getDefaultASRModelId(providerId);
         }
 
         // Add default PDF config if missing
