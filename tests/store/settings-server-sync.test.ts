@@ -263,7 +263,7 @@ describe('fetchServerProviders — provider availability sync', () => {
   // validates the current modelId/providerId selection against the new list.
   // These tests document the desired fix — remove .fails() once implemented.
 
-  it.fails('clears modelId when server removes the selected model', async () => {
+  it('clears modelId when server removes the selected model', async () => {
     const store = await getStore();
 
     // User selects gpt-4o-mini while it's available
@@ -278,45 +278,39 @@ describe('fetchServerProviders — provider availability sync', () => {
     expect(store.getState().modelId).toBe('');
   });
 
-  it.fails(
-    'clears providerId when entire provider loses server config and has no client key',
-    async () => {
-      const store = await getStore();
+  it('clears providerId when entire provider loses server config and has no client key', async () => {
+    const store = await getStore();
 
-      // User on a server-only provider (no client key)
-      store.getState().setModel('openai', 'gpt-4o');
-      mockServerProviders({ openai: { models: ['gpt-4o'] } });
-      await store.getState().fetchServerProviders();
-      expect(store.getState().providersConfig.openai.isServerConfigured).toBe(true);
+    // User on a server-only provider (no client key)
+    store.getState().setModel('openai', 'gpt-4o');
+    mockServerProviders({ openai: { models: ['gpt-4o'] } });
+    await store.getState().fetchServerProviders();
+    expect(store.getState().providersConfig.openai.isServerConfigured).toBe(true);
 
-      // Server removes openai entirely — no client key either
-      mockServerProviders({});
-      await store.getState().fetchServerProviders();
+    // Server removes openai entirely — no client key either
+    mockServerProviders({});
+    await store.getState().fetchServerProviders();
 
-      // Provider is unusable → selection should be cleared
-      expect(store.getState().providerId).toBe('');
-      expect(store.getState().modelId).toBe('');
-    },
-  );
+    // Provider is unusable → selection should be cleared
+    expect(store.getState().providerId).toBe('');
+    expect(store.getState().modelId).toBe('');
+  });
 
-  it.fails(
-    'clears modelId when server narrows model list and selected model is excluded',
-    async () => {
-      const store = await getStore();
+  it('clears modelId when server narrows model list and selected model is excluded', async () => {
+    const store = await getStore();
 
-      // Round 1: user picks gpt-4-turbo
-      mockServerProviders({ openai: { models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'] } });
-      await store.getState().fetchServerProviders();
-      store.getState().setModel('openai', 'gpt-4-turbo');
+    // Round 1: user picks gpt-4-turbo
+    mockServerProviders({ openai: { models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'] } });
+    await store.getState().fetchServerProviders();
+    store.getState().setModel('openai', 'gpt-4-turbo');
 
-      // Round 2: server narrows to gpt-4o only
-      mockServerProviders({ openai: { models: ['gpt-4o'] } });
-      await store.getState().fetchServerProviders();
+    // Round 2: server narrows to gpt-4o only
+    mockServerProviders({ openai: { models: ['gpt-4o'] } });
+    await store.getState().fetchServerProviders();
 
-      // Selection should be cleared, not left pointing to unavailable model
-      expect(store.getState().modelId).toBe('');
-    },
-  );
+    // Selection should be cleared, not left pointing to unavailable model
+    expect(store.getState().modelId).toBe('');
+  });
 
   it('keeps modelId when selected model is still available after server sync', async () => {
     const store = await getStore();
