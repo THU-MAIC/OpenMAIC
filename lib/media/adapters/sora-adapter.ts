@@ -20,6 +20,7 @@ const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 const POLL_INTERVAL_MS = 10_000;
 const MAX_POLL_ATTEMPTS = 60;
 const SORA_SUPPORTED_SECONDS = [4, 8, 12] as const;
+type SoraSupportedSecond = (typeof SORA_SUPPORTED_SECONDS)[number];
 
 interface SoraVideoJob {
   id: string;
@@ -67,7 +68,7 @@ function getSoraSeconds(duration?: number): string | undefined {
     Math.min(SORA_SUPPORTED_SECONDS[SORA_SUPPORTED_SECONDS.length - 1], roundedDuration),
   );
 
-  let closestDuration = SORA_SUPPORTED_SECONDS[0];
+  let closestDuration: SoraSupportedSecond = SORA_SUPPORTED_SECONDS[0];
   let smallestDifference = Math.abs(clampedDuration - closestDuration);
 
   for (const supportedDuration of SORA_SUPPORTED_SECONDS.slice(1)) {
