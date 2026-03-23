@@ -934,10 +934,6 @@ export function getTTSVoices(providerId: TTSProviderId): TTSVoiceInfo[] {
   return TTS_PROVIDERS[providerId]?.voices || [];
 }
 
-export function getTTSModels(providerId: TTSProviderId): Array<{ id: string; name: string }> {
-  return TTS_PROVIDERS[providerId]?.models || [];
-}
-
 /**
  * Get all available ASR providers
  */
@@ -957,8 +953,4 @@ export function getASRProvider(providerId: ASRProviderId): ASRProviderConfig | u
  */
 export function getASRSupportedLanguages(providerId: ASRProviderId): string[] {
   return ASR_PROVIDERS[providerId]?.supportedLanguages || [];
-}
-
-export function getASRModels(providerId: ASRProviderId): Array<{ id: string; name: string }> {
-  return ASR_PROVIDERS[providerId]?.models || [];
 }
