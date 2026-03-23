@@ -88,6 +88,9 @@ interface RoundtableProps {
   readonly controlsVisible?: boolean;
   readonly onTogglePresentation?: () => void;
   readonly onPresentationInteractionChange?: (active: boolean) => void;
+  /** Ref to the fullscreen container — passed to ProactiveCard so its portal
+   *  renders inside the top-layer during presentation mode. */
+  readonly fullscreenContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
 const VOICE_WAVE_BARS = [
@@ -170,6 +173,7 @@ export function Roundtable({
   controlsVisible,
   onTogglePresentation,
   onPresentationInteractionChange,
+  fullscreenContainerRef,
 }: RoundtableProps) {
   const { t } = useI18n();
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -933,6 +937,7 @@ export function Roundtable({
                       action={discussionRequest}
                       mode={engineMode === 'paused' ? 'paused' : 'playback'}
                       anchorRef={presentationActionAnchorRef}
+                      portalContainer={fullscreenContainerRef?.current}
                       align="left"
                       agentName={
                         presentationDiscussionParticipant?.name ||

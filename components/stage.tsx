@@ -1058,6 +1058,7 @@ export function Stage({
               controlsVisible={controlsVisible}
               onTogglePresentation={togglePresentation}
               onPresentationInteractionChange={setIsPresentationInteractionActive}
+              fullscreenContainerRef={stageRef}
             />
           </div>
         )}
