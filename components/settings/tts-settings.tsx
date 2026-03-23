@@ -164,6 +164,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               case 'qwen-tts':
                 endpointPath = '/services/aigc/multimodal-generation/generation';
                 break;
+              case 'elevenlabs-tts':
+                endpointPath = '/text-to-speech';
+                break;
             }
             if (!endpointPath) return null;
             return (

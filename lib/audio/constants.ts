@@ -606,6 +606,68 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'pcm'],
   },
 
+  'elevenlabs-tts': {
+    id: 'elevenlabs-tts',
+    name: 'ElevenLabs TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.elevenlabs.io/v1',
+    icon: '/logos/elevenlabs.svg',
+    // Free-tier-safe fallback set; account-specific/custom voices should come from /v2/voices dynamically later.
+    voices: [
+      {
+        id: 'EXAVITQu4vr4xnSDxMaL',
+        name: 'Sarah',
+        language: 'en-US',
+        gender: 'female',
+        description: 'Confident and warm professional voice for clear narration',
+      },
+      {
+        id: 'Xb7hH8MSUJpSbSDYk0k2',
+        name: 'Alice',
+        language: 'en-GB',
+        gender: 'female',
+        description: 'Clear and engaging British educator voice for e-learning',
+      },
+      {
+        id: 'XrExE9yKIg1WjnnlVkGX',
+        name: 'Matilda',
+        language: 'en-US',
+        gender: 'female',
+        description: 'Knowledgeable and upbeat voice suited for lectures',
+      },
+      {
+        id: 'CwhRBWXzGAHq8TQ4Fs17',
+        name: 'Roger',
+        language: 'en-US',
+        gender: 'male',
+        description: 'Laid-back but resonant male voice for friendly lessons',
+      },
+      {
+        id: 'cjVigY5qzO86Huf0OWal',
+        name: 'Eric',
+        language: 'en-US',
+        gender: 'male',
+        description: 'Smooth and trustworthy voice for polished classroom audio',
+      },
+      {
+        id: 'onwK4e9ZLuTAKqWW03F9',
+        name: 'Daniel',
+        language: 'en-GB',
+        gender: 'male',
+        description: 'Steady British broadcaster voice for formal explanations',
+      },
+      {
+        id: 'SAz9YHcvj6GT2YYXdXww',
+        name: 'River',
+        language: 'en-US',
+        gender: 'neutral',
+        description: 'Relaxed and informative neutral voice for general narration',
+      },
+    ],
+    supportedFormats: ['mp3', 'opus', 'pcm', 'wav', 'ulaw', 'alaw'],
+    speedRange: { min: 0.7, max: 1.2, default: 1.0 },
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -833,6 +895,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
+  'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'browser-native-tts': 'default',
 };
 
