@@ -141,7 +141,6 @@ export interface SettingsState {
 
   // Agent settings
   selectedAgentIds: string[];
-  presetSelectedAgentIds: string[];
   maxTurns: string;
   agentMode: 'preset' | 'auto';
   autoAgentCount: number;
@@ -161,7 +160,6 @@ export interface SettingsState {
   setAutoPlayLecture: (autoPlay: boolean) => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setSelectedAgentIds: (ids: string[]) => void;
-  setPresetSelectedAgentIds: (ids: string[]) => void;
   setMaxTurns: (turns: string) => void;
   setAgentMode: (mode: 'preset' | 'auto') => void;
   setAutoAgentCount: (count: number) => void;
@@ -517,11 +515,6 @@ export const useSettingsStore = create<SettingsState>()(
         providersConfig: migratedData?.providersConfig || getDefaultProvidersConfig(),
         ttsModel: migratedData?.ttsModel || 'openai-tts',
         selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
-        presetSelectedAgentIds: migratedData?.selectedAgentIds || [
-          'default-1',
-          'default-2',
-          'default-3',
-        ],
         maxTurns: migratedData?.maxTurns?.toString() || '10',
         agentMode: 'auto' as const,
         autoAgentCount: 3,
@@ -589,8 +582,6 @@ export const useSettingsStore = create<SettingsState>()(
         setPlaybackSpeed: (speed) => set({ playbackSpeed: speed }),
 
         setSelectedAgentIds: (ids) => set({ selectedAgentIds: ids }),
-        setPresetSelectedAgentIds: (ids) =>
-          set({ presetSelectedAgentIds: ids, selectedAgentIds: ids }),
 
         setMaxTurns: (turns) => set({ maxTurns: turns }),
         setAgentMode: (mode) => set({ agentMode: mode }),
@@ -1119,11 +1110,6 @@ export const useSettingsStore = create<SettingsState>()(
         }
         if ((state as Record<string, unknown>).autoAgentCount === undefined) {
           (state as Record<string, unknown>).autoAgentCount = 3;
-        }
-        if ((state as Record<string, unknown>).presetSelectedAgentIds === undefined) {
-          (state as Record<string, unknown>).presetSelectedAgentIds = (
-            state as Record<string, unknown>
-          ).selectedAgentIds || ['default-1', 'default-2', 'default-3'];
         }
 
         // Migrate Web Search: old flat fields → new provider-based config

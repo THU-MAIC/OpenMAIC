@@ -450,7 +450,7 @@ export function AgentBar() {
   const { t } = useI18n();
   const { listAgents } = useAgentRegistry();
   const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
-  const setPresetSelectedAgentIds = useSettingsStore((s) => s.setPresetSelectedAgentIds);
+  const setSelectedAgentIds = useSettingsStore((s) => s.setSelectedAgentIds);
   const maxTurns = useSettingsStore((s) => s.maxTurns);
   const setMaxTurns = useSettingsStore((s) => s.setMaxTurns);
   const agentMode = useSettingsStore((s) => s.agentMode);
@@ -508,16 +508,12 @@ export function AgentBar() {
   const handleModeChange = (mode: 'preset' | 'auto') => {
     setAgentMode(mode);
     if (mode === 'preset') {
-      // Restore preset selection and ensure a teacher is always selected
-      const presetIds = useSettingsStore.getState().presetSelectedAgentIds;
-      const hasTeacher = presetIds.some((id) => {
+      const hasTeacherSelected = selectedAgentIds.some((id) => {
         const a = agents.find((agent) => agent.id === id);
         return a?.role === 'teacher';
       });
-      if (!hasTeacher && teacherAgent) {
-        setPresetSelectedAgentIds([teacherAgent.id, ...presetIds]);
-      } else {
-        setPresetSelectedAgentIds(presetIds);
+      if (!hasTeacherSelected && teacherAgent) {
+        setSelectedAgentIds([teacherAgent.id, ...selectedAgentIds]);
       }
     }
   };
@@ -525,11 +521,10 @@ export function AgentBar() {
   const toggleAgent = (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
     if (agent?.role === 'teacher') return;
-    const presetIds = useSettingsStore.getState().presetSelectedAgentIds;
-    if (presetIds.includes(agentId)) {
-      setPresetSelectedAgentIds(presetIds.filter((id) => id !== agentId));
+    if (selectedAgentIds.includes(agentId)) {
+      setSelectedAgentIds(selectedAgentIds.filter((id) => id !== agentId));
     } else {
-      setPresetSelectedAgentIds([...presetIds, agentId]);
+      setSelectedAgentIds([...selectedAgentIds, agentId]);
     }
   };
 

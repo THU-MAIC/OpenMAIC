@@ -463,6 +463,7 @@ function GenerationPreviewContent() {
           const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
           const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
           settings.setSelectedAgentIds(savedIds);
+          stage.agentIds = savedIds;
 
           // Show card-reveal modal, continue generation once all cards are revealed
           setGeneratedAgents(agentData.agents);
@@ -492,6 +493,7 @@ function GenerationPreviewContent() {
               role: a!.role,
               persona: a!.persona,
             }));
+          stage.agentIds = settings.selectedAgentIds;
         }
       } else {
         // Preset mode — use selected agents (include persona)
@@ -505,6 +507,7 @@ function GenerationPreviewContent() {
             role: a!.role,
             persona: a!.persona,
           }));
+        stage.agentIds = settings.selectedAgentIds;
       }
 
       // ── Generate outlines (with agent personas for teacher context) ──
