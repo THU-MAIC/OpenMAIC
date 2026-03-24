@@ -191,7 +191,7 @@ export function PresentationBubbleCard({
         </div>
       </div>
 
-      <div className="px-4 pb-3 max-h-[120px] overflow-hidden">
+      <div className="px-4 pb-3 pr-10 max-h-[120px] overflow-hidden">
         {bubble.isLoading ? (
           <div className="flex gap-1 items-center py-1">
             {[0, 0.2, 0.4].map((delay) => (
@@ -229,7 +229,7 @@ export function PresentationBubbleCard({
 
           if (buttonState === 'play') {
             return (
-              <div className="absolute right-3 bottom-3 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
+              <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
                 <Play className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
               </div>
             );
@@ -237,7 +237,7 @@ export function PresentationBubbleCard({
 
           if (buttonState === 'restart') {
             return (
-              <div className="absolute right-3 bottom-3 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
+              <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
                 <Repeat className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400" />
               </div>
             );
@@ -245,7 +245,7 @@ export function PresentationBubbleCard({
 
           // buttonState === 'bars'
           return (
-            <div className="absolute right-3 bottom-3 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
+            <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
               {isPaused ? (
                 <Play className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
               ) : (
