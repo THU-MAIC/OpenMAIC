@@ -124,6 +124,18 @@ export interface StreamBufferCallbacks {
     directorState?: DirectorState;
   }): void;
   onError(message: string): void;
+  onSegmentSealed?: (
+    messageId: string,
+    partId: string,
+    fullText: string,
+    agentId: string | null,
+  ) => void;
+  /**
+   * When provided, called after a text item is fully revealed and sealed.
+   * If it returns true, the tick loop will NOT advance to the next item —
+   * the bubble stays on the current text (e.g. waiting for TTS playback to finish).
+   */
+  shouldHoldAfterReveal?: () => boolean;
 }
 
 // ─── Options ─────────────────────────────────────────────────────────
@@ -165,6 +177,8 @@ export class StreamBuffer {
 
   // Dwell / delay counters (in ticks)
   private _dwellTicksRemaining = 0;
+  /** True when a text item's post-delay has elapsed and we're waiting for TTS to finish. */
+  private _holdingForTTS = false;
 
   // Config
   private readonly tickMs: number;
@@ -286,6 +300,11 @@ export class StreamBuffer {
    * Returns a Promise that resolves when the buffer has processed all items
    * including the final `done` item. Rejects if the buffer is disposed/shutdown
    * before draining completes.
+   *
+   * NOTE: This will block indefinitely while the buffer is paused, by design.
+   * Buffer-level pause (see `livePausedRef` in use-chat-sessions) freezes ALL
+   * forward progress — the tick loop is a no-op while `_paused` is true, so
+   * no items are processed and drain never fires until resumed.
    */
   waitUntilDrained(): Promise<void> {
     if (this._disposed) {
@@ -403,6 +422,9 @@ export class StreamBuffer {
       const item = this.items[i];
       if (item.kind === 'text' && !item.sealed) {
         item.sealed = true;
+        // Ordering invariant: sealLastText() is called BEFORE pushAgentEnd/pushAgentStart,
+        // so this.currentAgentId still refers to the agent whose text is being sealed.
+        this.cb.onSegmentSealed?.(item.messageId, item.partId, item.text, this.currentAgentId);
         break;
       }
       // Stop searching once we hit a non-text item
@@ -416,6 +438,21 @@ export class StreamBuffer {
     // Honour dwell / action-delay countdown before advancing
     if (this._dwellTicksRemaining > 0) {
       this._dwellTicksRemaining--;
+      if (this._dwellTicksRemaining === 0 && this._holdingForTTS) {
+        // Post-text delay just finished — fall through to the TTS hold check below
+      } else {
+        return;
+      }
+    }
+
+    // TTS hold: after post-text delay, keep the bubble on screen while audio plays
+    if (this._holdingForTTS) {
+      if (this.cb.shouldHoldAfterReveal?.()) {
+        return; // TTS still playing — stay on current item
+      }
+      this._holdingForTTS = false;
+      // TTS done — continue to process next item
+      this.advanceNonText();
       return;
     }
 
@@ -450,7 +487,17 @@ export class StreamBuffer {
           // before the next action or agent turn fires.
           if (this.postTextDelayTicks > 0) {
             this._dwellTicksRemaining = this.postTextDelayTicks;
+            // If TTS hold callback exists, mark that we need to check it after delay
+            if (this.cb.shouldHoldAfterReveal) {
+              this._holdingForTTS = true;
+            }
             return; // next tick will count down, then advanceNonText
+          }
+
+          // No post-text delay — check TTS hold immediately
+          if (this.cb.shouldHoldAfterReveal?.()) {
+            this._holdingForTTS = true;
+            return; // TTS still playing — hold here
           }
 
           // Process any immediately-advanceable items in the same tick

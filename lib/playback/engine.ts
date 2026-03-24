@@ -305,13 +305,30 @@ export class PlaybackEngine {
     this.callbacks.onDiscussionEnd?.();
 
     // Restore lecture state
-    if (this.savedSceneIndex !== null && this.savedActionIndex !== null) {
-      this.sceneIndex = this.savedSceneIndex;
-      this.actionIndex = this.savedActionIndex;
-      this.savedSceneIndex = null;
-      this.savedActionIndex = null;
+    this.restoreSavedLectureState();
+
+    this.setMode('idle');
+  }
+
+  /**
+   * Exit live discussion mode after a request failure without treating it as a
+   * normal discussion end. The chat session stays retryable; this only restores
+   * the playback engine to a coherent non-live state.
+   */
+  handleDiscussionError(): void {
+    const hasSavedLectureState = this.savedSceneIndex !== null && this.savedActionIndex !== null;
+    const isLiveTopic =
+      this.mode === 'live' || (this.mode === 'paused' && this.currentTopicState === 'pending');
+
+    if (!isLiveTopic && !hasSavedLectureState) {
+      return;
     }
 
+    this.actionEngine.clearEffects();
+    useCanvasStore.getState().setWhiteboardOpen(false);
+    this.currentTopicState = 'closed';
+    this.currentTrigger = null;
+    this.restoreSavedLectureState();
     this.setMode('idle');
   }
 
@@ -372,6 +389,15 @@ export class PlaybackEngine {
     if (this.mode === mode) return;
     this.mode = mode;
     this.callbacks.onModeChange?.(mode);
+  }
+
+  private restoreSavedLectureState(): void {
+    if (this.savedSceneIndex !== null && this.savedActionIndex !== null) {
+      this.sceneIndex = this.savedSceneIndex;
+      this.actionIndex = this.savedActionIndex;
+    }
+    this.savedSceneIndex = null;
+    this.savedActionIndex = null;
   }
 
   /**

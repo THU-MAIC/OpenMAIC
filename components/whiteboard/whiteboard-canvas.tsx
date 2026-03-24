@@ -163,12 +163,27 @@ function InteractiveWhiteboardCanvas({
   const [isPanning, setIsPanning] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [hintTimedOut, setHintTimedOut] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => typeof document !== 'undefined' && !!document.fullscreenElement,
+  );
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const prevElementsLengthRef = useRef(elements.length);
   const resetTimerRef = useRef<number | null>(null);
   const hintTimerRef = useRef<number | null>(null);
   const hintEpochRef = useRef(0);
   const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Detect fullscreen to move hints away from the Roundtable overlay
+  useEffect(() => {
+    const onChange = () => {
+      const fs = !!document.fullscreenElement;
+      setIsFullscreen(fs);
+      // Re-show hint when entering fullscreen so users see it in the new context
+      if (fs) setHintTimedOut(false);
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
 
   const isViewModified = viewZoom !== 1 || panX !== 0 || panY !== 0;
   const hasOverflow = autoFitTransform.scale < 1;
@@ -390,8 +405,8 @@ function InteractiveWhiteboardCanvas({
             initial={{ opacity: 0 }}
             animate={{ opacity: 0.5, transition: { delay: 0.6, duration: 0.4 } }}
             exit={{ opacity: 0, transition: { duration: 0.3 } }}
-            className="absolute bottom-3 left-3 z-50 px-2.5 py-1 rounded-md
-              bg-black/40 text-white text-xs backdrop-blur-sm select-none pointer-events-none"
+            className={`absolute ${isFullscreen ? 'top-3' : 'bottom-3'} left-3 z-50 px-2.5 py-1 rounded-md
+              bg-black/40 text-white text-xs backdrop-blur-sm select-none pointer-events-none`}
           >
             {zoomHintText}
           </motion.div>
@@ -410,9 +425,9 @@ function InteractiveWhiteboardCanvas({
               e.stopPropagation();
               handleDoubleClick();
             }}
-            className="absolute bottom-3 right-3 z-50 px-2.5 py-1 rounded-md
+            className={`absolute ${isFullscreen ? 'top-3' : 'bottom-3'} right-3 z-50 px-2.5 py-1 rounded-md
               bg-black/60 text-white text-xs backdrop-blur-sm
-              hover:bg-black/80 transition-colors cursor-pointer select-none"
+              hover:bg-black/80 transition-colors cursor-pointer select-none`}
           >
             {resetViewText}
           </motion.button>
