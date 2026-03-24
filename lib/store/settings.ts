@@ -894,6 +894,14 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
+              const isProviderUsable = (
+                config: (typeof newProvidersConfig)[ProviderId] | undefined,
+              ) =>
+                !!config &&
+                (!config.requiresApiKey || !!config.apiKey || !!config.isServerConfigured) &&
+                config.models.length >= 1 &&
+                !!(config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl);
+
               // === Auto-select / auto-enable (only on first run) ===
               let autoTtsProvider: TTSProviderId | undefined;
               let autoTtsVoice: string | undefined;
@@ -960,12 +968,15 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
-              // LLM auto-select: when modelId is empty
               let autoProviderId: ProviderId | undefined;
               let autoModelId: string | undefined;
-              if (!state.modelId) {
+              const currentProviderConfig = newProvidersConfig[state.providerId];
+              const shouldAutoSelectLLM =
+                !state.modelId || !isProviderUsable(currentProviderConfig);
+
+              if (shouldAutoSelectLLM) {
                 for (const [pid, cfg] of Object.entries(newProvidersConfig)) {
-                  if (cfg.isServerConfigured) {
+                  if (cfg.isServerConfigured && isProviderUsable(cfg)) {
                     // Prefer server-restricted models, fall back to built-in list
                     const serverModels = cfg.serverModels;
                     const modelId = serverModels?.length
