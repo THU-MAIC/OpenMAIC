@@ -17,8 +17,6 @@ export interface WhiteboardSnapshot {
   elements: PPTElement[];
   /** Timestamp when the snapshot was taken */
   timestamp: number;
-  /** Human-readable label shown in the history panel */
-  label?: string;
   /** Cached fingerprint used for deduplication and no-op restore checks */
   fingerprint: string;
 }
@@ -28,39 +26,32 @@ interface WhiteboardHistoryState {
   snapshots: WhiteboardSnapshot[];
   /** Maximum number of snapshots to keep */
   maxSnapshots: number;
-  /** elementsKey of a just-restored snapshot; used to skip auto-snapshot once */
-  restoredKey: string | null;
-
   // Actions
   /** Save a snapshot of the current whiteboard elements */
-  pushSnapshot: (elements: PPTElement[], label?: string) => void;
+  pushSnapshot: (elements: PPTElement[]) => void;
   /** Get a snapshot by index */
   getSnapshot: (index: number) => WhiteboardSnapshot | null;
   /** Clear all history */
   clearHistory: () => void;
-  /** Set the restored key (elementsKey of the snapshot being restored) */
-  setRestoredKey: (key: string | null) => void;
 }
 
 export const useWhiteboardHistoryStore = create<WhiteboardHistoryState>((set, get) => ({
   snapshots: [],
   maxSnapshots: 20,
-  restoredKey: null,
 
-  pushSnapshot: (elements, label) => {
+  pushSnapshot: (elements) => {
     // Don't save empty snapshots
     if (!elements || elements.length === 0) return;
 
     const { snapshots } = get();
     const newFingerprint = elementFingerprint(elements);
-    if (snapshots.length > 0 && snapshots[snapshots.length - 1].fingerprint === newFingerprint) {
+    if (snapshots.some((s) => s.fingerprint === newFingerprint)) {
       return;
     }
 
     const snapshot: WhiteboardSnapshot = {
       elements: JSON.parse(JSON.stringify(elements)), // Deep copy
       timestamp: Date.now(),
-      label,
       fingerprint: newFingerprint,
     };
 
@@ -79,6 +70,5 @@ export const useWhiteboardHistoryStore = create<WhiteboardHistoryState>((set, ge
     return snapshots[index] ?? null;
   },
 
-  clearHistory: () => set({ snapshots: [], restoredKey: null }),
-  setRestoredKey: (key) => set({ restoredKey: key }),
+  clearHistory: () => set({ snapshots: [] }),
 }));
