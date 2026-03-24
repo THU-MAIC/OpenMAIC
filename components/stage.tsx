@@ -14,6 +14,8 @@ import { PlaybackEngine, computePlaybackView } from '@/lib/playback';
 import type { EngineMode, TriggerEvent, Effect } from '@/lib/playback';
 import { ActionEngine } from '@/lib/action/engine';
 import { createAudioPlayer } from '@/lib/utils/audio-player';
+import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
+import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 // Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
@@ -100,12 +102,35 @@ export function Stage({
 
   // Selected agents from settings store (Zustand)
   const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
+  const ttsMuted = useSettingsStore((s) => s.ttsMuted);
+  const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
 
   // Generate participants from selected agents
   const participants = useMemo(
     () => agentsToParticipants(selectedAgentIds, t),
     [selectedAgentIds, t],
   );
+
+  // Resolved AgentConfig array for hooks that need full agent objects
+  // Subscribe to the agents record so voiceConfig changes trigger re-resolution
+  const agentsRecord = useAgentRegistry((s) => s.agents);
+  const selectedAgents = useMemo(
+    () => selectedAgentIds.map((id) => agentsRecord[id]).filter((a): a is AgentConfig => a != null),
+    [agentsRecord, selectedAgentIds],
+  );
+
+  // Discussion TTS: audio indicator state
+  const [audioIndicatorState, setAudioIndicatorState] = useState<AudioIndicatorState>('idle');
+  const [audioAgentId, setAudioAgentId] = useState<string | null>(null);
+
+  const discussionTTS = useDiscussionTTS({
+    enabled: ttsEnabled && !ttsMuted,
+    agents: selectedAgents,
+    onAudioStateChange: (agentId, state) => {
+      setAudioAgentId(agentId);
+      setAudioIndicatorState(state);
+    },
+  });
 
   // Pick a student agent for discussion trigger (prioritize student > non-teacher > fallback)
   const pickStudentAgent = useCallback((): string => {
@@ -221,8 +246,11 @@ export function Stage({
       setTimeout(() => setShowEndFlash(false), 1800);
     }
 
+    // Stop any in-flight discussion TTS audio
+    discussionTTS.cleanup();
+
     resetLiveState();
-  }, [chatSessionType, resetLiveState]);
+  }, [chatSessionType, resetLiveState, discussionTTS]);
 
   // Shared stop-discussion handler (used by both Roundtable and Canvas toolbar)
   const handleStopDiscussion = useCallback(async () => {
@@ -245,6 +273,9 @@ export function Stage({
       discussionAbortRef.current.abort();
       discussionAbortRef.current = null;
     }
+
+    // Stop any in-flight discussion TTS audio on scene switch
+    discussionTTS.cleanup();
 
     // Reset all roundtable/live state so scenes are fully isolated
     resetSceneState();
@@ -335,6 +366,8 @@ export function Stage({
           discussionAbortRef.current = null;
         }
         setDiscussionTrigger(null);
+        // Stop any in-flight discussion TTS audio
+        discussionTTS.cleanup();
         // Clear roundtable state (idempotent — may already be cleared by doSessionCleanup)
         resetLiveState();
         // Only show flash for engine-initiated ends (not manual stop — that's handled by doSessionCleanup)
@@ -441,7 +474,6 @@ export function Stage({
   }, []);
 
   // Sync mute state from settings store to audioPlayer
-  const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   useEffect(() => {
     audioPlayerRef.current.setMuted(ttsMuted);
   }, [ttsMuted]);
@@ -748,6 +780,8 @@ export function Stage({
             discussionRequest={discussionRequest}
             engineMode={engineMode}
             isStreaming={chatIsStreaming}
+            audioIndicatorState={audioIndicatorState}
+            audioAgentId={audioAgentId}
             sessionType={
               chatSessionType === 'qa'
                 ? 'qa'
@@ -890,6 +924,8 @@ export function Stage({
           setIsCueUser(true);
         }}
         onStopSession={doSessionCleanup}
+        onSegmentSealed={discussionTTS.handleSegmentSealed}
+        shouldHoldAfterReveal={discussionTTS.shouldHold}
       />
 
       {/* Scene switch confirmation dialog */}

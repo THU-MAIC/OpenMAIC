@@ -36,6 +36,8 @@ interface RequestBody {
   sceneOutlines?: { title: string; description?: string }[];
   language: string;
   availableAvatars: string[];
+  avatarDescriptions?: Array<{ path: string; desc: string }>;
+  availableVoices?: Array<{ providerId: string; voiceId: string; voiceName: string }>;
 }
 
 function stripCodeFences(text: string): string {
@@ -50,7 +52,14 @@ function stripCodeFences(text: string): string {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as RequestBody;
-    const { stageInfo, sceneOutlines, language, availableAvatars } = body;
+    const {
+      stageInfo,
+      sceneOutlines,
+      language,
+      availableAvatars,
+      avatarDescriptions,
+      availableVoices,
+    } = body;
 
     // ── Validate required fields ──
     if (!stageInfo?.name) {
@@ -79,6 +88,27 @@ export async function POST(req: NextRequest) {
 
     const systemPrompt = `You are an expert instructional designer. Generate agent profiles for a multi-agent classroom simulation. Decide the appropriate number of agents (typically 3-5) based on the course content and complexity. Return ONLY valid JSON, no markdown or explanation.`;
 
+    // Build voice list for prompt (if available)
+    const voiceListStr =
+      availableVoices && availableVoices.length > 0
+        ? JSON.stringify(
+            availableVoices.map((v) => ({
+              id: `${v.providerId}::${v.voiceId}`,
+              name: v.voiceName,
+            })),
+          )
+        : '';
+
+    const voicePrompt = voiceListStr
+      ? `- Each agent should be assigned a voice that matches their persona from this list: ${voiceListStr}
+  - Pick a voice that suits the agent's personality and role (e.g. authoritative voice for teacher, lively voice for energetic student)
+  - Try to use different voices for each agent`
+      : '';
+
+    const voiceJsonField = voiceListStr
+      ? ',\n      "voice": "string (voice id from available list, e.g. \'qwen-tts::Cherry\')"'
+      : '';
+
     const userPrompt = `Generate agent profiles for the following course:
 
 Course name: ${stageInfo.name}
@@ -90,10 +120,13 @@ Requirements:
 - Priority values: teacher=10 (highest), assistant=7, student=4-6
 - Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
 - Names and personas must be in language: ${language}
-- Each agent must be assigned one avatar from this list: ${JSON.stringify(availableAvatars)}
+- Each agent must be assigned one avatar from this list: ${JSON.stringify(avatarDescriptions && avatarDescriptions.length > 0 ? avatarDescriptions.map((a) => ({ path: a.path, description: a.desc })) : availableAvatars)}
+  - Pick an avatar that visually matches the agent's personality and role
   - Try to use different avatars for each agent
+  - Use the "path" value as the avatar field in the output
 - Each agent must be assigned one color from this list: ${JSON.stringify(COLOR_PALETTE)}
   - Each agent must have a different color
+${voicePrompt}
 
 Return a JSON object with this exact structure:
 {
@@ -104,7 +137,7 @@ Return a JSON object with this exact structure:
       "persona": "string (2-3 sentences)",
       "avatar": "string (from available list)",
       "color": "string (hex color from palette)",
-      "priority": number (10 for teacher, 7 for assistant, 4-6 for student)
+      "priority": number (10 for teacher, 7 for assistant, 4-6 for student)${voiceJsonField}
     }
   ]
 }`;
@@ -130,6 +163,7 @@ Return a JSON object with this exact structure:
         avatar: string;
         color: string;
         priority: number;
+        voice?: string;
       }>;
     };
 
@@ -161,16 +195,28 @@ Return a JSON object with this exact structure:
     }
 
     // ── Build output with IDs ──
-    const agents = parsed.agents.map((agent, index) => ({
-      id: `gen-${nanoid(8)}`,
-      name: agent.name,
-      role: agent.role,
-      persona: agent.persona,
-      avatar: agent.avatar || availableAvatars[index % availableAvatars.length],
-      color: agent.color || COLOR_PALETTE[index % COLOR_PALETTE.length],
-      priority:
-        agent.priority ?? (agent.role === 'teacher' ? 10 : agent.role === 'assistant' ? 7 : 5),
-    }));
+    const agents = parsed.agents.map((agent, index) => {
+      // Parse voice "providerId::voiceId" format
+      let voiceConfig: { providerId: string; voiceId: string } | undefined;
+      if (agent.voice && agent.voice.includes('::')) {
+        const [providerId, voiceId] = agent.voice.split('::');
+        if (providerId && voiceId) {
+          voiceConfig = { providerId, voiceId };
+        }
+      }
+
+      return {
+        id: `gen-${nanoid(8)}`,
+        name: agent.name,
+        role: agent.role,
+        persona: agent.persona,
+        avatar: agent.avatar || availableAvatars[index % availableAvatars.length],
+        color: agent.color || COLOR_PALETTE[index % COLOR_PALETTE.length],
+        priority:
+          agent.priority ?? (agent.role === 'teacher' ? 10 : agent.role === 'assistant' ? 7 : 5),
+        ...(voiceConfig ? { voiceConfig } : {}),
+      };
+    });
 
     log.info(`Successfully generated ${agents.length} agent profiles for "${stageInfo.name}"`);
 
