@@ -300,6 +300,11 @@ export class StreamBuffer {
    * Returns a Promise that resolves when the buffer has processed all items
    * including the final `done` item. Rejects if the buffer is disposed/shutdown
    * before draining completes.
+   *
+   * NOTE: This will block indefinitely while the buffer is paused, by design.
+   * Buffer-level pause (see `livePausedRef` in use-chat-sessions) freezes ALL
+   * forward progress — the tick loop is a no-op while `_paused` is true, so
+   * no items are processed and drain never fires until resumed.
    */
   waitUntilDrained(): Promise<void> {
     if (this._disposed) {
