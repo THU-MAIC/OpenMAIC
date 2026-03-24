@@ -18,7 +18,12 @@ const log = createLogger('WebSearch');
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { query, apiKey: clientApiKey, pdfText, modelConfig } = body as {
+    const {
+      query,
+      apiKey: clientApiKey,
+      pdfText,
+      modelConfig,
+    } = body as {
       query?: string;
       apiKey?: string;
       pdfText?: string;

@@ -109,7 +109,6 @@ function stripCodeFences(text: string): string {
   return cleaned.trim();
 }
 
-
 async function generateAgentProfiles(
   requirement: string,
   language: string,
