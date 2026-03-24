@@ -1595,16 +1595,22 @@ export function Roundtable({
                                 );
                               if (aiState === 'playing')
                                 return (
-                                  <motion.div
-                                    animate={{ opacity: [0.45, 1, 0.45] }}
-                                    transition={{
-                                      repeat: Infinity,
-                                      duration: 1.8,
-                                      ease: 'easeInOut',
-                                    }}
-                                  >
-                                    <Volume2 className="w-3 h-3 text-gray-400 dark:text-gray-500" />
-                                  </motion.div>
+                                  <div className="relative flex items-center justify-center w-3.5 h-3.5">
+                                    <Volume2 className="w-3 h-3 text-gray-400 dark:text-gray-500 relative z-10" />
+                                    {[0, 0.6, 1.2].map((delay) => (
+                                      <motion.div
+                                        key={delay}
+                                        className="absolute inset-0 rounded-full border border-gray-400/40 dark:border-gray-500/40"
+                                        animate={{ scale: [1, 2.2], opacity: [0.5, 0] }}
+                                        transition={{
+                                          repeat: Infinity,
+                                          duration: 1.8,
+                                          delay,
+                                          ease: 'easeOut',
+                                        }}
+                                      />
+                                    ))}
+                                  </div>
                                 );
                               return null;
                             })()}
