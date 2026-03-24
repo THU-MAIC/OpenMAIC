@@ -44,8 +44,32 @@ vi.mock('@/lib/ai/providers', () => ({
 }));
 
 vi.mock('@/lib/audio/constants', () => ({
-  ASR_PROVIDERS: {},
-  DEFAULT_TTS_VOICES: {},
+  TTS_PROVIDERS: {
+    'browser-native-tts': {
+      id: 'browser-native-tts',
+      name: 'Browser Native TTS',
+      requiresApiKey: false,
+      supportsModelSelection: false,
+      models: [],
+      voices: [{ id: 'default', name: 'Default', language: 'en', gender: 'neutral' }],
+      supportedFormats: ['browser'],
+      speedRange: { min: 0.1, max: 10, default: 1 },
+    },
+  },
+  ASR_PROVIDERS: {
+    'browser-native': {
+      id: 'browser-native',
+      name: 'Browser Native ASR',
+      requiresApiKey: false,
+      supportsModelSelection: false,
+      models: [],
+      supportedLanguages: ['zh'],
+      supportedFormats: ['browser'],
+    },
+  },
+  DEFAULT_TTS_VOICES: {
+    'browser-native-tts': 'default',
+  },
 }));
 
 vi.mock('@/lib/audio/types', () => ({}));
