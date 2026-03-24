@@ -814,11 +814,14 @@ export function Roundtable({
                   ref={presentationActionAnchorRef}
                   className="flex items-center gap-2.5 rounded-full bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-gray-200/60 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] px-2.5 py-2"
                 >
-                  {/* Speaking agent avatar — shows when a student agent is actively speaking */}
+                  {/* Speaking / discussion-requesting agent avatar — shows when
+                      a student agent is actively speaking OR a discussion request
+                      is pending (so the user can see who's asking before joining) */}
                   <AnimatePresence>
-                    {activeRole === 'agent' && speakingStudent && (
+                    {((activeRole === 'agent' && speakingStudent) ||
+                      presentationDiscussionParticipant) && (
                       <motion.div
-                        key={`dock-agent-${speakingStudent.id}`}
+                        key={`dock-agent-${(speakingStudent || presentationDiscussionParticipant)?.id}`}
                         initial={{ opacity: 0, scale: 0.8, width: 0 }}
                         animate={{ opacity: 1, scale: 1, width: 'auto' }}
                         exit={{ opacity: 0, scale: 0.8, width: 0 }}
@@ -829,8 +832,13 @@ export function Roundtable({
                           <div className="absolute inset-0 rounded-full border-2 border-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.3)] transition-all duration-300" />
                           <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden relative z-10 text-lg">
                             <AvatarDisplay
-                              src={speakingStudent.avatar || '/avatars/user.png'}
-                              alt={speakingStudent.name}
+                              src={
+                                (speakingStudent || presentationDiscussionParticipant)?.avatar ||
+                                '/avatars/user.png'
+                              }
+                              alt={
+                                (speakingStudent || presentationDiscussionParticipant)?.name || ''
+                              }
                             />
                           </div>
                         </div>
