@@ -46,6 +46,8 @@ export const MINIMAX_TTS_MODELS = [
   { id: 'speech-2.6-hd', name: 'Speech 2.6 HD' },
   { id: 'speech-02-turbo', name: 'Speech 02 Turbo' },
   { id: 'speech-02-hd', name: 'Speech 02 HD' },
+  { id: 'speech-01-turbo', name: 'Speech 01 Turbo' },
+  { id: 'speech-01-hd', name: 'Speech 01 HD' },
 ] as const;
 
 export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
