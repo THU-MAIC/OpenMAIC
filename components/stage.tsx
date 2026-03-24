@@ -59,6 +59,8 @@ export function Stage({
   const setChatAreaWidth = useSettingsStore((s) => s.setChatAreaWidth);
   const chatAreaCollapsed = useSettingsStore((s) => s.chatAreaCollapsed);
   const setChatAreaCollapsed = useSettingsStore((s) => s.setChatAreaCollapsed);
+  const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
+  const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);
 
   // PlaybackEngine state
   const [engineMode, setEngineMode] = useState<EngineMode>('idle');
@@ -297,12 +299,19 @@ export function Stage({
 
     try {
       if (document.fullscreenElement === stageElement) {
+        // Unlock Escape key before exiting fullscreen
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (navigator as any).keyboard?.unlock?.();
         await document.exitFullscreen();
         return;
       }
 
       setControlsVisible(true);
       await stageElement.requestFullscreen();
+      // Lock Escape key so it doesn't auto-exit fullscreen (#255)
+      // Escape is handled manually in our keydown handler instead
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (navigator as any).keyboard?.lock?.(['Escape']).catch(() => {});
       setSidebarCollapsed(true);
       setChatAreaCollapsed(true);
     } catch {
@@ -317,6 +326,9 @@ export function Stage({
       setIsPresenting(active);
 
       if (!active) {
+        // Ensure keyboard unlock on any fullscreen exit
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        (navigator as any).keyboard?.unlock?.();
         setControlsVisible(true);
         clearPresentationIdleTimer();
       }
@@ -798,8 +810,6 @@ export function Stage({
   }, []);
 
   useEffect(() => {
-    if (!isPresenting) return;
-
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       if (
@@ -811,11 +821,13 @@ export function Stage({
 
       switch (event.key) {
         case 'ArrowLeft':
+          if (!isPresenting) return;
           event.preventDefault();
           handlePreviousScene();
           resetPresentationIdleTimer();
           break;
         case 'ArrowRight':
+          if (!isPresenting) return;
           event.preventDefault();
           handleNextScene();
           resetPresentationIdleTimer();
@@ -828,6 +840,38 @@ export function Stage({
           event.preventDefault();
           handlePlayPause();
           break;
+        case 'Escape':
+          // With keyboard.lock(), Escape no longer auto-exits fullscreen.
+          // If panels are open, roundtable handles Escape (close panels).
+          // If no panels are open, manually exit fullscreen.
+          if (isPresenting && !isPresentationInteractionActive) {
+            event.preventDefault();
+            togglePresentation();
+          }
+          break;
+        case 'ArrowUp':
+          event.preventDefault();
+          setTTSVolume(ttsVolume + 0.1);
+          break;
+        case 'ArrowDown':
+          event.preventDefault();
+          setTTSVolume(ttsVolume - 0.1);
+          break;
+        case 'm':
+        case 'M':
+          event.preventDefault();
+          setTTSMuted(!ttsMuted);
+          break;
+        case 's':
+        case 'S':
+          event.preventDefault();
+          setSidebarCollapsed(!sidebarCollapsed);
+          break;
+        case 'c':
+        case 'C':
+          event.preventDefault();
+          setChatAreaCollapsed(!chatAreaCollapsed);
+          break;
         default:
           break;
       }
@@ -837,12 +881,22 @@ export function Stage({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     chatSessionType,
+    chatAreaCollapsed,
     handleNextScene,
     handlePlayPause,
     handlePreviousScene,
     isPresenting,
+    isPresentationInteractionActive,
     isPresentationShortcutTarget,
     resetPresentationIdleTimer,
+    setChatAreaCollapsed,
+    setSidebarCollapsed,
+    setTTSMuted,
+    setTTSVolume,
+    sidebarCollapsed,
+    togglePresentation,
+    ttsMuted,
+    ttsVolume,
   ]);
 
   // Intercept F11 to use our presentation fullscreen instead of browser fullscreen

@@ -322,41 +322,6 @@ export function Roundtable({
     prevStreamingRef.current = !!isStreaming;
   }, [isStreaming, isSendCooldown]);
 
-  // Spacebar shortcut: toggle discussion buffer-level pause/resume
-  // Much easier than clicking the small bubble during fast text streaming
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip when user is typing in an input, textarea, or contentEditable
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) {
-        return;
-      }
-      if (e.code !== 'Space') return;
-
-      // Only handle during live flow (QA/Discussion)
-      if (!isInLiveFlow) return;
-
-      e.preventDefault(); // Prevent page scroll
-
-      if (isDiscussionPaused) {
-        onDiscussionResume?.();
-      } else if (!thinkingState && currentSpeech) {
-        // Same guard as bubble click: don't pause during thinking or before text arrives
-        onDiscussionPause?.();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    isInLiveFlow,
-    isDiscussionPaused,
-    thinkingState,
-    currentSpeech,
-    onDiscussionPause,
-    onDiscussionResume,
-  ]);
-
   // Separate participants by role (teacherParticipant & studentParticipants declared earlier for effect)
   const userParticipant = initialParticipants.find((p) => p.role === 'user');
 
@@ -428,6 +393,76 @@ export function Roundtable({
       startRecording();
     }
   };
+
+  // Keyboard shortcuts for roundtable interaction (#255)
+  // T = toggle text input, V = toggle voice input, Escape = dismiss panels,
+  // Space = discussion pause/resume (during live flow)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape should always work, even when typing in an input
+      if (e.key === 'Escape') {
+        if (isInputOpen || isVoiceOpen) {
+          e.preventDefault();
+          e.stopPropagation(); // Prevent fullscreen exit when panels are open
+          setIsInputOpen(false);
+          setIsVoiceOpen(false);
+          if (isRecording || isProcessing) cancelRecording();
+        }
+        return;
+      }
+
+      // Skip other shortcuts when user is typing in an input, textarea, or contentEditable
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) {
+        return;
+      }
+
+      switch (e.key) {
+        case ' ':
+        case 'Spacebar':
+          // Only handle during live flow (QA/Discussion)
+          if (!isInLiveFlow) return;
+          e.preventDefault(); // Prevent page scroll
+          if (isDiscussionPaused) {
+            onDiscussionResume?.();
+          } else if (!thinkingState && currentSpeech) {
+            // Same guard as bubble click: don't pause during thinking or before text arrives
+            onDiscussionPause?.();
+          }
+          break;
+
+        case 't':
+        case 'T':
+          e.preventDefault();
+          handleToggleInput();
+          break;
+
+        case 'v':
+        case 'V':
+          e.preventDefault();
+          if (asrEnabled) handleToggleVoice();
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isInLiveFlow,
+    isDiscussionPaused,
+    thinkingState,
+    currentSpeech,
+    onDiscussionPause,
+    onDiscussionResume,
+    asrEnabled,
+    isInputOpen,
+    isVoiceOpen,
+    isRecording,
+    isProcessing,
+  ]);
 
   const isPresentationInteractionActive = isInputOpen || isVoiceOpen || isRecording || isProcessing;
 
