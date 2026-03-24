@@ -26,7 +26,10 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
   const isClearing = useCanvasStore.use.whiteboardClearing();
   const clearingRef = useRef(false);
   const [historyOpen, setHistoryOpen] = useState(false);
-  const snapshotCount = useWhiteboardHistoryStore((s) => s.snapshots.length);
+  const stageId = stage?.id;
+  const snapshotCount = useWhiteboardHistoryStore((s) =>
+    stageId ? (s.snapshotsByStage[stageId]?.length ?? 0) : 0,
+  );
 
   // Get element count for indicator
   const whiteboard = stage?.whiteboard?.[0];
@@ -39,10 +42,10 @@ export function Whiteboard({ isOpen, onClose }: WhiteboardProps) {
     clearingRef.current = true;
 
     // Save snapshot before clearing
-    if (whiteboard.elements && whiteboard.elements.length > 0) {
+    if (stageId && whiteboard.elements && whiteboard.elements.length > 0) {
       useWhiteboardHistoryStore
         .getState()
-        .pushSnapshot(whiteboard.elements, t('whiteboard.beforeClear'));
+        .pushSnapshot(stageId, whiteboard.elements, t('whiteboard.beforeClear'));
     }
 
     // Trigger cascade exit animation
