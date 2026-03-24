@@ -124,10 +124,6 @@ async function enhanceSearchQuery(
   // No PDF → requirement is the only context we have
   if (!pdfText) return requirement;
 
-  // If requirement is already long enough (> 30 chars), it's probably specific
-  // enough to be a decent search query on its own
-  if (requirement.length > 30) return requirement;
-
   try {
     const snippet = pdfText.slice(0, 2000);
     const result = await aiCall(
