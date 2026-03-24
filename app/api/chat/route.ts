@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
     }
 
-    const { model: languageModel } = resolveModel({
+    const { model: languageModel, apiKey: resolvedApiKey } = resolveModel({
       modelString: body.model,
       apiKey: body.apiKey,
       baseUrl: body.baseUrl,
@@ -67,7 +67,7 @@ export async function POST(req: NextRequest) {
       requiresApiKey: body.requiresApiKey,
     });
 
-    if (!body.baseUrl && !body.apiKey && body.requiresApiKey !== false) {
+    if (!resolvedApiKey && body.requiresApiKey !== false) {
       return apiError('MISSING_API_KEY', 401, 'API Key is required');
     }
 
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
         const generator = statelessGenerate(
           {
             ...body,
-            apiKey: body.apiKey,
+            apiKey: resolvedApiKey,
           },
           signal,
           languageModel,

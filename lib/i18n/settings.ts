@@ -200,6 +200,7 @@ export const settingsZhCN = {
     asrDescription: 'ASR (Automatic Speech Recognition) - 将语音转换为文字',
     enableTTS: '启用语音合成',
     ttsEnabledDescription: '开启后，课程生成时将自动合成语音',
+    ttsVoiceConfigHint: '每个 Agent 的音色可在首页「课堂角色配置」中设置',
     enableASR: '启用语音识别',
     asrEnabledDescription: '开启后，学生可使用麦克风进行语音输入',
     ttsProvider: 'TTS 提供商',
@@ -788,6 +789,8 @@ export const settingsEnUS = {
     asrDescription: 'ASR (Automatic Speech Recognition) - Convert speech to text',
     enableTTS: 'Enable Text-to-Speech',
     ttsEnabledDescription: 'When enabled, speech audio will be generated during course creation',
+    ttsVoiceConfigHint:
+      'Per-agent voice can be configured in "Classroom Role Config" on the homepage',
     enableASR: 'Enable Speech Recognition',
     asrEnabledDescription: 'When enabled, students can use microphone for voice input',
     ttsProvider: 'TTS Provider',

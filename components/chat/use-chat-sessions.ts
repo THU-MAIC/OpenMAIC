@@ -37,6 +37,14 @@ interface UseChatSessionsOptions {
   onLiveSessionError?: () => void;
   /** Called when a QA/Discussion session completes naturally (director end). */
   onStopSession?: () => void;
+  onSegmentSealed?: (
+    messageId: string,
+    partId: string,
+    fullText: string,
+    agentId: string | null,
+  ) => void;
+  /** When provided and returns true, StreamBuffer holds on the current text item after reveal. */
+  shouldHoldAfterReveal?: () => boolean;
 }
 
 export function useChatSessions(options: UseChatSessionsOptions = {}) {
@@ -47,6 +55,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const onActiveBubbleRef = useRef(options.onActiveBubble);
   const onLiveSessionErrorRef = useRef(options.onLiveSessionError);
   const onStopSessionRef = useRef(options.onStopSession);
+  const onSegmentSealedRef = useRef(options.onSegmentSealed);
+  const shouldHoldAfterRevealRef = useRef(options.shouldHoldAfterReveal);
   useEffect(() => {
     onLiveSpeechRef.current = options.onLiveSpeech;
     onSpeechProgressRef.current = options.onSpeechProgress;
@@ -55,6 +65,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     onActiveBubbleRef.current = options.onActiveBubble;
     onLiveSessionErrorRef.current = options.onLiveSessionError;
     onStopSessionRef.current = options.onStopSession;
+    onSegmentSealedRef.current = options.onSegmentSealed;
+    shouldHoldAfterRevealRef.current = options.shouldHoldAfterReveal;
   }, [
     options.onLiveSpeech,
     options.onSpeechProgress,
@@ -63,6 +75,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     options.onActiveBubble,
     options.onLiveSessionError,
     options.onStopSession,
+    options.onSegmentSealed,
+    options.shouldHoldAfterReveal,
   ]);
   const { t } = useI18n();
 
@@ -368,6 +382,19 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
           onError(message: string) {
             log.error('[Buffer] Stream error:', message);
+          },
+
+          onSegmentSealed(
+            messageId: string,
+            partId: string,
+            fullText: string,
+            agentId: string | null,
+          ) {
+            onSegmentSealedRef.current?.(messageId, partId, fullText, agentId);
+          },
+
+          shouldHoldAfterReveal() {
+            return shouldHoldAfterRevealRef.current?.() ?? false;
           },
         },
         pacingOptions,

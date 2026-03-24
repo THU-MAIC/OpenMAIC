@@ -28,6 +28,14 @@ interface ChatAreaProps {
   onCueUser?: (fromAgentId?: string, prompt?: string) => void;
   onLiveSessionError?: () => void;
   onStopSession?: () => void;
+  onSegmentSealed?: (
+    messageId: string,
+    partId: string,
+    fullText: string,
+    agentId: string | null,
+  ) => void;
+  /** When provided and returns true, StreamBuffer holds on the current text item after reveal. */
+  shouldHoldAfterReveal?: () => boolean;
   currentSceneId?: string | null;
 }
 
@@ -71,6 +79,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onCueUser,
       onLiveSessionError,
       onStopSession,
+      onSegmentSealed,
+      shouldHoldAfterReveal,
       currentSceneId,
     },
     ref,
@@ -105,6 +115,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onActiveBubble,
       onLiveSessionError,
       onStopSession,
+      onSegmentSealed,
+      shouldHoldAfterReveal,
     });
 
     const [activeTab, setActiveTab] = useState<'lecture' | 'chat'>('lecture');
