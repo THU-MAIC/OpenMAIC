@@ -205,6 +205,9 @@ export function Stage({
     setSpeakingAgentId(null);
     setThinkingState({ stage: 'director' });
     setChatIsStreaming(true);
+    // Transition engine back to live — onInputActivate paused it when soft-pausing,
+    // so we must explicitly resume to keep engine mode in sync with the chat loop.
+    engineRef.current?.resume();
     // Fire new chat round — SSE events will drive thinking → agent_start → speech
     await chatAreaRef.current?.resumeActiveSession();
   }, []);
@@ -231,6 +234,13 @@ export function Stage({
     setShowEndFlash(false);
     setActiveBubbleId(null);
     setDiscussionTrigger(null);
+  }, [resetLiveState]);
+
+  /** Request failure should exit live discussion UI without hard-closing the session. */
+  const handleLiveSessionError = useCallback(() => {
+    engineRef.current?.handleDiscussionError();
+    resetLiveState();
+    setActiveBubbleId(null);
   }, [resetLiveState]);
 
   /**
@@ -1113,6 +1123,7 @@ export function Stage({
         onCueUser={(_fromAgentId, _prompt) => {
           setIsCueUser(true);
         }}
+        onLiveSessionError={handleLiveSessionError}
         onStopSession={doSessionCleanup}
         onSegmentSealed={discussionTTS.handleSegmentSealed}
         shouldHoldAfterReveal={discussionTTS.shouldHold}

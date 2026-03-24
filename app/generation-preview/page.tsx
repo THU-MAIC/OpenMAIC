@@ -780,6 +780,7 @@ function GenerationPreviewContent() {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
+      sessionStorage.removeItem('generationSession');
       setError(err instanceof Error ? err.message : String(err));
     }
   };
