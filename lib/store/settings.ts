@@ -999,14 +999,16 @@ export const useSettingsStore = create<SettingsState>()(
                   validateModel(
                     state.imageModelId,
                     IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [],
-                  )
+                  ) ||
+                  (IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models?.[0]?.id ?? '')
                 : '';
               const validVideoModel = validVideoProvider
                 ? recoveredVideoModel ||
                   validateModel(
                     state.videoModelId,
                     VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [],
-                  )
+                  ) ||
+                  (VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models?.[0]?.id ?? '')
                 : '';
 
               const validTTSVoice =
@@ -1018,15 +1020,11 @@ export const useSettingsStore = create<SettingsState>()(
               const shouldDisableImage =
                 !validImageProvider && state.imageGenerationEnabled;
               const shouldEnableImage =
-                !!validImageProvider &&
-                !state.imageGenerationEnabled &&
-                validImageProvider !== state.imageProviderId;
+                imageFallback.length > 0 && !state.imageGenerationEnabled;
               const shouldDisableVideo =
                 !validVideoProvider && state.videoGenerationEnabled;
               const shouldEnableVideo =
-                !!validVideoProvider &&
-                !state.videoGenerationEnabled &&
-                validVideoProvider !== state.videoProviderId;
+                videoFallback.length > 0 && !state.videoGenerationEnabled;
 
               // === Auto-select / auto-enable (only on first run) ===
               let autoTtsProvider: TTSProviderId | undefined;
@@ -1140,10 +1138,14 @@ export const useSettingsStore = create<SettingsState>()(
                 }),
                 ...(validImageProvider !== state.imageProviderId && {
                   imageProviderId: validImageProvider as ImageProviderId,
+                }),
+                ...(validImageModel !== state.imageModelId && {
                   imageModelId: validImageModel,
                 }),
                 ...(validVideoProvider !== state.videoProviderId && {
                   videoProviderId: validVideoProvider as VideoProviderId,
+                }),
+                ...(validVideoModel !== state.videoModelId && {
                   videoModelId: validVideoModel,
                 }),
                 ...(shouldDisableImage && { imageGenerationEnabled: false }),

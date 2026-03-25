@@ -618,6 +618,39 @@ describe('fetchServerProviders — Image stale selection', () => {
     expect(store.getState().imageModelId).toBe('doubao-seedream-5-0-260128');
     expect(store.getState().imageGenerationEnabled).toBe(true);
   });
+
+  it('auto-enables image generation on first load when server has image provider', async () => {
+    const store = await getStore();
+
+    // First ever fetchServerProviders — server has seedream
+    // Default state: imageProviderId='seedream', imageGenerationEnabled=false, autoConfigApplied=false
+    mockServerResponse({ image: { seedream: {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+    expect(store.getState().imageProviderId).toBe('seedream');
+    expect(store.getState().imageModelId).toBe('doubao-seedream-5-0-260128');
+  });
+
+  it('auto-enables when autoConfigApplied is true and default provider matches server', async () => {
+    const store = await getStore();
+
+    // Simulate: autoConfigApplied was set in a previous sync but generation was never enabled
+    // Default imageProviderId is 'seedream', server also has 'seedream'
+    mockServerResponse({});
+    await store.getState().fetchServerProviders(); // sets autoConfigApplied=true
+    expect(store.getState().autoConfigApplied).toBe(true);
+
+    // Reset provider to default (simulating fresh localStorage with autoConfigApplied=true)
+    store.setState({ imageProviderId: 'seedream', imageModelId: '', imageGenerationEnabled: false });
+
+    // Now server has seedream
+    mockServerResponse({ image: { seedream: {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+    expect(store.getState().imageModelId).toBe('doubao-seedream-5-0-260128');
+  });
 });
 
 describe('fetchServerProviders — Video stale selection', () => {
