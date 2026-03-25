@@ -7,26 +7,25 @@
 
 export type ProviderCfgLike = {
   isServerConfigured?: boolean;
-  requiresApiKey?: boolean;
   apiKey?: string;
 };
 
-/** Check whether a provider has a usable path (server config, client key, or no key needed). */
+/** Check whether a provider has a usable path (server config or client key). */
 export function isProviderUsable(cfg: ProviderCfgLike | undefined): boolean {
   if (!cfg) return false;
-  if (!cfg.requiresApiKey) return true;
-  return !!cfg.apiKey || !!cfg.isServerConfigured;
+  return !!cfg.isServerConfigured || !!cfg.apiKey;
 }
 
 /**
  * Validate current provider selection against updated config.
  * Returns the current ID if still usable, otherwise the first usable
- * provider from fallbackOrder, or '' if nothing is available.
+ * provider from fallbackOrder, or defaultId if provided, or ''.
  */
 export function validateProvider<T extends string>(
   currentId: T | '',
   configMap: Partial<Record<T, ProviderCfgLike>>,
   fallbackOrder: T[],
+  defaultId?: T,
 ): T | '' {
   if (!currentId) return currentId;
   if (isProviderUsable(configMap[currentId])) return currentId;
@@ -34,7 +33,7 @@ export function validateProvider<T extends string>(
   for (const id of fallbackOrder) {
     if (isProviderUsable(configMap[id])) return id;
   }
-  return '';
+  return defaultId ?? '';
 }
 
 /**

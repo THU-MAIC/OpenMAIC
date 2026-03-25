@@ -167,9 +167,11 @@ describe('fetchServerProviders — provider availability sync', () => {
 
   it('filters models to only those the server allows', async () => {
     const store = await getStore();
-    mockServerResponse({ providers: {
-      openai: { models: ['gpt-4o'] },
-    } });
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-4o'] },
+      },
+    });
 
     await store.getState().fetchServerProviders();
 
@@ -182,9 +184,11 @@ describe('fetchServerProviders — provider availability sync', () => {
 
   it('keeps all models when server provides no model restriction', async () => {
     const store = await getStore();
-    mockServerResponse({ providers: {
-      openai: {}, // no models field = no restriction
-    } });
+    mockServerResponse({
+      providers: {
+        openai: {}, // no models field = no restriction
+      },
+    });
 
     await store.getState().fetchServerProviders();
 
@@ -198,9 +202,11 @@ describe('fetchServerProviders — provider availability sync', () => {
     const store = await getStore();
 
     // Round 1: server allows two models
-    mockServerResponse({ providers: {
-      openai: { models: ['gpt-4o', 'gpt-4o-mini'] },
-    } });
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-4o', 'gpt-4o-mini'] },
+      },
+    });
     await store.getState().fetchServerProviders();
     expect(store.getState().providersConfig.openai.models.map((m) => m.id)).toEqual([
       'gpt-4o',
@@ -208,9 +214,11 @@ describe('fetchServerProviders — provider availability sync', () => {
     ]);
 
     // Round 2: server removes gpt-4o-mini
-    mockServerResponse({ providers: {
-      openai: { models: ['gpt-4o'] },
-    } });
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-4o'] },
+      },
+    });
     await store.getState().fetchServerProviders();
     const modelIds = store.getState().providersConfig.openai.models.map((m) => m.id);
     expect(modelIds).toEqual(['gpt-4o']);
@@ -221,9 +229,11 @@ describe('fetchServerProviders — provider availability sync', () => {
 
   it('marks provider as server-configured when present in response', async () => {
     const store = await getStore();
-    mockServerResponse({ providers: {
-      openai: { models: ['gpt-4o'] },
-    } });
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-4o'] },
+      },
+    });
 
     await store.getState().fetchServerProviders();
 
@@ -263,10 +273,12 @@ describe('fetchServerProviders — provider availability sync', () => {
 
   it('handles mixed provider state: one configured, one not', async () => {
     const store = await getStore();
-    mockServerResponse({ providers: {
-      openai: { models: ['gpt-4o'] },
-      // anthropic not in response
-    } });
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-4o'] },
+        // anthropic not in response
+      },
+    });
 
     await store.getState().fetchServerProviders();
 
@@ -278,9 +290,11 @@ describe('fetchServerProviders — provider availability sync', () => {
 
   it('stores serverModels metadata for downstream filtering', async () => {
     const store = await getStore();
-    mockServerResponse({ providers: {
-      openai: { models: ['gpt-4o', 'gpt-4o-mini'] },
-    } });
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-4o', 'gpt-4o-mini'] },
+      },
+    });
 
     await store.getState().fetchServerProviders();
 
@@ -342,7 +356,9 @@ describe('fetchServerProviders — provider availability sync', () => {
     const store = await getStore();
 
     // Round 1: user picks gpt-4-turbo
-    mockServerResponse({ providers: { openai: { models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'] } } });
+    mockServerResponse({
+      providers: { openai: { models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'] } },
+    });
     await store.getState().fetchServerProviders();
     store.getState().setModel('openai', 'gpt-4-turbo');
 

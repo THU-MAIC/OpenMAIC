@@ -18,6 +18,7 @@ import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { createLogger } from '@/lib/logger';
+import { validateProvider, validateModel } from '@/lib/store/settings-validation';
 
 const log = createLogger('Settings');
 
@@ -755,27 +756,6 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
-              // Validate current LLM selection against updated provider config
-              let clearedProviderId: ProviderId | undefined;
-              let clearedModelId: string | undefined;
-              if (state.providerId) {
-                const selectedCfg = newProvidersConfig[state.providerId as ProviderId];
-                const isUsable =
-                  selectedCfg &&
-                  (!selectedCfg.requiresApiKey ||
-                    !!selectedCfg.apiKey ||
-                    !!selectedCfg.isServerConfigured);
-                if (!isUsable) {
-                  clearedProviderId = '' as ProviderId;
-                  clearedModelId = '';
-                } else if (
-                  state.modelId &&
-                  !selectedCfg.models.some((m) => m.id === state.modelId)
-                ) {
-                  clearedModelId = '';
-                }
-              }
-
               // Merge TTS providers
               const newTTSConfig = { ...state.ttsProvidersConfig };
               for (const pid of Object.keys(newTTSConfig)) {
@@ -915,6 +895,89 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
+              // === Validate current selections against updated configs ===
+              const llmFallback = [
+                ...Object.entries(newProvidersConfig)
+                  .filter(([, c]) => c.isServerConfigured)
+                  .map(([id]) => id as ProviderId),
+                ...Object.entries(newProvidersConfig)
+                  .filter(([, c]) => !c.isServerConfigured && !!c.apiKey)
+                  .map(([id]) => id as ProviderId),
+              ];
+              const ttsFallback = Object.keys(newTTSConfig).filter(
+                (id) => newTTSConfig[id as TTSProviderId]?.isServerConfigured,
+              ) as TTSProviderId[];
+              const asrFallback = Object.keys(newASRConfig).filter(
+                (id) => newASRConfig[id as ASRProviderId]?.isServerConfigured,
+              ) as ASRProviderId[];
+              const pdfFallback = Object.keys(newPDFConfig).filter(
+                (id) => newPDFConfig[id as PDFProviderId]?.isServerConfigured,
+              ) as PDFProviderId[];
+              const imageFallback = Object.keys(newImageConfig).filter(
+                (id) => newImageConfig[id as ImageProviderId]?.isServerConfigured,
+              ) as ImageProviderId[];
+              const videoFallback = Object.keys(newVideoConfig).filter(
+                (id) => newVideoConfig[id as VideoProviderId]?.isServerConfigured,
+              ) as VideoProviderId[];
+
+              const validLLMProvider = validateProvider(
+                state.providerId,
+                newProvidersConfig,
+                llmFallback,
+              );
+              const validTTSProvider = validateProvider(
+                state.ttsProviderId,
+                newTTSConfig,
+                ttsFallback,
+                'browser-native-tts' as TTSProviderId,
+              );
+              const validASRProvider = validateProvider(
+                state.asrProviderId,
+                newASRConfig,
+                asrFallback,
+                'browser-native' as ASRProviderId,
+              );
+              const validPDFProvider = validateProvider(
+                state.pdfProviderId,
+                newPDFConfig,
+                pdfFallback,
+                'unpdf' as PDFProviderId,
+              );
+              const validImageProvider = validateProvider(
+                state.imageProviderId,
+                newImageConfig,
+                imageFallback,
+              );
+              const validVideoProvider = validateProvider(
+                state.videoProviderId,
+                newVideoConfig,
+                videoFallback,
+              );
+
+              const validLLMModel = validLLMProvider
+                ? validateModel(
+                    state.modelId,
+                    newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [],
+                  )
+                : '';
+              const validImageModel = validImageProvider
+                ? validateModel(
+                    state.imageModelId,
+                    IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [],
+                  )
+                : '';
+              const validVideoModel = validVideoProvider
+                ? validateModel(
+                    state.videoModelId,
+                    VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [],
+                  )
+                : '';
+
+              const validTTSVoice =
+                validTTSProvider !== state.ttsProviderId
+                  ? DEFAULT_TTS_VOICES[validTTSProvider as TTSProviderId] || 'default'
+                  : state.ttsVoice;
+
               // === Auto-select / auto-enable (only on first run) ===
               let autoTtsProvider: TTSProviderId | undefined;
               let autoTtsVoice: string | undefined;
@@ -981,10 +1044,10 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
-              // LLM auto-select: when modelId is empty
+              // LLM auto-select: only on true first load (no provider selected yet)
               let autoProviderId: ProviderId | undefined;
               let autoModelId: string | undefined;
-              if (!state.modelId) {
+              if (!state.providerId && !state.modelId) {
                 for (const [pid, cfg] of Object.entries(newProvidersConfig)) {
                   if (cfg.isServerConfigured) {
                     // Prefer server-restricted models, fall back to built-in list
@@ -1010,6 +1073,30 @@ export const useSettingsStore = create<SettingsState>()(
                 videoProvidersConfig: newVideoConfig,
                 webSearchProvidersConfig: newWebSearchConfig,
                 autoConfigApplied: true,
+                // Validated selections
+                ...(validLLMProvider !== state.providerId && {
+                  providerId: validLLMProvider as ProviderId,
+                }),
+                ...(validLLMModel !== state.modelId && { modelId: validLLMModel }),
+                ...(validTTSProvider !== state.ttsProviderId && {
+                  ttsProviderId: validTTSProvider as TTSProviderId,
+                  ttsVoice: validTTSVoice,
+                }),
+                ...(validASRProvider !== state.asrProviderId && {
+                  asrProviderId: validASRProvider as ASRProviderId,
+                }),
+                ...(validPDFProvider !== state.pdfProviderId && {
+                  pdfProviderId: validPDFProvider as PDFProviderId,
+                }),
+                ...(validImageProvider !== state.imageProviderId && {
+                  imageProviderId: validImageProvider as ImageProviderId,
+                  imageModelId: validImageModel,
+                }),
+                ...(validVideoProvider !== state.videoProviderId && {
+                  videoProviderId: validVideoProvider as VideoProviderId,
+                  videoModelId: validVideoModel,
+                }),
+                // First-run auto-select (autoConfigApplied guard)
                 ...(autoPdfProvider && { pdfProviderId: autoPdfProvider }),
                 ...(autoTtsProvider && {
                   ttsProviderId: autoTtsProvider,
@@ -1032,8 +1119,6 @@ export const useSettingsStore = create<SettingsState>()(
                 }),
                 ...(autoProviderId && { providerId: autoProviderId }),
                 ...(autoModelId && { modelId: autoModelId }),
-                ...(clearedProviderId !== undefined && { providerId: clearedProviderId }),
-                ...(clearedModelId !== undefined && { modelId: clearedModelId }),
               };
             });
           } catch (e) {
