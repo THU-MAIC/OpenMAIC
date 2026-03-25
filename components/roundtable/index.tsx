@@ -682,11 +682,12 @@ export function Roundtable({
         {/* ── Toolbar — pinned to bottom of screen ── */}
         <div
           className={cn(
-            'fixed bottom-0 inset-x-0 z-[40] pointer-events-auto flex items-center justify-center transition-all duration-300',
+            'fixed bottom-0 left-0 z-[40] pointer-events-auto flex items-center justify-center transition-all duration-300',
             controlsVisible
               ? 'opacity-100 translate-y-0'
               : 'opacity-0 translate-y-2 pointer-events-none',
           )}
+          style={{ right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }}
         >
           <div className="mb-3 px-2 py-1 rounded-full bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-gray-200/60 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
             {toolbar}
@@ -708,7 +709,10 @@ export function Roundtable({
                 times: [0, 0.15, 0.7, 1],
                 ease: 'easeOut',
               }}
-              className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[50] bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur-md text-gray-700 dark:text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none"
+              className="fixed bottom-20 -translate-x-1/2 z-[50] bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur-md text-gray-700 dark:text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none"
+              style={{
+                left: `calc((100vw - ${chatCollapsed === false ? (chatAreaWidth ?? 320) : 0}px) / 2)`,
+              }}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block mr-1.5" />
               {endFlashSessionType === 'discussion'
@@ -719,7 +723,10 @@ export function Roundtable({
         </AnimatePresence>
 
         {/* ── Center stack: input / voice / thinking — anchored above toolbar ── */}
-        <div className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[50] flex flex-col items-center gap-3 pointer-events-none">
+        <div
+          className="fixed bottom-14 left-0 z-[50] flex flex-col items-center justify-center gap-3 pointer-events-none transition-[right] duration-300"
+          style={{ right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }}
+        >
           {/* Input panel */}
           <AnimatePresence>
             {isInputOpen && (
