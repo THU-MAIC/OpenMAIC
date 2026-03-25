@@ -910,29 +910,24 @@ export const useSettingsStore = create<SettingsState>()(
               }
 
               // === Validate current selections against updated configs ===
-              const llmFallback = [
-                ...Object.entries(newProvidersConfig)
+              // Build fallback: server-configured first, then client-key-only
+              const buildFallback = <T extends string>(
+                config: Record<string, { isServerConfigured?: boolean; apiKey?: string }>,
+              ): T[] => [
+                ...Object.entries(config)
                   .filter(([, c]) => c.isServerConfigured)
-                  .map(([id]) => id as ProviderId),
-                ...Object.entries(newProvidersConfig)
+                  .map(([id]) => id as T),
+                ...Object.entries(config)
                   .filter(([, c]) => !c.isServerConfigured && !!c.apiKey)
-                  .map(([id]) => id as ProviderId),
+                  .map(([id]) => id as T),
               ];
-              const ttsFallback = Object.keys(newTTSConfig).filter(
-                (id) => newTTSConfig[id as TTSProviderId]?.isServerConfigured,
-              ) as TTSProviderId[];
-              const asrFallback = Object.keys(newASRConfig).filter(
-                (id) => newASRConfig[id as ASRProviderId]?.isServerConfigured,
-              ) as ASRProviderId[];
-              const pdfFallback = Object.keys(newPDFConfig).filter(
-                (id) => newPDFConfig[id as PDFProviderId]?.isServerConfigured,
-              ) as PDFProviderId[];
-              const imageFallback = Object.keys(newImageConfig).filter(
-                (id) => newImageConfig[id as ImageProviderId]?.isServerConfigured,
-              ) as ImageProviderId[];
-              const videoFallback = Object.keys(newVideoConfig).filter(
-                (id) => newVideoConfig[id as VideoProviderId]?.isServerConfigured,
-              ) as VideoProviderId[];
+
+              const llmFallback = buildFallback<ProviderId>(newProvidersConfig);
+              const ttsFallback = buildFallback<TTSProviderId>(newTTSConfig);
+              const asrFallback = buildFallback<ASRProviderId>(newASRConfig);
+              const pdfFallback = buildFallback<PDFProviderId>(newPDFConfig);
+              const imageFallback = buildFallback<ImageProviderId>(newImageConfig);
+              const videoFallback = buildFallback<VideoProviderId>(newVideoConfig);
 
               const validLLMProvider = validateProvider(
                 state.providerId,
@@ -993,6 +988,7 @@ export const useSettingsStore = create<SettingsState>()(
               const validImageModel = validImageProvider
                 ? recoveredImageModel ||
                   validateModel(state.imageModelId, imageModels) ||
+                  // validateModel('', ...) returns '' — fallback to first model when modelId is empty
                   imageModels[0]?.id ||
                   ''
                 : '';
@@ -1138,7 +1134,9 @@ export const useSettingsStore = create<SettingsState>()(
                 }),
                 ...(shouldDisableImage && { imageGenerationEnabled: false }),
                 ...(shouldDisableVideo && { videoGenerationEnabled: false }),
-                // First-run auto-select (autoConfigApplied guard)
+                // First-run auto-select overrides validation (autoConfigApplied guard).
+                // On first sync, auto-select picks the best provider. On subsequent syncs,
+                // auto* variables stay undefined so only validation spreads take effect.
                 ...(autoPdfProvider && { pdfProviderId: autoPdfProvider }),
                 ...(autoTtsProvider && {
                   ttsProviderId: autoTtsProvider,
