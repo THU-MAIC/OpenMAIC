@@ -246,6 +246,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
     // Cancel Speech Recognition if active
     if (speechRecognitionRef.current) {
       speechRecognitionRef.current.onresult = null; // Prevent transcription callback
+      speechRecognitionRef.current.onerror = null; // Suppress browser abort error events
       speechRecognitionRef.current.stop();
       speechRecognitionRef.current = null;
       setIsRecording(false);

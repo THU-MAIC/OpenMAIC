@@ -35,6 +35,8 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
 
   const queueRef = useRef<QueueItem[]>([]);
   const isPlayingRef = useRef(false);
+  const pausedRef = useRef(false);
+  const segmentDoneCounterRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const onAudioStateChangeRef = useRef(onAudioStateChange);
@@ -45,6 +47,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     rate: ttsSpeed,
     onEnd: () => {
       isPlayingRef.current = false;
+      segmentDoneCounterRef.current++;
       onAudioStateChangeRef.current?.(null, 'idle');
       processQueueRef.current();
     },
@@ -138,7 +141,6 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       const data = await res.json();
       if (!data.base64) throw new Error('No audio in response');
 
-      onAudioStateChangeRef.current?.(item.agentId, 'playing');
       const audioUrl = `data:audio/${data.format || 'mp3'};base64,${data.base64}`;
       const audio = new Audio(audioUrl);
       audio.playbackRate = playbackSpeed;
@@ -146,20 +148,32 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       audioRef.current = audio;
       audio.addEventListener('ended', () => {
         isPlayingRef.current = false;
+        segmentDoneCounterRef.current++;
         onAudioStateChangeRef.current?.(item.agentId, 'idle');
         queueMicrotask(() => processQueueRef.current());
       });
       audio.addEventListener('error', () => {
         isPlayingRef.current = false;
+        segmentDoneCounterRef.current++;
         onAudioStateChangeRef.current?.(item.agentId, 'idle');
         queueMicrotask(() => processQueueRef.current());
       });
+
+      // If paused during TTS generation, keep audio ready but don't play
+      if (pausedRef.current) {
+        onAudioStateChangeRef.current?.(item.agentId, 'playing');
+        audio.pause();
+        return;
+      }
+
+      onAudioStateChangeRef.current?.(item.agentId, 'playing');
       await audio.play();
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         console.error('[DiscussionTTS] TTS generation failed:', err);
       }
       isPlayingRef.current = false;
+      segmentDoneCounterRef.current++;
       onAudioStateChangeRef.current?.(item.agentId, 'idle');
       queueMicrotask(() => processQueueRef.current());
     }
@@ -194,7 +208,23 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     browserCancelRef.current();
     queueRef.current = [];
     isPlayingRef.current = false;
+    pausedRef.current = false;
+    segmentDoneCounterRef.current = 0;
     onAudioStateChangeRef.current?.(null, 'idle');
+  }, []);
+
+  const pause = useCallback(() => {
+    pausedRef.current = true;
+    if (audioRef.current && !audioRef.current.paused) {
+      audioRef.current.pause();
+    }
+  }, []);
+
+  const resume = useCallback(() => {
+    pausedRef.current = false;
+    if (audioRef.current && audioRef.current.paused && audioRef.current.src) {
+      audioRef.current.play().catch(() => {});
+    }
   }, []);
 
   // Sync playbackSpeed to currently playing audio in real-time
@@ -213,12 +243,23 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
 
   useEffect(() => cleanup, [cleanup]);
 
-  /** Returns true when TTS audio is still playing or queued — used by StreamBuffer hold logic. */
-  const shouldHold = useCallback(() => isPlayingRef.current || queueRef.current.length > 0, []);
+  /**
+   * Returns true when TTS audio for the *current* segment is still playing.
+   * Uses a monotonic counter so the buffer releases as soon as one segment's
+   * audio finishes, even if the next segment starts immediately.
+   */
+  const shouldHold = useCallback(() => {
+    return {
+      holding: isPlayingRef.current || queueRef.current.length > 0,
+      segmentDone: segmentDoneCounterRef.current,
+    };
+  }, []);
 
   return {
     handleSegmentSealed,
     cleanup,
+    pause,
+    resume,
     shouldHold,
   };
 }
