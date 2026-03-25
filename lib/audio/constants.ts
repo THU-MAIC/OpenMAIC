@@ -606,6 +606,105 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'pcm'],
   },
 
+  'doubao-tts': {
+    id: 'doubao-tts',
+    name: '豆包 TTS 2.0（火山引擎）',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://openspeech.bytedance.com/api/v3/tts',
+    icon: '/logos/doubao.svg',
+    voices: [
+      { id: 'zh_female_vv_uranus_bigtts', name: 'Vivi 2.0', language: 'zh-CN', gender: 'female' },
+      {
+        id: 'zh_female_xiaohe_uranus_bigtts',
+        name: '小何 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'zh_male_m191_uranus_bigtts',
+        name: '云舟 2.0',
+        language: 'zh-CN',
+        gender: 'male',
+      },
+      {
+        id: 'zh_male_taocheng_uranus_bigtts',
+        name: '小天 2.0',
+        language: 'zh-CN',
+        gender: 'male',
+      },
+      {
+        id: 'zh_male_liufei_uranus_bigtts',
+        name: '刘飞 2.0',
+        language: 'zh-CN',
+        gender: 'male',
+      },
+      {
+        id: 'zh_female_qingxinnvsheng_uranus_bigtts',
+        name: '清新女声 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'zh_female_cancan_uranus_bigtts',
+        name: '知性灿灿 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'zh_female_shuangkuaisisi_uranus_bigtts',
+        name: '爽快思思 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'zh_female_tianmeixiaoyuan_uranus_bigtts',
+        name: '甜美小源 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'zh_female_linjianvhai_uranus_bigtts',
+        name: '邻家女孩 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'zh_male_shaonianzixin_uranus_bigtts',
+        name: '少年梓辛 2.0',
+        language: 'zh-CN',
+        gender: 'male',
+      },
+      {
+        id: 'zh_male_ruyayichen_uranus_bigtts',
+        name: '儒雅逸辰 2.0',
+        language: 'zh-CN',
+        gender: 'male',
+      },
+      {
+        id: 'zh_female_yingyujiaoxue_uranus_bigtts',
+        name: 'Tina老师 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      {
+        id: 'zh_female_kefunvsheng_uranus_bigtts',
+        name: '暖阳女声 2.0',
+        language: 'zh-CN',
+        gender: 'female',
+      },
+      { id: 'en_male_tim_uranus_bigtts', name: 'Tim', language: 'en-US', gender: 'male' },
+      { id: 'en_female_dacey_uranus_bigtts', name: 'Dacey', language: 'en-US', gender: 'female' },
+      {
+        id: 'en_female_stokie_uranus_bigtts',
+        name: 'Stokie',
+        language: 'en-US',
+        gender: 'female',
+      },
+    ],
+    supportedFormats: ['mp3', 'ogg_opus', 'pcm'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'elevenlabs-tts': {
     id: 'elevenlabs-tts',
     name: 'ElevenLabs TTS',
@@ -895,6 +994,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
+  'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'browser-native-tts': 'default',
 };
