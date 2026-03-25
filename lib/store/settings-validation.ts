@@ -11,23 +11,41 @@ export type ProviderCfgLike = {
   apiKey?: string;
 };
 
-// Stub implementations — tests should fail on assertions, not on import
-
-export function isProviderUsable(_cfg: ProviderCfgLike | undefined): boolean {
-  return false;
+/** Check whether a provider has a usable path (server config, client key, or no key needed). */
+export function isProviderUsable(cfg: ProviderCfgLike | undefined): boolean {
+  if (!cfg) return false;
+  if (!cfg.requiresApiKey) return true;
+  return !!cfg.apiKey || !!cfg.isServerConfigured;
 }
 
+/**
+ * Validate current provider selection against updated config.
+ * Returns the current ID if still usable, otherwise the first usable
+ * provider from fallbackOrder, or '' if nothing is available.
+ */
 export function validateProvider<T extends string>(
-  _currentId: T | '',
-  _configMap: Partial<Record<T, ProviderCfgLike>>,
-  _fallbackOrder: T[],
+  currentId: T | '',
+  configMap: Partial<Record<T, ProviderCfgLike>>,
+  fallbackOrder: T[],
 ): T | '' {
-  return '' as T;
+  if (!currentId) return currentId;
+  if (isProviderUsable(configMap[currentId])) return currentId;
+
+  for (const id of fallbackOrder) {
+    if (isProviderUsable(configMap[id])) return id;
+  }
+  return '';
 }
 
+/**
+ * Validate current model selection against available models list.
+ * Falls back to first available model, or '' if list is empty.
+ */
 export function validateModel(
-  _currentModelId: string,
-  _availableModels: Array<{ id: string }>,
+  currentModelId: string,
+  availableModels: Array<{ id: string }>,
 ): string {
-  return '';
+  if (!currentModelId) return currentModelId;
+  if (availableModels.some((m) => m.id === currentModelId)) return currentModelId;
+  return availableModels[0]?.id ?? '';
 }
