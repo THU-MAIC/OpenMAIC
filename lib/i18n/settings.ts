@@ -575,6 +575,8 @@ export const settingsZhCN = {
     ttsHint: 'AI 老师语音讲解',
     asrCapability: '语音识别',
     asrHint: '语音输入参与讨论',
+    reviewOutline: '审阅大纲',
+    reviewOutlineHint: '生成大纲后先确认，再继续生成课程内容',
     provider: '服务商',
     model: '模型',
     voice: '音色',
@@ -1171,6 +1173,9 @@ export const settingsEnUS = {
     ttsHint: 'AI teacher speaks aloud',
     asrCapability: 'Speech Recognition',
     asrHint: 'Voice input for discussion',
+    reviewOutline: 'Review Outline',
+    reviewOutlineHint:
+      'Pause after the outline is drafted so you can review it before content generation',
     provider: 'Provider',
     model: 'Model',
     voice: 'Voice',

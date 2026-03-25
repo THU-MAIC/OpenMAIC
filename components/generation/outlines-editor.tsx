@@ -15,6 +15,7 @@ import {
 import { Plus, Trash2, ChevronUp, ChevronDown } from 'lucide-react';
 import { nanoid } from 'nanoid';
 import type { SceneOutline } from '@/lib/types/generation';
+import { useI18n } from '@/lib/hooks/use-i18n';
 
 interface OutlinesEditorProps {
   outlines: SceneOutline[];
@@ -31,6 +32,7 @@ export function OutlinesEditor({
   onBack,
   isLoading = false,
 }: OutlinesEditorProps) {
+  const { t } = useI18n();
   const addOutline = () => {
     const newOutline: SceneOutline = {
       id: nanoid(8),
@@ -82,14 +84,14 @@ export function OutlinesEditor({
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <div>
-          <h2 className="text-lg font-semibold">场景大纲</h2>
+          <h2 className="text-lg font-semibold">{t('generation.outlineEditorTitle')}</h2>
           <p className="text-sm text-muted-foreground">
-            共 {outlines.length} 个场景，可编辑、添加、删除或重排序
+            {t('generation.outlineEditorSummary').replace('{count}', String(outlines.length))}
           </p>
         </div>
         <Button variant="outline" onClick={addOutline} disabled={isLoading}>
           <Plus className="size-4 mr-1" />
-          添加场景
+          {t('generation.addScene')}
         </Button>
       </div>
 
@@ -126,7 +128,7 @@ export function OutlinesEditor({
                     <Input
                       value={outline.title}
                       onChange={(e) => updateOutline(index, { title: e.target.value })}
-                      placeholder="场景标题"
+                      placeholder={t('generation.sceneTitlePlaceholder')}
                       className="flex-1"
                       disabled={isLoading}
                     />
@@ -145,8 +147,8 @@ export function OutlinesEditor({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="slide">幻灯片</SelectItem>
-                    <SelectItem value="quiz">测验</SelectItem>
+                    <SelectItem value="slide">{t('generation.sceneTypeSlide')}</SelectItem>
+                    <SelectItem value="quiz">{t('generation.sceneTypeQuiz')}</SelectItem>
                   </SelectContent>
                 </Select>
                 <Button
@@ -161,22 +163,22 @@ export function OutlinesEditor({
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>场景描述</Label>
+                <Label>{t('generation.sceneDescriptionLabel')}</Label>
                 <Textarea
                   value={outline.description}
                   onChange={(e) => updateOutline(index, { description: e.target.value })}
-                  placeholder="简短描述这个场景的目的和内容"
+                  placeholder={t('generation.sceneDescriptionPlaceholder')}
                   rows={2}
                   disabled={isLoading}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label>关键要点（每行一个）</Label>
+                <Label>{t('generation.keyPointsLabel')}</Label>
                 <Textarea
                   value={outline.keyPoints?.join('\n') || ''}
                   onChange={(e) => updateKeyPoints(index, e.target.value)}
-                  placeholder="输入关键要点，每行一个"
+                  placeholder={t('generation.keyPointsPlaceholder')}
                   rows={3}
                   disabled={isLoading}
                 />
@@ -184,10 +186,10 @@ export function OutlinesEditor({
 
               {outline.type === 'quiz' && (
                 <div className="p-3 bg-muted/50 rounded-lg space-y-3">
-                  <Label className="text-sm font-medium">测验配置</Label>
+                  <Label className="text-sm font-medium">{t('generation.quizConfigLabel')}</Label>
                   <div className="grid grid-cols-3 gap-3">
                     <div className="space-y-1">
-                      <Label className="text-xs">题目数量</Label>
+                      <Label className="text-xs">{t('generation.quizQuestionCount')}</Label>
                       <Input
                         type="number"
                         value={outline.quizConfig?.questionCount || 3}
@@ -207,7 +209,7 @@ export function OutlinesEditor({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">难度</Label>
+                      <Label className="text-xs">{t('generation.quizDifficulty')}</Label>
                       <Select
                         value={outline.quizConfig?.difficulty || 'medium'}
                         onValueChange={(value) =>
@@ -226,14 +228,16 @@ export function OutlinesEditor({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="easy">简单</SelectItem>
-                          <SelectItem value="medium">中等</SelectItem>
-                          <SelectItem value="hard">困难</SelectItem>
+                          <SelectItem value="easy">{t('generation.quizDifficultyEasy')}</SelectItem>
+                          <SelectItem value="medium">
+                            {t('generation.quizDifficultyMedium')}
+                          </SelectItem>
+                          <SelectItem value="hard">{t('generation.quizDifficultyHard')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">题型</Label>
+                      <Label className="text-xs">{t('generation.quizType')}</Label>
                       <Select
                         value={outline.quizConfig?.questionTypes?.[0] || 'single'}
                         onValueChange={(value) =>
@@ -252,9 +256,11 @@ export function OutlinesEditor({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="single">单选</SelectItem>
-                          <SelectItem value="multiple">多选</SelectItem>
-                          <SelectItem value="text">简答</SelectItem>
+                          <SelectItem value="single">{t('generation.quizTypeSingle')}</SelectItem>
+                          <SelectItem value="multiple">
+                            {t('generation.quizTypeMultiple')}
+                          </SelectItem>
+                          <SelectItem value="text">{t('generation.quizTypeText')}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -268,10 +274,10 @@ export function OutlinesEditor({
 
       {outlines.length === 0 && (
         <Card className="p-8 text-center">
-          <p className="text-muted-foreground mb-4">暂无场景大纲</p>
+          <p className="text-muted-foreground mb-4">{t('generation.noOutlines')}</p>
           <Button variant="outline" onClick={addOutline} disabled={isLoading}>
             <Plus className="size-4 mr-1" />
-            添加第一个场景
+            {t('generation.addFirstScene')}
           </Button>
         </Card>
       )}
@@ -279,10 +285,12 @@ export function OutlinesEditor({
       {/* Actions */}
       <div className="flex justify-between pt-4">
         <Button variant="outline" onClick={onBack} disabled={isLoading}>
-          返回修改需求
+          {t('generation.backToRequirements')}
         </Button>
         <Button onClick={onConfirm} disabled={isLoading || outlines.length === 0}>
-          {isLoading ? '生成中...' : '确认并生成课程'}
+          {isLoading
+            ? t('generation.generatingInProgress')
+            : t('generation.confirmAndGenerateCourse')}
         </Button>
       </div>
     </div>

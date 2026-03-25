@@ -7,6 +7,7 @@ import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot } fr
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { OutlinesEditor } from '@/components/generation/outlines-editor';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -50,6 +51,7 @@ function GenerationPreviewContent() {
     [],
   );
   const [showAgentReveal, setShowAgentReveal] = useState(false);
+  const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
       id: string;
@@ -61,10 +63,20 @@ function GenerationPreviewContent() {
       priority: number;
     }>
   >([]);
+  const generatedStageRef = useRef<Stage | null>(null);
   const agentRevealResolveRef = useRef<(() => void) | null>(null);
+
+  const getOutlinePreviewPhase = (): GenerationSessionState['previewPhase'] =>
+    useSettingsStore.getState().reviewOutlineEnabled ? 'review' : 'generating-content';
 
   // Compute active steps based on session state
   const activeSteps = getActiveSteps(session);
+  const isReviewingOutlines = session?.previewPhase === 'review';
+
+  const persistSession = (nextSession: GenerationSessionState) => {
+    setSession(nextSession);
+    sessionStorage.setItem('generationSession', JSON.stringify(nextSession));
+  };
 
   // Load session from sessionStorage
   useEffect(() => {
@@ -74,6 +86,11 @@ function GenerationPreviewContent() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as GenerationSessionState;
+        if (!parsed.previewPhase) {
+          parsed.previewPhase = parsed.sceneOutlines?.length
+            ? getOutlinePreviewPhase()
+            : 'preparing';
+        }
         setSession(parsed);
       } catch (e) {
         log.error('Failed to parse generation session:', e);
@@ -120,7 +137,11 @@ function GenerationPreviewContent() {
 
   // Auto-start generation when session is loaded
   useEffect(() => {
-    if (session && !hasStartedRef.current) {
+    if (
+      session &&
+      !hasStartedRef.current &&
+      (session.previewPhase === 'preparing' || !session.previewPhase)
+    ) {
       hasStartedRef.current = true;
       startGeneration();
     }
@@ -272,8 +293,7 @@ function GenerationPreviewContent() {
           imageStorageIds,
           pdfStorageKey: undefined, // Clear so we don't re-parse
         };
-        setSession(updatedSession);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        persistSession(updatedSession);
 
         // Truncation warnings
         const warnings: string[] = [];
@@ -334,8 +354,7 @@ function GenerationPreviewContent() {
           researchContext: searchData.context || '',
           researchSources: sources,
         };
-        setSession(updatedSessionWithSearch);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSessionWithSearch));
+        persistSession(updatedSessionWithSearch);
         currentSession = updatedSessionWithSearch;
         activeSteps = getActiveSteps(currentSession);
       }
@@ -373,6 +392,7 @@ function GenerationPreviewContent() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
       };
+      generatedStageRef.current = stage;
 
       if (settings.agentMode === 'auto') {
         const agentStepIdx = activeSteps.findIndex((s) => s.id === 'agent-generation');
@@ -606,9 +626,13 @@ function GenerationPreviewContent() {
             .catch(reject);
         });
 
-        const updatedSession = { ...currentSession, sceneOutlines: outlines };
-        setSession(updatedSession);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        const updatedSession = {
+          ...currentSession,
+          sceneOutlines: outlines,
+          previewPhase: getOutlinePreviewPhase(),
+        };
+        persistSession(updatedSession);
+        currentSession = updatedSession;
 
         // Outline generation succeeded — clear homepage draft cache
         try {
@@ -616,27 +640,112 @@ function GenerationPreviewContent() {
         } catch {
           /* ignore */
         }
-
-        // Brief pause to let user see the final outline state
-        await new Promise((resolve) => setTimeout(resolve, 800));
       }
 
-      // Move to scene generation step
       setStatusMessage('');
-      if (!outlines || outlines.length === 0) {
+      if (!currentSession.sceneOutlines || currentSession.sceneOutlines.length === 0) {
         throw new Error(t('generation.outlineEmptyResponse'));
       }
+      setStreamingOutlines(currentSession.sceneOutlines);
 
-      // Store stage and outlines
+      if (currentSession.previewPhase === 'review') {
+        return;
+      }
+
+      await continueGeneration(currentSession.sceneOutlines);
+      return;
+    } catch (err) {
+      // AbortError is expected when navigating away — don't show as error
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        log.info('[GenerationPreview] Generation aborted');
+        return;
+      }
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const continueGeneration = async (confirmedOutlines: SceneOutline[]) => {
+    if (!session) return;
+
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const signal = controller.signal;
+
+    setError(null);
+    setIsConfirmingOutlines(true);
+
+    try {
+      const contentSession: GenerationSessionState = {
+        ...session,
+        sceneOutlines: confirmedOutlines,
+        previewPhase: 'generating-content',
+      };
+      persistSession(contentSession);
+
+      const activeSteps = getActiveSteps(contentSession);
+
+      let imageMapping: ImageMapping = {};
+      if (contentSession.imageStorageIds && contentSession.imageStorageIds.length > 0) {
+        log.debug('Loading images from IndexedDB');
+        imageMapping = await loadImageMapping(contentSession.imageStorageIds);
+      } else if (
+        contentSession.imageMapping &&
+        Object.keys(contentSession.imageMapping).length > 0
+      ) {
+        log.debug('Using imageMapping from session (old format)');
+        imageMapping = contentSession.imageMapping;
+      }
+
+      const settings = useSettingsStore.getState();
+      const stage = generatedStageRef.current ?? {
+        id: nanoid(10),
+        name: extractTopicFromRequirement(contentSession.requirements.requirement),
+        description: '',
+        language: contentSession.requirements.language || 'zh-CN',
+        style: 'professional',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      let agents: Array<{
+        id: string;
+        name: string;
+        role: string;
+        persona?: string;
+      }> = [];
+
+      if (settings.agentMode === 'auto') {
+        const registry = useAgentRegistry.getState();
+        agents = settings.selectedAgentIds
+          .map((id) => registry.getAgent(id))
+          .filter(Boolean)
+          .map((a) => ({
+            id: a!.id,
+            name: a!.name,
+            role: a!.role,
+            persona: a!.persona,
+          }));
+      } else {
+        const registry = useAgentRegistry.getState();
+        agents = settings.selectedAgentIds
+          .map((id) => registry.getAgent(id))
+          .filter(Boolean)
+          .map((a) => ({
+            id: a!.id,
+            name: a!.name,
+            role: a!.role,
+            persona: a!.persona,
+          }));
+      }
+
       const store = useStageStore.getState();
       store.setStage(stage);
-      store.setOutlines(outlines);
+      store.setOutlines(confirmedOutlines);
 
-      // Advance to slide-content step
       const contentStepIdx = activeSteps.findIndex((s) => s.id === 'slide-content');
       if (contentStepIdx >= 0) setCurrentStepIndex(contentStepIdx);
 
-      // Build stageInfo and userProfile for API call
       const stageInfo = {
         name: stage.name,
         description: stage.description,
@@ -645,23 +754,21 @@ function GenerationPreviewContent() {
       };
 
       const userProfile =
-        currentSession.requirements.userNickname || currentSession.requirements.userBio
-          ? `Student: ${currentSession.requirements.userNickname || 'Unknown'}${currentSession.requirements.userBio ? ` — ${currentSession.requirements.userBio}` : ''}`
+        contentSession.requirements.userNickname || contentSession.requirements.userBio
+          ? `Student: ${contentSession.requirements.userNickname || 'Unknown'}${contentSession.requirements.userBio ? ` — ${contentSession.requirements.userBio}` : ''}`
           : undefined;
 
-      // Generate ONLY the first scene
-      store.setGeneratingOutlines(outlines);
+      store.setGeneratingOutlines(confirmedOutlines);
 
-      const firstOutline = outlines[0];
+      const firstOutline = confirmedOutlines[0];
 
-      // Step 2: Generate content (currentStepIndex is already 2)
       const contentResp = await fetch('/api/generate/scene-content', {
         method: 'POST',
         headers: getApiHeaders(),
         body: JSON.stringify({
           outline: firstOutline,
-          allOutlines: outlines,
-          pdfImages: currentSession.pdfImages,
+          allOutlines: confirmedOutlines,
+          pdfImages: contentSession.pdfImages,
           imageMapping,
           stageInfo,
           stageId: stage.id,
@@ -680,7 +787,6 @@ function GenerationPreviewContent() {
         throw new Error(contentData.error || t('generation.sceneGenerateFailed'));
       }
 
-      // Generate actions (activate actions step indicator)
       const actionsStepIdx = activeSteps.findIndex((s) => s.id === 'actions');
       setCurrentStepIndex(actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
 
@@ -689,7 +795,7 @@ function GenerationPreviewContent() {
         headers: getApiHeaders(),
         body: JSON.stringify({
           outline: contentData.effectiveOutline || firstOutline,
-          allOutlines: outlines,
+          allOutlines: confirmedOutlines,
           content: contentData.content,
           stageId: stage.id,
           agents,
@@ -709,7 +815,6 @@ function GenerationPreviewContent() {
         throw new Error(data.error || t('generation.sceneGenerateFailed'));
       }
 
-      // Generate TTS for first scene (part of actions step — blocking)
       if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
         const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
         const speechActions = (data.scene.actions || []).filter(
@@ -765,19 +870,16 @@ function GenerationPreviewContent() {
         }
       }
 
-      // Add scene to store and navigate
       store.addScene(data.scene);
       store.setCurrentSceneId(data.scene.id);
 
-      // Set remaining outlines as skeleton placeholders
-      const remaining = outlines.filter((o) => o.order !== data.scene.order);
+      const remaining = confirmedOutlines.filter((o) => o.order !== data.scene.order);
       store.setGeneratingOutlines(remaining);
 
-      // Store generation params for classroom to continue generation
       sessionStorage.setItem(
         'generationParams',
         JSON.stringify({
-          pdfImages: currentSession.pdfImages,
+          pdfImages: contentSession.pdfImages,
           agents,
           userProfile,
         }),
@@ -787,14 +889,38 @@ function GenerationPreviewContent() {
       await store.saveToStorage();
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
-      // AbortError is expected when navigating away — don't show as error
       if (err instanceof DOMException && err.name === 'AbortError') {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
       sessionStorage.removeItem('generationSession');
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsConfirmingOutlines(false);
     }
+  };
+
+  const handleOutlinesChange = (outlines: SceneOutline[]) => {
+    if (!session) return;
+
+    setError(null);
+    setStreamingOutlines(outlines);
+    persistSession({
+      ...session,
+      sceneOutlines: outlines,
+      previewPhase: 'review',
+    });
+  };
+
+  const handleConfirmOutlines = async () => {
+    if (!session?.sceneOutlines) return;
+    await continueGeneration(session.sceneOutlines);
+  };
+
+  const handleBackToHomeFromReview = () => {
+    abortControllerRef.current?.abort();
+    sessionStorage.removeItem('generationSession');
+    router.push('/');
   };
 
   const extractTopicFromRequirement = (requirement: string): string => {
@@ -845,6 +971,86 @@ function GenerationPreviewContent() {
     activeSteps.length > 0
       ? activeSteps[Math.min(currentStepIndex, activeSteps.length - 1)]
       : ALL_STEPS[0];
+
+  if (isReviewingOutlines && session.sceneOutlines) {
+    const outlineStepIndex = Math.max(
+      0,
+      activeSteps.findIndex((step) => step.id === 'outline'),
+    );
+
+    return (
+      <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 relative overflow-hidden">
+        <div className="fixed inset-0 overflow-hidden pointer-events-none z-0">
+          <div
+            className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"
+            style={{ animationDuration: '4s' }}
+          />
+          <div
+            className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse"
+            style={{ animationDuration: '6s' }}
+          />
+        </div>
+
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-4 left-4 z-20"
+        >
+          <Button variant="ghost" size="sm" onClick={goBackToHome} disabled={isConfirmingOutlines}>
+            <ArrowLeft className="size-4 mr-2" />
+            {t('generation.backToHome')}
+          </Button>
+        </motion.div>
+
+        <div className="z-10 w-full max-w-5xl pt-16 pb-8">
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <Card className="relative overflow-hidden border-muted/40 shadow-2xl bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl p-6 md:p-8">
+              <div className="absolute top-6 left-0 right-0 flex justify-center gap-2">
+                {activeSteps.map((step, idx) => (
+                  <div
+                    key={step.id}
+                    className={cn(
+                      'h-1.5 rounded-full transition-all duration-500',
+                      idx < outlineStepIndex
+                        ? 'w-1.5 bg-blue-500/30'
+                        : idx === outlineStepIndex
+                          ? 'w-8 bg-blue-500'
+                          : 'w-1.5 bg-muted/50',
+                    )}
+                  />
+                ))}
+              </div>
+
+              <div className="pt-6 space-y-6">
+                <div className="max-w-2xl space-y-2 text-center mx-auto">
+                  <h2 className="text-2xl font-bold tracking-tight">
+                    {t('generation.reviewOutlineTitle')}
+                  </h2>
+                  <p className="text-muted-foreground text-sm md:text-base">
+                    {t('generation.reviewOutlineDesc')}
+                  </p>
+                </div>
+
+                {error && (
+                  <div className="mx-auto max-w-2xl rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300">
+                    {error}
+                  </div>
+                )}
+
+                <OutlinesEditor
+                  outlines={session.sceneOutlines}
+                  onChange={handleOutlinesChange}
+                  onConfirm={handleConfirmOutlines}
+                  onBack={handleBackToHomeFromReview}
+                  isLoading={isConfirmingOutlines}
+                />
+              </div>
+            </Card>
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden text-center">
