@@ -205,7 +205,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             ) : (
               <Volume2 className="h-4 w-4" />
             )}
-            {t('settings.testTTS')}
+            <span>{t('settings.testTTS')}</span>
           </Button>
         </div>
       </div>

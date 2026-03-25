@@ -314,7 +314,7 @@ export function ModelEditDialog({
                 {testStatus === 'testing' && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {testStatus === 'success' && <CheckCircle className="mr-2 h-4 w-4" />}
                 {testStatus === 'error' && <XCircle className="mr-2 h-4 w-4" />}
-                {testStatus === 'testing' ? t('settings.testing') : t('settings.testConnection')}
+                <span>{testStatus === 'testing' ? t('settings.testing') : t('settings.testConnection')}</span>
               </Button>
             </div>
             {testMessage && (
