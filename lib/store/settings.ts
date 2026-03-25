@@ -500,7 +500,7 @@ const migrateFromOldStorage = () => {
 
 export const useSettingsStore = create<SettingsState>()(
   persist(
-    (set) => {
+    (set, get) => {
       // Try to migrate from old storage
       const migratedData = migrateFromOldStorage();
       const defaultAudioConfig = getDefaultAudioConfig();
@@ -689,8 +689,26 @@ export const useSettingsStore = create<SettingsState>()(
           })),
 
         // Media generation toggle actions
-        setImageGenerationEnabled: (enabled) => set({ imageGenerationEnabled: enabled }),
-        setVideoGenerationEnabled: (enabled) => set({ videoGenerationEnabled: enabled }),
+        setImageGenerationEnabled: (enabled) => {
+          if (enabled) {
+            const cfg = get().imageProvidersConfig;
+            const hasUsable = Object.values(cfg).some(
+              (c) => c.isServerConfigured || c.apiKey,
+            );
+            if (!hasUsable) return;
+          }
+          set({ imageGenerationEnabled: enabled });
+        },
+        setVideoGenerationEnabled: (enabled) => {
+          if (enabled) {
+            const cfg = get().videoProvidersConfig;
+            const hasUsable = Object.values(cfg).some(
+              (c) => c.isServerConfigured || c.apiKey,
+            );
+            if (!hasUsable) return;
+          }
+          set({ videoGenerationEnabled: enabled });
+        },
         setTTSEnabled: (enabled) => set({ ttsEnabled: enabled }),
         setASREnabled: (enabled) => set({ asrEnabled: enabled }),
 
@@ -978,6 +996,12 @@ export const useSettingsStore = create<SettingsState>()(
                   ? DEFAULT_TTS_VOICES[validTTSProvider as TTSProviderId] || 'default'
                   : state.ttsVoice;
 
+              // Disable image/video generation when no provider is usable
+              const shouldDisableImage =
+                !validImageProvider && state.imageGenerationEnabled;
+              const shouldDisableVideo =
+                !validVideoProvider && state.videoGenerationEnabled;
+
               // === Auto-select / auto-enable (only on first run) ===
               let autoTtsProvider: TTSProviderId | undefined;
               let autoTtsVoice: string | undefined;
@@ -1096,6 +1120,8 @@ export const useSettingsStore = create<SettingsState>()(
                   videoProviderId: validVideoProvider as VideoProviderId,
                   videoModelId: validVideoModel,
                 }),
+                ...(shouldDisableImage && { imageGenerationEnabled: false }),
+                ...(shouldDisableVideo && { videoGenerationEnabled: false }),
                 // First-run auto-select (autoConfigApplied guard)
                 ...(autoPdfProvider && { pdfProviderId: autoPdfProvider }),
                 ...(autoTtsProvider && {

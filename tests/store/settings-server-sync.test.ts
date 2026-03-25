@@ -556,6 +556,35 @@ describe('fetchServerProviders — Image stale selection', () => {
     expect(store.getState().imageModelId).toBe('');
   });
 
+  it('disables imageGenerationEnabled when no image provider is usable', async () => {
+    const store = await getStore();
+
+    // Server configures seedream, user enables image generation
+    mockServerResponse({ image: { seedream: {} } });
+    await store.getState().fetchServerProviders();
+    store.getState().setImageProvider('seedream');
+    store.getState().setImageGenerationEnabled(true);
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+
+    // Server removes all image providers
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+  });
+
+  it('prevents enabling image generation when no image provider is usable', async () => {
+    const store = await getStore();
+
+    // No server image providers
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    // User tries to enable image generation
+    store.getState().setImageGenerationEnabled(true);
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+  });
+
   it('falls back to another server-configured image provider', async () => {
     const store = await getStore();
 
@@ -597,6 +626,31 @@ describe('fetchServerProviders — Video stale selection', () => {
 
     expect(store.getState().videoProviderId).toBe('');
     expect(store.getState().videoModelId).toBe('');
+  });
+
+  it('disables videoGenerationEnabled when no video provider is usable', async () => {
+    const store = await getStore();
+
+    mockServerResponse({ video: { seedance: {} } });
+    await store.getState().fetchServerProviders();
+    store.getState().setVideoProvider('seedance');
+    store.getState().setVideoGenerationEnabled(true);
+    expect(store.getState().videoGenerationEnabled).toBe(true);
+
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().videoGenerationEnabled).toBe(false);
+  });
+
+  it('prevents enabling video generation when no video provider is usable', async () => {
+    const store = await getStore();
+
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    store.getState().setVideoGenerationEnabled(true);
+    expect(store.getState().videoGenerationEnabled).toBe(false);
   });
 
   it('falls back to another server-configured video provider', async () => {
