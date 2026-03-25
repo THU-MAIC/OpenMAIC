@@ -564,6 +564,7 @@ export function Stage({
   // Cleanup on unmount
   useEffect(() => {
     const audioPlayer = audioPlayerRef.current;
+    const chatArea = chatAreaRef.current;
     return () => {
       if (engineRef.current) {
         engineRef.current.stop();
@@ -572,6 +573,8 @@ export function Stage({
       if (discussionAbortRef.current) {
         discussionAbortRef.current.abort();
       }
+      discussionTTS.cleanup();
+      chatArea?.endActiveSession();
       clearPresentationIdleTimer();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup, clearPresentationIdleTimer is stable
@@ -1046,10 +1049,12 @@ export function Stage({
               isDiscussionPaused={isDiscussionPaused}
               onDiscussionPause={() => {
                 chatAreaRef.current?.pauseActiveLiveBuffer();
+                discussionTTS.pause();
                 setIsDiscussionPaused(true);
               }}
               onDiscussionResume={() => {
                 chatAreaRef.current?.resumeActiveLiveBuffer();
+                discussionTTS.resume();
                 setIsDiscussionPaused(false);
               }}
               totalActions={totalActions}

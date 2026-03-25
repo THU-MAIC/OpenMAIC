@@ -14,9 +14,9 @@ import {
   Repeat,
   BookOpen,
   Loader2,
+  Volume2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { AudioIndicator } from './audio-indicator';
 import type { AudioIndicatorState } from './audio-indicator';
 import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
 import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
@@ -180,6 +180,7 @@ export function Roundtable({
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
   const ttsEnabled = useSettingsStore((state) => state.ttsEnabled);
   const asrEnabled = useSettingsStore((state) => state.asrEnabled);
+  const chatAreaWidth = useSettingsStore((s) => s.chatAreaWidth);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
   const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);
   const autoPlayLecture = useSettingsStore((s) => s.autoPlayLecture);
@@ -211,6 +212,7 @@ export function Roundtable({
   // Stable ref object for the current discussion agent's avatar
   const discussionAnchorRef = useRef<HTMLDivElement>(null);
   const presentationActionAnchorRef = useRef<HTMLDivElement>(null);
+  const presentationAgentAvatarRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!discussionRequest) {
       discussionAnchorRef.current = null;
@@ -542,6 +544,32 @@ export function Roundtable({
   const presentationDiscussionAgentConfig = discussionRequest
     ? getAgentConfig(discussionRequest.agentId || '')
     : null;
+
+  const handlePresentationBubbleClick = useCallback(() => {
+    if (isTopicPending) {
+      onResumeTopic?.();
+      return;
+    }
+    if (isInLiveFlow) {
+      if (isDiscussionPaused) {
+        onDiscussionResume?.();
+      } else if (!thinkingState && currentSpeech) {
+        onDiscussionPause?.();
+      }
+      return;
+    }
+    onPlayPause?.();
+  }, [
+    isTopicPending,
+    isInLiveFlow,
+    isDiscussionPaused,
+    thinkingState,
+    currentSpeech,
+    onResumeTopic,
+    onDiscussionResume,
+    onDiscussionPause,
+    onPlayPause,
+  ]);
   const showPresentationDock =
     !!controlsVisible ||
     !!discussionRequest ||
@@ -598,6 +626,10 @@ export function Roundtable({
           speakingAgentId={speakingAgentId ?? null}
           isTopicPending={!!isTopicPending}
           side="left"
+          onBubbleClick={handlePresentationBubbleClick}
+          audioIndicatorState={audioIndicatorState ?? 'idle'}
+          buttonState={enrichedPlaybackView?.buttonState}
+          isPaused={isDiscussionPaused}
         />
 
         {/* Click-outside backdrop to dismiss input/voice */}
@@ -789,7 +821,10 @@ export function Roundtable({
         </div>
 
         {/* ── Right-side stack: bubble + dock — flex column, no hardcoded px ── */}
-        <div className="fixed right-5 bottom-5 z-[48] flex flex-col items-end gap-3 pointer-events-none">
+        <div
+          className="fixed bottom-5 z-[48] flex flex-col items-end gap-3 pointer-events-none transition-[right] duration-300"
+          style={{ right: chatCollapsed ? 20 : 20 + (chatAreaWidth ?? 320) }}
+        >
           {/* Right-side speech bubble (flows above dock via flex) */}
           <PresentationSpeechOverlay
             playbackView={enrichedPlaybackView}
@@ -798,6 +833,10 @@ export function Roundtable({
             isTopicPending={!!isTopicPending}
             userAvatar={userAvatar}
             side="right"
+            onBubbleClick={handlePresentationBubbleClick}
+            audioIndicatorState={audioIndicatorState ?? 'idle'}
+            buttonState={enrichedPlaybackView?.buttonState}
+            isPaused={isDiscussionPaused}
           />
 
           {/* Dock */}
@@ -821,6 +860,7 @@ export function Roundtable({
                     {((activeRole === 'agent' && speakingStudent) ||
                       presentationDiscussionParticipant) && (
                       <motion.div
+                        ref={presentationAgentAvatarRef}
                         key={`dock-agent-${(speakingStudent || presentationDiscussionParticipant)?.id}`}
                         initial={{ opacity: 0, scale: 0.8, width: 0 }}
                         animate={{ opacity: 1, scale: 1, width: 'auto' }}
@@ -944,7 +984,7 @@ export function Roundtable({
                     <ProactiveCard
                       action={discussionRequest}
                       mode={engineMode === 'paused' ? 'paused' : 'playback'}
-                      anchorRef={presentationActionAnchorRef}
+                      anchorRef={presentationAgentAvatarRef}
                       portalContainer={fullscreenContainerRef?.current}
                       align="left"
                       agentName={
@@ -1484,7 +1524,7 @@ export function Roundtable({
                         onPlayPause?.();
                       }}
                       className={cn(
-                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border max-w-[65%] min-w-[200px] group/bubble flex flex-col max-h-[110px]',
+                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border w-[min(420px,calc(100%-3rem))] group/bubble flex flex-col max-h-[110px]',
                         bubbleRole === 'teacher' ? 'pl-4 pr-10' : 'pl-4 pr-10',
                         bubbleRole === 'user'
                           ? 'bg-purple-600/95 dark:bg-purple-500/95 backdrop-blur-sm border-purple-400/40 dark:border-purple-300/40 text-white rounded-br-sm shadow-md shadow-purple-300/30 dark:shadow-purple-800/30'
@@ -1536,21 +1576,21 @@ export function Roundtable({
                             <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 truncate">
                               {bubbleName}
                             </span>
-                            <AudioIndicator
-                              state={
+                            {(() => {
+                              const aiState =
                                 speakingAgentId === audioAgentId
                                   ? (audioIndicatorState ?? 'idle')
-                                  : 'idle'
-                              }
-                              agentColor={
-                                bubbleRole === 'agent'
-                                  ? (useAgentRegistry.getState().getAgent(speakingAgentId || '')
-                                      ?.color ?? undefined)
-                                  : (useAgentRegistry
-                                      .getState()
-                                      .getAgent(teacherParticipant?.id || '')?.color ?? undefined)
-                              }
-                            />
+                                  : 'idle';
+                              if (aiState === 'generating')
+                                return (
+                                  <Loader2 className="w-3 h-3 text-amber-500 dark:text-amber-400 animate-spin" />
+                                );
+                              if (aiState === 'playing')
+                                return (
+                                  <Volume2 className="w-3 h-3 text-gray-400 dark:text-gray-500" />
+                                );
+                              return null;
+                            })()}
                           </div>
                         )}
                         {isBubbleLoading ? (

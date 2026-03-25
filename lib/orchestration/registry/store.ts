@@ -334,17 +334,19 @@ export async function loadGeneratedAgentsForStage(stageId: string): Promise<stri
   const { getGeneratedAgentsByStageId } = await import('@/lib/utils/database');
   const records = await getGeneratedAgentsByStageId(stageId);
 
-  if (records.length === 0) return [];
-
   const registry = useAgentRegistry.getState();
 
-  // Clear previously loaded generated agents
+  // Always clear previously loaded generated agents — even when the new stage
+  // has none — to prevent stale agents from a prior auto-classroom leaking
+  // into the current preset classroom.
   const currentAgents = registry.listAgents();
   for (const agent of currentAgents) {
     if (agent.isGenerated) {
       registry.deleteAgent(agent.id);
     }
   }
+
+  if (records.length === 0) return [];
 
   // Add new ones
   const ids: string[] = [];

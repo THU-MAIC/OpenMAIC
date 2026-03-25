@@ -1,8 +1,10 @@
 'use client';
 
 import { AnimatePresence, motion } from 'motion/react';
+import { Play, Pause, Repeat, Loader2, Volume2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
+import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { PlaybackView } from '@/lib/playback';
 import type { Participant } from '@/lib/types/roundtable';
 import { cn } from '@/lib/utils';
@@ -18,6 +20,10 @@ interface PresentationSpeechOverlayProps {
   readonly userAvatar?: string;
   /** Which side this overlay instance renders — 'left' or 'right' */
   readonly side?: 'left' | 'right';
+  readonly onBubbleClick?: () => void;
+  readonly audioIndicatorState?: AudioIndicatorState;
+  readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
+  readonly isPaused?: boolean;
 }
 
 export interface PresentationBubbleModel {
@@ -112,13 +118,27 @@ export function buildPresentationBubbleModel({
 }
 
 /** Reusable bubble card — renders the speech bubble content (avatar, name, text) */
-export function PresentationBubbleCard({ bubble }: { readonly bubble: PresentationBubbleModel }) {
+export function PresentationBubbleCard({
+  bubble,
+  onClick,
+  audioIndicatorState,
+  buttonState,
+  isPaused,
+}: {
+  readonly bubble: PresentationBubbleModel;
+  readonly onClick?: () => void;
+  readonly audioIndicatorState?: AudioIndicatorState;
+  readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
+  readonly isPaused?: boolean;
+}) {
   const { t } = useI18n();
   return (
     <div
       aria-live="polite"
+      onClick={onClick}
       className={cn(
-        'w-full min-w-0 rounded-3xl border backdrop-blur-xl shadow-[0_18px_50px_-20px_rgba(0,0,0,0.45)] overflow-hidden',
+        'relative w-full min-w-0 rounded-3xl border backdrop-blur-xl shadow-[0_18px_50px_-20px_rgba(0,0,0,0.45)] overflow-hidden group/bubble',
+        onClick && 'cursor-pointer',
         bubble.role === 'user'
           ? 'bg-violet-50/60 dark:bg-violet-950/55 border-violet-200/70 dark:border-violet-800/60'
           : bubble.role === 'agent'
@@ -156,13 +176,21 @@ export function PresentationBubbleCard({ bubble }: { readonly bubble: Presentati
                 ? t('settings.agentRoles.student')
                 : t('settings.agentRoles.teacher')}
           </div>
-          <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
-            {bubble.name}
+          <div className="flex items-center gap-1.5">
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+              {bubble.name}
+            </div>
+            {audioIndicatorState === 'generating' && (
+              <Loader2 className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 animate-spin" />
+            )}
+            {audioIndicatorState === 'playing' && (
+              <Volume2 className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+            )}
           </div>
         </div>
       </div>
 
-      <div className="px-4 pb-3 max-h-[120px] overflow-hidden">
+      <div className="px-4 pb-4 pr-10 max-h-[140px] overflow-y-auto scrollbar-hide">
         {bubble.isLoading ? (
           <div className="flex gap-1 items-center py-1">
             {[0, 0.2, 0.4].map((delay) => (
@@ -190,6 +218,62 @@ export function PresentationBubbleCard({ bubble }: { readonly bubble: Presentati
           </p>
         )}
       </div>
+
+      {bubble.role !== 'user' &&
+        !bubble.isLoading &&
+        buttonState &&
+        buttonState !== 'none' &&
+        (() => {
+          const barsColor = bubble.role === 'agent' ? 'bg-blue-500' : 'bg-purple-500';
+
+          if (buttonState === 'play') {
+            return (
+              <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
+                <Play className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
+              </div>
+            );
+          }
+
+          if (buttonState === 'restart') {
+            return (
+              <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
+                <Repeat className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400" />
+              </div>
+            );
+          }
+
+          // buttonState === 'bars'
+          return (
+            <div className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300">
+              {isPaused ? (
+                <Play className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
+              ) : (
+                <>
+                  {/* Breathing bars — visible by default, hidden on hover */}
+                  <div className="flex gap-0.5 items-end justify-center h-3.5 w-3.5 group-hover/bubble:hidden">
+                    <motion.div
+                      animate={{ height: ['20%', '100%', '20%'] }}
+                      transition={{ repeat: Infinity, duration: 0.6 }}
+                      className={cn('w-1 rounded-full', barsColor)}
+                    />
+                    <motion.div
+                      animate={{ height: ['40%', '100%', '40%'] }}
+                      transition={{ repeat: Infinity, duration: 0.4 }}
+                      className={cn('w-1 rounded-full', barsColor)}
+                    />
+                    <motion.div
+                      animate={{ height: ['20%', '80%', '20%'] }}
+                      transition={{ repeat: Infinity, duration: 0.5 }}
+                      className={cn('w-1 rounded-full', barsColor)}
+                    />
+                  </div>
+                  {/* Pause icon on hover */}
+                  <Pause className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 hidden group-hover/bubble:block" />
+                </>
+              )}
+            </div>
+          );
+        })()}
     </div>
   );
 }
@@ -201,6 +285,10 @@ export function PresentationSpeechOverlay({
   isTopicPending,
   userAvatar,
   side = 'left',
+  onBubbleClick,
+  audioIndicatorState,
+  buttonState,
+  isPaused,
 }: PresentationSpeechOverlayProps) {
   const { t } = useI18n();
   const bubble = buildPresentationBubbleModel({
@@ -228,9 +316,18 @@ export function PresentationSpeechOverlay({
               animate={{ opacity: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
-              className={cn('absolute bottom-6 left-6 z-30', PRESENTATION_BUBBLE_WIDTH)}
+              className={cn(
+                'absolute bottom-6 left-6 z-30 pointer-events-auto',
+                PRESENTATION_BUBBLE_WIDTH,
+              )}
             >
-              <PresentationBubbleCard bubble={bubble} />
+              <PresentationBubbleCard
+                bubble={bubble}
+                onClick={onBubbleClick}
+                audioIndicatorState={audioIndicatorState}
+                buttonState={buttonState}
+                isPaused={isPaused}
+              />
             </motion.div>
           )}
         </AnimatePresence>
@@ -248,9 +345,15 @@ export function PresentationSpeechOverlay({
           animate={{ opacity: 1, x: 0, y: 0 }}
           exit={{ opacity: 0, y: 8 }}
           transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
-          className={PRESENTATION_BUBBLE_WIDTH}
+          className={cn(PRESENTATION_BUBBLE_WIDTH, 'pointer-events-auto')}
         >
-          <PresentationBubbleCard bubble={bubble} />
+          <PresentationBubbleCard
+            bubble={bubble}
+            onClick={onBubbleClick}
+            audioIndicatorState={audioIndicatorState}
+            buttonState={buttonState}
+            isPaused={isPaused}
+          />
         </motion.div>
       )}
     </AnimatePresence>

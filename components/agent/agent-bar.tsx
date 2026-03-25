@@ -508,13 +508,18 @@ export function AgentBar() {
   const handleModeChange = (mode: 'preset' | 'auto') => {
     setAgentMode(mode);
     if (mode === 'preset') {
-      const hasTeacherSelected = selectedAgentIds.some((id) => {
+      // Remove stale auto-generated agent IDs that may linger from a previous auto classroom
+      const presetIds = selectedAgentIds.filter((id) => agents.some((a) => a.id === id));
+      const hasTeacher = presetIds.some((id) => {
         const a = agents.find((agent) => agent.id === id);
         return a?.role === 'teacher';
       });
-      if (!hasTeacherSelected && teacherAgent) {
-        setSelectedAgentIds([teacherAgent.id, ...selectedAgentIds]);
+      if (!hasTeacher && teacherAgent) {
+        presetIds.unshift(teacherAgent.id);
       }
+      setSelectedAgentIds(
+        presetIds.length > 0 ? presetIds : ['default-1', 'default-2', 'default-3'],
+      );
     }
   };
 
