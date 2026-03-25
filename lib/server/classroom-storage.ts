@@ -5,8 +5,24 @@ import type { Scene, Stage, SlideContent } from '@/lib/types/stage';
 import type { Slide } from '@/lib/types/slides';
 import type { SceneOutline } from '@/lib/types/generation';
 
-export const CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
-export const CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
+function resolveProjectRoot(): string {
+  const explicitRoot = process.env.OPENMAIC_PROJECT_ROOT;
+  if (explicitRoot) {
+    return path.resolve(explicitRoot);
+  }
+
+  const cwd = process.cwd();
+  const standaloneSuffix = `${path.sep}.next${path.sep}standalone`;
+  if (cwd.endsWith(standaloneSuffix)) {
+    return path.resolve(cwd, '..', '..');
+  }
+
+  return cwd;
+}
+
+export const PROJECT_ROOT = resolveProjectRoot();
+export const CLASSROOMS_DIR = path.join(PROJECT_ROOT, 'data', 'classrooms');
+export const CLASSROOM_JOBS_DIR = path.join(PROJECT_ROOT, 'data', 'classroom-jobs');
 
 async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
