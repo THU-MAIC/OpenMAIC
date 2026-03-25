@@ -17,7 +17,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { SettingsDialog } from './settings';
 import { cn } from '@/lib/utils';
-import { useSettingsStore } from '@/lib/store/settings';
 import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
@@ -33,10 +32,6 @@ export function Header({ currentSceneTitle }: HeaderProps) {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [languageOpen, setLanguageOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
-
-  // Model setup state
-  const currentModelId = useSettingsStore((s) => s.modelId);
-  const needsSetup = !currentModelId;
 
   // Export
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
@@ -216,24 +211,10 @@ export function Header({ currentSceneTitle }: HeaderProps) {
           <div className="relative">
             <button
               onClick={() => setSettingsOpen(true)}
-              className={cn(
-                'p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group',
-                needsSetup && 'animate-setup-glow',
-              )}
+              className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
             >
               <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
             </button>
-            {needsSetup && (
-              <>
-                <span className="absolute -top-0.5 -right-0.5 flex h-3 w-3">
-                  <span className="animate-setup-ping absolute inline-flex h-full w-full rounded-full bg-violet-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-violet-500" />
-                </span>
-                <span className="animate-setup-float absolute top-full mt-2 right-0 whitespace-nowrap text-[11px] font-medium text-violet-600 dark:text-violet-400 bg-violet-50 dark:bg-violet-950/40 border border-violet-200 dark:border-violet-800/50 px-2 py-0.5 rounded-full shadow-sm pointer-events-none">
-                  {t('settings.setupNeeded')}
-                </span>
-              </>
-            )}
           </div>
         </div>
 
