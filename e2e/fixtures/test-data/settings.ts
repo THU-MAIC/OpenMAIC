@@ -4,6 +4,9 @@ export function createSettingsStorage(overrides: Record<string, unknown> = {}) {
     state: {
       modelId: 'gpt-4o',
       providerId: 'openai',
+      providersConfig: {
+        openai: { apiKey: 'test-key' },
+      },
       agentMode: 'preset',
       selectedAgentIds: [],
       ttsEnabled: false,

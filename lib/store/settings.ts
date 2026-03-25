@@ -755,6 +755,27 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
+              // Validate current LLM selection against updated provider config
+              let clearedProviderId: ProviderId | undefined;
+              let clearedModelId: string | undefined;
+              if (state.providerId) {
+                const selectedCfg = newProvidersConfig[state.providerId as ProviderId];
+                const isUsable =
+                  selectedCfg &&
+                  (!selectedCfg.requiresApiKey ||
+                    !!selectedCfg.apiKey ||
+                    !!selectedCfg.isServerConfigured);
+                if (!isUsable) {
+                  clearedProviderId = '' as ProviderId;
+                  clearedModelId = '';
+                } else if (
+                  state.modelId &&
+                  !selectedCfg.models.some((m) => m.id === state.modelId)
+                ) {
+                  clearedModelId = '';
+                }
+              }
+
               // Merge TTS providers
               const newTTSConfig = { ...state.ttsProvidersConfig };
               for (const pid of Object.keys(newTTSConfig)) {
@@ -1011,6 +1032,8 @@ export const useSettingsStore = create<SettingsState>()(
                 }),
                 ...(autoProviderId && { providerId: autoProviderId }),
                 ...(autoModelId && { modelId: autoModelId }),
+                ...(clearedProviderId !== undefined && { providerId: clearedProviderId }),
+                ...(clearedModelId !== undefined && { modelId: clearedModelId }),
               };
             });
           } catch (e) {
