@@ -599,6 +599,25 @@ describe('fetchServerProviders — Image stale selection', () => {
     expect(store.getState().imageProviderId).toBe('qwen-image');
     expect(store.getState().imageModelId).toBe('qwen-image-max');
   });
+
+  it('auto-selects provider and model when server adds image provider after empty state', async () => {
+    const store = await getStore();
+
+    // Start with no image providers — selection is empty, generation disabled
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+    expect(store.getState().imageProviderId).toBe('');
+    expect(store.getState().imageModelId).toBe('');
+    expect(store.getState().imageGenerationEnabled).toBe(false);
+
+    // Server adds seedream
+    mockServerResponse({ image: { seedream: {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().imageProviderId).toBe('seedream');
+    expect(store.getState().imageModelId).toBe('doubao-seedream-5-0-260128');
+    expect(store.getState().imageGenerationEnabled).toBe(true);
+  });
 });
 
 describe('fetchServerProviders — Video stale selection', () => {
@@ -666,6 +685,25 @@ describe('fetchServerProviders — Video stale selection', () => {
 
     expect(store.getState().videoProviderId).toBe('kling');
     expect(store.getState().videoModelId).toBe('kling-v2-6');
+  });
+
+  it('auto-selects provider and model when server adds video provider after empty state', async () => {
+    const store = await getStore();
+
+    // Start with no video providers — generation disabled
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+    expect(store.getState().videoProviderId).toBe('');
+    expect(store.getState().videoModelId).toBe('');
+    expect(store.getState().videoGenerationEnabled).toBe(false);
+
+    // Server adds seedance
+    mockServerResponse({ video: { seedance: {} } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().videoProviderId).toBe('seedance');
+    expect(store.getState().videoModelId).toBe('doubao-seedance-1-5-pro-251215');
+    expect(store.getState().videoGenerationEnabled).toBe(true);
   });
 });
 

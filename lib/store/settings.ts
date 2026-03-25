@@ -961,16 +961,32 @@ export const useSettingsStore = create<SettingsState>()(
                 pdfFallback,
                 'unpdf' as PDFProviderId,
               );
-              const validImageProvider = validateProvider(
+              let validImageProvider = validateProvider(
                 state.imageProviderId,
                 newImageConfig,
                 imageFallback,
               );
-              const validVideoProvider = validateProvider(
+              let validVideoProvider = validateProvider(
                 state.videoProviderId,
                 newVideoConfig,
                 videoFallback,
               );
+
+              // Auto-recover: when provider is empty but server has available ones
+              let recoveredImageModel = '';
+              if (!validImageProvider && imageFallback.length > 0) {
+                validImageProvider = imageFallback[0];
+                const models =
+                  IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models;
+                if (models?.length) recoveredImageModel = models[0].id;
+              }
+              let recoveredVideoModel = '';
+              if (!validVideoProvider && videoFallback.length > 0) {
+                validVideoProvider = videoFallback[0];
+                const models =
+                  VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models;
+                if (models?.length) recoveredVideoModel = models[0].id;
+              }
 
               const validLLMModel = validLLMProvider
                 ? validateModel(
@@ -979,13 +995,15 @@ export const useSettingsStore = create<SettingsState>()(
                   )
                 : '';
               const validImageModel = validImageProvider
-                ? validateModel(
+                ? recoveredImageModel ||
+                  validateModel(
                     state.imageModelId,
                     IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [],
                   )
                 : '';
               const validVideoModel = validVideoProvider
-                ? validateModel(
+                ? recoveredVideoModel ||
+                  validateModel(
                     state.videoModelId,
                     VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [],
                   )
@@ -996,11 +1014,19 @@ export const useSettingsStore = create<SettingsState>()(
                   ? DEFAULT_TTS_VOICES[validTTSProvider as TTSProviderId] || 'default'
                   : state.ttsVoice;
 
-              // Disable image/video generation when no provider is usable
+              // Auto-disable/enable image/video generation based on provider availability
               const shouldDisableImage =
                 !validImageProvider && state.imageGenerationEnabled;
+              const shouldEnableImage =
+                !!validImageProvider &&
+                !state.imageGenerationEnabled &&
+                validImageProvider !== state.imageProviderId;
               const shouldDisableVideo =
                 !validVideoProvider && state.videoGenerationEnabled;
+              const shouldEnableVideo =
+                !!validVideoProvider &&
+                !state.videoGenerationEnabled &&
+                validVideoProvider !== state.videoProviderId;
 
               // === Auto-select / auto-enable (only on first run) ===
               let autoTtsProvider: TTSProviderId | undefined;
@@ -1121,7 +1147,9 @@ export const useSettingsStore = create<SettingsState>()(
                   videoModelId: validVideoModel,
                 }),
                 ...(shouldDisableImage && { imageGenerationEnabled: false }),
+                ...(shouldEnableImage && { imageGenerationEnabled: true }),
                 ...(shouldDisableVideo && { videoGenerationEnabled: false }),
+                ...(shouldEnableVideo && { videoGenerationEnabled: true }),
                 // First-run auto-select (autoConfigApplied guard)
                 ...(autoPdfProvider && { pdfProviderId: autoPdfProvider }),
                 ...(autoTtsProvider && {
