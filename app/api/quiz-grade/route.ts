@@ -83,7 +83,9 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
         score: Math.round(points * 0.5),
         comment: isZh
           ? '已作答，请参考标准答案。'
-          : 'Answer received. Please refer to the standard answer.',
+          : isRu
+            ? 'Ответ получен. Сверьтесь с эталонным ответом.'
+            : 'Answer received. Please refer to the standard answer.',
       };
     }
 
