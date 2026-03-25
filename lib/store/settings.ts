@@ -994,21 +994,21 @@ export const useSettingsStore = create<SettingsState>()(
                     newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [],
                   )
                 : '';
+              const imageModels =
+                IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [];
               const validImageModel = validImageProvider
                 ? recoveredImageModel ||
-                  validateModel(
-                    state.imageModelId,
-                    IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [],
-                  ) ||
-                  (IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models?.[0]?.id ?? '')
+                  validateModel(state.imageModelId, imageModels) ||
+                  imageModels[0]?.id ||
+                  ''
                 : '';
+              const videoModels =
+                VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [];
               const validVideoModel = validVideoProvider
                 ? recoveredVideoModel ||
-                  validateModel(
-                    state.videoModelId,
-                    VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [],
-                  ) ||
-                  (VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models?.[0]?.id ?? '')
+                  validateModel(state.videoModelId, videoModels) ||
+                  videoModels[0]?.id ||
+                  ''
                 : '';
 
               const validTTSVoice =
@@ -1016,15 +1016,11 @@ export const useSettingsStore = create<SettingsState>()(
                   ? DEFAULT_TTS_VOICES[validTTSProvider as TTSProviderId] || 'default'
                   : state.ttsVoice;
 
-              // Auto-disable/enable image/video generation based on provider availability
+              // Auto-disable image/video generation when no provider is usable
               const shouldDisableImage =
                 !validImageProvider && state.imageGenerationEnabled;
-              const shouldEnableImage =
-                imageFallback.length > 0 && !state.imageGenerationEnabled;
               const shouldDisableVideo =
                 !validVideoProvider && state.videoGenerationEnabled;
-              const shouldEnableVideo =
-                videoFallback.length > 0 && !state.videoGenerationEnabled;
 
               // === Auto-select / auto-enable (only on first run) ===
               let autoTtsProvider: TTSProviderId | undefined;
@@ -1149,9 +1145,7 @@ export const useSettingsStore = create<SettingsState>()(
                   videoModelId: validVideoModel,
                 }),
                 ...(shouldDisableImage && { imageGenerationEnabled: false }),
-                ...(shouldEnableImage && { imageGenerationEnabled: true }),
                 ...(shouldDisableVideo && { videoGenerationEnabled: false }),
-                ...(shouldEnableVideo && { videoGenerationEnabled: true }),
                 // First-run auto-select (autoConfigApplied guard)
                 ...(autoPdfProvider && { pdfProviderId: autoPdfProvider }),
                 ...(autoTtsProvider && {
