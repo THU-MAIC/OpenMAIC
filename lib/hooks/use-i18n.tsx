@@ -16,6 +16,7 @@ const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<Locale>(defaultLocale);
+  const [hydrated, setHydrated] = useState(false);
 
   // Hydrate from localStorage after mount (avoids SSR mismatch)
   /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
@@ -24,6 +25,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
       if (stored && VALID_LOCALES.includes(stored as Locale)) {
         setLocaleState(stored as Locale);
+        setHydrated(true);
         return;
       }
       const browserLang = navigator.language;
@@ -37,6 +39,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     } catch {
       // localStorage unavailable, keep default
     }
+    setHydrated(true);
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -46,6 +49,17 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   };
 
   const t = (key: string): string => translate(locale, key);
+
+  // Prevent hydration mismatch: server renders with defaultLocale (zh-CN),
+  // but client may detect a different locale from localStorage/browser.
+  // Hide content briefly until the correct locale is resolved.
+  if (!hydrated) {
+    return (
+      <I18nContext.Provider value={{ locale, setLocale, t }}>
+        <div style={{ visibility: 'hidden' }}>{children}</div>
+      </I18nContext.Provider>
+    );
+  }
 
   return <I18nContext.Provider value={{ locale, setLocale, t }}>{children}</I18nContext.Provider>;
 }
