@@ -692,9 +692,7 @@ export const useSettingsStore = create<SettingsState>()(
         setImageGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().imageProvidersConfig;
-            const hasUsable = Object.values(cfg).some(
-              (c) => c.isServerConfigured || c.apiKey,
-            );
+            const hasUsable = Object.values(cfg).some((c) => c.isServerConfigured || c.apiKey);
             if (!hasUsable) return;
           }
           set({ imageGenerationEnabled: enabled });
@@ -702,9 +700,7 @@ export const useSettingsStore = create<SettingsState>()(
         setVideoGenerationEnabled: (enabled) => {
           if (enabled) {
             const cfg = get().videoProvidersConfig;
-            const hasUsable = Object.values(cfg).some(
-              (c) => c.isServerConfigured || c.apiKey,
-            );
+            const hasUsable = Object.values(cfg).some((c) => c.isServerConfigured || c.apiKey);
             if (!hasUsable) return;
           }
           set({ videoGenerationEnabled: enabled });
@@ -976,15 +972,13 @@ export const useSettingsStore = create<SettingsState>()(
               let recoveredImageModel = '';
               if (!validImageProvider && imageFallback.length > 0) {
                 validImageProvider = imageFallback[0];
-                const models =
-                  IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models;
+                const models = IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models;
                 if (models?.length) recoveredImageModel = models[0].id;
               }
               let recoveredVideoModel = '';
               if (!validVideoProvider && videoFallback.length > 0) {
                 validVideoProvider = videoFallback[0];
-                const models =
-                  VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models;
+                const models = VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models;
                 if (models?.length) recoveredVideoModel = models[0].id;
               }
 
@@ -1017,10 +1011,8 @@ export const useSettingsStore = create<SettingsState>()(
                   : state.ttsVoice;
 
               // Auto-disable image/video generation when no provider is usable
-              const shouldDisableImage =
-                !validImageProvider && state.imageGenerationEnabled;
-              const shouldDisableVideo =
-                !validVideoProvider && state.videoGenerationEnabled;
+              const shouldDisableImage = !validImageProvider && state.imageGenerationEnabled;
+              const shouldDisableVideo = !validVideoProvider && state.videoGenerationEnabled;
 
               // === Auto-select / auto-enable (only on first run) ===
               let autoTtsProvider: TTSProviderId | undefined;
