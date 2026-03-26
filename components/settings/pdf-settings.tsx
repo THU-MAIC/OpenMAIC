@@ -44,7 +44,8 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
   const isServerConfigured = !!pdfProvidersConfig[selectedProviderId]?.isServerConfigured;
   const providerConfig = pdfProvidersConfig[selectedProviderId];
   const hasBaseUrl = !!providerConfig?.baseUrl;
-  const needsRemoteConfig = selectedProviderId === 'wiseocr' || selectedProviderId === 'mineru';
+  // All PDF providers now support custom API Key and Base URL configuration
+  const needsRemoteConfig = true;
 
   // Reset state when provider changes
   const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
@@ -98,140 +99,152 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
         </div>
       )}
 
-      {/* Base URL + API Key Configuration (for remote providers like MinerU) */}
-      {(needsRemoteConfig || isServerConfigured) && (
-        <>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">{t('settings.pdfBaseUrl')}</Label>
-              <div className="flex gap-2">
-                <Input
-                  name={`pdf-base-url-${selectedProviderId}`}
-                  autoComplete="off"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  placeholder="http://localhost:8080"
-                  value={providerConfig?.baseUrl || ''}
-                  onChange={(e) =>
-                    setPDFProviderConfig(selectedProviderId, { baseUrl: e.target.value })
-                  }
-                  className="text-sm"
-                />
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleTestConnection}
-                  disabled={testStatus === 'testing' || !hasBaseUrl}
-                  className="gap-1.5 shrink-0"
-                >
-                  {testStatus === 'testing' ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <>
-                      <Zap className="h-3.5 w-3.5" />
-                      {t('settings.testConnection')}
-                    </>
-                  )}
-                </Button>
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label className="text-sm">
-                {t('settings.pdfApiKey')}
-                <span className="text-muted-foreground ml-1 font-normal">
-                  ({t('settings.optional')})
-                </span>
-              </Label>
-              <div className="relative">
-                <Input
-                  name={`pdf-api-key-${selectedProviderId}`}
-                  type={showApiKey ? 'text' : 'password'}
-                  autoComplete="new-password"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  placeholder={
-                    isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
-                  }
-                  value={providerConfig?.apiKey || ''}
-                  onChange={(e) =>
-                    setPDFProviderConfig(selectedProviderId, {
-                      apiKey: e.target.value,
-                    })
-                  }
-                  className="font-mono text-sm pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-          </div>
-
-          {/* Custom OCR prompt (for WiseOCR) */}
-          {selectedProviderId === 'wiseocr' && (
-            <div className="col-span-2 space-y-2 mt-2">
-              <Label className="text-sm">
-                {t('settings.wiseocrCustomPrompt')}
-                <span className="text-muted-foreground ml-1 font-normal">
-                  ({t('settings.optional')})
-                </span>
-              </Label>
+      {/* Base URL + API Key Configuration - all providers support custom configuration */}
+      <>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.pdfBaseUrl')}</Label>
+            <div className="flex gap-2">
               <Input
-                name={`pdf-custom-prompt-${selectedProviderId}`}
+                name={`pdf-base-url-${selectedProviderId}`}
                 autoComplete="off"
                 autoCapitalize="none"
                 autoCorrect="off"
-                spellCheck="false"
-                placeholder="自定义 OCR 提示词（不传则使用内置默认值）"
-                value={providerConfig?.customPrompt || ''}
+                spellCheck={false}
+                placeholder={
+                  selectedProviderId === 'unpdf'
+                    ? 'https://api.unpdf.dev'
+                    : selectedProviderId === 'mineru'
+                      ? 'http://localhost:8080'
+                      : 'http://localhost:8000'
+                }
+                value={providerConfig?.baseUrl || ''}
                 onChange={(e) =>
-                  setPDFProviderConfig(selectedProviderId, { customPrompt: e.target.value })
+                  setPDFProviderConfig(selectedProviderId, { baseUrl: e.target.value })
                 }
                 className="text-sm"
               />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleTestConnection}
+                disabled={testStatus === 'testing' || !hasBaseUrl}
+                className="gap-1.5 shrink-0"
+              >
+                {testStatus === 'testing' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <Zap className="h-3.5 w-3.5" />
+                    {t('settings.testConnection')}
+                  </>
+                )}
+              </Button>
             </div>
-          )}
+          </div>
 
-          {/* Test result message */}
-          {testMessage && (
-            <div
-              className={cn(
-                'rounded-lg p-3 text-sm',
-                testStatus === 'success' &&
-                  'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800',
-                testStatus === 'error' &&
-                  'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-800',
-              )}
-            >
-              <div className="flex items-center gap-2">
-                {testStatus === 'success' && <CheckCircle2 className="h-4 w-4 shrink-0" />}
-                {testStatus === 'error' && <XCircle className="h-4 w-4 shrink-0" />}
-                <span className="break-all">{testMessage}</span>
-              </div>
+          <div className="space-y-2">
+            <Label className="text-sm">
+              {t('settings.pdfApiKey')}
+              <span className="text-muted-foreground ml-1 font-normal">
+                {pdfProvider.requiresApiKey ? '' : `(${t('settings.optional')})`}
+              </span>
+            </Label>
+            <div className="relative">
+              <Input
+                name={`pdf-api-key-${selectedProviderId}`}
+                type={showApiKey ? 'text' : 'password'}
+                autoComplete="new-password"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                placeholder={
+                  isServerConfigured
+                    ? t('settings.optionalOverride')
+                    : pdfProvider.requiresApiKey
+                      ? t('settings.enterApiKey')
+                      : t('settings.optional')
+                }
+                value={providerConfig?.apiKey || ''}
+                onChange={(e) =>
+                  setPDFProviderConfig(selectedProviderId, {
+                    apiKey: e.target.value,
+                  })
+                }
+                className="font-mono text-sm pr-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+              >
+                {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
             </div>
-          )}
+          </div>
+        </div>
 
-          {/* Request URL Preview */}
-          {(() => {
-            const effectiveBaseUrl = providerConfig?.baseUrl || '';
-            if (!effectiveBaseUrl) return null;
-            const fullUrl = effectiveBaseUrl + '/file_parse';
-            return (
-              <p className="text-xs text-muted-foreground break-all">
-                {t('settings.requestUrl')}: {fullUrl}
-              </p>
-            );
-          })()}
-        </>
-      )}
+        {/* Custom OCR prompt (for WiseOCR) */}
+        {selectedProviderId === 'wiseocr' && (
+          <div className="space-y-2 mt-2">
+            <Label className="text-sm">
+              {t('settings.wiseocrCustomPrompt')}
+              <span className="text-muted-foreground ml-1 font-normal">
+                ({t('settings.optional')})
+              </span>
+            </Label>
+            <Input
+              name={`pdf-custom-prompt-${selectedProviderId}`}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder="自定义 OCR 提示词（不传则使用内置默认值）"
+              value={providerConfig?.customPrompt || ''}
+              onChange={(e) =>
+                setPDFProviderConfig(selectedProviderId, { customPrompt: e.target.value })
+              }
+              className="text-sm"
+            />
+          </div>
+        )}
+
+        {/* Test result message */}
+        {testMessage && (
+          <div
+            className={cn(
+              'rounded-lg p-3 text-sm',
+              testStatus === 'success' &&
+                'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/30 dark:text-green-300 dark:border-green-800',
+              testStatus === 'error' &&
+                'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/30 dark:text-red-300 dark:border-red-800',
+            )}
+          >
+            <div className="flex items-center gap-2">
+              {testStatus === 'success' && <CheckCircle2 className="h-4 w-4 shrink-0" />}
+              {testStatus === 'error' && <XCircle className="h-4 w-4 shrink-0" />}
+              <span className="break-all">{testMessage}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Request URL Preview - show different endpoints based on provider */}
+        {(() => {
+          const effectiveBaseUrl = providerConfig?.baseUrl || '';
+          if (!effectiveBaseUrl) return null;
+          let fullUrl = effectiveBaseUrl;
+          if (selectedProviderId === 'mineru' || selectedProviderId === 'wiseocr') {
+            fullUrl = effectiveBaseUrl.replace(/\/$/, '') + '/file_parse';
+          } else if (selectedProviderId === 'unpdf') {
+            fullUrl = effectiveBaseUrl.replace(/\/$/, '') + '/v1/convert';
+          }
+          return (
+            <p className="text-xs text-muted-foreground break-all">
+              {t('settings.requestUrl')}: {fullUrl}
+            </p>
+          );
+        })()}
+      </>
 
       {/* Features List */}
       <div className="space-y-2">

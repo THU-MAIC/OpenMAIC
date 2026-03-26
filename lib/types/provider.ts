@@ -15,7 +15,9 @@ export type BuiltInProviderId =
   | 'minimax'
   | 'glm'
   | 'siliconflow'
-  | 'doubao';
+  | 'doubao'
+  | 'ollama'
+  | 'llama-cpp';
 
 /**
  * Provider ID (built-in or custom)
