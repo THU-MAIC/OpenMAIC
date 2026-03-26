@@ -214,15 +214,25 @@ export class ActionEngine {
 
     useCanvasStore.getState().playVideo(action.elementId);
 
-    // Wait until the video finishes playing
+    // Wait until the video finishes playing, with a safety timeout to prevent
+    // the playback engine from hanging indefinitely if the video element is
+    // invalid or the state change is missed.
     return new Promise<void>((resolve) => {
+      const MAX_VIDEO_WAIT_MS = 5 * 60 * 1000; // 5 minutes
+      const timeout = setTimeout(() => {
+        unsubscribe();
+        log.warn(`[playVideo] Timeout waiting for video ${action.elementId} to finish`);
+        resolve();
+      }, MAX_VIDEO_WAIT_MS);
       const unsubscribe = useCanvasStore.subscribe((state) => {
         if (state.playingVideoElementId !== action.elementId) {
+          clearTimeout(timeout);
           unsubscribe();
           resolve();
         }
       });
       if (useCanvasStore.getState().playingVideoElementId !== action.elementId) {
+        clearTimeout(timeout);
         unsubscribe();
         resolve();
       }
