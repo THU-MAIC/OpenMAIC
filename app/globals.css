@@ -147,6 +147,35 @@
   }
 }
 
+/* Breathing bars for presentation speech bubbles */
+@keyframes breathing-bar-1 {
+  0%,
+  100% {
+    height: 20%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+@keyframes breathing-bar-2 {
+  0%,
+  100% {
+    height: 40%;
+  }
+  50% {
+    height: 100%;
+  }
+}
+@keyframes breathing-bar-3 {
+  0%,
+  100% {
+    height: 20%;
+  }
+  50% {
+    height: 80%;
+  }
+}
+
 /* Hide scrollbar by default, show on hover */
 @utility scrollbar-hide {
   &::-webkit-scrollbar {

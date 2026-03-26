@@ -312,7 +312,10 @@ export function PresentationBubbleCard({
           if (buttonState === 'play') {
             return (
               <div
-                onClick={onClick}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClick?.();
+                }}
                 className="absolute right-2.5 bottom-2.5 z-20 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300 cursor-pointer"
               >
                 <Play className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
@@ -323,7 +326,10 @@ export function PresentationBubbleCard({
           if (buttonState === 'restart') {
             return (
               <div
-                onClick={onClick}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onClick?.();
+                }}
                 className="absolute right-2.5 bottom-2.5 z-20 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300 cursor-pointer"
               >
                 <Repeat className="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400" />
@@ -334,8 +340,11 @@ export function PresentationBubbleCard({
           // buttonState === 'bars'
           return (
             <div
-              onClick={onClick}
-              className="absolute right-2.5 bottom-2.5 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300 cursor-pointer"
+              onClick={(e) => {
+                e.stopPropagation();
+                onClick?.();
+              }}
+              className="absolute right-2.5 bottom-2.5 z-20 p-1.5 rounded-full bg-white/40 dark:bg-gray-800/40 backdrop-blur-sm group-hover/bubble:bg-purple-100 dark:group-hover/bubble:bg-purple-900/50 transition-all duration-300 cursor-pointer"
             >
               {isPaused ? (
                 <Play className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400 group-hover/bubble:text-purple-600 dark:group-hover/bubble:text-purple-400 ml-0.5" />
@@ -343,20 +352,17 @@ export function PresentationBubbleCard({
                 <>
                   {/* Breathing bars — visible by default, hidden on hover */}
                   <div className="flex gap-0.5 items-end justify-center h-3.5 w-3.5 group-hover/bubble:hidden">
-                    <motion.div
-                      animate={{ height: ['20%', '100%', '20%'] }}
-                      transition={{ repeat: Infinity, duration: 0.6 }}
+                    <div
                       className={cn('w-1 rounded-full', barsColor)}
+                      style={{ animation: 'breathing-bar-1 0.6s ease-in-out infinite' }}
                     />
-                    <motion.div
-                      animate={{ height: ['40%', '100%', '40%'] }}
-                      transition={{ repeat: Infinity, duration: 0.4 }}
+                    <div
                       className={cn('w-1 rounded-full', barsColor)}
+                      style={{ animation: 'breathing-bar-2 0.4s ease-in-out infinite' }}
                     />
-                    <motion.div
-                      animate={{ height: ['20%', '80%', '20%'] }}
-                      transition={{ repeat: Infinity, duration: 0.5 }}
+                    <div
                       className={cn('w-1 rounded-full', barsColor)}
+                      style={{ animation: 'breathing-bar-3 0.5s ease-in-out infinite' }}
                     />
                   </div>
                   {/* Pause icon on hover */}
