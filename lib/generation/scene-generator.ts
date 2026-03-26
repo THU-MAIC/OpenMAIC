@@ -23,6 +23,7 @@ import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { generatePBLContent } from '@/lib/pbl/generate-pbl';
 import { buildPrompt, PROMPT_IDS } from './prompts';
+import { getGenerationLanguageSpec } from './language';
 import { postProcessInteractiveHtml } from './interactive-post-processor';
 import { parseActionsFromStructuredOutput } from './action-parser';
 import { parseJsonResponse } from './json-repair';
@@ -468,9 +469,10 @@ async function generateSlideContent(
   agents?: AgentInfo[],
 ): Promise<GeneratedSlideContent | null> {
   const lang = outline.language || 'zh-CN';
+  const languageSpec = getGenerationLanguageSpec(lang);
 
   // Build assigned images description for the prompt
-  let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
+  let assignedImagesText = languageSpec.noImagesForSlideText;
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
@@ -539,7 +541,7 @@ async function generateSlideContent(
     title: outline.title,
     description: outline.description,
     keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
-    elements: '（根据要点自动生成）',
+    elements: languageSpec.autoGenerateElementsText,
     assignedImages: assignedImagesText,
     canvas_width: canvasWidth,
     canvas_height: canvasHeight,
@@ -735,7 +737,7 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  language: 'zh-CN' | 'en-US' = 'zh-CN',
+  language: SceneOutline['language'] = 'zh-CN',
 ): Promise<GeneratedInteractiveContent | null> {
   const config = outline.interactiveConfig!;
 
@@ -1035,13 +1037,15 @@ export async function generateSceneActions(
 /**
  * Generate default PBL Actions (fallback)
  */
-function generateDefaultPBLActions(_outline: SceneOutline): Action[] {
+function generateDefaultPBLActions(outline: SceneOutline): Action[] {
+  const languageSpec = getGenerationLanguageSpec(outline.language);
+
   return [
     {
       id: `action_${nanoid(8)}`,
       type: 'speech',
-      title: 'PBL 项目介绍',
-      text: '现在让我们开始一个项目式学习活动。请选择你的角色，查看任务看板，开始协作完成项目。',
+      title: languageSpec.pblIntroTitle,
+      text: languageSpec.pblIntroText,
     },
   ];
 }
@@ -1140,6 +1144,7 @@ function processActions(actions: Action[], elements: PPTElement[], agents?: Agen
  * Generate default slide Actions (fallback)
  */
 function generateDefaultSlideActions(outline: SceneOutline, elements: PPTElement[]): Action[] {
+  const languageSpec = getGenerationLanguageSpec(outline.language);
   const actions: Action[] = [];
 
   // Add spotlight for text elements
@@ -1148,19 +1153,20 @@ function generateDefaultSlideActions(outline: SceneOutline, elements: PPTElement
     actions.push({
       id: `action_${nanoid(8)}`,
       type: 'spotlight',
-      title: '聚焦重点',
+      title: languageSpec.slideFocusTitle,
       elementId: textElements[0].id,
     });
   }
 
   // Add opening speech based on key points
+  const joiner = languageSpec.code === 'zh-CN' ? '。' : '. ';
   const speechText = outline.keyPoints?.length
-    ? outline.keyPoints.join('。') + '。'
-    : outline.description || outline.title;
+    ? `${outline.keyPoints.join(joiner)}${languageSpec.code === 'zh-CN' ? '。' : '.'}`
+    : outline.description || outline.title || languageSpec.slideSpeechFallback;
   actions.push({
     id: `action_${nanoid(8)}`,
     type: 'speech',
-    title: '场景讲解',
+    title: languageSpec.slideSpeechTitle,
     text: speechText,
   });
 
@@ -1170,13 +1176,15 @@ function generateDefaultSlideActions(outline: SceneOutline, elements: PPTElement
 /**
  * Generate default quiz Actions (fallback)
  */
-function generateDefaultQuizActions(_outline: SceneOutline): Action[] {
+function generateDefaultQuizActions(outline: SceneOutline): Action[] {
+  const languageSpec = getGenerationLanguageSpec(outline.language);
+
   return [
     {
       id: `action_${nanoid(8)}`,
       type: 'speech',
-      title: '测验引导',
-      text: '现在让我们来做一个小测验，检验一下学习成果。',
+      title: languageSpec.quizGuideTitle,
+      text: languageSpec.quizGuideText,
     },
   ];
 }
@@ -1184,13 +1192,15 @@ function generateDefaultQuizActions(_outline: SceneOutline): Action[] {
 /**
  * Generate default interactive Actions (fallback)
  */
-function generateDefaultInteractiveActions(_outline: SceneOutline): Action[] {
+function generateDefaultInteractiveActions(outline: SceneOutline): Action[] {
+  const languageSpec = getGenerationLanguageSpec(outline.language);
+
   return [
     {
       id: `action_${nanoid(8)}`,
       type: 'speech',
-      title: '交互引导',
-      text: '现在让我们通过交互式可视化来探索这个概念。请尝试操作页面中的元素，观察变化。',
+      title: languageSpec.interactiveGuideTitle,
+      text: languageSpec.interactiveGuideText,
     },
   ];
 }

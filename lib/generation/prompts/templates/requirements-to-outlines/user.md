@@ -14,7 +14,7 @@ Please generate scene outlines based on the following course requirements.
 
 **Required language**: {{language}}
 
-(If language is zh-CN, all content must be in Chinese; if en-US, all content must be in English)
+All content must be in the required language above. Do not switch to another language.
 
 ---
 

@@ -3,6 +3,7 @@
  */
 
 import type { PdfImage } from '@/lib/types/generation';
+import { getGenerationLanguageSpec } from './language';
 import type { AgentInfo, SceneGenerationContext } from './pipeline-types';
 
 /** Build a course context string for injection into action prompts */
@@ -76,15 +77,23 @@ export function formatTeacherPersonaForPrompt(agents?: AgentInfo[]): string {
  * Includes dimension/aspect-ratio info when available.
  */
 export function formatImageDescription(img: PdfImage, language: string): string {
+  const spec = getGenerationLanguageSpec(language);
   let dimInfo = '';
   if (img.width && img.height) {
     const ratio = (img.width / img.height).toFixed(2);
-    dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
+    dimInfo =
+      spec.code === 'zh-CN'
+        ? ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`
+        : ` | dimensions: ${img.width}×${img.height} (aspect ratio ${ratio})`;
   }
   const desc = img.description ? ` | ${img.description}` : '';
-  return language === 'zh-CN'
-    ? `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`
-    : `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
+  if (spec.code === 'zh-CN') {
+    return `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`;
+  }
+  if (spec.code === 'ru-RU') {
+    return `- **${img.id}**: из PDF, страница ${img.pageNumber}${dimInfo}${desc}`;
+  }
+  return `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
 }
 
 /**
@@ -92,14 +101,22 @@ export function formatImageDescription(img: PdfImage, language: string): string 
  * Only ID + page + dimensions + aspect ratio (no description), since the model can see the actual image.
  */
 export function formatImagePlaceholder(img: PdfImage, language: string): string {
+  const spec = getGenerationLanguageSpec(language);
   let dimInfo = '';
   if (img.width && img.height) {
     const ratio = (img.width / img.height).toFixed(2);
-    dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
+    dimInfo =
+      spec.code === 'zh-CN'
+        ? ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`
+        : ` | dimensions: ${img.width}×${img.height} (aspect ratio ${ratio})`;
   }
-  return language === 'zh-CN'
-    ? `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`
-    : `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
+  if (spec.code === 'zh-CN') {
+    return `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`;
+  }
+  if (spec.code === 'ru-RU') {
+    return `- **${img.id}**: изображение со страницы ${img.pageNumber} PDF${dimInfo} [см. вложение]`;
+  }
+  return `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
 }
 
 /**
@@ -121,7 +138,7 @@ export function buildVisionUserContent(
       let dimInfo = '';
       if (img.width && img.height) {
         const ratio = (img.width / img.height).toFixed(2);
-        dimInfo = ` (${img.width}×${img.height}, 宽高比${ratio})`;
+        dimInfo = ` (${img.width}×${img.height}, aspect ratio ${ratio})`;
       }
       parts.push({ type: 'text', text: `\n**${img.id}**${dimInfo}:` });
       // Strip data URI prefix — AI SDK only accepts http(s) URLs or raw base64
