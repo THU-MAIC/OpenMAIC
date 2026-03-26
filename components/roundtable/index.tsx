@@ -14,9 +14,9 @@ import {
   Repeat,
   BookOpen,
   Loader2,
+  Volume2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { AudioIndicator } from './audio-indicator';
 import type { AudioIndicatorState } from './audio-indicator';
 import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
 import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
@@ -180,6 +180,7 @@ export function Roundtable({
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
   const ttsEnabled = useSettingsStore((state) => state.ttsEnabled);
   const asrEnabled = useSettingsStore((state) => state.asrEnabled);
+  const chatAreaWidth = useSettingsStore((s) => s.chatAreaWidth);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
   const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);
   const autoPlayLecture = useSettingsStore((s) => s.autoPlayLecture);
@@ -211,6 +212,7 @@ export function Roundtable({
   // Stable ref object for the current discussion agent's avatar
   const discussionAnchorRef = useRef<HTMLDivElement>(null);
   const presentationActionAnchorRef = useRef<HTMLDivElement>(null);
+  const presentationAgentAvatarRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!discussionRequest) {
       discussionAnchorRef.current = null;
@@ -320,41 +322,6 @@ export function Roundtable({
     prevStreamingRef.current = !!isStreaming;
   }, [isStreaming, isSendCooldown]);
 
-  // Spacebar shortcut: toggle discussion buffer-level pause/resume
-  // Much easier than clicking the small bubble during fast text streaming
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Skip when user is typing in an input, textarea, or contentEditable
-      const tag = (e.target as HTMLElement).tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) {
-        return;
-      }
-      if (e.code !== 'Space') return;
-
-      // Only handle during live flow (QA/Discussion)
-      if (!isInLiveFlow) return;
-
-      e.preventDefault(); // Prevent page scroll
-
-      if (isDiscussionPaused) {
-        onDiscussionResume?.();
-      } else if (!thinkingState && currentSpeech) {
-        // Same guard as bubble click: don't pause during thinking or before text arrives
-        onDiscussionPause?.();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [
-    isInLiveFlow,
-    isDiscussionPaused,
-    thinkingState,
-    currentSpeech,
-    onDiscussionPause,
-    onDiscussionResume,
-  ]);
-
   // Separate participants by role (teacherParticipant & studentParticipants declared earlier for effect)
   const userParticipant = initialParticipants.find((p) => p.role === 'user');
 
@@ -426,6 +393,76 @@ export function Roundtable({
       startRecording();
     }
   };
+
+  // Keyboard shortcuts for roundtable interaction (#255)
+  // T = toggle text input, V = toggle voice input, Escape = dismiss panels,
+  // Space = discussion pause/resume (during live flow)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Escape should always work, even when typing in an input
+      if (e.key === 'Escape') {
+        if (isInputOpen || isVoiceOpen) {
+          e.preventDefault();
+          e.stopPropagation(); // Prevent fullscreen exit when panels are open
+          setIsInputOpen(false);
+          setIsVoiceOpen(false);
+          if (isRecording || isProcessing) cancelRecording();
+        }
+        return;
+      }
+
+      // Skip other shortcuts when user is typing in an input, textarea, or contentEditable
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement).isContentEditable) {
+        return;
+      }
+
+      switch (e.key) {
+        case ' ':
+        case 'Spacebar':
+          // Only handle during live flow (QA/Discussion)
+          if (!isInLiveFlow) return;
+          e.preventDefault(); // Prevent page scroll
+          if (isDiscussionPaused) {
+            onDiscussionResume?.();
+          } else if (!thinkingState && currentSpeech) {
+            // Same guard as bubble click: don't pause during thinking or before text arrives
+            onDiscussionPause?.();
+          }
+          break;
+
+        case 't':
+        case 'T':
+          e.preventDefault();
+          handleToggleInput();
+          break;
+
+        case 'v':
+        case 'V':
+          e.preventDefault();
+          if (asrEnabled) handleToggleVoice();
+          break;
+
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isInLiveFlow,
+    isDiscussionPaused,
+    thinkingState,
+    currentSpeech,
+    onDiscussionPause,
+    onDiscussionResume,
+    asrEnabled,
+    isInputOpen,
+    isVoiceOpen,
+    isRecording,
+    isProcessing,
+  ]);
 
   const isPresentationInteractionActive = isInputOpen || isVoiceOpen || isRecording || isProcessing;
 
@@ -542,6 +579,32 @@ export function Roundtable({
   const presentationDiscussionAgentConfig = discussionRequest
     ? getAgentConfig(discussionRequest.agentId || '')
     : null;
+
+  const handlePresentationBubbleClick = useCallback(() => {
+    if (isTopicPending) {
+      onResumeTopic?.();
+      return;
+    }
+    if (isInLiveFlow) {
+      if (isDiscussionPaused) {
+        onDiscussionResume?.();
+      } else if (!thinkingState && currentSpeech) {
+        onDiscussionPause?.();
+      }
+      return;
+    }
+    onPlayPause?.();
+  }, [
+    isTopicPending,
+    isInLiveFlow,
+    isDiscussionPaused,
+    thinkingState,
+    currentSpeech,
+    onResumeTopic,
+    onDiscussionResume,
+    onDiscussionPause,
+    onPlayPause,
+  ]);
   const showPresentationDock =
     !!controlsVisible ||
     !!discussionRequest ||
@@ -598,6 +661,10 @@ export function Roundtable({
           speakingAgentId={speakingAgentId ?? null}
           isTopicPending={!!isTopicPending}
           side="left"
+          onBubbleClick={handlePresentationBubbleClick}
+          audioIndicatorState={audioIndicatorState ?? 'idle'}
+          buttonState={enrichedPlaybackView?.buttonState}
+          isPaused={isDiscussionPaused || engineMode === 'paused'}
         />
 
         {/* Click-outside backdrop to dismiss input/voice */}
@@ -615,13 +682,12 @@ export function Roundtable({
         {/* ── Toolbar — pinned to bottom of screen ── */}
         <div
           className={cn(
-            'fixed bottom-0 inset-x-0 z-[40] pointer-events-auto flex items-center justify-center transition-all duration-300',
-            controlsVisible
-              ? 'opacity-100 translate-y-0'
-              : 'opacity-0 translate-y-2 pointer-events-none',
+            'fixed bottom-0 left-0 z-[40] pointer-events-none flex items-center justify-center transition-all duration-300',
+            controlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2',
           )}
+          style={{ right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }}
         >
-          <div className="mb-3 px-2 py-1 rounded-full bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-gray-200/60 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)]">
+          <div className="mb-3 px-2 py-1 rounded-full bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-gray-200/60 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] pointer-events-auto">
             {toolbar}
           </div>
         </div>
@@ -641,7 +707,10 @@ export function Roundtable({
                 times: [0, 0.15, 0.7, 1],
                 ease: 'easeOut',
               }}
-              className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[50] bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur-md text-gray-700 dark:text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none"
+              className="fixed bottom-20 -translate-x-1/2 z-[50] bg-gray-100/80 dark:bg-gray-800/80 backdrop-blur-md text-gray-700 dark:text-white px-3.5 py-1.5 rounded-full text-xs font-medium pointer-events-none"
+              style={{
+                left: `calc((100vw - ${chatCollapsed === false ? (chatAreaWidth ?? 320) : 0}px) / 2)`,
+              }}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block mr-1.5" />
               {endFlashSessionType === 'discussion'
@@ -652,7 +721,10 @@ export function Roundtable({
         </AnimatePresence>
 
         {/* ── Center stack: input / voice / thinking — anchored above toolbar ── */}
-        <div className="fixed bottom-14 left-1/2 -translate-x-1/2 z-[50] flex flex-col items-center gap-3 pointer-events-none">
+        <div
+          className="fixed bottom-14 left-0 z-[50] flex flex-col items-center justify-center gap-3 pointer-events-none transition-[right] duration-300"
+          style={{ right: chatCollapsed === false ? (chatAreaWidth ?? 320) : 0 }}
+        >
           {/* Input panel */}
           <AnimatePresence>
             {isInputOpen && (
@@ -789,7 +861,10 @@ export function Roundtable({
         </div>
 
         {/* ── Right-side stack: bubble + dock — flex column, no hardcoded px ── */}
-        <div className="fixed right-5 bottom-5 z-[48] flex flex-col items-end gap-3 pointer-events-none">
+        <div
+          className="fixed bottom-5 z-[48] flex flex-col items-end gap-3 pointer-events-none transition-[right] duration-300"
+          style={{ right: chatCollapsed ? 20 : 20 + (chatAreaWidth ?? 320) }}
+        >
           {/* Right-side speech bubble (flows above dock via flex) */}
           <PresentationSpeechOverlay
             playbackView={enrichedPlaybackView}
@@ -798,6 +873,10 @@ export function Roundtable({
             isTopicPending={!!isTopicPending}
             userAvatar={userAvatar}
             side="right"
+            onBubbleClick={handlePresentationBubbleClick}
+            audioIndicatorState={audioIndicatorState ?? 'idle'}
+            buttonState={enrichedPlaybackView?.buttonState}
+            isPaused={isDiscussionPaused || engineMode === 'paused'}
           />
 
           {/* Dock */}
@@ -821,6 +900,7 @@ export function Roundtable({
                     {((activeRole === 'agent' && speakingStudent) ||
                       presentationDiscussionParticipant) && (
                       <motion.div
+                        ref={presentationAgentAvatarRef}
                         key={`dock-agent-${(speakingStudent || presentationDiscussionParticipant)?.id}`}
                         initial={{ opacity: 0, scale: 0.8, width: 0 }}
                         animate={{ opacity: 1, scale: 1, width: 'auto' }}
@@ -944,7 +1024,7 @@ export function Roundtable({
                     <ProactiveCard
                       action={discussionRequest}
                       mode={engineMode === 'paused' ? 'paused' : 'playback'}
-                      anchorRef={presentationActionAnchorRef}
+                      anchorRef={presentationAgentAvatarRef}
                       portalContainer={fullscreenContainerRef?.current}
                       align="left"
                       agentName={
@@ -1484,7 +1564,7 @@ export function Roundtable({
                         onPlayPause?.();
                       }}
                       className={cn(
-                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border max-w-[65%] min-w-[200px] group/bubble flex flex-col max-h-[110px]',
+                        'relative px-4 pt-2 pb-3 rounded-2xl text-[15px] leading-relaxed transition-all border w-[min(420px,calc(100%-3rem))] group/bubble flex flex-col max-h-[110px]',
                         bubbleRole === 'teacher' ? 'pl-4 pr-10' : 'pl-4 pr-10',
                         bubbleRole === 'user'
                           ? 'bg-purple-600/95 dark:bg-purple-500/95 backdrop-blur-sm border-purple-400/40 dark:border-purple-300/40 text-white rounded-br-sm shadow-md shadow-purple-300/30 dark:shadow-purple-800/30'
@@ -1536,21 +1616,21 @@ export function Roundtable({
                             <span className="text-[10px] font-semibold text-gray-400 dark:text-gray-500 truncate">
                               {bubbleName}
                             </span>
-                            <AudioIndicator
-                              state={
+                            {(() => {
+                              const aiState =
                                 speakingAgentId === audioAgentId
                                   ? (audioIndicatorState ?? 'idle')
-                                  : 'idle'
-                              }
-                              agentColor={
-                                bubbleRole === 'agent'
-                                  ? (useAgentRegistry.getState().getAgent(speakingAgentId || '')
-                                      ?.color ?? undefined)
-                                  : (useAgentRegistry
-                                      .getState()
-                                      .getAgent(teacherParticipant?.id || '')?.color ?? undefined)
-                              }
-                            />
+                                  : 'idle';
+                              if (aiState === 'generating')
+                                return (
+                                  <Loader2 className="w-3 h-3 text-amber-500 dark:text-amber-400 animate-spin" />
+                                );
+                              if (aiState === 'playing')
+                                return (
+                                  <Volume2 className="w-3 h-3 text-gray-400 dark:text-gray-500" />
+                                );
+                              return null;
+                            })()}
                           </div>
                         )}
                         {isBubbleLoading ? (
