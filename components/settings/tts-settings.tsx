@@ -44,6 +44,23 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const [testMessage, setTestMessage] = useState('');
   const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
 
+  // Doubao TTS uses compound "appId:accessKey" — split for separate UI fields
+  const isDoubao = selectedProviderId === 'doubao-tts';
+  const rawApiKey = ttsProvidersConfig[selectedProviderId]?.apiKey || '';
+  const doubaoColonIdx = rawApiKey.indexOf(':');
+  const doubaoAppId = isDoubao && doubaoColonIdx > 0 ? rawApiKey.slice(0, doubaoColonIdx) : '';
+  const doubaoAccessKey =
+    isDoubao && doubaoColonIdx > 0
+      ? rawApiKey.slice(doubaoColonIdx + 1)
+      : isDoubao
+        ? rawApiKey
+        : '';
+
+  const setDoubaoCompoundKey = (appId: string, accessKey: string) => {
+    const combined = appId && accessKey ? `${appId}:${accessKey}` : appId || accessKey;
+    setTTSProviderConfig(selectedProviderId, { apiKey: combined });
+  };
+
   // Update test text when language changes
   useEffect(() => {
     setTestText(t('settings.ttsTestTextDefault'));
@@ -97,37 +114,93 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       {/* API Key & Base URL */}
       {(ttsProvider.requiresApiKey || isServerConfigured) && (
         <>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
-              <div className="relative">
-                <Input
-                  name={`tts-api-key-${selectedProviderId}`}
-                  type={showApiKey ? 'text' : 'password'}
-                  autoComplete="new-password"
-                  autoCapitalize="none"
-                  autoCorrect="off"
-                  spellCheck={false}
-                  placeholder={
-                    isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
-                  }
-                  value={ttsProvidersConfig[selectedProviderId]?.apiKey || ''}
-                  onChange={(e) =>
-                    setTTSProviderConfig(selectedProviderId, {
-                      apiKey: e.target.value,
-                    })
-                  }
-                  className="font-mono text-sm pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+          <div className={cn('grid gap-4', isDoubao ? 'grid-cols-3' : 'grid-cols-2')}>
+            {isDoubao ? (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-sm">App ID</Label>
+                  <div className="relative">
+                    <Input
+                      name={`tts-app-id-${selectedProviderId}`}
+                      type={showApiKey ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder={
+                        isServerConfigured
+                          ? t('settings.optionalOverride')
+                          : t('settings.enterApiKey')
+                      }
+                      value={doubaoAppId}
+                      onChange={(e) => setDoubaoCompoundKey(e.target.value, doubaoAccessKey)}
+                      className="font-mono text-sm pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">Access Key</Label>
+                  <div className="relative">
+                    <Input
+                      name={`tts-access-key-${selectedProviderId}`}
+                      type={showApiKey ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder={
+                        isServerConfigured
+                          ? t('settings.optionalOverride')
+                          : t('settings.enterApiKey')
+                      }
+                      value={doubaoAccessKey}
+                      onChange={(e) => setDoubaoCompoundKey(doubaoAppId, e.target.value)}
+                      className="font-mono text-sm"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
+                <div className="relative">
+                  <Input
+                    name={`tts-api-key-${selectedProviderId}`}
+                    type={showApiKey ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder={
+                      isServerConfigured
+                        ? t('settings.optionalOverride')
+                        : t('settings.enterApiKey')
+                    }
+                    value={ttsProvidersConfig[selectedProviderId]?.apiKey || ''}
+                    onChange={(e) =>
+                      setTTSProviderConfig(selectedProviderId, {
+                        apiKey: e.target.value,
+                      })
+                    }
+                    className="font-mono text-sm pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
               <Input
@@ -166,6 +239,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                 break;
               case 'elevenlabs-tts':
                 endpointPath = '/text-to-speech';
+                break;
+              case 'doubao-tts':
+                endpointPath = '/unidirectional';
                 break;
             }
             if (!endpointPath) return null;
