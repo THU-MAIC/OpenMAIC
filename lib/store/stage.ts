@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Stage, Scene, StageMode } from '@/lib/types/stage';
+import type { AssessmentContext } from '@/lib/types/assessment';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -59,6 +60,9 @@ interface StageState {
   // Persisted outlines for resume-on-refresh
   outlines: SceneOutline[];
 
+  // Latest quiz-derived learning signal for downstream orchestration
+  latestAssessmentContext: AssessmentContext | null;
+
   // Transient generation tracking (not persisted)
   generationEpoch: number;
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
@@ -77,6 +81,7 @@ interface StageState {
   setToolbarState: (state: ToolbarState) => void;
   setGeneratingOutlines: (outlines: SceneOutline[]) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
+  setLatestAssessmentContext: (context: AssessmentContext | null) => void;
   setGenerationStatus: (status: 'idle' | 'generating' | 'paused' | 'completed' | 'error') => void;
   setCurrentGeneratingOrder: (order: number) => void;
   bumpGenerationEpoch: () => void;
@@ -105,6 +110,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   toolbarState: 'ai',
   generatingOutlines: [],
   outlines: [],
+  latestAssessmentContext: null,
   generationEpoch: 0,
   generationStatus: 'idle' as const,
   currentGeneratingOrder: -1,
@@ -117,6 +123,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       scenes: [],
       currentSceneId: null,
       chats: [],
+      latestAssessmentContext: null,
       generationEpoch: s.generationEpoch + 1,
     }));
     debouncedSave();
@@ -211,6 +218,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     }
   },
 
+  setLatestAssessmentContext: (latestAssessmentContext) => set({ latestAssessmentContext }),
+
   setGenerationStatus: (generationStatus) => set({ generationStatus }),
 
   setCurrentGeneratingOrder: (currentGeneratingOrder) => set({ currentGeneratingOrder }),
@@ -282,8 +291,10 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
       // Load outlines for resume-on-refresh
       const { db } = await import('@/lib/utils/database');
+      const { getLatestAssessmentContextForStage } = await import('@/lib/utils/assessment-storage');
       const outlinesRecord = await db.stageOutlines.get(stageId);
       const outlines = outlinesRecord?.outlines || [];
+      const latestAssessmentContext = await getLatestAssessmentContextForStage(stageId);
 
       if (data) {
         set({
@@ -292,6 +303,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           currentSceneId: data.currentSceneId,
           chats: data.chats,
           outlines,
+          latestAssessmentContext,
           // Compute generatingOutlines from persisted outlines minus completed scenes
           generatingOutlines: outlines.filter((o) => !data.scenes.some((s) => s.order === o.order)),
         });
@@ -312,6 +324,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       currentSceneId: null,
       chats: [],
       outlines: [],
+      latestAssessmentContext: null,
       generationEpoch: s.generationEpoch + 1,
       generationStatus: 'idle' as const,
       currentGeneratingOrder: -1,
