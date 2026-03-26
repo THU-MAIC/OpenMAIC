@@ -150,7 +150,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
 
       {/* API Key + Test inline */}
       <div className="space-y-2">
-        <Label>API Key</Label>
+        <Label>{t('settings.apiKey')}</Label>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Input
@@ -213,7 +213,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
 
       {/* Base URL */}
       <div className="space-y-2">
-        <Label>Base URL</Label>
+        <Label>{t('settings.apiHost')}</Label>
         <Input
           name={`image-base-url-${selectedProviderId}`}
           type="url"

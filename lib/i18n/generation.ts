@@ -65,6 +65,68 @@ export const generationZhCN = {
   },
 } as const;
 
+export const generationRuRU = {
+  classroom: {
+    recentClassrooms: 'Недавние classroom',
+    today: 'Сегодня',
+    yesterday: 'Вчера',
+    daysAgo: 'дн. назад',
+    slides: 'слайдов',
+    nameCopied: 'Название скопировано',
+    deleteConfirmTitle: 'Удалить',
+    delete: 'Удалить',
+  },
+  upload: {
+    pdfSizeLimit: 'Поддерживаются PDF до 50MB',
+    generateFailed: 'Не удалось сгенерировать classroom, попробуй ещё раз',
+    requirementPlaceholder:
+      'Напиши, чему хочешь научиться, например:\n"Изучи Python с нуля за 30 минут"\n"Объясни преобразование Фурье на доске"\n"Как играть в Авалон"',
+    requirementRequired: 'Введите требования к курсу',
+    fileTooLarge: 'Файл слишком большой. Выбери PDF меньше 50MB',
+  },
+  generation: {
+    analyzingPdf: 'Анализ PDF',
+    analyzingPdfDesc: 'Извлекаю структуру и содержание документа...',
+    generatingOutlines: 'Создание структуры курса',
+    generatingOutlinesDesc: 'Собираю маршрут обучения...',
+    generatingSlideContent: 'Генерация контента страниц',
+    generatingSlideContentDesc: 'Создаю слайды, квизы и интерактивный контент...',
+    generatingActions: 'Генерация учебных действий',
+    generatingActionsDesc: 'Собираю объяснения, акценты и взаимодействия...',
+    generationComplete: 'Готово!',
+    generationFailed: 'Генерация не удалась',
+    generatingCourse: 'Генерирую курс',
+    openingClassroom: 'Открываю classroom...',
+    outlineReady: 'Структура курса готова',
+    generatingFirstPage: 'Генерирую первую страницу...',
+    firstPageReady: 'Первая страница готова, открываю classroom...',
+    speechFailed: 'Не удалось сгенерировать речь',
+    retryScene: 'Повторить',
+    retryingScene: 'Перегенерирую...',
+    backToHome: 'На главную',
+    sessionNotFound: 'Сессия не найдена',
+    sessionNotFoundDesc: 'Сначала введи требования к курсу, чтобы запустить генерацию.',
+    goBackAndRetry: 'Назад и повторить',
+    classroomReady: 'Твоя персональная AI-среда обучения успешно создана.',
+    aiWorking: 'AI-агенты работают...',
+    textTruncated: 'Текст документа длинный, использую первые {n} символов для генерации',
+    imageTruncated:
+      'Найдено {total} изображений, это больше лимита {max}. Лишние будут переданы только как текстовые описания',
+    agentGeneration: 'Создание ролей classroom',
+    agentGenerationDesc: 'Генерирую роли по содержанию курса...',
+    agentRevealTitle: 'Роли в твоём classroom',
+    viewAgents: 'Смотреть роли',
+    continue: 'Продолжить',
+    outlineRetrying: 'Проблема с генерацией структуры, пробую снова...',
+    outlineEmptyResponse:
+      'Модель не вернула валидную структуру. Проверь конфигурацию модели и попробуй снова',
+    outlineGenerateFailed: 'Не удалось сгенерировать структуру, попробуй позже',
+    webSearching: 'Поиск в сети',
+    webSearchingDesc: 'Ищу актуальную информацию в интернете',
+    webSearchFailed: 'Сбой веб-поиска',
+  },
+} as const;
+
 export const generationEnUS = {
   classroom: {
     recentClassrooms: 'Recent',

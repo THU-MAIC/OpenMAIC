@@ -45,6 +45,7 @@ import type {
   GenerationCallbacks,
 } from './pipeline-types';
 import { createLogger } from '@/lib/logger';
+import type { SupportedGenerationLanguage } from '@/lib/generation/language';
 const log = createLogger('Generation');
 
 // ==================== Stage 2: Full Scenes (Two-Step) ====================
@@ -735,7 +736,7 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  language: 'zh-CN' | 'en-US' = 'zh-CN',
+  language: SupportedGenerationLanguage = 'zh-CN',
 ): Promise<GeneratedInteractiveContent | null> {
   const config = outline.interactiveConfig!;
 

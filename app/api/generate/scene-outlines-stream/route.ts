@@ -37,6 +37,16 @@ const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
 
+function getLocalizedEmpty(language: string, kind: 'images' | 'content' | 'research'): string {
+  if (language === 'zh-CN') {
+    return kind === 'images' ? '无可用图片' : '无';
+  }
+  if (language === 'ru-RU') {
+    return kind === 'images' ? 'Нет доступных изображений' : 'Нет';
+  }
+  return kind === 'images' ? 'No images available' : 'None';
+}
+
 /**
  * Incremental JSON array parser.
  * Extracts complete top-level objects from a partially-streamed JSON array.
@@ -120,8 +130,7 @@ export async function POST(req: NextRequest) {
     const hasVision = !!modelInfo?.capabilities?.vision;
 
     // Build prompt (same logic as generateSceneOutlinesFromRequirements)
-    let availableImagesText =
-      requirements.language === 'zh-CN' ? '无可用图片' : 'No images available';
+    let availableImagesText = getLocalizedEmpty(requirements.language, 'images');
     let visionImages: Array<{ id: string; src: string }> | undefined;
 
     if (pdfImages && pdfImages.length > 0) {
@@ -177,11 +186,9 @@ export async function POST(req: NextRequest) {
       language: requirements.language,
       pdfContent: pdfText
         ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-        : requirements.language === 'zh-CN'
-          ? '无'
-          : 'None',
+        : getLocalizedEmpty(requirements.language, 'content'),
       availableImages: availableImagesText,
-      researchContext: researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+      researchContext: researchContext || getLocalizedEmpty(requirements.language, 'research'),
       mediaGenerationPolicy,
       teacherContext,
     });
