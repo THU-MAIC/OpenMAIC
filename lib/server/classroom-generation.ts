@@ -13,8 +13,12 @@ import {
 } from '@/lib/generation/scene-generator';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
+import type { PersistedAgent } from '@/lib/server/classroom-storage';
 import { formatTeacherPersonaForPrompt } from '@/lib/generation/prompt-formatters';
-import { getDefaultAgents } from '@/lib/orchestration/registry/store';
+import {
+  getDefaultAgents,
+  getDefaultAgentsForPersistence,
+} from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { parseModelString } from '@/lib/ai/providers';
 import { resolveApiKey, resolveWebSearchApiKey } from '@/lib/server/provider-config';
@@ -108,11 +112,37 @@ function stripCodeFences(text: string): string {
   return cleaned.trim();
 }
 
+const AVATAR_POOL = [
+  '/avatars/teacher.png',
+  '/avatars/assist.png',
+  '/avatars/curious.png',
+  '/avatars/thinker.png',
+  '/avatars/note-taker.png',
+  '/avatars/teacher-2.png',
+  '/avatars/assist-2.png',
+  '/avatars/curious-2.png',
+  '/avatars/thinker-2.png',
+  '/avatars/note-taker-2.png',
+];
+
+const COLOR_PALETTE = [
+  '#3b82f6',
+  '#10b981',
+  '#f59e0b',
+  '#ec4899',
+  '#06b6d4',
+  '#8b5cf6',
+  '#f97316',
+  '#14b8a6',
+  '#e11d48',
+  '#6366f1',
+];
+
 async function generateAgentProfiles(
   requirement: string,
   language: string,
   aiCall: AICallFn,
-): Promise<AgentInfo[]> {
+): Promise<PersistedAgent[]> {
   const systemPrompt =
     'You are an expert instructional designer. Generate agent profiles for a multi-agent classroom simulation. Return ONLY valid JSON, no markdown or explanation.';
 
@@ -122,8 +152,13 @@ ${requirement}
 Requirements:
 - Decide the appropriate number of agents based on the course content (typically 3-5)
 - Exactly 1 agent must have role "teacher", the rest can be "assistant" or "student"
+- Priority values: teacher=10 (highest), assistant=7, student=4-6
 - Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
 - Names and personas must be in language: ${language}
+- Each agent must be assigned one avatar from this list: ${JSON.stringify(AVATAR_POOL)}
+  - Try to use different avatars for each agent
+- Each agent must be assigned one color from this list: ${JSON.stringify(COLOR_PALETTE)}
+  - Each agent must have a different color
 
 Return a JSON object with this exact structure:
 {
@@ -131,7 +166,10 @@ Return a JSON object with this exact structure:
     {
       "name": "string",
       "role": "teacher" | "assistant" | "student",
-      "persona": "string (2-3 sentences)"
+      "persona": "string (2-3 sentences)",
+      "avatar": "string (from available list)",
+      "color": "string (hex color from palette)",
+      "priority": number (10 for teacher, 7 for assistant, 4-6 for student)
     }
   ]
 }`;
@@ -139,7 +177,14 @@ Return a JSON object with this exact structure:
   const response = await aiCall(systemPrompt, userPrompt);
   const rawText = stripCodeFences(response);
   const parsed = JSON.parse(rawText) as {
-    agents: Array<{ name: string; role: string; persona: string }>;
+    agents: Array<{
+      name: string;
+      role: string;
+      persona: string;
+      avatar?: string;
+      color?: string;
+      priority?: number;
+    }>;
   };
 
   if (!parsed.agents || !Array.isArray(parsed.agents) || parsed.agents.length < 2) {
@@ -156,6 +201,9 @@ Return a JSON object with this exact structure:
     name: a.name,
     role: a.role,
     persona: a.persona,
+    avatar: a.avatar || AVATAR_POOL[i % AVATAR_POOL.length],
+    color: a.color || COLOR_PALETTE[i % COLOR_PALETTE.length],
+    priority: a.priority ?? (a.role === 'teacher' ? 10 : a.role === 'assistant' ? 7 : 5),
   }));
 }
 
@@ -212,18 +260,23 @@ export async function generateClassroom(
 
   // Resolve agents based on agentMode
   let agents: AgentInfo[];
+  let persistedAgents: PersistedAgent[] | undefined;
   const agentMode = input.agentMode || 'default';
   if (agentMode === 'generate') {
     log.info('Generating custom agent profiles via LLM...');
     try {
-      agents = await generateAgentProfiles(requirement, lang, aiCall);
-      log.info(`Generated ${agents.length} agent profiles`);
+      const fullAgents = await generateAgentProfiles(requirement, lang, aiCall);
+      log.info(`Generated ${fullAgents.length} agent profiles`);
+      persistedAgents = fullAgents;
+      agents = fullAgents;
     } catch (e) {
       log.warn('Agent profile generation failed, falling back to defaults:', e);
       agents = getDefaultAgents();
+      persistedAgents = getDefaultAgentsForPersistence();
     }
   } else {
     agents = getDefaultAgents();
+    persistedAgents = getDefaultAgentsForPersistence();
   }
   const teacherContext = formatTeacherPersonaForPrompt(agents);
 
@@ -412,6 +465,7 @@ export async function generateClassroom(
       id: stageId,
       stage,
       scenes,
+      agents: persistedAgents,
     },
     options.baseUrl,
   );

@@ -44,13 +44,25 @@ export default function ClassroomDetailPage() {
           if (res.ok) {
             const json = await res.json();
             if (json.success && json.classroom) {
-              const { stage, scenes } = json.classroom;
+              const { stage, scenes, agents } = json.classroom;
               useStageStore.getState().setStage(stage);
               useStageStore.setState({
                 scenes,
                 currentSceneId: scenes[0]?.id ?? null,
               });
               log.info('Loaded from server-side storage:', classroomId);
+
+              // Register server-persisted agents into the agent registry
+              if (agents && agents.length > 0) {
+                const { registerPersistedAgents } =
+                  await import('@/lib/orchestration/registry/store');
+                const agentIds = registerPersistedAgents(classroomId, agents);
+                if (agentIds.length > 0) {
+                  const { useSettingsStore } = await import('@/lib/store/settings');
+                  useSettingsStore.getState().setSelectedAgentIds(agentIds);
+                }
+                log.info(`Registered ${agentIds.length} server-persisted agents`);
+              }
             }
           }
         } catch (fetchErr) {

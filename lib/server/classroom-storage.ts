@@ -3,6 +3,17 @@ import path from 'path';
 import type { NextRequest } from 'next/server';
 import type { Scene, Stage } from '@/lib/types/stage';
 
+/** Agent profile persisted alongside a classroom */
+export interface PersistedAgent {
+  id: string;
+  name: string;
+  role: string;
+  persona: string;
+  avatar: string;
+  color: string;
+  priority: number;
+}
+
 export const CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
 export const CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
 
@@ -38,6 +49,7 @@ export interface PersistedClassroomData {
   id: string;
   stage: Stage;
   scenes: Scene[];
+  agents?: PersistedAgent[];
   createdAt: string;
 }
 
@@ -63,6 +75,7 @@ export async function persistClassroom(
     id: string;
     stage: Stage;
     scenes: Scene[];
+    agents?: PersistedAgent[];
   },
   baseUrl: string,
 ): Promise<PersistedClassroomData & { url: string }> {
@@ -70,6 +83,7 @@ export async function persistClassroom(
     id: data.id,
     stage: data.stage,
     scenes: data.scenes,
+    ...(data.agents && data.agents.length > 0 ? { agents: data.agents } : {}),
     createdAt: new Date().toISOString(),
   };
 

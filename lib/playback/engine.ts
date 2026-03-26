@@ -494,14 +494,12 @@ export class PlaybackEngine {
           .play(speechAction.audioId || '', speechAction.audioUrl)
           .then((audioStarted) => {
             if (!audioStarted) {
-              // No pre-generated audio — try browser-native TTS if selected
+              // No pre-generated audio — try browser-native TTS as fallback
               const settings = useSettingsStore.getState();
-              if (
-                settings.ttsEnabled &&
-                settings.ttsProviderId === 'browser-native-tts' &&
-                typeof window !== 'undefined' &&
-                window.speechSynthesis
-              ) {
+              const browserTTSExplicit =
+                settings.ttsEnabled && settings.ttsProviderId === 'browser-native-tts';
+              const browserTTSAvailable = typeof window !== 'undefined' && !!window.speechSynthesis;
+              if ((browserTTSExplicit || !speechAction.audioUrl) && browserTTSAvailable) {
                 this.playBrowserTTS(speechAction);
               } else {
                 scheduleReadingTimer();
