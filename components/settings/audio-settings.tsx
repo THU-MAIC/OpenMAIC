@@ -25,6 +25,10 @@ import { Volume2, Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide
 import { cn } from '@/lib/utils';
 import azureVoicesData from '@/lib/audio/azure.json';
 import { createLogger } from '@/lib/logger';
+import {
+  getSupportedAudioMimeType,
+  getAudioFileExtension,
+} from '@/lib/audio/media-recorder-utils';
 
 const log = createLogger('AudioSettings');
 
@@ -302,7 +306,8 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
           const stream = await navigator.mediaDevices.getUserMedia({
             audio: true,
           });
-          const mediaRecorder = new MediaRecorder(stream);
+          const mimeType = getSupportedAudioMimeType();
+          const mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
           mediaRecorderRef.current = mediaRecorder;
 
           const audioChunks: Blob[] = [];
@@ -313,9 +318,9 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
           mediaRecorder.onstop = async () => {
             stream.getTracks().forEach((track) => track.stop());
 
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const audioBlob = new Blob(audioChunks, { type: mimeType || 'audio/webm' });
             const formData = new FormData();
-            formData.append('audio', audioBlob, 'recording.webm');
+            formData.append('audio', audioBlob, `recording.${getAudioFileExtension(audioBlob.type)}`);
             formData.append('providerId', asrProviderId);
             formData.append('language', asrLanguage);
 
