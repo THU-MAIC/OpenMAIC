@@ -147,32 +147,32 @@
   }
 }
 
-/* Breathing bars for presentation speech bubbles */
+/* Breathing bars for presentation speech bubbles (parent is h-3.5 = 14px) */
 @keyframes breathing-bar-1 {
   0%,
   100% {
-    height: 20%;
+    height: 3px;
   }
   50% {
-    height: 100%;
+    height: 14px;
   }
 }
 @keyframes breathing-bar-2 {
   0%,
   100% {
-    height: 40%;
+    height: 6px;
   }
   50% {
-    height: 100%;
+    height: 14px;
   }
 }
 @keyframes breathing-bar-3 {
   0%,
   100% {
-    height: 20%;
+    height: 3px;
   }
   50% {
-    height: 80%;
+    height: 11px;
   }
 }
 
