@@ -965,6 +965,18 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                   onConfigChange={(apiKey, baseUrl, requiresApiKey) =>
                     handleProviderConfigChange(selectedProviderId, apiKey, baseUrl, requiresApiKey)
                   }
+                  onReplaceModels={(models) => {
+                    const nextModels = models.map((m) => ({
+                      id: m.id,
+                      name: m.name,
+                      capabilities: {
+                        streaming: true,
+                        tools: true,
+                        vision: false,
+                      },
+                    }));
+                    setProviderConfig(selectedProviderId, { models: nextModels });
+                  }}
                   onSave={handleProviderConfigSave}
                   onEditModel={(index) => handleEditModel(selectedProviderId, index)}
                   onDeleteModel={(index) => handleDeleteModel(selectedProviderId, index)}
