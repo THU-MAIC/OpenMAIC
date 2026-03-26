@@ -502,9 +502,7 @@ export class ActionEngine {
     if (elementCount === 0) return;
 
     // Save snapshot before AI clear (mirrors UI handleClear in index.tsx)
-    useWhiteboardHistoryStore
-      .getState()
-      .pushSnapshot(wb.data.elements!, getClientTranslation('whiteboard.beforeAIClear'));
+    useWhiteboardHistoryStore.getState().pushSnapshot(wb.data.elements!);
 
     // Trigger cascade exit animation
     useCanvasStore.getState().setWhiteboardClearing(true);

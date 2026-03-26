@@ -166,4 +166,40 @@ providers:
       expect(resolveWebSearchApiKey()).toBe('tvly-bare-env');
     });
   });
+
+  describe('baseUrl-only providers (e.g. mineru)', () => {
+    it('includes PDF provider from YAML when only baseUrl is configured (no apiKey)', async () => {
+      yamlOverride = `
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+`;
+      const { getServerPDFProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers.mineru).toBeDefined();
+      expect(providers.mineru.baseUrl).toBe('http://localhost:8888');
+    });
+
+    it('includes provider from env when only BASE_URL is set (no API_KEY)', async () => {
+      vi.stubEnv('PDF_MINERU_BASE_URL', 'http://localhost:8888');
+      const { getServerPDFProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers.mineru).toBeDefined();
+      expect(providers.mineru.baseUrl).toBe('http://localhost:8888');
+    });
+
+    it('excludes PDF provider when only apiKey is configured (no baseUrl)', async () => {
+      yamlOverride = `
+pdf:
+  mineru:
+    apiKey: sk-fake
+`;
+      const { getServerPDFProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers.mineru).toBeUndefined();
+    });
+  });
 });

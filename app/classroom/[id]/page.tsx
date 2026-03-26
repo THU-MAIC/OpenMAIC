@@ -60,12 +60,32 @@ export default function ClassroomDetailPage() {
 
       // Restore completed media generation tasks from IndexedDB
       await useMediaGenerationStore.getState().restoreFromDB(classroomId);
-      // Restore generated agents for this stage
-      const { loadGeneratedAgentsForStage } = await import('@/lib/orchestration/registry/store');
-      const agentIds = await loadGeneratedAgentsForStage(classroomId);
-      if (agentIds.length > 0) {
-        const { useSettingsStore } = await import('@/lib/store/settings');
-        useSettingsStore.getState().setSelectedAgentIds(agentIds);
+      // Restore agents for this stage
+      const { loadGeneratedAgentsForStage, useAgentRegistry } =
+        await import('@/lib/orchestration/registry/store');
+      const generatedAgentIds = await loadGeneratedAgentsForStage(classroomId);
+      const { useSettingsStore } = await import('@/lib/store/settings');
+      if (generatedAgentIds.length > 0) {
+        // Auto mode — use generated agents from IndexedDB
+        useSettingsStore.getState().setAgentMode('auto');
+        useSettingsStore.getState().setSelectedAgentIds(generatedAgentIds);
+      } else {
+        // Preset mode — restore agent IDs saved in the stage at creation time.
+        // Filter out any stale generated IDs that may have been persisted before
+        // the bleed-fix, so they don't resolve against a leftover registry entry.
+        const stage = useStageStore.getState().stage;
+        const stageAgentIds = stage?.agentIds;
+        const registry = useAgentRegistry.getState();
+        const cleanIds = stageAgentIds?.filter((id) => {
+          const a = registry.getAgent(id);
+          return a && !a.isGenerated;
+        });
+        useSettingsStore.getState().setAgentMode('preset');
+        useSettingsStore
+          .getState()
+          .setSelectedAgentIds(
+            cleanIds && cleanIds.length > 0 ? cleanIds : ['default-1', 'default-2', 'default-3'],
+          );
       }
     } catch (error) {
       log.error('Failed to load classroom:', error);
