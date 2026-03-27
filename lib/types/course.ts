@@ -4,12 +4,20 @@ export interface CourseChapterContext {
   courseId: string;
   chapterId: string;
   stageId: string | null;
+  createdAt: number;
 }
 
 export interface ClassroomMeta {
   name: string;
   sceneCount: number;
   published: boolean;
+}
+
+/** Updates accepted by the updateChapter API. null means "clear the field". */
+export interface ChapterUpdates {
+  title?: string;
+  description?: string | null;
+  classroomId?: string | null;
 }
 
 export interface CourseChapter {

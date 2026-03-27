@@ -39,7 +39,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
       // Single batch fetch instead of N per-classroom requests
       const res = await fetch('/api/classroom');
       if (!res.ok) return;
-      const { classrooms } = await res.json() as { classrooms: Array<{ id: string; name?: string; scenes?: unknown[] }> };
+      const { classrooms } = await res.json() as { classrooms: Array<{ id: string; name?: string; sceneCount: number }> };
       const idSet = new Set(classroomIds);
       setClassroomMeta(
         Object.fromEntries(
@@ -47,7 +47,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
             .filter((c) => idSet.has(c.id))
             .map((c): [string, ClassroomMeta] => [
               c.id,
-              { name: c.name || c.id, sceneCount: (c.scenes?.length ?? 0), published: true },
+              { name: c.name || c.id, sceneCount: c.sceneCount ?? 0, published: true },
             ]),
         ),
       );
@@ -88,7 +88,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
   };
 
   const handleUnbind = async (chapterId: string) => {
-    await updateChapter(courseId, chapterId, { classroomId: undefined });
+    await updateChapter(courseId, chapterId, { classroomId: null });
   };
 
   const handleBind = (chapterId: string) => {
@@ -104,7 +104,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
   const handleCreateAndBind = (chapterId: string) => {
     sessionStorage.setItem(
       COURSE_CHAPTER_CONTEXT_KEY,
-      JSON.stringify({ courseId, chapterId, stageId: null } satisfies CourseChapterContext),
+      JSON.stringify({ courseId, chapterId, stageId: null, createdAt: Date.now() } satisfies CourseChapterContext),
     );
     router.push('/');
   };

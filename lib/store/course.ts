@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Course, CourseChapter, CourseFormData, CourseListItem } from '@/lib/types/course';
+import type { Course, CourseChapter, ChapterUpdates, CourseFormData, CourseListItem } from '@/lib/types/course';
 import { nanoid } from 'nanoid';
 
 interface CourseState {
@@ -12,7 +12,7 @@ interface CourseState {
   updateCourse: (id: string, data: Partial<CourseFormData>) => Promise<void>;
   deleteCourse: (id: string) => Promise<void>;
   addChapter: (courseId: string, title: string, description?: string) => Promise<void>;
-  updateChapter: (courseId: string, chapterId: string, updates: Partial<CourseChapter>) => Promise<void>;
+  updateChapter: (courseId: string, chapterId: string, updates: ChapterUpdates) => Promise<void>;
   removeChapter: (courseId: string, chapterId: string) => Promise<void>;
   reorderChapters: (courseId: string, chapterIds: string[]) => Promise<void>;
 }

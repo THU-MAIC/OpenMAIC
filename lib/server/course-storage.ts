@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { nanoid } from 'nanoid';
-import type { Course, CourseChapter, CourseListItem } from '@/lib/types/course';
+import type { Course, CourseChapter, ChapterUpdates, CourseListItem } from '@/lib/types/course';
 import { PROJECT_ROOT, writeJsonFileAtomic } from './classroom-storage';
 import { withCourseLock } from './course-lock';
 
@@ -113,14 +113,28 @@ export async function addChapter(
 export async function updateChapter(
   courseId: string,
   chapterId: string,
-  updates: Partial<Pick<CourseChapter, 'title' | 'description' | 'classroomId'>>,
+  updates: ChapterUpdates,
 ): Promise<void> {
   await withCourseLock(courseId, async () => {
     const course = await readCourse(courseId);
     if (!course) throw new Error('Course not found');
     const chapter = course.chapters.find((c) => c.id === chapterId);
     if (!chapter) throw new Error('Chapter not found');
-    Object.assign(chapter, updates);
+    if (updates.title !== undefined) chapter.title = updates.title;
+    if ('description' in updates) {
+      if (updates.description === null || updates.description === undefined) {
+        delete chapter.description;
+      } else {
+        chapter.description = updates.description;
+      }
+    }
+    if ('classroomId' in updates) {
+      if (updates.classroomId === null || updates.classroomId === undefined) {
+        delete chapter.classroomId;
+      } else {
+        chapter.classroomId = updates.classroomId;
+      }
+    }
     course.updatedAt = new Date().toISOString();
     await persistCourse(course);
   });

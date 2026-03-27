@@ -331,15 +331,14 @@ function HomePage() {
         currentStep: 'generating' as const,
       };
       sessionStorage.setItem('generationSession', JSON.stringify(sessionState));
-      // If there is a stale context (stageId already set from a prior generation),
-      // remove it so this new generation starts fresh without an accidental chapter binding.
+      // Clear stale chapter binding context: if stageId is set (prior generation ran) OR
+      // if it's older than 5 minutes (user abandoned the "create & bind" flow without generating).
       try {
         const ctxStr = sessionStorage.getItem(COURSE_CHAPTER_CONTEXT_KEY);
         if (ctxStr) {
           const ctx = JSON.parse(ctxStr) as CourseChapterContext;
-          if (ctx.stageId !== null) {
-            sessionStorage.removeItem(COURSE_CHAPTER_CONTEXT_KEY);
-          }
+          const stale = ctx.stageId !== null || Date.now() - (ctx.createdAt ?? 0) > 5 * 60 * 1000;
+          if (stale) sessionStorage.removeItem(COURSE_CHAPTER_CONTEXT_KEY);
         }
       } catch {
         sessionStorage.removeItem(COURSE_CHAPTER_CONTEXT_KEY);

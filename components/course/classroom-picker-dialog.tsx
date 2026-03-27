@@ -23,13 +23,13 @@ export function ClassroomPickerDialog({ usedClassroomIds, onSelect, onClose }: C
   useEffect(() => {
     fetch('/api/classroom')
       .then((r) => r.json())
-      .then((list: Array<{ id: string; name?: string; scenes?: unknown[] }>) => {
-        const items: PublishedClassroom[] = list
+      .then(({ classrooms }: { classrooms: Array<{ id: string; name?: string; sceneCount: number }> }) => {
+        const items: PublishedClassroom[] = classrooms
           .filter((c) => !usedClassroomIds.has(c.id))
           .map((c) => ({
             id: c.id,
             name: c.name || c.id,
-            sceneCount: c.scenes?.length ?? 0,
+            sceneCount: c.sceneCount ?? 0,
           }));
         setClassrooms(items);
       })

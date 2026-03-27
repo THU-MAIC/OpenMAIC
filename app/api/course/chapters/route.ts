@@ -1,5 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server';
 import { addChapter, updateChapter, removeChapter, reorderChapters } from '@/lib/server/course-storage';
+import type { ChapterUpdates } from '@/lib/types/course';
 
 export async function POST(req: NextRequest) {
   try {
@@ -31,10 +32,11 @@ export async function PUT(req: NextRequest) {
     if (!chapterId) {
       return NextResponse.json({ error: 'Missing chapterId' }, { status: 400 });
     }
-    const updates: Parameters<typeof updateChapter>[2] = {};
-    if (title !== undefined) updates.title = title;
-    if (description !== undefined) updates.description = description;
-    if (classroomId !== undefined) updates.classroomId = classroomId;
+    // Build updates; include a key whenever it is explicitly present in body (even if null)
+    const updates: ChapterUpdates = {};
+    if ('title' in body && title !== undefined) updates.title = title;
+    if ('description' in body) updates.description = description ?? null;
+    if ('classroomId' in body) updates.classroomId = classroomId ?? null;
     await updateChapter(courseId, chapterId, updates);
     return NextResponse.json({ success: true });
   } catch (error) {
