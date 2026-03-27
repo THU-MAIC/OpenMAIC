@@ -1,5 +1,6 @@
 import type { CSSProperties } from 'react';
 import type { TableCell, TableCellStyle } from '@/lib/types/slides';
+import { escapeHtml } from '@/lib/utils/sanitize-html';
 
 /**
  * Convert TableCellStyle to CSS properties
@@ -25,10 +26,11 @@ export function getTextStyle(style?: TableCellStyle): CSSProperties {
 }
 
 /**
- * Format text: convert \n to <br/> and spaces to &nbsp;
+ * Format text for safe HTML display: escape HTML entities first,
+ * then convert newlines to <br/> and spaces to &nbsp;.
  */
 export function formatText(text: string): string {
-  return text.replace(/\n/g, '<br/>').replace(/ /g, '&nbsp;');
+  return escapeHtml(text).replace(/\n/g, '<br/>').replace(/ /g, '&nbsp;');
 }
 
 /**

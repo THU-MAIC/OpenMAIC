@@ -21,7 +21,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const id = stage.id || randomUUID();
+    const rawId = stage.id || randomUUID();
+    const id = isValidClassroomId(rawId) ? rawId : randomUUID();
     const baseUrl = buildRequestOrigin(request);
 
     const persisted = await persistClassroom({ id, stage: { ...stage, id }, scenes }, baseUrl);

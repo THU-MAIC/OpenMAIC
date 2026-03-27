@@ -1,8 +1,14 @@
 import { useEffect, type RefObject } from 'react';
 import { useCanvasStore } from '@/lib/store';
+import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
+import { escapeHtml } from '@/lib/utils/sanitize-html';
+import type { PPTTextElement } from '@/lib/types/slides';
+import { nanoid } from 'nanoid';
 
 export function useDrop(elementRef: RefObject<HTMLElement | null>) {
   const disableHotkeys = useCanvasStore.use.disableHotkeys();
+  const canvasScale = useCanvasStore.use.canvasScale();
+  const { addElement } = useCanvasOperations();
 
   useEffect(() => {
     const element = elementRef.current;
@@ -13,9 +19,26 @@ export function useDrop(elementRef: RefObject<HTMLElement | null>) {
 
       const firstItem = e.dataTransfer.items[0];
       if (firstItem && firstItem.kind === 'string' && firstItem.type === 'text/plain') {
-        firstItem.getAsString((_text) => {
-          if (disableHotkeys) return;
-          // TODO: implement createTextElement
+        firstItem.getAsString((text) => {
+          if (disableHotkeys || !text.trim() || !element) return;
+
+          const rect = element.getBoundingClientRect();
+          const left = (e.clientX - rect.left) / canvasScale;
+          const top = (e.clientY - rect.top) / canvasScale;
+
+          const newElement: PPTTextElement = {
+            id: nanoid(10),
+            type: 'text',
+            left,
+            top,
+            width: 300,
+            height: 50,
+            rotate: 0,
+            content: `<p>${escapeHtml(text)}</p>`,
+            defaultFontName: 'Microsoft YaHei',
+            defaultColor: '#333333',
+          };
+          addElement(newElement);
         });
       }
     };
@@ -41,5 +64,5 @@ export function useDrop(elementRef: RefObject<HTMLElement | null>) {
       document.removeEventListener('dragenter', preventDefault);
       document.removeEventListener('dragover', preventDefault);
     };
-  }, [elementRef, disableHotkeys]);
+  }, [elementRef, disableHotkeys, canvasScale, addElement]);
 }

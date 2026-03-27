@@ -32,6 +32,7 @@ import type {
 } from '@/lib/types/action';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
+import { sanitizeHtml, escapeHtml } from '@/lib/utils/sanitize-html';
 
 const log = createLogger('ActionEngine');
 
@@ -287,7 +288,9 @@ export class ActionEngine {
     let htmlContent = action.content ?? '';
     if (!htmlContent) return; // nothing to draw
     if (!htmlContent.startsWith('<')) {
-      htmlContent = `<p style="font-size: ${fontSize}px;">${htmlContent}</p>`;
+      htmlContent = `<p style="font-size: ${fontSize}px;">${escapeHtml(htmlContent)}</p>`;
+    } else {
+      htmlContent = sanitizeHtml(htmlContent);
     }
 
     this.stageAPI.whiteboard.addElement(
