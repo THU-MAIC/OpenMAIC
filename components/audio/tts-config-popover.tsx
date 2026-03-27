@@ -36,6 +36,7 @@ export function TtsConfigPopover() {
   const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
   const setTTSEnabled = useSettingsStore((s) => s.setTTSEnabled);
   const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
+  const ttsModelId = useSettingsStore((s) => s.ttsModelId);
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
@@ -64,6 +65,7 @@ export function TtsConfigPopover() {
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: ttsProviderId,
+        modelId: ttsModelId,
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
@@ -79,6 +81,7 @@ export function TtsConfigPopover() {
     startPreview,
     stopPreview,
     t,
+    ttsModelId,
     ttsProviderId,
     ttsProvidersConfig,
     ttsSpeed,

@@ -137,6 +137,7 @@ export async function generateAndStoreTTS(
       text,
       audioId,
       ttsProviderId: settings.ttsProviderId,
+      ttsModelId: settings.ttsModelId,
       ttsVoice: settings.ttsVoice,
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,

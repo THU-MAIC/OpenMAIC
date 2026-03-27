@@ -214,7 +214,7 @@ async function transcribeOpenAIWhisper(
 
   try {
     const result = await transcribe({
-      model: openai.transcription('gpt-4o-mini-transcribe'),
+      model: openai.transcription(config.modelId || 'gpt-4o-mini-transcribe'),
       audio: audioData,
       providerOptions: {
         openai: {
@@ -256,7 +256,7 @@ async function transcribeQwenASR(
 
   // Build request body
   const requestBody: Record<string, unknown> = {
-    model: 'qwen3-asr-flash',
+    model: config.modelId || 'qwen3-asr-flash',
     input: {
       messages: [
         {
@@ -337,12 +337,14 @@ export async function getCurrentASRConfig(): Promise<ASRModelConfig> {
 
   // Lazy import to avoid circular dependency
   const { useSettingsStore } = await import('@/lib/store/settings');
-  const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
+  const { asrProviderId, asrModelId, asrLanguage, asrProvidersConfig } =
+    useSettingsStore.getState();
 
   const providerConfig = asrProvidersConfig?.[asrProviderId];
 
   return {
     providerId: asrProviderId,
+    modelId: asrModelId,
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
     language: asrLanguage,

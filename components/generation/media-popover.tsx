@@ -132,6 +132,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const setVideoModelId = useSettingsStore((s) => s.setVideoModelId);
 
   const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
+  const ttsModelId = useSettingsStore((s) => s.ttsModelId);
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
@@ -269,6 +270,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: ttsProviderId,
+        modelId: ttsModelId,
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
@@ -284,6 +286,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     startPreview,
     stopPreview,
     t,
+    ttsModelId,
     ttsProviderId,
     ttsProvidersConfig,
     ttsSpeed,

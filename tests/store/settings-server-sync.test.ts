@@ -45,15 +45,59 @@ vi.mock('@/lib/ai/providers', () => ({
 
 vi.mock('@/lib/audio/constants', () => ({
   TTS_PROVIDERS: {
-    'openai-tts': { id: 'openai-tts', requiresApiKey: true },
-    'azure-tts': { id: 'azure-tts', requiresApiKey: true },
-    'browser-native-tts': { id: 'browser-native-tts', requiresApiKey: false },
+    'openai-tts': {
+      id: 'openai-tts',
+      name: 'OpenAI TTS',
+      requiresApiKey: true,
+      supportsModelSelection: true,
+      models: [{ id: 'gpt-4o-mini-tts', name: 'GPT-4o Mini TTS' }],
+      voices: [{ id: 'alloy', name: 'Alloy', language: 'en', gender: 'neutral' }],
+      supportedFormats: ['mp3'],
+    },
+    'azure-tts': {
+      id: 'azure-tts',
+      name: 'Azure TTS',
+      requiresApiKey: true,
+      supportsModelSelection: false,
+      models: [],
+      voices: [{ id: 'zh-CN-XiaoxiaoNeural', name: 'Xiaoxiao', language: 'zh-CN' }],
+      supportedFormats: ['mp3'],
+    },
+    'browser-native-tts': {
+      id: 'browser-native-tts',
+      name: 'Browser Native TTS',
+      requiresApiKey: false,
+      supportsModelSelection: false,
+      models: [],
+      voices: [{ id: 'default', name: 'Default', language: 'en', gender: 'neutral' }],
+      supportedFormats: ['browser'],
+      speedRange: { min: 0.1, max: 10, default: 1 },
+    },
   },
   ASR_PROVIDERS: {
-    'openai-whisper': { id: 'openai-whisper', requiresApiKey: true },
-    'browser-native': { id: 'browser-native', requiresApiKey: false },
+    'openai-whisper': {
+      id: 'openai-whisper',
+      name: 'OpenAI Whisper',
+      requiresApiKey: true,
+      supportsModelSelection: true,
+      models: [{ id: 'gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe' }],
+      supportedLanguages: ['auto', 'zh'],
+      supportedFormats: ['webm'],
+    },
+    'browser-native': {
+      id: 'browser-native',
+      name: 'Browser Native ASR',
+      requiresApiKey: false,
+      supportsModelSelection: false,
+      models: [],
+      supportedLanguages: ['zh'],
+      supportedFormats: ['browser'],
+    },
   },
-  DEFAULT_TTS_VOICES: { 'openai-tts': 'alloy' },
+  DEFAULT_TTS_VOICES: {
+    'openai-tts': 'alloy',
+    'browser-native-tts': 'default',
+  },
 }));
 
 vi.mock('@/lib/audio/types', () => ({}));

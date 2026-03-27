@@ -161,7 +161,7 @@ async function generateOpenAITTS(
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini-tts',
+      model: config.modelId || 'gpt-4o-mini-tts',
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
@@ -233,7 +233,7 @@ async function generateGLMTTS(config: TTSModelConfig, text: string): Promise<TTS
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'glm-tts',
+      model: config.modelId || 'glm-tts',
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
@@ -280,7 +280,7 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'qwen3-tts-flash',
+      model: config.modelId || 'qwen3-tts-flash',
       input: {
         text,
         voice: config.voice,
@@ -383,12 +383,14 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 
   // Lazy import to avoid circular dependency
   const { useSettingsStore } = await import('@/lib/store/settings');
-  const { ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig } = useSettingsStore.getState();
+  const { ttsProviderId, ttsModelId, ttsVoice, ttsSpeed, ttsProvidersConfig } =
+    useSettingsStore.getState();
 
   const providerConfig = ttsProvidersConfig?.[ttsProviderId];
 
   return {
     providerId: ttsProviderId,
+    modelId: ttsModelId,
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
     voice: ttsVoice,

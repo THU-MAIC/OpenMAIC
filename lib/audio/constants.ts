@@ -19,7 +19,9 @@
  * - requiresApiKey: Whether the provider needs an API key
  * - defaultBaseUrl: Default API endpoint (optional)
  * - icon: Path to provider icon (optional)
+ * - supportsModelSelection: Whether selecting a model affects provider behavior
  * - voices: Array of available voices (TTS only)
+ * - models: Available model choices when model selection is supported
  * - supportedFormats: Audio formats supported by the provider
  * - speedRange: Min/max/default speed settings (TTS only)
  * - supportedLanguages: Languages supported by the provider (ASR only)
@@ -46,6 +48,12 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.openai.com/v1',
     icon: '/logos/openai.svg',
+    supportsModelSelection: true,
+    models: [
+      { id: 'gpt-4o-mini-tts', name: 'GPT-4o Mini TTS' },
+      { id: 'tts-1', name: 'TTS-1' },
+      { id: 'tts-1-hd', name: 'TTS-1 HD' },
+    ],
     voices: [
       // Recommended voices (best quality)
       {
@@ -151,6 +159,8 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://{region}.tts.speech.microsoft.com',
     icon: '/logos/azure.svg',
+    supportsModelSelection: false,
+    models: [],
     voices: [
       {
         id: 'zh-CN-XiaoxiaoNeural',
@@ -194,6 +204,8 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://open.bigmodel.cn/api/paas/v4',
     icon: '/logos/glm.svg',
+    supportsModelSelection: true,
+    models: [{ id: 'glm-tts', name: 'GLM TTS' }],
     voices: [
       {
         id: 'tongtong',
@@ -255,6 +267,8 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1',
     icon: '/logos/bailian.svg',
+    supportsModelSelection: true,
+    models: [{ id: 'qwen3-tts-flash', name: 'Qwen3 TTS Flash' }],
     voices: [
       // Standard Mandarin voices
       {
@@ -612,6 +626,8 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.elevenlabs.io/v1',
     icon: '/logos/elevenlabs.svg',
+    supportsModelSelection: true,
+    models: [{ id: 'eleven_multilingual_v2', name: 'Eleven Multilingual v2' }],
     // Free-tier-safe fallback set; account-specific/custom voices should come from /v2/voices dynamically later.
     voices: [
       {
@@ -673,6 +689,8 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     name: '浏览器原生 (Web Speech API)',
     requiresApiKey: false,
     icon: '/logos/browser.svg',
+    supportsModelSelection: false,
+    models: [],
     voices: [
       // Note: Actual voices are determined by the browser and OS
       // These are placeholder - real voices are fetched dynamically via speechSynthesis.getVoices()
@@ -696,6 +714,12 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.openai.com/v1',
     icon: '/logos/openai.svg',
+    supportsModelSelection: true,
+    models: [
+      { id: 'gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe' },
+      { id: 'gpt-4o-transcribe', name: 'GPT-4o Transcribe' },
+      { id: 'whisper-1', name: 'Whisper-1' },
+    ],
     supportedLanguages: [
       // OpenAI Whisper supports 58 languages (as of official docs)
       // Source: https://platform.openai.com/docs/guides/speech-to-text
@@ -769,6 +793,8 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://dashscope.aliyuncs.com/api/v1',
     icon: '/logos/bailian.svg',
+    supportsModelSelection: true,
+    models: [{ id: 'qwen3-asr-flash', name: 'Qwen3 ASR Flash' }],
     supportedLanguages: [
       // Qwen ASR supports 27 languages + auto-detect
       // If language is uncertain or mixed (e.g. Chinese-English-Japanese-Korean), use "auto" (do not specify language parameter)
@@ -811,6 +837,8 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
     name: '浏览器原生 ASR (Web Speech API)',
     requiresApiKey: false,
     icon: '/logos/browser.svg',
+    supportsModelSelection: false,
+    models: [],
     supportedLanguages: [
       // Chinese variants
       'zh-CN', // Mandarin (Simplified, China)
