@@ -105,6 +105,9 @@ export interface TTSGenerationResult {
 /**
  * Thrown when a TTS provider returns a rate-limit / concurrency-quota error.
  * Allows downstream consumers to distinguish rate-limit errors from other TTS failures.
+ *
+ * TODO: The API route currently catches all errors uniformly as GENERATION_FAILED.
+ * This class enables future retry/backoff logic without changing the throw sites.
  */
 export class TTSRateLimitError extends Error {
   constructor(
@@ -481,12 +484,7 @@ async function generateDoubaoTTS(
         start = -1;
 
         if (chunk.code === 0 && chunk.data) {
-          const binary = atob(chunk.data);
-          const bytes = new Uint8Array(binary.length);
-          for (let j = 0; j < binary.length; j++) {
-            bytes[j] = binary.charCodeAt(j);
-          }
-          audioChunks.push(bytes);
+          audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
         } else if (chunk.code === 20000000) {
           break;
         } else if (chunk.code && chunk.code !== 0) {

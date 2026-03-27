@@ -701,7 +701,7 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
         gender: 'female',
       },
     ],
-    supportedFormats: ['mp3', 'ogg_opus', 'pcm'],
+    supportedFormats: ['mp3'],
     speedRange: { min: 0.5, max: 2.0, default: 1.0 },
   },
 

@@ -118,7 +118,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             {isDoubao ? (
               <>
                 <div className="space-y-2">
-                  <Label className="text-sm">App ID</Label>
+                  <Label className="text-sm">{t('settings.doubaoAppId')}</Label>
                   <div className="relative">
                     <Input
                       name={`tts-app-id-${selectedProviderId}`}
@@ -146,7 +146,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-sm">Access Key</Label>
+                  <Label className="text-sm">{t('settings.doubaoAccessKey')}</Label>
                   <div className="relative">
                     <Input
                       name={`tts-access-key-${selectedProviderId}`}
@@ -162,8 +162,15 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                       }
                       value={doubaoAccessKey}
                       onChange={(e) => setDoubaoCompoundKey(doubaoAppId, e.target.value)}
-                      className="font-mono text-sm"
+                      className="font-mono text-sm pr-10"
                     />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
                   </div>
                 </div>
               </>
