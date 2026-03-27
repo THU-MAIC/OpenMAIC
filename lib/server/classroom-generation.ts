@@ -19,6 +19,7 @@ import { createLogger } from '@/lib/logger';
 import { parseModelString } from '@/lib/ai/providers';
 import { resolveApiKey, resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
 import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
@@ -203,6 +204,21 @@ export async function generateClassroom(
     return result.text;
   };
 
+  const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
+    const result = await callLLM(
+      {
+        model: languageModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        maxOutputTokens: 256,
+      },
+      'web-search-query-rewrite',
+    );
+    return result.text;
+  };
+
   const lang = normalizeLanguage(input.language);
   const requirements: UserRequirements = {
     requirement,
@@ -240,8 +256,19 @@ export async function generateClassroom(
     const tavilyKey = resolveWebSearchApiKey();
     if (tavilyKey) {
       try {
-        log.info('Running web search for requirement context...');
-        const searchResult = await searchWithTavily({ query: requirement, apiKey: tavilyKey });
+        const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
+
+        log.info('Running web search for classroom generation', {
+          hasPdfContext: searchQuery.hasPdfContext,
+          rawRequirementLength: searchQuery.rawRequirementLength,
+          rewriteAttempted: searchQuery.rewriteAttempted,
+          finalQueryLength: searchQuery.finalQueryLength,
+        });
+
+        const searchResult = await searchWithTavily({
+          query: searchQuery.query,
+          apiKey: tavilyKey,
+        });
         researchContext = formatSearchResultsAsContext(searchResult);
         if (researchContext) {
           log.info(`Web search returned ${searchResult.sources.length} sources`);
