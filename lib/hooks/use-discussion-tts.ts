@@ -164,16 +164,22 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       audio.volume = ttsMuted ? 0 : ttsVolume;
       audioRef.current = audio;
       audio.addEventListener('ended', () => {
+        audioRef.current = null;
         isPlayingRef.current = false;
         segmentDoneCounterRef.current++;
         onAudioStateChangeRef.current?.(item.agentId, 'idle');
-        queueMicrotask(() => processQueueRef.current());
+        if (!pausedRef.current) {
+          queueMicrotask(() => processQueueRef.current());
+        }
       });
       audio.addEventListener('error', () => {
+        audioRef.current = null;
         isPlayingRef.current = false;
         segmentDoneCounterRef.current++;
         onAudioStateChangeRef.current?.(item.agentId, 'idle');
-        queueMicrotask(() => processQueueRef.current());
+        if (!pausedRef.current) {
+          queueMicrotask(() => processQueueRef.current());
+        }
       });
 
       // If paused during TTS generation, keep audio ready but don't play
@@ -189,10 +195,13 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       if ((err as Error).name !== 'AbortError') {
         console.error('[DiscussionTTS] TTS generation failed:', err);
       }
+      audioRef.current = null;
       isPlayingRef.current = false;
       segmentDoneCounterRef.current++;
       onAudioStateChangeRef.current?.(item.agentId, 'idle');
-      queueMicrotask(() => processQueueRef.current());
+      if (!pausedRef.current) {
+        queueMicrotask(() => processQueueRef.current());
+      }
     }
   }, [enabled, ttsMuted, ttsVolume, ttsProvidersConfig, ttsSpeed, playbackSpeed]);
 
