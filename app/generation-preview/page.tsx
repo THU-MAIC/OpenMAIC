@@ -783,6 +783,29 @@ function GenerationPreviewContent() {
         }),
       );
 
+      // Persist classroom to server-side storage for cross-device access
+      const state = store;
+      try {
+        const persistResp = await fetch('/api/classroom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            stage: state.stage,
+            scenes: state.scenes,
+          }),
+        });
+        if (persistResp.ok) {
+          const persistData = await persistResp.json();
+          log.info('[Generation] Classroom persisted to server:', persistData.url);
+        } else {
+          log.warn(
+            '[Generation] Failed to persist classroom to server, continuing with local-only storage',
+          );
+        }
+      } catch (persistErr) {
+        log.warn('[Generation] Error persisting classroom to server:', persistErr);
+      }
+
       sessionStorage.removeItem('generationSession');
       await store.saveToStorage();
       router.push(`/classroom/${stage.id}`);
