@@ -337,10 +337,10 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
             </div>
             <div className="flex justify-end gap-2">
               <Button variant="outline" size="sm" onClick={() => setShowModelDialog(false)}>
-                {t('common.cancel')}
+                {t('settings.cancelEdit')}
               </Button>
               <Button size="sm" onClick={handleSaveModel} disabled={!modelForm.id.trim()}>
-                {t('common.save')}
+                {t('settings.saveModel')}
               </Button>
             </div>
           </div>
