@@ -92,7 +92,7 @@ export async function deleteCourse(id: string): Promise<void> {
 
 export async function addChapter(
   courseId: string,
-  data: { title: string; description?: string },
+  data: { title: string; description?: string | null },
 ): Promise<CourseChapter> {
   return withCourseLock(courseId, async () => {
     const course = await readCourse(courseId);
@@ -100,7 +100,7 @@ export async function addChapter(
     const chapter: CourseChapter = {
       id: nanoid(10),
       title: data.title,
-      description: data.description,
+      ...(data.description ? { description: data.description } : {}),
       order: course.chapters.length,
     };
     course.chapters.push(chapter);
@@ -157,9 +157,15 @@ export async function reorderChapters(courseId: string, chapterIds: string[]): P
     const course = await readCourse(courseId);
     if (!course) throw new Error('Course not found');
     const chapterMap = new Map(course.chapters.map((c) => [c.id, c]));
-    course.chapters = chapterIds
-      .filter((id) => chapterMap.has(id))
-      .map((id, i) => ({ ...chapterMap.get(id)!, order: i }));
+    // Reject if the incoming set doesn't match the current chapter set exactly —
+    // a partial list would silently delete missing chapters.
+    if (
+      chapterIds.length !== chapterMap.size ||
+      chapterIds.some((id) => !chapterMap.has(id))
+    ) {
+      throw new Error('chapterIds must contain exactly the current chapter set');
+    }
+    course.chapters = chapterIds.map((id, i) => ({ ...chapterMap.get(id)!, order: i }));
     course.updatedAt = new Date().toISOString();
     await persistCourse(course);
   });

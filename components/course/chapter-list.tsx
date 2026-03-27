@@ -9,8 +9,8 @@ interface ChapterListProps {
   courseId: string;
   chapters: CourseChapter[];
   classroomMeta: Record<string, ClassroomMeta>;
-  onAdd: (title: string, description?: string) => Promise<void>;
-  onEdit: (chapterId: string, title: string, description?: string) => Promise<void>;
+  onAdd: (title: string, description: string | null) => Promise<void>;
+  onEdit: (chapterId: string, title: string, description: string | null) => Promise<void>;
   onRemove: (chapterId: string) => Promise<void>;
   onMove: (chapterId: string, direction: 'up' | 'down') => Promise<void>;
   onBind: (chapterId: string) => void;
@@ -36,12 +36,12 @@ export function ChapterList({
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
-  const handleAdd = async (title: string, description?: string) => {
+  const handleAdd = async (title: string, description: string | null) => {
     await onAdd(title, description);
     setShowAddForm(false);
   };
 
-  const handleEdit = async (chapterId: string, title: string, description?: string) => {
+  const handleEdit = async (chapterId: string, title: string, description: string | null) => {
     await onEdit(chapterId, title, description);
     setEditingId(null);
   };

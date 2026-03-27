@@ -11,7 +11,7 @@ interface CourseState {
   createCourse: (data: CourseFormData) => Promise<string>;
   updateCourse: (id: string, data: Partial<CourseFormData>) => Promise<void>;
   deleteCourse: (id: string) => Promise<void>;
-  addChapter: (courseId: string, title: string, description?: string) => Promise<void>;
+  addChapter: (courseId: string, title: string, description: string | null) => Promise<void>;
   updateChapter: (courseId: string, chapterId: string, updates: ChapterUpdates) => Promise<void>;
   removeChapter: (courseId: string, chapterId: string) => Promise<void>;
   reorderChapters: (courseId: string, chapterIds: string[]) => Promise<void>;

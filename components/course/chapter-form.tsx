@@ -6,7 +6,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 interface ChapterFormProps {
   initialTitle?: string;
   initialDescription?: string;
-  onSubmit: (title: string, description?: string) => void;
+  onSubmit: (title: string, description: string | null) => void;
   onCancel: () => void;
 }
 
@@ -18,7 +18,7 @@ export function ChapterForm({ initialTitle = '', initialDescription = '', onSubm
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    onSubmit(title.trim(), description.trim() || undefined);
+    onSubmit(title.trim(), description.trim() || null);
   };
 
   return (
