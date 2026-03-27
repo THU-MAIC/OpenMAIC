@@ -137,6 +137,27 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           },
         },
       },
+      {
+        id: 'gpt-4o',
+        name: 'GPT-4o',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'gpt-4o-mini',
+        name: 'GPT-4o-mini',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'gpt-4-turbo',
+        name: 'GPT-4-turbo',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
 
       {
         id: 'o4-mini',
