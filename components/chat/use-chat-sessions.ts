@@ -1444,16 +1444,18 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     if (buf) buf.resume();
   }, []);
 
-  /** Pause the active live (QA/Discussion) buffer and set sticky intent. */
-  const pauseActiveLiveBuffer = useCallback(() => {
+  /** Pause the active live (QA/Discussion) buffer and set sticky intent. Returns true if paused. */
+  const pauseActiveLiveBuffer = useCallback((): boolean => {
     const active = sessionsRef.current.find(
       (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
     );
-    if (!active) return;
-    livePausedRef.current = true;
+    if (!active) return false;
     const buf = buffersRef.current.get(active.id);
-    if (buf) buf.pause();
+    if (!buf || buf.disposed) return false;
+    livePausedRef.current = true;
+    buf.pause();
     log.info('[ChatArea] Buffer-paused discussion:', active.id);
+    return true;
   }, []);
 
   /** Resume the active live (QA/Discussion) buffer and clear sticky intent. */

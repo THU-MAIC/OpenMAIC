@@ -173,30 +173,6 @@ export function Stage({
   const [isDiscussionPaused, setIsDiscussionPaused] = useState(false);
 
   /**
-   * Soft-pause: interrupt current agent stream but keep the session active.
-   * Used when clicking the bubble pause button or opening input during QA/discussion.
-   * Does NOT end the topic — user can continue speaking in the same session.
-   * Preserves liveSpeech (with "..." appended) and speakingAgentId so the
-   * roundtable bubble stays on the interrupted agent's text.
-   */
-  const doSoftPause = useCallback(async () => {
-    await chatAreaRef.current?.softPauseActiveSession();
-    // Append "..." to live speech to show interruption in roundtable bubble.
-    // Only annotate when there's actual text being interrupted — during pure
-    // director-thinking (prev is null, no agent assigned), leave liveSpeech
-    // as-is so no spurious teacher bubble appears.
-    setLiveSpeech((prev) => (prev !== null ? prev + '...' : null));
-    // Keep speakingAgentId — bubble identity is preserved
-    setThinkingState(null);
-    setChatIsStreaming(false);
-    setIsTopicPending(true);
-    setIsDiscussionPaused(false);
-    // Don't clear chatSessionType, speakingAgentId, or liveSpeech
-    // Don't show end flash
-    // Don't call handleEndDiscussion — engine stays in current state
-  }, []);
-
-  /**
    * Resume a soft-paused topic: re-call /chat with existing session messages.
    * The director picks the next agent to continue.
    */
@@ -1047,7 +1023,18 @@ export function Stage({
               thinkingState={thinkingState}
               isCueUser={isCueUser}
               isTopicPending={isTopicPending}
-              onMessageSend={(msg) => {
+              onMessageSend={async (msg) => {
+                // Always clear Level-1 pause state — the closure may hold a stale
+                // isDiscussionPaused value (e.g. voice input's onTranscription callback
+                // captures onMessageSend before React re-renders with the updated state).
+                setIsDiscussionPaused(false);
+                // Clear the sticky livePausedRef so the next agent-loop buffer
+                // starts unpaused. (pauseActiveLiveBuffer sets a ref that new
+                // buffers inherit — must be cleared before sendMessage creates one.)
+                chatAreaRef.current?.resumeActiveLiveBuffer();
+                // Flush any buffered / in-flight TTS audio from the previous
+                // agent turn so it doesn't leak into the next round.
+                discussionTTS.cleanup();
                 // Clear soft-paused state — user is continuing the topic
                 if (isTopicPending) {
                   setIsTopicPending(false);
@@ -1088,10 +1075,17 @@ export function Stage({
                 engineRef.current?.skipDiscussion();
               }}
               onStopDiscussion={handleStopDiscussion}
-              onInputActivate={async () => {
-                // Soft-pause QA/Discussion if streaming (opening input = implicit pause)
-                if (chatIsStreaming) {
-                  await doSoftPause();
+              onInputActivate={() => {
+                // Level-1 pause: freeze buffer tick + TTS audio while SSE keeps buffering.
+                // User resumes manually via Space / pause button after closing the input.
+                // No isDiscussionPaused guard — always attempt to pause the buffer.
+                // The return value ensures UI state stays in sync with buffer state.
+                if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
+                  const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
+                  if (paused) {
+                    discussionTTS.pause();
+                    setIsDiscussionPaused(true);
+                  }
                 }
                 // Also pause playback engine
                 if (engineRef.current && (engineMode === 'playing' || engineMode === 'live')) {
@@ -1102,9 +1096,11 @@ export function Stage({
               onPlayPause={handlePlayPause}
               isDiscussionPaused={isDiscussionPaused}
               onDiscussionPause={() => {
-                chatAreaRef.current?.pauseActiveLiveBuffer();
-                discussionTTS.pause();
-                setIsDiscussionPaused(true);
+                const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
+                if (paused) {
+                  discussionTTS.pause();
+                  setIsDiscussionPaused(true);
+                }
               }}
               onDiscussionResume={() => {
                 chatAreaRef.current?.resumeActiveLiveBuffer();
@@ -1195,7 +1191,10 @@ export function Stage({
           if (!open) cancelSceneSwitch();
         }}
       >
-        <AlertDialogContent className="max-w-sm rounded-2xl p-0 overflow-hidden border-0 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)]">
+        <AlertDialogContent
+          container={isPresenting ? stageRef.current : undefined}
+          className="max-w-sm rounded-2xl p-0 overflow-hidden border-0 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)]"
+        >
           <VisuallyHidden.Root>
             <AlertDialogTitle>{t('stage.confirmSwitchTitle')}</AlertDialogTitle>
           </VisuallyHidden.Root>
