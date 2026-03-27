@@ -46,6 +46,7 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { getSupportedDocumentType, readTextFileContent } from '@/lib/utils/document-upload';
 
 const log = createLogger('Home');
 
@@ -260,19 +261,36 @@ function HomePage() {
       let pdfFileName: string | undefined;
       let pdfProviderId: string | undefined;
       let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
+      let documentType: 'pdf' | 'text' | undefined;
 
       if (form.pdfFile) {
+        const detectedDocumentType = getSupportedDocumentType(form.pdfFile);
+        if (!detectedDocumentType) {
+          throw new Error('Unsupported file type');
+        }
+        documentType = detectedDocumentType;
+
+        if (documentType === 'text') {
+          const content = await readTextFileContent(form.pdfFile);
+          if (!content.trim()) {
+            toast.error(t('upload.emptyFile'));
+            return;
+          }
+        }
+
         pdfStorageKey = await storePdfBlob(form.pdfFile);
         pdfFileName = form.pdfFile.name;
 
-        const settings = useSettingsStore.getState();
-        pdfProviderId = settings.pdfProviderId;
-        const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
-        if (providerCfg) {
-          pdfProviderConfig = {
-            apiKey: providerCfg.apiKey,
-            baseUrl: providerCfg.baseUrl,
-          };
+        if (documentType === 'pdf') {
+          const settings = useSettingsStore.getState();
+          pdfProviderId = settings.pdfProviderId;
+          const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
+          if (providerCfg) {
+            pdfProviderConfig = {
+              apiKey: providerCfg.apiKey,
+              baseUrl: providerCfg.baseUrl,
+            };
+          }
         }
       }
 
@@ -284,6 +302,7 @@ function HomePage() {
         imageStorageIds: [],
         pdfStorageKey,
         pdfFileName,
+        documentType,
         pdfProviderId,
         pdfProviderConfig,
         sceneOutlines: null,

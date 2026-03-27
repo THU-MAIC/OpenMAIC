@@ -21,6 +21,7 @@ import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
+import { getSupportedDocumentType, SUPPORTED_DOCUMENT_ACCEPT } from '@/lib/utils/document-upload';
 
 // ─── Constants ───────────────────────────────────────────────
 const MAX_PDF_SIZE_MB = 50;
@@ -98,7 +99,7 @@ export function GenerationToolbar({
 
   // PDF handler
   const handleFileSelect = (file: File) => {
-    if (file.type !== 'application/pdf') return;
+    if (!getSupportedDocumentType(file)) return;
     if (file.size > MAX_PDF_SIZE_BYTES) {
       onPdfError(t('upload.fileTooLarge'));
       return;
@@ -212,7 +213,7 @@ export function GenerationToolbar({
               type="file"
               ref={fileInputRef}
               className="hidden"
-              accept=".pdf"
+              accept={SUPPORTED_DOCUMENT_ACCEPT}
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) handleFileSelect(f);
@@ -261,7 +262,7 @@ export function GenerationToolbar({
                 }}
               >
                 <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
-                <p className="text-xs font-medium">{t('toolbar.pdfUpload')}</p>
+                <p className="text-xs font-medium">{t('toolbar.docUpload')}</p>
                 <p className="text-[10px] text-muted-foreground/60 mt-0.5">
                   {t('upload.pdfSizeLimit')}
                 </p>
