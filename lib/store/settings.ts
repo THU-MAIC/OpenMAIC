@@ -50,6 +50,7 @@ export interface SettingsState {
     {
       apiKey: string;
       baseUrl: string;
+      model?: string;
       enabled: boolean;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
@@ -178,7 +179,7 @@ export interface SettingsState {
   setASRLanguage: (language: string) => void;
   setTTSProviderConfig: (
     providerId: TTSProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{ apiKey: string; baseUrl: string; model?: string; enabled: boolean }>,
   ) => void;
   setASRProviderConfig: (
     providerId: ASRProviderId,
@@ -269,8 +270,9 @@ const getDefaultAudioConfig = () => ({
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
+    'minimax-tts': { apiKey: '', baseUrl: '', model: 'speech-2.8-turbo', enabled: false },
     'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
-  } as Record<TTSProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+  } as Record<TTSProviderId, { apiKey: string; baseUrl: string; model?: string; enabled: boolean }>,
   asrProvidersConfig: {
     'openai-whisper': { apiKey: '', baseUrl: '', enabled: true },
     'browser-native': { apiKey: '', baseUrl: '', enabled: true },
@@ -295,6 +297,7 @@ const getDefaultImageConfig = () => ({
     seedream: { apiKey: '', baseUrl: '', enabled: false },
     'qwen-image': { apiKey: '', baseUrl: '', enabled: false },
     'nano-banana': { apiKey: '', baseUrl: '', enabled: false },
+    'minimax-image': { apiKey: '', baseUrl: '', enabled: false },
     'grok-image': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<ImageProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
@@ -308,6 +311,7 @@ const getDefaultVideoConfig = () => ({
     kling: { apiKey: '', baseUrl: '', enabled: false },
     veo: { apiKey: '', baseUrl: '', enabled: false },
     sora: { apiKey: '', baseUrl: '', enabled: false },
+    'minimax-video': { apiKey: '', baseUrl: '', enabled: false },
     'grok-video': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<VideoProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });

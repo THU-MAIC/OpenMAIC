@@ -85,6 +85,7 @@ export type TTSProviderId =
   | 'qwen-tts'
   | 'doubao-tts'
   | 'elevenlabs-tts'
+  | 'minimax-tts'
   | 'browser-native-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'fish-audio-tts'
@@ -128,6 +129,7 @@ export interface TTSModelConfig {
   providerId: TTSProviderId;
   apiKey?: string;
   baseUrl?: string;
+  model?: string;
   voice: string;
   speed?: number;
   format?: string;
