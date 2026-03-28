@@ -58,6 +58,7 @@ interface FormState {
   requirement: string;
   language: 'zh-CN' | 'en-US';
   webSearch: boolean;
+  questionBankText: string;
 }
 
 const initialFormState: FormState = {
@@ -65,6 +66,7 @@ const initialFormState: FormState = {
   requirement: '',
   language: 'zh-CN',
   webSearch: false,
+  questionBankText: '',
 };
 
 function HomePage() {
@@ -288,6 +290,7 @@ function HomePage() {
         pdfProviderConfig,
         sceneOutlines: null,
         currentStep: 'generating' as const,
+        questionBankContext: form.questionBankText || undefined,
       };
       sessionStorage.setItem('generationSession', JSON.stringify(sessionState));
 
@@ -542,6 +545,8 @@ function HomePage() {
                   pdfFile={form.pdfFile}
                   onPdfFileChange={(f) => updateForm('pdfFile', f)}
                   onPdfError={setError}
+                  questionBankText={form.questionBankText}
+                  onQuestionBankTextChange={(text) => updateForm('questionBankText', text)}
                 />
               </div>
 

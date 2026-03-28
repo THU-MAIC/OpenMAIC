@@ -1,7 +1,19 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2 } from 'lucide-react';
+import {
+  Bot,
+  Check,
+  ChevronLeft,
+  Globe,
+  Paperclip,
+  FileText,
+  X,
+  Globe2,
+  BookOpen,
+  Upload,
+  Trash2,
+} from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -37,6 +49,9 @@ export interface GenerationToolbarProps {
   pdfFile: File | null;
   onPdfFileChange: (file: File | null) => void;
   onPdfError: (error: string | null) => void;
+  // Question bank
+  questionBankText: string;
+  onQuestionBankTextChange: (text: string) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────
@@ -49,6 +64,8 @@ export function GenerationToolbar({
   pdfFile,
   onPdfFileChange,
   onPdfError,
+  questionBankText,
+  onQuestionBankTextChange,
 }: GenerationToolbarProps) {
   const { t } = useI18n();
   const currentProviderId = useSettingsStore((s) => s.providerId);
@@ -62,6 +79,7 @@ export function GenerationToolbar({
   const webSearchProvidersConfig = useSettingsStore((s) => s.webSearchProvidersConfig);
   const setWebSearchProvider = useSettingsStore((s) => s.setWebSearchProvider);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const qbFileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
   // Check if the selected web search provider has a valid config (API key or server-configured)
@@ -356,6 +374,79 @@ export function GenerationToolbar({
           <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
         </Tooltip>
       )}
+
+      {/* ── Question Bank ── */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <button className={questionBankText ? pillActive : pillMuted}>
+            <BookOpen className="size-3.5" />
+            {questionBankText && <span>{t('toolbar.questionBankActive')}</span>}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align="start" className="w-80 p-3 space-y-3">
+          {/* Header */}
+          <div>
+            <p className="text-xs font-medium">{t('toolbar.questionBank')}</p>
+            <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+              {t('toolbar.questionBankHint')}
+            </p>
+          </div>
+
+          {/* Textarea */}
+          <textarea
+            className="w-full h-32 rounded-lg border border-border/60 bg-transparent px-3 py-2 text-xs leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-violet-400/50 resize-none"
+            placeholder={t('toolbar.questionBankPlaceholder')}
+            value={questionBankText}
+            onChange={(e) => onQuestionBankTextChange(e.target.value)}
+          />
+
+          {/* Toolbar: Import + Clear */}
+          <div className="flex items-center gap-2">
+            <input
+              ref={qbFileInputRef}
+              type="file"
+              className="hidden"
+              accept=".txt,.md"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) {
+                  const reader = new FileReader();
+                  reader.onload = () => {
+                    if (typeof reader.result === 'string') {
+                      onQuestionBankTextChange(reader.result);
+                    }
+                  };
+                  reader.readAsText(f);
+                }
+                e.target.value = '';
+              }}
+            />
+            <button
+              onClick={() => qbFileInputRef.current?.click()}
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+            >
+              <Upload className="size-3" />
+              {t('toolbar.questionBankUpload')}
+            </button>
+            {questionBankText && (
+              <button
+                onClick={() => onQuestionBankTextChange('')}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium text-destructive/70 hover:text-destructive hover:bg-destructive/10 transition-colors ml-auto"
+              >
+                <Trash2 className="size-3" />
+                {t('toolbar.questionBankClear')}
+              </button>
+            )}
+          </div>
+
+          {/* Character count */}
+          {questionBankText && (
+            <p className="text-[10px] text-muted-foreground/50 text-right">
+              {questionBankText.length.toLocaleString()} chars
+            </p>
+          )}
+        </PopoverContent>
+      </Popover>
 
       {/* ── Language pill ── */}
       <Tooltip>
