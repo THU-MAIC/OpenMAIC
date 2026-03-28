@@ -905,6 +905,30 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'webm', 'm4a', 'flac'],
   },
 
+  'azure-asr': {
+    id: 'azure-asr',
+    name: 'Azure STT',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://{region}.api.cognitive.microsoft.com',
+    icon: '/logos/azure.svg',
+    supportedLanguages: [
+      'auto',
+      'en',
+      'zh',
+      'ja',
+      'ko',
+      'de',
+      'fr',
+      'es',
+      'it',
+      'pt',
+      'ru',
+      'ar',
+      'hi',
+    ],
+    supportedFormats: ['wav', 'ogg', 'webm', 'mp3', 'flac', 'm4a'],
+  },
+
   'browser-native': {
     id: 'browser-native',
     name: '浏览器原生 ASR (Web Speech API)',

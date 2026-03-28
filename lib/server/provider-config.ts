@@ -63,6 +63,7 @@ const TTS_ENV_MAP: Record<string, string> = {
 const ASR_ENV_MAP: Record<string, string> = {
   ASR_OPENAI: 'openai-whisper',
   ASR_QWEN: 'qwen-asr',
+  ASR_AZURE: 'azure-asr',
 };
 
 const PDF_ENV_MAP: Record<string, string> = {

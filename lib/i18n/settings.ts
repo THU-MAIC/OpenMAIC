@@ -230,6 +230,7 @@ export const settingsZhCN = {
     providerOpenAIWhisper: 'OpenAI ASR (gpt-4o-mini-transcribe)',
     providerBrowserNative: '浏览器原生 ASR',
     providerQwenASR: 'Qwen ASR（阿里云百炼）',
+    providerAzureASR: 'Azure STT',
     providerUnpdf: 'unpdf（内置）',
     providerMinerU: 'MinerU',
     browserNativeTTSNote: '浏览器原生 TTS 无需配置，完全免费，使用系统内置语音',
@@ -823,6 +824,7 @@ export const settingsEnUS = {
     providerOpenAIWhisper: 'OpenAI ASR (gpt-4o-mini-transcribe)',
     providerBrowserNative: 'Browser Native ASR',
     providerQwenASR: 'Qwen ASR (Alibaba Cloud Bailian)',
+    providerAzureASR: 'Azure STT',
     providerUnpdf: 'unpdf (Built-in)',
     providerMinerU: 'MinerU',
     browserNativeTTSNote:
