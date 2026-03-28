@@ -79,3 +79,44 @@ export const commonEnUS = {
     exportFailed: 'Export failed',
   },
 } as const;
+
+export const commonRuRU = {
+  common: {
+    you: 'Вы',
+    confirm: 'Подтвердить',
+    cancel: 'Отмена',
+    loading: 'Загрузка...',
+  },
+  home: {
+    slogan: 'Generative Learning in Multi-Agent Interactive Classroom',
+    greeting: 'Привет, ',
+  },
+  toolbar: {
+    languageHint: 'Курс будет сгенерирован на этом языке',
+    pdfParser: 'Парсер',
+    pdfUpload: 'Загрузить PDF',
+    removePdf: 'Удалить файл',
+    webSearchOn: 'Включено',
+    webSearchOff: 'Нажмите для включения',
+    webSearchDesc: 'Поиск актуальной информации в интернете перед генерацией',
+    webSearchProvider: 'Поисковый движок',
+    webSearchNoProvider: 'Настройте API-ключ поиска в Настройках',
+    selectProvider: 'Выбрать провайдера',
+    configureProvider: 'Настроить модель',
+    configureProviderHint: 'Настройте хотя бы одного провайдера моделей для генерации курсов',
+    enterClassroom: 'Войти в класс',
+    advancedSettings: 'Расширенные настройки',
+    ttsTitle: 'Синтез речи',
+    ttsHint: 'Выберите голос для AI-учителя',
+    ttsPreview: 'Прослушать',
+    ttsPreviewing: 'Воспроизведение...',
+  },
+  export: {
+    pptx: 'Экспорт PPTX',
+    resourcePack: 'Экспорт ресурсного пакета',
+    resourcePackDesc: 'PPTX + интерактивные страницы',
+    exporting: 'Экспорт...',
+    exportSuccess: 'Экспорт успешен',
+    exportFailed: 'Ошибка экспорта',
+  },
+} as const;

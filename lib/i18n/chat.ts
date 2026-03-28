@@ -145,3 +145,77 @@ export const chatEnUS = {
     stopListening: 'Stop recording',
   },
 } as const;
+
+export const chatRuRU = {
+  chat: {
+    lecture: 'Лекция',
+    noConversations: 'Нет диалогов',
+    startConversation: 'Введите сообщение, чтобы начать диалог',
+    noMessages: 'Пока нет сообщений',
+    ended: 'завершено',
+    unknown: 'Неизвестно',
+    stopDiscussion: 'Завершить обсуждение',
+    endQA: 'Завершить вопросы и ответы',
+    tabs: {
+      lecture: 'Заметки',
+      chat: 'Чат',
+    },
+    lectureNotes: {
+      empty: 'Заметки появятся здесь после воспроизведения лекции',
+      emptyHint: 'Нажмите воспроизведение для начала лекции',
+      pageLabel: 'Страница {n}',
+      currentPage: 'Текущая',
+    },
+    badge: {
+      qa: 'Вопросы',
+      discussion: 'ДИСКУС',
+      lecture: 'ЛЕКЦ',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: 'Прожектор',
+      laser: 'Лазерная указка',
+      wb_open: 'Открыть доску',
+      wb_draw_text: 'Текст на доске',
+      wb_draw_shape: 'Фигура на доске',
+      wb_draw_chart: 'График на доске',
+      wb_draw_latex: 'Формула на доске',
+      wb_draw_table: 'Таблица на доске',
+      wb_draw_line: 'Линия на доске',
+      wb_clear: 'Очистить доску',
+      wb_delete: 'Удалить элемент',
+      wb_close: 'Закрыть доску',
+      discussion: 'Обсуждение',
+    },
+    status: {
+      inputStreaming: 'Ожидание',
+      inputAvailable: 'Выполняется',
+      outputAvailable: 'Завершено',
+      outputError: 'Ошибка',
+      outputDenied: 'Отклонено',
+      running: 'Выполняется',
+      result: 'Завершено',
+      error: 'Ошибка',
+    },
+  },
+  agentBar: {
+    readyToLearn: 'Готовы учиться вместе?',
+    expandedTitle: 'Настройка ролей в классе',
+    configTooltip: 'Нажмите для настройки ролей в классе',
+    voiceLabel: 'Голос',
+    voiceLoading: 'Загрузка...',
+    voiceAutoAssign: 'Голоса будут назначены автоматически',
+  },
+  proactiveCard: {
+    discussion: 'Обсуждение',
+    join: 'Присоединиться',
+    skip: 'Пропустить',
+    pause: 'Пауза',
+    resume: 'Продолжить',
+  },
+  voice: {
+    startListening: 'Голосовой ввод',
+    stopListening: 'Остановить запись',
+  },
+} as const;
