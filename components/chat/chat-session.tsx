@@ -189,23 +189,28 @@ export function ChatSessionComponent({
     }
   }, [msgCount]);
 
-  // Auto-scroll: rAF-throttled instant scroll as text grows — only when user is at bottom
+  // Auto-scroll: rAF-throttled instant scroll as text grows — only when user is at bottom.
+  // Uses scrollIntoView on bottomRef because scrollContainerRef has no fixed height and
+  // never actually overflows — the real scrollable ancestor is in chat-area.tsx.
   const scrollRaf = useRef(0);
   useEffect(() => {
     if (!isAtBottomRef.current) return;
     cancelAnimationFrame(scrollRaf.current);
     scrollRaf.current = requestAnimationFrame(() => {
-      const el = scrollContainerRef.current;
-      if (el) el.scrollTop = el.scrollHeight;
+      if (bottomRef.current) {
+        bottomRef.current.scrollIntoView({ behavior: 'instant', block: 'end' });
+      }
     });
   }, [session.messages]);
 
-  // Scroll to active bubble when it changes
+  // Scroll to active bubble when it changes — use 'end' alignment so the bubble
+  // (which is always the latest message) lands at the bottom of the viewport.
+  // 'nearest' could leave the viewport mid-list after thinking transitions.
   useEffect(() => {
     if (activeBubbleId && activeBubbleRef.current) {
       activeBubbleRef.current.scrollIntoView({
         behavior: 'smooth',
-        block: 'nearest',
+        block: 'end',
       });
       isAtBottomRef.current = true;
     }
