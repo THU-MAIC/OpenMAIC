@@ -1010,7 +1010,7 @@ type SpeechRecognitionResult = {
 };
 
 type SpeechRecognitionAlternative = {
-  script: string;
+  transcript: string;
   confidence: number;
 };
 
@@ -1041,6 +1041,8 @@ export const PromptInputSpeechButton = ({
   const [isListening, setIsListening] = useState(false);
   const [recognition, setRecognition] = useState<SpeechRecognition | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const { useSettingsStore } = require('@/lib/store/settings');
+  const asrLanguage = useSettingsStore((state: { asrLanguage: string }) => state.asrLanguage);
 
   useEffect(() => {
     if (
@@ -1052,7 +1054,7 @@ export const PromptInputSpeechButton = ({
 
       speechRecognition.continuous = true;
       speechRecognition.interimResults = true;
-      speechRecognition.lang = 'en-US';
+      speechRecognition.lang = asrLanguage || 'zh-CN';
 
       speechRecognition.onstart = () => {
         setIsListening(true);
@@ -1068,7 +1070,7 @@ export const PromptInputSpeechButton = ({
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
           if (result.isFinal) {
-            finalScript += result[0]?.script ?? '';
+            finalScript += result[0]?.transcript ?? '';
           }
         }
 

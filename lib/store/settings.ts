@@ -74,6 +74,7 @@ export interface SettingsState {
     {
       apiKey: string;
       baseUrl: string;
+      customPrompt?: string;
       enabled: boolean;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
@@ -191,7 +192,7 @@ export interface SettingsState {
   setPDFProvider: (providerId: PDFProviderId) => void;
   setPDFProviderConfig: (
     providerId: PDFProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{ apiKey: string; baseUrl: string; customPrompt: string; enabled: boolean }>,
   ) => void;
 
   // Image Generation actions
@@ -282,9 +283,10 @@ const getDefaultAudioConfig = () => ({
 const getDefaultPDFConfig = () => ({
   pdfProviderId: 'unpdf' as PDFProviderId,
   pdfProvidersConfig: {
+    wiseocr: { apiKey: '', baseUrl: 'https://openapi.wisediag.com/v1/ocr/pdf', customPrompt: '', enabled: false },
     unpdf: { apiKey: '', baseUrl: '', enabled: true },
     mineru: { apiKey: '', baseUrl: '', enabled: false },
-  } as Record<PDFProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+  } as Record<PDFProviderId, { apiKey: string; baseUrl: string; customPrompt?: string; enabled: boolean }>,
 });
 
 // Initialize default Image config

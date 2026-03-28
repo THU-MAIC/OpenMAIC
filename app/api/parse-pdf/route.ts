@@ -25,6 +25,7 @@ export async function POST(req: NextRequest) {
     const providerId = formData.get('providerId') as PDFProviderId | null;
     const apiKey = formData.get('apiKey') as string | null;
     const baseUrl = formData.get('baseUrl') as string | null;
+    const prompt = formData.get('prompt') as string | null;
 
     if (!pdfFile) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'No PDF file provided');
@@ -49,6 +50,9 @@ export async function POST(req: NextRequest) {
       baseUrl: clientBaseUrl
         ? clientBaseUrl
         : resolvePDFBaseUrl(effectiveProviderId, baseUrl || undefined),
+      providerOptions: {
+        ...(prompt && { prompt }),
+      },
     };
 
     // Convert PDF to buffer

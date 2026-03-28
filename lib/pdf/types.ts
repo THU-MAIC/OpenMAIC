@@ -5,7 +5,7 @@
 /**
  * PDF Provider IDs
  */
-export type PDFProviderId = 'unpdf' | 'mineru';
+export type PDFProviderId = 'wiseocr' | 'unpdf' | 'mineru';
 
 /**
  * PDF Provider Configuration
@@ -26,6 +26,9 @@ export interface PDFParserConfig {
   providerId: PDFProviderId;
   apiKey?: string;
   baseUrl?: string;
+  providerOptions?: {
+    prompt?: string;
+  };
 }
 
 // Note: ParsedPdfContent is imported from @/lib/types/pdf to avoid duplication

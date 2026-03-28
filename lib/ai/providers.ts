@@ -945,6 +945,89 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
+
+  ollama: {
+    id: 'ollama',
+    name: 'Ollama',
+    type: 'openai',
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    requiresApiKey: false,
+    icon: '/logos/ollama.svg',
+    models: [
+      // Common models pre-configured for selection
+      {
+        id: 'llama3.1',
+        name: 'Llama 3.1',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'llama3.2',
+        name: 'Llama 3.2',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'llama3.2-vision',
+        name: 'Llama 3.2 Vision',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'gemma3',
+        name: 'Gemma 3',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'qwen3',
+        name: 'Qwen 3',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'deepseek-r1',
+        name: 'DeepSeek R1',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: {
+          streaming: true,
+          tools: false,
+          vision: false,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+    ],
+  },
+
+  'llama-cpp': {
+    id: 'llama-cpp',
+    name: 'LLaMA.cpp',
+    type: 'openai',
+    defaultBaseUrl: 'http://localhost:8080/v1',
+    requiresApiKey: false,
+    icon: '/logos/llama-cpp.svg',
+    models: [
+      // LLaMA.cpp doesn't ship with pre-loaded models
+      // Users can run any model they have loaded
+      {
+        id: 'default',
+        name: 'Default Model',
+        contextWindow: 8192,
+        outputWindow: 2048,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+    ],
+  },
 };
 
 /**

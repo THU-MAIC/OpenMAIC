@@ -83,8 +83,12 @@ export async function generateWithSeedream(
   options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
+  // If baseUrl already ends with /api/v3, don't duplicate it
+  const fullUrl = baseUrl.endsWith('/api/v3') 
+    ? `${baseUrl}/images/generations` 
+    : `${baseUrl}/api/v3/images/generations`;
 
-  const response = await fetch(`${baseUrl}/api/v3/images/generations`, {
+  const response = await fetch(fullUrl, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -99,7 +103,8 @@ export async function generateWithSeedream(
   });
 
   if (!response.ok) {
-    const text = await response.text();
+    const text = await response.text().catch(() => 'empty response');
+    console.error(`[Seedream] Request to ${fullUrl} failed with ${response.status}: ${text}`);
     throw new Error(`Seedream generation failed (${response.status}): ${text}`);
   }
 

@@ -168,6 +168,10 @@ export async function parsePDF(
   let result: ParsedPdfContent;
 
   switch (config.providerId) {
+    case 'wiseocr':
+      result = await parseWithWiseOCR(config, pdfBuffer);
+      break;
+
     case 'unpdf':
       result = await parseWithUnpdf(pdfBuffer);
       break;
@@ -433,6 +437,98 @@ function extractMinerUResult(fileResult: Record<string, unknown>): ParsedPdfCont
       parser: 'mineru',
       imageMapping,
       pdfImages,
+    },
+  };
+}
+
+/**
+ * Parse PDF using WiseOCR API (WiseDiag)
+ *
+ * Official WiseOCR API endpoint:
+ * POST https://openapi.wisediag.com/v1/ocr/pdf
+ *
+ * Supports: PDF and image files with OCR powered by vision large model
+ * Returns structured Markdown output
+ *
+ * @see https://api-docs.wisediag.com/wiseocr
+ */
+async function parseWithWiseOCR(
+  config: PDFParserConfig,
+  pdfBuffer: Buffer,
+): Promise<ParsedPdfContent> {
+  if (!config.apiKey) {
+    throw new Error(
+      'WiseOCR API key is required. ' +
+        'Please get your API key from https://www.wisediag.com/wiseocr',
+    );
+  }
+
+  log.info('[WiseOCR] Parsing PDF with WiseOCR API');
+
+  const fileName = 'document.pdf';
+
+  // Create FormData for file upload
+  const formData = new FormData();
+
+  // Convert Buffer to Blob
+  const arrayBuffer = pdfBuffer.buffer.slice(
+    pdfBuffer.byteOffset,
+    pdfBuffer.byteOffset + pdfBuffer.byteLength,
+  );
+  const blob = new Blob([arrayBuffer as ArrayBuffer], {
+    type: 'application/pdf',
+  });
+  formData.append('file', blob, fileName);
+
+  // Use default DPI 200 (recommended by WiseOCR)
+  formData.append('dpi', '200');
+
+  // Add optional prompt parameter for custom OCR instructions
+  if (config.providerOptions?.prompt) {
+    formData.append('prompt', config.providerOptions.prompt);
+  }
+
+  // Authorization header
+  const headers: Record<string, string> = {
+    'Authorization': `Bearer ${config.apiKey}`,
+  };
+
+  // Use custom base URL if provided, otherwise default to official API
+  const apiUrl = config.baseUrl || 'https://openapi.wisediag.com/v1/ocr/pdf';
+
+  // POST to WiseOCR API
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers,
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`WiseOCR API error (${response.status}): ${errorText}`);
+  }
+
+  const json = await response.json();
+
+  // Extract result
+  const markdown: string = json.markdown || '';
+  const pageCount: number = json.total_pages || 0;
+
+  log.info(
+    `[WiseOCR] Parsed successfully: ${pageCount} pages, ` +
+      `${markdown.length} chars of markdown`,
+  );
+
+  // WiseOCR already returns markdown with content
+  // Images are embedded in the markdown as base64 by the API
+  return {
+    text: markdown,
+    images: [], // WiseOCR embeds images directly in markdown
+    metadata: {
+      pageCount,
+      parser: 'wiseocr',
+      elapsedSeconds: json.elapsed_seconds,
+      usage: json.usage,
     },
   };
 }
