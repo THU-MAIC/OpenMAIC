@@ -162,8 +162,18 @@ export default function ClassroomDetailPage() {
       // Resume media generation for any tasks not yet in IndexedDB.
       // generateMediaForOutlines skips already-completed tasks automatically.
       generationStartedRef.current = true;
-      generateMediaForOutlines(outlines, stage.id).catch((err) => {
-        log.warn('[Classroom] Media generation resume error:', err);
+
+      // Load generation params to get the imageMapping for manual uploads
+      const genParamsStr = sessionStorage.getItem('generationParams');
+      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+      const storageIds = (params.pdfImages || [])
+        .map((img: { storageId?: string }) => img.storageId)
+        .filter(Boolean);
+
+      loadImageMapping(storageIds).then((imageMapping) => {
+        generateMediaForOutlines(outlines, stage.id, undefined, imageMapping).catch((err) => {
+          log.warn('[Classroom] Media generation resume error:', err);
+        });
       });
     }
   }, [loading, error, generateRemaining]);

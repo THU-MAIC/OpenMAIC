@@ -96,7 +96,8 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
+function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' | 'de-DE' {
+  if (language === 'de-DE') return 'de-DE';
   return language === 'en-US' ? 'en-US' : 'zh-CN';
 }
 

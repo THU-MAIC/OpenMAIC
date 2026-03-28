@@ -28,14 +28,17 @@ const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
-  language: 'zh-CN' | 'en-US';
-  onLanguageChange: (lang: 'zh-CN' | 'en-US') => void;
+  language: 'zh-CN' | 'en-US' | 'de-DE';
+  onLanguageChange: (lang: 'zh-CN' | 'en-US' | 'de-DE') => void;
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
   // PDF
   pdfFile: File | null;
   onPdfFileChange: (file: File | null) => void;
+  // Images
+  imageFiles: File[];
+  onImageFilesChange: (files: File[]) => void;
   onPdfError: (error: string | null) => void;
 }
 
@@ -48,6 +51,8 @@ export function GenerationToolbar({
   onSettingsOpen,
   pdfFile,
   onPdfFileChange,
+  imageFiles,
+  onImageFilesChange,
   onPdfError,
 }: GenerationToolbarProps) {
   const { t } = useI18n();
@@ -96,15 +101,38 @@ export function GenerationToolbar({
 
   const currentProviderConfig = providersConfig?.[currentProviderId];
 
-  // PDF handler
-  const handleFileSelect = (file: File) => {
-    if (file.type !== 'application/pdf') return;
-    if (file.size > MAX_PDF_SIZE_BYTES) {
-      onPdfError(t('upload.fileTooLarge'));
-      return;
+  // File handler for both PDF and images
+  const handleFilesSelect = (files: FileList | null) => {
+    if (!files) return;
+    const newFiles = Array.from(files);
+    const updatedImages = [...imageFiles];
+    let pdfSelected = pdfFile;
+
+    for (const file of newFiles) {
+      if (file.type === 'application/pdf') {
+        if (file.size > MAX_PDF_SIZE_BYTES) {
+          onPdfError(t('upload.fileTooLarge'));
+          continue;
+        }
+        pdfSelected = file;
+      } else if (file.type.startsWith('image/')) {
+        if (file.size > MAX_PDF_SIZE_BYTES) {
+          onPdfError(t('upload.fileTooLarge'));
+          continue;
+        }
+        updatedImages.push(file);
+      }
     }
+
     onPdfError(null);
-    onPdfFileChange(file);
+    onPdfFileChange(pdfSelected);
+    onImageFilesChange(updatedImages);
+  };
+
+  const removeImage = (index: number) => {
+    const updated = [...imageFiles];
+    updated.splice(index, 1);
+    onImageFilesChange(updated);
   };
 
   // ─── Pill button helper ─────────────────────────────
@@ -112,6 +140,8 @@ export function GenerationToolbar({
     'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
   const pillMuted = `${pillCls} border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60`;
   const pillActive = `${pillCls} border-violet-200/60 dark:border-violet-700/50 bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300`;
+
+  const totalFilesCount = (pdfFile ? 1 : 0) + imageFiles.length;
 
   return (
     <div className="flex items-center gap-1 flex-wrap">
@@ -147,19 +177,25 @@ export function GenerationToolbar({
       {/* ── Separator ── */}
       <div className="w-px h-4 bg-border/60 mx-1" />
 
-      {/* ── PDF (parser + upload) combined Popover ── */}
+      {/* ── Files (PDF + Images) combined Popover ── */}
       <Popover>
         <PopoverTrigger asChild>
-          {pdfFile ? (
+          {totalFilesCount > 0 ? (
             <button className={pillActive}>
               <Paperclip className="size-3.5" />
-              <span className="max-w-[100px] truncate">{pdfFile.name}</span>
+              <span className="max-w-[120px] truncate">
+                {pdfFile ? pdfFile.name : `${imageFiles.length} ${t('common.images') || 'Images'}`}
+              </span>
+              {totalFilesCount > 1 && (
+                <span className="ml-1 opacity-60">+{totalFilesCount - 1}</span>
+              )}
               <span
                 role="button"
-                className="size-4 rounded-full inline-flex items-center justify-center hover:bg-violet-200 dark:hover:bg-violet-800 transition-colors"
+                className="ml-1 size-4 rounded-full inline-flex items-center justify-center hover:bg-violet-200 dark:hover:bg-violet-800 transition-colors"
                 onClick={(e) => {
                   e.stopPropagation();
                   onPdfFileChange(null);
+                  onImageFilesChange([]);
                 }}
               >
                 <X className="size-2.5" />
@@ -171,9 +207,9 @@ export function GenerationToolbar({
             </button>
           )}
         </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-0">
-          {/* Parser selector */}
-          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
+        <PopoverContent align="start" className="w-80 p-0">
+          {/* Parser selector (only if PDF is present or to be added) */}
+          <div className="flex items-center gap-2 px-3 pt-3 pb-2 border-b">
             <span className="text-xs font-medium text-muted-foreground shrink-0">
               {t('toolbar.pdfParser')}
             </span>
@@ -206,67 +242,98 @@ export function GenerationToolbar({
             </Select>
           </div>
 
-          {/* Upload area / file info */}
-          <div className="px-3 pb-3">
+          {/* Upload area / file list */}
+          <div className="p-3 space-y-3 max-h-80 overflow-y-auto">
             <input
               type="file"
               ref={fileInputRef}
               className="hidden"
-              accept=".pdf"
+              accept=".pdf,image/*"
+              multiple
               onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFileSelect(f);
+                handleFilesSelect(e.target.files);
                 e.target.value = '';
               }}
             />
-            {pdfFile ? (
+
+            {/* File List */}
+            {totalFilesCount > 0 && (
               <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                    <FileText className="size-4 text-violet-600 dark:text-violet-400" />
+                {/* PDF */}
+                {pdfFile && (
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-violet-50 dark:bg-violet-900/20 border border-violet-100 dark:border-violet-800/50">
+                    <FileText className="size-4 text-violet-600 dark:text-violet-400 shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium truncate">{pdfFile.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => onPdfFileChange(null)}
+                      className="size-5 flex items-center justify-center hover:bg-violet-200 dark:hover:bg-violet-800 rounded transition-colors"
+                    >
+                      <X className="size-3 text-muted-foreground" />
+                    </button>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{pdfFile.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => onPdfFileChange(null)}
-                  className="w-full text-xs text-destructive hover:underline text-left"
-                >
-                  {t('toolbar.removePdf')}
-                </button>
-              </div>
-            ) : (
-              <div
-                className={cn(
-                  'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
-                  isDragging
-                    ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
-                    : 'border-muted-foreground/20 hover:border-violet-300',
                 )}
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragging(false);
-                  const f = e.dataTransfer.files?.[0];
-                  if (f) handleFileSelect(f);
-                }}
-              >
-                <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
-                <p className="text-xs font-medium">{t('toolbar.pdfUpload')}</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                  {t('upload.pdfSizeLimit')}
-                </p>
+                {/* Images */}
+                {imageFiles.map((file, i) => (
+                  <div
+                    key={`${file.name}-${i}`}
+                    className="flex items-center gap-2 p-2 rounded-lg bg-muted/40 border border-border/50"
+                  >
+                    <div className="size-6 rounded bg-muted overflow-hidden shrink-0">
+                      <img
+                        src={URL.createObjectURL(file)}
+                        alt=""
+                        className="size-full object-cover"
+                        onLoad={(e) => URL.revokeObjectURL((e.target as HTMLImageElement).src)}
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium truncate">{file.name}</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        {(file.size / 1024).toFixed(1)} KB
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => removeImage(i)}
+                      className="size-5 flex items-center justify-center hover:bg-muted rounded transition-colors"
+                    >
+                      <X className="size-3 text-muted-foreground" />
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
+
+            {/* Dropzone */}
+            <div
+              className={cn(
+                'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
+                isDragging
+                  ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
+                  : 'border-muted-foreground/20 hover:border-violet-300',
+              )}
+              onClick={() => fileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                setIsDragging(true);
+              }}
+              onDragLeave={() => setIsDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragging(false);
+                handleFilesSelect(e.dataTransfer.files);
+              }}
+            >
+              <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
+              <p className="text-xs font-medium">{t('toolbar.uploadFiles') || 'Upload Files'}</p>
+              <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                {t('upload.pdfAndImages') || 'PDF or Images up to 50MB'}
+              </p>
+            </div>
           </div>
         </PopoverContent>
       </Popover>
@@ -361,11 +428,15 @@ export function GenerationToolbar({
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            onClick={() => onLanguageChange(language === 'zh-CN' ? 'en-US' : 'zh-CN')}
+            onClick={() =>
+              onLanguageChange(
+                language === 'zh-CN' ? 'en-US' : language === 'en-US' ? 'de-DE' : 'zh-CN',
+              )
+            }
             className={pillMuted}
           >
             <Globe className="size-3.5" />
-            <span>{language === 'zh-CN' ? '中文' : 'EN'}</span>
+            <span>{language === 'zh-CN' ? '中文' : language === 'en-US' ? 'EN' : 'DE'}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>

@@ -26,17 +26,54 @@ class MediaApiError extends Error {
 
 /**
  * Launch media generation for all mediaGenerations declared in outlines.
- * Runs in parallel with content/action generation — does not block.
+ * Also registers manually uploaded images as "done" tasks in the store.
  */
 export async function generateMediaForOutlines(
   outlines: SceneOutline[],
   stageId: string,
   abortSignal?: AbortSignal,
+  imageMapping?: Record<string, string>,
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   const store = useMediaGenerationStore.getState();
 
-  // Collect all media requests
+  // ── Register manually uploaded images ──
+  if (imageMapping) {
+    Object.entries(imageMapping).forEach(([id, base64]) => {
+      if (id.startsWith('uploaded_img_')) {
+        // Skip if already tracked
+        if (store.getTask(id)) return;
+
+        const parts = base64.split(',');
+        const mime = parts[0].match(/:(.*?);/)?.[1] || 'image/png';
+        const binary = atob(parts[1]);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mime });
+        const objectUrl = URL.createObjectURL(blob);
+
+        // Add as a completed task to the store manually
+        // We use setState directly because markDone only updates existing tasks
+        useMediaGenerationStore.setState((s) => ({
+          tasks: {
+            ...s.tasks,
+            [id]: {
+              elementId: id,
+              type: 'image',
+              status: 'done',
+              prompt: 'Uploaded image',
+              params: {},
+              objectUrl,
+              retryCount: 0,
+              stageId,
+            },
+          },
+        }));
+      }
+    });
+  }
+
+  // Collect all media requests from outlines
   const allRequests: MediaGenerationRequest[] = [];
   for (const outline of outlines) {
     if (!outline.mediaGenerations) continue;

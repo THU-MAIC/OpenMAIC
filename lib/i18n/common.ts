@@ -4,6 +4,7 @@ export const commonZhCN = {
     confirm: '确定',
     cancel: '取消',
     loading: '加载中...',
+    images: '图片',
   },
   home: {
     slogan: 'Generative Learning in Multi-Agent Interactive Classroom',
@@ -13,6 +14,7 @@ export const commonZhCN = {
     languageHint: '课程将以此语言生成',
     pdfParser: '解析器',
     pdfUpload: '上传 PDF',
+    uploadFiles: '上传文件',
     removePdf: '移除文件',
     webSearchOn: '已开启',
     webSearchOff: '点击开启',
@@ -45,6 +47,7 @@ export const commonEnUS = {
     confirm: 'Confirm',
     cancel: 'Cancel',
     loading: 'Loading...',
+    images: 'Images',
   },
   home: {
     slogan: 'Generative Learning in Multi-Agent Interactive Classroom',
@@ -54,6 +57,7 @@ export const commonEnUS = {
     languageHint: 'Course will be generated in this language',
     pdfParser: 'Parser',
     pdfUpload: 'Upload PDF',
+    uploadFiles: 'Upload Files',
     removePdf: 'Remove file',
     webSearchOn: 'Enabled',
     webSearchOff: 'Click to enable',
@@ -77,5 +81,49 @@ export const commonEnUS = {
     exporting: 'Exporting...',
     exportSuccess: 'Export successful',
     exportFailed: 'Export failed',
+  },
+} as const;
+
+export const commonDeDE = {
+  common: {
+    you: 'Du',
+    confirm: 'Bestätigen',
+    cancel: 'Abbrechen',
+    loading: 'Laden...',
+    images: 'Bilder',
+  },
+  home: {
+    slogan: 'Generatives Lernen im interaktiven Klassenzimmer mit mehreren Agenten',
+    greeting: 'Hallo, ',
+  },
+  toolbar: {
+    languageHint: 'Der Kurs wird in dieser Sprache erstellt',
+    pdfParser: 'Parser',
+    pdfUpload: 'PDF hochladen',
+    uploadFiles: 'Dateien hochladen',
+    removePdf: 'Datei entfernen',
+    webSearchOn: 'Aktiviert',
+    webSearchOff: 'Klicken zum Aktivieren',
+    webSearchDesc: 'Vor der Erstellung im Web nach aktuellen Informationen suchen',
+    webSearchProvider: 'Suchmaschine',
+    webSearchNoProvider: 'Suchmaschinen-API-Key in den Einstellungen konfigurieren',
+    selectProvider: 'Anbieter auswählen',
+    configureProvider: 'Modell einrichten',
+    configureProviderHint:
+      'Konfigurieren Sie mindestens einen Modellanbieter, um Kurse zu erstellen',
+    enterClassroom: 'Klassenzimmer betreten',
+    advancedSettings: 'Erweiterte Einstellungen',
+    ttsTitle: 'Text-zu-Sprache',
+    ttsHint: 'Wählen Sie eine Stimme für den KI-Lehrer',
+    ttsPreview: 'Vorschau',
+    ttsPreviewing: 'Wiedergabe...',
+  },
+  export: {
+    pptx: 'PPTX exportieren',
+    resourcePack: 'Ressourcenpaket exportieren',
+    resourcePackDesc: 'PPTX + interaktive Seiten',
+    exporting: 'Exportieren...',
+    exportSuccess: 'Export erfolgreich',
+    exportFailed: 'Export fehlgeschlagen',
   },
 } as const;
