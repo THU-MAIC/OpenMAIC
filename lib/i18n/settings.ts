@@ -532,6 +532,15 @@ export const settingsZhCN = {
     // Access code
     setupNeeded: '请先完成配置',
     modelNotConfigured: '请选择一个模型以开始使用',
+    // Import .env.local
+    importEnvTitle: '导入配置文件',
+    importEnv: '导入 .env.local',
+    importEnvDescription: '上传 .env.local 文件，一键导入所有 API Key 和配置，无需逐个手动输入。',
+    importEnvButton: '选择文件',
+    importEnvSuccess: '成功导入 {count} 个服务商配置',
+    importEnvEmpty: '未在文件中找到有效的 API Key 配置',
+    importEnvFailed: '导入失败，请检查文件格式',
+    importEnvProviders: '个服务商',
     // Clear cache
     dangerZone: '危险区域',
     clearCache: '清空本地缓存',
@@ -1126,6 +1135,15 @@ export const settingsEnUS = {
     // Access code
     setupNeeded: 'Setup required',
     modelNotConfigured: 'Please select a model to get started',
+    // Import .env.local
+    importEnvTitle: 'Import Config File',
+    importEnv: 'Import .env.local',
+    importEnvDescription: 'Upload a .env.local file to import all API keys and settings at once.',
+    importEnvButton: 'Choose File',
+    importEnvSuccess: 'Successfully imported {count} provider(s)',
+    importEnvEmpty: 'No valid API key configurations found in the file',
+    importEnvFailed: 'Import failed, please check the file format',
+    importEnvProviders: 'provider(s)',
     // Clear cache
     dangerZone: 'Danger Zone',
     clearCache: 'Clear Local Cache',
