@@ -82,6 +82,22 @@ const initialFormState: FormState = {
   webSearch: false,
 };
 
+const COURSE_COVERS = [
+  { from: '#7c3aed', to: '#a78bfa', dot: 'rgba(255,255,255,0.15)' },
+  { from: '#0ea5e9', to: '#38bdf8', dot: 'rgba(255,255,255,0.15)' },
+  { from: '#059669', to: '#34d399', dot: 'rgba(255,255,255,0.15)' },
+  { from: '#e11d48', to: '#fb7185', dot: 'rgba(255,255,255,0.15)' },
+  { from: '#d97706', to: '#fbbf24', dot: 'rgba(255,255,255,0.15)' },
+  { from: '#0d9488', to: '#2dd4bf', dot: 'rgba(255,255,255,0.15)' },
+  { from: '#c026d3', to: '#e879f9', dot: 'rgba(255,255,255,0.15)' },
+  { from: '#ea580c', to: '#fb923c', dot: 'rgba(255,255,255,0.15)' },
+] as const;
+
+function getCourseGradient(courseId: string) {
+  const hash = courseId.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+  return COURSE_COVERS[hash % COURSE_COVERS.length];
+}
+
 function HomePage() {
   const { t, locale, setLocale } = useI18n();
   const { theme, setTheme } = useTheme();
@@ -149,7 +165,7 @@ function HomePage() {
   const [publicClassrooms, setPublicClassrooms] = useState<PublicClassroomItem[]>([]);
   const [publicThumbnails, setPublicThumbnails] = useState<Record<string, Slide>>({});
   const [publishedCourses, setPublishedCourses] = useState<CourseListItem[]>([]);
-  const [classroomsExpanded, setClassroomsExpanded] = useState(false);
+  const [classroomsExpanded, setClassroomsExpanded] = useState(true);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -223,7 +239,7 @@ function HomePage() {
       }
       if (Array.isArray(publishedCourseData)) {
         setPublishedCourses(publishedCourseData);
-        if (publishedCourseData.length === 0) setClassroomsExpanded(true);
+        if (publishedCourseData.length > 0) setClassroomsExpanded(false);
       }
     }).catch(() => {});
   }, []);
@@ -695,18 +711,7 @@ function HomePage() {
 
           <div className="pt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 w-full">
             {publishedCourses.map((course, i) => {
-              const COVERS = [
-                { from: '#7c3aed', to: '#a78bfa', dot: 'rgba(255,255,255,0.15)' },
-                { from: '#0ea5e9', to: '#38bdf8', dot: 'rgba(255,255,255,0.15)' },
-                { from: '#059669', to: '#34d399', dot: 'rgba(255,255,255,0.15)' },
-                { from: '#e11d48', to: '#fb7185', dot: 'rgba(255,255,255,0.15)' },
-                { from: '#d97706', to: '#fbbf24', dot: 'rgba(255,255,255,0.15)' },
-                { from: '#0d9488', to: '#2dd4bf', dot: 'rgba(255,255,255,0.15)' },
-                { from: '#c026d3', to: '#e879f9', dot: 'rgba(255,255,255,0.15)' },
-                { from: '#ea580c', to: '#fb923c', dot: 'rgba(255,255,255,0.15)' },
-              ];
-              const hash = course.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-              const cover = COVERS[hash % COVERS.length];
+              const cover = getCourseGradient(course.id);
               return (
                 <motion.div
                   key={course.id}
@@ -854,19 +859,7 @@ function HomePage() {
               ) : (
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                   {courses.map((course) => {
-                    // Deterministic accent per course id
-                    const COVERS = [
-                      { from: '#7c3aed', to: '#a78bfa', dot: 'rgba(255,255,255,0.15)' },
-                      { from: '#0ea5e9', to: '#38bdf8', dot: 'rgba(255,255,255,0.15)' },
-                      { from: '#059669', to: '#34d399', dot: 'rgba(255,255,255,0.15)' },
-                      { from: '#e11d48', to: '#fb7185', dot: 'rgba(255,255,255,0.15)' },
-                      { from: '#d97706', to: '#fbbf24', dot: 'rgba(255,255,255,0.15)' },
-                      { from: '#0d9488', to: '#2dd4bf', dot: 'rgba(255,255,255,0.15)' },
-                      { from: '#c026d3', to: '#e879f9', dot: 'rgba(255,255,255,0.15)' },
-                      { from: '#ea580c', to: '#fb923c', dot: 'rgba(255,255,255,0.15)' },
-                    ];
-                    const hash = course.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
-                    const cover = COVERS[hash % COVERS.length];
+                    const cover = getCourseGradient(course.id);
                     return (
                       <div
                         key={course.id}
@@ -874,26 +867,21 @@ function HomePage() {
                         className="group rounded-2xl overflow-hidden cursor-pointer border border-white/10 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-250 flex flex-col"
                         style={{ minHeight: '200px' }}
                       >
-                        {/* Cover area — compact with course name */}
                         <div
                           className="relative flex-shrink-0 h-[88px] flex flex-col justify-between px-3 pt-2.5 pb-2.5 overflow-hidden"
                           style={{ background: `linear-gradient(135deg, ${cover.from}, ${cover.to})` }}
                         >
-                          {/* Decorative circles */}
                           <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full" style={{ background: cover.dot }} />
                           <div className="absolute -bottom-5 -left-3 w-24 h-24 rounded-full" style={{ background: cover.dot }} />
-                          {/* Chapter badge */}
                           <span className="relative z-10 inline-flex items-center gap-1 text-[10px] font-semibold bg-white/20 backdrop-blur-sm text-white px-2 py-0.5 rounded-full border border-white/30 self-start">
                             <BookOpen className="size-2.5" />
                             {course.chapterCount} {t('course.chapter')}
                           </span>
-                          {/* Course name on gradient */}
                           <h3 className="relative z-10 text-[12px] font-bold text-white leading-snug line-clamp-1 tracking-tight drop-shadow-sm">
                             {course.name}
                           </h3>
                         </div>
 
-                        {/* Info area — taller, shows description */}
                         <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 px-3 pt-2.5 pb-3 min-h-0">
                           {course.description ? (
                             <p className="text-[11px] text-muted-foreground line-clamp-3 mb-auto leading-relaxed">

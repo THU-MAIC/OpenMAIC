@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listCourses, readCourse, persistCourse, deleteCourse } from '@/lib/server/course-storage';
-import type { Course, CourseChapter } from '@/lib/types/course';
+import type { Course } from '@/lib/types/course';
 
 export async function GET(req: NextRequest) {
   try {
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
       if (!body.chapters || body.chapters.length === 0) {
         return NextResponse.json({ error: 'Course must have at least one chapter to publish' }, { status: 400 });
       }
-      const unbound = body.chapters.filter((ch: CourseChapter) => !ch.classroomId);
+      const unbound = body.chapters.filter((ch) => !ch.classroomId);
       if (unbound.length > 0) {
         return NextResponse.json({ error: 'All chapters must have a bound classroom to publish' }, { status: 400 });
       }
