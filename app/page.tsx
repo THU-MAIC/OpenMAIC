@@ -37,6 +37,7 @@ import {
   StageListItem,
   listStages,
   deleteStageData,
+  renameStage,
   getFirstSlideByStages,
 } from '@/lib/utils/stage-storage';
 import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
@@ -183,6 +184,16 @@ function HomePage() {
     } catch (err) {
       log.error('Failed to delete classroom:', err);
       toast.error('Failed to delete classroom');
+    }
+  };
+
+  const handleRename = async (id: string, newName: string) => {
+    try {
+      await renameStage(id, newName);
+      setClassrooms((prev) => prev.map((c) => (c.id === id ? { ...c, name: newName } : c)));
+    } catch (err) {
+      log.error('Failed to rename classroom:', err);
+      toast.error('Failed to rename classroom');
     }
   };
 
@@ -653,6 +664,7 @@ function HomePage() {
                         slide={thumbnails[classroom.id]}
                         formatDate={formatDate}
                         onDelete={handleDelete}
+                        onRename={handleRename}
                         confirmingDelete={pendingDeleteId === classroom.id}
                         onConfirmDelete={() => confirmDelete(classroom.id)}
                         onCancelDelete={() => setPendingDeleteId(null)}
@@ -971,6 +983,7 @@ function ClassroomCard({
   slide,
   formatDate,
   onDelete,
+  onRename,
   confirmingDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -980,6 +993,7 @@ function ClassroomCard({
   slide?: Slide;
   formatDate: (ts: number) => string;
   onDelete: (id: string, e: React.MouseEvent) => void;
+  onRename: (id: string, newName: string) => void;
   confirmingDelete: boolean;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
@@ -988,6 +1002,9 @@ function ClassroomCard({
   const { t } = useI18n();
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumbWidth, setThumbWidth] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = thumbRef.current;
@@ -998,6 +1015,21 @@ function ClassroomCard({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  const startRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNameDraft(classroom.name);
+    setEditing(true);
+    setTimeout(() => nameInputRef.current?.focus(), 50);
+  };
+
+  const commitRename = () => {
+    const trimmed = nameDraft.trim();
+    if (trimmed && trimmed !== classroom.name) {
+      onRename(classroom.id, trimmed);
+    }
+    setEditing(false);
+  };
 
   return (
     <div className="group cursor-pointer" onClick={confirmingDelete ? undefined : onClick}>
@@ -1040,6 +1072,14 @@ function ClassroomCard({
                 }}
               >
                 <Trash2 className="size-3.5" />
+              </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="absolute top-2 right-11 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm rounded-full"
+                onClick={startRename}
+              >
+                <Pencil className="size-3.5" />
               </Button>
             </motion.div>
           )}
@@ -1085,9 +1125,30 @@ function ClassroomCard({
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
-            <p className="font-medium text-[15px] truncate text-foreground/90 min-w-0">
-              {classroom.name}
-            </p>
+            {editing ? (
+              <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+                <input
+                  ref={nameInputRef}
+                  value={nameDraft}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') setEditing(false);
+                  }}
+                  onBlur={commitRename}
+                  maxLength={100}
+                  placeholder={t('classroom.renamePlaceholder')}
+                  className="w-full bg-transparent border-b border-violet-400/60 text-[15px] font-medium text-foreground/90 outline-none placeholder:text-muted-foreground/40"
+                />
+              </div>
+            ) : (
+              <p
+                className="font-medium text-[15px] truncate text-foreground/90 min-w-0 cursor-text"
+                onDoubleClick={startRename}
+              >
+                {classroom.name}
+              </p>
+            )}
           </TooltipTrigger>
           <TooltipContent
             side="bottom"
