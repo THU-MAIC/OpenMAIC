@@ -31,10 +31,10 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
         style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
       >
         <div
-          className="element-content relative p-[10px] leading-[1.5] break-words"
+          className="element-content relative h-full overflow-hidden p-[10px] leading-[1.5] break-words"
           style={{
             width: elementInfo.vertical ? 'auto' : `${elementInfo.width}px`,
-            height: elementInfo.vertical ? `${elementInfo.height}px` : 'auto',
+            height: `${elementInfo.height}px`,
             backgroundColor: elementInfo.fill,
             opacity: elementInfo.opacity,
             textShadow: shadowStyle,
@@ -53,7 +53,7 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
             outline={elementInfo.outline}
           />
           <div
-            className={`text ProseMirror-static relative ${target === 'thumbnail' ? 'pointer-events-none' : ''}`}
+            className={`text ProseMirror-static relative overflow-hidden [&_p]:m-0 [&_p]:mb-[var(--paragraphSpace)] [&_p:last-child]:mb-0 ${target === 'thumbnail' ? 'pointer-events-none' : ''}`}
             dangerouslySetInnerHTML={{ __html: elementInfo.content }}
           />
         </div>

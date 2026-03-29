@@ -231,28 +231,37 @@ export default function ClassroomDetailPage() {
 
   const loadClassroom = useCallback(async () => {
     try {
-      await loadFromStorage(classroomId);
+      let loadedFromServer = false;
 
-      // If IndexedDB had no data, try server-side storage (API-generated classrooms)
-      if (!useStageStore.getState().stage) {
-        log.info('No IndexedDB data, trying server-side storage for:', classroomId);
-        try {
-          const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
-          if (res.ok) {
-            const json = await res.json();
-            if (json.success && json.classroom) {
-              const { stage, scenes, outlines } = json.classroom;
-              useStageStore.getState().setStage(stage);
-              useStageStore.setState({
-                scenes,
-                outlines: outlines || [],
-                currentSceneId: scenes[0]?.id ?? null,
-              });
-              log.info('Loaded from server-side storage:', classroomId);
-            }
+      // Published classrooms should prefer the latest server copy.
+      // IndexedDB stays as an offline/cache fallback instead of being authoritative.
+      try {
+        const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`, {
+          cache: 'no-store',
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && json.classroom) {
+            const { stage, scenes, outlines } = json.classroom;
+            useStageStore.getState().setStage(stage);
+            useStageStore.setState({
+              scenes,
+              outlines: outlines || [],
+              currentSceneId: scenes[0]?.id ?? null,
+            });
+            await useStageStore.getState().saveToStorage();
+            loadedFromServer = true;
+            log.info('Loaded latest classroom from server-side storage:', classroomId);
           }
-        } catch (fetchErr) {
-          log.warn('Server-side storage fetch failed:', fetchErr);
+        }
+      } catch (fetchErr) {
+        log.warn('Server-side storage fetch failed, falling back to IndexedDB:', fetchErr);
+      }
+
+      if (!loadedFromServer) {
+        await loadFromStorage(classroomId);
+        if (useStageStore.getState().stage) {
+          log.info('Loaded classroom from IndexedDB fallback:', classroomId);
         }
       }
 
