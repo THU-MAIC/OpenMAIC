@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import yaml from 'js-yaml';
 import { createLogger } from '@/lib/logger';
+import { ensureRuntimeEnvLoaded, resolveProjectRoot } from '@/lib/server/runtime-env';
 
 const log = createLogger('ServerProviderConfig');
 
@@ -101,7 +102,7 @@ type YamlData = Partial<{
 
 function loadYamlFile(filename: string): YamlData {
   try {
-    const filePath = path.join(process.cwd(), filename);
+    const filePath = path.join(resolveProjectRoot(), filename);
     if (!fs.existsSync(filePath)) return {};
     const raw = fs.readFileSync(filePath, 'utf-8');
     const parsed = yaml.load(raw) as Record<string, unknown> | null;
@@ -210,6 +211,7 @@ function getConfig(): ServerConfig {
   const cached = _configs.get('');
   if (cached) return cached;
 
+  ensureRuntimeEnvLoaded();
   const yamlData = loadYamlFile(DEFAULT_FILENAME);
   const config = buildConfig(yamlData);
   logConfig(config, DEFAULT_FILENAME);

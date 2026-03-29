@@ -94,6 +94,23 @@ export interface ClassroomListItem {
   firstSlide?: Slide | null;
 }
 
+function getDisplayClassroomName(data: PersistedClassroomData): string {
+  const rawName = data.stage?.name?.trim() || '';
+  const fallbackTitle =
+    data.scenes?.find((scene) => scene.title?.trim())?.title?.trim() || data.id || 'Untitled';
+
+  if (!rawName) return fallbackTitle;
+
+  const firstLine = rawName.split(/\r?\n/, 1)[0]?.trim() || '';
+  const looksLikeReferenceBlob =
+    rawName.startsWith('参考资料{') ||
+    /\n#{1,6}\s/.test(rawName) ||
+    /\n[-*]\s/.test(rawName);
+
+  if (looksLikeReferenceBlob) return fallbackTitle;
+  return firstLine || fallbackTitle;
+}
+
 export async function listClassrooms(): Promise<ClassroomListItem[]> {
   await ensureClassroomsDir();
   const entries = await fs.readdir(CLASSROOMS_DIR, { withFileTypes: true });
@@ -109,7 +126,7 @@ export async function listClassrooms(): Promise<ClassroomListItem[]> {
         const firstSlideScene = data.scenes?.find(s => s.content?.type === 'slide');
         items.push({
           id: data.id,
-          name: data.stage?.name || 'Untitled',
+          name: getDisplayClassroomName(data),
           description: data.stage?.description,
           language: data.stage?.language,
           sceneCount: data.scenes?.length || 0,
@@ -133,7 +150,7 @@ export async function listClassrooms(): Promise<ClassroomListItem[]> {
         const firstSlideScene = data.scenes?.find(s => s.content?.type === 'slide');
         items.push({
           id: data.id,
-          name: data.stage?.name || 'Untitled',
+          name: getDisplayClassroomName(data),
           description: data.stage?.description,
           language: data.stage?.language,
           sceneCount: data.scenes?.length || 0,
