@@ -1117,11 +1117,20 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         apiKey: effectiveApiKey,
         baseURL: effectiveBaseUrl,
       };
-      if (config.proxy) {
+      // Support per-provider proxy (config.proxy) or fall back to standard env vars.
+      // instrumentation.ts sets a global undici dispatcher for env-var proxy, so this
+      // explicit override is only needed when config.proxy differs from the global setting.
+      const proxyUrl =
+        config.proxy ||
+        process.env.HTTPS_PROXY ||
+        process.env.https_proxy ||
+        process.env.HTTP_PROXY ||
+        process.env.http_proxy;
+      if (proxyUrl) {
         // Dynamic require to avoid bundling undici on the client side
         // eslint-disable-next-line @typescript-eslint/no-require-imports
         const { ProxyAgent, fetch: undiciFetch } = require('undici');
-        const agent = new ProxyAgent(config.proxy);
+        const agent = new ProxyAgent(proxyUrl);
         googleOptions.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
           undiciFetch(input as string, {
             ...(init as Record<string, unknown>),
