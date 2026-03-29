@@ -29,7 +29,6 @@ interface VideoSettingsProps {
 export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
   const { t } = useI18n();
 
-  const videoModelId = useSettingsStore((state) => state.videoModelId);
   const videoProvidersConfig = useSettingsStore((state) => state.videoProvidersConfig);
   const setVideoProviderConfig = useSettingsStore((state) => state.setVideoProviderConfig);
 
@@ -77,22 +76,29 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
         method: 'POST',
         headers: {
           'x-video-provider': selectedProviderId,
-          'x-video-model': videoModelId || '',
           'x-api-key': currentConfig?.apiKey || '',
           'x-base-url': currentConfig?.baseUrl || '',
         },
       });
-      const data = await response.json();
+      const data = (await response.json().catch(() => ({}))) as {
+        success?: boolean;
+        message?: string;
+        error?: string;
+        details?: string;
+      };
       if (data.success) {
         setTestStatus('success');
         setTestMessage(t('settings.videoConnectivitySuccess'));
       } else {
         setTestStatus('error');
-        setTestMessage(`${t('settings.videoConnectivityFailed')}: ${data.message}`);
+        const errorMessage =
+          data.message || data.error || data.details || response.statusText || 'Unknown error';
+        setTestMessage(`${t('settings.videoConnectivityFailed')}: ${errorMessage}`);
       }
     } catch (err) {
       setTestStatus('error');
-      setTestMessage(`${t('settings.videoConnectivityFailed')}: ${err}`);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setTestMessage(`${t('settings.videoConnectivityFailed')}: ${errorMessage}`);
     } finally {
       setTestLoading(false);
     }
