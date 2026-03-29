@@ -29,3 +29,10 @@ export interface PDFParserConfig {
 }
 
 // Note: ParsedPdfContent is imported from @/lib/types/pdf to avoid duplication
+export interface PDFParserConfig {
+  providerId: PDFProviderId;
+  apiKey?: string;
+  baseUrl?: string;
+  sourceFileName?: string;
+  mineruModelVersion?: 'pipeline' | 'vlm';
+}
