@@ -15,17 +15,31 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { ArrowLeft, Pencil, BookOpen, Building2, GraduationCap, User } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ArrowLeft, Pencil, BookOpen, Building2, GraduationCap, User, Globe, GlobeLock } from 'lucide-react';
+
+type PublishDialogMode = 'publish' | 'unpublish' | null;
 
 export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { t } = useI18n();
   const router = useRouter();
-  const { currentCourse, fetchCourse, updateCourse, addChapter, updateChapter, removeChapter, reorderChapters } =
+  const { currentCourse, fetchCourse, updateCourse, addChapter, updateChapter, removeChapter, reorderChapters, publishCourse, unpublishCourse } =
     useCourseStore();
   const [editing, setEditing] = useState(false);
   const [courseId, setCourseId] = useState<string | null>(null);
   const [classroomMeta, setClassroomMeta] = useState<Record<string, ClassroomMeta>>({});
   const [bindingChapterId, setBindingChapterId] = useState<string | null>(null);
+  const [publishDialog, setPublishDialog] = useState<PublishDialogMode>(null);
 
   useEffect(() => {
     params.then(({ id }) => {
@@ -87,6 +101,13 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
     );
   }
 
+  const canPublish =
+    currentCourse.chapters.length > 0 &&
+    currentCourse.chapters.every((ch) => !!ch.classroomId);
+  const boundCount = currentCourse.chapters.filter((ch) => !!ch.classroomId).length;
+  const totalCount = currentCourse.chapters.length;
+  const isPublished = currentCourse.status === 'published';
+
   const handleUpdate = async (data: CourseFormData) => {
     await updateCourse(courseId, data);
     setEditing(false);
@@ -105,6 +126,13 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
 
   const handleUnbind = async (chapterId: string) => {
     await updateChapter(courseId, chapterId, { classroomId: null });
+  };
+
+  const handlePublishConfirm = async () => {
+    if (!courseId) return;
+    if (publishDialog === 'publish') await publishCourse(courseId);
+    else if (publishDialog === 'unpublish') await unpublishCourse(courseId);
+    setPublishDialog(null);
   };
 
   const handleBind = (chapterId: string) => {
@@ -162,10 +190,41 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
             <CardHeader>
               <CardTitle className="text-xl">{currentCourse.name}</CardTitle>
               <CardAction>
-                <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                  <Pencil />
-                  {t('course.edit')}
-                </Button>
+                <div className="flex items-center gap-2">
+                  {isPublished ? (
+                    <>
+                      <Badge variant="secondary" className="gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40">
+                        <Globe className="size-3" />
+                        {t('course.publishedStatus')}
+                      </Badge>
+                      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => setPublishDialog('unpublish')}>
+                        <GlobeLock className="size-4" />
+                        {t('course.unpublish')}
+                      </Button>
+                    </>
+                  ) : canPublish ? (
+                    <Button variant="default" size="sm" onClick={() => setPublishDialog('publish')}>
+                      <Globe className="size-4" />
+                      {t('course.publish')}
+                    </Button>
+                  ) : (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span tabIndex={0}>
+                          <Button variant="outline" size="sm" disabled>
+                            <Globe className="size-4" />
+                            {t('course.publish')}
+                          </Button>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>{t('course.cannotPublish')}</TooltipContent>
+                    </Tooltip>
+                  )}
+                  <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                    <Pencil />
+                    {t('course.edit')}
+                  </Button>
+                </div>
               </CardAction>
             </CardHeader>
             <CardContent>
@@ -223,6 +282,14 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
             <Badge variant="secondary" className="ml-1">
               {currentCourse.chapters.length}
             </Badge>
+            {totalCount > 0 && (
+              <Badge
+                variant="outline"
+                className={`ml-auto text-xs ${boundCount === totalCount ? 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800' : 'text-muted-foreground'}`}
+              >
+                {boundCount}/{totalCount} {t('course.chaptersReady')}
+              </Badge>
+            )}
           </div>
 
           <ChapterList
@@ -259,6 +326,26 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
           onClose={() => setBindingChapterId(null)}
         />
       )}
+
+      {/* Publish / Unpublish confirmation dialog */}
+      <AlertDialog open={publishDialog !== null} onOpenChange={(open) => { if (!open) setPublishDialog(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {publishDialog === 'publish' ? t('course.publish') : t('course.unpublish')}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {publishDialog === 'publish' ? t('course.confirmPublish') : t('course.confirmUnpublish')}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('course.cancel')}</AlertDialogCancel>
+            <AlertDialogAction onClick={handlePublishConfirm}>
+              {publishDialog === 'publish' ? t('course.publish') : t('course.unpublish')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -17,18 +17,26 @@ async function migrateCourseIfNeeded(
   filePath: string,
   raw: Record<string, unknown>,
 ): Promise<Course> {
-  if (Array.isArray((raw as unknown as Course).chapters)) return raw as unknown as Course;
-  const ids = (raw.classroomIds as string[] | undefined) ?? [];
-  const chapters: CourseChapter[] = ids.map((cid, i) => ({
-    id: nanoid(10),
-    title: `第 ${i + 1} 章`,
-    order: i,
-    classroomId: cid,
-  }));
-  const { classroomIds: _removed, ...rest } = raw;
-  const migrated = { ...(rest as Omit<Course, 'chapters'>), chapters } as Course;
-  await writeJsonFileAtomic(filePath, migrated);
-  return migrated;
+  let course: Course;
+  if (Array.isArray((raw as unknown as Course).chapters)) {
+    course = raw as unknown as Course;
+  } else {
+    const ids = (raw.classroomIds as string[] | undefined) ?? [];
+    const chapters: CourseChapter[] = ids.map((cid, i) => ({
+      id: nanoid(10),
+      title: `第 ${i + 1} 章`,
+      order: i,
+      classroomId: cid,
+    }));
+    const { classroomIds: _removed, ...rest } = raw;
+    course = { ...(rest as Omit<Course, 'chapters'>), chapters } as Course;
+  }
+  // Backfill missing status field for old courses
+  if (!course.status) {
+    course.status = 'draft';
+    await writeJsonFileAtomic(filePath, course);
+  }
+  return course;
 }
 
 export async function persistCourse(course: Course): Promise<void> {
@@ -69,6 +77,8 @@ export async function listCourses(): Promise<CourseListItem[]> {
             description: course.description,
             teacherName: course.teacherName,
             chapterCount: course.chapters.length,
+            status: course.status,
+            ...(course.publishedAt ? { publishedAt: course.publishedAt } : {}),
             createdAt: course.createdAt,
           } satisfies CourseListItem;
         } catch {

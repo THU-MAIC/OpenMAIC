@@ -44,6 +44,8 @@ export interface Course {
   description: string;
   teacherName: string;
   chapters: CourseChapter[];
+  status: 'draft' | 'published';
+  publishedAt?: string;
   createdAt: string;
   updatedAt: string;
 }

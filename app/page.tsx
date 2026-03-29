@@ -34,7 +34,7 @@ import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
 import type { UserRequirements } from '@/lib/types/generation';
-import { COURSE_CHAPTER_CONTEXT_KEY, type CourseChapterContext } from '@/lib/types/course';
+import { COURSE_CHAPTER_CONTEXT_KEY, type CourseChapterContext, type CourseListItem } from '@/lib/types/course';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -148,6 +148,7 @@ function HomePage() {
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [publicClassrooms, setPublicClassrooms] = useState<PublicClassroomItem[]>([]);
   const [publicThumbnails, setPublicThumbnails] = useState<Record<string, Slide>>({});
+  const [publishedCourses, setPublishedCourses] = useState<CourseListItem[]>([]);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -200,8 +201,9 @@ function HomePage() {
     Promise.all([
       loadClassrooms(),
       fetchCourses(),
-      fetch('/api/classroom').then(res => res.json())
-    ]).then(([, , publicData]) => {
+      fetch('/api/classroom').then(res => res.json()),
+      fetch('/api/course?status=published').then(res => res.json()),
+    ]).then(([, , publicData, publishedCourseData]) => {
       if (publicData.success && publicData.classrooms) {
         setPublicClassrooms(publicData.classrooms);
         const thumbs: Record<string, Slide> = {};
@@ -217,6 +219,9 @@ function HomePage() {
           }
         }
         setPublicThumbnails(thumbs);
+      }
+      if (Array.isArray(publishedCourseData)) {
+        setPublishedCourses(publishedCourseData);
       }
     }).catch(() => {});
   }, []);
@@ -667,6 +672,84 @@ function HomePage() {
           )}
         </AnimatePresence>
       </motion.div>
+
+      {/* ═══ Published courses ═══ */}
+      {publishedCourses.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.42 }}
+          className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
+        >
+          <div className="w-full flex items-center gap-4 py-2">
+            <div className="flex-1 h-px bg-border/40" />
+            <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 select-none">
+              <Globe className="size-3.5" />
+              {t('course.publishedCourses')}
+              <span className="text-[11px] tabular-nums opacity-60">{publishedCourses.length}</span>
+            </span>
+            <div className="flex-1 h-px bg-border/40" />
+          </div>
+
+          <div className="pt-4 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 w-full">
+            {publishedCourses.map((course, i) => {
+              const COVERS = [
+                { from: '#7c3aed', to: '#a78bfa', dot: 'rgba(255,255,255,0.15)' },
+                { from: '#0ea5e9', to: '#38bdf8', dot: 'rgba(255,255,255,0.15)' },
+                { from: '#059669', to: '#34d399', dot: 'rgba(255,255,255,0.15)' },
+                { from: '#e11d48', to: '#fb7185', dot: 'rgba(255,255,255,0.15)' },
+                { from: '#d97706', to: '#fbbf24', dot: 'rgba(255,255,255,0.15)' },
+                { from: '#0d9488', to: '#2dd4bf', dot: 'rgba(255,255,255,0.15)' },
+                { from: '#c026d3', to: '#e879f9', dot: 'rgba(255,255,255,0.15)' },
+                { from: '#ea580c', to: '#fb923c', dot: 'rgba(255,255,255,0.15)' },
+              ];
+              const hash = course.id.split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+              const cover = COVERS[hash % COVERS.length];
+              return (
+                <motion.div
+                  key={course.id}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
+                  onClick={() => router.push(`/course/${course.id}`)}
+                  className="group rounded-2xl overflow-hidden cursor-pointer border border-white/10 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-250 flex flex-col"
+                  style={{ minHeight: '200px' }}
+                >
+                  <div
+                    className="relative flex-shrink-0 h-[88px] flex flex-col justify-between px-3 pt-2.5 pb-2.5 overflow-hidden"
+                    style={{ background: `linear-gradient(135deg, ${cover.from}, ${cover.to})` }}
+                  >
+                    <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full" style={{ background: cover.dot }} />
+                    <div className="absolute -bottom-5 -left-3 w-24 h-24 rounded-full" style={{ background: cover.dot }} />
+                    <span className="relative z-10 inline-flex items-center gap-1 text-[10px] font-semibold bg-white/20 backdrop-blur-sm text-white px-2 py-0.5 rounded-full border border-white/30 self-start">
+                      <BookOpen className="size-2.5" />
+                      {course.chapterCount} {t('course.chapter')}
+                    </span>
+                    <h3 className="relative z-10 text-[12px] font-bold text-white leading-snug line-clamp-1 tracking-tight drop-shadow-sm">
+                      {course.name}
+                    </h3>
+                  </div>
+                  <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 px-3 pt-2.5 pb-3 min-h-0">
+                    {course.description ? (
+                      <p className="text-[11px] text-muted-foreground line-clamp-3 mb-auto leading-relaxed">
+                        {course.description}
+                      </p>
+                    ) : (
+                      <div className="mb-auto" />
+                    )}
+                    <div className="mt-2 flex items-center gap-1.5 min-w-0">
+                      <GraduationCap className="size-3 flex-shrink-0" style={{ color: cover.from }} />
+                      <span className="text-[11px] text-muted-foreground truncate">
+                        {course.college} · {course.major}
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
 
       {/* ═══ Public classrooms ═══ */}
       {publicClassrooms.length > 0 && (

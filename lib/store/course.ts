@@ -11,6 +11,8 @@ interface CourseState {
   createCourse: (data: CourseFormData) => Promise<string>;
   updateCourse: (id: string, data: Partial<CourseFormData>) => Promise<void>;
   deleteCourse: (id: string) => Promise<void>;
+  publishCourse: (id: string) => Promise<void>;
+  unpublishCourse: (id: string) => Promise<void>;
   addChapter: (courseId: string, title: string, description: string | null) => Promise<void>;
   updateChapter: (courseId: string, chapterId: string, updates: ChapterUpdates) => Promise<void>;
   removeChapter: (courseId: string, chapterId: string) => Promise<void>;
@@ -54,6 +56,7 @@ export const useCourseStore = create<CourseState>((set, get) => ({
       ...data,
       chapters: [],
       id,
+      status: 'draft',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -83,6 +86,38 @@ export const useCourseStore = create<CourseState>((set, get) => ({
 
   deleteCourse: async (id) => {
     await fetch(`/api/course?id=${id}`, { method: 'DELETE' });
+    await get().fetchCourses();
+  },
+
+  publishCourse: async (id) => {
+    const course = get().currentCourse;
+    if (!course || course.id !== id) return;
+    const updated: Course = {
+      ...course,
+      status: 'published',
+      publishedAt: course.publishedAt ?? new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    await fetch('/api/course', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    });
+    set({ currentCourse: updated });
+    await get().fetchCourses();
+  },
+
+  unpublishCourse: async (id) => {
+    const course = get().currentCourse;
+    if (!course || course.id !== id) return;
+    const { publishedAt: _removed, ...rest } = course;
+    const updated: Course = { ...rest, status: 'draft', updatedAt: new Date().toISOString() };
+    await fetch('/api/course', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updated),
+    });
+    set({ currentCourse: updated });
     await get().fetchCourses();
   },
 

@@ -16,7 +16,9 @@ export async function GET(req: NextRequest) {
     }
 
     const courses = await listCourses();
-    return NextResponse.json(courses);
+    const statusFilter = searchParams.get('status');
+    const filtered = statusFilter ? courses.filter((c) => c.status === statusFilter) : courses;
+    return NextResponse.json(filtered);
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
   }
