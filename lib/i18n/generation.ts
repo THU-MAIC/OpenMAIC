@@ -1,8 +1,9 @@
 export const generationZhCN = {
   classroom: {
-    recentClassrooms: '最近学习',
+    recentClassrooms: '本地课堂记录',
     today: '今天',
     yesterday: '昨天',
+    twoDaysAgo: '前天',
     daysAgo: '天前',
     slides: '页',
     nameCopied: '课堂名称已复制',
@@ -66,9 +67,10 @@ export const generationZhCN = {
 
 export const generationEnUS = {
   classroom: {
-    recentClassrooms: 'Recent',
+    recentClassrooms: 'Local Classrooms',
     today: 'Today',
     yesterday: 'Yesterday',
+    twoDaysAgo: 'Two days ago',
     daysAgo: 'days ago',
     slides: 'slides',
     nameCopied: 'Name copied',

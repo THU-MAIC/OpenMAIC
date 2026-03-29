@@ -154,6 +154,14 @@ function HomePage() {
   const [activeTab, setActiveTab] = useState<'courses' | 'standalone'>('standalone');
   const { courses, fetchCourses } = useCourseStore();
 
+  // Default to 'courses' tab when courses exist but no local classrooms
+  useEffect(() => {
+    if (courses.length > 0 && classrooms.length === 0) {
+      setActiveTab('courses');
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [courses.length, classrooms.length]);
+
   // Close dropdowns when clicking outside
   useEffect(() => {
     if (!languageOpen && !themeOpen) return;
@@ -361,6 +369,7 @@ function HomePage() {
 
     if (diffDays === 0) return t('classroom.today');
     if (diffDays === 1) return t('classroom.yesterday');
+    if (diffDays === 2) return t('classroom.twoDaysAgo');
     if (diffDays < 7) return `${diffDays} ${t('classroom.daysAgo')}`;
     return date.toLocaleDateString();
   };
@@ -1212,6 +1221,7 @@ function PublicClassroomCard({
     const diffDays = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60 * 24));
     if (diffDays === 0) return t('classroom.today');
     if (diffDays === 1) return t('classroom.yesterday');
+    if (diffDays === 2) return t('classroom.twoDaysAgo');
     if (diffDays < 7) return `${diffDays} ${t('classroom.daysAgo')}`;
     return date.toLocaleDateString();
   };
