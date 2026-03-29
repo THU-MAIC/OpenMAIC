@@ -467,7 +467,7 @@ async function generateSlideContent(
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
 ): Promise<GeneratedSlideContent | null> {
-  const lang = outline.language || 'zh-CN';
+  const lang = outline.language || 'id-ID';
 
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -735,7 +735,7 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  language: 'zh-CN' | 'en-US' = 'zh-CN',
+  language: 'en-US' | 'id-ID' | 'ar-SA' = 'id-ID',
 ): Promise<GeneratedInteractiveContent | null> {
   const config = outline.interactiveConfig!;
 

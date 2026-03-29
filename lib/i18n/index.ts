@@ -1,18 +1,18 @@
 import { defaultLocale, type Locale } from './types';
 export { type Locale, defaultLocale } from './types';
-import { commonZhCN, commonEnUS } from './common';
-import { stageZhCN, stageEnUS } from './stage';
-import { chatZhCN, chatEnUS } from './chat';
-import { generationZhCN, generationEnUS } from './generation';
-import { settingsZhCN, settingsEnUS } from './settings';
+import { commonZhCN, commonEnUS, commonIdID, commonArSA } from './common';
+import { stageZhCN, stageEnUS, stageIdID, stageArSA } from './stage';
+import { chatZhCN, chatEnUS, chatIdID, chatArSA } from './chat';
+import { generationZhCN, generationEnUS, generationIdID, generationArSA } from './generation';
+import { settingsZhCN, settingsEnUS, settingsIdID, settingsArSA } from './settings';
 
 export const translations = {
-  'zh-CN': {
-    ...commonZhCN,
-    ...stageZhCN,
-    ...chatZhCN,
-    ...generationZhCN,
-    ...settingsZhCN,
+  'id-ID': {
+    ...commonIdID,
+    ...stageIdID,
+    ...chatIdID,
+    ...generationIdID,
+    ...settingsIdID,
   },
   'en-US': {
     ...commonEnUS,
@@ -20,6 +20,13 @@ export const translations = {
     ...chatEnUS,
     ...generationEnUS,
     ...settingsEnUS,
+  },
+  'ar-SA': {
+    ...commonArSA,
+    ...stageArSA,
+    ...chatArSA,
+    ...generationArSA,
+    ...settingsArSA,
   },
 } as const;
 
@@ -40,7 +47,7 @@ export function getClientTranslation(key: string): string {
   if (typeof window !== 'undefined') {
     try {
       const storedLocale = localStorage.getItem('locale');
-      if (storedLocale === 'zh-CN' || storedLocale === 'en-US') {
+      if (storedLocale === 'en-US' || storedLocale === 'id-ID' || storedLocale === 'ar-SA') {
         locale = storedLocale;
       }
     } catch {

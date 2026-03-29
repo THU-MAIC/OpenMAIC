@@ -13,6 +13,10 @@ import { generateWithSeedream, testSeedreamConnectivity } from './adapters/seedr
 import { generateWithQwenImage, testQwenImageConnectivity } from './adapters/qwen-image-adapter';
 import { generateWithNanoBanana, testNanoBananaConnectivity } from './adapters/nano-banana-adapter';
 import { generateWithGrokImage, testGrokImageConnectivity } from './adapters/grok-image-adapter';
+import {
+  generateWithOpenRouterImage,
+  testOpenRouterImageConnectivity,
+} from './adapters/openrouter-image-adapter';
 
 export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   seedream: {
@@ -78,6 +82,20 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
   },
+  'openrouter-image': {
+    id: 'openrouter-image',
+    name: 'OpenRouter Image',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    models: [
+      { id: 'black-forest-labs/FLUX-1.1-pro', name: 'FLUX 1.1 Pro (Black Forest Labs)' },
+      { id: 'black-forest-labs/FLUX.1-schnell:free', name: 'FLUX.1 Schnell (Free)' },
+      { id: 'black-forest-labs/FLUX.1-dev', name: 'FLUX.1 Dev (Black Forest Labs)' },
+      { id: 'openai/dall-e-3', name: 'DALL-E 3 (OpenAI)' },
+      { id: 'openai/dall-e-2', name: 'DALL-E 2 (OpenAI)' },
+    ],
+    supportedAspectRatios: ['1:1', '16:9', '4:3', '9:16'],
+  },
 };
 
 export async function testImageConnectivity(
@@ -92,6 +110,8 @@ export async function testImageConnectivity(
       return testNanoBananaConnectivity(config);
     case 'grok-image':
       return testGrokImageConnectivity(config);
+    case 'openrouter-image':
+      return testOpenRouterImageConnectivity(config);
     default:
       return {
         success: false,
@@ -113,6 +133,8 @@ export async function generateImage(
       return generateWithNanoBanana(config, options);
     case 'grok-image':
       return generateWithGrokImage(config, options);
+    case 'openrouter-image':
+      return generateWithOpenRouterImage(config, options);
     default:
       throw new Error(`Unsupported image provider: ${config.providerId}`);
   }

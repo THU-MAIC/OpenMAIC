@@ -945,6 +945,140 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
+
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    type: 'openai',
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    requiresApiKey: true,
+    icon: '/logos/openrouter.svg',
+    models: [
+      // OpenAI models via OpenRouter
+      {
+        id: 'openai/gpt-4o',
+        name: 'GPT-4o (OpenAI)',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'openai/gpt-4o-mini',
+        name: 'GPT-4o mini (OpenAI)',
+        contextWindow: 128000,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      // Anthropic models via OpenRouter
+      {
+        id: 'anthropic/claude-sonnet-4-5',
+        name: 'Claude Sonnet 4.5 (Anthropic)',
+        contextWindow: 200000,
+        outputWindow: 64000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'anthropic/claude-haiku-4-5',
+        name: 'Claude Haiku 4.5 (Anthropic)',
+        contextWindow: 200000,
+        outputWindow: 64000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      // Google models via OpenRouter
+      {
+        id: 'google/gemini-2.5-flash',
+        name: 'Gemini 2.5 Flash (Google)',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'google/gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro (Google)',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      // DeepSeek models via OpenRouter
+      {
+        id: 'deepseek/deepseek-chat-v3-0324',
+        name: 'DeepSeek V3 (DeepSeek)',
+        contextWindow: 128000,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'deepseek/deepseek-r1-0528',
+        name: 'DeepSeek R1 (DeepSeek)',
+        contextWindow: 128000,
+        outputWindow: 32000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      // Meta Llama via OpenRouter
+      {
+        id: 'meta-llama/llama-4-maverick',
+        name: 'Llama 4 Maverick (Meta)',
+        contextWindow: 1048576,
+        outputWindow: 16384,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'meta-llama/llama-4-scout',
+        name: 'Llama 4 Scout (Meta)',
+        contextWindow: 512000,
+        outputWindow: 16384,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      // Mistral models via OpenRouter
+      {
+        id: 'mistralai/mistral-large',
+        name: 'Mistral Large (Mistral)',
+        contextWindow: 131072,
+        outputWindow: 16384,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'mistralai/mistral-small-3.2-24b-instruct',
+        name: 'Mistral Small 3.2 (Mistral)',
+        contextWindow: 131072,
+        outputWindow: 16384,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      // Free models via OpenRouter
+      {
+        id: 'meta-llama/llama-3.3-70b-instruct:free',
+        name: 'Llama 3.3 70B (Free)',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'deepseek/deepseek-r1:free',
+        name: 'DeepSeek R1 (Free)',
+        contextWindow: 65536,
+        outputWindow: 8192,
+        capabilities: {
+          streaming: true,
+          tools: false,
+          vision: false,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+    ],
+  },
 };
 
 /**

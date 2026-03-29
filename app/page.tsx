@@ -56,14 +56,14 @@ const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 interface FormState {
   pdfFile: File | null;
   requirement: string;
-  language: 'zh-CN' | 'en-US';
+  language: 'en-US' | 'id-ID' | 'ar-SA';
   webSearch: boolean;
 }
 
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
-  language: 'zh-CN',
+  language: 'id-ID',
   webSearch: false,
 };
 
@@ -99,10 +99,10 @@ function HomePage() {
       const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
-      if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US') {
+      if (savedLanguage === 'en-US' || savedLanguage === 'id-ID' || savedLanguage === 'ar-SA') {
         updates.language = savedLanguage;
       } else {
-        const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+        const detected = navigator.language?.startsWith('id') ? 'id-ID' : navigator.language?.startsWith('ar') ? 'ar-SA' : navigator.language?.startsWith('en') ? 'en-US' : 'id-ID';
         updates.language = detected;
       }
       if (Object.keys(updates).length > 0) {
@@ -335,22 +335,22 @@ function HomePage() {
             }}
             className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
           >
-            {locale === 'zh-CN' ? 'CN' : 'EN'}
+            {locale === 'id-ID' ? 'ID' : locale === 'ar-SA' ? 'AR' : 'EN'}
           </button>
           {languageOpen && (
             <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[120px]">
               <button
                 onClick={() => {
-                  setLocale('zh-CN');
+                  setLocale('id-ID');
                   setLanguageOpen(false);
                 }}
                 className={cn(
                   'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
-                  locale === 'zh-CN' &&
+                  locale === 'id-ID' &&
                     'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
                 )}
               >
-                简体中文
+                Bahasa Indonesia
               </button>
               <button
                 onClick={() => {
@@ -364,6 +364,19 @@ function HomePage() {
                 )}
               >
                 English
+              </button>
+              <button
+                onClick={() => {
+                  setLocale('ar-SA');
+                  setLanguageOpen(false);
+                }}
+                className={cn(
+                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
+                  locale === 'ar-SA' &&
+                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+                )}
+              >
+                العربية
               </button>
             </div>
           )}
@@ -475,10 +488,8 @@ function HomePage() {
           classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
         )}
       >
-        {/* ── Logo ── */}
-        <motion.img
-          src="/logo-horizontal.png"
-          alt="OpenMAIC"
+        {/* ── Title ── */}
+        <motion.h1
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{
@@ -487,8 +498,10 @@ function HomePage() {
             stiffness: 200,
             damping: 20,
           }}
-          className="h-12 md:h-16 mb-2 -ml-2 md:-ml-3"
-        />
+          className="text-2xl md:text-4xl font-bold bg-gradient-to-r from-purple-600 via-violet-600 to-indigo-600 dark:from-purple-400 dark:via-violet-400 dark:to-indigo-400 bg-clip-text text-transparent mb-2"
+        >
+          {t('home.appTitle')}
+        </motion.h1>
 
         {/* ── Slogan ── */}
         <motion.p
@@ -669,7 +682,7 @@ function HomePage() {
 
       {/* Footer — flows with content, at the very end */}
       <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
-        OpenMAIC Open Source Project
+        {t('home.appTitle')}
       </div>
     </div>
   );

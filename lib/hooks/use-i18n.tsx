@@ -10,7 +10,7 @@ type I18nContextType = {
 };
 
 const LOCALE_STORAGE_KEY = 'locale';
-const VALID_LOCALES: Locale[] = ['zh-CN', 'en-US'];
+const VALID_LOCALES: Locale[] = ['id-ID', 'en-US', 'ar-SA'];
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
@@ -26,7 +26,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         setLocaleState(stored as Locale);
         return;
       }
-      const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+      const detected = navigator.language?.startsWith('id') ? 'id-ID' : navigator.language?.startsWith('ar') ? 'ar-SA' : navigator.language?.startsWith('en') ? 'en-US' : 'id-ID';
       localStorage.setItem(LOCALE_STORAGE_KEY, detected);
       setLocaleState(detected);
     } catch {
