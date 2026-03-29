@@ -763,28 +763,35 @@ function HomePage() {
                         className="group rounded-2xl overflow-hidden cursor-pointer border border-white/10 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-250 flex flex-col"
                         style={{ minHeight: '200px' }}
                       >
-                        {/* Cover area */}
+                        {/* Cover area — compact with course name */}
                         <div
-                          className="relative flex-shrink-0 h-[88px] flex items-end px-4 pb-3 overflow-hidden"
+                          className="relative flex-shrink-0 h-[88px] flex flex-col justify-between px-3 pt-2.5 pb-2.5 overflow-hidden"
                           style={{ background: `linear-gradient(135deg, ${cover.from}, ${cover.to})` }}
                         >
                           {/* Decorative circles */}
                           <div className="absolute -top-4 -right-4 w-20 h-20 rounded-full" style={{ background: cover.dot }} />
-                          <div className="absolute top-2 right-10 w-10 h-10 rounded-full" style={{ background: cover.dot }} />
-                          <div className="absolute -bottom-6 -left-4 w-24 h-24 rounded-full" style={{ background: cover.dot }} />
+                          <div className="absolute -bottom-5 -left-3 w-24 h-24 rounded-full" style={{ background: cover.dot }} />
                           {/* Chapter badge */}
-                          <span className="relative z-10 inline-flex items-center gap-1 text-[10px] font-semibold bg-white/20 backdrop-blur-sm text-white px-2 py-0.5 rounded-full border border-white/30">
+                          <span className="relative z-10 inline-flex items-center gap-1 text-[10px] font-semibold bg-white/20 backdrop-blur-sm text-white px-2 py-0.5 rounded-full border border-white/30 self-start">
                             <BookOpen className="size-2.5" />
                             {course.chapterCount} {t('course.chapter')}
                           </span>
-                        </div>
-
-                        {/* Info area */}
-                        <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 px-4 pt-3 pb-3.5 min-h-0">
-                          <h3 className="text-[13px] font-semibold text-foreground leading-snug line-clamp-2 mb-auto">
+                          {/* Course name on gradient */}
+                          <h3 className="relative z-10 text-[12px] font-bold text-white leading-snug line-clamp-1 tracking-tight drop-shadow-sm">
                             {course.name}
                           </h3>
-                          <div className="mt-2.5 flex items-center gap-1.5 min-w-0">
+                        </div>
+
+                        {/* Info area — taller, shows description */}
+                        <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 px-3 pt-2.5 pb-3 min-h-0">
+                          {course.description ? (
+                            <p className="text-[11px] text-muted-foreground line-clamp-3 mb-auto leading-relaxed">
+                              {course.description}
+                            </p>
+                          ) : (
+                            <div className="mb-auto" />
+                          )}
+                          <div className="mt-2 flex items-center gap-1.5 min-w-0">
                             <GraduationCap className="size-3 flex-shrink-0" style={{ color: cover.from }} />
                             <span className="text-[11px] text-muted-foreground truncate">
                               {course.college} · {course.major}

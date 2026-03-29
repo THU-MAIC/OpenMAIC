@@ -68,22 +68,18 @@ function CourseCard({ course, index, onOpen, onDelete, chapterLabel }: CourseCar
         )}
         style={{ minHeight: '220px' }}
       >
-        {/* Cover area */}
+        {/* Cover area — compact, holds course name */}
         <div
-          className="relative flex-shrink-0 h-[110px] overflow-hidden flex flex-col justify-between p-4"
+          className="relative flex-shrink-0 h-[88px] overflow-hidden flex flex-col justify-between px-4 pt-3 pb-3"
           style={{ background: `linear-gradient(135deg, ${cover.from}, ${cover.to})` }}
         >
           {/* Geometric decorations */}
           <div
-            className="absolute -top-6 -right-6 w-28 h-28 rounded-full opacity-20"
+            className="absolute -top-5 -right-5 w-24 h-24 rounded-full opacity-20"
             style={{ background: 'rgba(255,255,255,0.4)' }}
           />
           <div
-            className="absolute bottom-0 right-8 w-16 h-16 rounded-full opacity-15"
-            style={{ background: 'rgba(255,255,255,0.5)' }}
-          />
-          <div
-            className="absolute -bottom-8 -left-4 w-32 h-32 rounded-full opacity-10"
+            className="absolute -bottom-6 -left-3 w-28 h-28 rounded-full opacity-10"
             style={{ background: 'rgba(255,255,255,0.6)' }}
           />
           {/* Top row: chapter badge + delete */}
@@ -100,28 +96,32 @@ function CourseCard({ course, index, onOpen, onDelete, chapterLabel }: CourseCar
               <Trash2 className="size-3" />
             </button>
           </div>
-          {/* Bottom: teacher name */}
-          <div className="relative z-10 flex items-center gap-1">
-            <User className="size-2.5 text-white/70 flex-shrink-0" />
-            <span className="text-[11px] text-white/80 font-medium truncate">{course.teacherName}</span>
-          </div>
-        </div>
-
-        {/* Info area */}
-        <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 px-4 pt-3.5 pb-4 min-h-0">
-          <h2 className="text-[14px] font-semibold text-foreground leading-snug line-clamp-2 mb-auto tracking-tight">
+          {/* Course name on gradient */}
+          <h2 className="relative z-10 text-[13px] font-bold text-white leading-snug line-clamp-1 tracking-tight drop-shadow-sm">
             {course.name}
           </h2>
-          {course.description && (
-            <p className="text-[11px] text-muted-foreground line-clamp-1 mt-1.5">
+        </div>
+
+        {/* Info area — taller now, 3 lines of description */}
+        <div className="flex-1 flex flex-col bg-white dark:bg-slate-900 px-4 pt-3 pb-4 min-h-0">
+          {course.description ? (
+            <p className="text-[11px] text-muted-foreground line-clamp-3 mb-auto leading-relaxed">
               {course.description}
             </p>
+          ) : (
+            <div className="mb-auto" />
           )}
-          <div className="mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 min-w-0">
-            <GraduationCap className="size-3 flex-shrink-0" style={{ color: cover.from }} />
-            <span className="text-[11px] text-muted-foreground truncate">
-              {course.college} · {course.major}
-            </span>
+          <div className="mt-2.5 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between gap-2 min-w-0">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <GraduationCap className="size-3 flex-shrink-0" style={{ color: cover.from }} />
+              <span className="text-[11px] text-muted-foreground truncate">
+                {course.college} · {course.major}
+              </span>
+            </div>
+            <div className="flex items-center gap-1 flex-shrink-0">
+              <User className="size-2.5 text-muted-foreground/60" />
+              <span className="text-[11px] text-muted-foreground/70 truncate max-w-[72px]">{course.teacherName}</span>
+            </div>
           </div>
         </div>
       </div>
