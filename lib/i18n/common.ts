@@ -47,6 +47,7 @@ export const commonZhCN = {
     invalidCredentials: '邮箱或密码错误',
     welcomeBack: '欢迎回来',
     loginDesc: '登录以管理你的课堂',
+    register: '立即注册',
   },
 } as const;
 
@@ -99,6 +100,7 @@ export const commonEnUS = {
     invalidCredentials: 'Invalid email or password',
     welcomeBack: 'Welcome back',
     loginDesc: 'Sign in to manage your classrooms',
+    register: 'Create Account',
   },
 } as const;
 
@@ -151,5 +153,6 @@ export const commonUz = {
     invalidCredentials: 'Elektron pochta yoki parol notoʻgʻri',
     welcomeBack: 'Xush kelibsiz',
     loginDesc: 'Darslaringizni boshqarish uchun tizimga kiring',
+    register: 'Roʻyxatdan oʻtish',
   },
 } as const;

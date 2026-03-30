@@ -13,10 +13,11 @@ function LoginContent() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
   const registered = searchParams.get('registered') === '1';
+  const authError = searchParams.get('error');
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [error, setError] = useState(authError ? t('auth.invalidCredentials') : '');
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,21 +25,23 @@ function LoginContent() {
     setError('');
     setLoading(true);
 
-    const result = await signIn('credentials', {
-      email,
-      password,
-      redirect: false,
-    });
+    try {
+      console.log('[Login] Attempting server-side sign in for:', email);
+      // Let Auth.js handle the 302 redirect. This is much more reliable
+      // for Cloudflare Tunnels as it results in a direct browser navigation.
+      await signIn('credentials', {
+        email,
+        password,
+        callbackUrl: callbackUrl.startsWith('http') ? new URL(callbackUrl).pathname : callbackUrl,
+        redirect: true,
+      });
 
-    setLoading(false);
-
-    if (result?.error) {
+      // No need for router.push/refresh here as the browser will redirect
+    } catch (err) {
+      console.error('[Login] Sign in failed:', err);
       setError(t('auth.invalidCredentials'));
-      return;
+      setLoading(false);
     }
-
-    router.push(callbackUrl);
-    router.refresh();
   };
 
   return (

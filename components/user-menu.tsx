@@ -30,7 +30,24 @@ export function UserMenu() {
     }
   }, [open, handleClickOutside]);
 
-  if (!session?.user) return null;
+  if (!session?.user) {
+    return (
+      <div className="flex items-center gap-2">
+        <button
+          onClick={() => router.push('/login')}
+          className="px-3 py-1.5 rounded-full text-xs font-medium text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
+        >
+          {t('auth.signIn')}
+        </button>
+        <button
+          onClick={() => router.push('/register')}
+          className="px-3 py-1.5 rounded-full text-xs font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-all shadow-sm"
+        >
+          {t('auth.register')}
+        </button>
+      </div>
+    );
+  }
 
   const isAdmin = (session.user as { role?: string }).role === 'admin';
 
@@ -91,7 +108,7 @@ export function UserMenu() {
           <button
             onClick={() => {
               setOpen(false);
-              signOut({ callbackUrl: '/login' });
+              signOut({ callbackUrl: '/login', redirect: true });
             }}
             className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-600 dark:text-gray-400"
           >
