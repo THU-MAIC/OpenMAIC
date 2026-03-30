@@ -151,6 +151,11 @@ Agents produce ordered JSON action arrays executed by `lib/action/engine.ts`:
 | `POST /api/web-search` | Tavily search |
 | `GET /api/server-providers` | List server-configured providers |
 | `GET /api/health` | Health check |
+| `POST /api/auth/register` | Create new user account (public) |
+| `POST /api/auth/change-password` | Change own password (authenticated) |
+| `GET /api/admin/users` | List all users (admin only) |
+| `PATCH /api/admin/users` | Change a user's role (admin only) |
+| `DELETE /api/admin/users` | Delete a user (admin only, not self) |
 
 ## Configuration
 
@@ -210,6 +215,30 @@ curl -X POST http://localhost:3232/api/regenerate-tts/[classroomId] \
 - Server file: `~/.local/share/openmaic-images/tts-server.py`
 - Rate format must be `+0%` not `0%` — edge-tts throws `ValueError: Invalid rate '0%'`
 - Fixed in both `tts-server.py` (SSML parser) and `lib/audio/tts-providers.ts` (`generateAzureTTS`)
+
+## Auth & User Management
+
+### User Model
+- `id`, `email`, `name?`, `password` (bcrypt), `role` (`teacher` | `admin`), `createdAt`
+- Default role on registration: `teacher`
+- First admin must be created manually via Prisma/SQLite (no bootstrap UI)
+
+### Pages
+| Path | Access | Purpose |
+|------|--------|---------|
+| `/login` | Public | Sign in with email + password |
+| `/register` | Public | Self-registration (creates teacher account) |
+| `/dashboard/settings` | Any user | Change own password |
+| `/dashboard/users` | Admin only | View/change roles/delete users |
+
+### Role access in components
+- `session.user.role` is available client-side via `useSession()` and server-side via `auth()`
+- `components/user-menu.tsx` shows "Users" link only when `role === 'admin'`
+- `/dashboard/users` page client-redirects to `/dashboard` if not admin
+- `/api/admin/users` returns 403 if not admin
+
+### i18n
+- All auth keys live under `auth.*` in `lib/i18n/settings.ts` (all 3 locales: zh-CN, en-US, uz)
 
 ## Important Gotchas
 
