@@ -15,7 +15,7 @@
  * - https://api-docs.deepseek.com/quick_start/pricing
  * - https://platform.moonshot.cn/docs/pricing/chat
  * - https://platform.minimaxi.com/docs/guides/text-generation
- * - https://platform.minimax.io/docs/api-reference/text-anthropic-api
+ * - https://platform.minimaxi.com/docs/api-reference/text-anthropic-api
  * - https://docs.bigmodel.cn/cn/guide/start/model-overview
  * - https://help.aliyun.com/zh/model-studio/models (Qwen/DashScope)
  * - https://siliconflow.cn/models
@@ -669,8 +669,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/minimax.svg',
     models: [
       {
-        id: 'MiniMax-M2.5',
-        name: 'MiniMax M2.5',
+        id: 'MiniMax-M2',
+        name: 'MiniMax M2',
         contextWindow: 204800,
         outputWindow: 8192,
         capabilities: { streaming: true, tools: true, vision: false },
@@ -683,15 +683,36 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         capabilities: { streaming: true, tools: true, vision: false },
       },
       {
-        id: 'MiniMax-M2.1-lightning',
-        name: 'MiniMax M2.1 Lightning',
+        id: 'MiniMax-M2.1-highspeed',
+        name: 'MiniMax M2.1 Highspeed',
         contextWindow: 204800,
         outputWindow: 8192,
         capabilities: { streaming: true, tools: true, vision: false },
       },
       {
-        id: 'MiniMax-M2',
-        name: 'MiniMax M2',
+        id: 'MiniMax-M2.5',
+        name: 'MiniMax M2.5',
+        contextWindow: 204800,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.5-highspeed',
+        name: 'MiniMax M2.5 Highspeed',
+        contextWindow: 204800,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.7',
+        name: 'MiniMax M2.7',
+        contextWindow: 204800,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'MiniMax-M2.7-highspeed',
+        name: 'MiniMax M2.7 Highspeed',
         contextWindow: 204800,
         outputWindow: 8192,
         capabilities: { streaming: true, tools: true, vision: false },
@@ -1030,6 +1051,24 @@ function getCompatThinkingBodyParams(
   return undefined;
 }
 
+function normalizeMiniMaxAnthropicBaseUrl(
+  providerId: ProviderId,
+  baseUrl?: string,
+): string | undefined {
+  if (providerId !== 'minimax' || !baseUrl) {
+    return baseUrl;
+  }
+
+  const trimmed = baseUrl.replace(/\/$/, '');
+  if (trimmed.endsWith('/anthropic/v1')) {
+    return trimmed;
+  }
+  if (trimmed.endsWith('/anthropic')) {
+    return `${trimmed}/v1`;
+  }
+  return `${trimmed}/anthropic/v1`;
+}
+
 /**
  * Get a configured language model instance with its info
  * Accepts individual parameters for flexibility and security
@@ -1059,7 +1098,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
   // Resolve base URL: explicit > provider default > SDK default
   const provider = getProviderConfig(config.providerId);
-  const effectiveBaseUrl = config.baseUrl || provider?.defaultBaseUrl || undefined;
+  const effectiveBaseUrl = normalizeMiniMaxAnthropicBaseUrl(
+    config.providerId,
+    config.baseUrl || provider?.defaultBaseUrl || undefined,
+  );
 
   let model: LanguageModel;
 
