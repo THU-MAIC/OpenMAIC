@@ -79,12 +79,20 @@ export function formatImageDescription(img: PdfImage, language: string): string 
   let dimInfo = '';
   if (img.width && img.height) {
     const ratio = (img.width / img.height).toFixed(2);
-    dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
+    dimInfo =
+      language === 'zh-CN'
+        ? ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`
+        : language === 'uz'
+          ? ` | Oʻlchami: ${img.width}×${img.height} (Nisbati ${ratio})`
+          : ` | Size: ${img.width}x${img.height} (Ratio ${ratio})`;
   }
   const desc = img.description ? ` | ${img.description}` : '';
-  return language === 'zh-CN'
-    ? `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`
-    : `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
+  if (language === 'zh-CN') {
+    return `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`;
+  } else if (language === 'uz') {
+    return `- **${img.id}**: PDF ning ${img.pageNumber}-sahifasidan${dimInfo}${desc}`;
+  }
+  return `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
 }
 
 /**
@@ -95,11 +103,19 @@ export function formatImagePlaceholder(img: PdfImage, language: string): string 
   let dimInfo = '';
   if (img.width && img.height) {
     const ratio = (img.width / img.height).toFixed(2);
-    dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
+    dimInfo =
+      language === 'zh-CN'
+        ? ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`
+        : language === 'uz'
+          ? ` | Oʻlchami: ${img.width}×${img.height} (Nisbati ${ratio})`
+          : ` | Size: ${img.width}x${img.height} (Ratio ${ratio})`;
   }
-  return language === 'zh-CN'
-    ? `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`
-    : `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
+  if (language === 'zh-CN') {
+    return `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`;
+  } else if (language === 'uz') {
+    return `- **${img.id}**: PDF ning ${img.pageNumber}-sahifasidagi rasm${dimInfo} [ilova qilingan]`;
+  }
+  return `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
 }
 
 /**

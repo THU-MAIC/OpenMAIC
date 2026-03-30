@@ -183,6 +183,18 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
         gender: 'female',
       },
       { id: 'en-US-GuyNeural', name: 'Guy', language: 'en-US', gender: 'male' },
+      {
+        id: 'uz-UZ-MadinaNeural',
+        name: 'Madina (uz-UZ)',
+        language: 'uz-UZ',
+        gender: 'female',
+      },
+      {
+        id: 'uz-UZ-SardorNeural',
+        name: 'Sardor (uz-UZ)',
+        language: 'uz-UZ',
+        gender: 'male',
+      },
     ],
     supportedFormats: ['mp3', 'wav', 'ogg'],
     speedRange: { min: 0.5, max: 2.0, default: 1.0 },
@@ -858,6 +870,7 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
       'ur', // Urdu
       'vi', // Vietnamese
       'cy', // Welsh
+      'uz', // Uzbek
     ],
     supportedFormats: ['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm'],
   },
@@ -966,6 +979,7 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
       // Other
       'af-ZA', // Afrikaans (South Africa)
       'uk-UA', // Ukrainian (Ukraine)
+      'uz-UZ', // Uzbek (Uzbekistan)
     ],
     supportedFormats: ['webm'], // MediaRecorder format
   },

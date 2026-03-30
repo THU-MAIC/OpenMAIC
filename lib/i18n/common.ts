@@ -79,3 +79,44 @@ export const commonEnUS = {
     exportFailed: 'Export failed',
   },
 } as const;
+
+export const commonUz = {
+  common: {
+    you: 'Siz',
+    confirm: 'Tasdiqlash',
+    cancel: 'Bekor qilish',
+    loading: 'Yuklanmoqda...',
+  },
+  home: {
+    slogan: 'Koʻp agentli interaktiv sinfxonada generativ taʼlim',
+    greeting: 'Salom, ',
+  },
+  toolbar: {
+    languageHint: 'Kurs ushbu tilda yaratiladi',
+    pdfParser: 'Parser',
+    pdfUpload: 'PDF yuklash',
+    removePdf: 'Faylni oʻchirish',
+    webSearchOn: 'Yoqilgan',
+    webSearchOff: 'Yoqish uchun bosing',
+    webSearchDesc: 'Yaratishdan oldin oxirgi maʼlumotlar uchun internetda qidirish',
+    webSearchProvider: 'Qidiruv tizimi',
+    webSearchNoProvider: "Sozlamalarda qidiruv API kalitini sozlang",
+    selectProvider: 'Provayderni tanlang',
+    configureProvider: 'Modelni sozlash',
+    configureProviderHint: 'Kurslarni yaratish uchun kamida bitta model provayderini sozlang',
+    enterClassroom: 'Sinfxonaga kirish',
+    advancedSettings: 'Qoʻshimcha sozlamalar',
+    ttsTitle: 'Matndan nutqqa',
+    ttsHint: 'AI oʻqituvchisi uchun ovoz tanlang',
+    ttsPreview: 'Oldindan eshitish',
+    ttsPreviewing: 'Oʻynalmoqda...',
+  },
+  export: {
+    pptx: 'PPTX formatida yuklab olish',
+    resourcePack: 'Resurslar paketini yuklab olish',
+    resourcePackDesc: 'PPTX + interaktiv sahifalar',
+    exporting: 'Yuklanmoqda...',
+    exportSuccess: 'Muvaffaqiyatli yuklab olindi',
+    exportFailed: 'Yuklab olish xatosi',
+  },
+} as const;

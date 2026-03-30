@@ -145,3 +145,77 @@ export const chatEnUS = {
     stopListening: 'Stop recording',
   },
 } as const;
+
+export const chatUz = {
+  chat: {
+    lecture: 'Maʼruza',
+    noConversations: 'Suhbatlar yoʻq',
+    startConversation: 'Suhbatni boshlash uchun quyida xabar yozing',
+    noMessages: 'Hozircha xabarlar yoʻq',
+    ended: 'yakunlandi',
+    unknown: 'Nomaʼlum',
+    stopDiscussion: 'Muhokamani toʻxtatish',
+    endQA: 'Savol-javobni yakunlash',
+    tabs: {
+      lecture: 'Qaydlar',
+      chat: 'Chat',
+    },
+    lectureNotes: {
+      empty: 'Dars oʻynalgandan soʻng qaydlar bu yerda paydo boʻladi',
+      emptyHint: 'Darsni boshlash uchun oʻynatish tugmasini bosing',
+      pageLabel: 'Sahifa {n}',
+      currentPage: 'Joriy',
+    },
+    badge: {
+      qa: 'S&J',
+      discussion: 'MUHOK',
+      lecture: 'DARS',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: 'Diqqat markazi',
+      laser: 'Lazer',
+      wb_open: 'Oq doskani ochish',
+      wb_draw_text: 'Oq doska matni',
+      wb_draw_shape: 'Oq doska shakli',
+      wb_draw_chart: 'Oq doska diagrammasi',
+      wb_draw_latex: 'Oq doska formulasi',
+      wb_draw_table: 'Oq doska jadvali',
+      wb_draw_line: 'Oq doska chizigʻi',
+      wb_clear: 'Oq doskani tozalash',
+      wb_delete: 'Elementni oʻchirish',
+      wb_close: 'Oq doskani yopish',
+      discussion: 'Muhokama',
+    },
+    status: {
+      inputStreaming: 'Kutilmoqda',
+      inputAvailable: 'Bajarilmoqda',
+      outputAvailable: 'Tugallandi',
+      outputError: 'Xato',
+      outputDenied: 'Rad etildi',
+      running: 'Bajarilmoqda',
+      result: 'Tugallandi',
+      error: 'Xato',
+    },
+  },
+  agentBar: {
+    readyToLearn: 'Birgalikda oʻrganishga tayyormisiz?',
+    expandedTitle: 'Sinfxona rollarini sozlash',
+    configTooltip: 'Sinfxona rollarini sozlash uchun bosing',
+    voiceLabel: 'Ovoz',
+    voiceLoading: 'Yuklanmoqda...',
+    voiceAutoAssign: 'Ovozlar avtomatik biriktiriladi',
+  },
+  proactiveCard: {
+    discussion: 'Muhokama',
+    join: 'Qoʻshilish',
+    skip: 'Oʻtkazib yuborish',
+    pause: 'Toʻxtatib turish',
+    resume: 'Davom etish',
+  },
+  voice: {
+    startListening: 'Ovozli kiritish',
+    stopListening: 'Yozib olishni toʻxtatish',
+  },
+} as const;
