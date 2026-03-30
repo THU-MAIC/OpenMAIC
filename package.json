@@ -9,8 +9,8 @@
   "scripts": {
     "postinstall": "cd packages/mathml2omml && npm run build && cd ../pptxgenjs && npm run build",
     "dev": "next dev --port 3232",
-    "build": "next build",
-    "start": "next start --port 3232",
+    "build": "next build && cp .env.local .next/standalone/.env.local && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public && pnpm prisma db seed",
+    "start": "next build && cp .env.local .next/standalone/.env.local && cp -r .next/static .next/standalone/.next/static && cp -r public .next/standalone/public && PORT=3232 node .next/standalone/server.js",
     "lint": "eslint",
     "check": "prettier . --check",
     "format": "prettier . --write",

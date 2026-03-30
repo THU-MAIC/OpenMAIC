@@ -1,9 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { getToken } from 'next-auth/jwt';
+import NextAuth from 'next-auth';
+import { NextResponse } from 'next/server';
+import { authConfig } from '@/auth.config';
+
+const { auth } = NextAuth(authConfig);
 
 const PUBLIC_PATHS = ['/', '/login', '/register', '/api/auth', '/api/health', '/api/server-providers'];
 
-export async function middleware(req: NextRequest) {
+export default auth(function middleware(req) {
   const { pathname } = req.nextUrl;
 
   // Allow public paths, static assets, and Next.js internals
@@ -25,18 +28,21 @@ export async function middleware(req: NextRequest) {
     return NextResponse.next();
   }
 
-  const token = await getToken({ req, secret: process.env.AUTH_SECRET });
-  const isAuth = !!token;
+  const isAuth = !!req.auth;
 
   // Redirect unauthenticated users to login
   if (!isAuth) {
-    const loginUrl = new URL('/login', req.url);
+    // Use the public-facing host (tunnel or localhost) so callbackUrl is correct
+    const host = req.headers.get('x-forwarded-host') || req.headers.get('host');
+    const proto = req.headers.get('x-forwarded-proto') || 'http';
+    const base = host ? `${proto}://${host}` : req.nextUrl.origin;
+    const loginUrl = new URL('/login', base);
     loginUrl.searchParams.set('callbackUrl', pathname);
     return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
-}
+});
 
 export const config = {
   matcher: ['/((?!_next/static|_next/image|favicon.ico).*)'],

@@ -25,23 +25,22 @@ function LoginContent() {
     setError('');
     setLoading(true);
 
-    try {
-      console.log('[Login] Attempting server-side sign in for:', email);
-      // Let Auth.js handle the 302 redirect. This is much more reliable
-      // for Cloudflare Tunnels as it results in a direct browser navigation.
-      await signIn('credentials', {
-        email,
-        password,
-        callbackUrl: callbackUrl.startsWith('http') ? new URL(callbackUrl).pathname : callbackUrl,
-        redirect: true,
-      });
+    const result = await signIn('credentials', {
+      email,
+      password,
+      redirect: false,
+    });
 
-      // No need for router.push/refresh here as the browser will redirect
-    } catch (err) {
-      console.error('[Login] Sign in failed:', err);
+    setLoading(false);
+
+    if (result?.error) {
       setError(t('auth.invalidCredentials'));
-      setLoading(false);
+      return;
     }
+
+    // Use window.location so the browser navigates using its own origin (works through tunnels)
+    const dest = callbackUrl.startsWith('http') ? new URL(callbackUrl).pathname : callbackUrl;
+    window.location.href = dest;
   };
 
   return (

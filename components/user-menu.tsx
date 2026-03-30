@@ -106,9 +106,10 @@ export function UserMenu() {
             {t('auth.changePassword')}
           </button>
           <button
-            onClick={() => {
+            onClick={async () => {
               setOpen(false);
-              signOut({ callbackUrl: '/login', redirect: true });
+              await signOut({ redirect: false });
+              window.location.href = '/login';
             }}
             className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-600 dark:text-gray-400"
           >
