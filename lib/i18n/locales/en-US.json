@@ -7,7 +7,7 @@
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
-    "greetingWithName": "Hi, {{name}}",
+    "greetingWithName": "Hi, {name}",
     "greetingDefault": "Hi there"
   },
   "toolbar": {
@@ -340,6 +340,8 @@
       "openaiTts": "OpenAI TTS",
       "azureTts": "Azure TTS"
     },
+    "availableModels": "Available Models",
+    "modelSelectedViaVoice": "Model is determined by voice selection",
     "testConnection": "Test Connection",
     "testConnectionDesc": "Test current API configuration is available",
     "testing": "Testing...",
