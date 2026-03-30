@@ -180,7 +180,9 @@ function AgentVoicePill({
           provider.modelGroups.map((group) => (
             <div key={`${provider.providerId}::${group.modelId}`}>
               <div className="text-[11px] text-muted-foreground/60 font-medium px-2 py-1 sticky top-0 bg-popover">
-                {group.modelName || provider.providerName}
+                {group.modelId
+                  ? `${provider.providerName} · ${group.modelName}`
+                  : provider.providerName}
               </div>
               {group.voices.map((voice) => {
                 const isActive =
@@ -397,7 +399,9 @@ function TeacherVoicePill({
           provider.modelGroups.map((group) => (
             <div key={`${provider.providerId}::${group.modelId}`}>
               <div className="text-[11px] text-muted-foreground/60 font-medium px-2 py-1 sticky top-0 bg-popover">
-                {group.modelName || provider.providerName}
+                {group.modelId
+                  ? `${provider.providerName} · ${group.modelName}`
+                  : provider.providerName}
               </div>
               {group.voices.map((voice) => {
                 const isActive = ttsProviderId === provider.providerId && ttsVoice === voice.id;
