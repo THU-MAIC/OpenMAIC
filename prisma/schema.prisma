@@ -1,0 +1,29 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id        String      @id @default(cuid())
+  email     String      @unique
+  name      String?
+  password  String
+  role      String      @default("teacher")
+  createdAt DateTime    @default(now())
+  classrooms Classroom[]
+}
+
+model Classroom {
+  id         String   @id
+  userId     String
+  title      String
+  language   String   @default("uz")
+  sceneCount Int      @default(0)
+  filePath   String
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id])
+}
