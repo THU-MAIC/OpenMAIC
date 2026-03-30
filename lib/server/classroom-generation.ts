@@ -96,8 +96,10 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
+function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' | 'uz' {
+  if (language === 'en-US') return 'en-US';
+  if (language === 'uz') return 'uz';
+  return 'zh-CN';
 }
 
 function stripCodeFences(text: string): string {
@@ -392,7 +394,7 @@ export async function generateClassroom(
     });
 
     try {
-      await generateTTSForClassroom(scenes, stageId, options.baseUrl);
+      await generateTTSForClassroom(scenes, stageId, options.baseUrl, lang);
       log.info('TTS generation complete');
     } catch (err) {
       log.warn('TTS generation phase failed, continuing:', err);

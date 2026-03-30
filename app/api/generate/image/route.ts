@@ -40,16 +40,20 @@ export async function POST(request: NextRequest) {
     const clientBaseUrl = request.headers.get('x-base-url') || undefined;
     const clientModel = request.headers.get('x-image-model') || undefined;
 
-    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+    // Server-configured URL takes priority — skip SSRF check for trusted server config
+    const serverBaseUrl = resolveImageBaseUrl(providerId, undefined);
+    const resolvedBaseUrl = serverBaseUrl || clientBaseUrl;
+
+    if (!serverBaseUrl && clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
     }
 
-    const apiKey = clientBaseUrl
-      ? clientApiKey || ''
-      : resolveImageApiKey(providerId, clientApiKey);
+    const apiKey = serverBaseUrl
+      ? resolveImageApiKey(providerId, clientApiKey)
+      : clientApiKey || resolveImageApiKey(providerId, clientApiKey);
     if (!apiKey) {
       return apiError(
         'MISSING_API_KEY',
@@ -58,7 +62,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl = clientBaseUrl ? clientBaseUrl : resolveImageBaseUrl(providerId, clientBaseUrl);
+    const baseUrl = resolvedBaseUrl;
 
     // Resolve dimensions from aspect ratio if not explicitly set
     if (!body.width && !body.height && body.aspectRatio) {

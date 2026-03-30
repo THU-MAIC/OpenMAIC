@@ -205,27 +205,33 @@ export async function generateTTSForClassroom(
   scenes: Scene[],
   classroomId: string,
   baseUrl: string,
+  language?: string,
 ): Promise<void> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
 
   // Resolve TTS provider (exclude browser-native-tts)
-  const ttsProviderIds = Object.keys(getServerTTSProviders()).filter(
+  const allProviderIds = Object.keys(getServerTTSProviders()).filter(
     (id) => id !== 'browser-native-tts',
-  );
-  if (ttsProviderIds.length === 0) {
+  ) as TTSProviderId[];
+  if (allProviderIds.length === 0) {
     log.warn('No server TTS provider configured, skipping TTS generation');
     return;
   }
 
-  const providerId = ttsProviderIds[0] as TTSProviderId;
+  // For Uzbek, prefer azure-tts (has native uz-UZ voices via edge-tts)
+  const isUzbek = language === 'uz';
+  const preferredId = isUzbek && allProviderIds.includes('azure-tts') ? 'azure-tts' : allProviderIds[0];
+  const providerId = preferredId;
+
   const apiKey = resolveTTSApiKey(providerId);
   if (!apiKey) {
     log.warn(`No API key for TTS provider "${providerId}", skipping TTS generation`);
     return;
   }
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || TTS_PROVIDERS[providerId]?.defaultBaseUrl;
-  const voice = DEFAULT_TTS_VOICES[providerId] || 'default';
+  // For Uzbek use Madina voice; otherwise use provider default
+  const voice = isUzbek ? 'uz-UZ-MadinaNeural' : (DEFAULT_TTS_VOICES[providerId] || 'default');
   const format = TTS_PROVIDERS[providerId]?.supportedFormats?.[0] || 'mp3';
 
   for (const scene of scenes) {

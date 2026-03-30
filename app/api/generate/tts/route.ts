@@ -47,19 +47,20 @@ export async function POST(req: NextRequest) {
     }
 
     const clientBaseUrl = ttsBaseUrl || undefined;
-    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+    const serverBaseUrl = resolveTTSBaseUrl(ttsProviderId, undefined);
+    const resolvedBaseUrl = serverBaseUrl || clientBaseUrl;
+
+    if (!serverBaseUrl && clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
     }
 
-    const apiKey = clientBaseUrl
-      ? ttsApiKey || ''
-      : resolveTTSApiKey(ttsProviderId, ttsApiKey || undefined);
-    const baseUrl = clientBaseUrl
-      ? clientBaseUrl
-      : resolveTTSBaseUrl(ttsProviderId, ttsBaseUrl || undefined);
+    const apiKey = serverBaseUrl
+      ? resolveTTSApiKey(ttsProviderId, ttsApiKey || undefined)
+      : ttsApiKey || resolveTTSApiKey(ttsProviderId, ttsApiKey || undefined);
+    const baseUrl = resolvedBaseUrl;
 
     // Build TTS config
     const config = {

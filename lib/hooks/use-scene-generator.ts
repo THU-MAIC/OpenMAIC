@@ -125,19 +125,25 @@ export async function generateAndStoreTTS(
   audioId: string,
   text: string,
   signal?: AbortSignal,
+  language?: string,
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   if (settings.ttsProviderId === 'browser-native-tts') return;
 
-  const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+  // For Uzbek, prefer azure-tts with the native Uzbek voice
+  const isUzbek = language === 'uz';
+  const effectiveProviderId = isUzbek ? 'azure-tts' : settings.ttsProviderId;
+  const effectiveVoice = isUzbek ? 'uz-UZ-MadinaNeural' : settings.ttsVoice;
+
+  const ttsProviderConfig = settings.ttsProvidersConfig?.[effectiveProviderId];
   const response = await fetch('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text,
       audioId,
-      ttsProviderId: settings.ttsProviderId,
-      ttsVoice: settings.ttsVoice,
+      ttsProviderId: effectiveProviderId,
+      ttsVoice: effectiveVoice,
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,
       ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
@@ -174,8 +180,10 @@ export async function generateAndStoreTTS(
 async function generateTTSForScene(
   scene: Scene,
   signal?: AbortSignal,
+  language?: string,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
-  const providerId = useSettingsStore.getState().ttsProviderId;
+  const isUzbek = language === 'uz';
+  const providerId = isUzbek ? 'azure-tts' : useSettingsStore.getState().ttsProviderId;
   scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
   const speechActions = scene.actions.filter(
     (a): a is SpeechAction => a.type === 'speech' && !!a.text,
@@ -189,7 +197,7 @@ async function generateTTSForScene(
     const audioId = `tts_${action.id}`;
     action.audioId = audioId;
     try {
-      await generateAndStoreTTS(audioId, action.text, signal);
+      await generateAndStoreTTS(audioId, action.text, signal, language);
     } catch (error) {
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
@@ -363,7 +371,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
             // TTS generation — failure means the whole scene fails
             if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
-              const ttsResult = await generateTTSForScene(scene, signal);
+              const ttsResult = await generateTTSForScene(scene, signal, params.stageInfo.language);
               if (!ttsResult.success) {
                 if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
                   pausedByFailureOrAbort = true;
@@ -508,7 +516,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         // Step 3: TTS
         const settings = useSettingsStore.getState();
         if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
-          const ttsResult = await generateTTSForScene(actionsResult.scene, signal);
+          const ttsResult = await generateTTSForScene(actionsResult.scene, signal, params.stageInfo.language);
           if (!ttsResult.success) {
             store.getState().addFailedOutline(outline);
             return;

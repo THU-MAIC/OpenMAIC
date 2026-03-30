@@ -31,17 +31,20 @@ export async function POST(request: NextRequest) {
     const clientApiKey = request.headers.get('x-api-key') || undefined;
     const clientBaseUrl = request.headers.get('x-base-url') || undefined;
 
-    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+    const serverBaseUrl = resolveImageBaseUrl(providerId, undefined);
+    const resolvedBaseUrl = serverBaseUrl || clientBaseUrl;
+
+    if (!serverBaseUrl && clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
     }
 
-    const apiKey = clientBaseUrl
-      ? clientApiKey || ''
-      : resolveImageApiKey(providerId, clientApiKey);
-    const baseUrl = clientBaseUrl ? clientBaseUrl : resolveImageBaseUrl(providerId, clientBaseUrl);
+    const apiKey = serverBaseUrl
+      ? resolveImageApiKey(providerId, clientApiKey)
+      : clientApiKey || resolveImageApiKey(providerId, clientApiKey);
+    const baseUrl = resolvedBaseUrl;
 
     if (!apiKey) {
       return apiError('MISSING_API_KEY', 400, 'No API key configured');
