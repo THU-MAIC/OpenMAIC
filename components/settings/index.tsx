@@ -1034,6 +1034,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         baseUrl={providersConfig[selectedProviderId]?.baseUrl}
         providerType={providersConfig[selectedProviderId]?.type}
         requiresApiKey={providersConfig[selectedProviderId]?.requiresApiKey}
+        isServerConfigured={providersConfig[selectedProviderId]?.isServerConfigured}
       />
 
       {/* Add Provider Dialog */}

@@ -39,11 +39,9 @@ export interface SettingsState {
 
   // Audio settings (new unified audio configuration)
   ttsProviderId: TTSProviderId;
-  ttsModelId: string;
   ttsVoice: string;
   ttsSpeed: number;
   asrProviderId: ASRProviderId;
-  asrModelId: string;
   asrLanguage: string;
 
   // Audio provider configurations
@@ -52,9 +50,10 @@ export interface SettingsState {
     {
       apiKey: string;
       baseUrl: string;
-      model?: string;
       enabled: boolean;
+      modelId?: string;
       customModels?: Array<{ id: string; name: string }>;
+      providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
     }
@@ -66,7 +65,9 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      modelId?: string;
       customModels?: Array<{ id: string; name: string }>;
+      providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
     }
@@ -177,11 +178,9 @@ export interface SettingsState {
 
   // Audio actions
   setTTSProvider: (providerId: TTSProviderId) => void;
-  setTTSModelId: (modelId: string) => void;
   setTTSVoice: (voice: string) => void;
   setTTSSpeed: (speed: number) => void;
   setASRProvider: (providerId: ASRProviderId) => void;
-  setASRModelId: (modelId: string) => void;
   setASRLanguage: (language: string) => void;
   setTTSProviderConfig: (
     providerId: TTSProviderId,
@@ -189,8 +188,9 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
-      model?: string;
+      modelId: string;
       customModels: Array<{ id: string; name: string }>;
+      providerOptions: Record<string, unknown>;
     }>,
   ) => void;
   setASRProviderConfig: (
@@ -199,7 +199,9 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      modelId: string;
       customModels: Array<{ id: string; name: string }>;
+      providerOptions: Record<string, unknown>;
     }>,
   ) => void;
   setTTSEnabled: (enabled: boolean) => void;
@@ -273,26 +275,12 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
   return config;
 };
 
-const getDefaultTTSModelId = (providerId: TTSProviderId): string => {
-  const provider = TTS_PROVIDERS[providerId];
-  if (!provider?.supportsModelSelection) return '';
-  return provider.models[0]?.id || '';
-};
-
-const getDefaultASRModelId = (providerId: ASRProviderId): string => {
-  const provider = ASR_PROVIDERS[providerId];
-  if (!provider?.supportsModelSelection) return '';
-  return provider.models[0]?.id || '';
-};
-
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
   ttsProviderId: 'browser-native-tts' as TTSProviderId,
-  ttsModelId: getDefaultTTSModelId('browser-native-tts'),
   ttsVoice: 'default',
   ttsSpeed: 1.0,
   asrProviderId: 'browser-native' as ASRProviderId,
-  asrModelId: getDefaultASRModelId('browser-native'),
   asrLanguage: 'zh',
   ttsProvidersConfig: {
     'openai-tts': { apiKey: '', baseUrl: '', enabled: true },
@@ -301,9 +289,12 @@ const getDefaultAudioConfig = () => ({
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
-    'minimax-tts': { apiKey: '', baseUrl: '', model: 'speech-2.8-turbo', enabled: false },
+    'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: false },
     'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
-  } as Record<TTSProviderId, { apiKey: string; baseUrl: string; model?: string; enabled: boolean }>,
+  } as Record<
+    TTSProviderId,
+    { apiKey: string; baseUrl: string; modelId?: string; enabled: boolean }
+  >,
   asrProvidersConfig: {
     'openai-whisper': { apiKey: '', baseUrl: '', enabled: true },
     'browser-native': { apiKey: '', baseUrl: '', enabled: true },
@@ -636,12 +627,9 @@ export const useSettingsStore = create<SettingsState>()(
             const shouldUpdateVoice = state.ttsProviderId !== providerId;
             return {
               ttsProviderId: providerId,
-              ttsModelId: getDefaultTTSModelId(providerId),
               ...(shouldUpdateVoice && { ttsVoice: DEFAULT_TTS_VOICES[providerId] }),
             };
           }),
-
-        setTTSModelId: (modelId) => set({ ttsModelId: modelId }),
 
         setTTSVoice: (voice) => set({ ttsVoice: voice }),
 
@@ -655,12 +643,9 @@ export const useSettingsStore = create<SettingsState>()(
             const isLanguageValid = supportedLanguages.includes(state.asrLanguage);
             return {
               asrProviderId: providerId,
-              asrModelId: getDefaultASRModelId(providerId),
               ...(isLanguageValid ? {} : { asrLanguage: supportedLanguages[0] || 'auto' }),
             };
           }),
-
-        setASRModelId: (modelId) => set({ asrModelId: modelId }),
 
         setASRLanguage: (language) => set({ asrLanguage: language }),
 
@@ -1250,14 +1235,32 @@ export const useSettingsStore = create<SettingsState>()(
           Object.assign(state, defaultAudioConfig);
         }
 
-        if (!state.ttsModelId) {
-          const providerId = state.ttsProviderId || ('browser-native-tts' as TTSProviderId);
-          state.ttsModelId = getDefaultTTSModelId(providerId);
+        // Migrate global ttsModelId to per-provider
+        if ((state as Record<string, unknown>).ttsModelId) {
+          const pid = state.ttsProviderId;
+          if (pid && state.ttsProvidersConfig?.[pid]) {
+            state.ttsProvidersConfig[pid].modelId = (state as Record<string, unknown>)
+              .ttsModelId as string;
+          }
+          delete (state as Record<string, unknown>).ttsModelId;
         }
-
-        if (!state.asrModelId) {
-          const providerId = state.asrProviderId || ('browser-native' as ASRProviderId);
-          state.asrModelId = getDefaultASRModelId(providerId);
+        // Same for asrModelId
+        if ((state as Record<string, unknown>).asrModelId) {
+          const pid = state.asrProviderId;
+          if (pid && state.asrProvidersConfig?.[pid]) {
+            state.asrProvidersConfig[pid].modelId = (state as Record<string, unknown>)
+              .asrModelId as string;
+          }
+          delete (state as Record<string, unknown>).asrModelId;
+        }
+        // Migrate MiniMax's model field to modelId
+        for (const [, cfg] of Object.entries(
+          (state.ttsProvidersConfig as Record<string, Record<string, unknown>>) || {},
+        )) {
+          if (cfg.model && !cfg.modelId) {
+            cfg.modelId = cfg.model;
+            delete cfg.model;
+          }
         }
 
         // Add default PDF config if missing

@@ -337,14 +337,13 @@ export async function getCurrentASRConfig(): Promise<ASRModelConfig> {
 
   // Lazy import to avoid circular dependency
   const { useSettingsStore } = await import('@/lib/store/settings');
-  const { asrProviderId, asrModelId, asrLanguage, asrProvidersConfig } =
-    useSettingsStore.getState();
+  const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
 
   const providerConfig = asrProvidersConfig?.[asrProviderId];
 
   return {
     providerId: asrProviderId,
-    modelId: asrModelId,
+    modelId: providerConfig?.modelId || ASR_PROVIDERS[asrProviderId]?.defaultModelId || '',
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
     language: asrLanguage,

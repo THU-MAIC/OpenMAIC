@@ -361,7 +361,7 @@ async function generateMiniMaxTTS(
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: config.model || 'speech-2.8-turbo',
+      model: config.modelId || 'speech-2.8-hd',
       text,
       stream: false,
       output_format: 'hex',
@@ -436,7 +436,7 @@ async function generateElevenLabsTTS(
       },
       body: JSON.stringify({
         text,
-        model_id: 'eleven_multilingual_v2',
+        model_id: config.modelId || 'eleven_multilingual_v2',
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
@@ -469,17 +469,15 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 
   // Lazy import to avoid circular dependency
   const { useSettingsStore } = await import('@/lib/store/settings');
-  const { ttsProviderId, ttsModelId, ttsVoice, ttsSpeed, ttsProvidersConfig } =
-    useSettingsStore.getState();
+  const { ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig } = useSettingsStore.getState();
 
   const providerConfig = ttsProvidersConfig?.[ttsProviderId];
 
   return {
     providerId: ttsProviderId,
-    modelId: ttsModelId,
+    modelId: providerConfig?.modelId || TTS_PROVIDERS[ttsProviderId]?.defaultModelId || '',
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
-    model: providerConfig?.model,
     voice: ttsVoice,
     speed: ttsSpeed,
   };

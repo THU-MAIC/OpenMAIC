@@ -16,7 +16,6 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import {
   TTS_PROVIDERS,
-  MINIMAX_TTS_MODELS,
   getTTSVoices,
   ASR_PROVIDERS,
   getASRSupportedLanguages,
@@ -498,31 +497,6 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
                   />
                 </div>
               </div>
-
-              {ttsProviderId === 'minimax-tts' && (
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.ttsModel')}</Label>
-                  <Select
-                    value={ttsProvidersConfig[ttsProviderId]?.model || 'speech-2.8-turbo'}
-                    onValueChange={(value) =>
-                      handleTTSProviderConfigChange(ttsProviderId, {
-                        model: value,
-                      })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={t('settings.ttsModelPlaceholder')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {MINIMAX_TTS_MODELS.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
             </>
           )}
         </div>

@@ -102,6 +102,8 @@ export interface TTSVoiceInfo {
   localeName?: string; // Language name in its native script (e.g., "中文（简体，中国）", "日本語")
   gender?: 'male' | 'female' | 'neutral';
   description?: string;
+  /** Model IDs this voice is compatible with. Undefined = all models. */
+  compatibleModels?: string[];
 }
 
 /**
@@ -113,9 +115,10 @@ export interface TTSProviderConfig {
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   icon?: string;
-  supportsModelSelection: boolean;
-  // Use an empty array when the provider does not expose a selectable model concept.
+  /** Available models. Empty array means provider has no model concept (e.g. Azure, Browser Native). */
   models: Array<{ id: string; name: string }>;
+  /** Default model ID used when user hasn't selected one. Empty string if no models. */
+  defaultModelId: string;
   voices: TTSVoiceInfo[];
   supportedFormats: string[]; // ['mp3', 'wav', 'opus', etc.]
   speedRange?: {
@@ -133,10 +136,10 @@ export interface TTSModelConfig {
   modelId?: string;
   apiKey?: string;
   baseUrl?: string;
-  model?: string;
   voice: string;
   speed?: number;
   format?: string;
+  providerOptions?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -165,9 +168,8 @@ export interface ASRProviderConfig {
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   icon?: string;
-  supportsModelSelection: boolean;
-  // Use an empty array when the provider does not expose a selectable model concept.
   models: Array<{ id: string; name: string }>;
+  defaultModelId: string;
   supportedLanguages: string[];
   supportedFormats: string[];
 }
