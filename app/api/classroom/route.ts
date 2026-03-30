@@ -7,9 +7,16 @@ import {
   persistClassroom,
   readClassroom,
 } from '@/lib/server/classroom-storage';
+import { upsertIndexEntry } from '@/lib/server/classroom-index';
+import { auth } from '@/auth';
 
 export async function POST(request: NextRequest) {
   try {
+    const session = await auth();
+    if (!session?.user?.id) {
+      return apiError(API_ERROR_CODES.INVALID_REQUEST, 401, 'Authentication required');
+    }
+
     const body = await request.json();
     const { stage, scenes } = body;
 
@@ -25,6 +32,15 @@ export async function POST(request: NextRequest) {
     const baseUrl = buildRequestOrigin(request);
 
     const persisted = await persistClassroom({ id, stage: { ...stage, id }, scenes }, baseUrl);
+
+    await upsertIndexEntry({
+      id: persisted.id,
+      title: stage.name || 'Untitled',
+      language: stage.language || 'zh-CN',
+      createdAt: persisted.createdAt,
+      sceneCount: Array.isArray(scenes) ? scenes.length : 0,
+      userId: session.user.id,
+    });
 
     return apiSuccess({ id: persisted.id, url: persisted.url }, 201);
   } catch (error) {

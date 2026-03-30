@@ -57,6 +57,8 @@ const OrchestratorState = Annotation.Root({
   discussionContext: Annotation<{ topic: string; prompt?: string } | null>,
   triggerAgentId: Annotation<string | null>,
   userProfile: Annotation<{ nickname?: string; bio?: string } | null>,
+  /** Course language (e.g. 'zh-CN', 'en-US', 'uz') for language-conditional prompting */
+  language: Annotation<string | null>,
   /** Request-scoped agent configs for generated agents (not in the default registry) */
   agentConfigOverrides: Annotation<Record<string, AgentConfig>>,
 
@@ -176,6 +178,7 @@ async function directorNode(
     state.whiteboardLedger,
     state.userProfile || undefined,
     state.storeState.whiteboardOpen,
+    state.language || undefined,
   );
 
   const adapter = new AISdkLangGraphAdapter(state.languageModel, state.thinkingConfig ?? undefined);
@@ -538,6 +541,7 @@ export function buildInitialState(
     discussionContext,
     triggerAgentId: request.config.triggerAgentId || null,
     userProfile: request.userProfile || null,
+    language: request.storeState.stage?.language || null,
     agentConfigOverrides,
     currentAgentId: null,
     turnCount,

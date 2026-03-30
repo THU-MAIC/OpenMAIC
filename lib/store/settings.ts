@@ -39,7 +39,8 @@ export interface SettingsState {
 
   // Audio settings (new unified audio configuration)
   ttsProviderId: TTSProviderId;
-  ttsVoice: string;
+  ttsVoice: string;        // teacher voice
+  ttsStudentVoice: string; // student/assistant voice (used by role-voice-map for en-US)
   ttsSpeed: number;
   asrProviderId: ASRProviderId;
   asrLanguage: string;
@@ -173,6 +174,7 @@ export interface SettingsState {
   // Audio actions
   setTTSProvider: (providerId: TTSProviderId) => void;
   setTTSVoice: (voice: string) => void;
+  setTTSStudentVoice: (voice: string) => void;
   setTTSSpeed: (speed: number) => void;
   setASRProvider: (providerId: ASRProviderId) => void;
   setASRLanguage: (language: string) => void;
@@ -255,13 +257,18 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
   return config;
 };
 
+// Detect if browser locale is Uzbek (client-only, safe for SSR)
+const isBrowserUzbek = () =>
+  typeof window !== 'undefined' && navigator.language?.startsWith('uz');
+
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
-  ttsProviderId: 'browser-native-tts' as TTSProviderId,
-  ttsVoice: 'default',
+  ttsProviderId: (isBrowserUzbek() ? 'azure-tts' : 'browser-native-tts') as TTSProviderId,
+  ttsVoice: isBrowserUzbek() ? 'uz-UZ-MadinaNeural' : 'af_nova',
+  ttsStudentVoice: 'am_echo',
   ttsSpeed: 1.0,
   asrProviderId: 'browser-native' as ASRProviderId,
-  asrLanguage: 'zh',
+  asrLanguage: isBrowserUzbek() ? 'uz' : 'zh',
   ttsProvidersConfig: {
     'openai-tts': { apiKey: '', baseUrl: '', enabled: true },
     'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
@@ -607,6 +614,8 @@ export const useSettingsStore = create<SettingsState>()(
           }),
 
         setTTSVoice: (voice) => set({ ttsVoice: voice }),
+
+        setTTSStudentVoice: (voice) => set({ ttsStudentVoice: voice }),
 
         setTTSSpeed: (speed) => set({ ttsSpeed: speed }),
 

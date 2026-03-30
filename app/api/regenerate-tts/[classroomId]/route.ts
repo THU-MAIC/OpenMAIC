@@ -33,12 +33,12 @@ export async function POST(
   const { classroomId } = await params;
 
   if (!isValidClassroomId(classroomId)) {
-    return apiError('INVALID_ID', 400, 'Invalid classroom ID');
+    return apiError('INVALID_REQUEST', 400, 'Invalid classroom ID');
   }
 
   const classroom = await readClassroom(classroomId);
   if (!classroom) {
-    return apiError('NOT_FOUND', 404, `Classroom "${classroomId}" not found`);
+    return apiError('INVALID_REQUEST', 404, `Classroom "${classroomId}" not found`);
   }
 
   let language: string | undefined;
@@ -80,7 +80,7 @@ export async function POST(
     await generateTTSForClassroom(classroom.scenes, classroomId, baseUrl, lang);
   } catch (err) {
     log.error('TTS generation failed:', err);
-    return apiError('TTS_FAILED', 500, err instanceof Error ? err.message : String(err));
+    return apiError('GENERATION_FAILED', 500, err instanceof Error ? err.message : String(err));
   }
 
   // Persist updated classroom JSON (scenes now have audioId/audioUrl)

@@ -3,6 +3,7 @@ export const commonZhCN = {
     you: '你',
     confirm: '确定',
     cancel: '取消',
+    save: '保存',
     loading: '加载中...',
   },
   home: {
@@ -37,6 +38,16 @@ export const commonZhCN = {
     exportSuccess: '导出成功',
     exportFailed: '导出失败',
   },
+  auth: {
+    login: '登录',
+    email: '邮箱',
+    password: '密码',
+    signIn: '登录',
+    signOut: '退出登录',
+    invalidCredentials: '邮箱或密码错误',
+    welcomeBack: '欢迎回来',
+    loginDesc: '登录以管理你的课堂',
+  },
 } as const;
 
 export const commonEnUS = {
@@ -44,6 +55,7 @@ export const commonEnUS = {
     you: 'You',
     confirm: 'Confirm',
     cancel: 'Cancel',
+    save: 'Save',
     loading: 'Loading...',
   },
   home: {
@@ -78,6 +90,16 @@ export const commonEnUS = {
     exportSuccess: 'Export successful',
     exportFailed: 'Export failed',
   },
+  auth: {
+    login: 'Log In',
+    email: 'Email',
+    password: 'Password',
+    signIn: 'Sign In',
+    signOut: 'Sign Out',
+    invalidCredentials: 'Invalid email or password',
+    welcomeBack: 'Welcome back',
+    loginDesc: 'Sign in to manage your classrooms',
+  },
 } as const;
 
 export const commonUz = {
@@ -85,6 +107,7 @@ export const commonUz = {
     you: 'Siz',
     confirm: 'Tasdiqlash',
     cancel: 'Bekor qilish',
+    save: 'Saqlash',
     loading: 'Yuklanmoqda...',
   },
   home: {
@@ -118,5 +141,15 @@ export const commonUz = {
     exporting: 'Yuklanmoqda...',
     exportSuccess: 'Muvaffaqiyatli yuklab olindi',
     exportFailed: 'Yuklab olish xatosi',
+  },
+  auth: {
+    login: 'Kirish',
+    email: 'Elektron pochta',
+    password: 'Parol',
+    signIn: 'Kirish',
+    signOut: 'Chiqish',
+    invalidCredentials: 'Elektron pochta yoki parol notoʻgʻri',
+    welcomeBack: 'Xush kelibsiz',
+    loginDesc: 'Darslaringizni boshqarish uchun tizimga kiring',
   },
 } as const;

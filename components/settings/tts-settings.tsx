@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import { EN_DEFAULTS } from '@/lib/audio/role-voice-map';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -23,10 +24,14 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const { t } = useI18n();
 
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
+  const ttsStudentVoice = useSettingsStore((state) => state.ttsStudentVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
+  const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
+  const setTTSStudentVoice = useSettingsStore((state) => state.setTTSStudentVoice);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
+  const showVoiceConfig = selectedProviderId === 'openai-tts' && selectedProviderId === activeProviderId;
 
   // When testing a non-active provider, use that provider's default voice
   // instead of the active provider's voice (which may be incompatible)
@@ -259,6 +264,34 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             );
           })()}
         </>
+      )}
+
+      {/* Teacher + Student voice (openai-tts / Kokoro only) */}
+      {showVoiceConfig && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.ttsTeacherVoice')}</Label>
+            <Input
+              placeholder={EN_DEFAULTS.teacher.voice}
+              value={ttsVoice}
+              onChange={(e) => setTTSVoice(e.target.value)}
+              className="text-sm font-mono"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.ttsStudentVoice')}</Label>
+            <Input
+              placeholder={EN_DEFAULTS.student.voice}
+              value={ttsStudentVoice}
+              onChange={(e) => setTTSStudentVoice(e.target.value)}
+              className="text-sm font-mono"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+        </div>
       )}
 
       {/* Test TTS */}

@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
+import { UserMenu } from './user-menu';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -229,6 +230,9 @@ export function Header({ currentSceneTitle }: HeaderProps) {
               <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
             </button>
           </div>
+
+          {/* User Menu */}
+          <UserMenu />
         </div>
 
         {/* Export Dropdown */}

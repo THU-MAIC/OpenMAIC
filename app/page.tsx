@@ -18,6 +18,7 @@ import {
   Monitor,
   BotOff,
   ChevronUp,
+  LayoutDashboard,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
@@ -27,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
+import { UserMenu } from '@/components/user-menu';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
@@ -102,7 +104,12 @@ function HomePage() {
       if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US' || savedLanguage === 'uz') {
         updates.language = savedLanguage;
       } else {
-        const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+        const browserLang = navigator.language;
+        const detected = browserLang?.startsWith('zh')
+          ? 'zh-CN'
+          : browserLang?.startsWith('uz')
+            ? 'uz'
+            : 'en-US';
         updates.language = detected;
       }
       if (Object.keys(updates).length > 0) {
@@ -445,6 +452,15 @@ function HomePage() {
           )}
         </div>
 
+        {/* Dashboard Button */}
+        <button
+          onClick={() => router.push('/dashboard')}
+          title={t('classroom.myClassrooms')}
+          className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
+        >
+          <LayoutDashboard className="w-4 h-4" />
+        </button>
+
         <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
 
         {/* Settings Button */}
@@ -456,6 +472,9 @@ function HomePage() {
             <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
           </button>
         </div>
+
+        {/* User Menu */}
+        <UserMenu />
       </div>
       <SettingsDialog
         open={settingsOpen}

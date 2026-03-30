@@ -12,7 +12,7 @@ import { CLASSROOMS_DIR } from '@/lib/server/classroom-storage';
 import { generateImage } from '@/lib/media/image-providers';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
 import { generateTTS } from '@/lib/audio/tts-providers';
-import { DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
+import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
@@ -34,6 +34,7 @@ import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { resolveRoleVoice } from '@/lib/audio/role-voice-map';
 
 const log = createLogger('ClassroomMedia');
 
@@ -210,7 +211,7 @@ export async function generateTTSForClassroom(
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
 
-  // Resolve TTS provider (exclude browser-native-tts)
+  // Verify at least one server TTS provider is configured
   const allProviderIds = Object.keys(getServerTTSProviders()).filter(
     (id) => id !== 'browser-native-tts',
   ) as TTSProviderId[];
@@ -219,32 +220,39 @@ export async function generateTTSForClassroom(
     return;
   }
 
-  // For Uzbek, prefer azure-tts (has native uz-UZ voices via edge-tts)
-  const isUzbek = language === 'uz';
-  const preferredId = isUzbek && allProviderIds.includes('azure-tts') ? 'azure-tts' : allProviderIds[0];
-  const providerId = preferredId;
-
-  const apiKey = resolveTTSApiKey(providerId);
-  if (!apiKey) {
-    log.warn(`No API key for TTS provider "${providerId}", skipping TTS generation`);
-    return;
-  }
-  const ttsBaseUrl = resolveTTSBaseUrl(providerId) || TTS_PROVIDERS[providerId]?.defaultBaseUrl;
-  // For Uzbek use Madina voice; otherwise use provider default
-  const voice = isUzbek ? 'uz-UZ-MadinaNeural' : (DEFAULT_TTS_VOICES[providerId] || 'default');
-  const format = TTS_PROVIDERS[providerId]?.supportedFormats?.[0] || 'mp3';
+  const lang = language || 'zh-CN';
 
   for (const scene of scenes) {
     if (!scene.actions) continue;
 
-    // Split long speech actions into multiple shorter ones before TTS generation,
-    // mirroring the client-side approach. Each sub-action gets its own audio file.
-    scene.actions = splitLongSpeechActions(scene.actions, providerId);
+    // Resolve teacher voice to determine provider for split-length calculation
+    const teacherResolved = resolveRoleVoice(lang, 'teacher');
+    const splitProviderId = allProviderIds.includes(teacherResolved.providerId)
+      ? teacherResolved.providerId
+      : allProviderIds[0];
+
+    // Split long speech actions before TTS generation
+    scene.actions = splitLongSpeechActions(scene.actions, splitProviderId);
 
     for (const action of scene.actions) {
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
       const speechAction = action as SpeechAction;
       const audioId = `tts_${action.id}`;
+
+      // Resolve voice by role — speech actions are always teacher narration
+      const resolved = resolveRoleVoice(lang, 'teacher');
+      const providerId = allProviderIds.includes(resolved.providerId)
+        ? resolved.providerId
+        : allProviderIds[0];
+
+      const apiKey = resolveTTSApiKey(providerId);
+      if (!apiKey) {
+        log.warn(`No API key for TTS provider "${providerId}", skipping action ${action.id}`);
+        continue;
+      }
+      const ttsBaseUrl = resolveTTSBaseUrl(providerId) || TTS_PROVIDERS[providerId]?.defaultBaseUrl;
+      const voice = resolved.voice;
+      const format = TTS_PROVIDERS[providerId]?.supportedFormats?.[0] || 'mp3';
 
       try {
         const result = await generateTTS(
@@ -257,7 +265,7 @@ export async function generateTTSForClassroom(
 
         speechAction.audioId = audioId;
         speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
-        log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
+        log.info(`Generated TTS: ${filename} (${result.audio.length} bytes) [${providerId}/${voice}]`);
       } catch (err) {
         log.warn(`TTS generation failed for action ${action.id}:`, err);
       }

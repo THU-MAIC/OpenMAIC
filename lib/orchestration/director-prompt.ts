@@ -59,6 +59,7 @@ export function buildDirectorPrompt(
   whiteboardLedger?: WhiteboardActionRecord[],
   userProfile?: { nickname?: string; bio?: string },
   whiteboardOpen?: boolean,
+  language?: string,
 ): string {
   const agentList = agents
     .map((a) => `- id: "${a.id}", name: "${a.name}", role: ${a.role}, priority: ${a.priority}`)
@@ -100,6 +101,19 @@ ${userProfile.bio ? `Background: ${userProfile.bio}` : ''}
 `
       : '';
 
+  const uzbekPedagogySection =
+    language === 'uz'
+      ? `
+# Uzbek Pedagogical Context (CRITICAL)
+This classroom operates in O'zbek tili (Uzbek). All agents MUST:
+- Use formal register (hurmatli, siz-form) — Uzbek classrooms expect respectful teacher–student address.
+- Follow a structured Q&A pattern: teacher explains → poses a direct question → waits for student response → provides feedback. Avoid free-form rambling.
+- Use Uzbek-relevant subject matter examples: Amir Temur, Ulug'bek Observatory, Silk Road trade routes, Registon, cotton/agricultural economics, Central Asian geography.
+- Reference familiar Uzbek educational norms: structured lessons, respect for the muallim (teacher), emphasis on memorization + understanding.
+- Avoid Western-centric idioms or cultural references that don't translate.
+`
+      : '';
+
   return `You are the Director of a multi-agent classroom. Your job is to decide which agent should speak next based on the conversation context.
 
 # Available Agents
@@ -110,7 +124,7 @@ ${respondedList}
 
 # Conversation Context
 ${conversationSummary}
-${discussionSection}${whiteboardSection}${studentProfileSection}
+${discussionSection}${whiteboardSection}${studentProfileSection}${uzbekPedagogySection}
 # Rules
 ${rule1}
 2. After the teacher, consider whether a student agent would add value (ask a follow-up question, crack a joke, take notes, offer a different perspective).

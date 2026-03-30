@@ -672,12 +672,12 @@ function GenerationPreviewContent() {
 
       if (!contentResp.ok) {
         const errorData = await contentResp.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(errorData.error || t('generation.sceneGenerateFailed'));
+        throw new Error(errorData.error || t('generation.generationFailed'));
       }
 
       const contentData = await contentResp.json();
       if (!contentData.success || !contentData.content) {
-        throw new Error(contentData.error || t('generation.sceneGenerateFailed'));
+        throw new Error(contentData.error || t('generation.generationFailed'));
       }
 
       // Generate actions (activate actions step indicator)
@@ -701,12 +701,12 @@ function GenerationPreviewContent() {
 
       if (!actionsResp.ok) {
         const errorData = await actionsResp.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(errorData.error || t('generation.sceneGenerateFailed'));
+        throw new Error(errorData.error || t('generation.generationFailed'));
       }
 
       const data = await actionsResp.json();
       if (!data.success || !data.scene) {
-        throw new Error(data.error || t('generation.sceneGenerateFailed'));
+        throw new Error(data.error || t('generation.generationFailed'));
       }
 
       // Generate TTS for first scene (part of actions step — blocking)
@@ -789,11 +789,10 @@ function GenerationPreviewContent() {
       // Persist to server filesystem so classrooms survive browser clears
       // and are accessible via /api/regenerate-tts and other server APIs.
       try {
-        const storeState = store.getState();
         await fetch('/api/classroom', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ stage: storeState.stage, scenes: storeState.scenes }),
+          body: JSON.stringify({ stage: store.stage, scenes: store.scenes }),
         });
       } catch (e) {
         // Non-fatal — classroom is already saved to IndexedDB

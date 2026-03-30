@@ -11,6 +11,7 @@ import type { Scene } from '@/lib/types/stage';
 import type { Action, SpeechAction } from '@/lib/types/action';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { resolveRoleVoice } from '@/lib/audio/role-voice-map';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
 
@@ -130,20 +131,21 @@ export async function generateAndStoreTTS(
   const settings = useSettingsStore.getState();
   if (settings.ttsProviderId === 'browser-native-tts') return;
 
-  // For Uzbek, prefer azure-tts with the native Uzbek voice
-  const isUzbek = language === 'uz';
-  const effectiveProviderId = isUzbek ? 'azure-tts' : settings.ttsProviderId;
-  const effectiveVoice = isUzbek ? 'uz-UZ-MadinaNeural' : settings.ttsVoice;
+  // Resolve provider + voice via role-based map (teacher role for speech narration)
+  const resolved = resolveRoleVoice(language || 'zh-CN', 'teacher', {
+    teacherVoice: settings.ttsVoice,
+    studentVoice: settings.ttsStudentVoice,
+  });
 
-  const ttsProviderConfig = settings.ttsProvidersConfig?.[effectiveProviderId];
+  const ttsProviderConfig = settings.ttsProvidersConfig?.[resolved.providerId];
   const response = await fetch('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text,
       audioId,
-      ttsProviderId: effectiveProviderId,
-      ttsVoice: effectiveVoice,
+      ttsProviderId: resolved.providerId,
+      ttsVoice: resolved.voice,
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,
       ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
@@ -182,9 +184,12 @@ async function generateTTSForScene(
   signal?: AbortSignal,
   language?: string,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
-  const isUzbek = language === 'uz';
-  const providerId = isUzbek ? 'azure-tts' : useSettingsStore.getState().ttsProviderId;
-  scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
+  const settings = useSettingsStore.getState();
+  const resolved = resolveRoleVoice(language || 'zh-CN', 'teacher', {
+    teacherVoice: settings.ttsVoice,
+    studentVoice: settings.ttsStudentVoice,
+  });
+  scene.actions = splitLongSpeechActions(scene.actions || [], resolved.providerId);
   const speechActions = scene.actions.filter(
     (a): a is SpeechAction => a.type === 'speech' && !!a.text,
   );
@@ -202,7 +207,6 @@ async function generateTTSForScene(
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
       log.warn('TTS generation failed:', {
-        providerId,
         actionId: action.id,
         textLength: action.text.length,
         error: lastError,
