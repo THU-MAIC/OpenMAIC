@@ -785,6 +785,20 @@ function GenerationPreviewContent() {
 
       sessionStorage.removeItem('generationSession');
       await store.saveToStorage();
+
+      // Persist to server filesystem so classrooms survive browser clears
+      // and are accessible via /api/regenerate-tts and other server APIs.
+      try {
+        const storeState = store.getState();
+        await fetch('/api/classroom', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ stage: storeState.stage, scenes: storeState.scenes }),
+        });
+      } catch (e) {
+        // Non-fatal — classroom is already saved to IndexedDB
+      }
+
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
       // AbortError is expected when navigating away — don't show as error
