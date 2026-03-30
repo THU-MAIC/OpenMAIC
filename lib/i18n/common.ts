@@ -37,6 +37,9 @@ export const commonZhCN = {
     exportSuccess: '导出成功',
     exportFailed: '导出失败',
   },
+  playback: {
+    browserTtsMuted: '当前浏览器处于静音状态，无法听到语音。请打开系统或浏览器音量。',
+  },
 } as const;
 
 export const commonEnUS = {
@@ -77,5 +80,8 @@ export const commonEnUS = {
     exporting: 'Exporting...',
     exportSuccess: 'Export successful',
     exportFailed: 'Export failed',
+  },
+  playback: {
+    browserTtsMuted: 'Browser is muted. Please unmute your system or browser to hear the audio.',
   },
 } as const;

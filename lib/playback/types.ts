@@ -59,4 +59,7 @@ export interface PlaybackEngineCallbacks {
   getPlaybackSpeed?: () => number;
 
   onComplete?: () => void;
+
+  /** Browser TTS is muted - prompt user to unmute */
+  onBrowserTTSMuted?: () => void;
 }
