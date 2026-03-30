@@ -1,0 +1,153 @@
+
+> openmaic@0.1.0 dev
+> next dev
+
+鈻?Next.js 16.1.2 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://198.18.0.1:3000
+- Environments: .env.local
+- Experiments (use with caution):
+  路 proxyClientMaxBodySize: "200mb"
+
+鉁?Starting...
+鉁?Ready in 3.7s
+ GET / 200 in 4.2s (compile: 1489ms, render: 2.8s)
+[2026-03-30T21:08:19.320Z] [INFO] [ServerProviderConfig] [ServerProviderConfig] Loaded (server-providers.yml): 1 LLM, 0 TTS, 0 ASR, 0 PDF, 0 Image, 0 Video, 0 WebSearch providers
+ GET /api/server-providers 200 in 211ms (compile: 175ms, render: 36ms)
+[2026-03-30T21:08:23.343Z] [ERROR] [Verify Model] Model verification failed [model="gpt-999-turbo-fake"]: AI_APICallError: Incorrect API key provided: sk-INVAL**************TING. You can find your API key at https://platform.openai.com/account/api-keys.
+    at D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\node_modules__pnpm_2cc317b9._.js:3149:24
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async postToApi (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\node_modules__pnpm_2cc317b9._.js:3022:36)
+    at async OpenAIChatLanguageModel.doGenerate (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\9f861_@ai-sdk_openai_dist_index_mjs_e172ddc1._.js:826:77)
+    at async fn (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\d8dce_ai_dist_index_mjs_516ae3a7._.js:4357:52)
+    at async D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\d8dce_ai_dist_index_mjs_516ae3a7._.js:2366:28
+    at async _retryWithExponentialBackoff (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\d8dce_ai_dist_index_mjs_516ae3a7._.js:2624:16)
+    at async fn (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\d8dce_ai_dist_index_mjs_516ae3a7._.js:4316:48)
+    at async D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\d8dce_ai_dist_index_mjs_516ae3a7._.js:2366:28
+    at async generateText (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\d8dce_ai_dist_index_mjs_516ae3a7._.js:4137:16)
+    at async POST (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\[root-of-the-server]__1457b120._.js:2110:26)
+    at async AppRouteRouteModule.do (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:37866)
+    at async AppRouteRouteModule.handle (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:45156)
+    at async responseGenerator (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_67c4c38f._.js:14843:38)
+    at async AppRouteRouteModule.handleResponse (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:1:187713)
+    at async handleResponse (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_67c4c38f._.js:14906:32)
+    at async Module.handler (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_67c4c38f._.js:14959:13)
+    at async DevServer.renderToResponseWithComponentsImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1422:9)
+    at async DevServer.renderPageComponent (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1474:24)
+    at async DevServer.renderToResponseImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1524:32)
+    at async DevServer.pipeImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1018:25)
+    at async NextNodeServer.handleCatchallRenderRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\next-server.js:395:17)
+    at async DevServer.handleRequestImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:909:17)
+    at async D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:387:20
+    at async Span.traceAsyncFn (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\trace\trace.js:157:20)
+    at async DevServer.handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:383:24)
+    at async invokeRender (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:248:21)
+    at async handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:447:24)
+    at async requestHandlerImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:496:13)
+    at async Server.requestListener (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\start-server.js:226:13)
+ POST /api/verify-model 500 in 1546ms (compile: 681ms, render: 865ms)
+[2026-03-30T21:08:24.019Z] [ERROR] [Azure Voices] Azure voices fetch failed [baseUrl="https://bad-endpoint.invalid/cognitiveservices/v1"]: TypeError: fetch failed
+    at node:internal/deps/undici/undici:13510:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async POST (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\[root-of-the-server]__b5cf1236._.js:204:26)
+    at async AppRouteRouteModule.do (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:37866)
+    at async AppRouteRouteModule.handle (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:45156)
+    at async responseGenerator (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\node_modules__pnpm_c01845b9._.js:17599:38)
+    at async AppRouteRouteModule.handleResponse (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:1:187713)
+    at async handleResponse (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\node_modules__pnpm_c01845b9._.js:17662:32)
+    at async Module.handler (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\node_modules__pnpm_c01845b9._.js:17715:13)
+    at async DevServer.renderToResponseWithComponentsImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1422:9)
+    at async DevServer.renderPageComponent (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1474:24)
+    at async DevServer.renderToResponseImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1524:32)
+    at async DevServer.pipeImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1018:25)
+    at async NextNodeServer.handleCatchallRenderRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\next-server.js:395:17)
+    at async DevServer.handleRequestImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:909:17)
+    at async D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:387:20
+    at async Span.traceAsyncFn (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\trace\trace.js:157:20)
+    at async DevServer.handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:383:24)
+    at async invokeRender (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:248:21)
+    at async handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:447:24)
+    at async requestHandlerImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:496:13)
+    at async Server.requestListener (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\start-server.js:226:13)
+ POST /api/azure-voices 500 in 151ms (compile: 100ms, render: 50ms)
+[2026-03-30T21:08:24.709Z] [INFO] [ProxyFetch] No proxy configured, using direct fetch for: https://api.tavily.com/search
+[2026-03-30T21:08:26.032Z] [ERROR] [WebSearch] Web search failed [query="test query for error logging demonstration"]: Error: Tavily API error (401): {
+    "detail": {
+        "error": "Unauthorized: missing or invalid API key."
+    }
+}
+
+    at searchWithTavily (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\[root-of-the-server]__79c315ca._.js:309:15)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async POST (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\[root-of-the-server]__79c315ca._.js:770:24)
+    at async AppRouteRouteModule.do (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:37866)
+    at async AppRouteRouteModule.handle (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:45156)
+    at async responseGenerator (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_81ced960._.js:14843:38)
+    at async AppRouteRouteModule.handleResponse (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:1:187713)
+    at async handleResponse (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_81ced960._.js:14906:32)
+    at async Module.handler (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_81ced960._.js:14959:13)
+    at async DevServer.renderToResponseWithComponentsImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1422:9)
+    at async DevServer.renderPageComponent (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1474:24)
+    at async DevServer.renderToResponseImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1524:32)
+    at async DevServer.pipeImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1018:25)
+    at async NextNodeServer.handleCatchallRenderRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\next-server.js:395:17)
+    at async DevServer.handleRequestImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:909:17)
+    at async D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:387:20
+    at async Span.traceAsyncFn (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\trace\trace.js:157:20)
+    at async DevServer.handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:383:24)
+    at async invokeRender (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:248:21)
+    at async handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:447:24)
+    at async requestHandlerImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:496:13)
+    at async Server.requestListener (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\start-server.js:226:13)
+ POST /api/web-search 500 in 1493ms (compile: 140ms, render: 1353ms)
+ POST /api/verify-pdf-provider 400 in 191ms (compile: 168ms, render: 23ms)
+[2026-03-30T21:08:27.409Z] [ERROR] [PBL Chat] PBL chat failed [agent="TestAgent", type=question]: TypeError: Cannot read properties of undefined (reading 'length')
+    at POST (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\[root-of-the-server]__e7cbaf83._.js:2449:46)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async AppRouteRouteModule.do (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:37866)
+    at async AppRouteRouteModule.handle (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:45156)
+    at async responseGenerator (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_e6af81f8._.js:14843:38)
+    at async AppRouteRouteModule.handleResponse (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:1:187713)
+    at async handleResponse (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_e6af81f8._.js:14906:32)
+    at async Module.handler (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_e6af81f8._.js:14959:13)
+    at async DevServer.renderToResponseWithComponentsImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1422:9)
+    at async DevServer.renderPageComponent (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1474:24)
+    at async DevServer.renderToResponseImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1524:32)
+    at async DevServer.pipeImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1018:25)
+    at async NextNodeServer.handleCatchallRenderRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\next-server.js:395:17)
+    at async DevServer.handleRequestImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:909:17)
+    at async D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:387:20
+    at async Span.traceAsyncFn (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\trace\trace.js:157:20)
+    at async DevServer.handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:383:24)
+    at async invokeRender (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:248:21)
+    at async handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:447:24)
+    at async requestHandlerImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:496:13)
+    at async Server.requestListener (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\start-server.js:226:13)
+ POST /api/pbl/chat 500 in 139ms (compile: 121ms, render: 17ms)
+[2026-03-30T21:08:28.143Z] [ERROR] [Transcription] Transcription failed [provider=unknown, model=default]: TypeError: Content-Type was not one of "multipart/form-data" or "application/x-www-form-urlencoded".
+    at node:internal/deps/undici/undici:5691:19
+    at successSteps (node:internal/deps/undici/undici:5719:27)
+    at fullyReadBody (node:internal/deps/undici/undici:4609:9)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async consumeBody (node:internal/deps/undici/undici:5728:7)
+    at async POST (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\[root-of-the-server]__2bfb0988._.js:2153:26)
+    at async AppRouteRouteModule.do (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:37866)
+    at async AppRouteRouteModule.handle (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:5:45156)
+    at async responseGenerator (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_5688b3f7._.js:14843:38)
+    at async AppRouteRouteModule.handleResponse (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\compiled\next-server\app-route-turbo.runtime.dev.js:1:187713)
+    at async handleResponse (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_5688b3f7._.js:14906:32)
+    at async Module.handler (D:\UserData\Desktop\OpenMAIC\.next\dev\server\chunks\38369_next_5688b3f7._.js:14959:13)
+    at async DevServer.renderToResponseWithComponentsImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1422:9)
+    at async DevServer.renderPageComponent (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1474:24)
+    at async DevServer.renderToResponseImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1524:32)
+    at async DevServer.pipeImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:1018:25)
+    at async NextNodeServer.handleCatchallRenderRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\next-server.js:395:17)
+    at async DevServer.handleRequestImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\base-server.js:909:17)
+    at async D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:387:20
+    at async Span.traceAsyncFn (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\trace\trace.js:157:20)
+    at async DevServer.handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\dev\next-dev-server.js:383:24)
+    at async invokeRender (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:248:21)
+    at async handleRequest (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:447:24)
+    at async requestHandlerImpl (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\router-server.js:496:13)
+    at async Server.requestListener (D:\UserData\Desktop\OpenMAIC\node_modules\.pnpm\next@16.1.2_@babel+core@7.2_73d26e8a224c7af85a4dde0601bbbcd7\node_modules\next\dist\server\lib\start-server.js:226:13)
+ POST /api/transcription 500 in 219ms (compile: 181ms, render: 38ms)

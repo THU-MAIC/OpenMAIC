@@ -71,7 +71,10 @@ export async function GET(request: NextRequest) {
 
     return apiSuccess({ classroom });
   } catch (error) {
-    log.error(`Classroom retrieval failed [id=${request.nextUrl.searchParams.get('id') ?? 'unknown'}]:`, error);
+    log.error(
+      `Classroom retrieval failed [id=${request.nextUrl.searchParams.get('id') ?? 'unknown'}]:`,
+      error,
+    );
     return apiError(
       API_ERROR_CODES.INTERNAL_ERROR,
       500,
