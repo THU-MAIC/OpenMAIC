@@ -34,7 +34,7 @@ import type { ImageProviderId } from '@/lib/media/types';
 import type { VideoProviderId } from '@/lib/media/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
-import { resolveRoleVoice } from '@/lib/audio/role-voice-map';
+import { resolveProvider, resolveVoice } from '@/lib/audio/voice-map';
 
 const log = createLogger('ClassroomMedia');
 
@@ -221,17 +221,14 @@ export async function generateTTSForClassroom(
   }
 
   const lang = language || 'zh-CN';
+  // Use first available provider as the "current" fallback for provider resolution
+  const fallbackProvider = allProviderIds[0];
 
   for (const scene of scenes) {
     if (!scene.actions) continue;
 
-    // Resolve teacher voice to determine provider for split-length calculation
-    const teacherResolved = resolveRoleVoice(lang, 'teacher');
-    const splitProviderId = allProviderIds.includes(teacherResolved.providerId)
-      ? teacherResolved.providerId
-      : allProviderIds[0];
-
-    // Split long speech actions before TTS generation
+    // Determine provider for split-length calculation
+    const splitProviderId = resolveProvider(lang, fallbackProvider, allProviderIds);
     scene.actions = splitLongSpeechActions(scene.actions, splitProviderId);
 
     for (const action of scene.actions) {
@@ -239,19 +236,18 @@ export async function generateTTSForClassroom(
       const speechAction = action as SpeechAction;
       const audioId = `tts_${action.id}`;
 
-      // Resolve voice by role — speech actions are always teacher narration
-      const resolved = resolveRoleVoice(lang, 'teacher');
-      const providerId = allProviderIds.includes(resolved.providerId)
-        ? resolved.providerId
-        : allProviderIds[0];
+      // Speech actions are always teacher narration
+      const role = 'teacher';
+      const providerId = resolveProvider(lang, fallbackProvider, allProviderIds);
+      const voice = resolveVoice(lang, role, providerId);
 
       const apiKey = resolveTTSApiKey(providerId);
       if (!apiKey) {
         log.warn(`No API key for TTS provider "${providerId}", skipping action ${action.id}`);
+        speechAction.ttsError = `No API key for provider "${providerId}"`;
         continue;
       }
       const ttsBaseUrl = resolveTTSBaseUrl(providerId) || TTS_PROVIDERS[providerId]?.defaultBaseUrl;
-      const voice = resolved.voice;
       const format = TTS_PROVIDERS[providerId]?.supportedFormats?.[0] || 'mp3';
 
       try {
@@ -267,7 +263,9 @@ export async function generateTTSForClassroom(
         speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
         log.info(`Generated TTS: ${filename} (${result.audio.length} bytes) [${providerId}/${voice}]`);
       } catch (err) {
-        log.warn(`TTS generation failed for action ${action.id}:`, err);
+        const msg = err instanceof Error ? err.message : String(err);
+        log.warn(`TTS failed [role=${role}, provider=${providerId}, voice=${voice}]: ${msg}`);
+        speechAction.ttsError = msg;
       }
     }
   }

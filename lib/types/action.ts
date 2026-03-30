@@ -42,7 +42,8 @@ export interface SpeechAction extends ActionBase {
   audioId?: string;
   audioUrl?: string; // Server-generated TTS audio URL
   voice?: string;
-  speed?: number; // default 1.0
+  speed?: number;    // default 1.0
+  ttsError?: string; // Set when TTS generation failed — UI should show "audio unavailable"
 }
 
 /** Open whiteboard (wait for animation) */

@@ -11,7 +11,7 @@ import type { Scene } from '@/lib/types/stage';
 import type { Action, SpeechAction } from '@/lib/types/action';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
-import { resolveRoleVoice } from '@/lib/audio/role-voice-map';
+import { resolveProvider, resolveVoice } from '@/lib/audio/voice-map';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
 
@@ -131,21 +131,19 @@ export async function generateAndStoreTTS(
   const settings = useSettingsStore.getState();
   if (settings.ttsProviderId === 'browser-native-tts') return;
 
-  // Resolve provider + voice via role-based map (teacher role for speech narration)
-  const resolved = resolveRoleVoice(language || 'zh-CN', 'teacher', {
-    teacherVoice: settings.ttsVoice,
-    studentVoice: settings.ttsStudentVoice,
-  });
+  const lang = language || 'zh-CN';
+  const providerId = resolveProvider(lang, settings.ttsProviderId);
+  const voice = resolveVoice(lang, 'teacher', providerId, settings.ttsVoice);
 
-  const ttsProviderConfig = settings.ttsProvidersConfig?.[resolved.providerId];
+  const ttsProviderConfig = settings.ttsProvidersConfig?.[providerId];
   const response = await fetch('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text,
       audioId,
-      ttsProviderId: resolved.providerId,
-      ttsVoice: resolved.voice,
+      ttsProviderId: providerId,
+      ttsVoice: voice,
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,
       ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
@@ -185,15 +183,16 @@ async function generateTTSForScene(
   language?: string,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
   const settings = useSettingsStore.getState();
-  const resolved = resolveRoleVoice(language || 'zh-CN', 'teacher', {
-    teacherVoice: settings.ttsVoice,
-    studentVoice: settings.ttsStudentVoice,
-  });
-  scene.actions = splitLongSpeechActions(scene.actions || [], resolved.providerId);
+  const lang = language || 'zh-CN';
+  const providerId = resolveProvider(lang, settings.ttsProviderId);
+  scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
   const speechActions = scene.actions.filter(
     (a): a is SpeechAction => a.type === 'speech' && !!a.text,
   );
   if (speechActions.length === 0) return { success: true, failedCount: 0 };
+
+  const resolvedProviderId = resolveProvider(lang, settings.ttsProviderId);
+  const resolvedVoice = resolveVoice(lang, 'teacher', resolvedProviderId, settings.ttsVoice);
 
   let failedCount = 0;
   let lastError: string | undefined;
@@ -206,11 +205,8 @@ async function generateTTSForScene(
     } catch (error) {
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
-      log.warn('TTS generation failed:', {
-        actionId: action.id,
-        textLength: action.text.length,
-        error: lastError,
-      });
+      action.ttsError = lastError;
+      log.warn(`TTS failed [role=teacher, provider=${resolvedProviderId}, voice=${resolvedVoice}]:`, lastError);
     }
   }
 

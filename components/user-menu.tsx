@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
-import { LogOut, User } from 'lucide-react';
+import { LogOut, KeyRound, Users } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 
@@ -31,6 +31,8 @@ export function UserMenu() {
   }, [open, handleClickOutside]);
 
   if (!session?.user) return null;
+
+  const isAdmin = (session.user as { role?: string }).role === 'admin';
 
   const initials = (session.user.name || session.user.email || '?')
     .split(/[\s@]/)
@@ -64,6 +66,28 @@ export function UserMenu() {
               </p>
             )}
           </div>
+          {isAdmin && (
+            <button
+              onClick={() => {
+                setOpen(false);
+                router.push('/dashboard/users');
+              }}
+              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-600 dark:text-gray-400"
+            >
+              <Users className="w-3.5 h-3.5" />
+              {t('auth.users')}
+            </button>
+          )}
+          <button
+            onClick={() => {
+              setOpen(false);
+              router.push('/dashboard/settings');
+            }}
+            className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2 text-gray-600 dark:text-gray-400"
+          >
+            <KeyRound className="w-3.5 h-3.5" />
+            {t('auth.changePassword')}
+          </button>
           <button
             onClick={() => {
               setOpen(false);
