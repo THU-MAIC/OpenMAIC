@@ -75,6 +75,7 @@ const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_QWEN_IMAGE: 'qwen-image',
   IMAGE_NANO_BANANA: 'nano-banana',
   IMAGE_GROK: 'grok-image',
+  IMAGE_LOCAL_IMAGE: 'local-image',
 };
 
 const VIDEO_ENV_MAP: Record<string, string> = {

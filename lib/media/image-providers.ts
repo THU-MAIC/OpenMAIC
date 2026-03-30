@@ -13,6 +13,7 @@ import { generateWithSeedream, testSeedreamConnectivity } from './adapters/seedr
 import { generateWithQwenImage, testQwenImageConnectivity } from './adapters/qwen-image-adapter';
 import { generateWithNanoBanana, testNanoBananaConnectivity } from './adapters/nano-banana-adapter';
 import { generateWithGrokImage, testGrokImageConnectivity } from './adapters/grok-image-adapter';
+import { generateWithLocalImage, testLocalImageConnectivity } from './adapters/local-image-adapter';
 
 export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   seedream: {
@@ -78,6 +79,16 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
   },
+  'local-image': {
+    id: 'local-image',
+    name: 'Local (SDXL-Turbo)',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:8765',
+    models: [
+      { id: 'sdxl-turbo', name: 'SDXL-Turbo (fast, 1-step)' },
+    ],
+    supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
+  },
 };
 
 export async function testImageConnectivity(
@@ -92,6 +103,8 @@ export async function testImageConnectivity(
       return testNanoBananaConnectivity(config);
     case 'grok-image':
       return testGrokImageConnectivity(config);
+    case 'local-image':
+      return testLocalImageConnectivity(config);
     default:
       return {
         success: false,
@@ -113,6 +126,8 @@ export async function generateImage(
       return generateWithNanoBanana(config, options);
     case 'grok-image':
       return generateWithGrokImage(config, options);
+    case 'local-image':
+      return generateWithLocalImage(config, options);
     default:
       throw new Error(`Unsupported image provider: ${config.providerId}`);
   }
