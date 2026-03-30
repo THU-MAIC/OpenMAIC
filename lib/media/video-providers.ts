@@ -12,6 +12,10 @@ import type {
 import { generateWithSeedance, testSeedanceConnectivity } from './adapters/seedance-adapter';
 import { generateWithKling, testKlingConnectivity } from './adapters/kling-adapter';
 import { generateWithVeo, testVeoConnectivity } from './adapters/veo-adapter';
+import {
+  generateWithMiniMaxVideo,
+  testMiniMaxVideoConnectivity,
+} from './adapters/minimax-video-adapter';
 import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
@@ -75,6 +79,23 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedAspectRatios: ['16:9', '1:1', '9:16'],
     maxDuration: 20,
   },
+  'minimax-video': {
+    id: 'minimax-video',
+    name: 'MiniMax Video',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.minimaxi.com',
+    models: [
+      { id: 'MiniMax-Hailuo-2.3', name: 'Hailuo 2.3' },
+      { id: 'MiniMax-Hailuo-2.3-Fast', name: 'Hailuo 2.3 Fast' },
+      { id: 'MiniMax-Hailuo-02', name: 'Hailuo 02' },
+      { id: 'T2V-01-Director', name: 'T2V-01 Director' },
+      { id: 'T2V-01', name: 'T2V-01' },
+    ],
+    supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
+    supportedDurations: [6, 10],
+    supportedResolutions: ['720p', '1080p'],
+    maxDuration: 10,
+  },
   'grok-video': {
     id: 'grok-video',
     name: 'Grok Video (xAI)',
@@ -97,6 +118,8 @@ export async function testVideoConnectivity(
       return testKlingConnectivity(config);
     case 'veo':
       return testVeoConnectivity(config);
+    case 'minimax-video':
+      return testMiniMaxVideoConnectivity(config);
     case 'grok-video':
       return testGrokVideoConnectivity(config);
     default:
@@ -162,6 +185,8 @@ export async function generateVideo(
       return generateWithKling(config, options);
     case 'veo':
       return generateWithVeo(config, options);
+    case 'minimax-video':
+      return generateWithMiniMaxVideo(config, options);
     case 'grok-video':
       return generateWithGrokVideo(config, options);
     default:

@@ -51,6 +51,9 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      modelId?: string;
+      customModels?: Array<{ id: string; name: string }>;
+      providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
     }
@@ -62,6 +65,9 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      modelId?: string;
+      customModels?: Array<{ id: string; name: string }>;
+      providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
     }
@@ -178,11 +184,25 @@ export interface SettingsState {
   setASRLanguage: (language: string) => void;
   setTTSProviderConfig: (
     providerId: TTSProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      modelId: string;
+      customModels: Array<{ id: string; name: string }>;
+      providerOptions: Record<string, unknown>;
+    }>,
   ) => void;
   setASRProviderConfig: (
     providerId: ASRProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      modelId: string;
+      customModels: Array<{ id: string; name: string }>;
+      providerOptions: Record<string, unknown>;
+    }>,
   ) => void;
   setTTSEnabled: (enabled: boolean) => void;
   setASREnabled: (enabled: boolean) => void;
@@ -267,9 +287,14 @@ const getDefaultAudioConfig = () => ({
     'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
     'glm-tts': { apiKey: '', baseUrl: '', enabled: false },
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
+    'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
+    'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: false },
     'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
-  } as Record<TTSProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+  } as Record<
+    TTSProviderId,
+    { apiKey: string; baseUrl: string; modelId?: string; enabled: boolean }
+  >,
   asrProvidersConfig: {
     'openai-whisper': { apiKey: '', baseUrl: '', enabled: true },
     'browser-native': { apiKey: '', baseUrl: '', enabled: true },
@@ -294,6 +319,7 @@ const getDefaultImageConfig = () => ({
     seedream: { apiKey: '', baseUrl: '', enabled: false },
     'qwen-image': { apiKey: '', baseUrl: '', enabled: false },
     'nano-banana': { apiKey: '', baseUrl: '', enabled: false },
+    'minimax-image': { apiKey: '', baseUrl: '', enabled: false },
     'grok-image': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<ImageProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
@@ -307,6 +333,7 @@ const getDefaultVideoConfig = () => ({
     kling: { apiKey: '', baseUrl: '', enabled: false },
     veo: { apiKey: '', baseUrl: '', enabled: false },
     sora: { apiKey: '', baseUrl: '', enabled: false },
+    'minimax-video': { apiKey: '', baseUrl: '', enabled: false },
     'grok-video': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<VideoProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
@@ -1206,6 +1233,34 @@ export const useSettingsStore = create<SettingsState>()(
         if (!state.ttsProvidersConfig || !state.asrProvidersConfig) {
           const defaultAudioConfig = getDefaultAudioConfig();
           Object.assign(state, defaultAudioConfig);
+        }
+
+        // Migrate global ttsModelId to per-provider
+        if ((state as Record<string, unknown>).ttsModelId) {
+          const pid = state.ttsProviderId;
+          if (pid && state.ttsProvidersConfig?.[pid]) {
+            state.ttsProvidersConfig[pid].modelId = (state as Record<string, unknown>)
+              .ttsModelId as string;
+          }
+          delete (state as Record<string, unknown>).ttsModelId;
+        }
+        // Same for asrModelId
+        if ((state as Record<string, unknown>).asrModelId) {
+          const pid = state.asrProviderId;
+          if (pid && state.asrProvidersConfig?.[pid]) {
+            state.asrProvidersConfig[pid].modelId = (state as Record<string, unknown>)
+              .asrModelId as string;
+          }
+          delete (state as Record<string, unknown>).asrModelId;
+        }
+        // Migrate MiniMax's model field to modelId
+        for (const [, cfg] of Object.entries(
+          (state.ttsProvidersConfig as Record<string, Record<string, unknown>>) || {},
+        )) {
+          if (cfg.model && !cfg.modelId) {
+            cfg.modelId = cfg.model;
+            delete cfg.model;
+          }
         }
 
         // Add default PDF config if missing

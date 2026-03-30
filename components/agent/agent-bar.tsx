@@ -71,7 +71,7 @@ function AgentVoicePill({
   }, []);
 
   const handlePreview = useCallback(
-    async (providerId: TTSProviderId, voiceId: string) => {
+    async (providerId: TTSProviderId, voiceId: string, modelId?: string) => {
       const key = `${providerId}::${voiceId}`;
       if (previewingId === key) {
         stopPreview();
@@ -109,6 +109,7 @@ function AgentVoicePill({
             text: previewText,
             audioId: 'voice-preview',
             ttsProviderId: providerId,
+            ttsModelId: modelId || providerConfig?.modelId,
             ttsVoice: voiceId,
             ttsSpeed: 1,
             ttsApiKey: providerConfig?.apiKey,
@@ -176,63 +177,73 @@ function AgentVoicePill({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        {availableProviders.map((provider) => (
-          <div key={provider.providerId}>
-            <div className="text-[11px] text-muted-foreground/60 font-medium px-2 py-1 sticky top-0 bg-popover">
-              {provider.providerName}
+        {availableProviders.map((provider) =>
+          provider.modelGroups.map((group) => (
+            <div key={`${provider.providerId}::${group.modelId}`}>
+              <div className="text-[11px] text-muted-foreground/60 font-medium px-2 py-1 sticky top-0 bg-popover">
+                {group.modelId
+                  ? `${provider.providerName} · ${group.modelName}`
+                  : provider.providerName}
+              </div>
+              {group.voices.map((voice) => {
+                const isActive =
+                  resolved.providerId === provider.providerId &&
+                  resolved.voiceId === voice.id &&
+                  (resolved.modelId || '') === (group.modelId || '');
+                const previewKey = `${provider.providerId}::${voice.id}`;
+                const isPreviewing = previewingId === previewKey;
+                return (
+                  <div
+                    key={previewKey}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-sm transition-colors',
+                      isActive ? 'bg-primary/10' : 'hover:bg-muted',
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        updateAgent(agent.id, {
+                          voiceConfig: {
+                            providerId: provider.providerId,
+                            modelId: group.modelId || undefined,
+                            voiceId: voice.id,
+                          },
+                        });
+                        setPopoverOpen(false);
+                      }}
+                      className={cn(
+                        'flex-1 text-left text-[13px] px-2 py-1.5 min-w-0 truncate',
+                        isActive ? 'text-primary font-medium' : 'text-foreground',
+                      )}
+                    >
+                      {voice.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePreview(provider.providerId, voice.id, group.modelId);
+                      }}
+                      className={cn(
+                        'shrink-0 size-6 flex items-center justify-center rounded-sm transition-colors',
+                        isPreviewing
+                          ? 'text-primary'
+                          : 'text-muted-foreground/40 hover:text-muted-foreground',
+                      )}
+                    >
+                      {isPreviewing ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Volume2 className="size-3.5" />
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-            {provider.voices.map((voice) => {
-              const isActive =
-                resolved.providerId === provider.providerId && resolved.voiceId === voice.id;
-              const previewKey = `${provider.providerId}::${voice.id}`;
-              const isPreviewing = previewingId === previewKey;
-              return (
-                <div
-                  key={previewKey}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-sm transition-colors',
-                    isActive ? 'bg-primary/10' : 'hover:bg-muted',
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      updateAgent(agent.id, {
-                        voiceConfig: { providerId: provider.providerId, voiceId: voice.id },
-                      });
-                      setPopoverOpen(false);
-                    }}
-                    className={cn(
-                      'flex-1 text-left text-[13px] px-2 py-1.5 min-w-0 truncate',
-                      isActive ? 'text-primary font-medium' : 'text-foreground',
-                    )}
-                  >
-                    {voice.name}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePreview(provider.providerId, voice.id);
-                    }}
-                    className={cn(
-                      'shrink-0 size-6 flex items-center justify-center rounded-sm transition-colors',
-                      isPreviewing
-                        ? 'text-primary'
-                        : 'text-muted-foreground/40 hover:text-muted-foreground',
-                    )}
-                  >
-                    {isPreviewing ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Volume2 className="size-3.5" />
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ))}
+          )),
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -253,6 +264,7 @@ function TeacherVoicePill({
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const setTTSProvider = useSettingsStore((s) => s.setTTSProvider);
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
+  const setTTSProviderConfig = useSettingsStore((s) => s.setTTSProviderConfig);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [previewingId, setPreviewingId] = useState<string | null>(null);
@@ -284,7 +296,7 @@ function TeacherVoicePill({
   }, []);
 
   const handlePreview = useCallback(
-    async (providerId: TTSProviderId, voiceId: string) => {
+    async (providerId: TTSProviderId, voiceId: string, modelId?: string) => {
       const key = `${providerId}::${voiceId}`;
       if (previewingId === key) {
         stopPreview();
@@ -321,6 +333,7 @@ function TeacherVoicePill({
             text: previewText,
             audioId: 'voice-preview',
             ttsProviderId: providerId,
+            ttsModelId: modelId || providerConfig?.modelId,
             ttsVoice: voiceId,
             ttsSpeed: 1,
             ttsApiKey: providerConfig?.apiKey,
@@ -386,61 +399,72 @@ function TeacherVoicePill({
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        {availableProviders.map((provider) => (
-          <div key={provider.providerId}>
-            <div className="text-[11px] text-muted-foreground/60 font-medium px-2 py-1 sticky top-0 bg-popover">
-              {provider.providerName}
+        {availableProviders.map((provider) =>
+          provider.modelGroups.map((group) => (
+            <div key={`${provider.providerId}::${group.modelId}`}>
+              <div className="text-[11px] text-muted-foreground/60 font-medium px-2 py-1 sticky top-0 bg-popover">
+                {group.modelId
+                  ? `${provider.providerName} · ${group.modelName}`
+                  : provider.providerName}
+              </div>
+              {group.voices.map((voice) => {
+                const currentModelId = ttsProvidersConfig[ttsProviderId]?.modelId || '';
+                const isActive =
+                  ttsProviderId === provider.providerId &&
+                  ttsVoice === voice.id &&
+                  currentModelId === (group.modelId || '');
+                const previewKey = `${provider.providerId}::${voice.id}`;
+                const isPreviewing = previewingId === previewKey;
+                return (
+                  <div
+                    key={previewKey}
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-sm transition-colors',
+                      isActive ? 'bg-primary/10' : 'hover:bg-muted',
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTTSProvider(provider.providerId);
+                        setTTSVoice(voice.id);
+                        if (group.modelId) {
+                          setTTSProviderConfig(provider.providerId, { modelId: group.modelId });
+                        }
+                        setPopoverOpen(false);
+                      }}
+                      className={cn(
+                        'flex-1 text-left text-[13px] px-2 py-1.5 min-w-0 truncate',
+                        isActive ? 'text-primary font-medium' : 'text-foreground',
+                      )}
+                    >
+                      {voice.name}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handlePreview(provider.providerId, voice.id, group.modelId);
+                      }}
+                      className={cn(
+                        'shrink-0 size-6 flex items-center justify-center rounded-sm transition-colors',
+                        isPreviewing
+                          ? 'text-primary'
+                          : 'text-muted-foreground/40 hover:text-muted-foreground',
+                      )}
+                    >
+                      {isPreviewing ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Volume2 className="size-3.5" />
+                      )}
+                    </button>
+                  </div>
+                );
+              })}
             </div>
-            {provider.voices.map((voice) => {
-              const isActive = ttsProviderId === provider.providerId && ttsVoice === voice.id;
-              const previewKey = `${provider.providerId}::${voice.id}`;
-              const isPreviewing = previewingId === previewKey;
-              return (
-                <div
-                  key={previewKey}
-                  className={cn(
-                    'flex items-center gap-1.5 rounded-sm transition-colors',
-                    isActive ? 'bg-primary/10' : 'hover:bg-muted',
-                  )}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setTTSProvider(provider.providerId);
-                      setTTSVoice(voice.id);
-                      setPopoverOpen(false);
-                    }}
-                    className={cn(
-                      'flex-1 text-left text-[13px] px-2 py-1.5 min-w-0 truncate',
-                      isActive ? 'text-primary font-medium' : 'text-foreground',
-                    )}
-                  >
-                    {voice.name}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handlePreview(provider.providerId, voice.id);
-                    }}
-                    className={cn(
-                      'shrink-0 size-6 flex items-center justify-center rounded-sm transition-colors',
-                      isPreviewing
-                        ? 'text-primary'
-                        : 'text-muted-foreground/40 hover:text-muted-foreground',
-                    )}
-                  >
-                    {isPreviewing ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      <Volume2 className="size-3.5" />
-                    )}
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        ))}
+          )),
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -486,6 +510,13 @@ export function AgentBar() {
             providerId: 'browser-native-tts' as TTSProviderId,
             providerName: 'Browser Native',
             voices: browserVoices.map((v) => ({ id: v.voiceURI, name: v.name })),
+            modelGroups: [
+              {
+                modelId: '',
+                modelName: 'Browser Native',
+                voices: browserVoices.map((v) => ({ id: v.voiceURI, name: v.name })),
+              },
+            ],
           },
         ]
       : []),

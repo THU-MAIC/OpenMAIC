@@ -3,7 +3,11 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useBrowserTTS } from '@/lib/hooks/use-browser-tts';
-import { resolveAgentVoice, getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import {
+  resolveAgentVoice,
+  getAvailableProvidersWithVoices,
+  type ResolvedVoice,
+} from '@/lib/audio/voice-resolver';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
@@ -20,6 +24,7 @@ interface QueueItem {
   text: string;
   agentId: string | null;
   providerId: TTSProviderId;
+  modelId?: string;
   voiceId: string;
 }
 
@@ -80,7 +85,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   }, [agents]);
 
   const resolveVoiceForAgent = useCallback(
-    (agentId: string | null): { providerId: TTSProviderId; voiceId: string } => {
+    (agentId: string | null): ResolvedVoice => {
       const providers = getAvailableProvidersWithVoices(ttsProvidersConfig);
       if (!agentId) {
         if (providers.length > 0) {
@@ -97,13 +102,18 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
           return {
             providerId: providers[0].providerId,
             voiceId: providers[0].voices[0]?.id ?? 'default',
+            modelId: undefined,
           };
         }
-        return { providerId: 'browser-native-tts', voiceId: 'default' };
+        return { providerId: 'browser-native-tts', voiceId: 'default', modelId: undefined };
       }
       // Teacher: always use global lecture voice (single source of truth with settings)
       if (agent.role === 'teacher') {
-        return { providerId: globalTtsProviderId, voiceId: globalTtsVoice };
+        return {
+          providerId: globalTtsProviderId,
+          voiceId: globalTtsVoice,
+          modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+        };
       }
       const index = agentIndexMap.current.get(agentId) ?? 0;
       return resolveAgentVoice(agent, index, providers);
@@ -145,6 +155,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
           text: item.text,
           audioId: item.partId,
           ttsProviderId: item.providerId,
+          ttsModelId: item.modelId || providerConfig?.modelId,
           ttsVoice: item.voiceId,
           ttsSpeed: ttsSpeed,
           ttsApiKey: providerConfig?.apiKey,
@@ -164,16 +175,22 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       audio.volume = ttsMuted ? 0 : ttsVolume;
       audioRef.current = audio;
       audio.addEventListener('ended', () => {
+        audioRef.current = null;
         isPlayingRef.current = false;
         segmentDoneCounterRef.current++;
         onAudioStateChangeRef.current?.(item.agentId, 'idle');
-        queueMicrotask(() => processQueueRef.current());
+        if (!pausedRef.current) {
+          queueMicrotask(() => processQueueRef.current());
+        }
       });
       audio.addEventListener('error', () => {
+        audioRef.current = null;
         isPlayingRef.current = false;
         segmentDoneCounterRef.current++;
         onAudioStateChangeRef.current?.(item.agentId, 'idle');
-        queueMicrotask(() => processQueueRef.current());
+        if (!pausedRef.current) {
+          queueMicrotask(() => processQueueRef.current());
+        }
       });
 
       // If paused during TTS generation, keep audio ready but don't play
@@ -189,10 +206,13 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       if ((err as Error).name !== 'AbortError') {
         console.error('[DiscussionTTS] TTS generation failed:', err);
       }
+      audioRef.current = null;
       isPlayingRef.current = false;
       segmentDoneCounterRef.current++;
       onAudioStateChangeRef.current?.(item.agentId, 'idle');
-      queueMicrotask(() => processQueueRef.current());
+      if (!pausedRef.current) {
+        queueMicrotask(() => processQueueRef.current());
+      }
     }
   }, [enabled, ttsMuted, ttsVolume, ttsProvidersConfig, ttsSpeed, playbackSpeed]);
 
@@ -202,8 +222,16 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     (messageId: string, partId: string, fullText: string, agentId: string | null) => {
       if (!enabled || ttsMuted || !fullText.trim()) return;
 
-      const { providerId, voiceId } = resolveVoiceForAgent(agentId);
-      queueRef.current.push({ messageId, partId, text: fullText, agentId, providerId, voiceId });
+      const { providerId, modelId, voiceId } = resolveVoiceForAgent(agentId);
+      queueRef.current.push({
+        messageId,
+        partId,
+        text: fullText,
+        agentId,
+        providerId,
+        modelId,
+        voiceId,
+      });
 
       if (!isPlayingRef.current) {
         processQueueRef.current();
