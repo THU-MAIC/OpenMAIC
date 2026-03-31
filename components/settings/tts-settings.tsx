@@ -4,9 +4,16 @@ import { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import { TTS_PROVIDERS, DEFAULT_TTS_VOICES, getTTSVoices } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,6 +33,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
+  const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
 
   // When testing a non-active provider, use that provider's default voice
@@ -46,6 +54,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   // Doubao TTS uses compound "appId:accessKey" — split for separate UI fields
   const isDoubao = selectedProviderId === 'doubao-tts';
+  const isVieNeu = selectedProviderId === 'vieneu-tts';
   const rawApiKey = ttsProvidersConfig[selectedProviderId]?.apiKey || '';
   const doubaoColonIdx = rawApiKey.indexOf(':');
   const doubaoAppId = isDoubao && doubaoColonIdx > 0 ? rawApiKey.slice(0, doubaoColonIdx) : '';
@@ -112,8 +121,50 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         </div>
       )}
 
+      {/* VieNeu TTS: Base URL + Voice (no API key required) */}
+      {isVieNeu && (
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
+            <Input
+              name={`tts-base-url-${selectedProviderId}`}
+              autoComplete="off"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              placeholder={ttsProvider.defaultBaseUrl || 'http://127.0.0.1:8001'}
+              value={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
+              onChange={(e) =>
+                setTTSProviderConfig(selectedProviderId, {
+                  baseUrl: e.target.value,
+                })
+              }
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.ttsVoice')}</Label>
+            <Select
+              value={effectiveVoice}
+              onValueChange={(v) => setTTSVoice(v)}
+            >
+              <SelectTrigger className="text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {getTTSVoices('vieneu-tts').map((voice) => (
+                  <SelectItem key={voice.id} value={voice.id} className="text-sm">
+                    {voice.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      )}
+
       {/* API Key & Base URL */}
-      {(ttsProvider.requiresApiKey || isServerConfigured) && (
+      {!isVieNeu && (ttsProvider.requiresApiKey || isServerConfigured) && (
         <>
           <div className={cn('grid gap-4', isDoubao ? 'grid-cols-3' : 'grid-cols-2')}>
             {isDoubao ? (

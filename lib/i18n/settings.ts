@@ -229,6 +229,7 @@ export const settingsZhCN = {
     providerDoubaoTTS: '豆包 TTS 2.0（火山引擎）',
     providerElevenLabsTTS: 'ElevenLabs TTS',
     providerMiniMaxTTS: 'MiniMax TTS',
+    providerVieNeuTTS: 'VieNeu TTS（越南本地语音）',
     providerBrowserNativeTTS: '浏览器原生 TTS',
     providerOpenAIWhisper: 'OpenAI ASR (gpt-4o-mini-transcribe)',
     providerBrowserNative: '浏览器原生 ASR',
@@ -342,6 +343,11 @@ export const settingsZhCN = {
     qwenVoiceEric: '跳脱市井的成都男子',
     qwenVoiceRocky: '幽默风趣的阿强',
     qwenVoiceKiki: '甜美的港妹闺蜜',
+    // TTS Voice descriptions (VieNeu)
+    vieneuVoiceXuanVinh: '男声 - 南部口音（默认）',
+    vieneuVoiceThucDoan: '女声 - 南部口音',
+    vieneuVoiceDoanTrang: '女声 - 北部口音',
+    vieneuVoicePhamTuyen: '男声 - 北部口音',
     // ASR Language names (native forms - autoglossonyms)
     lang_auto: '自动检测',
     lang_zh: '中文',
@@ -827,6 +833,7 @@ export const settingsEnUS = {
     providerDoubaoTTS: 'Doubao TTS 2.0 (Volcengine)',
     providerElevenLabsTTS: 'ElevenLabs TTS',
     providerMiniMaxTTS: 'MiniMax TTS',
+    providerVieNeuTTS: 'VieNeu TTS (Vietnamese Local TTS)',
     providerBrowserNativeTTS: 'Browser Native TTS',
     providerOpenAIWhisper: 'OpenAI ASR (gpt-4o-mini-transcribe)',
     providerBrowserNative: 'Browser Native ASR',
@@ -940,6 +947,11 @@ export const settingsEnUS = {
     qwenVoiceEric: 'Chengdu gentleman',
     qwenVoiceRocky: 'Humorous Hong Kong guy',
     qwenVoiceKiki: 'Sweet Hong Kong girl',
+    // TTS Voice descriptions (VieNeu)
+    vieneuVoiceXuanVinh: 'Male - Southern accent (default)',
+    vieneuVoiceThucDoan: 'Female - Southern accent',
+    vieneuVoiceDoanTrang: 'Female - Northern accent',
+    vieneuVoicePhamTuyen: 'Male - Northern accent',
     // ASR Language names (native forms - autoglossonyms)
     lang_auto: 'Auto Detect',
     lang_zh: '中文',
@@ -1431,6 +1443,7 @@ export const settingsViVN = {
     providerDoubaoTTS: 'Doubao TTS 2.0 (Volcengine)',
     providerElevenLabsTTS: 'ElevenLabs TTS',
     providerMiniMaxTTS: 'MiniMax TTS',
+    providerVieNeuTTS: 'VieNeu TTS (Tiếng Việt địa phương)',
     providerBrowserNativeTTS: 'Giọng nói cơ bản trong Trình duyệt',
     providerOpenAIWhisper: 'OpenAI ASR (gpt-4o-mini-transcribe)',
     providerBrowserNative: 'Hỗ trợ bằng micro từ Trình duyệt',
@@ -1544,6 +1557,11 @@ export const settingsViVN = {
     qwenVoiceEric: 'Thục nam Thành Đô quý giá',
     qwenVoiceRocky: 'Người nhà bên Hồng Kông ngông ngênh',
     qwenVoiceKiki: 'Gái kiêu sa Hongkong thuần 100%',
+    // TTS Voice descriptions (VieNeu)
+    vieneuVoiceXuanVinh: 'Nam - Miền Nam (Mặc định)',
+    vieneuVoiceThucDoan: 'Nữ - Miền Nam',
+    vieneuVoiceDoanTrang: 'Nữ - Miền Bắc',
+    vieneuVoicePhamTuyen: 'Nam - Miền Bắc',
     // ASR Language names (native forms - autoglossonyms)
     lang_auto: 'Nhận diện tự động',
     lang_zh: '中文',
