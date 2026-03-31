@@ -409,6 +409,8 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
                       providerId: ttsProviderId,
                       voice: ttsVoice,
                       speed: ttsSpeed,
+                      apiKey: ttsProvidersConfig[ttsProviderId]?.apiKey,
+                      baseUrl: ttsProvidersConfig[ttsProviderId]?.baseUrl,
                     })
                   }
                   className={cn(
