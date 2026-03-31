@@ -58,11 +58,11 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     defaultBaseUrl: 'https://api.openai.com/v1',
     icon: '/logos/openai.svg',
     models: [
+      { id: 'tts-1', name: 'TTS-1 (Standard)' },
+      { id: 'tts-1-hd', name: 'TTS-1 HD (High Definition)' },
       { id: 'gpt-4o-mini-tts', name: 'GPT-4o Mini TTS' },
-      { id: 'tts-1', name: 'TTS-1' },
-      { id: 'tts-1-hd', name: 'TTS-1 HD' },
     ],
-    defaultModelId: 'gpt-4o-mini-tts',
+    defaultModelId: 'tts-1',
     voices: [
       // Recommended voices (best quality)
       {
@@ -158,6 +158,31 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
         language: 'en',
         gender: 'neutral',
         description: 'voiceVerse',
+      },
+      // Kokoro-compatible voices (prefixed)
+      {
+        id: 'af_nova',
+        name: 'Nova (Kokoro)',
+        language: 'en',
+        gender: 'female',
+      },
+      {
+        id: 'am_echo',
+        name: 'Echo (Kokoro)',
+        language: 'en',
+        gender: 'male',
+      },
+      {
+        id: 'af_sky',
+        name: 'Sky (Kokoro)',
+        language: 'en',
+        gender: 'female',
+      },
+      {
+        id: 'am_adam',
+        name: 'Adam (Kokoro)',
+        language: 'en',
+        gender: 'male',
       },
     ],
     supportedFormats: ['mp3', 'opus', 'aac', 'flac'],

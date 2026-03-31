@@ -8,6 +8,7 @@ import {
   getAvailableProvidersWithVoices,
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
+import { resolveProvider, resolveVoice } from '@/lib/audio/voice-map';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
@@ -15,6 +16,7 @@ import type { AudioIndicatorState } from '@/components/roundtable/audio-indicato
 interface DiscussionTTSOptions {
   enabled: boolean;
   agents: AgentConfig[];
+  language?: string;
   onAudioStateChange?: (agentId: string | null, state: AudioIndicatorState) => void;
 }
 
@@ -28,7 +30,7 @@ interface QueueItem {
   voiceId: string;
 }
 
-export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: DiscussionTTSOptions) {
+export function useDiscussionTTS({ enabled, agents, language, onAudioStateChange }: DiscussionTTSOptions) {
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -107,12 +109,15 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         }
         return { providerId: 'browser-native-tts', voiceId: 'default', modelId: undefined };
       }
-      // Teacher: always use global lecture voice (single source of truth with settings)
+      // Teacher: use language-resolved provider/voice (falls back to global settings)
       if (agent.role === 'teacher') {
+        const lang = language || 'zh-CN';
+        const resolvedProviderId = resolveProvider(lang, globalTtsProviderId);
+        const resolvedVoice = resolveVoice(lang, 'teacher', resolvedProviderId, globalTtsVoice);
         return {
-          providerId: globalTtsProviderId,
-          voiceId: globalTtsVoice,
-          modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+          providerId: resolvedProviderId,
+          voiceId: resolvedVoice,
+          modelId: ttsProvidersConfig[resolvedProviderId]?.modelId,
         };
       }
       const index = agentIndexMap.current.get(agentId) ?? 0;

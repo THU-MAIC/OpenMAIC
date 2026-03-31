@@ -12,6 +12,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import { resolveProvider, resolveVoice } from '@/lib/audio/voice-map';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   loadImageMapping,
@@ -711,7 +712,10 @@ function GenerationPreviewContent() {
 
       // Generate TTS for first scene (part of actions step — blocking)
       if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
-        const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+        const firstSceneLang = stage.language || 'zh-CN';
+        const firstSceneProviderId = resolveProvider(firstSceneLang, settings.ttsProviderId);
+        const firstSceneVoice = resolveVoice(firstSceneLang, 'teacher', firstSceneProviderId, settings.ttsVoice);
+        const ttsProviderConfig = settings.ttsProvidersConfig?.[firstSceneProviderId];
         const speechActions = (data.scene.actions || []).filter(
           (a: { type: string; text?: string }) => a.type === 'speech' && a.text,
         );
@@ -727,9 +731,9 @@ function GenerationPreviewContent() {
               body: JSON.stringify({
                 text: action.text,
                 audioId,
-                ttsProviderId: settings.ttsProviderId,
+                ttsProviderId: firstSceneProviderId,
                 ttsModelId: ttsProviderConfig?.modelId,
-                ttsVoice: settings.ttsVoice,
+                ttsVoice: firstSceneVoice,
                 ttsSpeed: settings.ttsSpeed,
                 ttsApiKey: ttsProviderConfig?.apiKey || undefined,
                 ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,

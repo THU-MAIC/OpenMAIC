@@ -268,6 +268,10 @@ curl -X POST http://localhost:3232/api/regenerate-tts/[classroomId] \
 
 13. **azure-tts rate format** — edge-tts requires `+0%` not `0%`. Fixed in both TS adapter and Python server.
 
+14. **NextAuth v5 middleware cookie mismatch** — never use `getToken` from `next-auth/jwt` in middleware. It looks for `next-auth.session-token` (v4 name) but v5 uses `authjs.session-token` / `__Secure-authjs.session-token` (HTTPS). Result: session always null on tunnel → infinite login redirect. Fix: split config into `auth.config.ts` (edge-safe, no DB imports) and use `NextAuth(authConfig).auth` in middleware.
+
+15. **`lib/server/db.ts` used `process.cwd()` for DB path** — standalone server CWD is `.next/standalone/`, so it created a separate DB there, ignoring `DATABASE_URL`. Fixed: `db.ts` and `prisma/seed.ts` now check `process.env.DATABASE_URL` first. `.env.local` has `DATABASE_URL` set to the absolute project path so both dev and standalone use the same DB.
+
 ## Key Files to Know
 
 ```

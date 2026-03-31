@@ -30,9 +30,9 @@ export const VOICE_MAP: Record<string, Partial<Record<TTSProviderId, ProviderVoi
   },
   zh: {
     'openai-tts': {
-      teacher: 'zf_xiaoxiao',
-      student: 'zm_yunxi',
-      default: 'zf_xiaoxiao',
+      teacher: 'af_nova',
+      student: 'am_echo',
+      default: 'af_nova',
     },
   },
   en: {

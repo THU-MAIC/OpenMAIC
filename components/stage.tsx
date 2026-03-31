@@ -46,7 +46,7 @@ export function Stage({
   onRetryOutline?: (outlineId: string) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
+  const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines, stage: stageData } =
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
 
@@ -132,6 +132,7 @@ export function Stage({
   const discussionTTS = useDiscussionTTS({
     enabled: ttsEnabled && !ttsMuted,
     agents: selectedAgents,
+    language: stageData?.language,
     onAudioStateChange: (agentId, state) => {
       setAudioAgentId(agentId);
       setAudioIndicatorState(state);

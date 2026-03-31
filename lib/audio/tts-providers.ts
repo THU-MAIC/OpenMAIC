@@ -123,6 +123,46 @@ export class TTSRateLimitError extends Error {
 /**
  * Generate speech using specified TTS provider
  */
+/**
+ * Clean text before sending to any TTS provider.
+ * Removes markdown, URLs, code blocks, LaTeX, and other symbols
+ * that TTS engines read aloud as punctuation/syntax.
+ */
+function cleanTextForTTS(text: string): string {
+  return (
+    text
+      // Fenced code blocks (``` ... ```) — drop entirely, not speech-friendly
+      .replace(/```[\s\S]*?```/g, '')
+      // Inline code — keep text, drop backticks
+      .replace(/`([^`]+)`/g, '$1')
+      // LaTeX display math \[...\] and $$...$$
+      .replace(/\\\[[\s\S]*?\\\]/g, '')
+      .replace(/\$\$[\s\S]*?\$\$/g, '')
+      // LaTeX inline math \(...\) and $...$
+      .replace(/\\\([\s\S]*?\\\)/g, '')
+      .replace(/\$([^$\n]+)\$/g, '$1')
+      // Markdown links [text](url) — keep link text
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      // Bare URLs
+      .replace(/https?:\/\/\S+/g, '')
+      // Markdown headings — strip # symbols
+      .replace(/^#{1,6}\s+/gm, '')
+      // Bold/italic: ***text***, **text**, *text*, ___text___, __text__, _text_
+      .replace(/\*{1,3}([^*]+)\*{1,3}/g, '$1')
+      .replace(/_{1,3}([^_]+)_{1,3}/g, '$1')
+      // Blockquotes — strip leading >
+      .replace(/^>\s*/gm, '')
+      // Horizontal rules
+      .replace(/^[-*_]{3,}\s*$/gm, '')
+      // & → and
+      .replace(/\s*&\s*/g, ' and ')
+      // Collapse excess whitespace/newlines
+      .replace(/\n{3,}/g, '\n\n')
+      .replace(/[ \t]{2,}/g, ' ')
+      .trim()
+  );
+}
+
 export async function generateTTS(
   config: TTSModelConfig,
   text: string,
@@ -137,25 +177,27 @@ export async function generateTTS(
     throw new Error(`API key required for TTS provider: ${config.providerId}`);
   }
 
+  const cleanedText = cleanTextForTTS(text);
+
   switch (config.providerId) {
     case 'openai-tts':
-      return await generateOpenAITTS(config, text);
+      return await generateOpenAITTS(config, cleanedText);
 
     case 'azure-tts':
-      return await generateAzureTTS(config, text);
+      return await generateAzureTTS(config, cleanedText);
 
     case 'glm-tts':
-      return await generateGLMTTS(config, text);
+      return await generateGLMTTS(config, cleanedText);
 
     case 'qwen-tts':
-      return await generateQwenTTS(config, text);
+      return await generateQwenTTS(config, cleanedText);
 
     case 'minimax-tts':
-      return await generateMiniMaxTTS(config, text);
+      return await generateMiniMaxTTS(config, cleanedText);
     case 'doubao-tts':
-      return await generateDoubaoTTS(config, text);
+      return await generateDoubaoTTS(config, cleanedText);
     case 'elevenlabs-tts':
-      return await generateElevenLabsTTS(config, text);
+      return await generateElevenLabsTTS(config, cleanedText);
 
     case 'browser-native-tts':
       throw new Error(
@@ -184,7 +226,7 @@ async function generateOpenAITTS(
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: config.modelId || 'gpt-4o-mini-tts',
+      model: config.modelId || 'tts-1',
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
@@ -206,6 +248,15 @@ async function generateOpenAITTS(
 /**
  * Azure TTS implementation (direct API call with SSML)
  */
+
+/** Replace straight/curly apostrophes in Uzbek o'/g' patterns with ʻ (U+02BB).
+ *  MadinaNeural/SardorNeural pronounce U+02BB silently; straight apostrophe gets read aloud.
+ */
+function preprocessUzbekText(text: string): string {
+  // Matches o/g/O/G followed by any common apostrophe variant
+  return text.replace(/([oOgG])['\u2018\u2019\u02BC]/g, '$1\u02BB');
+}
+
 async function generateAzureTTS(
   config: TTSModelConfig,
   text: string,
@@ -216,10 +267,11 @@ async function generateAzureTTS(
   const ratePct = config.speed ? ((config.speed - 1) * 100).toFixed(0) : '0';
   const rate = Number(ratePct) >= 0 ? `+${ratePct}%` : `${ratePct}%`;
   const voiceLang = config.voice?.match(/^([a-z]{2}-[A-Z]{2})/)?.[1] || 'zh-CN';
+  const processedText = voiceLang.startsWith('uz') ? preprocessUzbekText(text) : text;
   const ssml = `
     <speak version='1.0' xml:lang='${voiceLang}'>
       <voice xml:lang='${voiceLang}' name='${config.voice}'>
-        <prosody rate='${rate}'>${escapeXml(text)}</prosody>
+        <prosody rate='${rate}'>${escapeXml(processedText)}</prosody>
       </voice>
     </speak>
   `.trim();
