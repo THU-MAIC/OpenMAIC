@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { listCourses, readCourse, persistCourse, deleteCourse } from '@/lib/server/course-storage';
+import { classroomExists } from '@/lib/server/classroom-storage';
 import type { Course } from '@/lib/types/course';
 
 export async function GET(req: NextRequest) {
@@ -37,6 +38,12 @@ export async function POST(req: NextRequest) {
       const bound = body.chapters.filter((ch) => ch.classroomId);
       if (bound.length === 0) {
         return NextResponse.json({ error: 'At least one chapter must have a bound classroom to publish' }, { status: 400 });
+      }
+      const missing = (await Promise.all(bound.map(async (ch) => ({ ch, exists: await classroomExists(ch.classroomId!) }))))
+        .filter(({ exists }) => !exists)
+        .map(({ ch }) => ch.classroomId);
+      if (missing.length > 0) {
+        return NextResponse.json({ error: `Bound classrooms not found on server: ${missing.join(', ')}` }, { status: 400 });
       }
     }
     await persistCourse(body);
