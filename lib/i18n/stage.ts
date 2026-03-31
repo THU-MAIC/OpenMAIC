@@ -76,6 +76,8 @@ export const stageZhCN = {
     textInput: '文字输入',
     stopRecording: '停止录音',
     startRecording: '开始录音',
+    confused: '没听懂？',
+    confusedMessage: '我没有理解关于"{scene}"的解释，请用更简单的比喻或具体例子重新解释一下。',
   },
   pbl: {
     legacyFormat: '此PBL场景使用旧格式，请重新生成课程',
@@ -226,6 +228,8 @@ export const stageEnUS = {
     textInput: 'Text input',
     stopRecording: 'Stop recording',
     startRecording: 'Start recording',
+    confused: 'Confused?',
+    confusedMessage: 'I didn\'t understand the explanation about "{scene}". Please re-explain it using a simpler analogy or a concrete example.',
   },
   pbl: {
     legacyFormat: 'This PBL scene uses a legacy format. Please regenerate the course.',
@@ -376,6 +380,8 @@ export const stageUz = {
     textInput: 'Matn kiritish',
     stopRecording: 'Yozib olishni toʻxtatish',
     startRecording: 'Yozib olishni boshlash',
+    confused: 'Tushunmadim?',
+    confusedMessage: '"{scene}" haqidagi tushuntirishni tushunmadim. Iltimos, oddiyroq misol yoki taqqoslash bilan qayta tushuntiring.',
   },
   pbl: {
     legacyFormat: 'Bu PBL sahnasida eski format ishlatilmoqda. Iltimos, kursni qayta yarating.',

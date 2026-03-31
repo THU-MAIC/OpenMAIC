@@ -728,6 +728,31 @@ export function Stage({
     }
   }, [playbackCompleted, currentScene]);
 
+  // "Confused?" — pause playback and ask the teacher to re-explain
+  const handleConfused = useCallback(() => {
+    const sceneName = currentScene?.title ?? '';
+    const msg = t('roundtable.confusedMessage').replace('{scene}', sceneName);
+
+    setIsDiscussionPaused(false);
+    chatAreaRef.current?.resumeActiveLiveBuffer();
+    discussionTTS.cleanup();
+    if (isTopicPending) {
+      setIsTopicPending(false);
+      setLiveSpeech(null);
+      setSpeakingAgentId(null);
+    }
+    if (engineRef.current && (engineMode === 'playing' || engineMode === 'live' || engineMode === 'paused')) {
+      engineRef.current.handleUserInterrupt(msg);
+    } else {
+      chatAreaRef.current?.sendMessage(msg);
+    }
+    chatAreaRef.current?.switchToTab('chat');
+    setIsCueUser(false);
+    setChatIsStreaming(true);
+    setChatSessionType(chatSessionType || 'qa');
+    setThinkingState({ stage: 'director' });
+  }, [currentScene, discussionTTS, engineMode, chatSessionType, isTopicPending]);
+
   // get scene information
   const isPendingScene = currentSceneId === PENDING_SCENE_ID;
   const hasNextPending = generatingOutlines.length > 0;
@@ -986,6 +1011,20 @@ export function Stage({
                 : undefined
             }
           />
+
+          {/* Confused? — floating button on canvas, visible during active playback */}
+          {mode === 'playback' &&
+            (engineMode === 'playing' || engineMode === 'live' || engineMode === 'paused') &&
+            !chatIsStreaming && (
+              <button
+                onClick={handleConfused}
+                className="absolute bottom-3 right-3 z-10 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-amber-50 hover:bg-amber-100 dark:bg-amber-950 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 transition-colors shadow-sm"
+                title="Ask the teacher to re-explain this differently"
+              >
+                <span>😕</span>
+                <span>{t('roundtable.confused')}</span>
+              </button>
+            )}
         </div>
 
         {/* Roundtable Area */}
