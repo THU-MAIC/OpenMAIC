@@ -53,10 +53,12 @@ const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const LANGUAGE_STORAGE_KEY = 'generationLanguage';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 
+import type { Locale } from '@/lib/i18n/types';
+
 interface FormState {
   pdfFile: File | null;
   requirement: string;
-  language: 'zh-CN' | 'en-US';
+  language: Locale;
   webSearch: boolean;
 }
 
@@ -99,8 +101,8 @@ function HomePage() {
       const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
-      if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US') {
-        updates.language = savedLanguage;
+      if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US' || savedLanguage === 'vi-VN') {
+        updates.language = savedLanguage as Locale;
       } else {
         const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
         updates.language = detected;
