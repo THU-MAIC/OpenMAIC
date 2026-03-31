@@ -687,7 +687,7 @@ function HomePage() {
                   initial={{ opacity: 0, y: 16 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: i * 0.04, duration: 0.35, ease: 'easeOut' }}
-                  onClick={() => router.push(`/course/${course.id}`)}
+                  onClick={() => router.push(`/course/${course.id}?mode=view`)}
                   className="group rounded-2xl overflow-hidden cursor-pointer border border-white/10 shadow-md hover:shadow-xl hover:-translate-y-1 transition-all duration-250 flex flex-col"
                   style={{ minHeight: '200px' }}
                 >

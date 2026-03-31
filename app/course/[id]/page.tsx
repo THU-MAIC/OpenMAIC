@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'motion/react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useCourseStore } from '@/lib/store/course';
@@ -31,9 +31,11 @@ import { toast } from 'sonner';
 
 type PublishDialogMode = 'publish' | 'unpublish' | null;
 
-export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+function CourseDetailContent({ params }: { params: Promise<{ id: string }> }) {
   const { t } = useI18n();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isViewMode = searchParams.get('mode') === 'view';
   const { currentCourse, fetchCourse, updateCourse, addChapter, updateChapter, removeChapter, reorderChapters, publishCourse, unpublishCourse } =
     useCourseStore();
   const [editing, setEditing] = useState(false);
@@ -78,15 +80,16 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
   }, []);
 
   useEffect(() => {
+    if (isViewMode) return;
     const ids = boundClassroomIdsKey ? boundClassroomIdsKey.split(',') : [];
     if (ids.length > 0) loadClassroomMeta(ids);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [boundClassroomIdsKey, loadClassroomMeta]);
+  }, [isViewMode, boundClassroomIdsKey, loadClassroomMeta]);
 
   const usedClassroomIds = useMemo(
-    () => new Set(currentCourse?.chapters.map((c) => c.classroomId).filter((id): id is string => !!id) ?? []),
+    () => isViewMode ? new Set<string>() : new Set(currentCourse?.chapters.map((c) => c.classroomId).filter((id): id is string => !!id) ?? []),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [boundClassroomIdsKey],
+    [isViewMode, boundClassroomIdsKey],
   );
 
   if (!courseId || !currentCourse) {
@@ -183,9 +186,9 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
           transition={{ duration: 0.3 }}
           className="mb-6"
         >
-          <Button variant="ghost" size="sm" onClick={() => router.push('/course')}>
+          <Button variant="ghost" size="sm" onClick={() => router.push(isViewMode ? '/' : '/course')}>
             <ArrowLeft />
-            {t('course.backToCourses')}
+            {isViewMode ? t('course.backToHome') : t('course.backToCourses')}
           </Button>
         </motion.div>
 
@@ -201,39 +204,43 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
               <CardTitle className="text-xl">{currentCourse.name}</CardTitle>
               <CardAction>
                 <div className="flex items-center gap-2">
-                  {isPublished ? (
+                  {(isViewMode || isPublished) && (
+                    <Badge variant="secondary" className="gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40">
+                      <Globe className="size-3" />
+                      {t('course.publishedStatus')}
+                    </Badge>
+                  )}
+                  {!isViewMode && (
                     <>
-                      <Badge variant="secondary" className="gap-1 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-950/40">
-                        <Globe className="size-3" />
-                        {t('course.publishedStatus')}
-                      </Badge>
-                      <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => setPublishDialog('unpublish')}>
-                        <GlobeLock className="size-4" />
-                        {t('course.unpublish')}
+                      {isPublished ? (
+                        <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-destructive" onClick={() => setPublishDialog('unpublish')}>
+                          <GlobeLock className="size-4" />
+                          {t('course.unpublish')}
+                        </Button>
+                      ) : canPublish ? (
+                        <Button variant="default" size="sm" onClick={() => setPublishDialog('publish')}>
+                          <Globe className="size-4" />
+                          {t('course.publish')}
+                        </Button>
+                      ) : (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <span tabIndex={0}>
+                              <Button variant="outline" size="sm" disabled>
+                                <Globe className="size-4" />
+                                {t('course.publish')}
+                              </Button>
+                            </span>
+                          </TooltipTrigger>
+                          <TooltipContent>{t('course.cannotPublish')}</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
+                        <Pencil />
+                        {t('course.edit')}
                       </Button>
                     </>
-                  ) : canPublish ? (
-                    <Button variant="default" size="sm" onClick={() => setPublishDialog('publish')}>
-                      <Globe className="size-4" />
-                      {t('course.publish')}
-                    </Button>
-                  ) : (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span tabIndex={0}>
-                          <Button variant="outline" size="sm" disabled>
-                            <Globe className="size-4" />
-                            {t('course.publish')}
-                          </Button>
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>{t('course.cannotPublish')}</TooltipContent>
-                    </Tooltip>
                   )}
-                  <Button variant="outline" size="sm" onClick={() => setEditing(true)}>
-                    <Pencil />
-                    {t('course.edit')}
-                  </Button>
                 </div>
               </CardAction>
             </CardHeader>
@@ -292,7 +299,7 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
             <Badge variant="secondary" className="ml-1">
               {currentCourse.chapters.length}
             </Badge>
-            {totalCount > 0 && (
+            {!isViewMode && totalCount > 0 && (
               <Badge
                 variant="outline"
                 className={`ml-auto text-xs ${boundCount === totalCount ? 'text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800' : 'text-muted-foreground'}`}
@@ -306,56 +313,71 @@ export default function CourseDetailPage({ params }: { params: Promise<{ id: str
             courseId={courseId}
             chapters={currentCourse.chapters}
             classroomMeta={classroomMeta}
-            onAdd={(title, description) => addChapter(courseId, title, description)}
-            onEdit={(chapterId, title, description) => updateChapter(courseId, chapterId, { title, description })}
-            onRemove={(chapterId) => removeChapter(courseId, chapterId)}
-            onMove={handleMove}
-            onBind={handleBind}
-            onUnbind={handleUnbind}
-            onCreateAndBind={handleCreateAndBind}
+            readOnly={isViewMode}
             onOpenClassroom={handleOpenClassroom}
+            {...(!isViewMode && {
+              onAdd: (title, description) => addChapter(courseId, title, description),
+              onEdit: (chapterId, title, description) => updateChapter(courseId, chapterId, { title, description }),
+              onRemove: (chapterId) => removeChapter(courseId, chapterId),
+              onMove: handleMove,
+              onBind: handleBind,
+              onUnbind: handleUnbind,
+              onCreateAndBind: handleCreateAndBind,
+            })}
           />
         </motion.div>
       </div>
 
-      {/* Edit course dialog */}
-      <Dialog open={editing} onOpenChange={(open) => { if (!open) setEditing(false); }}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('course.edit')}</DialogTitle>
-          </DialogHeader>
-          <CourseForm initialData={currentCourse} onSubmit={handleUpdate} onCancel={() => setEditing(false)} />
-        </DialogContent>
-      </Dialog>
+      {!isViewMode && (
+        <>
+          {/* Edit course dialog */}
+          <Dialog open={editing} onOpenChange={(open) => { if (!open) setEditing(false); }}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>{t('course.edit')}</DialogTitle>
+              </DialogHeader>
+              <CourseForm initialData={currentCourse} onSubmit={handleUpdate} onCancel={() => setEditing(false)} />
+            </DialogContent>
+          </Dialog>
 
-      {/* Classroom picker dialog */}
-      {bindingChapterId && (
-        <ClassroomPickerDialog
-          usedClassroomIds={usedClassroomIds}
-          onSelect={handlePickerSelect}
-          onClose={() => setBindingChapterId(null)}
-        />
+          {/* Classroom picker dialog */}
+          {bindingChapterId && (
+            <ClassroomPickerDialog
+              usedClassroomIds={usedClassroomIds}
+              onSelect={handlePickerSelect}
+              onClose={() => setBindingChapterId(null)}
+            />
+          )}
+
+          {/* Publish / Unpublish confirmation dialog */}
+          <AlertDialog open={publishDialog !== null} onOpenChange={(open) => { if (!open) setPublishDialog(null); }}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {publishDialog === 'publish' ? t('course.publish') : t('course.unpublish')}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {publishDialog === 'publish' ? t('course.confirmPublish') : t('course.confirmUnpublish')}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('course.cancel')}</AlertDialogCancel>
+                <AlertDialogAction onClick={handlePublishConfirm}>
+                  {publishDialog === 'publish' ? t('course.publish') : t('course.unpublish')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </>
       )}
-
-      {/* Publish / Unpublish confirmation dialog */}
-      <AlertDialog open={publishDialog !== null} onOpenChange={(open) => { if (!open) setPublishDialog(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {publishDialog === 'publish' ? t('course.publish') : t('course.unpublish')}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {publishDialog === 'publish' ? t('course.confirmPublish') : t('course.confirmUnpublish')}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t('course.cancel')}</AlertDialogCancel>
-            <AlertDialogAction onClick={handlePublishConfirm}>
-              {publishDialog === 'publish' ? t('course.publish') : t('course.unpublish')}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
+  );
+}
+
+export default function CourseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  return (
+    <Suspense>
+      <CourseDetailContent params={params} />
+    </Suspense>
   );
 }

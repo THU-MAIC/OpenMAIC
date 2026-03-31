@@ -44,13 +44,14 @@ interface ChapterListProps {
   courseId: string;
   chapters: CourseChapter[];
   classroomMeta: Record<string, ClassroomMeta>;
-  onAdd: (title: string, description: string | null) => Promise<void>;
-  onEdit: (chapterId: string, title: string, description: string | null) => Promise<void>;
-  onRemove: (chapterId: string) => Promise<void>;
-  onMove: (chapterId: string, direction: 'up' | 'down') => Promise<void>;
-  onBind: (chapterId: string) => void;
-  onUnbind: (chapterId: string) => Promise<void>;
-  onCreateAndBind: (chapterId: string) => void;
+  readOnly?: boolean;
+  onAdd?: (title: string, description: string | null) => Promise<void>;
+  onEdit?: (chapterId: string, title: string, description: string | null) => Promise<void>;
+  onRemove?: (chapterId: string) => Promise<void>;
+  onMove?: (chapterId: string, direction: 'up' | 'down') => Promise<void>;
+  onBind?: (chapterId: string) => void;
+  onUnbind?: (chapterId: string) => Promise<void>;
+  onCreateAndBind?: (chapterId: string) => void;
   onOpenClassroom: (classroomId: string) => void;
 }
 
@@ -58,6 +59,7 @@ export function ChapterList({
   courseId: _courseId,
   chapters,
   classroomMeta,
+  readOnly = false,
   onAdd,
   onEdit,
   onRemove,
@@ -73,18 +75,18 @@ export function ChapterList({
   const [removingChapterId, setRemovingChapterId] = useState<string | null>(null);
 
   const handleAdd = async (title: string, description: string | null) => {
-    await onAdd(title, description);
+    await onAdd!(title, description);
     setShowAddForm(false);
   };
 
   const handleEdit = async (chapterId: string, title: string, description: string | null) => {
-    await onEdit(chapterId, title, description);
+    await onEdit!(chapterId, title, description);
     setEditingId(null);
   };
 
   const handleConfirmRemove = async () => {
     if (!removingChapterId) return;
-    await onRemove(removingChapterId);
+    await onRemove!(removingChapterId);
     setRemovingChapterId(null);
   };
 
@@ -94,11 +96,15 @@ export function ChapterList({
         <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-muted mb-4">
           <BookOpen className="size-7 text-muted-foreground" />
         </div>
-        <p className="text-muted-foreground text-sm mb-5">{t('course.noChapters')}</p>
-        <Button onClick={() => setShowAddForm(true)}>
-          <Plus />
-          {t('course.addChapter')}
-        </Button>
+        <p className="text-muted-foreground text-sm mb-5">
+          {readOnly ? t('course.noChaptersPublic') : t('course.noChapters')}
+        </p>
+        {!readOnly && (
+          <Button onClick={() => setShowAddForm(true)}>
+            <Plus />
+            {t('course.addChapter')}
+          </Button>
+        )}
       </div>
     );
   }
@@ -148,7 +154,7 @@ export function ChapterList({
                                 : 'text-muted-foreground',
                             )}
                           >
-                            {isReady ? t('course.published') : t('course.unpublished')}
+                            {isReady ? t('course.published') : readOnly ? t('course.comingSoon') : t('course.unpublished')}
                           </Badge>
                         </div>
                         {chapter.description && (
@@ -167,13 +173,14 @@ export function ChapterList({
                         )}
                       </div>
 
-                      {/* Actions */}
+                      {/* Actions — editor only */}
+                      {!readOnly && (
                       <div className="flex items-center gap-0.5 flex-shrink-0">
                         <Button
                           variant="ghost"
                           size="icon-xs"
                           disabled={idx === 0}
-                          onClick={() => onMove(chapter.id, 'up')}
+                          onClick={() => onMove!(chapter.id, 'up')}
                           title={t('course.moveUp')}
                         >
                           <ChevronUp />
@@ -182,7 +189,7 @@ export function ChapterList({
                           variant="ghost"
                           size="icon-xs"
                           disabled={idx === chapters.length - 1}
-                          onClick={() => onMove(chapter.id, 'down')}
+                          onClick={() => onMove!(chapter.id, 'down')}
                           title={t('course.moveDown')}
                         >
                           <ChevronDown />
@@ -205,18 +212,18 @@ export function ChapterList({
                                   <ExternalLink />
                                   {t('course.openClassroom')}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onUnbind(chapter.id)}>
+                                <DropdownMenuItem onClick={() => onUnbind!(chapter.id)}>
                                   <Unlink />
                                   {t('course.unbindClassroom')}
                                 </DropdownMenuItem>
                               </>
                             ) : (
                               <>
-                                <DropdownMenuItem onClick={() => onBind(chapter.id)}>
+                                <DropdownMenuItem onClick={() => onBind!(chapter.id)}>
                                   <Link />
                                   {t('course.bindClassroom')}
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => onCreateAndBind(chapter.id)}>
+                                <DropdownMenuItem onClick={() => onCreateAndBind!(chapter.id)}>
                                   <Sparkles />
                                   {t('course.createAndBindClassroom')}
                                 </DropdownMenuItem>
@@ -233,6 +240,7 @@ export function ChapterList({
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </div>
+                      )}
                     </div>
                   )}
                 </CardContent>
@@ -242,7 +250,8 @@ export function ChapterList({
         })}
       </AnimatePresence>
 
-      {/* Add form */}
+      {/* Add form — editor only */}
+      {!readOnly && (
       <AnimatePresence mode="wait">
         {showAddForm ? (
           <motion.div
@@ -273,6 +282,7 @@ export function ChapterList({
           </motion.button>
         )}
       </AnimatePresence>
+      )}
 
       {/* Delete confirmation */}
       <AlertDialog open={!!removingChapterId} onOpenChange={(open) => { if (!open) setRemovingChapterId(null); }}>
