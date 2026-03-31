@@ -14,11 +14,9 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { setPrefillPromise, getPrefillPromise } from '@/lib/media/prefill-state';
 
 const log = createLogger('Classroom');
-
-// Module-level promise so backfillMissingTTS can wait for prefill to finish
-let prefillPromise: Promise<void> = Promise.resolve();
 
 /**
  * Pre-fill local IndexedDB with cached media from the server.
@@ -126,12 +124,12 @@ async function prefillMediaCache(classroomId: string): Promise<void> {
  * 2. Immediately persists to IndexedDB (not relying on 500ms debounce)
  * 3. Updates server-side classroom.json so audioIds survive across browsers
  */
-async function backfillMissingTTS(classroomId: string): Promise<void> {
+async function backfillMissingTTS(): Promise<void> {
   const settings = useSettingsStore.getState();
   if (!settings.ttsEnabled || settings.ttsProviderId === 'browser-native-tts') return;
 
   // Wait for prefill to finish so we don't regenerate already-cached TTS
-  await prefillPromise;
+  await getPrefillPromise();
 
   const scenes = useStageStore.getState().scenes;
   if (!scenes || scenes.length === 0) return;
@@ -269,9 +267,9 @@ export default function ClassroomDetailPage() {
       await useMediaGenerationStore.getState().restoreFromDB(classroomId);
 
       // Pre-fill media cache from server (fire-and-forget, backfill awaits this promise)
-      prefillPromise = prefillMediaCache(classroomId).catch((err) => {
+      setPrefillPromise(prefillMediaCache(classroomId).catch((err) => {
         log.warn('Media cache prefill failed:', err);
-      });
+      }));
 
       // Restore generated agents for this stage
       const { loadGeneratedAgentsForStage } = await import('@/lib/orchestration/registry/store');
@@ -356,15 +354,17 @@ export default function ClassroomDetailPage() {
       // Resume media generation for any tasks not yet in IndexedDB.
       // generateMediaForOutlines skips already-completed tasks automatically.
       generationStartedRef.current = true;
-      generateMediaForOutlines(outlines, stage.id).catch((err) => {
-        log.warn('[Classroom] Media generation resume error:', err);
+      getPrefillPromise().then(() => {
+        generateMediaForOutlines(outlines, stage.id).catch((err) => {
+          log.warn('[Classroom] Media generation resume error:', err);
+        });
       });
     }
 
     // Backfill TTS for completed scenes that lack audio (e.g. API-generated classrooms)
     if (stage && !backfillStartedRef.current) {
       backfillStartedRef.current = true;
-      backfillMissingTTS(stage.id).catch((err) => {
+      backfillMissingTTS().catch((err) => {
         log.warn('[Classroom] TTS backfill error:', err);
       });
     }

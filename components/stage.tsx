@@ -29,6 +29,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
+import { getPrefillPromise } from '@/lib/media/prefill-state';
 
 /**
  * Stage Component
@@ -585,6 +586,8 @@ export function Stage({
         const sessionId = await chatAreaRef.current.startLecture(currentScene.id);
         lectureSessionIdRef.current = sessionId;
       }
+      // Wait for media prefill to finish so TTS audio is in IndexedDB before playback starts
+      await getPrefillPromise();
       if (wasCompleted) {
         // Restart from beginning (user clicked restart after completion)
         lectureActionCounterRef.current = 0;
