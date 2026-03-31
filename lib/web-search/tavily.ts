@@ -10,6 +10,8 @@ import type { WebSearchResult, WebSearchSource } from '@/lib/types/web-search';
 
 const TAVILY_API_URL = 'https://api.tavily.com/search';
 
+const TAVILY_MAX_QUERY_LENGTH = 400;
+
 /**
  * Search the web using Tavily REST API and return structured results.
  */
@@ -20,6 +22,9 @@ export async function searchWithTavily(params: {
 }): Promise<WebSearchResult> {
   const { query, apiKey, maxResults = 5 } = params;
 
+  // Tavily rejects queries over 400 characters with a 400 error
+  const truncatedQuery = query.slice(0, TAVILY_MAX_QUERY_LENGTH);
+
   const res = await proxyFetch(TAVILY_API_URL, {
     method: 'POST',
     headers: {
@@ -27,7 +32,7 @@ export async function searchWithTavily(params: {
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      query,
+      query: truncatedQuery,
       search_depth: 'basic',
       max_results: maxResults,
       include_answer: 'basic',

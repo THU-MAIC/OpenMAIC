@@ -11,26 +11,27 @@
 
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
+import { createLogger } from '@/lib/logger';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
-import type { AudioPlayer } from '@/lib/utils/audio-player';
+import { isMediaPlaceholder, useMediaGenerationStore } from '@/lib/store/media-generation';
+import { useSettingsStore } from '@/lib/store/settings';
+import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import type {
   Action,
-  SpotlightAction,
   LaserAction,
-  SpeechAction,
   PlayVideoAction,
-  WbDrawTextAction,
-  WbDrawShapeAction,
+  SpeechAction,
+  SpotlightAction,
+  WbDeleteAction,
   WbDrawChartAction,
   WbDrawLatexAction,
-  WbDrawTableAction,
-  WbDeleteAction,
   WbDrawLineAction,
+  WbDrawShapeAction,
+  WbDrawTableAction,
+  WbDrawTextAction,
 } from '@/lib/types/action';
+import type { AudioPlayer } from '@/lib/utils/audio-player';
 import katex from 'katex';
-import { createLogger } from '@/lib/logger';
-import { useSettingsStore } from '@/lib/store/settings';
 
 const log = createLogger('ActionEngine');
 
@@ -187,7 +188,7 @@ export class ActionEngine {
           }
         : undefined;
 
-      this.audioPlayer!.play(action.audioId || '', browserTTSOptions)
+      this.audioPlayer!.play(action.audioId || '', action.audioUrl, browserTTSOptions)
         .then((audioStarted) => {
           if (!audioStarted) resolve();
         })
@@ -302,7 +303,8 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     const fontSize = action.fontSize ?? 18;
-    let htmlContent = action.content;
+    let htmlContent = action.content ?? '';
+    if (!htmlContent) return; // nothing to draw
     if (!htmlContent.startsWith('<')) {
       htmlContent = `<p style="font-size: ${fontSize}px;">${htmlContent}</p>`;
     }
@@ -517,6 +519,9 @@ export class ActionEngine {
 
     const elementCount = wb.data.elements?.length || 0;
     if (elementCount === 0) return;
+
+    // Save snapshot before AI clear (mirrors UI handleClear in index.tsx)
+    useWhiteboardHistoryStore.getState().pushSnapshot(wb.data.elements!);
 
     // Trigger cascade exit animation
     useCanvasStore.getState().setWhiteboardClearing(true);

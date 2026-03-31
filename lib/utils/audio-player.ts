@@ -7,8 +7,8 @@
  *
  */
 
-import { db } from '@/lib/utils/database';
 import { createLogger } from '@/lib/logger';
+import { db } from '@/lib/utils/database';
 
 const log = createLogger('AudioPlayer');
 
@@ -42,14 +42,36 @@ export class AudioPlayer {
   }
 
   /**
-   * Play audio (from IndexedDB pre-generated cache)
+   * Play audio (from URL or IndexedDB pre-generated cache)
    * @param audioId Audio ID
+   * @param audioUrl Optional server-generated audio URL (takes priority over IndexedDB)
    * @param browserTTSOptions Optional browser TTS options for fallback
    * @returns true if audio started playing, false if no audio (TTS disabled or not generated)
    */
-  public async play(audioId: string, browserTTSOptions?: BrowserTTSOptions): Promise<boolean> {
+  public async play(
+    audioId: string,
+    audioUrl?: string,
+    browserTTSOptions?: BrowserTTSOptions,
+  ): Promise<boolean> {
     try {
-      // Skip IndexedDB lookup if using browser native TTS (audioId will be empty or not exist)
+      // 1. Try audioUrl first (server-generated TTS)
+      if (audioUrl) {
+        this.stop();
+        this.audio = new Audio();
+        this.audio.src = audioUrl;
+        if (this.muted) this.audio.volume = 0;
+        else this.audio.volume = this.volume;
+        this.audio.defaultPlaybackRate = this.playbackRate;
+        this.audio.playbackRate = this.playbackRate;
+        this.audio.addEventListener('ended', () => {
+          this.onEndedCallback?.();
+        });
+        await this.audio.play();
+        this.audio.playbackRate = this.playbackRate;
+        return true;
+      }
+
+      // 2. Fall back to IndexedDB (client-generated TTS)
       let audioRecord = null;
       if (audioId && audioId.trim() !== '') {
         audioRecord = await db.audioFiles.get(audioId);

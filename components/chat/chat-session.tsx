@@ -6,6 +6,7 @@ import type { ChatSession, ChatMessageMetadata } from '@/lib/types/chat';
 import type { UIMessage } from 'ai';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { AvatarDisplay } from '@/components/ui/avatar-display';
 import { CircleStop } from 'lucide-react';
 import { InlineActionTag } from './inline-action-tag';
 import { useUserProfileStore } from '@/lib/store/user-profile';
@@ -31,26 +32,6 @@ const AVATARS = {
   teacher: '/avatars/teacher.png',
   user: '/avatars/user.png',
 };
-
-/** Render avatar as <img> for URLs or as emoji text span */
-function AvatarDisplay({ src, alt, className }: { src: string; alt?: string; className?: string }) {
-  const isUrl = src.startsWith('http') || src.startsWith('data:') || src.startsWith('/');
-  if (isUrl) {
-    return (
-      <img src={src} alt={alt || ''} className={cn('w-full h-full object-cover', className)} />
-    );
-  }
-  return (
-    <span
-      className={cn(
-        'flex items-center justify-center w-full h-full select-none text-xs',
-        className,
-      )}
-    >
-      {src}
-    </span>
-  );
-}
 
 /**
  * MessageBubble — renders one message as a single chat bubble.
@@ -301,7 +282,7 @@ export function ChatSessionComponent({
             >
               {/* Mini Avatar */}
               <div className="w-5 h-5 rounded-full overflow-hidden bg-gray-100 dark:bg-gray-800 shrink-0 mt-0.5 ring-1 ring-gray-200/50 dark:ring-gray-700/50">
-                <AvatarDisplay src={avatar} alt="avatar" />
+                <AvatarDisplay src={avatar} alt="avatar" className="text-xs" />
               </div>
 
               {/* Content */}

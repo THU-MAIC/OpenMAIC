@@ -1,17 +1,5 @@
 'use client';
 
-import { useState, useRef, useCallback, useMemo, Fragment } from 'react';
-import type { LucideIcon } from 'lucide-react';
-import {
-  Image as ImageIcon,
-  Video,
-  Volume2,
-  Mic,
-  SlidersHorizontal,
-  ChevronRight,
-  Play,
-  Loader2,
-} from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -25,16 +13,33 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
-import { useI18n } from '@/lib/hooks/use-i18n';
-import { useSettingsStore } from '@/lib/store/settings';
-import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
-import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import { TTS_PROVIDERS, getTTSVoices } from '@/lib/audio/constants';
-import { ASR_PROVIDERS, getASRSupportedLanguages } from '@/lib/audio/constants';
-import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
+import {
+  ASR_PROVIDERS,
+  TTS_PROVIDERS,
+  getASRSupportedLanguages,
+  getTTSVoices,
+} from '@/lib/audio/constants';
 import type { ASRProviderId, TTSProviderId } from '@/lib/audio/types';
+import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import { useI18n } from '@/lib/hooks/use-i18n';
+import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
+import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
+import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import { useSettingsStore } from '@/lib/store/settings';
 import type { SettingsSection } from '@/lib/types/settings';
+import { cn } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
+import {
+  ChevronRight,
+  Image as ImageIcon,
+  Loader2,
+  Mic,
+  Play,
+  SlidersHorizontal,
+  Video,
+  Volume2,
+} from 'lucide-react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 
 interface MediaPopoverProps {
   onSettingsOpen: (section: SettingsSection) => void;
@@ -45,15 +50,32 @@ const IMAGE_PROVIDER_ICONS: Record<string, string> = {
   seedream: '/logos/doubao.svg',
   'qwen-image': '/logos/bailian.svg',
   'nano-banana': '/logos/gemini.svg',
+  'grok-image': '/logos/grok.svg',
 };
 const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
   veo: '/logos/gemini.svg',
   sora: '/logos/openai.svg',
+  'grok-video': '/logos/grok.svg',
 };
 
 type TabId = 'image' | 'video' | 'tts' | 'asr';
+
+const LANG_LABELS: Record<string, string> = {
+  zh: '中文',
+  en: 'English',
+  ja: '日本語',
+  ko: '한국어',
+  fr: 'Français',
+  de: 'Deutsch',
+  es: 'Español',
+  pt: 'Português',
+  ru: 'Русский',
+  it: 'Italiano',
+  ar: 'العربية',
+  hi: 'हिन्दी',
+};
 
 const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
   { id: 'image', icon: ImageIcon, label: 'Image' },
@@ -61,6 +83,21 @@ const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
   { id: 'tts', icon: Volume2, label: 'TTS' },
   { id: 'asr', icon: Mic, label: 'ASR' },
 ];
+
+/** Localized TTS provider name (mirrors audio-settings.tsx) */
+function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => string): string {
+  const names: Record<TTSProviderId, string> = {
+    'openai-tts': t('settings.providerOpenAITTS'),
+    'azure-tts': t('settings.providerAzureTTS'),
+    'glm-tts': t('settings.providerGLMTTS'),
+    'qwen-tts': t('settings.providerQwenTTS'),
+    'doubao-tts': t('settings.providerDoubaoTTS'),
+    'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
+    'minimax-tts': t('settings.providerMiniMaxTTS'),
+    'browser-native-tts': t('settings.providerBrowserNativeTTS'),
+  };
+  return names[providerId] || providerId;
+}
 
 /** Extract the English name from voice name format "ChineseName (English)" */
 function getVoiceDisplayName(name: string, lang: string): string {
@@ -75,8 +112,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('image');
-  const [previewing, setPreviewing] = useState(false);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const { previewing, startPreview, stopPreview } = useTTSPreview();
 
   // ─── Store ───
   const imageGenerationEnabled = useSettingsStore((s) => s.imageGenerationEnabled);
@@ -136,6 +172,16 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
 
   const ttsSpeedRange = TTS_PROVIDERS[ttsProviderId]?.speedRange;
 
+  // ─── Dynamic browser voices ───
+  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const load = () => setBrowserVoices(window.speechSynthesis.getVoices());
+    load();
+    window.speechSynthesis.addEventListener('voiceschanged', load);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
+  }, []);
+
   // ─── Grouped select data (only available providers) ───
   const imageGroups = useMemo(
     () =>
@@ -171,90 +217,51 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     [videoProvidersConfig],
   );
 
-  // TTS: grouped by provider (only available providers)
-  const ttsGroups = useMemo(
-    () =>
-      Object.values(TTS_PROVIDERS)
-        .filter((p) => cfgOk(ttsProvidersConfig, p.id, p.requiresApiKey))
-        .map((p) => ({
-          groupId: p.id,
-          groupName: p.name,
-          groupIcon: p.icon,
-          available: true,
-          items: getTTSVoices(p.id).map((v) => ({
-            id: v.id,
-            name: getVoiceDisplayName(v.name, locale),
-          })),
-        })),
-    [ttsProvidersConfig, locale],
-  );
+  // TTS: grouped by provider, voices as items (matching Image/Video pattern)
+  // Browser-native voices are split into sub-groups by language.
+  const ttsGroups = useMemo(() => {
+    const groups: SelectGroupData[] = [];
 
-  // TTS preview
-  const handlePreview = useCallback(async () => {
-    if (previewing) {
-      audioRef.current?.pause();
-      audioRef.current = null;
-      window.speechSynthesis?.cancel();
-      setPreviewing(false);
-      return;
-    }
-    setPreviewing(true);
-    try {
-      // Handle browser native TTS separately
-      if (ttsProviderId === 'browser-native-tts') {
-        if (!('speechSynthesis' in window)) {
-          setPreviewing(false);
-          return;
+    for (const p of Object.values(TTS_PROVIDERS)) {
+      if (p.requiresApiKey && !cfgOk(ttsProvidersConfig, p.id, p.requiresApiKey)) continue;
+
+      const providerName = getTTSProviderName(p.id, t);
+
+      // For browser-native-tts, split voices by language
+      if (p.id === 'browser-native-tts' && browserVoices.length > 0) {
+        const byLang = new Map<string, SpeechSynthesisVoice[]>();
+        for (const v of browserVoices) {
+          const langKey = v.lang.split('-')[0]; // "zh-CN" → "zh"
+          if (!byLang.has(langKey)) byLang.set(langKey, []);
+          byLang.get(langKey)!.push(v);
         }
-
-        const utterance = new SpeechSynthesisUtterance('你好，欢迎来到AI课堂！让我们一起学习吧。');
-        utterance.rate = ttsSpeed;
-        const voices = window.speechSynthesis.getVoices();
-        const selectedVoice = voices.find((v) => v.name === ttsVoice || v.lang === ttsVoice);
-        if (selectedVoice) utterance.voice = selectedVoice;
-
-        utterance.onend = () => {
-          setPreviewing(false);
-        };
-        utterance.onerror = () => {
-          setPreviewing(false);
-        };
-        window.speechSynthesis.speak(utterance);
-        return;
+        for (const [langKey, voices] of byLang) {
+          const langLabel = LANG_LABELS[langKey] || langKey;
+          groups.push({
+            groupId: p.id,
+            groupName: `${providerName} · ${langLabel}`,
+            groupIcon: p.icon,
+            available: true,
+            items: voices.map((v) => ({ id: v.voiceURI, name: v.name })),
+          });
+        }
+        continue;
       }
 
-      const providerConfig = ttsProvidersConfig[ttsProviderId];
-      const res = await fetch('/api/generate/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text: '你好，欢迎来到AI课堂！让我们一起学习吧。',
-          audioId: 'preview',
-          ttsProviderId,
-          ttsVoice,
-          ttsApiKey: providerConfig?.apiKey,
-          ttsBaseUrl: providerConfig?.baseUrl,
-        }),
+      groups.push({
+        groupId: p.id,
+        groupName: providerName,
+        groupIcon: p.icon,
+        available: true,
+        items: getTTSVoices(p.id).map((v) => ({
+          id: v.id,
+          name: getVoiceDisplayName(v.name, locale),
+        })),
       });
-      if (!res.ok) throw new Error('TTS failed');
-      const data = await res.json();
-      if (data.base64) {
-        const audio = new Audio(`data:audio/${data.format || 'mp3'};base64,${data.base64}`);
-        audioRef.current = audio;
-        audio.onended = () => {
-          setPreviewing(false);
-          audioRef.current = null;
-        };
-        audio.onerror = () => {
-          setPreviewing(false);
-          audioRef.current = null;
-        };
-        await audio.play();
-      }
-    } catch {
-      setPreviewing(false);
     }
-  }, [ttsProviderId, ttsVoice, ttsProvidersConfig, previewing, ttsSpeed]);
+
+    return groups;
+  }, [ttsProvidersConfig, locale, browserVoices, t]);
 
   // ASR: only available providers
   const asrGroups = useMemo(
@@ -276,6 +283,9 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
 
   // Auto-select first enabled tab on open
   const handleOpenChange = (isOpen: boolean) => {
+    if (!isOpen) {
+      stopPreview();
+    }
     setOpen(isOpen);
     if (isOpen) {
       const first = (['image', 'video', 'tts', 'asr'] as TabId[]).find((id) => enabledMap[id]);
@@ -393,7 +403,14 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
                   />
                 </div>
                 <button
-                  onClick={handlePreview}
+                  onClick={() =>
+                    startPreview({
+                      text: t('toolbar.ttsDemoVoice'),
+                      providerId: ttsProviderId,
+                      voice: ttsVoice,
+                      speed: ttsSpeed,
+                    })
+                  }
                   className={cn(
                     'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all shrink-0',
                     previewing
@@ -531,7 +548,12 @@ function GroupedSelect({
   onSelect: (groupId: string, itemId: string) => void;
 }) {
   const composite = `${selectedGroupId}::${selectedItemId}`;
-  const selectedGroup = groups.find((g) => g.groupId === selectedGroupId);
+  // When multiple groups share the same groupId (e.g. browser-native-tts split by language),
+  // find the sub-group that actually contains the selected item.
+  const selectedGroup =
+    groups.find(
+      (g) => g.groupId === selectedGroupId && g.items.some((item) => item.id === selectedItemId),
+    ) || groups.find((g) => g.groupId === selectedGroupId);
 
   return (
     <Select
@@ -556,7 +578,7 @@ function GroupedSelect({
       </SelectTrigger>
       <SelectContent>
         {groups.map((group, i) => (
-          <Fragment key={group.groupId}>
+          <Fragment key={`${group.groupId}-${i}`}>
             {i > 0 && <SelectSeparator />}
             <SelectGroup>
               <SelectLabel className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
