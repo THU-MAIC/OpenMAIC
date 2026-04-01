@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-04-01
+
+### Highlights
+
+- **Taluss Rebrand** — Complete visual identity refresh with new color palette (coral/amber/teal), German language default, and updated branding [#352](https://github.com/THU-MAIC/OpenMAIC/pull/352)
+
 ## [0.1.0] - 2026-03-26
 
 The first tagged release of OpenMAIC, including all improvements since the initial open-source launch.
