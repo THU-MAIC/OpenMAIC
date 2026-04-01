@@ -23,6 +23,8 @@ export interface Stage {
   style?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];
+  // Agent IDs selected when this classroom was created
+  agentIds?: string[];
 }
 
 /**

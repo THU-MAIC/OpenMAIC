@@ -55,6 +55,9 @@ export const chatZhCN = {
     readyToLearn: '准备好一起学习了吗？',
     expandedTitle: '课堂角色配置',
     configTooltip: '点击配置课堂角色',
+    voiceLabel: '音色',
+    voiceLoading: '加载中...',
+    voiceAutoAssign: '音色将自动分配',
   },
   proactiveCard: {
     discussion: '讨论',
@@ -126,6 +129,9 @@ export const chatEnUS = {
     readyToLearn: 'Ready to learn together?',
     expandedTitle: 'Classroom Role Config',
     configTooltip: 'Click to configure classroom roles',
+    voiceLabel: 'Voice',
+    voiceLoading: 'Loading...',
+    voiceAutoAssign: 'Voices will be auto-assigned',
   },
   proactiveCard: {
     discussion: 'Discussion',

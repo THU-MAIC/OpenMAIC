@@ -30,5 +30,5 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules", "dist", "packages/*/src", "openclaw"]
+  "exclude": ["node_modules", "dist", "packages/*/src", "openclaw", "e2e"]
 }
