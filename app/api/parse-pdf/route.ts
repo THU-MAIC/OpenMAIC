@@ -6,6 +6,10 @@ import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const log = createLogger('Parse PDF');
 
 export async function POST(req: NextRequest) {

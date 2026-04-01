@@ -263,7 +263,6 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
   };
 }
 
-
 // Return MinerU v4 API base URL ("https://mineru.net/api/v4") if baseUrl is a valid mineru.net (cloud) endpoint, else null
 function getMinerUCloudApiBase(baseUrl: string): string | null {
   try {

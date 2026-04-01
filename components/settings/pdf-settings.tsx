@@ -38,9 +38,13 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
   const [showLocalApiKey, setShowLocalApiKey] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
-  const [cloudTestStatus, setCloudTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [cloudTestStatus, setCloudTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>(
+    'idle',
+  );
   const [cloudTestMessage, setCloudTestMessage] = useState('');
-  const [localTestStatus, setLocalTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [localTestStatus, setLocalTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>(
+    'idle',
+  );
   const [localTestMessage, setLocalTestMessage] = useState('');
 
   const pdfProvidersConfig = useSettingsStore((state) => state.pdfProvidersConfig);
@@ -220,9 +224,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-sm">
-                  {t('settings.pdfApiKey')}
-                </Label>
+                <Label className="text-sm">{t('settings.pdfApiKey')}</Label>
                 <div className="relative">
                   <Input
                     type={showCloudApiKey ? 'text' : 'password'}
