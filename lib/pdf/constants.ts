@@ -9,6 +9,14 @@ import type { PDFProviderId, PDFProviderConfig } from './types';
  * PDF Provider Registry
  */
 export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
+  wiseocr: {
+    id: 'wiseocr',
+    name: 'WiseOCR',
+    requiresApiKey: true,
+    icon: '/logos/wiseocr.png',
+    features: ['text', 'images', 'tables', 'formulas', 'layout-analysis', 'ocr'],
+  },
+
   unpdf: {
     id: 'unpdf',
     name: 'unpdf',
