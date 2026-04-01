@@ -11,8 +11,11 @@ export const maxDuration = 30;
  * Fetches available voices from Azure Speech Services
  */
 export async function POST(req: NextRequest) {
+  let baseUrl: string | undefined;
   try {
-    const { apiKey, baseUrl } = await req.json();
+    const body = await req.json();
+    const { apiKey } = body;
+    baseUrl = body.baseUrl;
 
     if (!apiKey) {
       return apiError('MISSING_API_KEY', 400, 'API Key is required');
@@ -55,7 +58,7 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ voices });
   } catch (error) {
-    log.error('API error:', error);
+    log.error(`Azure voices fetch failed [baseUrl="${baseUrl ?? 'unknown'}"]:`, error);
     return apiError(
       'INTERNAL_ERROR',
       500,
