@@ -158,6 +158,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         outputWindow: 4096,
         capabilities: { streaming: true, tools: true, vision: true },
       },
+
       {
         id: 'o4-mini',
         name: 'o4-mini',
@@ -311,22 +312,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       {
         id: 'gemini-3.1-pro-preview',
         name: 'Gemini 3.1 Pro Preview',
-        contextWindow: 1048576,
-        outputWindow: 65536,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'gemini-3-pro-preview',
-        name: 'Gemini 3 Pro Preview',
         contextWindow: 1048576,
         outputWindow: 65536,
         capabilities: {

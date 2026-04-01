@@ -15,6 +15,9 @@ export const generationZhCN = {
     noClassrooms: '还没有课堂',
     noClassroomsDesc: '创建你的第一个 AI 课堂吧',
     createFirst: '创建课堂',
+    rename: '重命名',
+    renamePlaceholder: '输入课堂名称',
+    renameFailed: '重命名失败',
   },
   upload: {
     pdfSizeLimit: '支持最大50MB的PDF文件',
@@ -89,6 +92,9 @@ export const generationEnUS = {
     noClassrooms: 'No classrooms yet',
     noClassroomsDesc: 'Create your first AI classroom to get started',
     createFirst: 'Create Classroom',
+    rename: 'Rename',
+    renamePlaceholder: 'Enter classroom name',
+    renameFailed: 'Failed to rename classroom',
   },
   upload: {
     pdfSizeLimit: 'Supports PDF files up to 50MB',
@@ -165,6 +171,9 @@ export const generationUz = {
     noClassrooms: 'Hali darslar yoʻq',
     noClassroomsDesc: 'Birinchi AI darsxonangizni yarating',
     createFirst: 'Dars yaratish',
+    rename: 'Nomini oʻzgartirish',
+    renamePlaceholder: 'Dars nomini kiriting',
+    renameFailed: 'Nomini oʻzgartirib boʻlmadi',
   },
   upload: {
     pdfSizeLimit: '50MB gacha boʻlgan PDF fayllarni qoʻllab-quvvatlaydi',

@@ -97,11 +97,14 @@ function extractNewOutlines(buffer: string, alreadyParsed: number): SceneOutline
 }
 
 export async function POST(req: NextRequest) {
+  let requirementSnippet: string | undefined;
+  let resolvedModelString: string | undefined;
   try {
     const body = await req.json();
 
     // Get API configuration from request headers
     const { model: languageModel, modelInfo, modelString } = resolveModelFromHeaders(req);
+    resolvedModelString = modelString;
 
     if (!body.requirements) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
@@ -115,6 +118,7 @@ export async function POST(req: NextRequest) {
       researchContext?: string;
       agents?: AgentInfo[];
     };
+    requirementSnippet = requirements?.requirement?.substring(0, 60);
 
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
@@ -355,7 +359,10 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    log.error('Streaming error:', error);
+    log.error(
+      `Outline streaming failed [requirement="${requirementSnippet ?? 'unknown'}...", model=${resolvedModelString ?? 'unknown'}]:`,
+      error,
+    );
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
   }
 }
