@@ -1,5 +1,8 @@
 'use client';
 
+import { useState, useCallback, useMemo } from 'react';
+import { Volume2, Play, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -10,14 +13,11 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { getTTSVoices } from '@/lib/audio/constants';
-import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { cn } from '@/lib/utils';
-import { Loader2, Play, Volume2 } from 'lucide-react';
-import { useCallback, useMemo, useState } from 'react';
-import { toast } from 'sonner';
+import { getTTSVoices } from '@/lib/audio/constants';
+import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 
 /** Extract the English name from voice name format "ChineseName (English)" */
 function getVoiceDisplayName(name: string, lang: string): string {
