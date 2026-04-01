@@ -26,7 +26,7 @@ export default function ClassroomDetailPage() {
 
   const generationStartedRef = useRef(false);
 
-  const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
+  const { generateRemaining, retrySingleOutline, stop, regenerateScene } = useSceneGenerator({
     onComplete: () => {
       log.info('[Classroom] All scenes generated');
     },
@@ -131,37 +131,41 @@ export default function ClassroomDetailPage() {
     const completedOrders = new Set(scenes.map((s) => s.order));
     const hasPending = outlines.some((o) => !completedOrders.has(o.order));
 
-    if (hasPending && stage) {
-      generationStartedRef.current = true;
+    if (!stage) return;
 
-      // Load generation params from sessionStorage (stored by generation-preview before navigating)
-      const genParamsStr = sessionStorage.getItem('generationParams');
-      const params = genParamsStr ? JSON.parse(genParamsStr) : {};
+    generationStartedRef.current = true;
 
-      // Reconstruct imageMapping from IndexedDB using pdfImages storageIds
-      const storageIds = (params.pdfImages || [])
-        .map((img: { storageId?: string }) => img.storageId)
-        .filter(Boolean);
+    // Load generation params from sessionStorage (stored by generation-preview before navigating)
+    const genParamsStr = sessionStorage.getItem('generationParams');
+    const params = genParamsStr ? JSON.parse(genParamsStr) : {};
 
-      loadImageMapping(storageIds).then((imageMapping) => {
-        generateRemaining({
-          pdfImages: params.pdfImages,
-          imageMapping,
-          stageInfo: {
-            name: stage.name || '',
-            description: stage.description,
-            language: stage.language,
-            style: stage.style,
-          },
-          agents: params.agents,
-          userProfile: params.userProfile,
-        });
+    // Reconstruct imageMapping from IndexedDB using pdfImages storageIds
+    const storageIds = (params.pdfImages || [])
+      .map((img: { storageId?: string }) => img.storageId)
+      .filter(Boolean);
+
+    // Always call generateRemaining to set lastParamsRef (needed for regenerateScene)
+    // It will early-return if there's nothing to generate
+    loadImageMapping(storageIds).then((imageMapping) => {
+      generateRemaining({
+        pdfImages: params.pdfImages,
+        imageMapping,
+        stageInfo: {
+          name: stage.name || '',
+          description: stage.description,
+          language: stage.language,
+          style: stage.style,
+        },
+        agents: params.agents,
+        userProfile: params.userProfile,
       });
-    } else if (outlines.length > 0 && stage) {
+    });
+
+    // If no pending outlines, also resume media generation in background
+    if (!hasPending && outlines.length > 0) {
       // All scenes are generated, but some media may not have finished.
       // Resume media generation for any tasks not yet in IndexedDB.
       // generateMediaForOutlines skips already-completed tasks automatically.
-      generationStartedRef.current = true;
       generateMediaForOutlines(outlines, stage.id).catch((err) => {
         log.warn('[Classroom] Media generation resume error:', err);
       });
@@ -195,7 +199,7 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
-            <Stage onRetryOutline={retrySingleOutline} />
+            <Stage onRetryOutline={retrySingleOutline} onRegenerateScene={regenerateScene} />
           )}
         </div>
       </MediaStageProvider>

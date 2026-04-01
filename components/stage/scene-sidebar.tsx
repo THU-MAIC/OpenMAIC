@@ -24,6 +24,8 @@ interface SceneSidebarProps {
   readonly onCollapseChange: (collapsed: boolean) => void;
   readonly onSceneSelect?: (sceneId: string) => void;
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
+  readonly onRegenerateScene?: (sceneId: string) => Promise<void>;
+  readonly regeneratingSceneId?: string | null;
 }
 
 const DEFAULT_WIDTH = 220;
@@ -35,6 +37,8 @@ export function SceneSidebar({
   onCollapseChange,
   onSceneSelect,
   onRetryOutline,
+  onRegenerateScene,
+  regeneratingSceneId,
 }: SceneSidebarProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -55,6 +59,40 @@ export function SceneSidebar({
       setRetryingOutlineId(null);
     }
   };
+
+  const [regeneratingSceneIdState, setRegeneratingSceneIdState] = useState<string | null>(null);
+
+  const handleRegenerateScene = useCallback(async (sceneId: string) => {
+    if (!onRegenerateScene) return;
+    setRegeneratingSceneIdState(sceneId);
+    try {
+      await onRegenerateScene(sceneId);
+    } finally {
+      setRegeneratingSceneIdState(null);
+    }
+  }, [onRegenerateScene]);
+
+  // Determines whether a scene is actively regenerating.
+  // Checks the local button-click state AND whether the scene's outline
+  // is currently in generatingOutlines (meaning the operation is running).
+  // This ensures the animation stays visible when the operation is queued
+  // (local state is cleared in finally but generatingOutlines is updated
+  // when the operation actually starts executing).
+  const isSceneRegenerating = useCallback(
+    (sceneId: string) => {
+      // Respect external prop if provided
+      if (regeneratingSceneId !== undefined && regeneratingSceneId !== null) {
+        return regeneratingSceneId === sceneId;
+      }
+      if (regeneratingSceneIdState === sceneId) return true;
+      const scene = scenes.find((s) => s.id === sceneId);
+      if (!scene) return false;
+      // Cross-reference: if the outline with matching order is in generatingOutlines,
+      // this scene is being regenerated (even if local state was cleared after queueing).
+      return generatingOutlines.some((o) => o.order === scene.order);
+    },
+    [regeneratingSceneId, regeneratingSceneIdState, scenes, generatingOutlines],
+  );
 
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_WIDTH);
   const isDraggingRef = useRef(false);
@@ -190,6 +228,27 @@ export function SceneSidebar({
                       {scene.title}
                     </span>
                   </div>
+                  {/* Regenerate Button */}
+                  {onRegenerateScene && (
+                    <button
+                      type="button"
+                      data-testid="regenerate-button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRegenerateScene(scene.id);
+                      }}
+                      disabled={isSceneRegenerating(scene.id)}
+                      className={cn(
+                        'opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-all active:scale-90',
+                        isSceneRegenerating(scene.id) && 'opacity-100',
+                      )}
+                      title={t('generation.regenerateScene')}
+                    >
+                      <RefreshCw
+                        className={cn('w-3 h-3 text-gray-400 dark:text-gray-500', isSceneRegenerating(scene.id) && 'animate-spin')}
+                      />
+                    </button>
+                  )}
                 </div>
 
                 {/* Thumbnail */}

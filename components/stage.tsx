@@ -6,6 +6,7 @@ import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useSceneGenerator } from '@/lib/hooks/use-scene-generator';
 import { SceneSidebar } from './stage/scene-sidebar';
 import { Header } from './header';
 import { CanvasArea } from '@/components/canvas/canvas-area';
@@ -42,8 +43,10 @@ import { VisuallyHidden } from 'radix-ui';
  */
 export function Stage({
   onRetryOutline,
+  onRegenerateScene,
 }: {
   onRetryOutline?: (outlineId: string) => Promise<void>;
+  onRegenerateScene?: (sceneId: string) => Promise<void>;
 }) {
   const { t } = useI18n();
   const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
@@ -137,6 +140,9 @@ export function Stage({
       setAudioIndicatorState(state);
     },
   });
+
+  // Scene regeneration hook
+  const { regenerateScene } = useSceneGenerator();
 
   // Pick a student agent for discussion trigger (prioritize student > non-teacher > fallback)
   const pickStudentAgent = useCallback((): string => {
@@ -934,6 +940,7 @@ export function Stage({
         onCollapseChange={setSidebarCollapsed}
         onSceneSelect={gatedSceneSwitch}
         onRetryOutline={onRetryOutline}
+        onRegenerateScene={onRegenerateScene ?? regenerateScene}
       />
 
       {/* Main Content Area */}
