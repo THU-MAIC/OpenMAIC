@@ -497,28 +497,6 @@ function ensurePDFProviderConfigShape(state: Partial<SettingsState>): void {
   };
 }
 
-/**
- * Ensure that the selected provider IDs are valid entries in their respective configs.
- * Falls back to the default selection if the persisted ID no longer exists.
- */
-function ensureValidProviderSelections(state: Partial<SettingsState>): void {
-  if (state.imageProviderId && state.imageProvidersConfig) {
-    if (!state.imageProvidersConfig[state.imageProviderId]) {
-      state.imageProviderId = getDefaultImageConfig().imageProviderId;
-    }
-  }
-  if (state.videoProviderId && state.videoProvidersConfig) {
-    if (!state.videoProvidersConfig[state.videoProviderId]) {
-      state.videoProviderId = getDefaultVideoConfig().videoProviderId;
-    }
-  }
-  if (state.pdfProviderId && state.pdfProvidersConfig) {
-    if (!state.pdfProvidersConfig[state.pdfProviderId]) {
-      state.pdfProviderId = getDefaultPDFConfig().pdfProviderId;
-    }
-  }
-}
-
 // Migrate from old localStorage format
 const migrateFromOldStorage = () => {
   if (typeof window === 'undefined') return null;

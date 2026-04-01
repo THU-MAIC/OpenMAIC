@@ -45,14 +45,6 @@ export async function POST(req: NextRequest) {
     pdfFileName = pdfFile?.name;
     resolvedProviderId = effectiveProviderId;
 
-    const clientBaseUrl = baseUrl || undefined;
-    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-      const ssrfError = validateUrlForSSRF(clientBaseUrl);
-      if (ssrfError) {
-        return apiError('INVALID_URL', 403, ssrfError);
-      }
-    }
-
     const resolveClientPdfConfig = () => {
       const legacyBaseUrl = baseUrl?.trim() || '';
       const legacyApiKey = apiKey?.trim() || '';
