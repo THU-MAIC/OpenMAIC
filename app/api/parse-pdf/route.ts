@@ -5,6 +5,7 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 const log = createLogger('Parse PDF');
 
 export async function POST(req: NextRequest) {
@@ -36,12 +37,6 @@ export async function POST(req: NextRequest) {
     // providerId is required from the client — no server-side store to fall back to
     const effectiveProviderId = providerId || ('unpdf' as PDFProviderId);
 
-<<<<<<< Updated upstream
-    const config = {
-      providerId: effectiveProviderId,
-      apiKey: resolvePDFApiKey(effectiveProviderId, apiKey || undefined),
-      baseUrl: resolvePDFBaseUrl(effectiveProviderId, baseUrl || undefined),
-=======
     const resolveClientPdfConfig = () => {
       const legacyBaseUrl = baseUrl?.trim() || '';
       const legacyApiKey = apiKey?.trim() || '';
@@ -90,7 +85,6 @@ export async function POST(req: NextRequest) {
       baseUrl: clientBaseUrl
         ? clientBaseUrl
         : resolvePDFBaseUrl(effectiveProviderId, baseUrl || undefined),
->>>>>>> Stashed changes
     };
 
     // Convert PDF to buffer
