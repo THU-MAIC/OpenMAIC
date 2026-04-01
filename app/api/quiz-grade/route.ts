@@ -26,9 +26,13 @@ interface GradeResponse {
 }
 
 export async function POST(req: NextRequest) {
+  let questionSnippet: string | undefined;
+  let resolvedPoints: number | undefined;
   try {
     const body = (await req.json()) as GradeRequest;
     const { question, userAnswer, points, commentPrompt, language } = body;
+    questionSnippet = question?.substring(0, 60);
+    resolvedPoints = points;
 
     if (!question || !userAnswer) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'question and userAnswer are required');
@@ -89,7 +93,10 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
 
     return apiSuccess({ ...gradeResult });
   } catch (error) {
-    log.error('Error:', error);
+    log.error(
+      `Quiz grading failed [question="${questionSnippet ?? 'unknown'}...", points=${resolvedPoints ?? 'unknown'}]:`,
+      error,
+    );
     return apiError('INTERNAL_ERROR', 500, 'Failed to grade answer');
   }
 }

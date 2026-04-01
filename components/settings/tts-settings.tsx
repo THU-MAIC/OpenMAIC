@@ -1,16 +1,17 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { TTS_PROVIDERS } from '@/lib/audio/constants';
+import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
+import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 
 const log = createLogger('TTSSettings');
 
@@ -25,104 +26,80 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
+  const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
+
+  // When testing a non-active provider, use that provider's default voice
+  // instead of the active provider's voice (which may be incompatible).
+  const effectiveVoice =
+    selectedProviderId === activeProviderId
+      ? ttsVoice
+      : DEFAULT_TTS_VOICES[selectedProviderId] || 'default';
 
   const ttsProvider = TTS_PROVIDERS[selectedProviderId] ?? TTS_PROVIDERS['openai-tts'];
   const isServerConfigured = !!ttsProvidersConfig[selectedProviderId]?.isServerConfigured;
 
   const [showApiKey, setShowApiKey] = useState(false);
-  const [testingTTS, setTestingTTS] = useState(false);
   const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
 
-  // Update test text when language changes
+  // Doubao TTS uses compound "appId:accessKey" — split for separate UI fields
+  const isDoubao = selectedProviderId === 'doubao-tts';
+  const rawApiKey = ttsProvidersConfig[selectedProviderId]?.apiKey || '';
+  const doubaoColonIdx = rawApiKey.indexOf(':');
+  const doubaoAppId = isDoubao && doubaoColonIdx > 0 ? rawApiKey.slice(0, doubaoColonIdx) : '';
+  const doubaoAccessKey =
+    isDoubao && doubaoColonIdx > 0
+      ? rawApiKey.slice(doubaoColonIdx + 1)
+      : isDoubao
+        ? rawApiKey
+        : '';
+
+  const setDoubaoCompoundKey = (appId: string, accessKey: string) => {
+    const combined = appId && accessKey ? `${appId}:${accessKey}` : appId || accessKey;
+    setTTSProviderConfig(selectedProviderId, { apiKey: combined });
+  };
+
+  // Keep the sample text in sync with locale changes.
   useEffect(() => {
     setTestText(t('settings.ttsTestTextDefault'));
   }, [t]);
 
-  // Reset state when provider changes
+  // Reset transient UI state when switching providers.
   useEffect(() => {
+    stopPreview();
     setShowApiKey(false);
     setTestStatus('idle');
     setTestMessage('');
-  }, [selectedProviderId]);
+  }, [selectedProviderId, stopPreview]);
 
   const handleTestTTS = async () => {
     if (!testText.trim()) return;
-    setTestingTTS(true);
+
     setTestStatus('testing');
     setTestMessage('');
 
     try {
-      if (selectedProviderId === 'browser-native-tts') {
-        if (!('speechSynthesis' in window)) {
-          setTestStatus('error');
-          setTestMessage(t('settings.browserTTSNotSupported'));
-          setTestingTTS(false);
-          return;
-        }
-        const utterance = new SpeechSynthesisUtterance(testText);
-        utterance.rate = ttsSpeed;
-        const voices = window.speechSynthesis.getVoices();
-        const selectedVoice = voices.find((v) => v.name === ttsVoice || v.lang === ttsVoice);
-        if (selectedVoice) utterance.voice = selectedVoice;
-        utterance.onend = () => {
-          setTestStatus('success');
-          setTestMessage(t('settings.ttsTestSuccess'));
-          setTestingTTS(false);
-        };
-        utterance.onerror = (event) => {
-          setTestStatus('error');
-          setTestMessage(t('settings.ttsTestFailed') + ': ' + event.error);
-          setTestingTTS(false);
-        };
-        window.speechSynthesis.speak(utterance);
-        return;
-      }
-
-      const requestBody: Record<string, unknown> = {
+      await startPreview({
         text: testText,
-        audioId: 'tts-test',
-        ttsProviderId: selectedProviderId,
-        ttsVoice: ttsVoice,
-        ttsSpeed: ttsSpeed,
-      };
-      const apiKeyValue = ttsProvidersConfig[selectedProviderId]?.apiKey;
-      if (apiKeyValue?.trim()) requestBody.ttsApiKey = apiKeyValue;
-      const baseUrlValue = ttsProvidersConfig[selectedProviderId]?.baseUrl;
-      if (baseUrlValue?.trim()) requestBody.ttsBaseUrl = baseUrlValue;
-
-      const response = await fetch('/api/generate/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        providerId: selectedProviderId,
+        modelId: ttsProvidersConfig[selectedProviderId]?.modelId || ttsProvider.defaultModelId,
+        voice: effectiveVoice,
+        speed: ttsSpeed,
+        apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
+        baseUrl: ttsProvidersConfig[selectedProviderId]?.baseUrl,
       });
-      const data = await response
-        .json()
-        .catch(() => ({ success: false, error: response.statusText }));
-      if (response.ok && data.success) {
-        const binaryStr = atob(data.base64);
-        const bytes = new Uint8Array(binaryStr.length);
-        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
-        const audioBlob = new Blob([bytes], { type: `audio/${data.format}` });
-        const audioUrl = URL.createObjectURL(audioBlob);
-        if (audioRef.current) {
-          audioRef.current.src = audioUrl;
-          audioRef.current.play();
-        }
-        setTestStatus('success');
-        setTestMessage(t('settings.ttsTestSuccess'));
-      } else {
-        setTestStatus('error');
-        setTestMessage(data.error || t('settings.ttsTestFailed'));
-      }
+      setTestStatus('success');
+      setTestMessage(t('settings.ttsTestSuccess'));
     } catch (error) {
       log.error('TTS test failed:', error);
       setTestStatus('error');
-      setTestMessage(t('settings.ttsTestFailed'));
-    } finally {
-      setTestingTTS(false);
+      setTestMessage(
+        error instanceof Error && error.message
+          ? `${t('settings.ttsTestFailed')}: ${error.message}`
+          : t('settings.ttsTestFailed'),
+      );
     }
   };
 
@@ -138,35 +115,108 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       {/* API Key & Base URL */}
       {(ttsProvider.requiresApiKey || isServerConfigured) && (
         <>
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
-              <div className="relative">
-                <Input
-                  type={showApiKey ? 'text' : 'password'}
-                  placeholder={
-                    isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
-                  }
-                  value={ttsProvidersConfig[selectedProviderId]?.apiKey || ''}
-                  onChange={(e) =>
-                    setTTSProviderConfig(selectedProviderId, {
-                      apiKey: e.target.value,
-                    })
-                  }
-                  className="font-mono text-sm pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowApiKey(!showApiKey)}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                >
-                  {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
+          <div className={cn('grid gap-4', isDoubao ? 'grid-cols-3' : 'grid-cols-2')}>
+            {isDoubao ? (
+              <>
+                <div className="space-y-2">
+                  <Label className="text-sm">{t('settings.doubaoAppId')}</Label>
+                  <div className="relative">
+                    <Input
+                      name={`tts-app-id-${selectedProviderId}`}
+                      type={showApiKey ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder={
+                        isServerConfigured
+                          ? t('settings.optionalOverride')
+                          : t('settings.enterApiKey')
+                      }
+                      value={doubaoAppId}
+                      onChange={(e) => setDoubaoCompoundKey(e.target.value, doubaoAccessKey)}
+                      className="font-mono text-sm pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-sm">{t('settings.doubaoAccessKey')}</Label>
+                  <div className="relative">
+                    <Input
+                      name={`tts-access-key-${selectedProviderId}`}
+                      type={showApiKey ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      autoCapitalize="none"
+                      autoCorrect="off"
+                      spellCheck={false}
+                      placeholder={
+                        isServerConfigured
+                          ? t('settings.optionalOverride')
+                          : t('settings.enterApiKey')
+                      }
+                      value={doubaoAccessKey}
+                      onChange={(e) => setDoubaoCompoundKey(doubaoAppId, e.target.value)}
+                      className="font-mono text-sm pr-10"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
+                <div className="relative">
+                  <Input
+                    name={`tts-api-key-${selectedProviderId}`}
+                    type={showApiKey ? 'text' : 'password'}
+                    autoComplete="new-password"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    placeholder={
+                      isServerConfigured
+                        ? t('settings.optionalOverride')
+                        : t('settings.enterApiKey')
+                    }
+                    value={ttsProvidersConfig[selectedProviderId]?.apiKey || ''}
+                    onChange={(e) =>
+                      setTTSProviderConfig(selectedProviderId, {
+                        apiKey: e.target.value,
+                      })
+                    }
+                    className="font-mono text-sm pr-10"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowApiKey(!showApiKey)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                  >
+                    {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
               <Input
+                name={`tts-base-url-${selectedProviderId}`}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
                 value={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
@@ -194,6 +244,12 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                 break;
               case 'qwen-tts':
                 endpointPath = '/services/aigc/multimodal-generation/generation';
+                break;
+              case 'elevenlabs-tts':
+                endpointPath = '/text-to-speech';
+                break;
+              case 'doubao-tts':
+                endpointPath = '/unidirectional';
                 break;
             }
             if (!endpointPath) return null;
@@ -256,7 +312,26 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         </div>
       )}
 
-      <audio ref={audioRef} className="hidden" />
+      {/* Available Models */}
+      {ttsProvider.models.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-sm text-muted-foreground">{t('settings.availableModels')}</Label>
+          <div className="flex flex-wrap gap-2">
+            {ttsProvider.models.map((model) => (
+              <div
+                key={model.id}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 border border-border/40 text-xs font-mono text-muted-foreground"
+              >
+                <span className="size-1.5 rounded-full bg-emerald-500/70" />
+                {model.name}
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground/60">
+            {t('settings.modelSelectedViaVoice')}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

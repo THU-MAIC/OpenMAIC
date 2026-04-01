@@ -1,7 +1,13 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
+CLAUDE.local.md
+.claude
+.superpowers
+
 # dependencies
 /node_modules
+/openclaw/node_modules
+/openclaw/package-lock.json
 /.pnp
 .pnp.*
 .yarn/*
@@ -12,6 +18,12 @@
 
 # testing
 /coverage
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
 
 # next.js
 /.next/
@@ -49,6 +61,9 @@ next-env.d.ts
 # IDE
 .idea
 .vscode
+
+# worktrees
+.worktrees
 
 # generated data
 /data

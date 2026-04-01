@@ -8,10 +8,13 @@
 import type { NextRequest } from 'next/server';
 import { getModel, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
   modelString: string;
+  /** Effective API key after server-side fallback resolution */
+  apiKey: string;
 }
 
 /**
@@ -26,10 +29,21 @@ export function resolveModel(params: {
   providerType?: string;
   requiresApiKey?: boolean;
 }): ResolvedModel {
-  const modelString = params.modelString || 'gpt-4o-mini';
+  const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-4o-mini';
   const { providerId, modelId } = parseModelString(modelString);
-  const apiKey = resolveApiKey(providerId, params.apiKey || '');
-  const baseUrl = resolveBaseUrl(providerId, params.baseUrl);
+
+  const clientBaseUrl = params.baseUrl || undefined;
+  if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+    const ssrfError = validateUrlForSSRF(clientBaseUrl);
+    if (ssrfError) {
+      throw new Error(ssrfError);
+    }
+  }
+
+  const apiKey = clientBaseUrl
+    ? params.apiKey || ''
+    : resolveApiKey(providerId, params.apiKey || '');
+  const baseUrl = clientBaseUrl ? clientBaseUrl : resolveBaseUrl(providerId, params.baseUrl);
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({
     providerId,
@@ -41,7 +55,7 @@ export function resolveModel(params: {
     requiresApiKey: params.requiresApiKey,
   });
 
-  return { model, modelInfo, modelString };
+  return { model, modelInfo, modelString, apiKey };
 }
 
 /**

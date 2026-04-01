@@ -4,6 +4,13 @@ import { useState, useRef } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
@@ -104,6 +111,10 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             const formData = new FormData();
             formData.append('audio', audioBlob, 'recording.webm');
             formData.append('providerId', selectedProviderId);
+            formData.append(
+              'modelId',
+              asrProvidersConfig[selectedProviderId]?.modelId || asrProvider.defaultModelId,
+            );
             formData.append('language', asrLanguage);
             const apiKeyValue = asrProvidersConfig[selectedProviderId]?.apiKey;
             if (apiKeyValue?.trim()) formData.append('apiKey', apiKeyValue);
@@ -161,7 +172,12 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
               <Label className="text-sm">{t('settings.asrApiKey')}</Label>
               <div className="relative">
                 <Input
+                  name={`asr-api-key-${selectedProviderId}`}
                   type={showApiKey ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder={
                     isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
                   }
@@ -185,6 +201,11 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             <div className="space-y-2">
               <Label className="text-sm">{t('settings.asrBaseUrl')}</Label>
               <Input
+                name={`asr-base-url-${selectedProviderId}`}
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
                 placeholder={asrProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
                 value={asrProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
@@ -269,6 +290,28 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             {testStatus === 'error' && <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
             <p className="flex-1 min-w-0 break-all">{testMessage}</p>
           </div>
+        </div>
+      )}
+
+      {/* Model Selection */}
+      {asrProvider.models.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-sm">{t('settings.ttsModel')}</Label>
+          <Select
+            value={asrProvidersConfig[selectedProviderId]?.modelId || asrProvider.defaultModelId}
+            onValueChange={(value) => setASRProviderConfig(selectedProviderId, { modelId: value })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {asrProvider.models.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
       )}
     </div>

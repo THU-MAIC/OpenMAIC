@@ -34,8 +34,17 @@ interface UseChatSessionsOptions {
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
   onCueUser?: (fromAgentId?: string, prompt?: string) => void;
   onActiveBubble?: (messageId: string | null) => void;
+  onLiveSessionError?: () => void;
   /** Called when a QA/Discussion session completes naturally (director end). */
   onStopSession?: () => void;
+  onSegmentSealed?: (
+    messageId: string,
+    partId: string,
+    fullText: string,
+    agentId: string | null,
+  ) => void;
+  /** When provided and returns true, StreamBuffer holds on the current text item after reveal. */
+  shouldHoldAfterReveal?: () => { holding: boolean; segmentDone: number } | boolean;
 }
 
 export function useChatSessions(options: UseChatSessionsOptions = {}) {
@@ -44,21 +53,30 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const onThinkingRef = useRef(options.onThinking);
   const onCueUserRef = useRef(options.onCueUser);
   const onActiveBubbleRef = useRef(options.onActiveBubble);
+  const onLiveSessionErrorRef = useRef(options.onLiveSessionError);
   const onStopSessionRef = useRef(options.onStopSession);
+  const onSegmentSealedRef = useRef(options.onSegmentSealed);
+  const shouldHoldAfterRevealRef = useRef(options.shouldHoldAfterReveal);
   useEffect(() => {
     onLiveSpeechRef.current = options.onLiveSpeech;
     onSpeechProgressRef.current = options.onSpeechProgress;
     onThinkingRef.current = options.onThinking;
     onCueUserRef.current = options.onCueUser;
     onActiveBubbleRef.current = options.onActiveBubble;
+    onLiveSessionErrorRef.current = options.onLiveSessionError;
     onStopSessionRef.current = options.onStopSession;
+    onSegmentSealedRef.current = options.onSegmentSealed;
+    shouldHoldAfterRevealRef.current = options.shouldHoldAfterReveal;
   }, [
     options.onLiveSpeech,
     options.onSpeechProgress,
     options.onThinking,
     options.onCueUser,
     options.onActiveBubble,
+    options.onLiveSessionError,
     options.onStopSession,
+    options.onSegmentSealed,
+    options.shouldHoldAfterReveal,
   ]);
   const { t } = useI18n();
 
@@ -118,6 +136,67 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
   // StreamBuffer instances per session (SSE + lecture share the same buffer model)
   const buffersRef = useRef<Map<string, StreamBuffer>>(new Map());
+
+  // Abort active stream and destroy buffers on unmount
+  useEffect(() => {
+    const buffers = buffersRef.current;
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      buffers.forEach((buf) => buf.shutdown());
+      buffers.clear();
+    };
+  }, []);
+
+  // Session-scoped "paused intent" — survives buffer recreation across turns.
+  // When true, newly created discussion/QA buffers are immediately paused.
+  const livePausedRef = useRef(false);
+
+  const clearLiveSessionAfterError = useCallback((sessionId: string, message: string) => {
+    const now = Date.now();
+    const errorMessageId = `error-${now}`;
+
+    const buf = buffersRef.current.get(sessionId);
+    if (buf) {
+      buf.shutdown();
+      buffersRef.current.delete(sessionId);
+    }
+
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? {
+              ...s,
+              updatedAt: now,
+              messages: [
+                ...s.messages,
+                {
+                  id: errorMessageId,
+                  role: 'assistant' as const,
+                  parts: [{ type: 'text', text: message }],
+                  metadata: {
+                    senderName: 'System',
+                    originalRole: 'agent' as const,
+                    createdAt: now,
+                  },
+                },
+              ],
+            }
+          : s,
+      ),
+    );
+
+    onActiveBubbleRef.current?.(null);
+    if (onLiveSessionErrorRef.current) {
+      onLiveSessionErrorRef.current();
+    } else {
+      onSpeechProgressRef.current?.(null);
+      onThinkingRef.current?.(null);
+      onLiveSpeechRef.current?.(null, null);
+    }
+  }, []);
 
   // Tracks the single message ID per lecture session
   const lectureMessageIds = useRef<Map<string, string>>(new Map());
@@ -317,12 +396,32 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           onError(message: string) {
             log.error('[Buffer] Stream error:', message);
           },
+
+          onSegmentSealed(
+            messageId: string,
+            partId: string,
+            fullText: string,
+            agentId: string | null,
+          ) {
+            onSegmentSealedRef.current?.(messageId, partId, fullText, agentId);
+          },
+
+          shouldHoldAfterReveal() {
+            return shouldHoldAfterRevealRef.current?.() ?? (false as const);
+          },
         },
         pacingOptions,
       );
 
       buffersRef.current.set(sessionId, buffer);
       buffer.start();
+
+      // Inherit paused intent for discussion/QA sessions so new-turn buffers
+      // don't start revealing text while the user has paused reading.
+      if (type !== 'lecture' && livePausedRef.current) {
+        buffer.pause();
+      }
+
       return buffer;
     },
     [],
@@ -353,6 +452,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         apiKey: string;
         baseUrl?: string;
         model?: string;
+        providerType?: string;
+        requiresApiKey?: boolean;
       },
       controller: AbortController,
       sessionType: SessionType,
@@ -541,6 +642,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const endSession = useCallback(
     async (sessionId: string): Promise<void> => {
       log.info(`[ChatArea] Ending session: ${sessionId}`);
+      livePausedRef.current = false;
 
       const session = sessionsRef.current.find((s) => s.id === sessionId);
       const isLiveSession = session && (session.type === 'qa' || session.type === 'discussion');
@@ -639,6 +741,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
    * so the user can continue speaking in the same topic.
    */
   const softPauseSession = useCallback(async (sessionId: string): Promise<void> => {
+    livePausedRef.current = false;
     const session = sessionsRef.current.find((s) => s.id === sessionId);
     if (!session) return;
     const isLiveSession = session.type === 'qa' || session.type === 'discussion';
@@ -771,6 +874,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             apiKey: mc.apiKey,
             baseUrl: mc.baseUrl,
             model: mc.modelString,
+            providerType: mc.providerType,
+            requiresApiKey: mc.requiresApiKey,
           },
           controller,
           session.type,
@@ -781,34 +886,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           return;
         }
         log.error('[ChatArea] Resume error:', error);
-
-        const errorMessageId = `error-${Date.now()}`;
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === sessionId
-              ? {
-                  ...s,
-                  messages: [
-                    ...s.messages,
-                    {
-                      id: errorMessageId,
-                      role: 'assistant' as const,
-                      parts: [
-                        {
-                          type: 'text',
-                          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-                        },
-                      ],
-                      metadata: {
-                        senderName: 'System',
-                        originalRole: 'agent' as const,
-                        createdAt: Date.now(),
-                      },
-                    },
-                  ],
-                }
-              : s,
-          ),
+        clearLiveSessionAfterError(
+          sessionId,
+          `Error: ${error instanceof Error ? error.message : String(error)}`,
         );
       } finally {
         if (abortControllerRef.current === controller) {
@@ -818,7 +898,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
       }
     },
-    [runAgentLoop],
+    [clearLiveSessionAfterError, runAgentLoop],
   );
 
   /**
@@ -1006,6 +1086,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             apiKey: mc.apiKey,
             baseUrl: mc.baseUrl,
             model: mc.modelString,
+            providerType: mc.providerType,
+            requiresApiKey: mc.requiresApiKey,
           },
           controller,
           sessionType,
@@ -1018,35 +1100,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
 
         log.error('[ChatArea] Error:', error);
-
-        // Create error message since there's no pre-created assistant message
-        const errorMessageId = `error-${Date.now()}`;
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === sessionId
-              ? {
-                  ...s,
-                  messages: [
-                    ...s.messages,
-                    {
-                      id: errorMessageId,
-                      role: 'assistant' as const,
-                      parts: [
-                        {
-                          type: 'text',
-                          text: `Error: ${error instanceof Error ? error.message : String(error)}`,
-                        },
-                      ],
-                      metadata: {
-                        senderName: 'System',
-                        originalRole: 'agent' as const,
-                        createdAt: Date.now(),
-                      },
-                    },
-                  ],
-                }
-              : s,
-          ),
+        clearLiveSessionAfterError(
+          sessionId!,
+          `Error: ${error instanceof Error ? error.message : String(error)}`,
         );
       } finally {
         // Only clean up if this is still the active controller (avoid race with interrupt)
@@ -1057,7 +1113,15 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
       }
     },
-    [activeSessionId, isStreaming, createSession, endSession, runAgentLoop, t],
+    [
+      activeSessionId,
+      clearLiveSessionAfterError,
+      isStreaming,
+      createSession,
+      endSession,
+      runAgentLoop,
+      t,
+    ],
   );
 
   /**
@@ -1066,6 +1130,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   const startDiscussion = useCallback(
     async (request: DiscussionRequest): Promise<void> => {
       log.info(`[ChatArea] Starting discussion: "${request.topic}"`);
+      // Explicitly clear buffer-pause intent (also cleared transitively via endSession,
+      // but being explicit guards against future refactors)
+      livePausedRef.current = false;
 
       // Validate model configuration before starting discussion
       const modelConfig = getCurrentModelConfig();
@@ -1162,6 +1229,8 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             apiKey: mc.apiKey,
             baseUrl: mc.baseUrl,
             model: mc.modelString,
+            providerType: mc.providerType,
+            requiresApiKey: mc.requiresApiKey,
           },
           controller,
           'discussion',
@@ -1174,35 +1243,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
 
         log.error('[ChatArea] Discussion error:', error);
-
-        // Create error message since there's no pre-created assistant message
-        const errorMessageId = `error-${Date.now()}`;
-        setSessions((prev) =>
-          prev.map((s) =>
-            s.id === sessionId
-              ? {
-                  ...s,
-                  messages: [
-                    ...s.messages,
-                    {
-                      id: errorMessageId,
-                      role: 'assistant' as const,
-                      parts: [
-                        {
-                          type: 'text',
-                          text: `Error starting discussion: ${error instanceof Error ? error.message : String(error)}`,
-                        },
-                      ],
-                      metadata: {
-                        senderName: 'System',
-                        originalRole: 'agent' as const,
-                        createdAt: Date.now(),
-                      },
-                    },
-                  ],
-                }
-              : s,
-          ),
+        clearLiveSessionAfterError(
+          sessionId,
+          `Error starting discussion: ${error instanceof Error ? error.message : String(error)}`,
         );
       } finally {
         // Only clean up if this is still the active controller (avoid race with interrupt)
@@ -1214,7 +1257,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable from i18n context
-    [endSession, runAgentLoop],
+    [clearLiveSessionAfterError, endSession, runAgentLoop],
   );
 
   /**
@@ -1401,6 +1444,32 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     if (buf) buf.resume();
   }, []);
 
+  /** Pause the active live (QA/Discussion) buffer and set sticky intent. Returns true if paused. */
+  const pauseActiveLiveBuffer = useCallback((): boolean => {
+    const active = sessionsRef.current.find(
+      (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
+    );
+    if (!active) return false;
+    const buf = buffersRef.current.get(active.id);
+    if (!buf || buf.disposed) return false;
+    livePausedRef.current = true;
+    buf.pause();
+    log.info('[ChatArea] Buffer-paused discussion:', active.id);
+    return true;
+  }, []);
+
+  /** Resume the active live (QA/Discussion) buffer and clear sticky intent. */
+  const resumeActiveLiveBuffer = useCallback(() => {
+    const active = sessionsRef.current.find(
+      (s) => (s.type === 'qa' || s.type === 'discussion') && s.status === 'active',
+    );
+    if (!active) return;
+    livePausedRef.current = false;
+    const buf = buffersRef.current.get(active.id);
+    if (buf) buf.resume();
+    log.info('[ChatArea] Buffer-resumed discussion:', active.id);
+  }, []);
+
   return {
     sessions,
     activeSessionId,
@@ -1421,5 +1490,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
     getLectureMessageId,
     pauseBuffer,
     resumeBuffer,
+    pauseActiveLiveBuffer,
+    resumeActiveLiveBuffer,
   };
 }

@@ -450,7 +450,9 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
       laserElementId: '',
       laserOptions: null,
       zoomTarget: null,
-      playingVideoElementId: '',
+      // Note: playingVideoElementId intentionally NOT cleared here.
+      // Video playback has its own lifecycle (playVideo/pauseVideo/onEnded)
+      // and must not be interrupted by visual effect auto-clear timers.
     });
   },
 

@@ -23,6 +23,8 @@ export interface Stage {
   style?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];
+  // Agent IDs selected when this classroom was created
+  agentIds?: string[];
 }
 
 /**
@@ -48,7 +50,6 @@ export interface Scene {
   multiAgent?: {
     enabled: boolean; // Enable multi-agent for this scene
     agentIds: string[]; // Which agents to include (from registry)
-    maxTurns: number; // Max discussion turns (default: 10)
     directorPrompt?: string; // Optional custom director instructions
   };
 

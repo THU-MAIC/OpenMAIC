@@ -8,7 +8,9 @@ import { db } from '@/lib/utils/database';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
-import type { SpeechAction } from '@/lib/types/action';
+import type { Action, SpeechAction } from '@/lib/types/action';
+import type { TTSProviderId } from '@/lib/audio/types';
+import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
 
@@ -128,43 +130,45 @@ export async function generateAndStoreTTS(
   if (settings.ttsProviderId === 'browser-native-tts') return;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+  const response = await fetch('/api/generate/tts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      text,
+      audioId,
+      ttsProviderId: settings.ttsProviderId,
+      ttsModelId: ttsProviderConfig?.modelId,
+      ttsVoice: settings.ttsVoice,
+      ttsSpeed: settings.ttsSpeed,
+      ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+      ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
+    }),
+    signal,
+  });
 
-  try {
-    const response = await fetch('/api/generate/tts', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        text,
-        audioId,
-        ttsProviderId: settings.ttsProviderId,
-        ttsVoice: settings.ttsVoice,
-        ttsSpeed: settings.ttsSpeed,
-        ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-        ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
-      }),
-      signal,
-    });
-
-    if (!response.ok) return;
-    const data = await response.json();
-    if (!data.success) return;
-
-    const binary = atob(data.base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
-      bytes[i] = binary.charCodeAt(i);
-    }
-    const blob = new Blob([bytes], { type: `audio/${data.format}` });
-    await db.audioFiles.put({
-      id: audioId,
-      blob,
-      format: data.format,
-      createdAt: Date.now(),
-    });
-  } catch (err) {
+  const data = await response
+    .json()
+    .catch(() => ({ success: false, error: response.statusText || 'Invalid TTS response' }));
+  if (!response.ok || !data.success || !data.base64 || !data.format) {
+    const err = new Error(
+      data.details || data.error || `TTS request failed: HTTP ${response.status}`,
+    );
     log.warn('TTS failed for', audioId, ':', err);
     throw err;
   }
+
+  const binary = atob(data.base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const blob = new Blob([bytes], { type: `audio/${data.format}` });
+  await db.audioFiles.put({
+    id: audioId,
+    blob,
+    format: data.format,
+    createdAt: Date.now(),
+  });
 }
 
 /** Generate TTS for all speech actions in a scene. Returns result. */
@@ -172,7 +176,9 @@ async function generateTTSForScene(
   scene: Scene,
   signal?: AbortSignal,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
-  const speechActions = (scene.actions || []).filter(
+  const providerId = useSettingsStore.getState().ttsProviderId;
+  scene.actions = splitLongSpeechActions(scene.actions || [], providerId);
+  const speechActions = scene.actions.filter(
     (a): a is SpeechAction => a.type === 'speech' && !!a.text,
   );
   if (speechActions.length === 0) return { success: true, failedCount: 0 };
@@ -185,9 +191,15 @@ async function generateTTSForScene(
     action.audioId = audioId;
     try {
       await generateAndStoreTTS(audioId, action.text, signal);
-    } catch {
+    } catch (error) {
       failedCount++;
-      lastError = `TTS failed for action ${action.id}`;
+      lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
+      log.warn('TTS generation failed:', {
+        providerId,
+        actionId: action.id,
+        textLength: action.text.length,
+        error: lastError,
+      });
     }
   }
 

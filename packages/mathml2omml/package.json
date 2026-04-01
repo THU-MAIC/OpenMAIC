@@ -11,7 +11,7 @@
     "require": "./dist/index.cjs"
   },
   "scripts": {
-    "build": "rollup -c && cp src/index.d.ts dist/index.d.ts"
+    "build": "rollup -c && node -e \"require('fs').copyFileSync('src/index.d.ts','dist/index.d.ts')\""
   },
   "repository": {
     "type": "git",

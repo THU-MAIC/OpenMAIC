@@ -378,6 +378,11 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
               <Label className="text-sm">{t('settings.pdfBaseUrl')}</Label>
               <div className="flex gap-2">
                 <Input
+                  name={`pdf-base-url-${selectedProviderId}`}
+                  autoComplete="off"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder="http://localhost:8080"
                   value={providerConfig?.baseUrl || ''}
                   onChange={(e) =>
@@ -413,7 +418,12 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
               </Label>
               <div className="relative">
                 <Input
+                  name={`pdf-api-key-${selectedProviderId}`}
                   type={showApiKey ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder={
                     isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
                   }

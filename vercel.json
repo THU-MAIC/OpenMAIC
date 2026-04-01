@@ -5,10 +5,7 @@
   "buildCommand": "pnpm build",
   "functions": {
     "app/api/**/*.ts": {
-      "maxDuration": 300,
-      "bodyParser": {
-        "sizeLimit": "50mb"
-      }
+      "maxDuration": 300
     }
   }
 }
