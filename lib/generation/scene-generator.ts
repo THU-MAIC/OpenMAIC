@@ -394,8 +394,8 @@ function fixElementDefaults(
     if (el.type === 'shape') {
       const shapeEl = el as Record<string, unknown>;
 
-      if (!shapeEl.viewBox) {
-        shapeEl.viewBox = `0 0 ${el.width ?? 100} ${el.height ?? 100}`;
+      if (!shapeEl.viewBox || !Array.isArray(shapeEl.viewBox)) {
+        shapeEl.viewBox = [el.width ?? 100, el.height ?? 100];
       }
       if (!shapeEl.path) {
         // Default to rectangle

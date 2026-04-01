@@ -3,6 +3,15 @@
 import { useRef, useState, useLayoutEffect } from 'react';
 import type { PPTLatexElement } from '@/lib/types/slides';
 
+function getViewBoxDims(viewBox: [number, number] | string | undefined): [number, number] {
+  if (Array.isArray(viewBox)) return viewBox;
+  if (typeof viewBox === 'string') {
+    const parts = viewBox.trim().split(/\s+/).map(Number);
+    return parts.length >= 4 ? [parts[2], parts[3]] : parts.length >= 2 ? [parts[0], parts[1]] : [0, 0];
+  }
+  return [0, 0];
+}
+
 export { BaseLatexElement } from './BaseLatexElement';
 
 export interface LatexElementProps {
@@ -61,9 +70,12 @@ export function LatexElement({ elementInfo, selectElement }: LatexElementProps) 
               className="transform-origin-[0_0]"
             >
               <g
-                transform={`scale(${elementInfo.width / elementInfo.viewBox[0]}, ${
-                  elementInfo.height / elementInfo.viewBox[1]
-                }) translate(0,0) matrix(1,0,0,1,0,0)`}
+                transform={(() => {
+                  const [vbW, vbH] = getViewBoxDims(elementInfo.viewBox);
+                  const sx = vbW > 0 ? elementInfo.width / vbW : 1;
+                  const sy = vbH > 0 ? elementInfo.height / vbH : 1;
+                  return `scale(${sx}, ${sy}) translate(0,0) matrix(1,0,0,1,0,0)`;
+                })()}
               >
                 <path d={elementInfo.path} />
               </g>
