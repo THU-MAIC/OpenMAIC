@@ -29,7 +29,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
 
   // When testing a non-active provider, use that provider's default voice
-  // instead of the active provider's voice (which may be incompatible)
+  // instead of the active provider's voice (which may be incompatible).
   const effectiveVoice =
     selectedProviderId === activeProviderId
       ? ttsVoice
@@ -61,12 +61,12 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     setTTSProviderConfig(selectedProviderId, { apiKey: combined });
   };
 
-  // Update test text when language changes
+  // Keep the sample text in sync with locale changes.
   useEffect(() => {
     setTestText(t('settings.ttsTestTextDefault'));
   }, [t]);
 
-  // Reset state when provider changes
+  // Reset transient UI state when switching providers.
   useEffect(() => {
     stopPreview();
     setShowApiKey(false);
@@ -84,6 +84,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       await startPreview({
         text: testText,
         providerId: selectedProviderId,
+        modelId: ttsProvidersConfig[selectedProviderId]?.modelId || ttsProvider.defaultModelId,
         voice: effectiveVoice,
         speed: ttsSpeed,
         apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
@@ -308,6 +309,27 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             {testStatus === 'error' && <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
             <p className="flex-1 min-w-0 break-all">{testMessage}</p>
           </div>
+        </div>
+      )}
+
+      {/* Available Models */}
+      {ttsProvider.models.length > 0 && (
+        <div className="space-y-2">
+          <Label className="text-sm text-muted-foreground">{t('settings.availableModels')}</Label>
+          <div className="flex flex-wrap gap-2">
+            {ttsProvider.models.map((model) => (
+              <div
+                key={model.id}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-muted/50 border border-border/40 text-xs font-mono text-muted-foreground"
+              >
+                <span className="size-1.5 rounded-full bg-emerald-500/70" />
+                {model.name}
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-muted-foreground/60">
+            {t('settings.modelSelectedViaVoice')}
+          </p>
         </div>
       )}
     </div>

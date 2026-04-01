@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
+import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioRecorder');
@@ -49,6 +50,12 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
 
           formData.append('providerId', asrProviderId);
+          formData.append(
+            'modelId',
+            asrProvidersConfig?.[asrProviderId]?.modelId ||
+              ASR_PROVIDERS[asrProviderId]?.defaultModelId ||
+              '',
+          );
           formData.append('language', asrLanguage);
 
           // Append API key and base URL if configured

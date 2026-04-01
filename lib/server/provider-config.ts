@@ -58,6 +58,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_QWEN: 'qwen-tts',
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
+  TTS_MINIMAX: 'minimax-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {
@@ -74,6 +75,7 @@ const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_SEEDREAM: 'seedream',
   IMAGE_QWEN_IMAGE: 'qwen-image',
   IMAGE_NANO_BANANA: 'nano-banana',
+  IMAGE_MINIMAX: 'minimax-image',
   IMAGE_GROK: 'grok-image',
 };
 
@@ -82,6 +84,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
   VIDEO_KLING: 'kling',
   VIDEO_VEO: 'veo',
   VIDEO_SORA: 'sora',
+  VIDEO_MINIMAX: 'minimax-video',
   VIDEO_GROK: 'grok-video',
 };
 

@@ -9,6 +9,7 @@
  * - Azure TTS: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech
  * - GLM TTS: https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts
  * - Qwen TTS: https://bailian.console.aliyun.com/
+ * - MiniMax TTS: https://platform.minimaxi.com/docs/api-reference/speech-t2a-http
  * - Doubao TTS: https://www.volcengine.com/docs/6561/1257543
  * - ElevenLabs TTS: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
  * - Browser Native: Web Speech API (client-side only)
@@ -149,9 +150,10 @@ export async function generateTTS(
     case 'qwen-tts':
       return await generateQwenTTS(config, text);
 
+    case 'minimax-tts':
+      return await generateMiniMaxTTS(config, text);
     case 'doubao-tts':
       return await generateDoubaoTTS(config, text);
-
     case 'elevenlabs-tts':
       return await generateElevenLabsTTS(config, text);
 
@@ -182,7 +184,7 @@ async function generateOpenAITTS(
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini-tts',
+      model: config.modelId || 'gpt-4o-mini-tts',
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
@@ -254,7 +256,7 @@ async function generateGLMTTS(config: TTSModelConfig, text: string): Promise<TTS
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'glm-tts',
+      model: config.modelId || 'glm-tts',
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
@@ -301,7 +303,7 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'qwen3-tts-flash',
+      model: config.modelId || 'qwen3-tts-flash',
       input: {
         text,
         voice: config.voice,
@@ -342,6 +344,69 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
 }
 
 /**
+ * MiniMax TTS implementation (synchronous HTTP API)
+ */
+async function generateMiniMaxTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['minimax-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+  const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      model: config.modelId || 'speech-2.8-hd',
+      text,
+      stream: false,
+      output_format: 'hex',
+      voice_setting: {
+        voice_id: config.voice,
+        speed: config.speed || 1.0,
+        vol: 1,
+        pitch: 0,
+      },
+      audio_setting: {
+        sample_rate: 32000,
+        bitrate: 128000,
+        format: config.format || 'mp3',
+        channel: 1,
+      },
+      language_boost: 'auto',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`MiniMax TTS API error: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const hexAudio = data?.data?.audio;
+  if (!hexAudio || typeof hexAudio !== 'string') {
+    throw new Error(`MiniMax TTS error: No audio returned. Response: ${JSON.stringify(data)}`);
+  }
+
+  const cleanedHex = hexAudio.trim();
+  if (cleanedHex.length % 2 !== 0) {
+    throw new Error('MiniMax TTS error: invalid hex audio payload length');
+  }
+
+  const audio = new Uint8Array(
+    cleanedHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [],
+  );
+  return {
+    audio,
+    format: data?.extra_info?.audio_format || config.format || 'mp3',
+  };
+}
+
+/**
  * ElevenLabs TTS implementation (direct API call with voice-specific endpoint)
  */
 async function generateElevenLabsTTS(
@@ -371,7 +436,7 @@ async function generateElevenLabsTTS(
       },
       body: JSON.stringify({
         text,
-        model_id: 'eleven_multilingual_v2',
+        model_id: config.modelId || 'eleven_multilingual_v2',
         voice_settings: {
           stability: 0.5,
           similarity_boost: 0.75,
@@ -410,6 +475,7 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 
   return {
     providerId: ttsProviderId,
+    modelId: providerConfig?.modelId || TTS_PROVIDERS[ttsProviderId]?.defaultModelId || '',
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
     voice: ttsVoice,
