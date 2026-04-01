@@ -26,6 +26,7 @@ import {
   replaceMediaPlaceholders,
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
+import { buildLanguageInstruction, normalizeGenerationLanguage } from '@/lib/generation/language';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 
@@ -94,10 +95,6 @@ function createInMemoryStore(stage: Stage): StageStore {
       };
     },
   };
-}
-
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
 }
 
 function stripCodeFences(text: string): string {
@@ -188,13 +185,19 @@ export async function generateClassroom(
     );
   }
 
+  const lang = normalizeGenerationLanguage(input.language);
+  const languageInstruction = buildLanguageInstruction(lang);
+
   const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(
       {
         model: languageModel,
         messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
+          { role: 'system', content: `${languageInstruction}\n\n${systemPrompt}` },
+          {
+            role: 'user',
+            content: `${userPrompt}\n\nLanguage enforcement: ${languageInstruction}`,
+          },
         ],
         maxOutputTokens: modelInfo?.outputWindow,
       },
@@ -203,7 +206,6 @@ export async function generateClassroom(
     return result.text;
   };
 
-  const lang = normalizeLanguage(input.language);
   const requirements: UserRequirements = {
     requirement,
     language: lang,
