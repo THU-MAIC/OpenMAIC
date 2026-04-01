@@ -24,6 +24,10 @@ export async function POST(req: NextRequest) {
     const providerId = formData.get('providerId') as PDFProviderId | null;
     const apiKey = formData.get('apiKey') as string | null;
     const baseUrl = formData.get('baseUrl') as string | null;
+    const cloudApiKey = formData.get('cloudApiKey') as string | null;
+    const cloudBaseUrl = formData.get('cloudBaseUrl') as string | null;
+    const localApiKey = formData.get('localApiKey') as string | null;
+    const localBaseUrl = formData.get('localBaseUrl') as string | null;
 
     if (!pdfFile) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'No PDF file provided');
@@ -32,10 +36,61 @@ export async function POST(req: NextRequest) {
     // providerId is required from the client — no server-side store to fall back to
     const effectiveProviderId = providerId || ('unpdf' as PDFProviderId);
 
+<<<<<<< Updated upstream
     const config = {
       providerId: effectiveProviderId,
       apiKey: resolvePDFApiKey(effectiveProviderId, apiKey || undefined),
       baseUrl: resolvePDFBaseUrl(effectiveProviderId, baseUrl || undefined),
+=======
+    const resolveClientPdfConfig = () => {
+      const legacyBaseUrl = baseUrl?.trim() || '';
+      const legacyApiKey = apiKey?.trim() || '';
+
+      if (effectiveProviderId !== 'mineru') {
+        return {
+          clientBaseUrl: legacyBaseUrl || undefined,
+          clientApiKey: legacyApiKey || undefined,
+        };
+      }
+
+      const cloudUrl = cloudBaseUrl?.trim() || '';
+      const cloudKey = cloudApiKey?.trim() || '';
+      const localUrl = localBaseUrl?.trim() || '';
+      const localKey = localApiKey?.trim() || '';
+
+      // Prefer cloud when it is complete, then local, then legacy fallback.
+      if (cloudUrl && cloudKey) {
+        return { clientBaseUrl: cloudUrl, clientApiKey: cloudKey };
+      }
+      if (localUrl) {
+        return { clientBaseUrl: localUrl, clientApiKey: localKey || undefined };
+      }
+      if (cloudUrl) {
+        return { clientBaseUrl: cloudUrl, clientApiKey: cloudKey || undefined };
+      }
+      return {
+        clientBaseUrl: legacyBaseUrl || undefined,
+        clientApiKey: legacyApiKey || undefined,
+      };
+    };
+
+    const { clientBaseUrl, clientApiKey } = resolveClientPdfConfig();
+    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+      const ssrfError = validateUrlForSSRF(clientBaseUrl);
+      if (ssrfError) {
+        return apiError('INVALID_URL', 403, ssrfError);
+      }
+    }
+
+    const config = {
+      providerId: effectiveProviderId,
+      apiKey: clientBaseUrl
+        ? clientApiKey || ''
+        : resolvePDFApiKey(effectiveProviderId, apiKey || undefined),
+      baseUrl: clientBaseUrl
+        ? clientBaseUrl
+        : resolvePDFBaseUrl(effectiveProviderId, baseUrl || undefined),
+>>>>>>> Stashed changes
     };
 
     // Convert PDF to buffer

@@ -73,6 +73,10 @@ export interface SettingsState {
       enabled: boolean;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
+      cloudApiKey?: string;
+      cloudBaseUrl?: string;
+      localApiKey?: string;
+      localBaseUrl?: string;
     }
   >;
 
@@ -187,7 +191,15 @@ export interface SettingsState {
   setPDFProvider: (providerId: PDFProviderId) => void;
   setPDFProviderConfig: (
     providerId: PDFProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      cloudApiKey: string;
+      cloudBaseUrl: string;
+      localApiKey: string;
+      localBaseUrl: string;
+    }>,
   ) => void;
 
   // Image Generation actions
@@ -277,8 +289,16 @@ const getDefaultPDFConfig = () => ({
   pdfProviderId: 'unpdf' as PDFProviderId,
   pdfProvidersConfig: {
     unpdf: { apiKey: '', baseUrl: '', enabled: true },
-    mineru: { apiKey: '', baseUrl: '', enabled: false },
-  } as Record<PDFProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+    mineru: {
+      apiKey: '',
+      baseUrl: '',
+      enabled: false,
+      cloudApiKey: '',
+      cloudBaseUrl: '',
+      localApiKey: '',
+      localBaseUrl: '',
+    },
+  } as SettingsState['pdfProvidersConfig'],
 });
 
 // Initialize default Image config
@@ -349,6 +369,59 @@ function ensureBuiltInProviders(state: Partial<SettingsState>): void {
   });
 }
 
+<<<<<<< Updated upstream
+=======
+/**
+ * Ensure imageProvidersConfig includes all built-in image providers.
+ * Called on every rehydrate so newly added image providers appear automatically.
+ */
+function ensureBuiltInImageProviders(state: Partial<SettingsState>): void {
+  if (!state.imageProvidersConfig) return;
+  const defaultConfig = getDefaultImageConfig().imageProvidersConfig;
+  Object.keys(IMAGE_PROVIDERS).forEach((pid) => {
+    const providerId = pid as ImageProviderId;
+    if (!state.imageProvidersConfig![providerId]) {
+      state.imageProvidersConfig![providerId] = defaultConfig[providerId];
+    }
+  });
+}
+
+/**
+ * Ensure videoProvidersConfig includes all built-in video providers.
+ * Called on every rehydrate so newly added video providers appear automatically.
+ */
+function ensureBuiltInVideoProviders(state: Partial<SettingsState>): void {
+  if (!state.videoProvidersConfig) return;
+  const defaultConfig = getDefaultVideoConfig().videoProvidersConfig;
+  Object.keys(VIDEO_PROVIDERS).forEach((pid) => {
+    const providerId = pid as VideoProviderId;
+    if (!state.videoProvidersConfig![providerId]) {
+      state.videoProvidersConfig![providerId] = defaultConfig[providerId];
+    }
+  });
+}
+
+/**
+ * Ensure PDF provider config shape includes MinerU cloud/local fields.
+ * Preserves legacy baseUrl/apiKey and migrates them into cloud defaults.
+ */
+function ensurePDFProviderConfigShape(state: Partial<SettingsState>): void {
+  if (!state.pdfProvidersConfig?.mineru) return;
+
+  const mineruConfig = state.pdfProvidersConfig.mineru;
+  const legacyBaseUrl = mineruConfig.baseUrl || '';
+  const legacyApiKey = mineruConfig.apiKey || '';
+
+  state.pdfProvidersConfig.mineru = {
+    ...mineruConfig,
+    cloudBaseUrl: mineruConfig.cloudBaseUrl ?? legacyBaseUrl,
+    cloudApiKey: mineruConfig.cloudApiKey ?? legacyApiKey,
+    localBaseUrl: mineruConfig.localBaseUrl ?? '',
+    localApiKey: mineruConfig.localApiKey ?? '',
+  };
+}
+
+>>>>>>> Stashed changes
 // Migrate from old localStorage format
 const migrateFromOldStorage = () => {
   if (typeof window === 'undefined') return null;
@@ -987,6 +1060,7 @@ export const useSettingsStore = create<SettingsState>()(
           const defaultPDFConfig = getDefaultPDFConfig();
           Object.assign(state, defaultPDFConfig);
         }
+        ensurePDFProviderConfigShape(state);
 
         // Add default Image config if missing
         if (!state.imageProvidersConfig) {
@@ -1060,6 +1134,13 @@ export const useSettingsStore = create<SettingsState>()(
       merge: (persistedState, currentState) => {
         const merged = { ...currentState, ...(persistedState as object) };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
+<<<<<<< Updated upstream
+=======
+        ensureBuiltInImageProviders(merged as Partial<SettingsState>);
+        ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
+        ensurePDFProviderConfigShape(merged as Partial<SettingsState>);
+        ensureValidProviderSelections(merged as Partial<SettingsState>);
+>>>>>>> Stashed changes
         return merged as SettingsState;
       },
     },

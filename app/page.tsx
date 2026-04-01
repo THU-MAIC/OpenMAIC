@@ -257,7 +257,16 @@ function HomePage() {
       let pdfStorageKey: string | undefined;
       let pdfFileName: string | undefined;
       let pdfProviderId: string | undefined;
-      let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
+      let pdfProviderConfig:
+        | {
+            apiKey?: string;
+            baseUrl?: string;
+            cloudApiKey?: string;
+            cloudBaseUrl?: string;
+            localApiKey?: string;
+            localBaseUrl?: string;
+          }
+        | undefined;
 
       if (form.pdfFile) {
         pdfStorageKey = await storePdfBlob(form.pdfFile);
@@ -270,6 +279,10 @@ function HomePage() {
           pdfProviderConfig = {
             apiKey: providerCfg.apiKey,
             baseUrl: providerCfg.baseUrl,
+            cloudApiKey: providerCfg.cloudApiKey,
+            cloudBaseUrl: providerCfg.cloudBaseUrl,
+            localApiKey: providerCfg.localApiKey,
+            localBaseUrl: providerCfg.localBaseUrl,
           };
         }
       }

@@ -31,6 +31,50 @@ import { StepVisualizer } from './components/visualizers';
 
 const log = createLogger('GenerationPreview');
 
+function resolveEffectivePdfConfig(
+  providerId?: string,
+  config?: {
+    apiKey?: string;
+    baseUrl?: string;
+    cloudApiKey?: string;
+    cloudBaseUrl?: string;
+    localApiKey?: string;
+    localBaseUrl?: string;
+  },
+): { apiKey?: string; baseUrl?: string } {
+  if (!config) return {};
+
+  const legacyBaseUrl = config.baseUrl?.trim() || '';
+  const legacyApiKey = config.apiKey?.trim() || '';
+
+  if (providerId !== 'mineru') {
+    return {
+      apiKey: legacyApiKey || undefined,
+      baseUrl: legacyBaseUrl || undefined,
+    };
+  }
+
+  const cloudBaseUrl = config.cloudBaseUrl?.trim() || '';
+  const cloudApiKey = config.cloudApiKey?.trim() || '';
+  const localBaseUrl = config.localBaseUrl?.trim() || '';
+  const localApiKey = config.localApiKey?.trim() || '';
+
+  // Prefer cloud when complete, otherwise local, then legacy.
+  if (cloudBaseUrl && cloudApiKey) {
+    return { baseUrl: cloudBaseUrl, apiKey: cloudApiKey };
+  }
+  if (localBaseUrl) {
+    return { baseUrl: localBaseUrl, apiKey: localApiKey || undefined };
+  }
+  if (cloudBaseUrl) {
+    return { baseUrl: cloudBaseUrl, apiKey: cloudApiKey || undefined };
+  }
+  return {
+    baseUrl: legacyBaseUrl || undefined,
+    apiKey: legacyApiKey || undefined,
+  };
+}
+
 function GenerationPreviewContent() {
   const router = useRouter();
   const { t } = useI18n();
@@ -182,11 +226,29 @@ function GenerationPreviewContent() {
         if (currentSession.pdfProviderId) {
           parseFormData.append('providerId', currentSession.pdfProviderId);
         }
-        if (currentSession.pdfProviderConfig?.apiKey?.trim()) {
-          parseFormData.append('apiKey', currentSession.pdfProviderConfig.apiKey);
+
+        const resolvedPdfConfig = resolveEffectivePdfConfig(
+          currentSession.pdfProviderId,
+          currentSession.pdfProviderConfig,
+        );
+        if (resolvedPdfConfig.apiKey) {
+          parseFormData.append('apiKey', resolvedPdfConfig.apiKey);
         }
-        if (currentSession.pdfProviderConfig?.baseUrl?.trim()) {
-          parseFormData.append('baseUrl', currentSession.pdfProviderConfig.baseUrl);
+        if (resolvedPdfConfig.baseUrl) {
+          parseFormData.append('baseUrl', resolvedPdfConfig.baseUrl);
+        }
+
+        if (currentSession.pdfProviderConfig?.cloudApiKey?.trim()) {
+          parseFormData.append('cloudApiKey', currentSession.pdfProviderConfig.cloudApiKey);
+        }
+        if (currentSession.pdfProviderConfig?.cloudBaseUrl?.trim()) {
+          parseFormData.append('cloudBaseUrl', currentSession.pdfProviderConfig.cloudBaseUrl);
+        }
+        if (currentSession.pdfProviderConfig?.localApiKey?.trim()) {
+          parseFormData.append('localApiKey', currentSession.pdfProviderConfig.localApiKey);
+        }
+        if (currentSession.pdfProviderConfig?.localBaseUrl?.trim()) {
+          parseFormData.append('localBaseUrl', currentSession.pdfProviderConfig.localBaseUrl);
         }
 
         const parseResponse = await fetch('/api/parse-pdf', {

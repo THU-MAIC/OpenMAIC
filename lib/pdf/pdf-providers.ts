@@ -143,6 +143,7 @@ import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
+import { parseWithMinerUCloudV4, sanitizePdfFileNameForMinerU } from './mineru-cloud';
 
 const log = createLogger('PDFProviders');
 
@@ -262,6 +263,22 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
   };
 }
 
+
+// Return MinerU v4 API base URL ("https://mineru.net/api/v4") if baseUrl is a valid mineru.net (cloud) endpoint, else null
+function getMinerUCloudApiBase(baseUrl: string): string | null {
+  try {
+    const url = new URL(baseUrl.trim());
+    if (url.hostname.toLowerCase() !== 'mineru.net') return null;
+    const path = url.pathname.replace(/\/+$/, '');
+    if (path === '' || path === '/' || path.startsWith('/api/v4')) {
+      return `${url.origin}/api/v4`;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Parse PDF using self-hosted MinerU service (mineru-api)
  *
@@ -283,6 +300,24 @@ async function parseWithMinerU(
         'Please deploy MinerU locally or specify the server URL. ' +
         'See: https://github.com/opendatalab/MinerU',
     );
+  }
+
+  // Route to cloud v4 if baseUrl points to mineru.net (mineru.net/api/v4)
+  // Otherwise, route to self-hosted MinerU server
+  const cloudApiBase = getMinerUCloudApiBase(config.baseUrl);
+  if (cloudApiBase) {
+    // MinerU cloud Precision API v4 has an upload size limit (200MB for single files).
+    const MAX_BYTES = 200 * 1024 * 1024;
+    if (pdfBuffer.byteLength > MAX_BYTES) {
+      const sizeMb = (pdfBuffer.byteLength / (1024 * 1024)).toFixed(1);
+      throw new Error(`MinerU cloud: file too large (${sizeMb}MB, max 200MB)`);
+    }
+    if (!config.apiKey?.trim()) {
+      throw new Error('MinerU cloud (mineru.net) requires an API token');
+    }
+    const uploadName = sanitizePdfFileNameForMinerU(config.sourceFileName);
+    log.info('[MinerU] Using cloud v4 API:', cloudApiBase, 'file:', uploadName);
+    return parseWithMinerUCloudV4({ ...config, baseUrl: cloudApiBase }, pdfBuffer, uploadName);
   }
 
   log.info('[MinerU] Parsing PDF with MinerU server:', config.baseUrl);

@@ -452,6 +452,8 @@ export const settingsZhCN = {
     pdfFeatures: '支持功能',
     pdfApiKey: 'API Key',
     pdfBaseUrl: 'Base URL',
+    mineruCloud: 'Cloud Base URL',
+    mineruLocal: 'Local Base URL',
     mineruDescription:
       'MinerU 是一个商用 PDF 解析服务，支持高级功能如表格提取、公式识别和布局分析。',
     mineruApiKeyRequired: '使用前需要在 MinerU 官网申请 API Key。',
@@ -1037,6 +1039,8 @@ export const settingsEnUS = {
     pdfFeatures: 'Supported Features',
     pdfApiKey: 'API Key',
     pdfBaseUrl: 'Base URL',
+    mineruCloud: 'Cloud Base URL',
+    mineruLocal: 'Local Base URL',
     mineruDescription:
       'MinerU is a commercial PDF parsing service that supports advanced features such as table extraction, formula recognition, and layout analysis.',
     mineruApiKeyRequired: 'You need to apply for an API Key on the MinerU website before use.',
