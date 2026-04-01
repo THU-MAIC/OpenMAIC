@@ -39,7 +39,8 @@ import {
   Video,
   Volume2,
 } from 'lucide-react';
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 interface MediaPopoverProps {
   onSettingsOpen: (section: SettingsSection) => void;
@@ -263,6 +264,38 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     return groups;
   }, [ttsProvidersConfig, locale, browserVoices, t]);
 
+  const handlePreview = useCallback(async () => {
+    if (previewing) {
+      stopPreview();
+      return;
+    }
+    try {
+      const providerConfig = ttsProvidersConfig[ttsProviderId];
+      await startPreview({
+        text: t('settings.ttsTestTextDefault'),
+        providerId: ttsProviderId,
+        modelId: providerConfig?.modelId,
+        voice: ttsVoice,
+        speed: ttsSpeed,
+        apiKey: providerConfig?.apiKey,
+        baseUrl: providerConfig?.baseUrl,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error && error.message ? error.message : t('settings.ttsTestFailed');
+      toast.error(message);
+    }
+  }, [
+    previewing,
+    startPreview,
+    stopPreview,
+    t,
+    ttsProviderId,
+    ttsProvidersConfig,
+    ttsSpeed,
+    ttsVoice,
+  ]);
+
   // ASR: only available providers
   const asrGroups = useMemo(
     () =>
@@ -403,16 +436,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
                   />
                 </div>
                 <button
-                  onClick={() =>
-                    startPreview({
-                      text: t('toolbar.ttsDemoVoice'),
-                      providerId: ttsProviderId,
-                      voice: ttsVoice,
-                      speed: ttsSpeed,
-                      apiKey: ttsProvidersConfig[ttsProviderId]?.apiKey,
-                      baseUrl: ttsProvidersConfig[ttsProviderId]?.baseUrl,
-                    })
-                  }
+                  onClick={handlePreview}
                   className={cn(
                     'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all shrink-0',
                     previewing

@@ -11,27 +11,27 @@
 
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
-import { createLogger } from '@/lib/logger';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { isMediaPlaceholder, useMediaGenerationStore } from '@/lib/store/media-generation';
-import { useSettingsStore } from '@/lib/store/settings';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
+import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
+import { getClientTranslation } from '@/lib/i18n';
+import type { AudioPlayer } from '@/lib/utils/audio-player';
 import type {
   Action,
-  LaserAction,
-  PlayVideoAction,
-  SpeechAction,
   SpotlightAction,
-  WbDeleteAction,
+  LaserAction,
+  SpeechAction,
+  PlayVideoAction,
+  WbDrawTextAction,
+  WbDrawShapeAction,
   WbDrawChartAction,
   WbDrawLatexAction,
-  WbDrawLineAction,
-  WbDrawShapeAction,
   WbDrawTableAction,
-  WbDrawTextAction,
+  WbDeleteAction,
+  WbDrawLineAction,
 } from '@/lib/types/action';
-import type { AudioPlayer } from '@/lib/utils/audio-player';
 import katex from 'katex';
+import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ActionEngine');
 
@@ -167,28 +167,9 @@ export class ActionEngine {
   private async executeSpeech(action: SpeechAction): Promise<void> {
     if (!this.audioPlayer) return;
 
-    const settings = useSettingsStore.getState();
-    const isBrowserNativeTTS = settings.ttsProviderId === 'browser-native-tts';
-
-    // Enable browser TTS fallback in AudioPlayer if using browser native TTS
-    if (isBrowserNativeTTS) {
-      this.audioPlayer.setBrowserTTSEnabled(true);
-    }
-
     return new Promise<void>((resolve) => {
       this.audioPlayer!.onEnded(() => resolve());
-
-      // Prepare browser TTS options if using browser native TTS
-      const browserTTSOptions = isBrowserNativeTTS
-        ? {
-            text: action.text,
-            voice: settings.ttsVoice,
-            rate: settings.ttsSpeed,
-            lang: settings.ttsVoice?.startsWith('zh') ? 'zh-CN' : 'en-US',
-          }
-        : undefined;
-
-      this.audioPlayer!.play(action.audioId || '', action.audioUrl, browserTTSOptions)
+      this.audioPlayer!.play(action.audioId || '', action.audioUrl)
         .then((audioStarted) => {
           if (!audioStarted) resolve();
         })

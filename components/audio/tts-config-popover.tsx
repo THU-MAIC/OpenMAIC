@@ -59,7 +59,6 @@ export function TtsConfigPopover() {
       stopPreview();
       return;
     }
-
     try {
       const providerConfig = ttsProvidersConfig[ttsProviderId];
       await startPreview({

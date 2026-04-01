@@ -23,21 +23,21 @@
  *                                 └────────────────────┘
  */
 
-import { ActionEngine } from '@/lib/action/engine';
-import { createLogger } from '@/lib/logger';
-import { useCanvasStore } from '@/lib/store/canvas';
-import { useSettingsStore } from '@/lib/store/settings';
-import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 import type { Scene } from '@/lib/types/stage';
-import type { AudioPlayer, BrowserTTSOptions } from '@/lib/utils/audio-player';
+import type { Action, SpeechAction, DiscussionAction } from '@/lib/types/action';
 import type {
-  Effect,
   EngineMode,
+  TopicState,
   PlaybackEngineCallbacks,
   PlaybackSnapshot,
-  TopicState,
   TriggerEvent,
+  Effect,
 } from './types';
+import type { AudioPlayer } from '@/lib/utils/audio-player';
+import { ActionEngine } from '@/lib/action/engine';
+import { useCanvasStore } from '@/lib/store/canvas';
+import { useSettingsStore } from '@/lib/store/settings';
+import { createLogger } from '@/lib/logger';
 
 const log = createLogger('PlaybackEngine');
 
@@ -490,25 +490,8 @@ export class PlaybackEngine {
           }, readingMs);
         };
 
-        // Prepare browser TTS options if using browser native TTS
-        const settings = useSettingsStore.getState();
-        const browserTTSOptions: BrowserTTSOptions | undefined =
-          settings.ttsProviderId === 'browser-native-tts'
-            ? {
-                text: speechAction.text,
-                voice: settings.ttsVoice,
-                rate: settings.ttsSpeed,
-                lang: settings.ttsVoice?.startsWith('zh') ? 'zh-CN' : 'en-US',
-              }
-            : undefined;
-
-        // Enable browser TTS fallback in AudioPlayer if using browser native TTS
-        if (browserTTSOptions) {
-          this.audioPlayer.setBrowserTTSEnabled(true);
-        }
-
         this.audioPlayer
-          .play(speechAction.audioId || '', speechAction.audioUrl, browserTTSOptions)
+          .play(speechAction.audioId || '', speechAction.audioUrl)
           .then((audioStarted) => {
             if (!audioStarted) {
               // No pre-generated audio — try browser-native TTS if selected
