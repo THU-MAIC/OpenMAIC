@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Dars.ai — Sun'iy intellekt bilan interaktiv darslar</title>
+  <meta name="description" content="Dars.ai — O'zbekistondagi birinchi ko'p agentli AI dars platformasi. Har qanday mavzuni bir zumda interaktiv darsga aylantiring."/>
+  <meta property="og:title" content="Dars.ai — AI bilan o'qing"/>
+  <meta property="og:description" content="O'zbekistondagi birinchi AI dars platformasi. DTM tayyorgarlik, universitetlar, korporativ trening."/>
+  <meta property="og:url" content="https://darsai.uz"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --primary: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --violet: #7c3aed;
+      --bg: #050714;
+      --bg2: #0a0f1e;
+      --bg3: #0f1630;
+      --card: rgba(255,255,255,0.04);
+      --card-border: rgba(255,255,255,0.08);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --success: #10b981;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      overflow-x: hidden;
+      line-height: 1.6;
+    }
+
+    /* ── NOISE OVERLAY ── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+      pointer-events: none; z-index: 0; opacity: .4;
+    }
+
+    /* ── NAV ── */
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 1rem 2rem;
+      backdrop-filter: blur(20px);
+      background: rgba(5,7,20,0.7);
+      border-bottom: 1px solid var(--card-border);
+    }
+    .logo {
+      display: flex; align-items: center; gap: .5rem;
+      font-size: 1.4rem; font-weight: 800; color: var(--text);
+      text-decoration: none;
+    }
+    .logo span { color: var(--primary-light); }
+    .logo-icon {
+      width: 36px; height: 36px; border-radius: 10px;
+      background: linear-gradient(135deg, var(--primary), var(--violet));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.1rem;
+    }
+    .nav-links { display: flex; align-items: center; gap: 1.5rem; }
+    .nav-links a {
+      color: var(--muted); text-decoration: none; font-size: .9rem;
+      transition: color .2s;
+    }
+    .nav-links a:hover { color: var(--text); }
+    .lang-switcher {
+      display: flex; gap: .3rem;
+    }
+    .lang-btn {
+      background: none; border: 1px solid var(--card-border);
+      color: var(--muted); padding: .2rem .6rem; border-radius: 6px;
+      font-size: .8rem; cursor: pointer; transition: all .2s; font-family: inherit;
+    }
+    .lang-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .nav-cta {
+      background: linear-gradient(135deg, var(--primary), var(--violet));
+      color: white; padding: .5rem 1.25rem; border-radius: 8px;
+      text-decoration: none; font-size: .9rem; font-weight: 600;
+      transition: opacity .2s; white-space: nowrap;
+    }
+    .nav-cta:hover { opacity: .85; }
+
+    /* ── HERO ── */
+    .hero {
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      text-align: center; padding: 8rem 1.5rem 5rem;
+      position: relative;
+    }
+    .hero-glow {
+      position: absolute; top: 20%; left: 50%; transform: translateX(-50%);
+      width: 800px; height: 500px; border-radius: 50%;
+      background: radial-gradient(ellipse, rgba(99,102,241,.18) 0%, transparent 70%);
+      pointer-events: none;
+    }
+    .badge {
+      display: inline-flex; align-items: center; gap: .5rem;
+      background: rgba(99,102,241,.1); border: 1px solid rgba(99,102,241,.3);
+      color: var(--primary-light); padding: .4rem 1rem; border-radius: 100px;
+      font-size: .8rem; font-weight: 600; margin-bottom: 1.5rem;
+      animation: fadeUp .6s ease both;
+    }
+    .badge-dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--success); box-shadow: 0 0 8px var(--success);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    @keyframes fadeUp { from{opacity:0;transform:translateY(20px)} to{opacity:1;transform:translateY(0)} }
+
+    h1 {
+      font-size: clamp(2.4rem, 6vw, 5rem);
+      font-weight: 900; line-height: 1.1;
+      letter-spacing: -.03em;
+      animation: fadeUp .7s .1s ease both;
+    }
+    h1 .grad {
+      background: linear-gradient(135deg, #a5b4fc, #818cf8, #c4b5fd);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    .hero-sub {
+      max-width: 580px; margin: 1.5rem auto 0;
+      color: var(--muted); font-size: 1.15rem; line-height: 1.7;
+      animation: fadeUp .7s .2s ease both;
+    }
+    .hero-actions {
+      display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center;
+      margin-top: 2.5rem;
+      animation: fadeUp .7s .3s ease both;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--primary), var(--violet));
+      color: white; padding: .85rem 2rem; border-radius: 12px;
+      font-size: 1rem; font-weight: 700; text-decoration: none;
+      box-shadow: 0 0 30px rgba(99,102,241,.35);
+      transition: all .2s; display: inline-flex; align-items: center; gap: .5rem;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 0 40px rgba(99,102,241,.5); }
+    .btn-secondary {
+      background: var(--card); border: 1px solid var(--card-border);
+      color: var(--text); padding: .85rem 2rem; border-radius: 12px;
+      font-size: 1rem; font-weight: 600; text-decoration: none;
+      transition: all .2s; display: inline-flex; align-items: center; gap: .5rem;
+    }
+    .btn-secondary:hover { background: rgba(255,255,255,.08); }
+
+    .hero-stats {
+      display: flex; flex-wrap: wrap; gap: 2.5rem; justify-content: center;
+      margin-top: 4rem;
+      animation: fadeUp .7s .4s ease both;
+    }
+    .stat { text-align: center; }
+    .stat-num { font-size: 2rem; font-weight: 800; color: var(--primary-light); }
+    .stat-label { font-size: .8rem; color: var(--muted); margin-top: .2rem; }
+
+    /* ── DEMO VIDEO PLACEHOLDER ── */
+    .demo-section {
+      padding: 2rem 1.5rem 6rem;
+      display: flex; justify-content: center;
+    }
+    .demo-frame {
+      width: 100%; max-width: 900px;
+      aspect-ratio: 16/9;
+      background: var(--bg3);
+      border: 1px solid var(--card-border);
+      border-radius: 20px;
+      overflow: hidden; position: relative;
+      box-shadow: 0 40px 100px rgba(0,0,0,.5), 0 0 0 1px rgba(99,102,241,.1);
+    }
+    .demo-inner {
+      width: 100%; height: 100%;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 1rem; color: var(--muted);
+    }
+    .demo-play {
+      width: 72px; height: 72px; border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary), var(--violet));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.8rem; cursor: pointer;
+      box-shadow: 0 0 40px rgba(99,102,241,.4);
+      transition: transform .2s;
+    }
+    .demo-play:hover { transform: scale(1.1); }
+    .demo-label { font-size: .95rem; }
+
+    /* ── FEATURES ── */
+    section { position: relative; z-index: 1; }
+    .section-label {
+      text-align: center;
+      font-size: .8rem; font-weight: 700; letter-spacing: .12em;
+      color: var(--primary-light); text-transform: uppercase; margin-bottom: 1rem;
+    }
+    .section-title {
+      text-align: center; font-size: clamp(1.8rem, 4vw, 3rem);
+      font-weight: 800; letter-spacing: -.02em; margin-bottom: 1rem;
+    }
+    .section-sub {
+      text-align: center; color: var(--muted); max-width: 520px;
+      margin: 0 auto 3.5rem; line-height: 1.7;
+    }
+    .features { padding: 5rem 1.5rem; }
+    .features-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem; max-width: 1100px; margin: 0 auto;
+    }
+    .feature-card {
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 16px; padding: 1.75rem;
+      transition: all .3s;
+    }
+    .feature-card:hover {
+      background: rgba(99,102,241,.06);
+      border-color: rgba(99,102,241,.3);
+      transform: translateY(-4px);
+    }
+    .feature-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; margin-bottom: 1rem;
+    }
+    .feature-card h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: .5rem; }
+    .feature-card p { color: var(--muted); font-size: .9rem; line-height: 1.6; }
+
+    /* ── USE CASES ── */
+    .usecases { padding: 5rem 1.5rem; background: var(--bg2); }
+    .tabs {
+      display: flex; gap: .5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 2.5rem;
+    }
+    .tab {
+      padding: .5rem 1.25rem; border-radius: 8px; border: 1px solid var(--card-border);
+      background: var(--card); color: var(--muted); cursor: pointer;
+      font-size: .9rem; font-weight: 500; transition: all .2s; font-family: inherit;
+    }
+    .tab.active { background: var(--primary); color: white; border-color: var(--primary); }
+    .usecase-content {
+      max-width: 800px; margin: 0 auto; text-align: center;
+      padding: 2.5rem; background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 20px;
+    }
+    .usecase-emoji { font-size: 3rem; margin-bottom: 1rem; }
+    .usecase-content h3 { font-size: 1.4rem; font-weight: 700; margin-bottom: .75rem; }
+    .usecase-content p { color: var(--muted); line-height: 1.7; }
+
+    /* ── PRICING ── */
+    .pricing { padding: 5rem 1.5rem; }
+    .pricing-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem; max-width: 950px; margin: 0 auto;
+    }
+    .price-card {
+      background: var(--card); border: 1px solid var(--card-border);
+      border-radius: 20px; padding: 2rem; position: relative;
+      transition: transform .3s;
+    }
+    .price-card:hover { transform: translateY(-4px); }
+    .price-card.popular {
+      background: linear-gradient(135deg, rgba(99,102,241,.12), rgba(124,58,237,.08));
+      border-color: rgba(99,102,241,.4);
+    }
+    .popular-badge {
+      position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+      background: linear-gradient(135deg, var(--primary), var(--violet));
+      color: white; padding: .25rem .9rem; border-radius: 100px;
+      font-size: .75rem; font-weight: 700; white-space: nowrap;
+    }
+    .plan-name { font-size: .85rem; font-weight: 700; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+    .plan-price { font-size: 2.8rem; font-weight: 900; margin: .5rem 0; }
+    .plan-price span { font-size: 1rem; font-weight: 500; color: var(--muted); }
+    .plan-desc { color: var(--muted); font-size: .9rem; margin-bottom: 1.5rem; }
+    .plan-features { list-style: none; display: flex; flex-direction: column; gap: .65rem; margin-bottom: 2rem; }
+    .plan-features li {
+      display: flex; align-items: flex-start; gap: .5rem;
+      font-size: .9rem; color: var(--muted);
+    }
+    .plan-features li::before { content: '✓'; color: var(--success); font-weight: 700; flex-shrink: 0; }
+    .plan-btn {
+      display: block; width: 100%; padding: .8rem; border-radius: 10px;
+      text-align: center; font-weight: 700; font-size: .95rem;
+      text-decoration: none; transition: all .2s; cursor: pointer;
+      border: none; font-family: inherit;
+    }
+    .plan-btn-outline {
+      background: none; border: 1px solid var(--card-border); color: var(--text);
+    }
+    .plan-btn-outline:hover { background: var(--card); }
+    .plan-btn-fill {
+      background: linear-gradient(135deg, var(--primary), var(--violet));
+      color: white; box-shadow: 0 0 20px rgba(99,102,241,.3);
+    }
+    .plan-btn-fill:hover { opacity: .9; transform: translateY(-1px); }
+
+    /* ── WAITLIST ── */
+    .waitlist {
+      padding: 6rem 1.5rem;
+      background: linear-gradient(135deg, rgba(99,102,241,.08), rgba(124,58,237,.05));
+      border-top: 1px solid var(--card-border);
+      border-bottom: 1px solid var(--card-border);
+    }
+    .waitlist-box {
+      max-width: 520px; margin: 0 auto; text-align: center;
+    }
+    .waitlist-box h2 { font-size: clamp(1.8rem,4vw,2.8rem); font-weight: 800; margin-bottom: 1rem; }
+    .waitlist-box p { color: var(--muted); margin-bottom: 2rem; }
+    .waitlist-form { display: flex; gap: .75rem; flex-wrap: wrap; }
+    .waitlist-input {
+      flex: 1; min-width: 200px;
+      background: rgba(255,255,255,.05); border: 1px solid var(--card-border);
+      color: var(--text); padding: .85rem 1.25rem; border-radius: 12px;
+      font-size: 1rem; font-family: inherit; outline: none; transition: border-color .2s;
+    }
+    .waitlist-input:focus { border-color: var(--primary); }
+    .waitlist-input::placeholder { color: var(--muted); }
+    .waitlist-submit {
+      background: linear-gradient(135deg, var(--primary), var(--violet));
+      color: white; border: none; padding: .85rem 1.75rem; border-radius: 12px;
+      font-size: 1rem; font-weight: 700; cursor: pointer; font-family: inherit;
+      box-shadow: 0 0 20px rgba(99,102,241,.3); transition: all .2s;
+    }
+    .waitlist-submit:hover { opacity: .9; transform: translateY(-1px); }
+    .success-msg {
+      display: none; color: var(--success);
+      background: rgba(16,185,129,.1); border: 1px solid rgba(16,185,129,.3);
+      padding: 1rem; border-radius: 10px; margin-top: 1rem; font-weight: 600;
+    }
+
+    /* ── FOOTER ── */
+    footer {
+      padding: 3rem 2rem;
+      display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+      gap: 1rem; border-top: 1px solid var(--card-border);
+      color: var(--muted); font-size: .85rem;
+    }
+    footer a { color: var(--muted); text-decoration: none; }
+    footer a:hover { color: var(--text); }
+
+    /* ── SCROLLBAR ── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: rgba(99,102,241,.4); border-radius: 3px; }
+
+    @media (max-width: 640px) {
+      nav { padding: 1rem; }
+      .nav-links { display: none; }
+      .hero { padding: 6rem 1rem 3rem; }
+      .features-grid, .pricing-grid { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav>
+  <a href="#" class="logo">
+    <div class="logo-icon">🎓</div>
+    dars<span>.ai</span>
+  </a>
+  <div class="nav-links">
+    <a href="#features" data-i18n="nav.features">Imkoniyatlar</a>
+    <a href="#pricing" data-i18n="nav.pricing">Narxlar</a>
+    <a href="#waitlist" data-i18n="nav.contact">Bog'lanish</a>
+  </div>
+  <div style="display:flex;align-items:center;gap:.75rem">
+    <div class="lang-switcher">
+      <button class="lang-btn active" onclick="setLang('uz')">UZ</button>
+      <button class="lang-btn" onclick="setLang('ru')">RU</button>
+      <button class="lang-btn" onclick="setLang('en')">EN</button>
+    </div>
+    <a href="#waitlist" class="nav-cta" data-i18n="nav.cta">Bepul boshlash</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="badge">
+    <span class="badge-dot"></span>
+    <span data-i18n="badge">O'zbekistondagi birinchi AI dars platformasi</span>
+  </div>
+  <h1>
+    <span data-i18n="hero.line1">Sun'iy intellekt bilan</span><br/>
+    <span class="grad" data-i18n="hero.line2">interaktiv darslar</span>
+  </h1>
+  <p class="hero-sub" data-i18n="hero.sub">
+    Har qanday mavzu yoki hujjatni AI o'qituvchilar, suhbatlar, viktorinalar va simulyatsiyalar bilan to'liq interaktiv darsga aylantiring — bir marta bosish bilan.
+  </p>
+  <div class="hero-actions">
+    <a href="#waitlist" class="btn-primary">
+      🚀 <span data-i18n="hero.cta1">Bepul sinab ko'ring</span>
+    </a>
+    <a href="#features" class="btn-secondary">
+      ▶ <span data-i18n="hero.cta2">Qanday ishlashini ko'ring</span>
+    </a>
+  </div>
+  <div class="hero-stats">
+    <div class="stat">
+      <div class="stat-num">1-zumda</div>
+      <div class="stat-label" data-i18n="stat.1">Dars yaratilishi</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">10+</div>
+      <div class="stat-label" data-i18n="stat.2">AI agentlar</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">3</div>
+      <div class="stat-label" data-i18n="stat.3">Til: O'zbek, Rus, Ingliz</div>
+    </div>
+    <div class="stat">
+      <div class="stat-num">DTM ✓</div>
+      <div class="stat-label" data-i18n="stat.4">Imtihon tayyorgarligi</div>
+    </div>
+  </div>
+</section>
+
+<!-- DEMO -->
+<div class="demo-section">
+  <div class="demo-frame">
+    <div class="demo-inner">
+      <div class="demo-play" onclick="alert('Demo tez kunda! Ro\'yxatdan o\'ting 👇')">▶</div>
+      <div class="demo-label" data-i18n="demo.label">"DTM uchun algebra o'rgatilsin" — bir bosishda dars tayyor</div>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<section class="features" id="features">
+  <p class="section-label" data-i18n="features.label">Imkoniyatlar</p>
+  <h2 class="section-title" data-i18n="features.title">Oddiy kursdan farqli narsa</h2>
+  <p class="section-sub" data-i18n="features.sub">Dars.ai — bu video emas. Bu siz bilan gaplashadigan tirik sinfxona.</p>
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(99,102,241,.15)">🤖</div>
+      <h3 data-i18n="f1.title">Ko'p agentli AI o'qituvchilar</h3>
+      <p data-i18n="f1.desc">Turli xarakter va uslubdagi AI o'qituvchilar va tengdoshlar o'rtasida jonli munozaralar. Siz istalgan vaqt savol bera olasiz.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(16,185,129,.15)">📊</div>
+      <h3 data-i18n="f2.title">Slaydlar, viktorinalar, simulyatsiyalar</h3>
+      <p data-i18n="f2.desc">AI dars uchun slaydlar, testlar va interaktiv HTML simulyatsiyalarni avtomatik yaratadi.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(245,158,11,.15)">🎙️</div>
+      <h3 data-i18n="f3.title">Ovozli o'qituvchi (TTS)</h3>
+      <p data-i18n="f3.desc">O'zbek va rus tillarida tabiiiy ovoz bilan gapiradigan AI o'qituvchi. Mikrofon orqali siz ham javob bera olasiz.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(239,68,68,.15)">✏️</div>
+      <h3 data-i18n="f4.title">Jonli doska</h3>
+      <p data-i18n="f4.desc">AI agentlar mavzuni tushuntirish uchun doska chizadilar — formulalar, diagrammalar, kontseptsiya xaritalari.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(99,102,241,.15)">📄</div>
+      <h3 data-i18n="f5.title">Hujjatdan dars yaratish</h3>
+      <p data-i18n="f5.desc">PDF, Word yoki matn fayl yuklang — AI uni to'liq interaktiv darsga aylantiradi.</p>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon" style="background:rgba(124,58,237,.15)">🎓</div>
+      <h3 data-i18n="f6.title">DTM va imtihon tayyorgarligi</h3>
+      <p data-i18n="f6.desc">Matematika, Fizika, Biologiya, Kimyo, O'zbek tili — DTM fanlarida maxsus shablon va testlar.</p>
+    </div>
+  </div>
+</section>
+
+<!-- USE CASES -->
+<section class="usecases" id="usecases">
+  <p class="section-label" data-i18n="uc.label">Kim uchun</p>
+  <h2 class="section-title" data-i18n="uc.title">Har kimga mos</h2>
+  <div class="tabs">
+    <button class="tab active" onclick="showTab(0)" data-i18n="tab.0">Talabalar</button>
+    <button class="tab" onclick="showTab(1)" data-i18n="tab.1">O'qituvchilar</button>
+    <button class="tab" onclick="showTab(2)" data-i18n="tab.2">Korporativ</button>
+    <button class="tab" onclick="showTab(3)" data-i18n="tab.3">Maktab / DTM</button>
+  </div>
+  <div class="usecase-content" id="uc0">
+    <div class="usecase-emoji">👨‍🎓</div>
+    <h3 data-i18n="uc0.title">Talabalar uchun</h3>
+    <p data-i18n="uc0.desc">Har qanday mavzuni bir zumda tushuntirib beradigan AI o'qituvchi. Savol ber, munozara qil, test yech — barchasi bir joyda. Statik YouTube videolardan voz kech.</p>
+  </div>
+  <div class="usecase-content" id="uc1" style="display:none">
+    <div class="usecase-emoji">👩‍🏫</div>
+    <h3 data-i18n="uc1.title">O'qituvchilar uchun</h3>
+    <p data-i18n="uc1.desc">Dars materialingizni PDF yoki mavzu sifatida kiritib, tayyor interaktiv sinfxona oling. Slaydlarni PPTX formatda yuklab oling va darsda ishlating.</p>
+  </div>
+  <div class="usecase-content" id="uc2" style="display:none">
+    <div class="usecase-emoji">🏢</div>
+    <h3 data-i18n="uc2.title">Korporativ trening</h3>
+    <p data-i18n="uc2.desc">Bank, telekommunikatsiya, savdo kompaniyalari uchun xodimlarni o'qitish. Yangi qoidalar, mahsulotlar va jarayonlarni interaktiv dars sifatida taqdim eting.</p>
+  </div>
+  <div class="usecase-content" id="uc3" style="display:none">
+    <div class="usecase-emoji">📚</div>
+    <h3 data-i18n="uc3.title">Maktab va DTM tayyorgarligi</h3>
+    <p data-i18n="uc3.desc">O'zbekiston maktab o'quv dasturiga mos darslar. DTM imtihoniga maxsus tayyorgarlik: Matematika, Fizika, Biologiya fanlarida AI bilan mashq qiling.</p>
+  </div>
+</section>
+
+<!-- PRICING -->
+<section class="pricing" id="pricing">
+  <p class="section-label" data-i18n="pricing.label">Narxlar</p>
+  <h2 class="section-title" data-i18n="pricing.title">Oddiy va shaffof narxlar</h2>
+  <p class="section-sub" data-i18n="pricing.sub">Hech qanday yashirin to'lov yo'q. Istalgan vaqt bekor qilishingiz mumkin.</p>
+  <div class="pricing-grid">
+    <!-- Free -->
+    <div class="price-card">
+      <p class="plan-name" data-i18n="plan.free.name">Bepul</p>
+      <p class="plan-price">$0</p>
+      <p class="plan-desc" data-i18n="plan.free.desc">Platformani sinab ko'ring</p>
+      <ul class="plan-features">
+        <li data-i18n="plan.free.f1">Oyiga 3 ta interaktiv dars</li>
+        <li data-i18n="plan.free.f2">Barcha fan turlari</li>
+        <li data-i18n="plan.free.f3">PPTX eksport</li>
+        <li data-i18n="plan.free.f4">O'zbek, Rus, Ingliz tillari</li>
+      </ul>
+      <a href="#waitlist" class="plan-btn plan-btn-outline" data-i18n="plan.cta.free">Boshlash</a>
+    </div>
+    <!-- Pro -->
+    <div class="price-card popular">
+      <div class="popular-badge" data-i18n="plan.popular">Eng mashhur</div>
+      <p class="plan-name" data-i18n="plan.pro.name">Pro</p>
+      <p class="plan-price">$9<span data-i18n="plan.mo">/oy</span></p>
+      <p class="plan-desc" data-i18n="plan.pro.desc">Faol o'quvchilar uchun</p>
+      <ul class="plan-features">
+        <li data-i18n="plan.pro.f1">Cheksiz darslar</li>
+        <li data-i18n="plan.pro.f2">Ovozli AI o'qituvchi (TTS)</li>
+        <li data-i18n="plan.pro.f3">Mikrofon bilan javob berish</li>
+        <li data-i18n="plan.pro.f4">DTM maxsus shablonlar</li>
+        <li data-i18n="plan.pro.f5">HTML va PPTX eksport</li>
+        <li data-i18n="plan.pro.f6">Ustuvor qo'llab-quvvatlash</li>
+      </ul>
+      <a href="#waitlist" class="plan-btn plan-btn-fill" data-i18n="plan.cta.pro">7 kun bepul sinash</a>
+    </div>
+    <!-- Institution -->
+    <div class="price-card">
+      <p class="plan-name" data-i18n="plan.inst.name">Muassasa</p>
+      <p class="plan-price" data-i18n="plan.inst.price">Maxsus</p>
+      <p class="plan-desc" data-i18n="plan.inst.desc">Maktablar, universitetlar, korxonalar</p>
+      <ul class="plan-features">
+        <li data-i18n="plan.inst.f1">White-label (sizning brendingiz)</li>
+        <li data-i18n="plan.inst.f2">SSO integratsiya</li>
+        <li data-i18n="plan.inst.f3">Ma'lumotlar xavfsizligi (mahalliy server)</li>
+        <li data-i18n="plan.inst.f4">O'qituvchi paneli va analitika</li>
+        <li data-i18n="plan.inst.f5">Maxsus ovoz va agent sozlamalari</li>
+        <li data-i18n="plan.inst.f6">Dedicated qo'llab-quvvatlash</li>
+      </ul>
+      <a href="mailto:hello@darsai.uz" class="plan-btn plan-btn-outline" data-i18n="plan.cta.inst">Bog'lanish</a>
+    </div>
+  </div>
+</section>
+
+<!-- WAITLIST -->
+<section class="waitlist" id="waitlist">
+  <div class="waitlist-box">
+    <h2 data-i18n="wl.title">Birinchilar sifatida kiring 🚀</h2>
+    <p data-i18n="wl.sub">Ro'yxatdan o'ting va erta kirish huquqi bilan 3 oylik Pro rejasini <strong>bepul</strong> oling.</p>
+    <form class="waitlist-form" id="wlForm" onsubmit="handleWaitlist(event)">
+      <input
+        class="waitlist-input"
+        type="email"
+        id="wlEmail"
+        placeholder="email@example.com"
+        required
+        data-i18n-placeholder="wl.placeholder"
+      />
+      <button type="submit" class="waitlist-submit" data-i18n="wl.btn">Ro'yxatga olish</button>
+    </form>
+    <div class="success-msg" id="successMsg" data-i18n="wl.success">
+      🎉 Tabriklaymiz! Tez orada siz bilan bog'lanamiz.
+    </div>
+    <p style="margin-top:1rem;font-size:.8rem;color:var(--muted)" data-i18n="wl.note">
+      Spam yo'q. Istalgan vaqt obunani bekor qilishingiz mumkin.
+    </p>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <div class="logo" style="font-size:1.1rem">
+    <div class="logo-icon" style="width:28px;height:28px;font-size:.9rem">🎓</div>
+    dars<span style="color:var(--primary-light)">.ai</span>
+  </div>
+  <div style="display:flex;gap:1.5rem;flex-wrap:wrap">
+    <a href="mailto:hello@darsai.uz">hello@darsai.uz</a>
+    <a href="https://t.me/darsai_uz" target="_blank">Telegram</a>
+    <span>© 2026 Dars.ai</span>
+  </div>
+</footer>
+
+<script>
+// ─── i18n ───────────────────────────────────────────────
+const i18n = {
+  uz: {
+    'nav.features':'Imkoniyatlar','nav.pricing':'Narxlar','nav.contact':'Bog\'lanish',
+    'nav.cta':'Bepul boshlash','badge':'O\'zbekistondagi birinchi AI dars platformasi',
+    'hero.line1':'Sun\'iy intellekt bilan','hero.line2':'interaktiv darslar',
+    'hero.sub':'Har qanday mavzu yoki hujjatni AI o\'qituvchilar, suhbatlar, viktorinalar va simulyatsiyalar bilan to\'liq interaktiv darsga aylantiring — bir marta bosish bilan.',
+    'hero.cta1':'Bepul sinab ko\'ring','hero.cta2':'Qanday ishlashini ko\'ring',
+    'stat.1':'Dars yaratilishi','stat.2':'AI agentlar','stat.3':'Til: O\'zbek, Rus, Ingliz','stat.4':'Imtihon tayyorgarligi',
+    'demo.label':'"DTM uchun algebra o\'rgatilsin" — bir bosishda dars tayyor',
+    'features.label':'Imkoniyatlar','features.title':'Oddiy kursdan farqli narsa',
+    'features.sub':'Dars.ai — bu video emas. Bu siz bilan gaplashadigan tirik sinfxona.',
+    'f1.title':'Ko\'p agentli AI o\'qituvchilar','f1.desc':'Turli xarakter va uslubdagi AI o\'qituvchilar va tengdoshlar o\'rtasida jonli munozaralar.',
+    'f2.title':'Slaydlar, viktorinalar, simulyatsiyalar','f2.desc':'AI dars uchun slaydlar, testlar va interaktiv HTML simulyatsiyalarni avtomatik yaratadi.',
+    'f3.title':'Ovozli o\'qituvchi (TTS)','f3.desc':'O\'zbek va rus tillarida tabiiy ovoz bilan gapiradigan AI o\'qituvchi.',
+    'f4.title':'Jonli doska','f4.desc':'AI agentlar mavzuni tushuntirish uchun doska chizadilar — formulalar, diagrammalar.',
+    'f5.title':'Hujjatdan dars yaratish','f5.desc':'PDF, Word yoki matn fayl yuklang — AI uni to\'liq interaktiv darsga aylantiradi.',
+    'f6.title':'DTM va imtihon tayyorgarligi','f6.desc':'Matematika, Fizika, Biologiya, Kimyo, O\'zbek tili — DTM fanlarida maxsus shablon.',
+    'uc.label':'Kim uchun','uc.title':'Har kimga mos',
+    'tab.0':'Talabalar','tab.1':'O\'qituvchilar','tab.2':'Korporativ','tab.3':'Maktab / DTM',
+    'uc0.title':'Talabalar uchun','uc0.desc':'Har qanday mavzuni bir zumda tushuntirib beradigan AI o\'qituvchi.',
+    'uc1.title':'O\'qituvchilar uchun','uc1.desc':'Dars materialingizni PDF sifatida kiritib, tayyor interaktiv sinfxona oling.',
+    'uc2.title':'Korporativ trening','uc2.desc':'Bank, telekommunikatsiya, savdo kompaniyalari uchun xodimlarni o\'qitish.',
+    'uc3.title':'Maktab va DTM tayyorgarligi','uc3.desc':'O\'zbekiston maktab o\'quv dasturiga mos darslar. DTM imtihoniga maxsus tayyorgarlik.',
+    'pricing.label':'Narxlar','pricing.title':'Oddiy va shaffof narxlar',
+    'pricing.sub':'Hech qanday yashirin to\'lov yo\'q. Istalgan vaqt bekor qilishingiz mumkin.',
+    'plan.free.name':'Bepul','plan.free.desc':'Platformani sinab ko\'ring',
+    'plan.free.f1':'Oyiga 3 ta interaktiv dars','plan.free.f2':'Barcha fan turlari',
+    'plan.free.f3':'PPTX eksport','plan.free.f4':'O\'zbek, Rus, Ingliz tillari',
+    'plan.pro.name':'Pro','plan.pro.desc':'Faol o\'quvchilar uchun',
+    'plan.pro.f1':'Cheksiz darslar','plan.pro.f2':'Ovozli AI o\'qituvchi (TTS)',
+    'plan.pro.f3':'Mikrofon bilan javob berish','plan.pro.f4':'DTM maxsus shablonlar',
+    'plan.pro.f5':'HTML va PPTX eksport','plan.pro.f6':'Ustuvor qo\'llab-quvvatlash',
+    'plan.inst.name':'Muassasa','plan.inst.price':'Maxsus','plan.inst.desc':'Maktablar, universitetlar, korxonalar',
+    'plan.inst.f1':'White-label (sizning brendingiz)','plan.inst.f2':'SSO integratsiya',
+    'plan.inst.f3':'Ma\'lumotlar xavfsizligi (mahalliy server)','plan.inst.f4':'O\'qituvchi paneli va analitika',
+    'plan.inst.f5':'Maxsus ovoz va agent sozlamalari','plan.inst.f6':'Dedicated qo\'llab-quvvatlash',
+    'plan.popular':'Eng mashhur','plan.mo':'/oy',
+    'plan.cta.free':'Boshlash','plan.cta.pro':'7 kun bepul sinash','plan.cta.inst':'Bog\'lanish',
+    'wl.title':'Birinchilar sifatida kiring 🚀',
+    'wl.sub':'Ro\'yxatdan o\'ting va erta kirish huquqi bilan 3 oylik Pro rejasini <strong>bepul</strong> oling.',
+    'wl.placeholder':'email@example.com','wl.btn':'Ro\'yxatga olish',
+    'wl.success':'🎉 Tabriklaymiz! Tez orada siz bilan bog\'lanamiz.',
+    'wl.note':'Spam yo\'q. Istalgan vaqt obunani bekor qilishingiz mumkin.',
+  },
+  ru: {
+    'nav.features':'Возможности','nav.pricing':'Цены','nav.contact':'Контакт',
+    'nav.cta':'Начать бесплатно','badge':'Первая AI-платформа для обучения в Узбекистане',
+    'hero.line1':'Интерактивные уроки','hero.line2':'с искусственным интеллектом',
+    'hero.sub':'Превратите любую тему или документ в живой интерактивный урок с AI-учителями, дискуссиями, викторинами и симуляциями — в один клик.',
+    'hero.cta1':'Попробовать бесплатно','hero.cta2':'Посмотреть демо',
+    'stat.1':'Создание урока','stat.2':'AI агентов','stat.3':'Языки: Узбекский, Русский, Английский','stat.4':'Подготовка к экзаменам',
+    'demo.label':'"Обучи меня алгебре для ЕГЭ" — урок готов за секунды',
+    'features.label':'Возможности','features.title':'Это не просто курс',
+    'features.sub':'Dars.ai — это не видео. Это живой класс, который разговаривает с вами.',
+    'f1.title':'Мультиагентные AI-учителя','f1.desc':'Живые дискуссии между AI-учителями разных стилей и AI-однокурсниками. Задавайте вопросы в любой момент.',
+    'f2.title':'Слайды, викторины, симуляции','f2.desc':'AI автоматически создаёт слайды, тесты и интерактивные HTML-симуляции для урока.',
+    'f3.title':'Голосовой учитель (TTS)','f3.desc':'AI-учитель говорит естественным голосом на узбекском и русском языках. Отвечайте через микрофон.',
+    'f4.title':'Живая доска','f4.desc':'AI-агенты рисуют на доске для объяснения темы — формулы, диаграммы, концепт-карты.',
+    'f5.title':'Урок из документа','f5.desc':'Загрузите PDF, Word или текст — AI превратит его в полноценный интерактивный урок.',
+    'f6.title':'Подготовка к экзаменам','f6.desc':'Математика, Физика, Биология, Химия — специальные шаблоны для подготовки к ЕГЭ и другим экзаменам.',
+    'uc.label':'Для кого','uc.title':'Подходит каждому',
+    'tab.0':'Студенты','tab.1':'Преподаватели','tab.2':'Корпоративный','tab.3':'Школа / Экзамены',
+    'uc0.title':'Для студентов','uc0.desc':'AI-учитель, который объяснит любую тему за секунды. Задавайте вопросы, дискутируйте, проходите тесты — всё в одном месте.',
+    'uc1.title':'Для преподавателей','uc1.desc':'Загрузите материал урока как PDF и получите готовый интерактивный класс. Скачайте слайды в формате PPTX.',
+    'uc2.title':'Корпоративное обучение','uc2.desc':'Обучение сотрудников для банков, телекоммуникаций, торговых компаний. Представьте новые правила и продукты в формате интерактивного урока.',
+    'uc3.title':'Школа и подготовка к экзаменам','uc3.desc':'Уроки по школьной программе Узбекистана. Специальная подготовка к ЕГЭ и другим экзаменам: Математика, Физика, Биология.',
+    'pricing.label':'Цены','pricing.title':'Прозрачные цены',
+    'pricing.sub':'Никаких скрытых платежей. Отмените в любое время.',
+    'plan.free.name':'Бесплатно','plan.free.desc':'Попробуйте платформу',
+    'plan.free.f1':'3 интерактивных урока в месяц','plan.free.f2':'Все предметы',
+    'plan.free.f3':'Экспорт PPTX','plan.free.f4':'Узбекский, Русский, Английский',
+    'plan.pro.name':'Pro','plan.pro.desc':'Для активных учащихся',
+    'plan.pro.f1':'Неограниченные уроки','plan.pro.f2':'Голосовой AI-учитель (TTS)',
+    'plan.pro.f3':'Ответы через микрофон','plan.pro.f4':'Специальные шаблоны для экзаменов',
+    'plan.pro.f5':'HTML и PPTX экспорт','plan.pro.f6':'Приоритетная поддержка',
+    'plan.inst.name':'Учреждение','plan.inst.price':'По запросу','plan.inst.desc':'Школы, университеты, компании',
+    'plan.inst.f1':'White-label (ваш бренд)','plan.inst.f2':'Интеграция SSO',
+    'plan.inst.f3':'Безопасность данных (локальный сервер)','plan.inst.f4':'Панель преподавателя и аналитика',
+    'plan.inst.f5':'Настраиваемые голоса и агенты','plan.inst.f6':'Выделенная поддержка',
+    'plan.popular':'Самый популярный','plan.mo':'/мес',
+    'plan.cta.free':'Начать','plan.cta.pro':'7 дней бесплатно','plan.cta.inst':'Связаться',
+    'wl.title':'Получите ранний доступ 🚀',
+    'wl.sub':'Зарегистрируйтесь и получите 3 месяца Pro-плана <strong>бесплатно</strong> в рамках раннего доступа.',
+    'wl.placeholder':'email@example.com','wl.btn':'Зарегистрироваться',
+    'wl.success':'🎉 Поздравляем! Мы свяжемся с вами в ближайшее время.',
+    'wl.note':'Никакого спама. Отписаться можно в любое время.',
+  },
+  en: {
+    'nav.features':'Features','nav.pricing':'Pricing','nav.contact':'Contact',
+    'nav.cta':'Start Free','badge':'The first AI classroom platform in Uzbekistan',
+    'hero.line1':'Interactive lessons','hero.line2':'powered by AI',
+    'hero.sub':'Turn any topic or document into a full interactive classroom with AI teachers, discussions, quizzes, and simulations — in one click.',
+    'hero.cta1':'Try for free','hero.cta2':'See how it works',
+    'stat.1':'Lesson creation','stat.2':'AI agents','stat.3':'Languages: Uzbek, Russian, English','stat.4':'Exam preparation',
+    'demo.label':'"Teach me algebra for my exam" — classroom ready in seconds',
+    'features.label':'Features','features.title':'Not your average course',
+    'features.sub':'Dars.ai is not a video. It\'s a live classroom that talks back.',
+    'f1.title':'Multi-agent AI teachers','f1.desc':'Live discussions between AI teachers with distinct personalities and AI classmates. Ask questions any time.',
+    'f2.title':'Slides, quizzes, simulations','f2.desc':'AI automatically generates slides, tests, and interactive HTML simulations for each lesson.',
+    'f3.title':'Voice teacher (TTS)','f3.desc':'AI teacher speaks in natural voice in Uzbek and Russian. Answer through your microphone.',
+    'f4.title':'Live whiteboard','f4.desc':'AI agents draw on a shared whiteboard to explain topics — formulas, diagrams, concept maps.',
+    'f5.title':'Lesson from a document','f5.desc':'Upload a PDF, Word, or text file — AI turns it into a full interactive lesson.',
+    'f6.title':'Exam preparation','f6.desc':'Math, Physics, Biology, Chemistry — special templates for national exam preparation.',
+    'uc.label':'Who is it for','uc.title':'Built for everyone',
+    'tab.0':'Students','tab.1':'Teachers','tab.2':'Corporate','tab.3':'School / Exams',
+    'uc0.title':'For students','uc0.desc':'An AI teacher that explains any topic in seconds. Ask questions, debate, take quizzes — all in one place.',
+    'uc1.title':'For teachers','uc1.desc':'Upload your lesson material as a PDF and get a ready-to-use interactive classroom. Download slides as PPTX.',
+    'uc2.title':'Corporate training','uc2.desc':'Employee training for banks, telecoms, and retail companies. Present new policies and products as interactive lessons.',
+    'uc3.title':'School and exam prep','uc3.desc':'Lessons aligned to Uzbekistan\'s school curriculum. Specialized exam prep: Math, Physics, Biology.',
+    'pricing.label':'Pricing','pricing.title':'Simple, transparent pricing',
+    'pricing.sub':'No hidden fees. Cancel anytime.',
+    'plan.free.name':'Free','plan.free.desc':'Try the platform',
+    'plan.free.f1':'3 interactive lessons per month','plan.free.f2':'All subjects',
+    'plan.free.f3':'PPTX export','plan.free.f4':'Uzbek, Russian, English',
+    'plan.pro.name':'Pro','plan.pro.desc':'For active learners',
+    'plan.pro.f1':'Unlimited lessons','plan.pro.f2':'Voice AI teacher (TTS)',
+    'plan.pro.f3':'Microphone answers','plan.pro.f4':'Exam special templates',
+    'plan.pro.f5':'HTML & PPTX export','plan.pro.f6':'Priority support',
+    'plan.inst.name':'Institution','plan.inst.price':'Custom','plan.inst.desc':'Schools, universities, companies',
+    'plan.inst.f1':'White-label (your brand)','plan.inst.f2':'SSO integration',
+    'plan.inst.f3':'Data sovereignty (local server)','plan.inst.f4':'Teacher dashboard & analytics',
+    'plan.inst.f5':'Custom voices and agents','plan.inst.f6':'Dedicated support',
+    'plan.popular':'Most popular','plan.mo':'/mo',
+    'plan.cta.free':'Get started','plan.cta.pro':'7-day free trial','plan.cta.inst':'Contact us',
+    'wl.title':'Get early access 🚀',
+    'wl.sub':'Sign up and get 3 months of Pro <strong>free</strong> with early access.',
+    'wl.placeholder':'email@example.com','wl.btn':'Join waitlist',
+    'wl.success':'🎉 You\'re in! We\'ll reach out soon.',
+    'wl.note':'No spam. Unsubscribe anytime.',
+  }
+};
+
+let currentLang = 'uz';
+
+function setLang(lang) {
+  currentLang = lang;
+  document.querySelectorAll('.lang-btn').forEach(b => b.classList.remove('active'));
+  document.querySelector(`.lang-btn[onclick="setLang('${lang}')"]`).classList.add('active');
+  document.querySelectorAll('[data-i18n]').forEach(el => {
+    const key = el.getAttribute('data-i18n');
+    if (i18n[lang][key]) el.innerHTML = i18n[lang][key];
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach(el => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (i18n[lang][key]) el.placeholder = i18n[lang][key];
+  });
+  document.documentElement.lang = lang;
+}
+
+// ─── Tabs ───────────────────────────────────────────────
+let activeTab = 0;
+function showTab(idx) {
+  document.querySelectorAll('.usecase-content').forEach((el,i) => {
+    el.style.display = i === idx ? 'block' : 'none';
+  });
+  document.querySelectorAll('.tab').forEach((el,i) => {
+    el.classList.toggle('active', i === idx);
+  });
+  activeTab = idx;
+}
+
+// ─── Waitlist ───────────────────────────────────────────
+function handleWaitlist(e) {
+  e.preventDefault();
+  const email = document.getElementById('wlEmail').value;
+  // In production: POST to your API or Formspree/Google Forms
+  console.log('Waitlist signup:', email);
+  document.getElementById('wlForm').style.display = 'none';
+  document.getElementById('successMsg').style.display = 'block';
+}
+
+// ─── Scroll animation ───────────────────────────────────
+const observer = new IntersectionObserver((entries) => {
+  entries.forEach(e => {
+    if (e.isIntersecting) {
+      e.target.style.opacity = '1';
+      e.target.style.transform = 'translateY(0)';
+    }
+  });
+}, { threshold: 0.1 });
+
+document.querySelectorAll('.feature-card, .price-card').forEach(el => {
+  el.style.opacity = '0';
+  el.style.transform = 'translateY(24px)';
+  el.style.transition = 'opacity .5s ease, transform .5s ease';
+  observer.observe(el);
+});
+</script>
+</body>
+</html>

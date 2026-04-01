@@ -4,7 +4,7 @@
 
 ## Stack
 
-- **Framework**: Next.js 16 (App Router), React 19, TypeScript 5
+- **Framework**: Next.js 16.1.2 (App Router), React 19, TypeScript 5
 - **AI/LLM**: Vercel AI SDK (`@ai-sdk`) — OpenAI, Anthropic, Google, DeepSeek, Grok, etc.
 - **Orchestration**: LangGraph (`@langchain/langgraph`) — StateGraph director/agent pattern
 - **Styling**: Tailwind CSS 4, shadcn/ui, Radix UI
@@ -12,7 +12,7 @@
 - **Slides**: Custom PPTist renderer (in-house canvas editor)
 - **Audio**: Multi-provider TTS/ASR (OpenAI, Azure/edge-tts, ElevenLabs, Qwen, GLM, browser)
 - **Export**: Custom `pptxgenjs` fork (PPTX), self-contained HTML
-- **Package manager**: `pnpm` (workspaces — `packages/pptxgenjs`, `packages/mathml2omml`)
+- **Package manager**: `pnpm@10.28.0` (workspaces — `packages/pptxgenjs`, `packages/mathml2omml`)
 
 ## How to Run
 
@@ -39,9 +39,10 @@ Config: copy `.env.local` (already configured for Doston's setup).
 - **Port**: 3232 (dev and prod)
 - **LLM**: Google Gemini — `GOOGLE_API_KEY` + `DEFAULT_MODEL=google:gemini-2.5-flash`
 - **Ollama**: Also configured at `http://localhost:11434/v1` (OPENAI_BASE_URL)
-- **TTS (Chinese/English)**: Kokoro at `http://localhost:8880/v1` (openai-tts provider)
 - **TTS (Uzbek)**: edge-tts at `http://localhost:8881` (azure-tts provider)
+- **TTS (Chinese/English)**: Kokoro at `http://localhost:8880/v1` (openai-tts provider)
 - **Image generation**: SDXL-Turbo at `http://localhost:8765` (local-image provider)
+- **Database**: `DATABASE_URL` uses absolute path (`file:/home/doston-sulaymon/Desktop/OpenMAIC/data/openmaic.db`)
 - **Location**: `~/Desktop/OpenMAIC`
 
 ### Starting Local Services
@@ -209,6 +210,26 @@ curl -X POST http://localhost:3232/api/regenerate-tts/[classroomId] \
 # classroomId from URL: /classroom/[classroomId]
 ```
 
+## 🇺🇿 Three Strategic Features for Uzbek Market
+
+### 1. DTM Exam Simulator (High Priority)
+Specialized agent configuration and classroom templates for the **Davlat Test Markazi** (State Test Center) university entrance exams.
+- Simulated practice tests with real-time feedback in Uzbek.
+- DTM-specific subjects: Math, Physics, Biology, Chemistry, Uzbek Language, History.
+- Error analysis and personalized tutoring bits based on previous mistakes.
+
+### 2. Low-Bandwidth / "Lite" Mode
+Optimized asset loading for regions with intermittent or slow internet (e.g., remote areas of Karakalpakstan or Surkhandarya).
+- Audio compression options for Kokoro/edge-tts.
+- Toggle to skip image/video generation in low-latency mode.
+- Optimized client-side caching of UI assets.
+
+### 3. National Curriculum Orientation
+Grounding AI agents in the **Uzbekistan Ministry of Public Education** standards.
+- RAG integration for national textbooks (uzedu.uz content).
+- Agent personas reflecting local pedagogical styles and cultural values.
+- Uzbek Cyrillic support for older instructional materials.
+
 ### edge-tts Notes
 - Free, no API key, uses Microsoft Edge voice backend
 - Voices: `uz-UZ-MadinaNeural` (female), `uz-UZ-SardorNeural` (male)
@@ -271,6 +292,8 @@ curl -X POST http://localhost:3232/api/regenerate-tts/[classroomId] \
 14. **NextAuth v5 middleware cookie mismatch** — never use `getToken` from `next-auth/jwt` in middleware. It looks for `next-auth.session-token` (v4 name) but v5 uses `authjs.session-token` / `__Secure-authjs.session-token` (HTTPS). Result: session always null on tunnel → infinite login redirect. Fix: split config into `auth.config.ts` (edge-safe, no DB imports) and use `NextAuth(authConfig).auth` in middleware.
 
 15. **`lib/server/db.ts` used `process.cwd()` for DB path** — standalone server CWD is `.next/standalone/`, so it created a separate DB there, ignoring `DATABASE_URL`. Fixed: `db.ts` and `prisma/seed.ts` now check `process.env.DATABASE_URL` first. `.env.local` has `DATABASE_URL` set to the absolute project path so both dev and standalone use the same DB.
+
+16. **Cloudflare Tunnel Host Handling** — Authentication callbacks (NextAuth) and absolute redirects (e.g., to `/login`) must use the public-facing tunnel host. `middleware.ts` handles this by extracting `x-forwarded-host` or `host` headers to construct the correct base URL. `auth.ts` uses `authConfig.trustHost = true`.
 
 ## Key Files to Know
 
