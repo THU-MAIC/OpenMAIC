@@ -25,6 +25,8 @@ export interface GenerationSessionState {
   // Web search context
   researchContext?: string;
   researchSources?: Array<{ title: string; url: string }>;
+  // Manually uploaded images (along with PDF)
+  uploadedImageStorageIds?: string[];
 }
 
 export type GenerationStep = {

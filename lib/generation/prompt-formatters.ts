@@ -79,12 +79,19 @@ export function formatImageDescription(img: PdfImage, language: string): string 
   let dimInfo = '';
   if (img.width && img.height) {
     const ratio = (img.width / img.height).toFixed(2);
-    dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
+    dimInfo =
+      language === 'zh-CN'
+        ? ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`
+        : language === 'de-DE'
+          ? ` | Größe: ${img.width}×${img.height} (Seitenverhältnis ${ratio})`
+          : ` | Dimensions: ${img.width}×${img.height} (Aspect ratio ${ratio})`;
   }
   const desc = img.description ? ` | ${img.description}` : '';
   return language === 'zh-CN'
     ? `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`
-    : `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
+    : language === 'de-DE'
+      ? `- **${img.id}**: aus PDF-Seite ${img.pageNumber}${dimInfo}${desc}`
+      : `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
 }
 
 /**
@@ -95,11 +102,18 @@ export function formatImagePlaceholder(img: PdfImage, language: string): string 
   let dimInfo = '';
   if (img.width && img.height) {
     const ratio = (img.width / img.height).toFixed(2);
-    dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
+    dimInfo =
+      language === 'zh-CN'
+        ? ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`
+        : language === 'de-DE'
+          ? ` | Größe: ${img.width}×${img.height} (Seitenverhältnis ${ratio})`
+          : ` | Dimensions: ${img.width}×${img.height} (Aspect ratio ${ratio})`;
   }
   return language === 'zh-CN'
     ? `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`
-    : `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
+    : language === 'de-DE'
+      ? `- **${img.id}**: Bild von PDF-Seite ${img.pageNumber}${dimInfo} [siehe Anhang]`
+      : `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
 }
 
 /**

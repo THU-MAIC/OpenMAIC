@@ -20,7 +20,7 @@ export function buildPBLSystemPrompt(config: PBLSystemPromptConfig): string {
     return buildPBLSystemPromptZH(config);
   }
 
-  return `You are a Teaching Assistant (TA) on a Project-Based Learning platform. You are fully responsible for designing group projects for students based on the course information provided by the teacher.
+  const basePrompt = `You are a Teaching Assistant (TA) on a Project-Based Learning platform. You are fully responsible for designing group projects for students based on the course information provided by the teacher.
 
 ## Your Responsibility
 
@@ -82,6 +82,15 @@ When you create issues:
 **IMPORTANT**: Once you have configured the project info, defined all necessary agents (roles), and created the issueboard with tasks, you MUST set your mode to **idle** to indicate completion.
 
 Your initial mode is **project_info**.`;
+
+  if (language === 'de-DE') {
+    return (
+      basePrompt +
+      '\n\n**IMPORTANT: All content you generate (titles, descriptions, agent prompts, etc.) MUST be in German.**'
+    );
+  }
+
+  return basePrompt;
 }
 
 function buildPBLSystemPromptZH(config: PBLSystemPromptConfig): string {

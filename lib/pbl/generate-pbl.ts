@@ -290,7 +290,9 @@ export async function generatePBLContent(
       prompt:
         language === 'zh-CN'
           ? `请设计一个PBL项目。现在从 project_info 模式开始，先设置项目标题和描述。`
-          : `Design a PBL project. Start in project_info mode by setting the project title and description.`,
+          : language === 'de-DE'
+            ? `Entwerfen Sie ein PBL-Projekt. Beginnen Sie im Modus project_info, indem Sie den Projekttitel und die Beschreibung festlegen.`
+            : `Design a PBL project. Start in project_info mode by setting the project title and description.`,
       tools: pblTools,
       stopWhen: stepCountIs(30),
       onStepFinish: ({ toolCalls, text }) => {
@@ -379,7 +381,25 @@ ${firstIssue.notes ? `**备注**: ${firstIssue.notes}` : ''}
 - 鼓励批判性思考
 
 请以编号列表格式回答。`
-        : `## Issue Information
+        : language === 'de-DE'
+          ? `## Aufgabeninformationen
+
+**Titel**: ${firstIssue.title}
+**Beschreibung**: ${firstIssue.description}
+**Verantwortliche Person**: ${firstIssue.person_in_charge}
+${firstIssue.participants.length > 0 ? `**Teilnehmer**: ${firstIssue.participants.join(', ')}` : ''}
+${firstIssue.notes ? `**Notizen**: ${firstIssue.notes}` : ''}
+
+## Ihre Aufgabe
+
+Basierend auf den obigen Aufgabeninformationen generieren Sie 1-3 spezifische, umsetzbare Fragen, die den Schülern helfen, diese Aufgabe zu verstehen und zu erledigen. Jede Frage sollte:
+- Die Schüler zu wichtigen Lernzielen führen
+- Spezifisch und umsetzbar sein
+- Helfen, das Problem aufzuschlüsseln
+- Kritisches Denken fördern
+
+Formatieren Sie Ihre Antwort als nummerierte Liste.`
+          : `## Issue Information
 
 **Title**: ${firstIssue.title}
 **Description**: ${firstIssue.description}
@@ -413,7 +433,9 @@ Format your response as a numbered list.`;
     const welcomeMessage =
       language === 'zh-CN'
         ? `你好！我是这个任务的提问助手："${firstIssue.title}"\n\n为了引导你的学习，我准备了一些问题：\n\n${generatedQuestions}\n\n随时 @question 我来获取帮助或澄清！`
-        : `Hello! I'm your Question Agent for this issue: "${firstIssue.title}"\n\nTo help guide your work, I've prepared some questions for you:\n\n${generatedQuestions}\n\nFeel free to @question me anytime if you need help or clarification!`;
+        : language === 'de-DE'
+          ? `Hallo! Ich bin Ihr Frage-Agent für diese Aufgabe: "${firstIssue.title}"\n\nUm Ihnen bei der Arbeit zu helfen, habe ich einige Fragen für Sie vorbereitet:\n\n${generatedQuestions}\n\nSie können mich jederzeit @question, wenn Sie Hilfe oder Klärung benötigen!`
+          : `Hello! I'm your Question Agent for this issue: "${firstIssue.title}"\n\nTo help guide your work, I've prepared some questions for you:\n\n${generatedQuestions}\n\nFeel free to @question me anytime if you need help or clarification!`;
 
     config.chat.messages.push({
       id: `msg_welcome_${Date.now()}`,
