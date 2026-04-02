@@ -1162,6 +1162,8 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://{region}.api.cognitive.microsoft.com',
     icon: '/logos/azure.svg',
+    models: [],
+    defaultModelId: '',
     supportedLanguages: [
       'auto',
       'en',
