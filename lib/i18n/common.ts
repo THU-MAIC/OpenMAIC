@@ -39,6 +39,47 @@ export const commonZhCN = {
   },
 } as const;
 
+export const commonRuRU = {
+  common: {
+    you: 'Ты',
+    confirm: 'Подтвердить',
+    cancel: 'Отмена',
+    loading: 'Загрузка...',
+  },
+  home: {
+    slogan: 'Генеративное обучение в интерактивном классе с мультиагентной подачей',
+    greeting: 'Привет, ',
+  },
+  toolbar: {
+    languageHint: 'Курс будет сгенерирован на этом языке',
+    pdfParser: 'Парсер',
+    pdfUpload: 'Загрузить PDF',
+    removePdf: 'Удалить файл',
+    webSearchOn: 'Включено',
+    webSearchOff: 'Нажми, чтобы включить',
+    webSearchDesc: 'Искать в сети актуальную информацию перед генерацией',
+    webSearchProvider: 'Поисковик',
+    webSearchNoProvider: 'Настрой API ключ поиска в Settings',
+    selectProvider: 'Выбрать провайдера',
+    configureProvider: 'Настроить модель',
+    configureProviderHint: 'Сначала настрой хотя бы одного провайдера моделей',
+    enterClassroom: 'Открыть classroom',
+    advancedSettings: 'Расширенные настройки',
+    ttsTitle: 'Синтез речи',
+    ttsHint: 'Выбери голос для AI-преподавателя',
+    ttsPreview: 'Прослушать',
+    ttsPreviewing: 'Воспроизведение...',
+  },
+  export: {
+    pptx: 'Экспорт PPTX',
+    resourcePack: 'Экспорт набора материалов',
+    resourcePackDesc: 'PPTX + интерактивные страницы',
+    exporting: 'Экспорт...',
+    exportSuccess: 'Экспорт завершён',
+    exportFailed: 'Экспорт не удался',
+  },
+} as const;
+
 export const commonEnUS = {
   common: {
     you: 'You',
