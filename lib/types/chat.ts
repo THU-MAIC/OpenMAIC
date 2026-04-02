@@ -6,6 +6,7 @@
  */
 
 import type { UIMessage } from 'ai';
+import type { AssessmentContext } from '@/lib/types/assessment';
 
 // Session Types
 export type SessionType = 'qa' | 'discussion' | 'lecture';
@@ -154,6 +155,7 @@ export interface SendMessageRequest {
     currentSceneId: string | null;
     mode: 'autonomous' | 'playback';
     whiteboardOpen: boolean;
+    assessmentContext?: AssessmentContext | null;
   };
 }
 
@@ -243,6 +245,7 @@ export interface StatelessChatRequest {
     currentSceneId: string | null;
     mode: StageMode;
     whiteboardOpen: boolean;
+    assessmentContext?: AssessmentContext | null;
   };
   /** Agent configuration */
   config: {

@@ -617,7 +617,7 @@ DO NOT redraw content that already exists. Check positions above before adding n
  * Build context string from store state
  */
 function buildStateContext(storeState: StatelessChatRequest['storeState']): string {
-  const { stage, scenes, currentSceneId, mode, whiteboardOpen } = storeState;
+  const { stage, scenes, currentSceneId, mode, whiteboardOpen, assessmentContext } = storeState;
 
   const lines: string[] = [];
 
@@ -685,6 +685,26 @@ function buildStateContext(storeState: StatelessChatRequest['storeState']): stri
     const wbElements = lastWb.elements || [];
     lines.push(
       `Whiteboard (last of ${stage.whiteboard.length}, ${wbElements.length} elements):\n${summarizeElements(wbElements)}`,
+    );
+  }
+
+  if (assessmentContext) {
+    lines.push(
+      [
+        'Latest assessment context:',
+        `  Scene ID: ${assessmentContext.sceneId}`,
+        `  Score: ${assessmentContext.latestQuizScore}/${assessmentContext.maxScore}`,
+        `  Mastery: ${assessmentContext.masteryLevel}`,
+        `  Recommended next step: ${assessmentContext.recommendedNextStep}`,
+        assessmentContext.weakConcepts.length > 0
+          ? `  Weak concepts: ${assessmentContext.weakConcepts.join('; ')}`
+          : null,
+        assessmentContext.incorrectQuestions.length > 0
+          ? `  Incorrect questions: ${assessmentContext.incorrectQuestions.join(' | ')}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join('\n'),
     );
   }
 

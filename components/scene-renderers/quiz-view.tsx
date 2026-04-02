@@ -17,6 +17,13 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { createLogger } from '@/lib/logger';
+import { useStageStore } from '@/lib/store';
+import {
+  deleteQuizAttemptsForScene,
+  getLatestQuizAttemptForScene,
+  saveQuizAttempt,
+} from '@/lib/utils/assessment-storage';
+import type { QuizAnswerMap, QuizQuestionResult } from '@/lib/types/assessment';
 
 const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
@@ -27,112 +34,11 @@ import { SpeechButton } from '@/components/audio/speech-button';
 
 type Phase = 'not_started' | 'answering' | 'grading' | 'reviewing';
 
-interface QuestionResult {
-  questionId: string;
-  correct: boolean | null;
-  status: 'correct' | 'incorrect';
-  earned: number;
-  aiComment?: string;
-}
+type QuestionResult = QuizQuestionResult;
 
 interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const sa = [...a].sort();
-  const sb = [...b].sort();
-  return sa.every((v, i) => v === sb[i]);
-}
-
-function toArray(v: string | string[] | undefined): string[] {
-  if (!v) return [];
-  return Array.isArray(v) ? v : [v];
-}
-
-function isShortAnswer(q: QuizQuestion): boolean {
-  return q.type === 'short_answer' || (!q.hasAnswer && (!q.answer || q.answer.length === 0));
-}
-
-/** Grade choice questions locally. Returns results only for non-short-answer questions. */
-function gradeChoiceQuestions(
-  questions: QuizQuestion[],
-  answers: Record<string, string | string[]>,
-): QuestionResult[] {
-  return questions
-    .filter((q) => !isShortAnswer(q))
-    .map((q) => {
-      const pts = q.points ?? 1;
-      const userAnswer = toArray(answers[q.id]);
-      const correctAnswer = toArray(q.answer);
-      const correct = arraysEqual(userAnswer, correctAnswer);
-      return {
-        questionId: q.id,
-        correct,
-        status: correct ? ('correct' as const) : ('incorrect' as const),
-        earned: correct ? pts : 0,
-      };
-    });
-}
-
-/** Call /api/quiz-grade for a single short-answer question. */
-async function gradeShortAnswerQuestion(
-  q: QuizQuestion,
-  userAnswer: string,
-  language: string,
-): Promise<QuestionResult> {
-  const pts = q.points ?? 1;
-  try {
-    const modelConfig = getCurrentModelConfig();
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'x-model': modelConfig.modelString,
-      'x-api-key': modelConfig.apiKey,
-    };
-    if (modelConfig.baseUrl) headers['x-base-url'] = modelConfig.baseUrl;
-    if (modelConfig.providerType) headers['x-provider-type'] = modelConfig.providerType;
-    if (modelConfig.requiresApiKey) headers['x-requires-api-key'] = 'true';
-
-    const res = await fetch('/api/quiz-grade', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        question: q.question,
-        userAnswer,
-        points: pts,
-        commentPrompt: q.commentPrompt,
-        language,
-      }),
-    });
-
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const data = (await res.json()) as { score: number; comment: string };
-    const earned = Math.max(0, Math.min(pts, data.score));
-    return {
-      questionId: q.id,
-      correct: earned >= pts * 0.8,
-      status: earned >= pts * 0.8 ? 'correct' : 'incorrect',
-      earned,
-      aiComment: data.comment,
-    };
-  } catch (err) {
-    log.error('[quiz-view] AI grading failed for', q.id, err);
-    // Fallback: give half credit
-    return {
-      questionId: q.id,
-      correct: null,
-      status: 'incorrect',
-      earned: Math.round(pts * 0.5),
-      aiComment:
-        language === 'zh-CN'
-          ? '评分服务暂时不可用，已给予基础分。'
-          : 'Grading service unavailable. Base score given.',
-    };
-  }
 }
 
 // ─── Sub-components ─────────────────────────────────────────────────────────
@@ -687,8 +593,10 @@ function ScoreBanner({
 
 export function QuizView({ questions, sceneId }: QuizViewProps) {
   const { t, locale } = useI18n();
+  const stageId = useStageStore((state) => state.stage?.id);
+  const setLatestAssessmentContext = useStageStore((state) => state.setLatestAssessmentContext);
   const [phase, setPhase] = useState<Phase>('not_started');
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
+  const [answers, setAnswers] = useState<QuizAnswerMap>({});
   const [results, setResults] = useState<QuestionResult[]>([]);
 
   // Draft cache for quiz answers, keyed by sceneId to isolate across classrooms
@@ -709,6 +617,25 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
       setPhase('answering');
     }
   }
+
+  useEffect(() => {
+    if (!stageId) return;
+    let cancelled = false;
+
+    void (async () => {
+      const attempt = await getLatestQuizAttemptForScene(stageId, sceneId);
+      if (!attempt || cancelled) return;
+
+      setAnswers(attempt.answers);
+      setResults(attempt.results);
+      setPhase('reviewing');
+      setLatestAssessmentContext(attempt.assessmentContext);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [sceneId, setLatestAssessmentContext, stageId]);
 
   const totalPoints = useMemo(
     () => questions.reduce((sum, q) => sum + (q.points ?? 1), 0),
@@ -735,53 +662,93 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     [updateAnswersCache],
   );
 
-  const handleSubmit = useCallback(() => {
+  const handleSubmit = useCallback(async () => {
+    if (!stageId) return;
+
     setPhase('grading');
-    clearAnswersCache();
-  }, [clearAnswersCache]);
 
-  // When entering grading phase, grade choice questions locally + call API for short-answer
-  useEffect(() => {
-    if (phase !== 'grading') return;
-    let cancelled = false;
+    try {
+      const modelConfig = getCurrentModelConfig();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-model': modelConfig.modelString,
+        'x-api-key': modelConfig.apiKey,
+      };
+      if (modelConfig.baseUrl) headers['x-base-url'] = modelConfig.baseUrl;
+      if (modelConfig.providerType) headers['x-provider-type'] = modelConfig.providerType;
+      if (modelConfig.requiresApiKey) headers['x-requires-api-key'] = 'true';
 
-    (async () => {
-      // 1. Grade choice questions locally (instant)
-      const choiceResults = gradeChoiceQuestions(questions, answers);
+      const res = await fetch('/api/quiz-submit', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          stageId,
+          sceneId,
+          questions,
+          answers,
+          language: locale,
+        }),
+      });
 
-      // 2. Grade short-answer questions via AI API (parallel)
-      const shortAnswerQs = questions.filter(isShortAnswer);
-      const aiResults = await Promise.all(
-        shortAnswerQs.map((q) =>
-          gradeShortAnswerQuestion(q, (answers[q.id] as string) ?? '', locale),
-        ),
-      );
-
-      if (cancelled) return;
-
-      // 3. Merge results in original question order
-      const allResultsMap = new Map<string, QuestionResult>();
-      for (const r of [...choiceResults, ...aiResults]) {
-        allResultsMap.set(r.questionId, r);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}`);
       }
-      const ordered = questions.map((q) => allResultsMap.get(q.id)!).filter(Boolean);
 
-      setResults(ordered);
+      const payload = (await res.json()) as {
+        success?: boolean;
+        attempt?: {
+          attemptId: string;
+          stageId: string;
+          sceneId: string;
+          answers: QuizAnswerMap;
+          results: QuestionResult[];
+          totalScore: number;
+          maxScore: number;
+          assessmentContext: {
+            attemptId: string;
+            stageId: string;
+            sceneId: string;
+            latestQuizScore: number;
+            maxScore: number;
+            incorrectQuestions: string[];
+            weakConcepts: string[];
+            masteryLevel: 'high' | 'medium' | 'low';
+            recommendedNextStep: 'advance' | 'review' | 'remediate';
+            submittedAt: number;
+          };
+          submittedAt: number;
+        };
+      };
 
+      if (!payload.attempt) {
+        throw new Error('Missing quiz attempt in response');
+      }
+
+      await saveQuizAttempt({
+        ...payload.attempt,
+        questions,
+      });
+
+      setResults(payload.attempt.results);
+      setLatestAssessmentContext(payload.attempt.assessmentContext);
+      clearAnswersCache();
       setPhase('reviewing');
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [phase, questions, answers, locale]);
+    } catch (error) {
+      log.error('[quiz-view] quiz submit failed', error);
+      setPhase('answering');
+    }
+  }, [answers, clearAnswersCache, locale, questions, sceneId, setLatestAssessmentContext, stageId]);
 
   const handleRetry = useCallback(() => {
+    if (stageId) {
+      void deleteQuizAttemptsForScene(stageId, sceneId);
+    }
     setPhase('not_started');
     setAnswers({});
     setResults([]);
     clearAnswersCache();
-  }, [clearAnswersCache]);
+    setLatestAssessmentContext(null);
+  }, [clearAnswersCache, sceneId, setLatestAssessmentContext, stageId]);
 
   const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
 
