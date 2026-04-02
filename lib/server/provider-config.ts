@@ -49,6 +49,7 @@ const LLM_ENV_MAP: Record<string, string> = {
   SILICONFLOW: 'siliconflow',
   DOUBAO: 'doubao',
   GROK: 'grok',
+  OLLAMA: 'ollama',
 };
 
 const TTS_ENV_MAP: Record<string, string> = {
@@ -134,9 +135,7 @@ function loadEnvSection(
   // First, add everything from YAML as defaults
   if (yamlSection) {
     for (const [id, entry] of Object.entries(yamlSection)) {
-      const hasKey = !!entry?.apiKey;
-      const hasUrl = !!entry?.baseUrl;
-      if (requiresBaseUrl ? hasUrl : hasKey) {
+      if (requiresBaseUrl ? !!entry?.baseUrl : entry?.apiKey || entry?.baseUrl) {
         result[id] = {
           apiKey: entry.apiKey || '',
           baseUrl: entry.baseUrl,
@@ -167,6 +166,7 @@ function loadEnvSection(
       continue;
     }
 
+    // Activate on API key; or on base URL alone for baseUrl-only sections (PDF)
     if (requiresBaseUrl ? !envBaseUrl : !envApiKey) continue;
     result[providerId] = {
       apiKey: envApiKey || '',

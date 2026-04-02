@@ -3,6 +3,10 @@
  *
  * Validates URLs to prevent requests to internal/private network addresses.
  * Used by any API route that fetches a user-supplied URL server-side.
+ *
+ * Note: Server-configured provider URLs (e.g. OLLAMA_BASE_URL) bypass this
+ * check entirely — they flow through resolveBaseUrl() and are never validated
+ * here. This guard only applies to client-supplied URLs.
  */
 
 /** Check if hostname is in the 172.16.0.0 - 172.31.255.255 private range */
