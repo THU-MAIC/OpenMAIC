@@ -23,6 +23,7 @@ import {
   EyeOff,
   RotateCcw,
   Plus,
+  RefreshCw,
   Zap,
   Settings2,
   Trash2,
@@ -44,6 +45,7 @@ interface ProviderConfigPanelProps {
   initialRequiresApiKey: boolean;
   providersConfig: ProvidersConfig;
   onConfigChange: (apiKey: string, baseUrl: string, requiresApiKey: boolean) => void;
+  onReplaceModels: (models: Array<{ id: string; name: string }>) => void;
   onSave: () => void; // Auto-save on blur
   onEditModel: (index: number) => void;
   onDeleteModel: (index: number) => void;
@@ -59,6 +61,7 @@ export function ProviderConfigPanel({
   initialRequiresApiKey,
   providersConfig,
   onConfigChange,
+  onReplaceModels,
   onSave,
   onEditModel,
   onDeleteModel,
@@ -75,6 +78,8 @@ export function ProviderConfigPanel({
   const [showApiKey, setShowApiKey] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
+  const [syncStatus, setSyncStatus] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle');
+  const [syncMessage, setSyncMessage] = useState('');
   const [showResetDialog, setShowResetDialog] = useState(false);
 
   // Update local state when provider changes or initial values change
@@ -149,6 +154,59 @@ export function ProviderConfigPanel({
     }
   }, [apiKey, baseUrl, provider.id, provider.type, requiresApiKey, providersConfig, t]);
 
+  const handleSyncModels = useCallback(async () => {
+    setSyncStatus('syncing');
+    setSyncMessage('');
+
+    try {
+      const response = await fetch('/api/provider-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey,
+          baseUrl,
+          providerType: provider.type,
+          requiresApiKey,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setSyncStatus('error');
+        setSyncMessage(data.error || '同步失败');
+        return;
+      }
+
+      const fetchedModels = (data.models || []) as Array<{ id: string; name?: string }>;
+      if (!fetchedModels.length) {
+        setSyncStatus('error');
+        setSyncMessage('未获取到模型列表');
+        return;
+      }
+
+      const nextModels = fetchedModels.map((m) => ({
+        id: m.id,
+        name: m.name || m.id,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+        },
+      }));
+
+      onReplaceModels(nextModels);
+      onConfigChange(apiKey, baseUrl, requiresApiKey);
+
+      setSyncStatus('success');
+      setSyncMessage(`已同步 ${nextModels.length} 个模型`);
+      onSave();
+    } catch (error) {
+      setSyncStatus('error');
+      setSyncMessage(error instanceof Error ? error.message : '同步失败');
+    }
+  }, [apiKey, baseUrl, provider.type, requiresApiKey, onConfigChange, onSave]);
+
   const models = providersConfig[provider.id]?.models || [];
   const isServerConfigured = providersConfig[provider.id]?.isServerConfigured;
 
@@ -207,6 +265,22 @@ export function ProviderConfigPanel({
               </>
             )}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleSyncModels}
+            disabled={syncStatus === 'syncing' || (requiresApiKey && !apiKey && !isServerConfigured)}
+            className="gap-1.5"
+          >
+            {syncStatus === 'syncing' ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <>
+                <RefreshCw className="h-3.5 w-3.5" />
+                一键同步模型
+              </>
+            )}
+          </Button>
         </div>
         {testMessage && (
           <div
@@ -220,6 +294,21 @@ export function ProviderConfigPanel({
               {testStatus === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />}
               {testStatus === 'error' && <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
               <p className="flex-1 min-w-0 break-all">{testMessage}</p>
+            </div>
+          </div>
+        )}
+        {syncMessage && (
+          <div
+            className={cn(
+              'rounded-lg p-3 text-sm overflow-hidden',
+              syncStatus === 'success' && 'bg-green-50 text-green-700 border border-green-200',
+              syncStatus === 'error' && 'bg-red-50 text-red-700 border border-red-200',
+            )}
+          >
+            <div className="flex items-start gap-2 min-w-0">
+              {syncStatus === 'success' && <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />}
+              {syncStatus === 'error' && <XCircle className="h-4 w-4 mt-0.5 shrink-0" />}
+              <p className="flex-1 min-w-0 break-all">{syncMessage}</p>
             </div>
           </div>
         )}
