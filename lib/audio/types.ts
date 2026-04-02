@@ -16,6 +16,7 @@
  * - OpenAI Whisper (https://platform.openai.com/docs/guides/speech-to-text)
  * - Browser Native (Web Speech API, client-side only)
  * - Qwen ASR (DashScope API)
+ * - Azure STT (https://learn.microsoft.com/azure/ai-services/speech-service/fast-transcription-create)
  *
  * Future Provider Support (extensible):
  * - ElevenLabs TTS/ASR (https://elevenlabs.io/docs)
@@ -152,7 +153,7 @@ export interface TTSModelConfig {
  * Add new ASR providers here as union members.
  * Keep in sync with ASR_PROVIDERS registry in constants.ts
  */
-export type ASRProviderId = 'openai-whisper' | 'browser-native' | 'qwen-asr';
+export type ASRProviderId = 'openai-whisper' | 'browser-native' | 'qwen-asr' | 'azure-asr';
 // Add new ASR providers below (uncomment and modify):
 // | 'elevenlabs-asr'
 // | 'assemblyai-asr'

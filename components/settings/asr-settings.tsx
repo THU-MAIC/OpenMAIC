@@ -33,6 +33,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
   const setASRProviderConfig = useSettingsStore((state) => state.setASRProviderConfig);
 
   const asrProvider = ASR_PROVIDERS[selectedProviderId] ?? ASR_PROVIDERS['openai-whisper'];
+  const availableModels = asrProvider.models ?? [];
   const isServerConfigured = !!asrProvidersConfig[selectedProviderId]?.isServerConfigured;
 
   const [showApiKey, setShowApiKey] = useState(false);
@@ -294,7 +295,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
       )}
 
       {/* Model Selection */}
-      {asrProvider.models.length > 0 && (
+      {availableModels.length > 0 && (
         <div className="space-y-2">
           <Label className="text-sm">{t('settings.ttsModel')}</Label>
           <Select
@@ -305,7 +306,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {asrProvider.models.map((model) => (
+              {availableModels.map((model) => (
                 <SelectItem key={model.id} value={model.id}>
                   {model.name}
                 </SelectItem>
