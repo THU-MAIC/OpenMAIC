@@ -79,15 +79,19 @@ async function withJobLock<T>(jobId: string, fn: () => Promise<T>): Promise<T> {
 const STALE_JOB_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 function markStaleIfNeeded(job: ClassroomGenerationJob): ClassroomGenerationJob {
-  if (job.status !== 'running') return job;
+  if (job.status !== 'running' && job.status !== 'queued') return job;
   const updatedAt = new Date(job.updatedAt).getTime();
   if (Date.now() - updatedAt > STALE_JOB_TIMEOUT_MS) {
+    const reason =
+      job.status === 'queued'
+        ? 'Stale job: queued but never started (worker may have crashed)'
+        : 'Stale job: process may have restarted during generation';
     return {
       ...job,
       status: 'failed',
       step: 'failed',
-      message: 'Job appears stale (no progress update for 30 minutes)',
-      error: 'Stale job: process may have restarted during generation',
+      message: `Job appears stale (no progress update for 30 minutes)`,
+      error: reason,
       completedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
