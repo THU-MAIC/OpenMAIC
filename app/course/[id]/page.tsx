@@ -82,7 +82,6 @@ function CourseDetailContent({ params }: { params: Promise<{ id: string }> }) {
   useEffect(() => {
     const ids = boundClassroomIdsKey ? boundClassroomIdsKey.split(',') : [];
     if (ids.length > 0) loadClassroomMeta(ids);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boundClassroomIdsKey, loadClassroomMeta]);
 
   const usedClassroomIds = useMemo(
