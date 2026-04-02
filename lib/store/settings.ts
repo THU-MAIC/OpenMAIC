@@ -83,6 +83,10 @@ export interface SettingsState {
       enabled: boolean;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
+      cloudApiKey?: string;
+      cloudBaseUrl?: string;
+      localApiKey?: string;
+      localBaseUrl?: string;
     }
   >;
 
@@ -211,7 +215,15 @@ export interface SettingsState {
   setPDFProvider: (providerId: PDFProviderId) => void;
   setPDFProviderConfig: (
     providerId: PDFProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      cloudApiKey: string;
+      cloudBaseUrl: string;
+      localApiKey: string;
+      localBaseUrl: string;
+    }>,
   ) => void;
 
   // Image Generation actions
@@ -307,8 +319,16 @@ const getDefaultPDFConfig = () => ({
   pdfProviderId: 'unpdf' as PDFProviderId,
   pdfProvidersConfig: {
     unpdf: { apiKey: '', baseUrl: '', enabled: true },
-    mineru: { apiKey: '', baseUrl: '', enabled: false },
-  } as Record<PDFProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+    mineru: {
+      apiKey: '',
+      baseUrl: '',
+      enabled: false,
+      cloudApiKey: '',
+      cloudBaseUrl: '',
+      localApiKey: '',
+      localBaseUrl: '',
+    },
+  } as SettingsState['pdfProvidersConfig'],
 });
 
 // Initialize default Image config
@@ -455,6 +475,26 @@ function ensureBuiltInVideoProviders(state: Partial<SettingsState>): void {
       state.videoProvidersConfig![providerId] = defaultConfig[providerId];
     }
   });
+}
+
+/**
+ * Ensure PDF provider config shape includes MinerU cloud/local fields.
+ * Preserves legacy baseUrl/apiKey and migrates them into cloud defaults.
+ */
+function ensurePDFProviderConfigShape(state: Partial<SettingsState>): void {
+  if (!state.pdfProvidersConfig?.mineru) return;
+
+  const mineruConfig = state.pdfProvidersConfig.mineru;
+  const legacyBaseUrl = mineruConfig.baseUrl || '';
+  const legacyApiKey = mineruConfig.apiKey || '';
+
+  state.pdfProvidersConfig.mineru = {
+    ...mineruConfig,
+    cloudBaseUrl: mineruConfig.cloudBaseUrl ?? legacyBaseUrl,
+    cloudApiKey: mineruConfig.cloudApiKey ?? legacyApiKey,
+    localBaseUrl: mineruConfig.localBaseUrl ?? '',
+    localApiKey: mineruConfig.localApiKey ?? '',
+  };
 }
 
 // Migrate from old localStorage format
@@ -1268,6 +1308,7 @@ export const useSettingsStore = create<SettingsState>()(
           const defaultPDFConfig = getDefaultPDFConfig();
           Object.assign(state, defaultPDFConfig);
         }
+        ensurePDFProviderConfigShape(state);
 
         // Add default Image config if missing
         if (!state.imageProvidersConfig) {
@@ -1345,6 +1386,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInProviders(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
+        ensurePDFProviderConfigShape(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
         return merged as SettingsState;
       },

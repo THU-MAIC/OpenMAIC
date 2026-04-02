@@ -15,6 +15,12 @@ export interface PDFProviderConfig {
   name: string;
   requiresApiKey: boolean;
   baseUrl?: string;
+  apiKey?: string;
+  cloudBaseUrl?: string;
+  cloudApiKey?: string;
+  localBaseUrl?: string;
+  localApiKey?: string;
+  isServerConfigured?: boolean;
   icon?: string;
   features: string[]; // ['text', 'images', 'tables', 'formulas', 'layout-analysis', etc.]
 }
@@ -26,6 +32,6 @@ export interface PDFParserConfig {
   providerId: PDFProviderId;
   apiKey?: string;
   baseUrl?: string;
+  sourceFileName?: string;
+  mineruModelVersion?: 'pipeline' | 'vlm';
 }
-
-// Note: ParsedPdfContent is imported from @/lib/types/pdf to avoid duplication

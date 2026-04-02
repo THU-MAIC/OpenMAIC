@@ -6,6 +6,10 @@ import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 const log = createLogger('Parse PDF');
 
 export async function POST(req: NextRequest) {
@@ -27,6 +31,10 @@ export async function POST(req: NextRequest) {
     const providerId = formData.get('providerId') as PDFProviderId | null;
     const apiKey = formData.get('apiKey') as string | null;
     const baseUrl = formData.get('baseUrl') as string | null;
+    const cloudApiKey = formData.get('cloudApiKey') as string | null;
+    const cloudBaseUrl = formData.get('cloudBaseUrl') as string | null;
+    const localApiKey = formData.get('localApiKey') as string | null;
+    const localBaseUrl = formData.get('localBaseUrl') as string | null;
 
     if (!pdfFile) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'No PDF file provided');
@@ -37,7 +45,39 @@ export async function POST(req: NextRequest) {
     pdfFileName = pdfFile?.name;
     resolvedProviderId = effectiveProviderId;
 
-    const clientBaseUrl = baseUrl || undefined;
+    const resolveClientPdfConfig = () => {
+      const legacyBaseUrl = baseUrl?.trim() || '';
+      const legacyApiKey = apiKey?.trim() || '';
+
+      if (effectiveProviderId !== 'mineru') {
+        return {
+          clientBaseUrl: legacyBaseUrl || undefined,
+          clientApiKey: legacyApiKey || undefined,
+        };
+      }
+
+      const cloudUrl = cloudBaseUrl?.trim() || '';
+      const cloudKey = cloudApiKey?.trim() || '';
+      const localUrl = localBaseUrl?.trim() || '';
+      const localKey = localApiKey?.trim() || '';
+
+      // Prefer cloud when it is complete, then local, then legacy fallback.
+      if (cloudUrl && cloudKey) {
+        return { clientBaseUrl: cloudUrl, clientApiKey: cloudKey };
+      }
+      if (localUrl) {
+        return { clientBaseUrl: localUrl, clientApiKey: localKey || undefined };
+      }
+      if (cloudUrl) {
+        return { clientBaseUrl: cloudUrl, clientApiKey: cloudKey || undefined };
+      }
+      return {
+        clientBaseUrl: legacyBaseUrl || undefined,
+        clientApiKey: legacyApiKey || undefined,
+      };
+    };
+
+    const { clientBaseUrl, clientApiKey } = resolveClientPdfConfig();
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
@@ -48,7 +88,7 @@ export async function POST(req: NextRequest) {
     const config = {
       providerId: effectiveProviderId,
       apiKey: clientBaseUrl
-        ? apiKey || ''
+        ? clientApiKey || ''
         : resolvePDFApiKey(effectiveProviderId, apiKey || undefined),
       baseUrl: clientBaseUrl
         ? clientBaseUrl
