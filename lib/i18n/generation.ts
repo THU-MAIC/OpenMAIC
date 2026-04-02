@@ -139,3 +139,71 @@ export const generationEnUS = {
     webSearchFailed: 'Web search failed',
   },
 } as const;
+
+export const generationEsMX = {
+  classroom: {
+    recentClassrooms: 'Recientes',
+    today: 'Hoy',
+    yesterday: 'Ayer',
+    daysAgo: 'días atrás',
+    slides: 'diapositivas',
+    nameCopied: 'Nombre copiado',
+    deleteConfirmTitle: 'Eliminar',
+    delete: 'Eliminar',
+  },
+  upload: {
+    pdfSizeLimit: 'Soporta archivos PDF de hasta 50MB',
+    generateFailed: 'Error al generar el aula, intenta de nuevo',
+    requirementPlaceholder:
+      'Dime lo que quieras aprender, por ejemplo:\n"Enséñame Python desde cero en 30 minutos"\n"Explícame la Transformada de Fourier en la pizarra"\n"¿Cómo se juega el juego de mesa Avalon?"',
+    requirementRequired: 'Por favor ingresa los requisitos del curso',
+    fileTooLarge: 'Archivo demasiado grande. Selecciona un PDF menor a 50MB',
+  },
+  generation: {
+    analyzingPdf: 'Analizando Documento PDF',
+    analyzingPdfDesc: 'Extrayendo estructura y contenido del documento...',
+    pdfLoadFailed: 'Error al cargar el PDF, intenta de nuevo',
+    pdfParseFailed: 'Error al analizar el PDF',
+    streamNotReadable: 'No se puede leer el flujo de generación',
+    generatingOutlines: 'Creando Esquema del Curso',
+    generatingOutlinesDesc: 'Estructurando la ruta de aprendizaje...',
+    generatingSlideContent: 'Generando Contenido de Páginas',
+    generatingSlideContentDesc: 'Creando diapositivas, exámenes y contenido interactivo...',
+    generatingActions: 'Generando Acciones de Enseñanza',
+    generatingActionsDesc: 'Orquestando narración, focos e interacciones...',
+    generationComplete: '¡Generación completada!',
+    generationFailed: 'Error en la generación',
+    generatingCourse: 'Generando curso',
+    openingClassroom: 'Abriendo el aula...',
+    outlineReady: 'Esquema del curso generado',
+    generatingFirstPage: 'Generando primera página...',
+    firstPageReady: '¡Primera página lista! Abriendo el aula...',
+    speechFailed: 'Error en la generación de voz',
+    retryScene: 'Reintentar',
+    retryingScene: 'Regenerando...',
+    backToHome: 'Volver al Inicio',
+    sessionNotFound: 'Sesión No Encontrada',
+    sessionNotFoundDesc:
+      'Por favor ingresa los requisitos del curso para iniciar el proceso de generación.',
+    goBackAndRetry: 'Regresar e Intentar de Nuevo',
+    classroomReady:
+      'Tu entorno de aprendizaje personalizado con IA se ha generado exitosamente.',
+    aiWorking: 'Agentes IA Trabajando...',
+    textTruncated:
+      'El texto del documento es extenso, usando los primeros {n} caracteres para la generación',
+    imageTruncated:
+      'Se encontraron {total} imágenes, excediendo el límite de {max}. Las imágenes extra usarán solo descripciones de texto',
+    agentGeneration: 'Generando Roles del Aula',
+    agentGenerationDesc: 'Generando roles basados en el contenido del curso...',
+    agentRevealTitle: 'Tus Roles del Aula',
+    viewAgents: 'Ver Roles',
+    continue: 'Continuar',
+    outlineRetrying: 'Problema en la generación del esquema, reintentando...',
+    outlineEmptyResponse:
+      'El modelo no devolvió esquemas válidos. Revisa la configuración del modelo e intenta de nuevo',
+    outlineGenerateFailed: 'Error al generar el esquema, intenta más tarde',
+    webSearching: 'Búsqueda Web',
+    webSearchingDesc: 'Buscando en la web información actualizada',
+    webSearchFailed: 'Error en la búsqueda web',
+  },
+} as const;

@@ -203,7 +203,7 @@ export function ProviderConfigPanel({
             ) : (
               <>
                 <Zap className="h-3.5 w-3.5" />
-                {t('settings.testConnection')}
+                <span>{t('settings.testConnection')}</span>
               </>
             )}
           </Button>

@@ -145,3 +145,77 @@ export const chatEnUS = {
     stopListening: 'Stop recording',
   },
 } as const;
+
+export const chatEsMX = {
+  chat: {
+    lecture: 'Clase',
+    noConversations: 'Sin conversaciones',
+    startConversation: 'Escribe un mensaje para iniciar la conversación',
+    noMessages: 'Aún no hay mensajes',
+    ended: 'finalizado',
+    unknown: 'Desconocido',
+    stopDiscussion: 'Detener Discusión',
+    endQA: 'Finalizar Preguntas',
+    tabs: {
+      lecture: 'Notas',
+      chat: 'Chat',
+    },
+    lectureNotes: {
+      empty: 'Las notas aparecerán aquí después de reproducir la clase',
+      emptyHint: 'Presiona reproducir para iniciar la clase',
+      pageLabel: 'Página {n}',
+      currentPage: 'Actual',
+    },
+    badge: {
+      qa: 'P&R',
+      discussion: 'DISC',
+      lecture: 'CLASE',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: 'Foco',
+      laser: 'Láser',
+      wb_open: 'Abrir Pizarra',
+      wb_draw_text: 'Texto en Pizarra',
+      wb_draw_shape: 'Forma en Pizarra',
+      wb_draw_chart: 'Gráfica en Pizarra',
+      wb_draw_latex: 'Fórmula en Pizarra',
+      wb_draw_table: 'Tabla en Pizarra',
+      wb_draw_line: 'Línea en Pizarra',
+      wb_clear: 'Limpiar Pizarra',
+      wb_delete: 'Eliminar Elemento',
+      wb_close: 'Cerrar Pizarra',
+      discussion: 'Discusión',
+    },
+    status: {
+      inputStreaming: 'Esperando',
+      inputAvailable: 'Ejecutando',
+      outputAvailable: 'Completado',
+      outputError: 'Error',
+      outputDenied: 'Rechazado',
+      running: 'Ejecutando',
+      result: 'Completado',
+      error: 'Error',
+    },
+  },
+  agentBar: {
+    readyToLearn: '¿Listos para aprender juntos?',
+    expandedTitle: 'Configuración de Roles del Aula',
+    configTooltip: 'Clic para configurar los roles del aula',
+    voiceLabel: 'Voz',
+    voiceLoading: 'Cargando...',
+    voiceAutoAssign: 'Las voces se asignarán automáticamente',
+  },
+  proactiveCard: {
+    discussion: 'Discusión',
+    join: 'Unirse',
+    skip: 'Omitir',
+    pause: 'Pausar',
+    resume: 'Reanudar',
+  },
+  voice: {
+    startListening: 'Entrada de voz',
+    stopListening: 'Detener grabación',
+  },
+} as const;
