@@ -77,9 +77,25 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
 
       // Set voice if specified
       if (voiceURI) {
+        // 1. Try exact voiceURI match
         const voice = availableVoices.find((v) => v.voiceURI === voiceURI);
         if (voice) {
           utterance.voice = voice;
+          utterance.lang = voice.lang;
+        } else {
+          // 2. Try language code match (e.g. 'zh-HK', 'zh-CN', 'en-US')
+          const langVoice =
+            availableVoices.find((v) => v.lang === voiceURI) ||
+            availableVoices.find((v) => v.lang.startsWith(voiceURI)) ||
+            availableVoices.find((v) => voiceURI.startsWith(v.lang)) ||
+            availableVoices.find((v) => v.lang.startsWith(voiceURI.split('-')[0]));
+          if (langVoice) {
+            utterance.voice = langVoice;
+            utterance.lang = langVoice.lang;
+          } else {
+            // 3. No matching voice — set lang directly so browser picks best voice
+            utterance.lang = voiceURI;
+          }
         }
       }
 

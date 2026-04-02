@@ -1140,6 +1140,74 @@ export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
 };
 
 /**
+ * Map course generation language to appropriate TTS voice for each provider.
+ * When generating course in Traditional Chinese (zh-TW), use Cantonese (zh-HK) voice.
+ */
+export const LANGUAGE_TO_TTS_VOICE: Record<string, Record<TTSProviderId, string>> = {
+  'zh-CN': {
+    'openai-tts': 'alloy',
+    'azure-tts': 'zh-CN-XiaoxiaoNeural',
+    'glm-tts': 'tongtong',
+    'qwen-tts': 'Cherry',
+    'doubao-tts': 'zh_female_vv_uranus_bigtts',
+    'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
+    'minimax-tts': 'female-yujie',
+    'browser-native-tts': 'zh-CN',
+  },
+  'zh-TW': {
+    'openai-tts': 'alloy', // OpenAI TTS doesn't support Chinese, will fallback
+    'azure-tts': 'zh-HK-HiuGaNeural', // Cantonese voice for Traditional Chinese content
+    'glm-tts': 'tongtong',
+    'qwen-tts': 'Tingting',
+    'doubao-tts': 'zh_female_vv_uranus_bigtts',
+    'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
+    'minimax-tts': 'female-yujie',
+    'browser-native-tts': 'zh-HK',
+  },
+  'en-US': {
+    'openai-tts': 'alloy',
+    'azure-tts': 'en-US-JennyNeural',
+    'glm-tts': 'tongtong',
+    'qwen-tts': 'Amy',
+    'doubao-tts': 'en_male_tim_uranus_bigtts',
+    'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
+    'minimax-tts': 'English_Trustworthy_Man',
+    'browser-native-tts': 'en-US',
+  },
+};
+
+/**
+ * Get the appropriate TTS voice for a given course language and provider.
+ */
+export function getVoiceForLanguage(courseLanguage: string, providerId: TTSProviderId): string {
+  const languageMap = LANGUAGE_TO_TTS_VOICE[courseLanguage];
+  if (languageMap && languageMap[providerId]) {
+    return languageMap[providerId];
+  }
+  // Fallback to default voice
+  return DEFAULT_TTS_VOICES[providerId] || 'alloy';
+}
+
+/**
+ * Map UI locale (zh-CN / zh-TW / en-US) to browser-native-tts voice ID.
+ * zh-TW → zh-HK (Cantonese voice for Traditional Chinese UI)
+ * zh-CN → zh-CN (Mandarin voice for Simplified Chinese UI)
+ * en-US → en-US (English voice)
+ */
+export const LOCALE_TO_BROWSER_VOICE: Record<string, string> = {
+  'zh-CN': 'zh-CN',
+  'zh-TW': 'zh-HK',
+  'en-US': 'en-US',
+};
+
+/**
+ * Get the browser-native-tts voice ID for a given UI locale.
+ */
+export function getBrowserVoiceForLocale(locale: string): string {
+  return LOCALE_TO_BROWSER_VOICE[locale] || 'zh-CN';
+}
+
+/**
  * Get voices for a specific TTS provider
  */
 export function getTTSVoices(providerId: TTSProviderId): TTSVoiceInfo[] {
