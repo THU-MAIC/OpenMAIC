@@ -1234,3 +1234,22 @@ export function getASRProvider(providerId: ASRProviderId): ASRProviderConfig | u
 export function getASRSupportedLanguages(providerId: ASRProviderId): string[] {
   return ASR_PROVIDERS[providerId]?.supportedLanguages || [];
 }
+
+/**
+ * Map UI locale (zh-CN / zh-TW / en-US) to browser-native-tts voice ID.
+ * zh-TW → zh-HK (Cantonese voice for Traditional Chinese UI)
+ * zh-CN → zh-CN (Mandarin voice for Simplified Chinese UI)
+ * en-US → en-US (English voice)
+ */
+export const LOCALE_TO_BROWSER_VOICE: Record<string, string> = {
+  'zh-CN': 'zh-CN',
+  'zh-TW': 'zh-HK',
+  'en-US': 'en-US',
+};
+
+/**
+ * Get the browser-native-tts voice ID for a given UI locale.
+ */
+export function getBrowserVoiceForLocale(locale: string): string {
+  return LOCALE_TO_BROWSER_VOICE[locale] || 'zh-CN';
+}
