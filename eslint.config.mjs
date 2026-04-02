@@ -14,6 +14,12 @@ const eslintConfig = defineConfig([
     'next-env.d.ts',
     // Vendored/generated code:
     'packages/**',
+    // Claude Code local files:
+    '.claude/**',
+    '.superpowers/**',
+    '.worktrees/**',
+    // Playwright e2e tests (not React code):
+    'e2e/**',
   ]),
   {
     rules: {

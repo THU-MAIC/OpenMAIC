@@ -7,6 +7,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { AgentConfig } from './types';
 import { getActionsForRole } from './types';
+import type { TTSProviderId } from '@/lib/audio/types';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
@@ -231,7 +232,7 @@ export const useAgentRegistry = create<AgentRegistryState>()(
     }),
     {
       name: 'agent-registry-storage',
-      version: 10, // Bumped: exclude generated agents from persisted cache
+      version: 11, // Bumped: add voiceOverrides field to AgentConfig
       migrate: (persistedState: unknown) => persistedState,
       // Merge persisted state with default agents
       // Default agents always use code-defined values (not cached)
@@ -333,17 +334,19 @@ export async function loadGeneratedAgentsForStage(stageId: string): Promise<stri
   const { getGeneratedAgentsByStageId } = await import('@/lib/utils/database');
   const records = await getGeneratedAgentsByStageId(stageId);
 
-  if (records.length === 0) return [];
-
   const registry = useAgentRegistry.getState();
 
-  // Clear previously loaded generated agents
+  // Always clear previously loaded generated agents — even when the new stage
+  // has none — to prevent stale agents from a prior auto-classroom leaking
+  // into the current preset classroom.
   const currentAgents = registry.listAgents();
   for (const agent of currentAgents) {
     if (agent.isGenerated) {
       registry.deleteAgent(agent.id);
     }
   }
+
+  if (records.length === 0) return [];
 
   // Add new ones
   const ids: string[] = [];
@@ -377,6 +380,7 @@ export async function saveGeneratedAgents(
     avatar: string;
     color: string;
     priority: number;
+    voiceConfig?: { providerId: string; voiceId: string };
   }>,
 ): Promise<string[]> {
   const { db } = await import('@/lib/utils/database');
@@ -396,14 +400,23 @@ export async function saveGeneratedAgents(
 
   // Add to registry
   for (const record of records) {
+    const { voiceConfig, ...rest } = record;
     registry.addAgent({
-      ...record,
+      ...rest,
       allowedActions: getActionsForRole(record.role),
       isDefault: false,
       isGenerated: true,
       boundStageId: stageId,
       createdAt: new Date(record.createdAt),
       updatedAt: new Date(record.createdAt),
+      ...(voiceConfig
+        ? {
+            voiceConfig: {
+              providerId: voiceConfig.providerId as TTSProviderId,
+              voiceId: voiceConfig.voiceId,
+            },
+          }
+        : {}),
     });
   }
 

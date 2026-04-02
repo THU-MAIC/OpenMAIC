@@ -8,6 +8,9 @@ export const generationZhCN = {
     nameCopied: '课堂名称已复制',
     deleteConfirmTitle: '删除课堂',
     delete: '删除',
+    rename: '重命名',
+    renamePlaceholder: '输入课堂名称',
+    renameFailed: '重命名失败',
   },
   upload: {
     pdfSizeLimit: '支持最大50MB的PDF文件',
@@ -21,6 +24,9 @@ export const generationZhCN = {
     // Progress steps (used dynamically via activeStep)
     analyzingPdf: '解析 PDF 文档',
     analyzingPdfDesc: '正在提取文档结构和内容...',
+    pdfLoadFailed: '无法加载 PDF 文件，请重试',
+    pdfParseFailed: 'PDF 解析失败',
+    streamNotReadable: '无法读取生成数据流',
     generatingOutlines: '生成课程大纲',
     generatingOutlinesDesc: '正在构建学习路径...',
     generatingSlideContent: '生成页面内容',
@@ -136,6 +142,9 @@ export const generationEnUS = {
     nameCopied: 'Name copied',
     deleteConfirmTitle: 'Delete',
     delete: 'Delete',
+    rename: 'Rename',
+    renamePlaceholder: 'Enter classroom name',
+    renameFailed: 'Failed to rename classroom',
   },
   upload: {
     pdfSizeLimit: 'Supports PDF files up to 50MB',
@@ -149,6 +158,9 @@ export const generationEnUS = {
     // Progress steps (used dynamically via activeStep)
     analyzingPdf: 'Analyzing PDF Document',
     analyzingPdfDesc: 'Extracting document structure and content...',
+    pdfLoadFailed: 'Failed to load PDF file, please try again',
+    pdfParseFailed: 'PDF parsing failed',
+    streamNotReadable: 'Unable to read generation stream',
     generatingOutlines: 'Drafting Course Outline',
     generatingOutlinesDesc: 'Structuring the learning path...',
     generatingSlideContent: 'Generating Page Content',

@@ -23,6 +23,23 @@ export interface Stage {
   style?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];
+  // Agent IDs selected when this classroom was created
+  agentIds?: string[];
+  /**
+   * Server-generated agent configurations.
+   * Embedded in persisted classroom JSON so clients can hydrate
+   * the agent registry without relying on IndexedDB pre-population.
+   * Only present for API-generated classrooms.
+   */
+  generatedAgentConfigs?: Array<{
+    id: string;
+    name: string;
+    role: string;
+    persona: string;
+    avatar: string;
+    color: string;
+    priority: number;
+  }>;
 }
 
 /**

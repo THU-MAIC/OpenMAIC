@@ -13,7 +13,10 @@
     "start": "next start",
     "lint": "eslint",
     "check": "prettier . --check",
-    "format": "prettier . --write"
+    "format": "prettier . --write",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",
@@ -96,6 +99,7 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@rollup/plugin-commonjs": "^28.0.1",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@tailwindcss/postcss": "^4",
@@ -114,6 +118,7 @@
     "tailwindcss": "^4",
     "tslib": "^2.8.0",
     "typescript": "^5",
+    "vitest": "^4.1.0",
     "vue-to-react": "^1.0.0"
   },
   "pnpm": {

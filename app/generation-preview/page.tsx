@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   loadImageMapping,
@@ -308,9 +309,10 @@ function GenerationPreviewContent() {
           wsSettings.webSearchProvidersConfig?.[wsSettings.webSearchProviderId]?.apiKey;
         const res = await fetch('/api/web-search', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: getApiHeaders(),
           body: JSON.stringify({
             query: currentSession.requirements.requirement,
+            pdfText: currentSession.pdfText || undefined,
             apiKey: wsApiKey || undefined,
           }),
           signal,
@@ -379,19 +381,66 @@ function GenerationPreviewContent() {
 
         try {
           const allAvatars = [
-            '/avatars/assist.png',
-            '/avatars/assist-2.png',
-            '/avatars/clown.png',
-            '/avatars/clown-2.png',
-            '/avatars/curious.png',
-            '/avatars/curious-2.png',
-            '/avatars/note-taker.png',
-            '/avatars/note-taker-2.png',
-            '/avatars/teacher.png',
-            '/avatars/teacher-2.png',
-            '/avatars/thinker.png',
-            '/avatars/thinker-2.png',
+            {
+              path: '/avatars/teacher.png',
+              desc: 'Male teacher with glasses, holding a book, green background',
+            },
+            {
+              path: '/avatars/teacher-2.png',
+              desc: 'Female teacher with long dark hair, blue traditional outfit, gentle expression',
+            },
+            {
+              path: '/avatars/assist.png',
+              desc: 'Young female assistant with glasses, pink background, friendly smile',
+            },
+            {
+              path: '/avatars/assist-2.png',
+              desc: 'Young female in orange top and purple overalls, cheerful and approachable',
+            },
+            {
+              path: '/avatars/clown.png',
+              desc: 'Energetic girl with glasses pointing up, green shirt, lively and fun',
+            },
+            {
+              path: '/avatars/clown-2.png',
+              desc: 'Playful girl with curly hair doing rock gesture, blue shirt, humorous vibe',
+            },
+            {
+              path: '/avatars/curious.png',
+              desc: 'Surprised boy with glasses, hand on cheek, curious expression',
+            },
+            {
+              path: '/avatars/curious-2.png',
+              desc: 'Boy with backpack holding a book and question mark bubble, inquisitive',
+            },
+            {
+              path: '/avatars/note-taker.png',
+              desc: 'Studious boy with glasses, blue shirt, calm and organized',
+            },
+            {
+              path: '/avatars/note-taker-2.png',
+              desc: 'Active boy with yellow backpack waving, blue outfit, enthusiastic learner',
+            },
+            {
+              path: '/avatars/thinker.png',
+              desc: 'Thoughtful girl with hand on chin, purple background, contemplative',
+            },
+            {
+              path: '/avatars/thinker-2.png',
+              desc: 'Girl reading a book intently, long dark hair, intellectual and focused',
+            },
           ];
+
+          const getAvailableVoicesForGeneration = () => {
+            const providers = getAvailableProvidersWithVoices(settings.ttsProvidersConfig);
+            return providers.flatMap((p) =>
+              p.voices.map((v) => ({
+                providerId: p.providerId,
+                voiceId: v.id,
+                voiceName: v.name,
+              })),
+            );
+          };
 
           // No outlines yet — agent generation uses only stage name + description
           const agentResp = await fetch('/api/generate/agent-profiles', {
@@ -400,7 +449,9 @@ function GenerationPreviewContent() {
             body: JSON.stringify({
               stageInfo: { name: stage.name, description: stage.description },
               language: currentSession.requirements.language || 'zh-CN',
-              availableAvatars: allAvatars,
+              availableAvatars: allAvatars.map((a) => a.path),
+              avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
+              availableVoices: getAvailableVoicesForGeneration(),
             }),
             signal,
           });
@@ -413,6 +464,7 @@ function GenerationPreviewContent() {
           const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
           const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
           settings.setSelectedAgentIds(savedIds);
+          stage.agentIds = savedIds;
 
           // Show card-reveal modal, continue generation once all cards are revealed
           setGeneratedAgents(agentData.agents);
@@ -433,7 +485,11 @@ function GenerationPreviewContent() {
         } catch (err: unknown) {
           log.warn('[Generation] Agent generation failed, falling back to presets:', err);
           const registry = useAgentRegistry.getState();
-          agents = settings.selectedAgentIds
+          const fallbackIds = settings.selectedAgentIds.filter((id) => {
+            const a = registry.getAgent(id);
+            return a && !a.isGenerated;
+          });
+          agents = fallbackIds
             .map((id) => registry.getAgent(id))
             .filter(Boolean)
             .map((a) => ({
@@ -442,11 +498,17 @@ function GenerationPreviewContent() {
               role: a!.role,
               persona: a!.persona,
             }));
+          stage.agentIds = fallbackIds;
         }
       } else {
         // Preset mode — use selected agents (include persona)
+        // Filter out stale generated agent IDs that may linger in settings
         const registry = useAgentRegistry.getState();
-        agents = settings.selectedAgentIds
+        const presetAgentIds = settings.selectedAgentIds.filter((id) => {
+          const a = registry.getAgent(id);
+          return a && !a.isGenerated;
+        });
+        agents = presetAgentIds
           .map((id) => registry.getAgent(id))
           .filter(Boolean)
           .map((a) => ({
@@ -455,6 +517,7 @@ function GenerationPreviewContent() {
             role: a!.role,
             persona: a!.persona,
           }));
+        stage.agentIds = presetAgentIds;
       }
 
       // ── Generate outlines (with agent personas for teacher context) ──
@@ -666,6 +729,7 @@ function GenerationPreviewContent() {
                 text: action.text,
                 audioId,
                 ttsProviderId: settings.ttsProviderId,
+                ttsModelId: ttsProviderConfig?.modelId,
                 ttsVoice: settings.ttsVoice,
                 ttsSpeed: settings.ttsSpeed,
                 ttsApiKey: ttsProviderConfig?.apiKey || undefined,
@@ -730,6 +794,7 @@ function GenerationPreviewContent() {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
+      sessionStorage.removeItem('generationSession');
       setError(err instanceof Error ? err.message : String(err));
     }
   };

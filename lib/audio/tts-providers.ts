@@ -9,6 +9,9 @@
  * - Azure TTS: https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech
  * - GLM TTS: https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts
  * - Qwen TTS: https://bailian.console.aliyun.com/
+ * - MiniMax TTS: https://platform.minimaxi.com/docs/api-reference/speech-t2a-http
+ * - Doubao TTS: https://www.volcengine.com/docs/6561/1257543
+ * - ElevenLabs TTS: https://elevenlabs.io/docs/api-reference/text-to-speech/convert
  * - Browser Native: Web Speech API (client-side only)
  *
  * HOW TO ADD A NEW PROVIDER:
@@ -23,7 +26,7 @@
  *      name: 'ElevenLabs',
  *      requiresApiKey: true,
  *      defaultBaseUrl: 'https://api.elevenlabs.io/v1',
- *      icon: '/elevenlabs.svg',
+ *      icon: '/logos/elevenlabs.svg',
  *      voices: [...],
  *      supportedFormats: ['mp3', 'pcm'],
  *      speedRange: { min: 0.5, max: 2.0, default: 1.0 }
@@ -51,10 +54,10 @@
  *        },
  *        body: JSON.stringify({
  *          text,
- *          model_id: 'eleven_monolingual_v1',
+ *          model_id: 'eleven_multilingual_v2',
  *          voice_settings: {
  *            stability: 0.5,
- *            similarity_boost: 0.5,
+ *            similarity_boost: 0.75,
  *          }
  *        }),
  *      });
@@ -101,6 +104,23 @@ export interface TTSGenerationResult {
 }
 
 /**
+ * Thrown when a TTS provider returns a rate-limit / concurrency-quota error.
+ * Allows downstream consumers to distinguish rate-limit errors from other TTS failures.
+ *
+ * TODO: The API route currently catches all errors uniformly as GENERATION_FAILED.
+ * This class enables future retry/backoff logic without changing the throw sites.
+ */
+export class TTSRateLimitError extends Error {
+  constructor(
+    public readonly provider: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'TTSRateLimitError';
+  }
+}
+
+/**
  * Generate speech using specified TTS provider
  */
 export async function generateTTS(
@@ -130,6 +150,13 @@ export async function generateTTS(
     case 'qwen-tts':
       return await generateQwenTTS(config, text);
 
+    case 'minimax-tts':
+      return await generateMiniMaxTTS(config, text);
+    case 'doubao-tts':
+      return await generateDoubaoTTS(config, text);
+    case 'elevenlabs-tts':
+      return await generateElevenLabsTTS(config, text);
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -157,7 +184,7 @@ async function generateOpenAITTS(
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'gpt-4o-mini-tts',
+      model: config.modelId || 'gpt-4o-mini-tts',
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
@@ -229,7 +256,7 @@ async function generateGLMTTS(config: TTSModelConfig, text: string): Promise<TTS
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'glm-tts',
+      model: config.modelId || 'glm-tts',
       input: text,
       voice: config.voice,
       speed: config.speed || 1.0,
@@ -276,7 +303,7 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
       'Content-Type': 'application/json; charset=utf-8',
     },
     body: JSON.stringify({
-      model: 'qwen3-tts-flash',
+      model: config.modelId || 'qwen3-tts-flash',
       input: {
         text,
         voice: config.voice,
@@ -317,6 +344,121 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
 }
 
 /**
+ * MiniMax TTS implementation (synchronous HTTP API)
+ */
+async function generateMiniMaxTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['minimax-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+  const response = await fetch(`${baseUrl}/v1/t2a_v2`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      model: config.modelId || 'speech-2.8-hd',
+      text,
+      stream: false,
+      output_format: 'hex',
+      voice_setting: {
+        voice_id: config.voice,
+        speed: config.speed || 1.0,
+        vol: 1,
+        pitch: 0,
+      },
+      audio_setting: {
+        sample_rate: 32000,
+        bitrate: 128000,
+        format: config.format || 'mp3',
+        channel: 1,
+      },
+      language_boost: 'auto',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`MiniMax TTS API error: ${errorText}`);
+  }
+
+  const data = await response.json();
+  const hexAudio = data?.data?.audio;
+  if (!hexAudio || typeof hexAudio !== 'string') {
+    throw new Error(`MiniMax TTS error: No audio returned. Response: ${JSON.stringify(data)}`);
+  }
+
+  const cleanedHex = hexAudio.trim();
+  if (cleanedHex.length % 2 !== 0) {
+    throw new Error('MiniMax TTS error: invalid hex audio payload length');
+  }
+
+  const audio = new Uint8Array(
+    cleanedHex.match(/.{1,2}/g)?.map((byte: string) => parseInt(byte, 16)) || [],
+  );
+  return {
+    audio,
+    format: data?.extra_info?.audio_format || config.format || 'mp3',
+  };
+}
+
+/**
+ * ElevenLabs TTS implementation (direct API call with voice-specific endpoint)
+ */
+async function generateElevenLabsTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['elevenlabs-tts'].defaultBaseUrl;
+  const requestedFormat = config.format || 'mp3';
+  const clampedSpeed = Math.min(1.2, Math.max(0.7, config.speed || 1.0));
+  const outputFormatMap: Record<string, string> = {
+    mp3: 'mp3_44100_128',
+    opus: 'opus_48000_96',
+    pcm: 'pcm_44100',
+    wav: 'wav_44100',
+    ulaw: 'ulaw_8000',
+    alaw: 'alaw_8000',
+  };
+  const outputFormat = outputFormatMap[requestedFormat] || outputFormatMap.mp3;
+
+  const response = await fetch(
+    `${baseUrl}/text-to-speech/${encodeURIComponent(config.voice)}?output_format=${outputFormat}`,
+    {
+      method: 'POST',
+      headers: {
+        'xi-api-key': config.apiKey!,
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: config.modelId || 'eleven_multilingual_v2',
+        voice_settings: {
+          stability: 0.5,
+          similarity_boost: 0.75,
+          speed: clampedSpeed,
+        },
+      }),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`ElevenLabs TTS API error: ${errorText || response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    audio: new Uint8Array(arrayBuffer),
+    format: requestedFormat,
+  };
+}
+
+/**
  * Get current TTS configuration from settings store
  * Note: This function should only be called in browser context
  */
@@ -333,6 +475,7 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 
   return {
     providerId: ttsProviderId,
+    modelId: providerConfig?.modelId || TTS_PROVIDERS[ttsProviderId]?.defaultModelId || '',
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
     voice: ttsVoice,
@@ -342,6 +485,101 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 
 // Re-export from constants for convenience
 export { getAllTTSProviders, getTTSProvider, getTTSVoices } from './constants';
+
+/**
+ * Doubao TTS 2.0 implementation (Volcengine Seed-TTS 2.0)
+ */
+async function generateDoubaoTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const colonIdx = (config.apiKey || '').indexOf(':');
+  if (colonIdx <= 0) {
+    throw new Error(
+      'Doubao TTS requires API key in format "appId:accessKey". Get both from the Volcengine console.',
+    );
+  }
+  const appId = config.apiKey!.slice(0, colonIdx);
+  const accessKey = config.apiKey!.slice(colonIdx + 1);
+
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['doubao-tts'].defaultBaseUrl;
+  const speechRate = Math.round(((config.speed || 1.0) - 1.0) * 100);
+
+  const response = await fetch(`${baseUrl}/unidirectional`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-App-Id': appId,
+      'X-Api-Access-Key': accessKey,
+      'X-Api-Resource-Id': 'seed-tts-2.0',
+    },
+    body: JSON.stringify({
+      user: { uid: 'openmaic' },
+      req_params: {
+        text,
+        speaker: config.voice,
+        audio_params: { format: 'mp3', sample_rate: 24000, speech_rate: speechRate },
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Doubao TTS API error (${response.status}): ${errorText}`);
+  }
+
+  const responseText = await response.text();
+  const audioChunks: Uint8Array[] = [];
+
+  let depth = 0;
+  let start = -1;
+  for (let i = 0; i < responseText.length; i++) {
+    if (responseText[i] === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (responseText[i] === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        let chunk: { code: number; message?: string; data?: string };
+        try {
+          chunk = JSON.parse(responseText.slice(start, i + 1));
+        } catch {
+          start = -1;
+          continue;
+        }
+        start = -1;
+
+        if (chunk.code === 0 && chunk.data) {
+          audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
+        } else if (chunk.code === 20000000) {
+          break;
+        } else if (chunk.code && chunk.code !== 0) {
+          if (chunk.code === 45000000 || chunk.code === 45000292) {
+            throw new TTSRateLimitError(
+              'doubao-tts',
+              chunk.message || 'concurrency quota exceeded',
+            );
+          }
+          throw new Error(`Doubao TTS error: ${chunk.message || 'unknown'} (code: ${chunk.code})`);
+        }
+      }
+    }
+  }
+
+  if (audioChunks.length === 0) {
+    throw new Error('Doubao TTS: no audio data received');
+  }
+
+  const totalLength = audioChunks.reduce((sum, c) => sum + c.length, 0);
+  const combined = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const chunk of audioChunks) {
+    combined.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return { audio: combined, format: 'mp3' };
+}
 
 /**
  * Escape XML special characters for SSML
