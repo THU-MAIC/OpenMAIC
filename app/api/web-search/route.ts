@@ -5,22 +5,35 @@
  * Simple JSON request/response using Tavily search.
  */
 
+import { NextRequest } from 'next/server';
+import { callLLM } from '@/lib/ai/llm';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import {
+  buildSearchQuery,
+  SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
+} from '@/lib/server/search-query-builder';
+import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import type { AICallFn } from '@/lib/generation/pipeline-types';
 
 const log = createLogger('WebSearch');
 
-export async function POST(req: Request) {
+export async function POST(req: NextRequest) {
   let query: string | undefined;
   try {
     const body = await req.json();
-    const { apiKey: clientApiKey } = body as {
+    const {
+      query: requestQuery,
+      pdfText,
+      apiKey: clientApiKey,
+    } = body as {
       query?: string;
+      pdfText?: string;
       apiKey?: string;
     };
-    query = body.query;
+    query = requestQuery;
 
     if (!query || !query.trim()) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'query is required');
@@ -35,7 +48,40 @@ export async function POST(req: Request) {
       );
     }
 
-    const result = await searchWithTavily({ query: query.trim(), apiKey });
+    // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
+    const boundedPdfText = pdfText?.slice(0, SEARCH_QUERY_REWRITE_EXCERPT_LENGTH);
+
+    let aiCall: AICallFn | undefined;
+    try {
+      const { model: languageModel } = resolveModelFromHeaders(req);
+      aiCall = async (systemPrompt, userPrompt) => {
+        const result = await callLLM(
+          {
+            model: languageModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            maxOutputTokens: 256,
+          },
+          'web-search-query-rewrite',
+        );
+        return result.text;
+      };
+    } catch (error) {
+      log.warn('Search query rewrite model unavailable, falling back to raw requirement:', error);
+    }
+
+    const searchQuery = await buildSearchQuery(query, boundedPdfText, aiCall);
+
+    log.info('Running web search API request', {
+      hasPdfContext: searchQuery.hasPdfContext,
+      rawRequirementLength: searchQuery.rawRequirementLength,
+      rewriteAttempted: searchQuery.rewriteAttempted,
+      finalQueryLength: searchQuery.finalQueryLength,
+    });
+
+    const result = await searchWithTavily({ query: searchQuery.query, apiKey });
     const context = formatSearchResultsAsContext(result);
 
     return apiSuccess({
