@@ -61,6 +61,7 @@ interface RoundtableProps {
   readonly isCueUser?: boolean;
   readonly isTopicPending?: boolean;
   readonly onMessageSend?: (message: string) => void;
+  readonly onSoftPause?: () => void;
   readonly onDiscussionStart?: (request: DiscussionAction) => void;
   readonly onDiscussionSkip?: () => void;
   readonly onStopDiscussion?: () => void;
@@ -149,6 +150,7 @@ export function Roundtable({
   isCueUser,
   isTopicPending,
   onMessageSend,
+  onSoftPause,
   onDiscussionStart,
   onDiscussionSkip,
   onStopDiscussion,

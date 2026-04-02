@@ -1,8 +1,8 @@
 /**
  * Generation Types - Two-Stage Content Generation System
  *
- * Stage 1: User requirements + documents â†’ Scene Outlines (per-page)
- * Stage 2: Scene Outlines â†’ Full Scenes (slide/quiz/interactive/pbl with actions)
+ * Stage 1: User requirements + documents â†?Scene Outlines (per-page)
+ * Stage 2: Scene Outlines â†?Full Scenes (slide/quiz/interactive/pbl with actions)
  */
 
 import type { ActionType } from './action';
@@ -24,7 +24,7 @@ export interface PdfImage {
 }
 
 /**
- * Image mapping for post-processing: image_id â†’ base64 URL
+ * Image mapping for post-processing: image_id â†?base64 URL
  */
 export type ImageMapping = Record<string, string>;
 
@@ -64,7 +64,7 @@ export interface UploadedDocument {
  */
 export interface UserRequirements {
   requirement: string; // Single free-form text for all user input
-  language: 'zh-CN' | 'en-US'; // Course language - critical for generation
+  language: 'zh-CN' | 'zh-TW' | 'en-US'; // Course language - critical for generation
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
@@ -100,7 +100,7 @@ export interface SceneOutline {
   teachingObjective?: string;
   estimatedDuration?: number; // seconds
   order: number;
-  language?: 'zh-CN' | 'en-US'; // Generation language (inherited from requirements)
+  language?: 'zh-CN' | 'zh-TW' | 'en-US'; // Generation language (inherited from requirements)
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)
@@ -124,7 +124,7 @@ export interface SceneOutline {
     projectDescription: string;
     targetSkills: string[];
     issueCount?: number;
-    language: 'zh-CN' | 'en-US';
+    language: 'zh-CN' | 'zh-TW' | 'en-US';
   };
 }
 

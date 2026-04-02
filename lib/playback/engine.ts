@@ -655,8 +655,12 @@ export class PlaybackEngine {
         voiceFound = true;
       }
     }
-    if (!voiceFound) {
+    if (!voiceFound && settings.ttsVoice && settings.ttsVoice !== 'default') {
       // No usable voice configured — detect text language so the browser
+      utterance.lang = settings.ttsVoice;
+    }
+
+    if (!voiceFound && (!settings.ttsVoice || settings.ttsVoice === 'default')) {
       // auto-selects an appropriate voice.
       const cjkRatio =
         (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / chunkText.length;

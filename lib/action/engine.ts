@@ -14,7 +14,7 @@ import { createStageAPI } from '@/lib/api/stage-api';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
-import { getClientTranslation } from '@/lib/i18n';
+import { useSettingsStore } from '@/lib/store/settings';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 import type {
   Action,
@@ -171,10 +171,84 @@ export class ActionEngine {
       this.audioPlayer!.onEnded(() => resolve());
       this.audioPlayer!.play(action.audioId || '', action.audioUrl)
         .then((audioStarted) => {
-          if (!audioStarted) resolve();
+          if (!audioStarted) {
+            // No pre-generated audio — try browser-native TTS if selected
+            const settings = useSettingsStore.getState();
+            if (
+              settings.ttsEnabled &&
+              settings.ttsProviderId === 'browser-native-tts' &&
+              typeof window !== 'undefined' &&
+              window.speechSynthesis &&
+              action.text
+            ) {
+              // Use browser TTS with current voice setting
+              const voice =
+                settings.ttsVoice && settings.ttsVoice !== 'default' ? settings.ttsVoice : 'zh-CN';
+              this.speakWithBrowserTTS(action.text, voice, settings.ttsSpeed, () => resolve());
+            } else {
+              resolve();
+            }
+          }
         })
         .catch(() => resolve());
     });
+  }
+
+  /**
+   * Speak text using browser-native TTS (Web Speech API)
+   * Respects user's voice preference from settings store
+   */
+  private speakWithBrowserTTS(text: string, voice: string, speed: number, onEnd: () => void): void {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      onEnd();
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = speed;
+
+    // Try to find matching voice
+    const voices = window.speechSynthesis.getVoices();
+    let selectedVoice: SpeechSynthesisVoice | null = null;
+
+    if (voice && voice !== 'default') {
+      // 1. Try exact voice name/URI match
+      selectedVoice = voices.find((v) => v.name === voice || v.voiceURI === voice) || null;
+
+      // 2. Try language code match (e.g. 'zh-HK', 'zh-CN', 'en-US')
+      if (!selectedVoice) {
+        selectedVoice =
+          voices.find((v) => v.lang === voice) ||
+          voices.find((v) => v.lang.startsWith(voice)) ||
+          voices.find((v) => voice.startsWith(v.lang)) ||
+          voices.find((v) => v.lang.startsWith(voice.split('-')[0])) ||
+          null;
+      }
+    }
+
+    if (selectedVoice) {
+      utterance.voice = selectedVoice;
+      utterance.lang = selectedVoice.lang;
+    } else if (voice && voice !== 'default') {
+      // User set preference but no matching voice — set lang directly
+      // so browser uses its best voice for that language
+      utterance.lang = voice;
+    }
+
+    utterance.onend = () => {
+      onEnd();
+    };
+
+    utterance.onerror = (event) => {
+      if (event.error !== 'canceled') {
+        log.warn('Browser TTS error:', event.error);
+      }
+      onEnd();
+    };
+
+    window.speechSynthesis.speak(utterance);
   }
 
   // ==================== Synchronous — Video ====================

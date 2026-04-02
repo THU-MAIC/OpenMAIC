@@ -5,6 +5,11 @@ import { stageZhCN, stageEnUS } from './stage';
 import { chatZhCN, chatEnUS } from './chat';
 import { generationZhCN, generationEnUS } from './generation';
 import { settingsZhCN, settingsEnUS } from './settings';
+import { commonZhTW } from './common-zhTW';
+import { stageZhTW } from './stage-zhTW';
+import { chatZhTW } from './chat-zhTW';
+import { generationZhTW } from './generation-zhTW';
+import { settingsZhTW } from './settings-zhTW';
 
 export const translations = {
   'zh-CN': {
@@ -13,6 +18,13 @@ export const translations = {
     ...chatZhCN,
     ...generationZhCN,
     ...settingsZhCN,
+  },
+  'zh-TW': {
+    ...commonZhTW,
+    ...stageZhTW,
+    ...chatZhTW,
+    ...generationZhTW,
+    ...settingsZhTW,
   },
   'en-US': {
     ...commonEnUS,
@@ -40,7 +52,7 @@ export function getClientTranslation(key: string): string {
   if (typeof window !== 'undefined') {
     try {
       const storedLocale = localStorage.getItem('locale');
-      if (storedLocale === 'zh-CN' || storedLocale === 'en-US') {
+      if (storedLocale === 'zh-CN' || storedLocale === 'zh-TW' || storedLocale === 'en-US') {
         locale = storedLocale;
       }
     } catch {

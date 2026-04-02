@@ -13,11 +13,8 @@ import { Roundtable } from '@/components/roundtable';
 import { PlaybackEngine, computePlaybackView } from '@/lib/playback';
 import type { EngineMode, TriggerEvent, Effect } from '@/lib/playback';
 import { ActionEngine } from '@/lib/action/engine';
-import { createAudioPlayer } from '@/lib/utils/audio-player';
-import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
-import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
+import { createAudioPlayer, type BrowserTTSConfig } from '@/lib/utils/audio-player';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
-import { cn } from '@/lib/utils';
 // Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
 import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
@@ -59,8 +56,6 @@ export function Stage({
   const setChatAreaWidth = useSettingsStore((s) => s.setChatAreaWidth);
   const chatAreaCollapsed = useSettingsStore((s) => s.chatAreaCollapsed);
   const setChatAreaCollapsed = useSettingsStore((s) => s.setChatAreaCollapsed);
-  const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
-  const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);
 
   // PlaybackEngine state
   const [engineMode, setEngineMode] = useState<EngineMode>('idle');
@@ -98,9 +93,6 @@ export function Stage({
 
   // Scene switch confirmation dialog state
   const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
-  const [isPresenting, setIsPresenting] = useState(false);
-  const [controlsVisible, setControlsVisible] = useState(true);
-  const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
 
   // Whiteboard state (from canvas store so AI tools can open it)
   const whiteboardOpen = useCanvasStore.use.whiteboardOpen();
@@ -108,35 +100,12 @@ export function Stage({
 
   // Selected agents from settings store (Zustand)
   const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
-  const ttsMuted = useSettingsStore((s) => s.ttsMuted);
-  const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
 
   // Generate participants from selected agents
   const participants = useMemo(
     () => agentsToParticipants(selectedAgentIds, t),
     [selectedAgentIds, t],
   );
-
-  // Resolved AgentConfig array for hooks that need full agent objects
-  // Subscribe to the agents record so voiceConfig changes trigger re-resolution
-  const agentsRecord = useAgentRegistry((s) => s.agents);
-  const selectedAgents = useMemo(
-    () => selectedAgentIds.map((id) => agentsRecord[id]).filter((a): a is AgentConfig => a != null),
-    [agentsRecord, selectedAgentIds],
-  );
-
-  // Discussion TTS: audio indicator state
-  const [audioIndicatorState, setAudioIndicatorState] = useState<AudioIndicatorState>('idle');
-  const [audioAgentId, setAudioAgentId] = useState<string | null>(null);
-
-  const discussionTTS = useDiscussionTTS({
-    enabled: ttsEnabled && !ttsMuted,
-    agents: selectedAgents,
-    onAudioStateChange: (agentId, state) => {
-      setAudioAgentId(agentId);
-      setAudioIndicatorState(state);
-    },
-  });
 
   // Pick a student agent for discussion trigger (prioritize student > non-teacher > fallback)
   const pickStudentAgent = useCallback((): string => {
@@ -161,16 +130,35 @@ export function Stage({
   const lectureSessionIdRef = useRef<string | null>(null);
   const lectureActionCounterRef = useRef(0);
   const discussionAbortRef = useRef<AbortController | null>(null);
-  const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const stageRef = useRef<HTMLDivElement>(null);
   // Guard to prevent double flash when manual stop triggers onDiscussionEnd
   const manualStopRef = useRef(false);
   // Monotonic counter incremented on each scene switch — used to discard stale SSE callbacks
   const sceneEpochRef = useRef(0);
   // When true, the next engine init will auto-start playback (for auto-play scene advance)
   const autoStartRef = useRef(false);
-  // Discussion buffer-level pause state (distinct from soft-pause which aborts SSE)
-  const [isDiscussionPaused, setIsDiscussionPaused] = useState(false);
+
+  /**
+   * Soft-pause: interrupt current agent stream but keep the session active.
+   * Used when clicking the bubble pause button or opening input during QA/discussion.
+   * Does NOT end the topic — user can continue speaking in the same session.
+   * Preserves liveSpeech (with "..." appended) and speakingAgentId so the
+   * roundtable bubble stays on the interrupted agent's text.
+   */
+  const doSoftPause = useCallback(async () => {
+    await chatAreaRef.current?.softPauseActiveSession();
+    // Append "..." to live speech to show interruption in roundtable bubble.
+    // Only annotate when there's actual text being interrupted — during pure
+    // director-thinking (prev is null, no agent assigned), leave liveSpeech
+    // as-is so no spurious teacher bubble appears.
+    setLiveSpeech((prev) => (prev !== null ? prev + '...' : null));
+    // Keep speakingAgentId — bubble identity is preserved
+    setThinkingState(null);
+    setChatIsStreaming(false);
+    setIsTopicPending(true);
+    // Don't clear chatSessionType, speakingAgentId, or liveSpeech
+    // Don't show end flash
+    // Don't call handleEndDiscussion — engine stays in current state
+  }, []);
 
   /**
    * Resume a soft-paused topic: re-call /chat with existing session messages.
@@ -183,9 +171,6 @@ export function Stage({
     setSpeakingAgentId(null);
     setThinkingState({ stage: 'director' });
     setChatIsStreaming(true);
-    // Transition engine back to live — onInputActivate paused it when soft-pausing,
-    // so we must explicitly resume to keep engine mode in sync with the chat loop.
-    engineRef.current?.resume();
     // Fire new chat round — SSE events will drive thinking → agent_start → speech
     await chatAreaRef.current?.resumeActiveSession();
   }, []);
@@ -200,7 +185,6 @@ export function Stage({
     setIsTopicPending(false);
     setChatIsStreaming(false);
     setChatSessionType(null);
-    setIsDiscussionPaused(false);
   }, []);
 
   /** Full scene reset (scene switch) — resetLiveState + lecture/visual state */
@@ -212,13 +196,6 @@ export function Stage({
     setShowEndFlash(false);
     setActiveBubbleId(null);
     setDiscussionTrigger(null);
-  }, [resetLiveState]);
-
-  /** Request failure should exit live discussion UI without hard-closing the session. */
-  const handleLiveSessionError = useCallback(() => {
-    engineRef.current?.handleDiscussionError();
-    resetLiveState();
-    setActiveBubbleId(null);
   }, [resetLiveState]);
 
   /**
@@ -240,113 +217,14 @@ export function Stage({
       setTimeout(() => setShowEndFlash(false), 1800);
     }
 
-    // Stop any in-flight discussion TTS audio
-    discussionTTS.cleanup();
-
     resetLiveState();
-  }, [chatSessionType, resetLiveState, discussionTTS]);
+  }, [chatSessionType, resetLiveState]);
 
   // Shared stop-discussion handler (used by both Roundtable and Canvas toolbar)
   const handleStopDiscussion = useCallback(async () => {
     await chatAreaRef.current?.endActiveSession();
     doSessionCleanup();
   }, [doSessionCleanup]);
-
-  const clearPresentationIdleTimer = useCallback(() => {
-    if (presentationIdleTimerRef.current) {
-      clearTimeout(presentationIdleTimerRef.current);
-      presentationIdleTimerRef.current = null;
-    }
-  }, []);
-
-  const resetPresentationIdleTimer = useCallback(() => {
-    setControlsVisible(true);
-    clearPresentationIdleTimer();
-    if (isPresenting && !isPresentationInteractionActive) {
-      presentationIdleTimerRef.current = setTimeout(() => {
-        setControlsVisible(false);
-      }, 3000);
-    }
-  }, [clearPresentationIdleTimer, isPresenting, isPresentationInteractionActive]);
-
-  const togglePresentation = useCallback(async () => {
-    const stageElement = stageRef.current;
-    if (!stageElement) return;
-
-    try {
-      if (document.fullscreenElement === stageElement) {
-        // Unlock Escape key before exiting fullscreen
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (navigator as any).keyboard?.unlock?.();
-        await document.exitFullscreen();
-        return;
-      }
-
-      setControlsVisible(true);
-      await stageElement.requestFullscreen();
-      // Lock Escape key so it doesn't auto-exit fullscreen (#255)
-      // Escape is handled manually in our keydown handler instead
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (navigator as any).keyboard?.lock?.(['Escape']).catch(() => {});
-      setSidebarCollapsed(true);
-      setChatAreaCollapsed(true);
-    } catch {
-      // Firefox may deny fullscreen from certain keyboard events (e.g. F11)
-      console.warn('[Presentation] Fullscreen request denied — browser policy');
-    }
-  }, [setChatAreaCollapsed, setSidebarCollapsed]);
-
-  useEffect(() => {
-    const onFullscreenChange = () => {
-      const active = document.fullscreenElement === stageRef.current;
-      setIsPresenting(active);
-
-      if (!active) {
-        // Ensure keyboard unlock on any fullscreen exit
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (navigator as any).keyboard?.unlock?.();
-        setControlsVisible(true);
-        clearPresentationIdleTimer();
-      }
-    };
-
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
-  }, [clearPresentationIdleTimer]);
-
-  useEffect(() => {
-    if (!isPresenting) {
-      setControlsVisible(true);
-      clearPresentationIdleTimer();
-      return;
-    }
-
-    const handleActivity = () => {
-      resetPresentationIdleTimer();
-    };
-
-    window.addEventListener('mousemove', handleActivity);
-    window.addEventListener('mousedown', handleActivity);
-    window.addEventListener('touchstart', handleActivity);
-    if (isPresentationInteractionActive) {
-      setControlsVisible(true);
-      clearPresentationIdleTimer();
-    } else {
-      resetPresentationIdleTimer();
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleActivity);
-      window.removeEventListener('mousedown', handleActivity);
-      window.removeEventListener('touchstart', handleActivity);
-      clearPresentationIdleTimer();
-    };
-  }, [
-    clearPresentationIdleTimer,
-    isPresenting,
-    isPresentationInteractionActive,
-    resetPresentationIdleTimer,
-  ]);
 
   // Initialize playback engine when scene changes
   useEffect(() => {
@@ -363,9 +241,6 @@ export function Stage({
       discussionAbortRef.current.abort();
       discussionAbortRef.current = null;
     }
-
-    // Stop any in-flight discussion TTS audio on scene switch
-    discussionTTS.cleanup();
 
     // Reset all roundtable/live state so scenes are fully isolated
     resetSceneState();
@@ -456,8 +331,6 @@ export function Stage({
           discussionAbortRef.current = null;
         }
         setDiscussionTrigger(null);
-        // Stop any in-flight discussion TTS audio
-        discussionTTS.cleanup();
         // Clear roundtable state (idempotent — may already be cleared by doSessionCleanup)
         resetLiveState();
         // Only show flash for engine-initiated ends (not manual stop — that's handled by doSessionCleanup)
@@ -552,7 +425,6 @@ export function Stage({
   // Cleanup on unmount
   useEffect(() => {
     const audioPlayer = audioPlayerRef.current;
-    const chatArea = chatAreaRef.current;
     return () => {
       if (engineRef.current) {
         engineRef.current.stop();
@@ -561,14 +433,11 @@ export function Stage({
       if (discussionAbortRef.current) {
         discussionAbortRef.current.abort();
       }
-      discussionTTS.cleanup();
-      chatArea?.endActiveSession();
-      clearPresentationIdleTimer();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- unmount-only cleanup, clearPresentationIdleTimer is stable
   }, []);
 
   // Sync mute state from settings store to audioPlayer
+  const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   useEffect(() => {
     audioPlayerRef.current.setMuted(ttsMuted);
   }, [ttsMuted]);
@@ -586,6 +455,23 @@ export function Stage({
   useEffect(() => {
     audioPlayerRef.current.setPlaybackRate(playbackSpeed);
   }, [playbackSpeed]);
+
+  // Sync TTS config to audio player (for browser-native-tts support)
+  const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
+  const ttsVoice = useSettingsStore((s) => s.ttsVoice);
+  const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
+  useEffect(() => {
+    if (ttsProviderId === 'browser-native-tts') {
+      const browserTTSConfig: BrowserTTSConfig = {
+        providerId: 'browser-native-tts',
+        voice: ttsVoice,
+        speed: ttsSpeed,
+      };
+      audioPlayerRef.current.setBrowserTTSConfig(browserTTSConfig);
+    } else {
+      audioPlayerRef.current.setBrowserTTSConfig(null);
+    }
+  }, [ttsProviderId, ttsVoice, ttsSpeed]);
 
   /**
    * Handle discussion SSE — POST /api/chat and push events to engine
@@ -691,7 +577,7 @@ export function Stage({
   }, []);
 
   // play/pause toggle
-  const handlePlayPause = useCallback(async () => {
+  const handlePlayPause = async () => {
     const engine = engineRef.current;
     if (!engine) return;
 
@@ -725,14 +611,10 @@ export function Stage({
         engine.continuePlayback();
       }
     }
-  }, [playbackCompleted, currentScene]);
-
-  // get scene information
-  const isPendingScene = currentSceneId === PENDING_SCENE_ID;
-  const hasNextPending = generatingOutlines.length > 0;
+  };
 
   // previous scene (gated)
-  const handlePreviousScene = useCallback(() => {
+  const handlePreviousScene = () => {
     if (isPendingScene) {
       // From pending page → go to last real scene
       if (scenes.length > 0) {
@@ -744,10 +626,10 @@ export function Stage({
     if (currentIndex > 0) {
       gatedSceneSwitch(scenes[currentIndex - 1].id);
     }
-  }, [currentSceneId, gatedSceneSwitch, isPendingScene, scenes]);
+  };
 
   // next scene (gated)
-  const handleNextScene = useCallback(() => {
+  const handleNextScene = () => {
     if (isPendingScene) return; // Already on pending, nowhere to go
     const currentIndex = scenes.findIndex((s) => s.id === currentSceneId);
     if (currentIndex < scenes.length - 1) {
@@ -756,8 +638,11 @@ export function Stage({
       // On last real scene → advance to pending page
       setCurrentSceneId(PENDING_SCENE_ID);
     }
-  }, [currentSceneId, gatedSceneSwitch, hasNextPending, isPendingScene, scenes, setCurrentSceneId]);
+  };
 
+  // get scene information
+  const isPendingScene = currentSceneId === PENDING_SCENE_ID;
+  const hasNextPending = generatingOutlines.length > 0;
   const currentSceneIndex = isPendingScene
     ? scenes.length
     : scenes.findIndex((s) => s.id === currentSceneId);
@@ -770,124 +655,6 @@ export function Stage({
   const handleWhiteboardToggle = () => {
     setWhiteboardOpen(!whiteboardOpen);
   };
-
-  const isPresentationShortcutTarget = useCallback((target: EventTarget | null) => {
-    if (!(target instanceof HTMLElement)) return false;
-
-    if (target.isContentEditable || target.closest('[contenteditable="true"]')) {
-      return true;
-    }
-
-    return (
-      target.closest(
-        ['input', 'textarea', 'select', '[role="slider"]', 'input[type="range"]'].join(', '),
-      ) !== null
-    );
-  }, []);
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
-      if (
-        isPresentationShortcutTarget(event.target) ||
-        isPresentationShortcutTarget(document.activeElement)
-      ) {
-        return;
-      }
-
-      switch (event.key) {
-        case 'ArrowLeft':
-          if (!isPresenting) return;
-          event.preventDefault();
-          handlePreviousScene();
-          resetPresentationIdleTimer();
-          break;
-        case 'ArrowRight':
-          if (!isPresenting) return;
-          event.preventDefault();
-          handleNextScene();
-          resetPresentationIdleTimer();
-          break;
-        case ' ':
-        case 'Spacebar':
-          // During active QA/discussion, Roundtable owns Space for
-          // buffer-level pause/resume — don't also fire engine play/pause.
-          if (chatSessionType === 'qa' || chatSessionType === 'discussion') break;
-          event.preventDefault();
-          handlePlayPause();
-          break;
-        case 'Escape':
-          // With keyboard.lock(), Escape no longer auto-exits fullscreen.
-          // If panels are open, roundtable handles Escape (close panels).
-          // If no panels are open, manually exit fullscreen.
-          if (isPresenting && !isPresentationInteractionActive) {
-            event.preventDefault();
-            togglePresentation();
-          }
-          break;
-        case 'ArrowUp':
-          event.preventDefault();
-          setTTSVolume(ttsVolume + 0.1);
-          break;
-        case 'ArrowDown':
-          event.preventDefault();
-          setTTSVolume(ttsVolume - 0.1);
-          break;
-        case 'm':
-        case 'M':
-          event.preventDefault();
-          setTTSMuted(!ttsMuted);
-          break;
-        case 's':
-        case 'S':
-          event.preventDefault();
-          setSidebarCollapsed(!sidebarCollapsed);
-          break;
-        case 'c':
-        case 'C':
-          event.preventDefault();
-          setChatAreaCollapsed(!chatAreaCollapsed);
-          break;
-        default:
-          break;
-      }
-    };
-
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [
-    chatSessionType,
-    chatAreaCollapsed,
-    handleNextScene,
-    handlePlayPause,
-    handlePreviousScene,
-    isPresenting,
-    isPresentationInteractionActive,
-    isPresentationShortcutTarget,
-    resetPresentationIdleTimer,
-    setChatAreaCollapsed,
-    setSidebarCollapsed,
-    setTTSMuted,
-    setTTSVolume,
-    sidebarCollapsed,
-    togglePresentation,
-    ttsMuted,
-    ttsVolume,
-  ]);
-
-  // Intercept F11 to use our presentation fullscreen instead of browser fullscreen
-  // This way ESC can exit fullscreen (browser F11 fullscreen requires F11 to exit)
-  useEffect(() => {
-    const onF11 = (event: KeyboardEvent) => {
-      if (event.key === 'F11') {
-        event.preventDefault();
-        togglePresentation();
-      }
-    };
-
-    window.addEventListener('keydown', onF11);
-    return () => window.removeEventListener('keydown', onF11);
-  }, [togglePresentation]);
 
   // Map engine mode to the CanvasArea's expected engine state
   const canvasEngineState = (() => {
@@ -915,19 +682,15 @@ export function Stage({
 
   // Calculate scene viewer height (subtract Header's 80px height)
   const sceneViewerHeight = (() => {
-    const headerHeight = isPresenting ? 0 : 80; // Header h-20 = 80px
-    const roundtableHeight = mode === 'playback' && !isPresenting ? 192 : 0;
-    return `calc(100% - ${headerHeight + roundtableHeight}px)`;
+    const headerHeight = 80; // Header h-20 = 80px
+    if (mode === 'playback') {
+      return `calc(100% - ${headerHeight + 192}px)`; // Header + Roundtable
+    }
+    return `calc(100% - ${headerHeight}px)`;
   })();
 
   return (
-    <div
-      ref={stageRef}
-      className={cn(
-        'flex-1 flex overflow-hidden bg-gray-50 dark:bg-gray-900',
-        isPresenting && !controlsVisible && 'cursor-none',
-      )}
-    >
+    <div className="flex-1 flex overflow-hidden bg-gray-50 dark:bg-gray-900">
       {/* Scene Sidebar */}
       <SceneSidebar
         collapsed={sidebarCollapsed}
@@ -939,7 +702,7 @@ export function Stage({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
         {/* Header */}
-        {!isPresenting && <Header currentSceneTitle={currentScene?.title || ''} />}
+        <Header currentSceneTitle={currentScene?.title || ''} />
 
         {/* Canvas Area */}
         <div
@@ -967,14 +730,12 @@ export function Stage({
             onNextSlide={handleNextScene}
             onPlayPause={handlePlayPause}
             onWhiteboardClose={handleWhiteboardToggle}
-            isPresenting={isPresenting}
-            onTogglePresentation={togglePresentation}
             showStopDiscussion={
               engineMode === 'live' ||
               (chatIsStreaming && (chatSessionType === 'qa' || chatSessionType === 'discussion'))
             }
             onStopDiscussion={handleStopDiscussion}
-            hideToolbar={mode === 'playback' || (isPresenting && !controlsVisible)}
+            hideToolbar={mode === 'playback'}
             isPendingScene={isPendingScene}
             isGenerationFailed={
               isPendingScene && failedOutlines.some((f) => f.id === generatingOutlines[0]?.id)
@@ -989,143 +750,98 @@ export function Stage({
 
         {/* Roundtable Area */}
         {mode === 'playback' && (
-          <div
-            className={cn(
-              'transition-opacity duration-300',
-              !isPresenting && 'shrink-0',
-              isPresenting && 'absolute inset-x-0 bottom-0 z-20',
-            )}
-          >
-            <Roundtable
-              mode={mode}
-              initialParticipants={participants}
-              playbackView={playbackView}
-              currentSpeech={liveSpeech}
-              lectureSpeech={lectureSpeech}
-              idleText={firstSpeechText}
-              playbackCompleted={playbackCompleted}
-              discussionRequest={discussionRequest}
-              engineMode={engineMode}
-              isStreaming={chatIsStreaming}
-              audioIndicatorState={audioIndicatorState}
-              audioAgentId={audioAgentId}
-              sessionType={
-                chatSessionType === 'qa'
-                  ? 'qa'
-                  : chatSessionType === 'discussion'
-                    ? 'discussion'
-                    : undefined
+          <Roundtable
+            mode={mode}
+            initialParticipants={participants}
+            playbackView={playbackView}
+            currentSpeech={liveSpeech}
+            lectureSpeech={lectureSpeech}
+            idleText={firstSpeechText}
+            playbackCompleted={playbackCompleted}
+            discussionRequest={discussionRequest}
+            engineMode={engineMode}
+            isStreaming={chatIsStreaming}
+            sessionType={
+              chatSessionType === 'qa'
+                ? 'qa'
+                : chatSessionType === 'discussion'
+                  ? 'discussion'
+                  : undefined
+            }
+            speakingAgentId={speakingAgentId}
+            speechProgress={speechProgress}
+            showEndFlash={showEndFlash}
+            endFlashSessionType={endFlashSessionType}
+            thinkingState={thinkingState}
+            isCueUser={isCueUser}
+            isTopicPending={isTopicPending}
+            onMessageSend={(msg) => {
+              // Clear soft-paused state — user is continuing the topic
+              if (isTopicPending) {
+                setIsTopicPending(false);
+                setLiveSpeech(null);
+                setSpeakingAgentId(null);
               }
-              speakingAgentId={speakingAgentId}
-              speechProgress={speechProgress}
-              showEndFlash={showEndFlash}
-              endFlashSessionType={endFlashSessionType}
-              thinkingState={thinkingState}
-              isCueUser={isCueUser}
-              isTopicPending={isTopicPending}
-              onMessageSend={async (msg) => {
-                // Always clear Level-1 pause state — the closure may hold a stale
-                // isDiscussionPaused value (e.g. voice input's onTranscription callback
-                // captures onMessageSend before React re-renders with the updated state).
-                setIsDiscussionPaused(false);
-                // Clear the sticky livePausedRef so the next agent-loop buffer
-                // starts unpaused. (pauseActiveLiveBuffer sets a ref that new
-                // buffers inherit — must be cleared before sendMessage creates one.)
-                chatAreaRef.current?.resumeActiveLiveBuffer();
-                // Flush any buffered / in-flight TTS audio from the previous
-                // agent turn so it doesn't leak into the next round.
-                discussionTTS.cleanup();
-                // Clear soft-paused state — user is continuing the topic
-                if (isTopicPending) {
-                  setIsTopicPending(false);
-                  setLiveSpeech(null);
-                  setSpeakingAgentId(null);
-                }
-                // User interrupts during playback — handleUserInterrupt triggers
-                // onUserInterrupt callback which already calls sendMessage, so skip
-                // the direct sendMessage below to avoid sending twice.
-                // Include 'paused' because onInputActivate pauses the engine before
-                // the user finishes typing — without this the interrupt position
-                // would never be saved and resuming after QA skips to the next sentence.
-                if (
-                  engineRef.current &&
-                  (engineMode === 'playing' || engineMode === 'live' || engineMode === 'paused')
-                ) {
-                  engineRef.current.handleUserInterrupt(msg);
-                } else {
-                  chatAreaRef.current?.sendMessage(msg);
-                }
-                // Auto-switch to chat tab when user sends a message
-                chatAreaRef.current?.switchToTab('chat');
-                setIsCueUser(false);
-                // Immediately mark streaming for synchronized stop button
-                setChatIsStreaming(true);
-                setChatSessionType(chatSessionType || 'qa');
-                // Optimistic thinking: show thinking dots immediately so there's
-                // no blank gap between userMessage expiry and the SSE thinking event.
-                // The real SSE event will overwrite this with the same or updated value.
-                setThinkingState({ stage: 'director' });
-              }}
-              onDiscussionStart={() => {
-                // User clicks "Join" on ProactiveCard
-                engineRef.current?.confirmDiscussion();
-              }}
-              onDiscussionSkip={() => {
-                // User clicks "Skip" on ProactiveCard
-                engineRef.current?.skipDiscussion();
-              }}
-              onStopDiscussion={handleStopDiscussion}
-              onInputActivate={() => {
-                // Level-1 pause: freeze buffer tick + TTS audio while SSE keeps buffering.
-                // User resumes manually via Space / pause button after closing the input.
-                // No isDiscussionPaused guard — always attempt to pause the buffer.
-                // The return value ensures UI state stays in sync with buffer state.
-                if (chatSessionType === 'qa' || chatSessionType === 'discussion') {
-                  const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
-                  if (paused) {
-                    discussionTTS.pause();
-                    setIsDiscussionPaused(true);
-                  }
-                }
-                // Also pause playback engine
-                if (engineRef.current && (engineMode === 'playing' || engineMode === 'live')) {
-                  engineRef.current.pause();
-                }
-              }}
-              onResumeTopic={doResumeTopic}
-              onPlayPause={handlePlayPause}
-              isDiscussionPaused={isDiscussionPaused}
-              onDiscussionPause={() => {
-                const paused = chatAreaRef.current?.pauseActiveLiveBuffer();
-                if (paused) {
-                  discussionTTS.pause();
-                  setIsDiscussionPaused(true);
-                }
-              }}
-              onDiscussionResume={() => {
-                chatAreaRef.current?.resumeActiveLiveBuffer();
-                discussionTTS.resume();
-                setIsDiscussionPaused(false);
-              }}
-              totalActions={totalActions}
-              currentActionIndex={0}
-              currentSceneIndex={currentSceneIndex}
-              scenesCount={totalScenesCount}
-              whiteboardOpen={whiteboardOpen}
-              sidebarCollapsed={sidebarCollapsed}
-              chatCollapsed={chatAreaCollapsed}
-              onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
-              onToggleChat={() => setChatAreaCollapsed(!chatAreaCollapsed)}
-              onPrevSlide={handlePreviousScene}
-              onNextSlide={handleNextScene}
-              onWhiteboardClose={handleWhiteboardToggle}
-              isPresenting={isPresenting}
-              controlsVisible={controlsVisible}
-              onTogglePresentation={togglePresentation}
-              onPresentationInteractionChange={setIsPresentationInteractionActive}
-              fullscreenContainerRef={stageRef}
-            />
-          </div>
+              // User interrupts during playback — handleUserInterrupt triggers
+              // onUserInterrupt callback which already calls sendMessage, so skip
+              // the direct sendMessage below to avoid sending twice.
+              // Include 'paused' because onInputActivate pauses the engine before
+              // the user finishes typing — without this the interrupt position
+              // would never be saved and resuming after QA skips to the next sentence.
+              if (
+                engineRef.current &&
+                (engineMode === 'playing' || engineMode === 'live' || engineMode === 'paused')
+              ) {
+                engineRef.current.handleUserInterrupt(msg);
+              } else {
+                chatAreaRef.current?.sendMessage(msg);
+              }
+              // Auto-switch to chat tab when user sends a message
+              chatAreaRef.current?.switchToTab('chat');
+              setIsCueUser(false);
+              // Immediately mark streaming for synchronized stop button
+              setChatIsStreaming(true);
+              setChatSessionType(chatSessionType || 'qa');
+              // Optimistic thinking: show thinking dots immediately so there's
+              // no blank gap between userMessage expiry and the SSE thinking event.
+              // The real SSE event will overwrite this with the same or updated value.
+              setThinkingState({ stage: 'director' });
+            }}
+            onDiscussionStart={() => {
+              // User clicks "Join" on ProactiveCard
+              engineRef.current?.confirmDiscussion();
+            }}
+            onDiscussionSkip={() => {
+              // User clicks "Skip" on ProactiveCard
+              engineRef.current?.skipDiscussion();
+            }}
+            onStopDiscussion={handleStopDiscussion}
+            onInputActivate={async () => {
+              // Soft-pause QA/Discussion if streaming (opening input = implicit pause)
+              if (chatIsStreaming) {
+                await doSoftPause();
+              }
+              // Also pause playback engine
+              if (engineRef.current && (engineMode === 'playing' || engineMode === 'live')) {
+                engineRef.current.pause();
+              }
+            }}
+            onSoftPause={doSoftPause}
+            onResumeTopic={doResumeTopic}
+            onPlayPause={handlePlayPause}
+            totalActions={totalActions}
+            currentActionIndex={0}
+            currentSceneIndex={currentSceneIndex}
+            scenesCount={totalScenesCount}
+            whiteboardOpen={whiteboardOpen}
+            sidebarCollapsed={sidebarCollapsed}
+            chatCollapsed={chatAreaCollapsed}
+            onToggleSidebar={() => setSidebarCollapsed(!sidebarCollapsed)}
+            onToggleChat={() => setChatAreaCollapsed(!chatAreaCollapsed)}
+            onPrevSlide={handlePreviousScene}
+            onNextSlide={handleNextScene}
+            onWhiteboardClose={handleWhiteboardToggle}
+          />
         )}
       </div>
 
@@ -1178,10 +894,7 @@ export function Stage({
         onCueUser={(_fromAgentId, _prompt) => {
           setIsCueUser(true);
         }}
-        onLiveSessionError={handleLiveSessionError}
         onStopSession={doSessionCleanup}
-        onSegmentSealed={discussionTTS.handleSegmentSealed}
-        shouldHoldAfterReveal={discussionTTS.shouldHold}
       />
 
       {/* Scene switch confirmation dialog */}
@@ -1191,10 +904,7 @@ export function Stage({
           if (!open) cancelSceneSwitch();
         }}
       >
-        <AlertDialogContent
-          container={isPresenting ? stageRef.current : undefined}
-          className="max-w-sm rounded-2xl p-0 overflow-hidden border-0 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)]"
-        >
+        <AlertDialogContent className="max-w-sm rounded-2xl p-0 overflow-hidden border-0 shadow-[0_25px_60px_-12px_rgba(0,0,0,0.15)] dark:shadow-[0_25px_60px_-12px_rgba(0,0,0,0.5)]">
           <VisuallyHidden.Root>
             <AlertDialogTitle>{t('stage.confirmSwitchTitle')}</AlertDialogTitle>
           </VisuallyHidden.Root>
