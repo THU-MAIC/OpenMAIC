@@ -82,6 +82,7 @@ export type TTSProviderId =
   | 'azure-tts'
   | 'glm-tts'
   | 'qwen-tts'
+  | 'qnaigc-tts'
   | 'browser-native-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'elevenlabs-tts'

@@ -57,6 +57,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_AZURE: 'azure-tts',
   TTS_GLM: 'glm-tts',
   TTS_QWEN: 'qwen-tts',
+  TTS_QNAIGC: 'qnaigc-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {
@@ -73,6 +74,7 @@ const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_SEEDREAM: 'seedream',
   IMAGE_QWEN_IMAGE: 'qwen-image',
   IMAGE_NANO_BANANA: 'nano-banana',
+  IMAGE_QNAIGC: 'qnaigc-image',
 };
 
 const VIDEO_ENV_MAP: Record<string, string> = {

@@ -130,6 +130,9 @@ export async function generateTTS(
     case 'qwen-tts':
       return await generateQwenTTS(config, text);
 
+    case 'qnaigc-tts':
+      return await generateQnaigcTTS(config, text);
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -314,6 +317,48 @@ async function generateQwenTTS(config: TTSModelConfig, text: string): Promise<TT
     audio: new Uint8Array(arrayBuffer),
     format: 'wav', // Qwen3 TTS returns WAV format
   };
+}
+
+/**
+ * QNAIGC TTS implementation (Qiniu Cloud)
+ */
+async function generateQnaigcTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['qnaigc-tts'].defaultBaseUrl;
+
+  const response = await fetch(`${baseUrl}/voice/tts`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      audio: {
+        voice_type: config.voice,
+        encoding: 'mp3',
+        speed_ratio: config.speed || 1.0,
+      },
+      request: {
+        text,
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`QNAIGC TTS API error: ${errorText}`);
+  }
+
+  const data = await response.json();
+
+  if (!data.data) {
+    throw new Error(`QNAIGC TTS error: No audio data in response. Response: ${JSON.stringify(data)}`);
+  }
+
+  const audio = new Uint8Array(Buffer.from(data.data as string, 'base64'));
+  return { audio, format: 'mp3' };
 }
 
 /**

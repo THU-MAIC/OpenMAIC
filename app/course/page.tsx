@@ -19,7 +19,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from '@/components/ui/alert-dialog';
-import { Plus, BookOpen, Trash2, GraduationCap, User } from 'lucide-react';
+import { ArrowLeft, Plus, BookOpen, Trash2, GraduationCap, User } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const COVERS = [
@@ -167,7 +167,13 @@ export default function CoursePage() {
           transition={{ duration: 0.45 }}
           className="flex justify-between items-center mb-8"
         >
-          <h1 className="text-2xl font-bold text-foreground">{t('course.myCourses')}</h1>
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="sm" onClick={() => router.push('/')}>
+              <ArrowLeft />
+              {t('course.backToHome')}
+            </Button>
+            <h1 className="text-2xl font-bold text-foreground">{t('course.myCourses')}</h1>
+          </div>
           <Button onClick={() => setShowForm(true)}>
             <Plus />
             {t('course.create')}

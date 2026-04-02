@@ -4,9 +4,17 @@ import { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import { TTS_PROVIDERS, DEFAULT_TTS_VOICES, getTTSVoices } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -26,6 +34,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
+  const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
+  const setTTSSpeed = useSettingsStore((state) => state.setTTSSpeed);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
 
   // When testing a non-active provider, use that provider's default voice
@@ -164,6 +174,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               case 'qwen-tts':
                 endpointPath = '/services/aigc/multimodal-generation/generation';
                 break;
+              case 'qnaigc-tts':
+                endpointPath = '/voice/tts';
+                break;
             }
             if (!endpointPath) return null;
             return (
@@ -173,6 +186,49 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             );
           })()}
         </>
+      )}
+
+      {/* Voice & Speed — only when this is the active TTS provider */}
+      {selectedProviderId === activeProviderId && selectedProviderId !== 'browser-native-tts' && (
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: ttsProvider.speedRange ? '1fr 200px' : '1fr' }}
+        >
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.ttsVoice')}</Label>
+            <Select value={ttsVoice} onValueChange={setTTSVoice}>
+              <SelectTrigger className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {getTTSVoices(selectedProviderId).map((voice) => (
+                  <SelectItem key={voice.id} value={voice.id}>
+                    {voice.name}
+                    {voice.description && ` - ${t(`settings.${voice.description}`)}`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {ttsProvider.speedRange && (
+            <div className="space-y-2">
+              <Label className="text-sm">{t('settings.ttsSpeed')}</Label>
+              <div className="flex items-center gap-3">
+                <Slider
+                  value={[ttsSpeed]}
+                  onValueChange={(value) => setTTSSpeed(value[0])}
+                  min={ttsProvider.speedRange.min}
+                  max={ttsProvider.speedRange.max}
+                  step={0.1}
+                  className="flex-1"
+                />
+                <span className="text-xs text-muted-foreground min-w-[3rem] text-right">
+                  {ttsSpeed.toFixed(1)}x
+                </span>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Test TTS */}

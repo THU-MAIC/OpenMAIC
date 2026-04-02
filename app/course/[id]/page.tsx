@@ -80,11 +80,10 @@ function CourseDetailContent({ params }: { params: Promise<{ id: string }> }) {
   }, []);
 
   useEffect(() => {
-    if (isViewMode) return;
     const ids = boundClassroomIdsKey ? boundClassroomIdsKey.split(',') : [];
     if (ids.length > 0) loadClassroomMeta(ids);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isViewMode, boundClassroomIdsKey, loadClassroomMeta]);
+  }, [boundClassroomIdsKey, loadClassroomMeta]);
 
   const usedClassroomIds = useMemo(
     () => isViewMode ? new Set<string>() : new Set(currentCourse?.chapters.map((c) => c.classroomId).filter((id): id is string => !!id) ?? []),

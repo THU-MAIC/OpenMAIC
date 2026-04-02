@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Qiniu Cloud">
+  <defs>
+    <linearGradient id="cloudGradient" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#28b1f7"/>
+      <stop offset="100%" stop-color="#28b1f7"/>
+    </linearGradient>
+    <mask id="qCutout">
+      <rect width="256" height="256" fill="white"/>
+      <circle cx="126" cy="128" r="27" fill="black"/>
+      <circle cx="126" cy="128" r="16" fill="white"/>
+      <rect x="138" y="139" width="20" height="8" rx="4" transform="rotate(38 148 143)" fill="black"/>
+    </mask>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#0b6fb0" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <g filter="url(#softShadow)">
+    <path mask="url(#qCutout)" fill="url(#cloudGradient)" d="M73 187c-23.2 0-42-18.4-42-41.2 0-19.9 14.3-36.7 33.7-40.3C70.4 78 94 58 122.6 58c24.1 0 45.1 14.1 55.1 34.5 2.4-.5 4.9-.7 7.5-.7 22 0 39.8 17.4 39.8 38.8S207.2 169 185.2 169H82.4c-2.2 0-4.2-.2-6.3-.5-1.4 5.8-1.9 12.2-3.1 18.5Z"/>
+    <path fill="#28b1f7" opacity="0.28" d="M86 104c9-16 24.9-26 42.9-26 16.7 0 31.2 7.9 40.1 20.7-9.7-7-21.8-11.1-34.8-11.1-21.7 0-40.9 11.6-51.9 28.8-3.2 5-7.1 12.9-7.7 13.4 1.1-7.8 6.6-18.2 11.4-25.8Z"/>
+  </g>
+  <circle cx="185" cy="82" r="20" fill="#ff9933"/>
+  <circle cx="189" cy="78" r="6" fill="#fff" opacity="0.58"/>
+</svg>

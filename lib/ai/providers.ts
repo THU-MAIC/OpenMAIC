@@ -844,7 +844,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     type: 'openai',
     defaultBaseUrl: 'https://api.qnaigc.com/v1',
     requiresApiKey: true,
-    icon: '/logos/qwen.svg',
+    icon: '/logos/qiniu.svg',
     models: [
       {
         id: 'gemini-3.1-pro-preview',
