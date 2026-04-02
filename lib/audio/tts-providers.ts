@@ -157,6 +157,9 @@ export async function generateTTS(
     case 'elevenlabs-tts':
       return await generateElevenLabsTTS(config, text);
 
+    case 'vieneu-tts':
+      return await generateVieNeuTTS(config, text);
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -579,6 +582,41 @@ async function generateDoubaoTTS(
   }
 
   return { audio: combined, format: 'mp3' };
+}
+
+/**
+ * VieNeu TTS implementation (local Vietnamese TTS server)
+ * API: GET /stream?text=<text>&voice_id=<voice_id>
+ * Returns: WAV audio
+ */
+async function generateVieNeuTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['vieneu-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+
+  const params = new URLSearchParams({
+    text,
+    voice_id: config.voice,
+  });
+
+  const response = await fetch(`${baseUrl}/stream?${params.toString()}`, {
+    method: 'GET',
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`VieNeu TTS API error (${response.status}): ${errorText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    audio: new Uint8Array(arrayBuffer),
+    format: 'wav',
+  };
 }
 
 /**

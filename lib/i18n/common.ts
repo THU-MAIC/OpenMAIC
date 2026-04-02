@@ -79,3 +79,44 @@ export const commonEnUS = {
     exportFailed: 'Export failed',
   },
 } as const;
+
+export const commonViVN = {
+  common: {
+    you: 'Bạn',
+    confirm: 'Xác nhận',
+    cancel: 'Hủy',
+    loading: 'Đang tải...',
+  },
+  home: {
+    slogan: 'Học tập với AI trong Lớp học Đa nhân vật Tương tác',
+    greeting: 'Chào, ',
+  },
+  toolbar: {
+    languageHint: 'Khóa học sẽ được tạo bằng ngôn ngữ này',
+    pdfParser: 'Bộ phân tích',
+    pdfUpload: 'Tải PDF lên',
+    removePdf: 'Xóa tệp',
+    webSearchOn: 'Đã bật',
+    webSearchOff: 'Nhấn để bật',
+    webSearchDesc: 'Tìm kiếm trên web để cập nhật thông tin chuẩn nhất trước khi tạo',
+    webSearchProvider: 'Công cụ tìm kiếm',
+    webSearchNoProvider: 'Cấu hình API Key trong mục Cài đặt',
+    selectProvider: 'Chọn dịch vụ',
+    configureProvider: 'Thiết lập mô hình',
+    configureProviderHint: 'Cấu hình ít nhất một dịch vụ mô hình để bắt đầu tính năng tạo khóa học',
+    enterClassroom: 'Vào lớp học',
+    advancedSettings: 'Cài đặt nâng cao',
+    ttsTitle: 'Chuyển văn bản thành giọng nói',
+    ttsHint: 'Chọn giọng nói cho giáo viên AI',
+    ttsPreview: 'Nghe thử',
+    ttsPreviewing: 'Đang phát...',
+  },
+  export: {
+    pptx: 'Xuất ra PPTX',
+    resourcePack: 'Xuất gói tài liệu',
+    resourcePackDesc: 'PPTX + trang tài liệu tương tác',
+    exporting: 'Đang xuất...',
+    exportSuccess: 'Xuất thành công',
+    exportFailed: 'Xuất thất bại',
+  },
+} as const;

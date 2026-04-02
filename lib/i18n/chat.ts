@@ -145,3 +145,77 @@ export const chatEnUS = {
     stopListening: 'Stop recording',
   },
 } as const;
+
+export const chatViVN = {
+  chat: {
+    lecture: 'Bài giảng',
+    noConversations: 'Không có cuộc trò chuyện nào',
+    startConversation: 'Nhập tin nhắn bên dưới để bắt đầu trò chuyện',
+    noMessages: 'Chưa có tin nhắn nào',
+    ended: 'đã kết thúc',
+    unknown: 'Không rõ',
+    stopDiscussion: 'Dừng thảo luận',
+    endQA: 'Kết thúc Q&A',
+    tabs: {
+      lecture: 'Ghi chú',
+      chat: 'Trò chuyện',
+    },
+    lectureNotes: {
+      empty: 'Ghi chú sẽ xuất hiện ở đây sau khi bài giảng phát',
+      emptyHint: 'Dùng nút Phát để bắt đầu bài giảng',
+      pageLabel: 'Trang {n}',
+      currentPage: 'Trang hiện tại',
+    },
+    badge: {
+      qa: 'Q&A',
+      discussion: 'THẢO LUẬN',
+      lecture: 'BÀI GIẢNG',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: 'Đèn nổi bật',
+      laser: 'Con trỏ Laser',
+      wb_open: 'Mở Bảng trắng',
+      wb_draw_text: 'Văn bản Bảng trắng',
+      wb_draw_shape: 'Hình khối Bảng trắng',
+      wb_draw_chart: 'Biểu đồ Bảng trắng',
+      wb_draw_latex: 'Công thức Bảng trắng',
+      wb_draw_table: 'Bảng trên Bảng trắng',
+      wb_draw_line: 'Đường thẳng Bảng trắng',
+      wb_clear: 'Xóa Bảng trắng',
+      wb_delete: 'Xóa phần tử',
+      wb_close: 'Đóng Bảng trắng',
+      discussion: 'Thảo luận',
+    },
+    status: {
+      inputStreaming: 'Đang chờ',
+      inputAvailable: 'Đang thực thi',
+      outputAvailable: 'Hoàn thành',
+      outputError: 'Lỗi',
+      outputDenied: 'Bị từ chối',
+      running: 'Đang thực thi',
+      result: 'Hoàn thành',
+      error: 'Lỗi',
+    },
+  },
+  agentBar: {
+    readyToLearn: 'Cùng nhau học nhé?',
+    expandedTitle: 'Đội hình Lớp học',
+    configTooltip: 'Bấm để cấu hình các nhân vật trong lớp',
+    voiceLabel: 'Giọng nói',
+    voiceLoading: 'Đang tải...',
+    voiceAutoAssign: 'Giọng nói sẽ được tự động chỉ định',
+  },
+  proactiveCard: {
+    discussion: 'Thảo luận',
+    join: 'Tham gia',
+    skip: 'Bỏ qua',
+    pause: 'Tạm dừng',
+    resume: 'Tiếp tục',
+  },
+  voice: {
+    startListening: 'Nhập bằng giọng nói',
+    stopListening: 'Dừng ghi âm',
+  },
+} as const;

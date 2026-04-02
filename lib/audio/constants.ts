@@ -883,6 +883,50 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.7, max: 1.2, default: 1.0 },
   },
 
+  'vieneu-tts': {
+    id: 'vieneu-tts',
+    name: 'VieNeu TTS (Tiếng Việt)',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://127.0.0.1:8001',
+    icon: '/logos/vieneu.svg',
+    models: [],
+    defaultModelId: '',
+    voices: [
+      // Miền Nam (Southern accent)
+      {
+        id: 'Xuân Vĩnh (Nam - Miền Nam)',
+        name: 'Xuân Vĩnh (Nam - Miền Nam)',
+        language: 'vi-VN',
+        gender: 'male',
+        description: 'vieneuVoiceXuanVinh',
+      },
+      {
+        id: 'Thục Đoan (Nữ - Miền Nam)',
+        name: 'Thục Đoan (Nữ - Miền Nam)',
+        language: 'vi-VN',
+        gender: 'female',
+        description: 'vieneuVoiceThucDoan',
+      },
+      // Miền Bắc (Northern accent)
+      {
+        id: 'Đoan Trang (Nữ - Miền Bắc)',
+        name: 'Đoan Trang (Nữ - Miền Bắc)',
+        language: 'vi-VN',
+        gender: 'female',
+        description: 'vieneuVoiceDoanTrang',
+      },
+      {
+        id: 'Phạm Tuyên (Nam - Miền Bắc)',
+        name: 'Phạm Tuyên (Nam - Miền Bắc)',
+        language: 'vi-VN',
+        gender: 'male',
+        description: 'vieneuVoicePhamTuyen',
+      },
+    ],
+    supportedFormats: ['wav'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -1125,6 +1169,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
+  'vieneu-tts': 'Xuân Vĩnh (Nam - Miền Nam)',
   'browser-native-tts': 'default',
 };
 
@@ -1136,6 +1181,7 @@ export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
+  'vieneu-tts': '',
   'browser-native-tts': '',
 };
 

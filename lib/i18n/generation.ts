@@ -139,3 +139,72 @@ export const generationEnUS = {
     webSearchFailed: 'Web search failed',
   },
 } as const;
+
+export const generationViVN = {
+  classroom: {
+    recentClassrooms: 'Gần đây',
+    today: 'Hôm nay',
+    yesterday: 'Hôm qua',
+    daysAgo: 'ngày trước',
+    slides: 'trang',
+    nameCopied: 'Đã sao chép tên',
+    deleteConfirmTitle: 'Xóa lớp học',
+    delete: 'Xóa',
+  },
+  upload: {
+    pdfSizeLimit: 'Hỗ trợ tệp PDF lên đến 50MB',
+    generateFailed: 'Không thể tạo lớp học, vui lòng thử lại',
+    requirementPlaceholder:
+      'Nhập bất kỳ điều gì bạn muốn học, ví dụ:\n"Dạy tôi Python từ cơ bản trong 30 phút"\n"Giải thích Biến đổi Fourier trên bảng trắng"\n"Cách chơi board game Avalon"',
+    requirementRequired: 'Vui lòng nhập yêu cầu khóa học',
+    fileTooLarge: 'Tệp quá lớn. Vui lòng chọn tệp PDF dưới 50MB',
+  },
+  generation: {
+    // Progress steps (used dynamically via activeStep)
+    analyzingPdf: 'Đang phân tích tài liệu PDF',
+    analyzingPdfDesc: 'Đang trích xuất cấu trúc và nội dung tài liệu...',
+    pdfLoadFailed: 'Không thể tải tệp PDF, vui lòng thử lại',
+    pdfParseFailed: 'Phân tích PDF thất bại',
+    streamNotReadable: 'Không thể đọc luồng dữ liệu tiến trình tạo',
+    generatingOutlines: 'Đang phác thảo Khóa học',
+    generatingOutlinesDesc: 'Đang xây dựng lộ trình học tập...',
+    generatingSlideContent: 'Đang tạo nội dung Trang',
+    generatingSlideContentDesc: 'Đang tạo trang chiếu, câu đố và nội dung tương tác...',
+    generatingActions: 'Đang tạo Hành động Sư phạm',
+    generatingActionsDesc: 'Đang biên soạn lời giảng, hướng điểm nhìn, và tương tác...',
+    generationComplete: 'Tạo hoàn tất!',
+    generationFailed: 'Tạo lớp học thất bại',
+    generatingCourse: 'Đang tạo khóa học',
+    openingClassroom: 'Đang mở lớp học...',
+    outlineReady: 'Đã tạo xong dàn ý học tập',
+    generatingFirstPage: 'Đang tạo nội dung trang đầu tiên...',
+    firstPageReady: 'Trang đầu đã sẵn sàng! Đang mở lớp học...',
+    speechFailed: 'Tổng hợp giọng nói thất bại',
+    retryScene: 'Thử lại phần này',
+    retryingScene: 'Đang tạo lại...',
+    backToHome: 'Quay về Trang chủ',
+    sessionNotFound: 'Không tìm thấy Phiên',
+    sessionNotFoundDesc: 'Vui lòng điền yêu cầu để bắt đầu quá trình tạo.',
+    goBackAndRetry: 'Quay lại và thử lại',
+    classroomReady: 'Môi trường học tập cá nhân hóa AI của bạn đã được tạo thành công.',
+    aiWorking: 'Các tác nhân AI đang hoạt động...',
+    textTruncated: 'Văn bản tài liệu khá dài, sử dụng {n} ký tự đầu tiên để tạo bài',
+    imageTruncated:
+      'Đã tìm thấy {total} hình ảnh, vượt quá giới hạn {max} hình ảnh. Các hình ảnh dư sẽ chỉ sử dụng mô tả văn bản',
+    // Agent generation
+    agentGeneration: 'Đang thiết lập Đội hình Lớp học',
+    agentGenerationDesc: 'Tạo các vai diễn phù hợp dựa trên nội dung khóa học...',
+    agentRevealTitle: 'Vai diễn Lớp học của bạn',
+    viewAgents: 'Xem các vai diễn',
+    continue: 'Tiếp tục',
+    // Outline errors
+    outlineRetrying: 'Lỗi lúc tạo dàn ý, đang thử lại...',
+    outlineEmptyResponse:
+      'Mô hình không trả về dàn ý hợp lệ. Vui lòng kiểm tra cấu hình mô hình và thử lại',
+    outlineGenerateFailed: 'Tạo dàn ý thất bại, vui lòng thử lại sau',
+    // Web Search
+    webSearching: 'Tìm kiếm trên Web',
+    webSearchingDesc: 'Đang tìm kiếm trên web để cập nhật thông tin mới nhất',
+    webSearchFailed: 'Tìm kiếm không thành công',
+  },
+} as const;
