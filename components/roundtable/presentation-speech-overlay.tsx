@@ -307,7 +307,7 @@ export function PresentationBubbleCard({
         buttonState &&
         buttonState !== 'none' &&
         (() => {
-          const barsColor = bubble.role === 'agent' ? 'bg-blue-500' : 'bg-purple-500';
+          const barsColor = bubble.role === 'agent' ? '#3b82f6' : '#a855f7';
 
           if (buttonState === 'play') {
             return (
@@ -353,16 +353,25 @@ export function PresentationBubbleCard({
                   {/* Breathing bars — visible by default, hidden on hover */}
                   <div className="flex gap-0.5 items-end justify-center h-3.5 w-3.5 group-hover/bubble:hidden">
                     <div
-                      className={cn('w-1 rounded-full', barsColor)}
-                      style={{ animation: 'breathing-bar-1 0.6s ease-in-out infinite' }}
+                      className="w-1 rounded-full"
+                      style={{
+                        backgroundColor: barsColor,
+                        animation: 'breathing-bar-1 0.6s ease-in-out infinite',
+                      }}
                     />
                     <div
-                      className={cn('w-1 rounded-full', barsColor)}
-                      style={{ animation: 'breathing-bar-2 0.4s ease-in-out infinite' }}
+                      className="w-1 rounded-full"
+                      style={{
+                        backgroundColor: barsColor,
+                        animation: 'breathing-bar-2 0.4s ease-in-out infinite',
+                      }}
                     />
                     <div
-                      className={cn('w-1 rounded-full', barsColor)}
-                      style={{ animation: 'breathing-bar-3 0.5s ease-in-out infinite' }}
+                      className="w-1 rounded-full"
+                      style={{
+                        backgroundColor: barsColor,
+                        animation: 'breathing-bar-3 0.5s ease-in-out infinite',
+                      }}
                     />
                   </div>
                   {/* Pause icon on hover */}

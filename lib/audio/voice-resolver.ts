@@ -4,6 +4,7 @@ import { TTS_PROVIDERS } from '@/lib/audio/constants';
 
 export interface ResolvedVoice {
   providerId: TTSProviderId;
+  modelId?: string;
   voiceId: string;
 }
 
@@ -21,11 +22,19 @@ export function resolveAgentVoice(
   if (agent.voiceConfig) {
     // Browser-native voices are dynamic (not in static registry), so skip validation
     if (agent.voiceConfig.providerId === 'browser-native-tts') {
-      return agent.voiceConfig;
+      return {
+        providerId: agent.voiceConfig.providerId,
+        modelId: agent.voiceConfig.modelId,
+        voiceId: agent.voiceConfig.voiceId,
+      };
     }
     const list = getServerVoiceList(agent.voiceConfig.providerId);
     if (list.includes(agent.voiceConfig.voiceId)) {
-      return agent.voiceConfig;
+      return {
+        providerId: agent.voiceConfig.providerId,
+        modelId: agent.voiceConfig.modelId,
+        voiceId: agent.voiceConfig.voiceId,
+      };
     }
   }
 
@@ -52,10 +61,17 @@ export function getServerVoiceList(providerId: TTSProviderId): string[] {
   return provider.voices.map((v) => v.id);
 }
 
+export interface ModelVoiceGroup {
+  modelId: string;
+  modelName: string;
+  voices: Array<{ id: string; name: string }>;
+}
+
 export interface ProviderWithVoices {
   providerId: TTSProviderId;
   providerName: string;
-  voices: Array<{ id: string; name: string }>;
+  voices: Array<{ id: string; name: string }>; // keep for backward compat
+  modelGroups: ModelVoiceGroup[]; // voices grouped by model
 }
 
 /**
@@ -81,10 +97,35 @@ export function getAvailableProvidersWithVoices(
     const isServerConfigured = providerConfig?.isServerConfigured === true;
 
     if (hasApiKey || isServerConfigured) {
+      const allVoices = config.voices.map((v) => ({ id: v.id, name: v.name }));
+
+      // Build model groups
+      const modelGroups: ModelVoiceGroup[] = [];
+      if (config.models.length > 0) {
+        for (const model of config.models) {
+          const compatibleVoices = config.voices
+            .filter((v) => !v.compatibleModels || v.compatibleModels.includes(model.id))
+            .map((v) => ({ id: v.id, name: v.name }));
+          modelGroups.push({
+            modelId: model.id,
+            modelName: model.name,
+            voices: compatibleVoices,
+          });
+        }
+      } else {
+        // Provider has no model concept (Azure, Browser Native, Doubao)
+        modelGroups.push({
+          modelId: '',
+          modelName: config.name,
+          voices: allVoices,
+        });
+      }
+
       result.push({
         providerId,
         providerName: config.name,
-        voices: config.voices.map((v) => ({ id: v.id, name: v.name })),
+        voices: allVoices,
+        modelGroups,
       });
     }
   }
