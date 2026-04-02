@@ -60,7 +60,10 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ message: result.message });
   } catch (err) {
-    log.error('Connectivity test error:', err);
+    log.error(
+      `Image provider verification failed [provider=${request.headers.get('x-image-provider') ?? 'seedream'}]:`,
+      err,
+    );
     return apiError('INTERNAL_ERROR', 500, `Connectivity test error: ${err}`);
   }
 }

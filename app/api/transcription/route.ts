@@ -10,6 +10,8 @@ const log = createLogger('Transcription');
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  let resolvedProviderId: string | undefined;
+  let resolvedModelId: string | undefined;
   try {
     const formData = await req.formData();
     const audioFile = formData.get('audio') as File;
@@ -25,6 +27,8 @@ export async function POST(req: NextRequest) {
 
     // providerId is required from the client — no server-side store to fall back to
     const effectiveProviderId = providerId || ('openai-whisper' as ASRProviderId);
+    resolvedProviderId = effectiveProviderId;
+    resolvedModelId = modelId ?? undefined;
 
     const clientBaseUrl = baseUrl || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
@@ -55,7 +59,10 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ text: result.text });
   } catch (error) {
-    log.error('Transcription error:', error);
+    log.error(
+      `Transcription failed [provider=${resolvedProviderId ?? 'unknown'}, model=${resolvedModelId ?? 'default'}]:`,
+      error,
+    );
     return apiError(
       'TRANSCRIPTION_FAILED',
       500,
