@@ -655,6 +655,7 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
       { id: 'qiniu_en_male_msyyn', name: '美式英语男', language: 'en-US', gender: 'male' },
       { id: 'qiniu_en_male_azyyn', name: '澳洲英语男', language: 'en-AU', gender: 'male' },
     ],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
     supportedFormats: ['mp3'],
   },
 
