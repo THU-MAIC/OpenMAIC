@@ -1,18 +1,5 @@
 'use client';
 
-import { useState, useCallback, useMemo, useEffect, Fragment } from 'react';
-import type { LucideIcon } from 'lucide-react';
-import {
-  Image as ImageIcon,
-  Video,
-  Volume2,
-  Mic,
-  SlidersHorizontal,
-  ChevronRight,
-  Play,
-  Loader2,
-} from 'lucide-react';
-import { toast } from 'sonner';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -26,17 +13,34 @@ import {
 } from '@/components/ui/select';
 import { Slider } from '@/components/ui/slider';
 import { Switch } from '@/components/ui/switch';
-import { cn } from '@/lib/utils';
-import { useI18n } from '@/lib/hooks/use-i18n';
-import { useSettingsStore } from '@/lib/store/settings';
+import {
+  ASR_PROVIDERS,
+  TTS_PROVIDERS,
+  getASRSupportedLanguages,
+  getTTSVoices,
+} from '@/lib/audio/constants';
+import type { ASRProviderId, TTSProviderId } from '@/lib/audio/types';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
-import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import { TTS_PROVIDERS, getTTSVoices } from '@/lib/audio/constants';
-import { ASR_PROVIDERS, getASRSupportedLanguages } from '@/lib/audio/constants';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
-import type { TTSProviderId, ASRProviderId } from '@/lib/audio/types';
+import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
+import { useSettingsStore } from '@/lib/store/settings';
 import type { SettingsSection } from '@/lib/types/settings';
+import { cn } from '@/lib/utils';
+import type { LucideIcon } from 'lucide-react';
+import {
+  ChevronRight,
+  Image as ImageIcon,
+  Loader2,
+  Mic,
+  Play,
+  SlidersHorizontal,
+  Video,
+  Volume2,
+} from 'lucide-react';
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 
 interface MediaPopoverProps {
   onSettingsOpen: (section: SettingsSection) => void;
@@ -260,7 +264,6 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     return groups;
   }, [ttsProvidersConfig, locale, browserVoices, t]);
 
-  // TTS preview
   const handlePreview = useCallback(async () => {
     if (previewing) {
       stopPreview();
@@ -419,9 +422,54 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               enabled={ttsEnabled}
               onToggle={setTTSEnabled}
             >
-              <p className="text-[11px] text-muted-foreground/60">
-                {t('settings.ttsVoiceConfigHint')}
-              </p>
+              {/* Voice select + preview */}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <GroupedSelect
+                    groups={ttsGroups}
+                    selectedGroupId={ttsProviderId}
+                    selectedItemId={ttsVoice}
+                    onSelect={(gid, iid) => {
+                      setTTSProvider(gid as TTSProviderId);
+                      setTTSVoice(iid);
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={handlePreview}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all shrink-0',
+                    previewing
+                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  {previewing ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Play className="size-3" />
+                  )}
+                  {previewing ? t('toolbar.ttsPreviewing') : t('toolbar.ttsPreview')}
+                </button>
+              </div>
+              {ttsSpeedRange && (
+                <div className="flex items-center gap-2.5 mt-2.5">
+                  <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                    {t('media.speed')}
+                  </span>
+                  <Slider
+                    value={[ttsSpeed]}
+                    onValueChange={(value) => setTTSSpeed(value[0])}
+                    min={ttsSpeedRange.min}
+                    max={ttsSpeedRange.max}
+                    step={0.1}
+                    className="flex-1"
+                  />
+                  <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">
+                    {ttsSpeed.toFixed(1)}x
+                  </span>
+                </div>
+              )}
             </TabPanel>
           )}
 
