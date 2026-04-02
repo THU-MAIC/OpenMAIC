@@ -540,6 +540,7 @@ function GenerationPreviewContent() {
               pdfImages: currentSession.pdfImages,
               imageMapping,
               researchContext: currentSession.researchContext,
+              questionBankContext: currentSession.questionBankContext,
               agents,
             }),
             signal,
