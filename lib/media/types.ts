@@ -8,12 +8,14 @@
  * - Seedream (ByteDance SDXL-based image generation)
  * - Qwen Image (Alibaba Cloud Wanx image generation)
  * - Nano Banana (Lightweight image generation via Banana.dev)
+ * - OpenAI-Compatible Image (any OpenAI-compatible API)
  *
  * Currently Supported Video Providers (Phase 2):
  * - Seedance (ByteDance video generation)
  * - Kling (Kuaishou video generation)
  * - Veo (Google DeepMind video generation)
  * - Sora (OpenAI video generation)
+ * - OpenAI-Compatible Video (any OpenAI-compatible API)
  *
  * HOW TO ADD A NEW PROVIDER:
  *
@@ -74,7 +76,8 @@ export type ImageProviderId =
   | 'qwen-image'
   | 'nano-banana'
   | 'minimax-image'
-  | 'grok-image';
+  | 'grok-image'
+  | 'openai-compatible-image';
 // Add new image providers below (uncomment and modify):
 // | 'dall-e'
 // | 'midjourney'
@@ -189,7 +192,8 @@ export type VideoProviderId =
   | 'veo'
   | 'sora'
   | 'minimax-video'
-  | 'grok-video';
+  | 'grok-video'
+  | 'openai-compatible-video';
 // Add new video providers below (uncomment and modify):
 // | 'runway'
 // | 'pika'

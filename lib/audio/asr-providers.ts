@@ -178,6 +178,9 @@ export async function transcribeAudio(
     case 'openai-whisper':
       return await transcribeOpenAIWhisper(config, audioBuffer);
 
+    case 'openai-compatible-asr':
+      return await transcribeOpenAIWhisper(config, audioBuffer);
+
     case 'browser-native':
       throw new Error('Browser Native ASR must be handled client-side using useBrowserASR hook');
 

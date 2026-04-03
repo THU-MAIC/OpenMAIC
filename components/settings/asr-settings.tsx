@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -15,9 +15,10 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import type { ASRProviderId } from '@/lib/audio/types';
-import { Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
+import { Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff, Plus, Settings2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
+import { MediaModelEditDialog } from './media-model-edit-dialog';
 
 const log = createLogger('ASRSettings');
 
@@ -32,15 +33,24 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
   const asrProvidersConfig = useSettingsStore((state) => state.asrProvidersConfig);
   const setASRProviderConfig = useSettingsStore((state) => state.setASRProviderConfig);
 
-  const asrProvider = ASR_PROVIDERS[selectedProviderId] ?? ASR_PROVIDERS['openai-whisper'];
-  const isServerConfigured = !!asrProvidersConfig[selectedProviderId]?.isServerConfigured;
-
   const [showApiKey, setShowApiKey] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [asrResult, setASRResult] = useState('');
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  
+  // Model dialog state
+  const [showModelDialog, setShowModelDialog] = useState(false);
+  const [editingModelIndex, setEditingModelIndex] = useState<number | null>(null);
+  const [modelDialogData, setModelDialogData] = useState<{ id: string; name: string }>({ id: '', name: '' });
+
+  const asrProvider = ASR_PROVIDERS[selectedProviderId] ?? ASR_PROVIDERS['openai-whisper'];
+  const isServerConfigured = !!asrProvidersConfig[selectedProviderId]?.isServerConfigured;
+  const customModels = useMemo(
+    () => asrProvidersConfig[selectedProviderId]?.customModels || [],
+    [asrProvidersConfig[selectedProviderId]?.customModels],
+  );
 
   // Reset state when provider changes (derived state pattern)
   const [prevProviderId, setPrevProviderId] = useState(selectedProviderId);
@@ -50,6 +60,8 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
     setTestStatus('idle');
     setTestMessage('');
     setASRResult('');
+    setShowModelDialog(false);
+    setEditingModelIndex(null);
   }
 
   const handleToggleASRRecording = async () => {
@@ -153,6 +165,46 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         }
       }
     }
+  };
+
+  // Model CRUD
+  const handleOpenAddModel = () => {
+    setEditingModelIndex(null);
+    setModelDialogData({ id: '', name: '' });
+    setShowModelDialog(true);
+  };
+
+  const handleOpenEditModel = (index: number) => {
+    setEditingModelIndex(index);
+    setModelDialogData({ ...customModels[index] });
+    setShowModelDialog(true);
+  };
+
+  const handleSaveModel = useCallback(() => {
+    if (!modelDialogData.id.trim()) return;
+    const newCustomModels = [...customModels];
+    if (editingModelIndex !== null) {
+      newCustomModels[editingModelIndex] = {
+        id: modelDialogData.id.trim(),
+        name: modelDialogData.name.trim() || modelDialogData.id.trim(),
+      };
+    } else {
+      newCustomModels.push({
+        id: modelDialogData.id.trim(),
+        name: modelDialogData.name.trim() || modelDialogData.id.trim(),
+      });
+    }
+    setASRProviderConfig(selectedProviderId, {
+      customModels: newCustomModels,
+    });
+    setShowModelDialog(false);
+  }, [modelDialogData, editingModelIndex, customModels, selectedProviderId, setASRProviderConfig]);
+
+  const handleDeleteModel = (index: number) => {
+    const newCustomModels = customModels.filter((_, i) => i !== index);
+    setASRProviderConfig(selectedProviderId, {
+      customModels: newCustomModels,
+    });
   };
 
   return (
@@ -314,6 +366,70 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           </Select>
         </div>
       )}
+
+      {/* Custom Models Section (OpenAI Compatible) */}
+      {selectedProviderId === 'openai-compatible-asr' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <Label className="text-base">{t('settings.customModels')}</Label>
+            <Button variant="outline" size="sm" onClick={handleOpenAddModel} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {t('settings.addNewModel')}
+            </Button>
+          </div>
+
+          <div className="space-y-1.5">
+            {customModels.map((model, index) => (
+              <div
+                key={`custom-${index}`}
+                className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-card"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-sm font-medium">{model.name}</div>
+                  <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => handleOpenEditModel(index)}
+                    title={t('settings.editModel')}
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => handleDeleteModel(index)}
+                    title={t('settings.deleteModel')}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Model Edit Dialog */}
+      <MediaModelEditDialog
+        open={showModelDialog}
+        onOpenChange={setShowModelDialog}
+        mediaType="asr"
+        modelId={modelDialogData.id}
+        onModelIdChange={(id) => setModelDialogData((prev) => ({ ...prev, id }))}
+        modelName={modelDialogData.name}
+        onModelNameChange={(name) => setModelDialogData((prev) => ({ ...prev, name }))}
+        apiKey={asrProvidersConfig[selectedProviderId]?.apiKey || ''}
+        baseUrl={asrProvidersConfig[selectedProviderId]?.baseUrl || ''}
+        providerId={selectedProviderId}
+        language={asrLanguage}
+        onSave={handleSaveModel}
+        isEditing={editingModelIndex !== null}
+      />
     </div>
   );
 }

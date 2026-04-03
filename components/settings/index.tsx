@@ -118,6 +118,7 @@ function ProviderListColumn<T extends string>({
 function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => string): string {
   const names: Record<TTSProviderId, string> = {
     'openai-tts': t('settings.providerOpenAITTS'),
+    'openai-compatible-tts': t('settings.providerOpenAICompatibleTTS'),
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
@@ -132,6 +133,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
 function getASRProviderName(providerId: ASRProviderId, t: (key: string) => string): string {
   const names: Record<ASRProviderId, string> = {
     'openai-whisper': t('settings.providerOpenAIWhisper'),
+    'openai-compatible-asr': t('settings.providerOpenAICompatibleASR'),
     'browser-native': t('settings.providerBrowserNative'),
     'qwen-asr': t('settings.providerQwenASR'),
   };
@@ -145,6 +147,7 @@ const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'nano-banana': 'providerNanoBanana',
   'minimax-image': 'providerMiniMaxImage',
   'grok-image': 'providerGrokImage',
+  'openai-compatible-image': 'providerOpenAICompatibleImage',
 };
 
 const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
@@ -153,6 +156,7 @@ const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
   'nano-banana': '/logos/gemini.svg',
   'minimax-image': '/logos/minimax.svg',
   'grok-image': '/logos/grok.svg',
+  'openai-compatible-image': '/logos/openai.svg',
 };
 
 const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
@@ -162,6 +166,7 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   sora: 'providerSora',
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
+  'openai-compatible-video': 'providerOpenAICompatibleVideo',
 };
 
 const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
@@ -171,6 +176,7 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   sora: '/logos/openai.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
+  'openai-compatible-video': '/logos/openai.svg',
 };
 
 interface SettingsDialogProps {

@@ -4,7 +4,6 @@ import { useState, useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -21,6 +20,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { VideoProviderId } from '@/lib/media/types';
+import { MediaModelEditDialog } from './media-model-edit-dialog';
 
 interface VideoSettingsProps {
   selectedProviderId: VideoProviderId;
@@ -308,44 +308,20 @@ export function VideoSettings({ selectedProviderId }: VideoSettingsProps) {
       </div>
 
       {/* Add/Edit Model Dialog */}
-      <Dialog open={showModelDialog} onOpenChange={setShowModelDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogTitle>
-            {editingModelIndex !== null ? t('settings.editModel') : t('settings.addNewModel')}
-          </DialogTitle>
-          <DialogDescription className="sr-only">
-            {editingModelIndex !== null ? t('settings.editModel') : t('settings.addNewModel')}
-          </DialogDescription>
-          <div className="space-y-4 pt-2">
-            <div className="space-y-2">
-              <Label>{t('settings.modelId')}</Label>
-              <Input
-                value={modelForm.id}
-                onChange={(e) => setModelForm((prev) => ({ ...prev, id: e.target.value }))}
-                placeholder="e.g. my-custom-model-v1"
-                className="h-8 font-mono text-sm"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>{t('settings.modelName')}</Label>
-              <Input
-                value={modelForm.name}
-                onChange={(e) => setModelForm((prev) => ({ ...prev, name: e.target.value }))}
-                placeholder="e.g. My Custom Model"
-                className="h-8 text-sm"
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" size="sm" onClick={() => setShowModelDialog(false)}>
-                {t('settings.cancelEdit')}
-              </Button>
-              <Button size="sm" onClick={handleSaveModel} disabled={!modelForm.id.trim()}>
-                {t('settings.saveModel')}
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <MediaModelEditDialog
+        open={showModelDialog}
+        onOpenChange={setShowModelDialog}
+        mediaType="video"
+        modelId={modelForm.id}
+        onModelIdChange={(id) => setModelForm((prev) => ({ ...prev, id }))}
+        modelName={modelForm.name}
+        onModelNameChange={(name) => setModelForm((prev) => ({ ...prev, name }))}
+        apiKey={currentConfig?.apiKey || ''}
+        baseUrl={currentConfig?.baseUrl || ''}
+        providerId={selectedProviderId}
+        onSave={handleSaveModel}
+        isEditing={editingModelIndex !== null}
+      />
     </div>
   );
 }
