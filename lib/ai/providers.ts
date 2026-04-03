@@ -46,6 +46,30 @@ const log = createLogger('AIProviders');
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
 const MODEL_BASE_URL_PLACEHOLDER = /\{\{\s*model\s*\}\}/gi;
+const AZURE_OPENAI_API_VERSION = '2024-05-01-preview';
+
+function shouldAppendAzureOpenAIApiVersion(url: URL): boolean {
+  const isAzureHost =
+    url.hostname.endsWith('.openai.azure.com') || url.hostname.endsWith('.cognitiveservices.azure.com');
+
+  return (
+    isAzureHost &&
+    url.pathname.includes('/openai/deployments/') &&
+    !url.searchParams.has('api-version')
+  );
+}
+
+export function finalizeProviderRequestUrl(url: string): string {
+  try {
+    const parsedUrl = new URL(url);
+    if (shouldAppendAzureOpenAIApiVersion(parsedUrl)) {
+      parsedUrl.searchParams.set('api-version', AZURE_OPENAI_API_VERSION);
+    }
+    return parsedUrl.toString();
+  } catch {
+    return url;
+  }
+}
 
 /**
  * Provider registry
@@ -1109,19 +1133,19 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
   switch (providerType) {
     case 'openai': {
+      const providerId = config.providerId;
       const openaiOptions: Parameters<typeof createOpenAI>[0] = {
         apiKey: effectiveApiKey,
         baseURL: effectiveBaseUrl,
       };
 
-      // For OpenAI-compatible providers (not native OpenAI), add a fetch
-      // wrapper that injects vendor-specific thinking params into the HTTP
-      // body. The thinking config is read from AsyncLocalStorage, set by
-      // callLLM / streamLLM at call time.
-      if (config.providerId !== 'openai') {
-        const providerId = config.providerId;
-        openaiOptions.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
-          // Read thinking config from globalThis (set by thinking-context.ts)
+      openaiOptions.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+        const rawUrl = typeof url === 'string' ? url : url.toString();
+        const requestUrl = finalizeProviderRequestUrl(rawUrl);
+
+        // For OpenAI-compatible providers (not native OpenAI), inject
+        // vendor-specific thinking params into the HTTP body.
+        if (providerId !== 'openai') {
           const thinkingCtx = (globalThis as Record<string, unknown>).__thinkingContext as
             | { getStore?: () => unknown }
             | undefined;
@@ -1138,9 +1162,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               }
             }
           }
-          return globalThis.fetch(url, init);
-        };
-      }
+        }
+
+        return globalThis.fetch(requestUrl, init);
+      };
 
       const openai = createOpenAI(openaiOptions);
       model = openai.chat(config.modelId);

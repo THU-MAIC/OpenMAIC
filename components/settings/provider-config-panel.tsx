@@ -32,7 +32,11 @@ import {
   Send,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { resolveProviderBaseUrl, type ProviderConfig } from '@/lib/ai/providers';
+import {
+  finalizeProviderRequestUrl,
+  resolveProviderBaseUrl,
+  type ProviderConfig,
+} from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { formatContextWindow } from './utils';
 import { cn } from '@/lib/utils';
@@ -282,7 +286,7 @@ export function ProviderConfigPanel({
               endpointPath = '';
           }
 
-          const fullUrl = effectiveBaseUrl + endpointPath;
+          const fullUrl = finalizeProviderRequestUrl(effectiveBaseUrl + endpointPath);
 
           return (
             <p className="text-xs text-muted-foreground break-all">

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { getProvider, resolveProviderBaseUrl } from '@/lib/ai/providers';
+import { finalizeProviderRequestUrl, getProvider, resolveProviderBaseUrl } from '@/lib/ai/providers';
 
 describe('MiniMax provider defaults', () => {
   it('uses the Anthropic-compatible v1 endpoint by default', () => {
@@ -46,5 +46,25 @@ describe('OpenAI-compatible base URL templates', () => {
         'https://gateway.example.com/deployments/{{model}}',
       ),
     ).toBe('https://gateway.example.com/deployments/publisher%2Fmodel-name');
+  });
+
+  it('appends the Azure OpenAI api-version to deployment endpoints', () => {
+    expect(
+      finalizeProviderRequestUrl(
+        'https://resource.example.cognitiveservices.azure.com/openai/deployments/gpt-5.4/chat/completions',
+      ),
+    ).toBe(
+      'https://resource.example.cognitiveservices.azure.com/openai/deployments/gpt-5.4/chat/completions?api-version=2024-05-01-preview',
+    );
+  });
+
+  it('preserves an explicit Azure OpenAI api-version if already present', () => {
+    expect(
+      finalizeProviderRequestUrl(
+        'https://resource.example.openai.azure.com/openai/deployments/gpt-5.4/chat/completions?api-version=2024-10-21',
+      ),
+    ).toBe(
+      'https://resource.example.openai.azure.com/openai/deployments/gpt-5.4/chat/completions?api-version=2024-10-21',
+    );
   });
 });
