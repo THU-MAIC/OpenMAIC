@@ -663,7 +663,19 @@ export class PlaybackEngine {
       utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
     }
 
+    // Track start time to detect abnormally fast completion (likely due to mute)
+    const startTime = performance.now();
+    const MIN_NORMAL_DURATION = 200; // ms - anything faster is suspicious
+
     utterance.onend = () => {
+      const duration = performance.now() - startTime;
+      
+      // Detect abnormally fast completion - likely browser/system is muted
+      if (duration < MIN_NORMAL_DURATION && chunkText.trim().length > 0) {
+        log.warn(`Browser TTS chunk ended too quickly (${duration}ms) - possible mute state`);
+        this.callbacks.onBrowserTTSMuted?.();
+      }
+      
       this.browserTTSChunkIndex++;
       if (this.mode === 'playing') {
         this.playBrowserTTSChunk(); // next chunk

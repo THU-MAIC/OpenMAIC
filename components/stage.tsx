@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
+import { toast } from 'sonner';
 
 /**
  * Stage Component
@@ -527,6 +528,12 @@ export function Stage({
             }
           }, 1500);
         }
+      },
+      onBrowserTTSMuted: () => {
+        toast.warning(t('playback.browserTtsMuted'), {
+          duration: 5000,
+          id: 'browser-tts-muted',
+        });
       },
     });
 
