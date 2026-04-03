@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
@@ -8,10 +8,11 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
-import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
+import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff, Plus, Settings2, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import { MediaModelEditDialog } from './media-model-edit-dialog';
 
 const log = createLogger('TTSSettings');
 
@@ -37,12 +38,21 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   const ttsProvider = TTS_PROVIDERS[selectedProviderId] ?? TTS_PROVIDERS['openai-tts'];
   const isServerConfigured = !!ttsProvidersConfig[selectedProviderId]?.isServerConfigured;
+  const customModels = useMemo(
+    () => ttsProvidersConfig[selectedProviderId]?.customModels || [],
+    [ttsProvidersConfig[selectedProviderId]?.customModels],
+  );
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const { previewing: testingTTS, startPreview, stopPreview } = useTTSPreview();
+  
+  // Model dialog state
+  const [showModelDialog, setShowModelDialog] = useState(false);
+  const [editingModelIndex, setEditingModelIndex] = useState<number | null>(null);
+  const [modelDialogData, setModelDialogData] = useState<{ id: string; name: string }>({ id: '', name: '' });
 
   // Doubao TTS uses compound "appId:accessKey" — split for separate UI fields
   const isDoubao = selectedProviderId === 'doubao-tts';
@@ -72,6 +82,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     setShowApiKey(false);
     setTestStatus('idle');
     setTestMessage('');
+    setShowModelDialog(false);
+    setEditingModelIndex(null);
   }, [selectedProviderId, stopPreview]);
 
   const handleTestTTS = async () => {
@@ -101,6 +113,46 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           : t('settings.ttsTestFailed'),
       );
     }
+  };
+
+  // Model CRUD
+  const handleOpenAddModel = () => {
+    setEditingModelIndex(null);
+    setModelDialogData({ id: '', name: '' });
+    setShowModelDialog(true);
+  };
+
+  const handleOpenEditModel = (index: number) => {
+    setEditingModelIndex(index);
+    setModelDialogData({ ...customModels[index] });
+    setShowModelDialog(true);
+  };
+
+  const handleSaveModel = useCallback(() => {
+    if (!modelDialogData.id.trim()) return;
+    const newCustomModels = [...customModels];
+    if (editingModelIndex !== null) {
+      newCustomModels[editingModelIndex] = {
+        id: modelDialogData.id.trim(),
+        name: modelDialogData.name.trim() || modelDialogData.id.trim(),
+      };
+    } else {
+      newCustomModels.push({
+        id: modelDialogData.id.trim(),
+        name: modelDialogData.name.trim() || modelDialogData.id.trim(),
+      });
+    }
+    setTTSProviderConfig(selectedProviderId, {
+      customModels: newCustomModels,
+    });
+    setShowModelDialog(false);
+  }, [modelDialogData, editingModelIndex, customModels, selectedProviderId, setTTSProviderConfig]);
+
+  const handleDeleteModel = (index: number) => {
+    const newCustomModels = customModels.filter((_, i) => i !== index);
+    setTTSProviderConfig(selectedProviderId, {
+      customModels: newCustomModels,
+    });
   };
 
   return (
@@ -332,6 +384,69 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           </p>
         </div>
       )}
+
+      {/* Custom Models Section (OpenAI Compatible) */}
+      {selectedProviderId === 'openai-compatible-tts' && (
+        <div className="space-y-3">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <Label className="text-base">{t('settings.customModels')}</Label>
+            <Button variant="outline" size="sm" onClick={handleOpenAddModel} className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" />
+              {t('settings.addNewModel')}
+            </Button>
+          </div>
+
+          <div className="space-y-1.5">
+            {customModels.map((model, index) => (
+              <div
+                key={`custom-${index}`}
+                className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-card"
+              >
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-sm font-medium">{model.name}</div>
+                  <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2"
+                    onClick={() => handleOpenEditModel(index)}
+                    title={t('settings.editModel')}
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                    onClick={() => handleDeleteModel(index)}
+                    title={t('settings.deleteModel')}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Model Edit Dialog */}
+      <MediaModelEditDialog
+        open={showModelDialog}
+        onOpenChange={setShowModelDialog}
+        mediaType="tts"
+        modelId={modelDialogData.id}
+        onModelIdChange={(id) => setModelDialogData((prev) => ({ ...prev, id }))}
+        modelName={modelDialogData.name}
+        onModelNameChange={(name) => setModelDialogData((prev) => ({ ...prev, name }))}
+        apiKey={ttsProvidersConfig[selectedProviderId]?.apiKey || ''}
+        baseUrl={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
+        providerId={selectedProviderId}
+        onSave={handleSaveModel}
+        isEditing={editingModelIndex !== null}
+      />
     </div>
   );
 }

@@ -17,6 +17,10 @@ import {
   testMiniMaxImageConnectivity,
 } from './adapters/minimax-image-adapter';
 import { generateWithGrokImage, testGrokImageConnectivity } from './adapters/grok-image-adapter';
+import {
+  generateWithOpenAICompatibleImage,
+  testOpenAICompatibleImageConnectivity,
+} from './adapters/openai-compatible-image-adapter';
 
 export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   seedream: {
@@ -93,6 +97,15 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
   },
+
+  'openai-compatible-image': {
+    id: 'openai-compatible-image',
+    name: 'OpenAI Compatible Image',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    models: [],
+    supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
+  },
 };
 
 export async function testImageConnectivity(
@@ -109,6 +122,8 @@ export async function testImageConnectivity(
       return testMiniMaxImageConnectivity(config);
     case 'grok-image':
       return testGrokImageConnectivity(config);
+    case 'openai-compatible-image':
+      return testOpenAICompatibleImageConnectivity(config);
     default:
       return {
         success: false,
@@ -132,6 +147,8 @@ export async function generateImage(
       return generateWithMiniMaxImage(config, options);
     case 'grok-image':
       return generateWithGrokImage(config, options);
+    case 'openai-compatible-image':
+      return generateWithOpenAICompatibleImage(config, options);
     default:
       throw new Error(`Unsupported image provider: ${config.providerId}`);
   }

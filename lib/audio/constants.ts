@@ -164,6 +164,62 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.25, max: 4.0, default: 1.0 },
   },
 
+  'openai-compatible-tts': {
+    id: 'openai-compatible-tts',
+    name: 'OpenAI Compatible TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    icon: '/logos/openai.svg',
+    models: [], // User can add custom models
+    defaultModelId: '',
+    voices: [
+      {
+        id: 'alloy',
+        name: 'Alloy',
+        language: 'en',
+        gender: 'neutral',
+        description: 'voiceAlloy',
+      },
+      {
+        id: 'echo',
+        name: 'Echo',
+        language: 'en',
+        gender: 'male',
+        description: 'voiceEcho',
+      },
+      {
+        id: 'fable',
+        name: 'Fable',
+        language: 'en',
+        gender: 'neutral',
+        description: 'voiceFable',
+      },
+      {
+        id: 'nova',
+        name: 'Nova',
+        language: 'en',
+        gender: 'female',
+        description: 'voiceNova',
+      },
+      {
+        id: 'onyx',
+        name: 'Onyx',
+        language: 'en',
+        gender: 'male',
+        description: 'voiceOnyx',
+      },
+      {
+        id: 'shimmer',
+        name: 'Shimmer',
+        language: 'en',
+        gender: 'female',
+        description: 'voiceShimmer',
+      },
+    ],
+    supportedFormats: ['mp3', 'opus', 'aac', 'flac'],
+    speedRange: { min: 0.25, max: 4.0, default: 1.0 },
+  },
+
   'azure-tts': {
     id: 'azure-tts',
     name: 'Azure TTS',
@@ -1031,6 +1087,30 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'webm', 'm4a', 'flac'],
   },
 
+  'openai-compatible-asr': {
+    id: 'openai-compatible-asr',
+    name: 'OpenAI Compatible ASR',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.openai.com/v1',
+    icon: '/logos/openai.svg',
+    models: [
+      { id: 'whisper-1', name: 'Whisper-1' },
+    ],
+    defaultModelId: 'whisper-1',
+    supportedLanguages: [
+      'auto', // Auto-detect
+      'zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'ru', 'ar', 'pt', 'it', 'hi',
+      'af', 'hy', 'az', 'be', 'bs', 'bg', 'ca', 'hr', 'cs', 'da', 'nl', 'et',
+      'fi', 'gl', 'ka', 'el', 'gu', 'ht', 'ha', 'haw', 'he', 'hu', 'is', 'ig',
+      'id', 'ga', 'jw', 'kn', 'kk', 'km', 'rw', 'ku', 'ky', 'lo', 'la', 'lv',
+      'lt', 'lb', 'mk', 'mg', 'ms', 'mt', 'mi', 'mn', 'my', 'ne', 'no', 'or',
+      'ps', 'fa', 'pl', 'ro', 'sm', 'gd', 'sr', 'st', 'sn', 'sd', 'si', 'sk',
+      'sl', 'so', 'su', 'sw', 'sv', 'tl', 'tg', 'ta', 'te', 'th', 'tr', 'tk',
+      'uk', 'ur', 'ug', 'uz', 'vi', 'cy', 'xh', 'yi', 'yo', 'zu',
+    ],
+    supportedFormats: ['mp3', 'wav', 'webm', 'm4a', 'flac'],
+  },
+
   'browser-native': {
     id: 'browser-native',
     name: '浏览器原生 ASR (Web Speech API)',
@@ -1119,6 +1199,7 @@ export function getTTSProvider(providerId: TTSProviderId): TTSProviderConfig | u
  */
 export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'openai-tts': 'alloy',
+  'openai-compatible-tts': 'alloy',
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
@@ -1130,6 +1211,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
 
 export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
   'openai-tts': 'gpt-4o-mini-tts',
+  'openai-compatible-tts': '',
   'azure-tts': '',
   'glm-tts': 'glm-tts',
   'qwen-tts': 'qwen3-tts-flash',

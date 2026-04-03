@@ -141,6 +141,9 @@ export async function generateTTS(
     case 'openai-tts':
       return await generateOpenAITTS(config, text);
 
+    case 'openai-compatible-tts':
+      return await generateOpenAITTS(config, text);
+
     case 'azure-tts':
       return await generateAzureTTS(config, text);
 

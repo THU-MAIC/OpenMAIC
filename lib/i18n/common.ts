@@ -3,6 +3,7 @@ export const commonZhCN = {
     you: '你',
     confirm: '确定',
     cancel: '取消',
+    save: '保存',
     loading: '加载中...',
   },
   home: {
@@ -44,6 +45,7 @@ export const commonEnUS = {
     you: 'You',
     confirm: 'Confirm',
     cancel: 'Cancel',
+    save: 'Save',
     loading: 'Loading...',
   },
   home: {

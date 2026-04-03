@@ -34,6 +34,7 @@ const log = createLogger('AudioSettings');
 function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => string): string {
   const names: Record<TTSProviderId, string> = {
     'openai-tts': t('settings.providerOpenAITTS'),
+    'openai-compatible-tts': t('settings.providerOpenAICompatibleTTS'),
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
@@ -48,6 +49,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
 function getASRProviderName(providerId: ASRProviderId, t: (key: string) => string): string {
   const names: Record<ASRProviderId, string> = {
     'openai-whisper': t('settings.providerOpenAIWhisper'),
+    'openai-compatible-asr': t('settings.providerOpenAICompatibleASR'),
     'browser-native': t('settings.providerBrowserNative'),
     'qwen-asr': t('settings.providerQwenASR'),
   };
