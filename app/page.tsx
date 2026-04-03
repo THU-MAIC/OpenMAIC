@@ -756,9 +756,7 @@ function GreetingBar() {
               <TooltipTrigger asChild>
                 <span className="leading-none select-none flex items-center gap-1">
                   <span className="text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors">
-                    {nickname
-                      ? t('home.greetingWithName', { name: nickname })
-                      : t('home.greetingDefault')}
+                    {t('home.greetingWithName', { name: displayName })}
                   </span>
                   <ChevronDown className="size-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
                 </span>

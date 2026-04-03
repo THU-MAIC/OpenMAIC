@@ -7,8 +7,7 @@
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
-    "greetingWithName": "嗨，{{name}}",
-    "greetingDefault": "嗨，同学"
+    "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
     "languageHint": "课程将以此语言生成",
