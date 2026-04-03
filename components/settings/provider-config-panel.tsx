@@ -32,7 +32,7 @@ import {
   Send,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { ProviderConfig } from '@/lib/ai/providers';
+import { resolveProviderBaseUrl, type ProviderConfig } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { formatContextWindow } from './utils';
 import { cn } from '@/lib/utils';
@@ -258,7 +258,12 @@ export function ProviderConfigPanel({
           className="h-8"
         />
         {(() => {
-          const effectiveBaseUrl = baseUrl || provider.defaultBaseUrl || '';
+          const previewModelId = models[0]?.id || 'model';
+          const effectiveBaseUrl = resolveProviderBaseUrl(
+            provider.id,
+            previewModelId,
+            baseUrl || provider.defaultBaseUrl || '',
+          );
           if (!effectiveBaseUrl) return null;
 
           // Generate endpoint path based on provider type

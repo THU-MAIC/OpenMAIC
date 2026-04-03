@@ -26,6 +26,10 @@ interface AddProviderDialogProps {
 
 export function AddProviderDialog({ open, onOpenChange, onAdd }: AddProviderDialogProps) {
   const { t } = useI18n();
+  const baseUrlPlaceholder =
+    type === 'openai'
+      ? 'https://example-resource.openai.azure.com/openai/deployments/{{model}}'
+      : 'https://api.example.com/v1';
 
   // Internal state
   const [name, setName] = useState('');
@@ -128,7 +132,7 @@ export function AddProviderDialog({ open, onOpenChange, onAdd }: AddProviderDial
             <Label>{t('settings.defaultBaseUrl')}</Label>
             <Input
               type="url"
-              placeholder="https://api.example.com/v1"
+              placeholder={baseUrlPlaceholder}
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
             />

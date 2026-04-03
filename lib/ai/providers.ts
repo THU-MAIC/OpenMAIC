@@ -45,6 +45,8 @@ const log = createLogger('AIProviders');
 // Re-export types for backward compatibility
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
+const MODEL_BASE_URL_PLACEHOLDER = /\{\{\s*model\s*\}\}/gi;
+
 /**
  * Provider registry
  */
@@ -1054,6 +1056,20 @@ function normalizeMiniMaxAnthropicBaseUrl(
   return `${trimmed}/anthropic/v1`;
 }
 
+export function resolveProviderBaseUrl(
+  providerId: ProviderId,
+  modelId: string,
+  baseUrl?: string,
+): string | undefined {
+  if (!baseUrl) {
+    return baseUrl;
+  }
+
+  const resolvedBaseUrl = baseUrl.replace(MODEL_BASE_URL_PLACEHOLDER, encodeURIComponent(modelId));
+
+  return normalizeMiniMaxAnthropicBaseUrl(providerId, resolvedBaseUrl);
+}
+
 /**
  * Get a configured language model instance with its info
  * Accepts individual parameters for flexibility and security
@@ -1083,8 +1099,9 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
   // Resolve base URL: explicit > provider default > SDK default
   const provider = getProviderConfig(config.providerId);
-  const effectiveBaseUrl = normalizeMiniMaxAnthropicBaseUrl(
+  const effectiveBaseUrl = resolveProviderBaseUrl(
     config.providerId,
+    config.modelId,
     config.baseUrl || provider?.defaultBaseUrl || undefined,
   );
 
