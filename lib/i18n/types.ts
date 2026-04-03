@@ -1,3 +1,5 @@
-export type Locale = 'zh-CN' | 'en-US';
+export type Locale = 'zh-CN' | 'en-US' | 'ca';
 
-export const defaultLocale: Locale = 'zh-CN';
+export const VALID_LOCALES: Locale[] = ['zh-CN', 'en-US', 'ca'];
+
+export const defaultLocale: Locale = 'ca';

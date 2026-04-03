@@ -1,10 +1,10 @@
-import { defaultLocale, type Locale } from './types';
-export { type Locale, defaultLocale } from './types';
-import { commonZhCN, commonEnUS } from './common';
-import { stageZhCN, stageEnUS } from './stage';
-import { chatZhCN, chatEnUS } from './chat';
-import { generationZhCN, generationEnUS } from './generation';
-import { settingsZhCN, settingsEnUS } from './settings';
+import { defaultLocale, type Locale, VALID_LOCALES } from './types';
+export { type Locale, defaultLocale, VALID_LOCALES } from './types';
+import { commonZhCN, commonEnUS, commonCa } from './common';
+import { stageZhCN, stageEnUS, stageCa } from './stage';
+import { chatZhCN, chatEnUS, chatCa } from './chat';
+import { generationZhCN, generationEnUS, generationCa } from './generation';
+import { settingsZhCN, settingsEnUS, settingsCa } from './settings';
 
 export const translations = {
   'zh-CN': {
@@ -20,6 +20,13 @@ export const translations = {
     ...chatEnUS,
     ...generationEnUS,
     ...settingsEnUS,
+  },
+  'ca': {
+    ...commonCa,
+    ...stageCa,
+    ...chatCa,
+    ...generationCa,
+    ...settingsCa,
   },
 } as const;
 
@@ -40,8 +47,8 @@ export function getClientTranslation(key: string): string {
   if (typeof window !== 'undefined') {
     try {
       const storedLocale = localStorage.getItem('locale');
-      if (storedLocale === 'zh-CN' || storedLocale === 'en-US') {
-        locale = storedLocale;
+      if (storedLocale && VALID_LOCALES.includes(storedLocale as Locale)) {
+        locale = storedLocale as Locale;
       }
     } catch {
       // localStorage unavailable, keep default locale

@@ -39,6 +39,47 @@ export const commonZhCN = {
   },
 } as const;
 
+export const commonCa = {
+  common: {
+    you: 'Tu',
+    confirm: 'Confirmar',
+    cancel: 'Cancel·lar',
+    loading: 'Carregant...',
+  },
+  home: {
+    slogan: 'Aprenentatge Generatiu en Aula Interactiva Multi-Agent',
+    greeting: 'Hola, ',
+  },
+  toolbar: {
+    languageHint: 'El curs es generarà en aquesta llengua',
+    pdfParser: 'Analitzador',
+    pdfUpload: 'Pujar PDF',
+    removePdf: 'Eliminar fitxer',
+    webSearchOn: 'Activat',
+    webSearchOff: 'Clic per activar',
+    webSearchDesc: 'Cerca informació actualitzada a la web abans de la generació',
+    webSearchProvider: 'Motor de cerca',
+    webSearchNoProvider: 'Configura la clau API de cerca a la Configuració',
+    selectProvider: 'Selecciona proveïdor',
+    configureProvider: 'Configura model',
+    configureProviderHint: 'Configura almenys un proveïdor de model per generar cursos',
+    enterClassroom: 'Entrar a l\'aula',
+    advancedSettings: 'Configuració avançada',
+    ttsTitle: 'Síntesi de veu',
+    ttsHint: 'Trieu una veu per al professor IA',
+    ttsPreview: 'Previsualitzar',
+    ttsPreviewing: 'Reproduint...',
+  },
+  export: {
+    pptx: 'Exportar PPTX',
+    resourcePack: 'Exportar paquet de recursos',
+    resourcePackDesc: 'PPTX + pàgines interactives',
+    exporting: 'Exportant...',
+    exportSuccess: 'Exportació correcta',
+    exportFailed: 'Error en l\'exportació',
+  },
+} as const;
+
 export const commonEnUS = {
   common: {
     you: 'You',

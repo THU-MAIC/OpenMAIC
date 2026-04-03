@@ -72,6 +72,80 @@ export const chatZhCN = {
   },
 } as const;
 
+export const chatCa = {
+  chat: {
+    lecture: 'Lliçó',
+    noConversations: 'Cap conversa',
+    startConversation: 'Escriu un missatge per començar a xatejar',
+    noMessages: 'Encara no hi ha missatges',
+    ended: 'finalitzat',
+    unknown: 'Desconegut',
+    stopDiscussion: 'Aturar discussió',
+    endQA: 'Finalitzar P&R',
+    tabs: {
+      lecture: 'Notes',
+      chat: 'Xat',
+    },
+    lectureNotes: {
+      empty: 'Les notes apareixeran aquí després de la reproducció de la lliçó',
+      emptyHint: 'Premeu reproduir per iniciar la lliçó',
+      pageLabel: 'Pàgina {n}',
+      currentPage: 'Actual',
+    },
+    badge: {
+      qa: 'P&R',
+      discussion: 'DISC',
+      lecture: 'LLIÇ',
+    },
+  },
+  actions: {
+    names: {
+      spotlight: 'Focus',
+      laser: 'Làser',
+      wb_open: 'Obrir pissarra',
+      wb_draw_text: 'Text a la pissarra',
+      wb_draw_shape: 'Forma a la pissarra',
+      wb_draw_chart: 'Gràfic a la pissarra',
+      wb_draw_latex: 'Fórmula a la pissarra',
+      wb_draw_table: 'Taula a la pissarra',
+      wb_draw_line: 'Línia a la pissarra',
+      wb_clear: 'Netejar pissarra',
+      wb_delete: 'Eliminar element',
+      wb_close: 'Tancar pissarra',
+      discussion: 'Discussió',
+    },
+    status: {
+      inputStreaming: 'En espera',
+      inputAvailable: 'Executant',
+      outputAvailable: 'Completat',
+      outputError: 'Error',
+      outputDenied: 'Denegat',
+      running: 'Executant',
+      result: 'Completat',
+      error: 'Error',
+    },
+  },
+  agentBar: {
+    readyToLearn: 'Preparats per aprendre junts?',
+    expandedTitle: 'Configuració de rols de l\'aula',
+    configTooltip: 'Clic per configurar els rols de l\'aula',
+    voiceLabel: 'Veu',
+    voiceLoading: 'Carregant...',
+    voiceAutoAssign: 'Les veus s\'assignaran automàticament',
+  },
+  proactiveCard: {
+    discussion: 'Discussió',
+    join: 'Unir-se',
+    skip: 'Ometre',
+    pause: 'Pausar',
+    resume: 'Reprendre',
+  },
+  voice: {
+    startListening: 'Entrada de veu',
+    stopListening: 'Aturar gravació',
+  },
+} as const;
+
 export const chatEnUS = {
   chat: {
     lecture: 'Lecture',

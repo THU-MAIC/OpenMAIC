@@ -68,6 +68,78 @@ export const generationZhCN = {
   },
 } as const;
 
+export const generationCa = {
+  classroom: {
+    recentClassrooms: 'Recent',
+    today: 'Avui',
+    yesterday: 'Ahir',
+    daysAgo: 'dies enrere',
+    slides: 'diapositives',
+    nameCopied: 'Nom copiat',
+    deleteConfirmTitle: 'Eliminar',
+    delete: 'Eliminar',
+    rename: 'Reanomenar',
+    renamePlaceholder: 'Introduïu el nom de l\'aula',
+    renameFailed: 'Error en reanomenar l\'aula',
+  },
+  upload: {
+    pdfSizeLimit: 'Suporta fitxers PDF de fins a 50MB',
+    generateFailed: 'Error en generar l\'aula, torneu-ho a intentar',
+    requirementPlaceholder:
+      'Digueu-me qualsevol cosa que vulgueu aprendre, per exemple:\n"Ensenyeu-me Python des de zero en 30 minuts"\n"Expliqueu la Transformada de Fourier a la pissarra"\n"Com es juga al joc de taula Avalon"',
+    requirementRequired: 'Introduïu els requisits del curs',
+    fileTooLarge: 'Fitxer massa gran. Seleccioneu un PDF inferior a 50MB',
+  },
+  generation: {
+    // Progress steps (used dynamically via activeStep)
+    analyzingPdf: 'Analitzant document PDF',
+    analyzingPdfDesc: 'Extraient l\'estructura i contingut del document...',
+    pdfLoadFailed: 'Error en carregar el fitxer PDF, torneu-ho a intentar',
+    pdfParseFailed: 'Error en analitzar el PDF',
+    streamNotReadable: 'No es pot llegir el flux de generació',
+    generatingOutlines: 'Elaborant esquema del curs',
+    generatingOutlinesDesc: 'Estructurant el camí d\'aprenentatge...',
+    generatingSlideContent: 'Generant contingut de les pàgines',
+    generatingSlideContentDesc: 'Creant diapositives, qüestionaris i contingut interactiu...',
+    generatingActions: 'Generant accions didàctiques',
+    generatingActionsDesc: 'Organitzant narracions, focus i interaccions...',
+    generationComplete: 'Generació completada!',
+    generationFailed: 'Error en la generació',
+    generatingCourse: 'Generant el curs',
+    openingClassroom: 'Obrint l\'aula...',
+    outlineReady: 'Esquema del curs generat',
+    generatingFirstPage: 'Generant la primera pàgina...',
+    firstPageReady: 'Primera pàgina llesta! Obrint l\'aula...',
+    speechFailed: 'Error en la generació de veu',
+    retryScene: 'Reintentar',
+    retryingScene: 'Regenerant...',
+    backToHome: 'Tornar a l\'inici',
+    sessionNotFound: 'Sessió no trobada',
+    sessionNotFoundDesc: 'Ompliu els requisits del curs per iniciar el procés de generació.',
+    goBackAndRetry: 'Tornar enrere i reintentar',
+    classroomReady: 'El vostre entorn d\'aprenentatge IA personalitzat s\'ha generat correctament.',
+    aiWorking: 'Agents IA treballant...',
+    textTruncated: 'El text del document és llarg, s\'utilitzen els primers {n} caràcters per a la generació',
+    imageTruncated:
+      'S\'han trobat {total} imatges, que superen el límit de {max}. Les imatges addicionals només usaran descripcions de text',
+    // Agent generation
+    agentGeneration: 'Generant rols de l\'aula',
+    agentGenerationDesc: 'Generant rols basats en el contingut del curs...',
+    agentRevealTitle: 'Els vostres rols de l\'aula',
+    viewAgents: 'Veure rols',
+    continue: 'Continuar',
+    // Outline errors
+    outlineRetrying: 'Problema en la generació de l\'esquema, reintentant...',
+    outlineEmptyResponse:
+      'El model no ha retornat cap esquema vàlid. Comproveu la configuració del model i torneu-ho a intentar',
+    outlineGenerateFailed: 'Error en generar l\'esquema, torneu-ho a intentar més tard',
+    // Web Search
+    webSearching: 'Cerca web',
+    webSearchingDesc: 'Cercant a la web informació actualitzada',
+    webSearchFailed: 'Error en la cerca web',
+  },
+} as const;
+
 export const generationEnUS = {
   classroom: {
     recentClassrooms: 'Recent',

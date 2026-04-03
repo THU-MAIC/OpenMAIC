@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Locale, translate, defaultLocale } from '@/lib/i18n';
+import { Locale, translate, defaultLocale, VALID_LOCALES } from '@/lib/i18n';
 
 type I18nContextType = {
   locale: Locale;
@@ -10,7 +10,6 @@ type I18nContextType = {
 };
 
 const LOCALE_STORAGE_KEY = 'locale';
-const VALID_LOCALES: Locale[] = ['zh-CN', 'en-US'];
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
 
@@ -26,7 +25,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
         setLocaleState(stored as Locale);
         return;
       }
-      const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+      const lang = navigator.language ?? '';
+      const detected: Locale = lang.startsWith('zh') ? 'zh-CN' : lang.startsWith('ca') ? 'ca' : 'en-US';
       localStorage.setItem(LOCALE_STORAGE_KEY, detected);
       setLocaleState(detected);
     } catch {
