@@ -175,6 +175,11 @@ export function buildCourseHtml(opts: CourseHtmlOptions): string {
       line-height: 1.35;
     }
     .om-nav-item.om-active .om-nav-label { color: #e0e8f0; }
+    .om-nav-item.om-locked {
+      opacity: 0.4;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
 
     /* ── Scene container ── */
     .om-scene {
@@ -289,6 +294,21 @@ export function buildCourseHtml(opts: CourseHtmlOptions): string {
     }
     .om-submit:hover:not(:disabled) { background: #0077ed; }
     .om-submit:disabled { background: #b0c8e8; cursor: not-allowed; }
+    .om-qblock--warn { border: 2px solid #ff9500; }
+    .om-retry {
+      display: block;
+      width: 100%;
+      padding: 0.8rem;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      border: 1.5px solid #d0d0d5;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 0.5rem;
+    }
+    .om-retry:hover { background: #e8e8ed; }
 
     /* ── Interactive scenes ── */
     .om-interactive { background: #fff; }
@@ -390,6 +410,7 @@ var SCENES = ${metasJson};
 var TOTAL = ${totalScenes};
 var currentIdx = 0;
 var quizScores = {};
+var unlockedUpTo = 0; // highest scene index the student may access
 
 // ── Visit tracking ──
 var visitedArr = [];
@@ -487,6 +508,7 @@ function updateSidebar(idx) {
     var cls = 'om-nav-item';
     if (visitedArr[i]) cls += ' om-visited';
     if (i === idx) cls += ' om-active';
+    if (i > unlockedUpTo) cls += ' om-locked';
     item.className = cls;
     var dot = item.querySelector('.om-nav-dot');
     if (dot) dot.textContent = visitedArr[i] ? '\\u2713' : '';
@@ -502,6 +524,7 @@ function updateSidebar(idx) {
 }
 
 function sidebarGo(idx) {
+  if (idx > unlockedUpTo) return;
   showScene(idx);
 }
 
@@ -511,7 +534,7 @@ function saveSuspendData() {
   for (var i = 0; i < TOTAL; i++) {
     visitedStr += visitedArr[i] ? '1' : '0';
   }
-  var suspendData = JSON.stringify({ v: visitedStr, q: quizScores });
+  var suspendData = JSON.stringify({ v: visitedStr, q: quizScores, u: unlockedUpTo });
   SCORM.setValue('cmi.core.lesson_location', String(currentIdx));
   SCORM.setValue('cmi.suspend_data', suspendData);
 }
@@ -533,6 +556,11 @@ function showScene(idx) {
   // Mark visited
   visitedArr[idx] = true;
 
+  // Unlock next scene for non-quiz scenes (quiz unlocks only on pass)
+  if (scene.type !== 'quiz') {
+    unlockedUpTo = Math.max(unlockedUpTo, Math.min(idx + 1, TOTAL - 1));
+  }
+
   // Sidebar + counter
   updateSidebar(idx);
   document.getElementById('scene-counter').textContent = (idx + 1) + ' / ' + TOTAL;
@@ -540,8 +568,8 @@ function showScene(idx) {
   // Prev / Next buttons
   document.getElementById('prev-btn').disabled = (idx === 0);
   var isLast = (idx === TOTAL - 1);
-  var isQuizNotDone = scene.type === 'quiz' && quizScores[idx] === undefined;
-  document.getElementById('next-btn').disabled = isLast || isQuizNotDone;
+  var nextLocked = isLast || (idx + 1 > unlockedUpTo);
+  document.getElementById('next-btn').disabled = nextLocked;
 
   // Narration controls
   var narrCtrl = document.getElementById('narr-ctrl');
@@ -583,11 +611,15 @@ function nextScene() {
 // Called by quiz sections after submit
 window.onQuizSubmitted = function(sceneIdx, score) {
   quizScores[sceneIdx] = score;
+  if (score >= ${QUIZ_PASS_THRESHOLD}) {
+    unlockedUpTo = Math.max(unlockedUpTo, Math.min(sceneIdx + 1, TOTAL - 1));
+    if (sceneIdx === currentIdx && sceneIdx < TOTAL - 1) {
+      document.getElementById('next-btn').disabled = false;
+    }
+  }
   saveSuspendData();
   SCORM.commit();
-  if (sceneIdx < TOTAL - 1) {
-    document.getElementById('next-btn').disabled = false;
-  } else {
+  if (sceneIdx === TOTAL - 1) {
     SCORM.setScore(score, 0, 100);
     if (score >= ${QUIZ_PASS_THRESHOLD}) {
       SCORM.setPassed();
@@ -611,15 +643,15 @@ window.addEventListener('load', function() {
     var savedLocation = SCORM.getValue('cmi.core.lesson_location');
 
     // If data looks empty and we haven't exhausted retries, wait and retry.
-    // (A fresh first-time enrolment will also have empty data, but retrying
-    //  is harmless — we just end up at scene 0 after the last attempt.)
-    if (!savedData && !savedLocation && resumeAttempts < 10) {
+    // Safety net for LMS bridges that load state asynchronously after LMSInitialize.
+    // (A fresh first-time enrolment also has empty data — retrying is harmless.)
+    if (!savedData && !savedLocation && resumeAttempts < 5) {
       resumeAttempts++;
-      setTimeout(applyResume, 50);
+      setTimeout(applyResume, 100);
       return;
     }
 
-    // Restore visited scenes + quiz scores from suspend_data
+    // Restore visited scenes, quiz scores, and unlock level from suspend_data
     if (savedData) {
       try {
         var state = JSON.parse(savedData);
@@ -633,6 +665,9 @@ window.addEventListener('load', function() {
           for (var ki = 0; ki < keys.length; ki++) {
             quizScores[parseInt(keys[ki], 10)] = state.q[keys[ki]];
           }
+        }
+        if (typeof state.u === 'number') {
+          unlockedUpTo = Math.min(state.u, TOTAL - 1);
         }
       } catch (e) {}
     }

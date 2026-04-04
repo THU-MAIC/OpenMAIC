@@ -89,6 +89,9 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
     <button id="submit_${sceneIndex}" class="om-submit"${noQuestions ? ' disabled' : ''}>
       Submit
     </button>
+    <button id="retry_${sceneIndex}" class="om-retry" style="display:none">
+      Torna-ho a intentar
+    </button>
   </div>
   <script>
   (function() {
@@ -97,6 +100,19 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
 
     document.getElementById('submit_${sceneIndex}').addEventListener('click', function() {
       if (submitted_${sceneIndex} || QUESTIONS_${sceneIndex}.length === 0) return;
+
+      // Require at least one answer per question
+      var allAnswered = true;
+      QUESTIONS_${sceneIndex}.forEach(function(q) {
+        var block = document.getElementById('qblock_' + q.id);
+        var hasAnswer = q.type === 'single'
+          ? !!block.querySelector('input[type=radio]:checked')
+          : !!block.querySelector('input[type=checkbox]:checked');
+        if (!hasAnswer) { allAnswered = false; block.classList.add('om-qblock--warn'); }
+        else { block.classList.remove('om-qblock--warn'); }
+      });
+      if (!allAnswered) return;
+
       submitted_${sceneIndex} = true;
       this.disabled = true;
 
@@ -147,10 +163,35 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
       bar.textContent = 'Score: ' + correct + ' / ' + QUESTIONS_${sceneIndex}.length + ' (' + pct + '%)';
       bar.className = 'om-result ' + (pct >= ${QUIZ_PASS_THRESHOLD} ? 'om-pass' : 'om-fail');
 
+      // Show retry button if failed
+      if (pct < ${QUIZ_PASS_THRESHOLD}) {
+        document.getElementById('retry_${sceneIndex}').style.display = 'block';
+      }
+
       // Notify course controller
       if (typeof window.onQuizSubmitted === 'function') {
         window.onQuizSubmitted(${sceneIndex}, pct);
       }
+    });
+
+    document.getElementById('retry_${sceneIndex}').addEventListener('click', function() {
+      submitted_${sceneIndex} = false;
+      this.style.display = 'none';
+      document.getElementById('submit_${sceneIndex}').disabled = false;
+      document.getElementById('result_${sceneIndex}').style.display = 'none';
+
+      QUESTIONS_${sceneIndex}.forEach(function(q) {
+        var block = document.getElementById('qblock_' + q.id);
+        block.querySelectorAll('input').forEach(function(inp) {
+          inp.disabled = false;
+          inp.checked = false;
+        });
+        block.querySelectorAll('.om-opt').forEach(function(lbl) {
+          lbl.className = 'om-opt';
+        });
+        var analysisEl = document.getElementById('analysis_' + q.id);
+        if (analysisEl) analysisEl.style.display = 'none';
+      });
     });
   })();
   </script>
