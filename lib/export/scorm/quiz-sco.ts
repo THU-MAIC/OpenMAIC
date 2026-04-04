@@ -105,6 +105,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
       var allAnswered = true;
       QUESTIONS_${sceneIndex}.forEach(function(q) {
         var block = document.getElementById('qblock_' + q.id);
+        if (!block) return;
         var hasAnswer = q.type === 'single'
           ? !!block.querySelector('input[type=radio]:checked')
           : !!block.querySelector('input[type=checkbox]:checked');
@@ -182,6 +183,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
 
       QUESTIONS_${sceneIndex}.forEach(function(q) {
         var block = document.getElementById('qblock_' + q.id);
+        if (!block) return;
         block.querySelectorAll('input').forEach(function(inp) {
           inp.disabled = false;
           inp.checked = false;
@@ -191,6 +193,17 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
         });
         var analysisEl = document.getElementById('analysis_' + q.id);
         if (analysisEl) analysisEl.style.display = 'none';
+      });
+    });
+
+    // Clear orange warning in real time when user selects an answer
+    QUESTIONS_${sceneIndex}.forEach(function(q) {
+      var block = document.getElementById('qblock_' + q.id);
+      if (!block) return;
+      block.querySelectorAll('input').forEach(function(inp) {
+        inp.addEventListener('change', function() {
+          block.classList.remove('om-qblock--warn');
+        });
       });
     });
   })();
