@@ -36,6 +36,13 @@ export const commonZhCN = {
     exporting: '正在导出...',
     exportSuccess: '导出成功',
     exportFailed: '导出失败',
+    scorm: '导出 SCORM 1.2',
+    scormDesc: '用于 LMS 的标准化课程包',
+    scormDialogTitle: '导出 SCORM 1.2',
+    scormDialogDesc: '请选择视频处理方式',
+    scormIncludeVideos: '包含视频（完整包，文件较大）',
+    scormReplacePoster: '用封面图替换视频（文件更小）',
+    scormExport: '导出',
   },
 } as const;
 
@@ -77,5 +84,12 @@ export const commonEnUS = {
     exporting: 'Exporting...',
     exportSuccess: 'Export successful',
     exportFailed: 'Export failed',
+    scorm: 'Export SCORM 1.2',
+    scormDesc: 'Standardized course package for LMS',
+    scormDialogTitle: 'Export SCORM 1.2',
+    scormDialogDesc: 'Choose how to handle video content',
+    scormIncludeVideos: 'Include videos (complete package, may be large)',
+    scormReplacePoster: 'Replace videos with poster images (smaller download)',
+    scormExport: 'Export',
   },
 } as const;

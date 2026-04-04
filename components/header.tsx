@@ -10,16 +10,19 @@ import {
   Download,
   FileDown,
   Package,
+  BookOpen,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { SettingsDialog } from './settings';
+import { ScormExportDialog } from './scorm-export-dialog';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
+import { useExportScorm } from '@/lib/export/scorm';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -35,12 +38,16 @@ export function Header({ currentSceneTitle }: HeaderProps) {
 
   // Export
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
+  const { exporting: isExportingScorm, exportScorm } = useExportScorm();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [scormDialogOpen, setScormDialogOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
   const scenes = useStageStore((s) => s.scenes);
   const generatingOutlines = useStageStore((s) => s.generatingOutlines);
   const failedOutlines = useStageStore((s) => s.failedOutlines);
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
+
+  const anyExporting = isExporting || isExportingScorm;
 
   const canExport =
     scenes.length > 0 &&
@@ -222,31 +229,31 @@ export function Header({ currentSceneTitle }: HeaderProps) {
         <div className="relative" ref={exportRef}>
           <button
             onClick={() => {
-              if (canExport && !isExporting) setExportMenuOpen(!exportMenuOpen);
+              if (canExport && !anyExporting) setExportMenuOpen(!exportMenuOpen);
             }}
-            disabled={!canExport || isExporting}
+            disabled={!canExport || anyExporting}
             title={
               canExport
-                ? isExporting
+                ? anyExporting
                   ? t('export.exporting')
                   : t('export.pptx')
                 : t('share.notReady')
             }
             className={cn(
               'shrink-0 p-2 rounded-full transition-all',
-              canExport && !isExporting
+              canExport && !anyExporting
                 ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
                 : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
             )}
           >
-            {isExporting ? (
+            {anyExporting ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Download className="w-4 h-4" />
             )}
           </button>
           {exportMenuOpen && (
-            <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[200px]">
+            <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[220px]">
               <button
                 onClick={() => {
                   setExportMenuOpen(false);
@@ -272,11 +279,32 @@ export function Header({ currentSceneTitle }: HeaderProps) {
                   </div>
                 </div>
               </button>
+              <div className="border-t border-gray-100 dark:border-gray-700" />
+              <button
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  setScormDialogOpen(true);
+                }}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
+              >
+                <BookOpen className="w-4 h-4 text-gray-400 shrink-0" />
+                <div>
+                  <div>{t('export.scorm')}</div>
+                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                    {t('export.scormDesc')}
+                  </div>
+                </div>
+              </button>
             </div>
           )}
         </div>
       </header>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ScormExportDialog
+        open={scormDialogOpen}
+        onOpenChange={setScormDialogOpen}
+        onConfirm={(opts) => exportScorm(opts)}
+      />
     </>
   );
 }
