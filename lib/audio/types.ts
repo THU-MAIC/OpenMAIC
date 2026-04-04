@@ -81,6 +81,7 @@
 export type TTSProviderId =
   | 'openai-tts'
   | 'azure-tts'
+  | 'azure-foundry-tts'
   | 'glm-tts'
   | 'qwen-tts'
   | 'doubao-tts'

@@ -144,6 +144,9 @@ export async function generateTTS(
     case 'azure-tts':
       return await generateAzureTTS(config, text);
 
+    case 'azure-foundry-tts':
+      return await generateAzureFoundryTTS(config, text);
+
     case 'glm-tts':
       return await generateGLMTTS(config, text);
 
@@ -204,6 +207,16 @@ async function generateOpenAITTS(
 }
 
 /**
+ * Extracts the BCP-47 language code from an Azure voice name.
+ * Supports both standard ("en-US-AvaNeural") and HD ("en-US-Ava:DragonHDLatestNeural") formats.
+ * Falls back to 'en-US' if the format is unrecognised.
+ */
+function getVoiceLanguage(voice: string): string {
+  const match = voice.match(/^([a-z]{2,3}-[A-Z]{2,3})-/);
+  return match ? match[1] : 'en-US';
+}
+
+/**
  * Azure TTS implementation (direct API call with SSML)
  */
 async function generateAzureTTS(
@@ -211,12 +224,13 @@ async function generateAzureTTS(
   text: string,
 ): Promise<TTSGenerationResult> {
   const baseUrl = config.baseUrl || TTS_PROVIDERS['azure-tts'].defaultBaseUrl;
+  const lang = getVoiceLanguage(config.voice);
 
   // Build SSML
   const rate = config.speed ? `${((config.speed - 1) * 100).toFixed(0)}%` : '0%';
   const ssml = `
-    <speak version='1.0' xml:lang='zh-CN'>
-      <voice xml:lang='zh-CN' name='${config.voice}'>
+    <speak version='1.0' xml:lang='${lang}'>
+      <voice xml:lang='${lang}' name='${config.voice}'>
         <prosody rate='${rate}'>${escapeXml(text)}</prosody>
       </voice>
     </speak>
@@ -234,6 +248,48 @@ async function generateAzureTTS(
 
   if (!response.ok) {
     throw new Error(`Azure TTS API error: ${response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    audio: new Uint8Array(arrayBuffer),
+    format: 'mp3',
+  };
+}
+
+/**
+ * Azure AI Foundry TTS — multi-service Cognitive Services endpoint.
+ * URL format: https://{resource}.cognitiveservices.azure.com/cognitiveservices/v1
+ * Supports standard Neural and premium DragonHD voices (e.g. "en-US-Ava:DragonHDLatestNeural").
+ */
+async function generateAzureFoundryTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['azure-foundry-tts'].defaultBaseUrl;
+  const lang = getVoiceLanguage(config.voice);
+
+  const rate = config.speed ? `${((config.speed - 1) * 100).toFixed(0)}%` : '0%';
+  const ssml = `
+    <speak version='1.0' xml:lang='${lang}'>
+      <voice xml:lang='${lang}' name='${config.voice}'>
+        <prosody rate='${rate}'>${escapeXml(text)}</prosody>
+      </voice>
+    </speak>
+  `.trim();
+
+  const response = await fetch(`${baseUrl}/cognitiveservices/v1`, {
+    method: 'POST',
+    headers: {
+      'Ocp-Apim-Subscription-Key': config.apiKey!,
+      'Content-Type': 'application/ssml+xml; charset=utf-8',
+      'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3',
+    },
+    body: ssml,
+  });
+
+  if (!response.ok) {
+    throw new Error(`Azure AI Foundry TTS error: ${response.statusText}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();

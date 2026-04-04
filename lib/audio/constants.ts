@@ -209,6 +209,38 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.5, max: 2.0, default: 1.0 },
   },
 
+  'azure-foundry-tts': {
+    id: 'azure-foundry-tts',
+    name: 'Azure AI Foundry TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://{resource}.cognitiveservices.azure.com',
+    icon: '/logos/azure.svg',
+    models: [],
+    defaultModelId: '',
+    voices: [
+      // Standard Neural voices
+      { id: 'en-US-AvaNeural',    name: 'Ava',    language: 'en-US', gender: 'female' as const },
+      { id: 'en-US-AndrewNeural', name: 'Andrew', language: 'en-US', gender: 'male'   as const },
+      { id: 'en-US-EmmaNeural',   name: 'Emma',   language: 'en-US', gender: 'female' as const },
+      { id: 'en-US-BrianNeural',  name: 'Brian',  language: 'en-US', gender: 'male'   as const },
+      { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓 (女)', language: 'zh-CN', gender: 'female' as const },
+      { id: 'zh-CN-YunxiNeural',    name: '云希 (男)', language: 'zh-CN', gender: 'male'   as const },
+      { id: 'ca-ES-AlbaNeural',   name: 'Alba (Català)',    language: 'ca-ES', gender: 'female' as const },
+      { id: 'ca-ES-EnricNeural',  name: 'Enric (Català)',   language: 'ca-ES', gender: 'male'   as const },
+      { id: 'es-ES-ElviraNeural', name: 'Elvira (Español)', language: 'es-ES', gender: 'female' as const },
+      { id: 'es-ES-AlvaroNeural', name: 'Álvaro (Español)', language: 'es-ES', gender: 'male'   as const },
+      // HD Neural voices (Azure AI Foundry — premium DragonHD quality)
+      { id: 'en-US-Ava:DragonHDLatestNeural',    name: 'Ava HD',              language: 'en-US', gender: 'female' as const, description: 'DragonHD' },
+      { id: 'en-US-Andrew:DragonHDLatestNeural', name: 'Andrew HD',           language: 'en-US', gender: 'male'   as const, description: 'DragonHD' },
+      { id: 'en-US-Emma:DragonHDLatestNeural',   name: 'Emma HD',             language: 'en-US', gender: 'female' as const, description: 'DragonHD' },
+      { id: 'en-US-Brian:DragonHDLatestNeural',  name: 'Brian HD',            language: 'en-US', gender: 'male'   as const, description: 'DragonHD' },
+      { id: 'ca-ES-Alba:DragonHDLatestNeural',   name: 'Alba HD (Català)',    language: 'ca-ES', gender: 'female' as const, description: 'DragonHD' },
+      { id: 'es-ES-Elvira:DragonHDLatestNeural', name: 'Elvira HD (Español)', language: 'es-ES', gender: 'female' as const, description: 'DragonHD' },
+    ],
+    supportedFormats: ['mp3', 'wav', 'ogg'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'glm-tts': {
     id: 'glm-tts',
     name: 'GLM TTS',
@@ -1120,6 +1152,7 @@ export function getTTSProvider(providerId: TTSProviderId): TTSProviderConfig | u
 export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'openai-tts': 'alloy',
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
+  'azure-foundry-tts': 'en-US-AvaNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
@@ -1131,6 +1164,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
 export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
   'openai-tts': 'gpt-4o-mini-tts',
   'azure-tts': '',
+  'azure-foundry-tts': '',
   'glm-tts': 'glm-tts',
   'qwen-tts': 'qwen3-tts-flash',
   'doubao-tts': '',

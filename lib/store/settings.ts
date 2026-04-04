@@ -285,6 +285,7 @@ const getDefaultAudioConfig = () => ({
   ttsProvidersConfig: {
     'openai-tts': { apiKey: '', baseUrl: '', enabled: true },
     'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
+    'azure-foundry-tts': { apiKey: '', baseUrl: '', enabled: false },
     'glm-tts': { apiKey: '', baseUrl: '', enabled: false },
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },

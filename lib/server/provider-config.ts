@@ -54,6 +54,7 @@ const LLM_ENV_MAP: Record<string, string> = {
 const TTS_ENV_MAP: Record<string, string> = {
   TTS_OPENAI: 'openai-tts',
   TTS_AZURE: 'azure-tts',
+  TTS_AZURE_FOUNDRY: 'azure-foundry-tts',
   TTS_GLM: 'glm-tts',
   TTS_QWEN: 'qwen-tts',
   TTS_DOUBAO: 'doubao-tts',
