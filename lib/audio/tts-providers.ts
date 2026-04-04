@@ -266,8 +266,23 @@ async function generateAzureFoundryTTS(
   config: TTSModelConfig,
   text: string,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['azure-foundry-tts'].defaultBaseUrl;
+  const baseUrl = (config.baseUrl || '').trim() || TTS_PROVIDERS['azure-foundry-tts'].defaultBaseUrl!;
+
+  // Guard: detect unconfigured placeholder URL
+  if (baseUrl.includes('{resource}')) {
+    throw new Error(
+      'Azure AI Foundry TTS: Base URL not configured. ' +
+      'Replace {resource} with your actual Azure resource name, e.g. ' +
+      'https://my-resource.cognitiveservices.azure.com',
+    );
+  }
+
+  if (!config.apiKey?.trim()) {
+    throw new Error('Azure AI Foundry TTS: API Key is required.');
+  }
+
   const lang = getVoiceLanguage(config.voice);
+  const endpoint = `${baseUrl.replace(/\/$/, '')}/cognitiveservices/v1`;
 
   const rate = config.speed ? `${((config.speed - 1) * 100).toFixed(0)}%` : '0%';
   const ssml = `
@@ -278,10 +293,10 @@ async function generateAzureFoundryTTS(
     </speak>
   `.trim();
 
-  const response = await fetch(`${baseUrl}/cognitiveservices/v1`, {
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: {
-      'Ocp-Apim-Subscription-Key': config.apiKey!,
+      'Ocp-Apim-Subscription-Key': config.apiKey,
       'Content-Type': 'application/ssml+xml; charset=utf-8',
       'X-Microsoft-OutputFormat': 'audio-16khz-128kbitrate-mono-mp3',
     },
@@ -289,7 +304,12 @@ async function generateAzureFoundryTTS(
   });
 
   if (!response.ok) {
-    throw new Error(`Azure AI Foundry TTS error: ${response.statusText}`);
+    const body = await response.text().catch(() => '');
+    throw new Error(
+      `Azure AI Foundry TTS error ${response.status} (${response.statusText})` +
+      (body ? `: ${body.slice(0, 200)}` : '') +
+      ` — endpoint: ${endpoint}`,
+    );
   }
 
   const arrayBuffer = await response.arrayBuffer();
