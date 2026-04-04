@@ -174,7 +174,7 @@ function renderShape(el: PPTShapeElement): string {
   }
   const { defs, fillRef } = svgGradientDef(el);
   return `<div style="${elBaseStyle(el)}${opacity}overflow:visible;">
-  <svg viewBox="0 0 ${vw} ${vh}" style="width:100%;height:100%;"${svgTransform}>
+  <svg viewBox="0 0 ${vw} ${vh}" preserveAspectRatio="none" style="width:100%;height:100%;"${svgTransform}>
     ${defs}<path d="${escHtml(el.path)}" fill="${fillRef}" ${outline} fill-rule="nonzero"/>
   </svg>${text}
 </div>`;
