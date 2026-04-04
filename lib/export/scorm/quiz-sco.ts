@@ -120,6 +120,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
       var correct = 0;
       QUESTIONS_${sceneIndex}.forEach(function(q, iIdx) {
         var block = document.getElementById('qblock_' + q.id);
+        if (!block) return;
         var studentResponse = '';
         var isCorrect = false;
 
@@ -137,8 +138,9 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
         if (isCorrect) correct++;
 
         // Visual feedback
-        block.querySelectorAll('.om-opt').forEach(function(label) {
+        Array.from(block.querySelectorAll('.om-opt')).forEach(function(label) {
           var input = label.querySelector('input');
+          if (!input) return;
           input.disabled = true;
           var inAnswer = q.answer.indexOf(input.value) !== -1;
           if (inAnswer && input.checked) label.classList.add('om-correct');
@@ -151,7 +153,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
 
         // SCORM interaction
         var correctPattern = q.type === 'single' ? q.answer[0] : q.answer.slice().sort().join('[,]');
-        if (typeof SCORM !== 'undefined') {
+        if (typeof SCORM !== 'undefined' && typeof SCORM.logInteraction === 'function') {
           SCORM.logInteraction(iIdx, q.id, 'choice', studentResponse, correctPattern, isCorrect ? 'correct' : 'wrong');
         }
       });
@@ -184,11 +186,11 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
       QUESTIONS_${sceneIndex}.forEach(function(q) {
         var block = document.getElementById('qblock_' + q.id);
         if (!block) return;
-        block.querySelectorAll('input').forEach(function(inp) {
+        Array.from(block.querySelectorAll('input')).forEach(function(inp) {
           inp.disabled = false;
           inp.checked = false;
         });
-        block.querySelectorAll('.om-opt').forEach(function(lbl) {
+        Array.from(block.querySelectorAll('.om-opt')).forEach(function(lbl) {
           lbl.className = 'om-opt';
         });
         var analysisEl = document.getElementById('analysis_' + q.id);
@@ -200,7 +202,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
     QUESTIONS_${sceneIndex}.forEach(function(q) {
       var block = document.getElementById('qblock_' + q.id);
       if (!block) return;
-      block.querySelectorAll('input').forEach(function(inp) {
+      Array.from(block.querySelectorAll('input')).forEach(function(inp) {
         inp.addEventListener('change', function() {
           block.classList.remove('om-qblock--warn');
         });
