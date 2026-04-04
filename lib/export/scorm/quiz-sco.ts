@@ -27,16 +27,19 @@ function escHtml(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function renderQuestion(q: QuizQuestion, idx: number): string {
+function renderQuestion(q: QuizQuestion, idx: number, sceneIndex: number): string {
   if (q.type === 'short_answer' || !q.options?.length) return '';
   const inputType = q.type === 'multiple' ? 'checkbox' : 'radio';
   const multiHint = q.type === 'multiple' ? ' <span class="om-qhint">(select all that apply)</span>' : '';
+  // Prefix IDs with sceneIndex to avoid conflicts when multiple quizzes share question IDs
+  const blockId = `qblock_${sceneIndex}_${escHtml(q.id)}`;
+  const analysisId = `analysis_${sceneIndex}_${escHtml(q.id)}`;
 
   const options = q.options
     .map(
       (opt) => `
       <label class="om-opt" data-value="${escHtml(opt.value)}">
-        <input type="${inputType}" name="q_${escHtml(q.id)}" value="${escHtml(opt.value)}">
+        <input type="${inputType}" name="q_${sceneIndex}_${escHtml(q.id)}" value="${escHtml(opt.value)}">
         <span class="om-optval">${escHtml(opt.value)}.</span>
         <span class="om-opttext">${escHtml(opt.label)}</span>
       </label>`,
@@ -44,10 +47,10 @@ function renderQuestion(q: QuizQuestion, idx: number): string {
     .join('');
 
   const analysis = q.analysis
-    ? `<div class="om-analysis" id="analysis_${escHtml(q.id)}">${escHtml(q.analysis)}</div>`
+    ? `<div class="om-analysis" id="${analysisId}">${escHtml(q.analysis)}</div>`
     : '';
 
-  return `<div class="om-qblock" id="qblock_${escHtml(q.id)}"
+  return `<div class="om-qblock" id="${blockId}"
      data-qid="${escHtml(q.id)}" data-type="${q.type}"
      data-answer="${escHtml((q.answer ?? []).join(','))}">
   <div class="om-qtext"><span class="om-qnum">${idx + 1}.</span> ${escHtml(q.question)}${multiHint}</div>
@@ -69,7 +72,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
     (q) => (q.type === 'single' || q.type === 'multiple') && q.options?.length && q.answer?.length,
   );
 
-  const questionsHtml = exportable.map((q, i) => renderQuestion(q, i)).join('\n');
+  const questionsHtml = exportable.map((q, i) => renderQuestion(q, i, sceneIndex)).join('\n');
 
   // Serialize question data for inline JS
   const questionsJson = JSON.stringify(
@@ -104,7 +107,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
       // Require at least one answer per question
       var allAnswered = true;
       QUESTIONS_${sceneIndex}.forEach(function(q) {
-        var block = document.getElementById('qblock_' + q.id);
+        var block = document.getElementById('qblock_${sceneIndex}_' + q.id);
         if (!block) return;
         var hasAnswer = q.type === 'single'
           ? !!block.querySelector('input[type=radio]:checked')
@@ -119,7 +122,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
 
       var correct = 0;
       QUESTIONS_${sceneIndex}.forEach(function(q, iIdx) {
-        var block = document.getElementById('qblock_' + q.id);
+        var block = document.getElementById('qblock_${sceneIndex}_' + q.id);
         if (!block) return;
         var studentResponse = '';
         var isCorrect = false;
@@ -148,7 +151,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
           else if (!inAnswer && input.checked) label.classList.add('om-wrong');
         });
 
-        var analysisEl = document.getElementById('analysis_' + q.id);
+        var analysisEl = document.getElementById('analysis_${sceneIndex}_' + q.id);
         if (analysisEl) analysisEl.style.display = 'block';
 
         // SCORM interaction
@@ -184,7 +187,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
       document.getElementById('result_${sceneIndex}').style.display = 'none';
 
       QUESTIONS_${sceneIndex}.forEach(function(q) {
-        var block = document.getElementById('qblock_' + q.id);
+        var block = document.getElementById('qblock_${sceneIndex}_' + q.id);
         if (!block) return;
         Array.from(block.querySelectorAll('input')).forEach(function(inp) {
           inp.disabled = false;
@@ -193,14 +196,14 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
         Array.from(block.querySelectorAll('.om-opt')).forEach(function(lbl) {
           lbl.className = 'om-opt';
         });
-        var analysisEl = document.getElementById('analysis_' + q.id);
+        var analysisEl = document.getElementById('analysis_${sceneIndex}_' + q.id);
         if (analysisEl) analysisEl.style.display = 'none';
       });
     });
 
     // Clear orange warning in real time when user selects an answer
     QUESTIONS_${sceneIndex}.forEach(function(q) {
-      var block = document.getElementById('qblock_' + q.id);
+      var block = document.getElementById('qblock_${sceneIndex}_' + q.id);
       if (!block) return;
       Array.from(block.querySelectorAll('input')).forEach(function(inp) {
         inp.addEventListener('change', function() {
