@@ -1,0 +1,8 @@
+---
+alwaysApply: true
+---
+# Git remote target
+
+- **Push all branches, tags, and changes to `origin`:** [MycallAI/OpenMAIC-1](https://github.com/MycallAI/OpenMAIC-1).
+- **`upstream`** ([THU-MAIC/OpenMAIC](https://github.com/THU-MAIC/OpenMAIC)) is for pulling or comparing with the original project only. Do not treat upstream as the default push target or PR base for this workspace.
+- When suggesting `git push`, `gh pr create`, or clone URLs for this repo, use **OpenMAIC-1** unless the user explicitly asks about contributing back to THU-MAIC.
