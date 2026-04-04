@@ -86,6 +86,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
   const names: Record<TTSProviderId, string> = {
     'openai-tts': t('settings.providerOpenAITTS'),
     'azure-tts': t('settings.providerAzureTTS'),
+    'azure-foundry-tts': t('settings.providerAzureFoundryTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
     'doubao-tts': t('settings.providerDoubaoTTS'),
