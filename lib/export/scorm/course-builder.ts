@@ -601,42 +601,61 @@ window.onQuizSubmitted = function(sceneIdx, score) {
 window.addEventListener('load', function() {
   SCORM.init();
 
-  // Restore suspend_data (visited scenes + quiz scores)
-  var savedData = SCORM.getValue('cmi.suspend_data');
-  if (savedData) {
-    try {
-      var state = JSON.parse(savedData);
-      if (state.v) {
-        for (var i = 0; i < state.v.length && i < TOTAL; i++) {
-          visitedArr[i] = state.v[i] === '1';
-        }
-      }
-      if (state.q) {
-        var keys = Object.keys(state.q);
-        for (var ki = 0; ki < keys.length; ki++) {
-          quizScores[parseInt(keys[ki], 10)] = state.q[keys[ki]];
-        }
-      }
-    } catch (e) {}
-  }
+  // Some LMS bridges load state asynchronously after LMSInitialize returns.
+  // We retry reading suspend_data up to 10 times (50ms apart, max ~500ms)
+  // so that resume works even when the LMS fetch takes a moment to complete.
+  var resumeAttempts = 0;
 
-  // Do not overwrite 'completed'/'passed' with 'incomplete'
-  var currentStatus = SCORM.getValue('cmi.core.lesson_status');
-  if (currentStatus !== 'completed' && currentStatus !== 'passed') {
-    SCORM.setValue('cmi.core.lesson_status', 'incomplete');
-  }
+  function applyResume() {
+    var savedData = SCORM.getValue('cmi.suspend_data');
+    var savedLocation = SCORM.getValue('cmi.core.lesson_location');
 
-  // Resume at last saved position
-  var startIdx = 0;
-  var savedLocation = SCORM.getValue('cmi.core.lesson_location');
-  if (savedLocation) {
-    var parsed = parseInt(savedLocation, 10);
-    if (!isNaN(parsed) && parsed >= 0 && parsed < TOTAL) {
-      startIdx = parsed;
+    // If data looks empty and we haven't exhausted retries, wait and retry.
+    // (A fresh first-time enrolment will also have empty data, but retrying
+    //  is harmless — we just end up at scene 0 after the last attempt.)
+    if (!savedData && !savedLocation && resumeAttempts < 10) {
+      resumeAttempts++;
+      setTimeout(applyResume, 50);
+      return;
     }
+
+    // Restore visited scenes + quiz scores from suspend_data
+    if (savedData) {
+      try {
+        var state = JSON.parse(savedData);
+        if (state.v) {
+          for (var i = 0; i < state.v.length && i < TOTAL; i++) {
+            visitedArr[i] = state.v[i] === '1';
+          }
+        }
+        if (state.q) {
+          var keys = Object.keys(state.q);
+          for (var ki = 0; ki < keys.length; ki++) {
+            quizScores[parseInt(keys[ki], 10)] = state.q[keys[ki]];
+          }
+        }
+      } catch (e) {}
+    }
+
+    // Do not overwrite 'completed'/'passed' with 'incomplete'
+    var currentStatus = SCORM.getValue('cmi.core.lesson_status');
+    if (currentStatus !== 'completed' && currentStatus !== 'passed') {
+      SCORM.setValue('cmi.core.lesson_status', 'incomplete');
+    }
+
+    // Resume at last saved position
+    var startIdx = 0;
+    if (savedLocation) {
+      var parsed = parseInt(savedLocation, 10);
+      if (!isNaN(parsed) && parsed >= 0 && parsed < TOTAL) {
+        startIdx = parsed;
+      }
+    }
+
+    showScene(startIdx);
   }
 
-  showScene(startIdx);
+  applyResume();
 });
 
 window.addEventListener('beforeunload', function() {
