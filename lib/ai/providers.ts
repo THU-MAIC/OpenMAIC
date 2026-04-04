@@ -951,6 +951,24 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
+
+  local: {
+    id: 'local',
+    name: 'Local (LM Studio)',
+    type: 'openai',
+    defaultBaseUrl: 'http://192.168.10.111:1234/v1',
+    requiresApiKey: false,
+    icon: '/logos/openai.svg',
+    models: [
+      {
+        id: 'google/gemma-4-e4b',
+        name: 'Gemma 4 E4B (Local)',
+        contextWindow: 8192,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+    ],
+  },
 };
 
 /**
