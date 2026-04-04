@@ -267,8 +267,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                 endpointPath = '/audio/speech';
                 break;
               case 'azure-tts':
-              case 'azure-foundry-tts':
                 endpointPath = '/cognitiveservices/v1';
+                break;
+              case 'azure-foundry-tts':
+                endpointPath = '/tts/cognitiveservices/v1';
                 break;
               case 'qwen-tts':
                 endpointPath = '/services/aigc/multimodal-generation/generation';

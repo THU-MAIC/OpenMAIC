@@ -282,7 +282,11 @@ async function generateAzureFoundryTTS(
   }
 
   const lang = getVoiceLanguage(config.voice);
-  const endpoint = `${baseUrl.replace(/\/$/, '')}/cognitiveservices/v1`;
+  // Custom domain endpoints require the /tts/ prefix before /cognitiveservices/v1.
+  // Regional endpoints (azure-tts) use: {region}.tts.speech.microsoft.com/cognitiveservices/v1
+  // Custom domain endpoints (azure-foundry-tts) use: {custom}.cognitiveservices.azure.com/tts/cognitiveservices/v1
+  // Reference: https://learn.microsoft.com/azure/ai-services/speech-service/speech-services-private-link
+  const endpoint = `${baseUrl.replace(/\/$/, '')}/tts/cognitiveservices/v1`;
 
   const rate = config.speed ? `${((config.speed - 1) * 100).toFixed(0)}%` : '0%';
   const ssml = `
