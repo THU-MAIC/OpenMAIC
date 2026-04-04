@@ -30,8 +30,8 @@ export function buildInteractiveSection(scene: Scene, sceneIndex: number): Inter
   // Escape HTML for srcdoc attribute (must escape " and &)
   const srcdoc = (content.html ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
 
-  const html = `<section id="${sceneId}" class="scene scene-interactive" data-title="${escHtml(scene.title)}" style="display:none">
-  <iframe class="interactive-frame"
+  const html = `<section id="${sceneId}" class="om-scene om-interactive" data-title="${escHtml(scene.title)}" style="display:none">
+  <iframe class="om-iframe"
     srcdoc="${srcdoc}"
     sandbox="allow-scripts allow-same-origin allow-forms"
     title="${escHtml(scene.title)}"></iframe>

@@ -358,12 +358,10 @@ export function buildSlideSection(opts: SlideSectionOptions): SlideSectionResult
     }
   }
 
-  const html = `<section id="${sceneId}" class="scene scene-slide" data-title="${escHtml(scene.title)}" style="display:none">
-  <div class="slide-stage">
-    <div class="slide-scaler" id="${scalerId}">
-      <div class="slide-canvas" id="${canvasId}" style="width:${cw}px;height:${ch}px;background:${bgFallback};${bgCss}">
-        ${elements}
-      </div>
+  const html = `<section id="${sceneId}" class="om-scene om-slide" data-title="${escHtml(scene.title)}" style="display:none">
+  <div class="om-scaler" id="${scalerId}">
+    <div class="om-canvas" id="${canvasId}" style="width:${cw}px;height:${ch}px;background:${bgFallback};${bgCss}">
+      ${elements}
     </div>
   </div>
   ${narrTags}</section>`;

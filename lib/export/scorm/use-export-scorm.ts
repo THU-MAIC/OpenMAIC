@@ -107,7 +107,7 @@ export function useExportScorm(): {
         }
 
         // 4. Build scene section fragments
-        const sectionResults: Array<{ html: string; meta: SceneMeta }> = [];
+        const sectionResults: Array<{ html: string; meta: SceneMeta; title: string }> = [];
         let needsKatex = false;
         let hasQuiz = false;
 
@@ -116,15 +116,15 @@ export function useExportScorm(): {
 
           if (scene.content.type === 'slide') {
             const res = buildSlideSection({ scene, sceneIndex: i, assetMap, includeVideos: options.includeVideos });
-            sectionResults.push({ html: res.html, meta: res.meta });
+            sectionResults.push({ html: res.html, meta: res.meta, title: scene.title });
             if (res.needsKatex) needsKatex = true;
           } else if (scene.content.type === 'quiz') {
             const res = buildQuizSection(scene, i);
-            sectionResults.push({ html: res.html, meta: res.meta });
+            sectionResults.push({ html: res.html, meta: res.meta, title: scene.title });
             hasQuiz = true;
           } else if (scene.content.type === 'interactive') {
             const res = buildInteractiveSection(scene, i);
-            sectionResults.push({ html: res.html, meta: res.meta });
+            sectionResults.push({ html: res.html, meta: res.meta, title: scene.title });
           }
         }
 

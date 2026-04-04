@@ -2,6 +2,7 @@
  * quiz-sco.ts
  * Builds the HTML fragment (a <section> element) for a quiz scene.
  * Only single/multiple choice questions are exported (short_answer excluded).
+ * CSS classes use the "om-" prefix to avoid conflicts with LMS stylesheets.
  */
 import type { Scene, QuizContent, QuizQuestion } from '@/lib/types/stage';
 
@@ -29,28 +30,28 @@ function escHtml(s: string): string {
 function renderQuestion(q: QuizQuestion, idx: number): string {
   if (q.type === 'short_answer' || !q.options?.length) return '';
   const inputType = q.type === 'multiple' ? 'checkbox' : 'radio';
-  const multiHint = q.type === 'multiple' ? ' <span class="q-multi-hint">(select all that apply)</span>' : '';
+  const multiHint = q.type === 'multiple' ? ' <span class="om-qhint">(select all that apply)</span>' : '';
 
   const options = q.options
     .map(
       (opt) => `
-      <label class="option-label" data-value="${escHtml(opt.value)}">
+      <label class="om-opt" data-value="${escHtml(opt.value)}">
         <input type="${inputType}" name="q_${escHtml(q.id)}" value="${escHtml(opt.value)}">
-        <span class="option-value">${escHtml(opt.value)}.</span>
-        <span class="option-text">${escHtml(opt.label)}</span>
+        <span class="om-optval">${escHtml(opt.value)}.</span>
+        <span class="om-opttext">${escHtml(opt.label)}</span>
       </label>`,
     )
     .join('');
 
   const analysis = q.analysis
-    ? `<div class="analysis" id="analysis_${escHtml(q.id)}">${escHtml(q.analysis)}</div>`
+    ? `<div class="om-analysis" id="analysis_${escHtml(q.id)}">${escHtml(q.analysis)}</div>`
     : '';
 
-  return `<div class="question-block" id="qblock_${escHtml(q.id)}"
+  return `<div class="om-qblock" id="qblock_${escHtml(q.id)}"
      data-qid="${escHtml(q.id)}" data-type="${q.type}"
      data-answer="${escHtml((q.answer ?? []).join(','))}">
-  <div class="question-text"><span class="q-num">${idx + 1}.</span> ${escHtml(q.question)}${multiHint}</div>
-  <div class="options-list">${options}</div>
+  <div class="om-qtext"><span class="om-qnum">${idx + 1}.</span> ${escHtml(q.question)}${multiHint}</div>
+  <div class="om-opts">${options}</div>
   ${analysis}
 </div>`;
 }
@@ -77,15 +78,15 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
 
   const noQuestions = exportable.length === 0;
 
-  const html = `<section id="${sceneId}" class="scene scene-quiz" data-title="${escHtml(scene.title)}" style="display:none">
-  <div class="quiz-scroll">
-    <h2 class="quiz-title">${escHtml(scene.title)}</h2>
+  const html = `<section id="${sceneId}" class="om-scene om-quiz" data-title="${escHtml(scene.title)}" style="display:none">
+  <div class="om-quiz-scroll">
+    <h2 class="om-quiz-title">${escHtml(scene.title)}</h2>
     ${noQuestions
       ? '<p style="color:#6e6e73;">No gradable questions in this section.</p>'
       : questionsHtml
     }
-    <div id="result_${sceneIndex}" class="result-bar" style="display:none"></div>
-    <button id="submit_${sceneIndex}" class="submit-btn"${noQuestions ? ' disabled' : ''}>
+    <div id="result_${sceneIndex}" class="om-result" style="display:none"></div>
+    <button id="submit_${sceneIndex}" class="om-submit"${noQuestions ? ' disabled' : ''}>
       Submit
     </button>
   </div>
@@ -119,13 +120,13 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
         if (isCorrect) correct++;
 
         // Visual feedback
-        block.querySelectorAll('.option-label').forEach(function(label) {
+        block.querySelectorAll('.om-opt').forEach(function(label) {
           var input = label.querySelector('input');
           input.disabled = true;
           var inAnswer = q.answer.indexOf(input.value) !== -1;
-          if (inAnswer && input.checked) label.classList.add('opt-correct');
-          else if (inAnswer && !input.checked) label.classList.add('opt-missed');
-          else if (!inAnswer && input.checked) label.classList.add('opt-incorrect');
+          if (inAnswer && input.checked) label.classList.add('om-correct');
+          else if (inAnswer && !input.checked) label.classList.add('om-missed');
+          else if (!inAnswer && input.checked) label.classList.add('om-wrong');
         });
 
         var analysisEl = document.getElementById('analysis_' + q.id);
@@ -144,7 +145,7 @@ export function buildQuizSection(scene: Scene, sceneIndex: number): QuizSectionR
       var bar = document.getElementById('result_${sceneIndex}');
       bar.style.display = 'block';
       bar.textContent = 'Score: ' + correct + ' / ' + QUESTIONS_${sceneIndex}.length + ' (' + pct + '%)';
-      bar.className = 'result-bar ' + (pct >= ${QUIZ_PASS_THRESHOLD} ? 'result-pass' : 'result-fail');
+      bar.className = 'om-result ' + (pct >= ${QUIZ_PASS_THRESHOLD} ? 'om-pass' : 'om-fail');
 
       // Notify course controller
       if (typeof window.onQuizSubmitted === 'function') {

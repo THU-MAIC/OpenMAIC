@@ -1,15 +1,14 @@
 /**
  * course-builder.ts
- * Assembles all scene fragments into a single SCORM 1.2 SCO HTML file (index.html).
+ * Assembles all scene fragments into a single SCORM 1.2 SCO (index.html).
  *
- * Architecture: single SCO with internal JS navigation.
- * - All scenes are <section> elements; only the current one is visible.
- * - Navigation (Prev/Next) is handled entirely in JS.
- * - Slide canvases scale responsively via transform:scale() with a wrapper
- *   that tracks the visual (scaled) dimensions so flex centering works correctly.
- * - Narration audio plays automatically on slide load; user can pause/resume/restart.
- * - SCORM completion is set only when the user reaches the last scene.
- * - Quiz sections call window.onQuizSubmitted(sceneIdx, score) on submit.
+ * Layout:
+ *   - Fixed 240px left sidebar with scene list and progress indicator
+ *   - Scene area fills the remaining right space (position:fixed, left:240px)
+ *   - Fixed 52px nav bar at the bottom (also right of sidebar)
+ *
+ * CSS: all class names prefixed with "om-" to avoid conflicts with LMS stylesheets
+ * (Bootstrap, Moodle, etc. commonly define .scene, .option-label, .submit-btn, etc.)
  */
 import type { SlideSceneMeta } from './slide-sco';
 import type { QuizSceneMeta } from './quiz-sco';
@@ -20,13 +19,18 @@ export type SceneMeta = SlideSceneMeta | QuizSceneMeta | InteractiveSceneMeta;
 
 export interface CourseHtmlOptions {
   courseName: string;
-  sections: Array<{ html: string; meta: SceneMeta }>;
+  /** Each section includes the pre-built HTML fragment, its metadata, and the scene title. */
+  sections: Array<{ html: string; meta: SceneMeta; title: string }>;
   needsKatex: boolean;
 }
 
-const NAV_HEIGHT = 52; // px — fixed bottom nav bar height
+const SIDEBAR_W = 240; // px
+const NAV_H = 52;      // px
 
-/** Serialise scene metadata for the JS runtime (avoids any TS types in output) */
+function escHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
 function serializeMeta(metas: SceneMeta[]): string {
   return JSON.stringify(
     metas.map((m) => {
@@ -58,45 +62,144 @@ export function buildCourseHtml(opts: CourseHtmlOptions): string {
     ? `<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous" onerror="this.remove()">`
     : '';
 
+  const sidebarItems = sections
+    .map((s, i) => `    <li id="om-nav-${i}" class="om-nav-item" onclick="sidebarGo(${i})" title="${escHtml(s.title)}">
+      <span class="om-nav-dot"></span>
+      <span class="om-nav-label">${escHtml(s.title)}</span>
+    </li>`)
+    .join('\n');
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${courseName.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</title>
+  <title>${escHtml(courseName)}</title>
   <script src="scorm_bridge.js"></script>
   ${katexLink}
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      width: 100%; height: 100%;
+    html, body { width: 100%; height: 100%; overflow: hidden; font-family: 'Segoe UI', Arial, sans-serif; background: #111; }
+
+    /* ── Sidebar ── */
+    #om-sidebar {
+      position: fixed;
+      left: 0; top: 0; bottom: 0;
+      width: ${SIDEBAR_W}px;
+      background: #0d1b2a;
+      border-right: 1px solid rgba(255,255,255,0.08);
+      display: flex;
+      flex-direction: column;
+      z-index: 200;
       overflow: hidden;
-      font-family: 'Segoe UI', Arial, sans-serif;
-      background: #111;
     }
+    #om-sidebar-header {
+      padding: 1.2rem 1rem 1rem;
+      flex-shrink: 0;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    #om-course-title {
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.35;
+      margin-bottom: 0.6rem;
+    }
+    #om-progress-label {
+      font-size: 0.68rem;
+      color: #8090a8;
+      margin-bottom: 0.35rem;
+    }
+    #om-progress-bar {
+      height: 3px;
+      background: rgba(255,255,255,0.12);
+      border-radius: 2px;
+    }
+    #om-progress-fill {
+      height: 100%;
+      background: #0071e3;
+      border-radius: 2px;
+      width: 0%;
+      transition: width 0.4s ease;
+    }
+    #om-scene-list {
+      list-style: none;
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem 0;
+    }
+    #om-scene-list::-webkit-scrollbar { width: 4px; }
+    #om-scene-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 2px; }
+    .om-nav-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 0.55rem 1rem;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .om-nav-item:hover { background: rgba(255,255,255,0.06); }
+    .om-nav-item.om-active {
+      background: rgba(0,113,227,0.18);
+      border-left-color: #0071e3;
+    }
+    .om-nav-dot {
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      border: 1.5px solid #4a5a6a;
+      flex-shrink: 0;
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 9px;
+      font-weight: bold;
+      color: transparent;
+      transition: all 0.2s;
+    }
+    .om-nav-item.om-visited .om-nav-dot {
+      background: #34c759;
+      border-color: #34c759;
+      color: #fff;
+    }
+    .om-nav-item.om-active .om-nav-dot { border-color: #0071e3; }
+    .om-nav-item.om-active.om-visited .om-nav-dot {
+      background: #0071e3;
+      border-color: #0071e3;
+      color: #fff;
+    }
+    .om-nav-label {
+      font-size: 0.76rem;
+      color: #9aa8ba;
+      line-height: 1.35;
+    }
+    .om-nav-item.om-active .om-nav-label { color: #e0e8f0; }
 
     /* ── Scene container ── */
-    .scene {
+    .om-scene {
       position: fixed;
-      inset: 0;
-      bottom: ${NAV_HEIGHT}px;
+      left: ${SIDEBAR_W}px;
+      right: 0;
+      top: 0;
+      bottom: ${NAV_H}px;
     }
 
     /* ── Slide scenes ── */
-    .scene-slide {
+    .om-slide {
       background: #1a1a1a;
       display: flex;
       align-items: center;
       justify-content: center;
       overflow: hidden;
     }
-    /* slide-scaler: sized to VISUAL (scaled) dimensions — flex lays out around this */
-    .slide-scaler {
+    /* om-scaler: sized to VISUAL (scaled) dimensions — flex lays out around this */
+    .om-scaler {
       position: relative;
       flex-shrink: 0;
     }
-    /* slide-canvas: full 960×N canvas, scaled from top-left inside .slide-scaler */
-    .slide-canvas {
+    /* om-canvas: full-resolution canvas, scaled from top-left inside .om-scaler */
+    .om-canvas {
       position: absolute;
       top: 0; left: 0;
       transform-origin: top left;
@@ -104,81 +207,100 @@ export function buildCourseHtml(opts: CourseHtmlOptions): string {
     }
 
     /* ── Quiz scenes ── */
-    .scene-quiz {
+    .om-quiz {
       background: #f5f5f7;
       overflow-y: auto;
     }
-    .quiz-scroll {
+    .om-quiz-scroll {
       max-width: 760px;
       margin: 0 auto;
       padding: 2rem 1.5rem;
     }
-    .quiz-title {
+    .om-quiz-title {
       font-size: 1.4rem;
       font-weight: 700;
       margin-bottom: 1.5rem;
       color: #1d1d1f;
     }
-    .question-block {
+    .om-qblock {
       background: #fff;
       border-radius: 10px;
       padding: 1.25rem 1.5rem;
       margin-bottom: 1.25rem;
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
     }
-    .question-text {
+    .om-qtext {
       font-size: 1rem;
       font-weight: 600;
       margin-bottom: 1rem;
       line-height: 1.5;
     }
-    .q-num { color: #6e6e73; margin-right: 4px; }
-    .q-multi-hint { font-size: 0.8rem; font-weight: 400; color: #6e6e73; }
-    .options-list { display: flex; flex-direction: column; gap: 0.5rem; }
-    .option-label {
-      display: flex; align-items: flex-start; gap: 10px;
+    .om-qnum { color: #6e6e73; margin-right: 4px; }
+    .om-qhint { font-size: 0.8rem; font-weight: 400; color: #6e6e73; }
+    .om-opts { display: flex; flex-direction: column; gap: 0.5rem; }
+    .om-opt {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
       padding: 0.6rem 0.75rem;
-      border-radius: 6px; cursor: pointer;
+      border-radius: 6px;
+      cursor: pointer;
       border: 1.5px solid #e0e0e5;
       transition: border-color 0.15s, background 0.15s;
     }
-    .option-label:hover { border-color: #0071e3; background: #f0f6ff; }
-    .option-label input { margin-top: 2px; accent-color: #0071e3; }
-    .option-value { font-weight: 600; min-width: 20px; color: #6e6e73; }
-    .option-text { flex: 1; }
-    .option-label.opt-correct  { border-color: #34c759; background: #f0faf3; }
-    .option-label.opt-incorrect { border-color: #ff3b30; background: #fff5f4; }
-    .option-label.opt-missed   { border-color: #34c759; background: #f0faf3; border-style: dashed; }
-    .analysis {
-      margin-top: 0.75rem; padding: 0.6rem 0.75rem;
-      background: #f9f9fb; border-left: 3px solid #0071e3;
-      font-size: 0.9rem; color: #444; border-radius: 0 4px 4px 0;
+    .om-opt:hover { border-color: #0071e3; background: #f0f6ff; }
+    .om-opt input { margin-top: 2px; accent-color: #0071e3; }
+    .om-optval { font-weight: 600; min-width: 20px; color: #6e6e73; }
+    .om-opttext { flex: 1; }
+    .om-opt.om-correct  { border-color: #34c759; background: #f0faf3; }
+    .om-opt.om-wrong    { border-color: #ff3b30; background: #fff5f4; }
+    .om-opt.om-missed   { border-color: #34c759; background: #f0faf3; border-style: dashed; }
+    .om-analysis {
+      margin-top: 0.75rem;
+      padding: 0.6rem 0.75rem;
+      background: #f9f9fb;
+      border-left: 3px solid #0071e3;
+      font-size: 0.9rem;
+      color: #444;
+      border-radius: 0 4px 4px 0;
       display: none;
     }
-    .result-bar {
-      margin: 1rem 0; padding: 0.75rem 1rem;
-      border-radius: 8px; font-weight: 600; font-size: 1rem;
+    .om-result {
+      margin: 1rem 0;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
     }
-    .result-pass { background: #f0faf3; color: #1a7f37; border: 1.5px solid #34c759; }
-    .result-fail { background: #fff5f4; color: #c0392b; border: 1.5px solid #ff3b30; }
-    .submit-btn {
-      display: block; width: 100%; padding: 0.8rem;
-      background: #0071e3; color: #fff; border: none;
-      border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer;
+    .om-pass { background: #f0faf3; color: #1a7f37; border: 1.5px solid #34c759; }
+    .om-fail { background: #fff5f4; color: #c0392b; border: 1.5px solid #ff3b30; }
+    .om-submit {
+      display: block;
+      width: 100%;
+      padding: 0.8rem;
+      background: #0071e3;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
       margin-top: 1rem;
     }
-    .submit-btn:hover:not(:disabled) { background: #0077ed; }
-    .submit-btn:disabled { background: #b0c8e8; cursor: not-allowed; }
+    .om-submit:hover:not(:disabled) { background: #0077ed; }
+    .om-submit:disabled { background: #b0c8e8; cursor: not-allowed; }
 
     /* ── Interactive scenes ── */
-    .scene-interactive { background: #fff; }
-    .interactive-frame { width: 100%; height: 100%; border: none; }
+    .om-interactive { background: #fff; }
+    .om-iframe { width: 100%; height: 100%; border: none; }
 
-    /* ── Navigation bar (fixed bottom) ── */
+    /* ── Navigation bar (fixed bottom, right of sidebar) ── */
     #nav-bar {
       position: fixed;
-      bottom: 0; left: 0; right: 0;
-      height: ${NAV_HEIGHT}px;
+      bottom: 0;
+      left: ${SIDEBAR_W}px;
+      right: 0;
+      height: ${NAV_H}px;
       background: #fff;
       border-top: 1px solid #e0e0e5;
       display: flex;
@@ -188,15 +310,19 @@ export function buildCourseHtml(opts: CourseHtmlOptions): string {
       gap: 0.5rem;
       z-index: 1000;
     }
-    .nav-btn {
-      background: #f5f5f7; border: 1.5px solid #d0d0d5;
-      padding: 6px 14px; border-radius: 6px;
-      cursor: pointer; font-size: 0.85rem; font-weight: 500;
+    .om-nav-btn {
+      background: #f5f5f7;
+      border: 1.5px solid #d0d0d5;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
       white-space: nowrap;
       flex-shrink: 0;
     }
-    .nav-btn:hover:not(:disabled) { background: #e8e8ed; }
-    .nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .om-nav-btn:hover:not(:disabled) { background: #e8e8ed; }
+    .om-nav-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     #nav-center {
       flex: 1;
       display: flex;
@@ -205,52 +331,57 @@ export function buildCourseHtml(opts: CourseHtmlOptions): string {
       gap: 0.75rem;
       min-width: 0;
     }
-    #scene-title {
-      font-size: 0.85rem;
-      font-weight: 600;
-      color: #1d1d1f;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
     #scene-counter {
       font-size: 0.8rem;
       color: #6e6e73;
       white-space: nowrap;
       flex-shrink: 0;
     }
-
-    /* ── Audio control (inline with nav) ── */
     #narr-ctrl { display: none; align-items: center; gap: 6px; flex-shrink: 0; }
     #narr-play-btn {
-      background: #f0f0f5; border: 1.5px solid #c0c0c8;
-      padding: 5px 10px; border-radius: 6px; cursor: pointer;
-      font-size: 0.8rem; white-space: nowrap;
+      background: #f0f0f5;
+      border: 1.5px solid #c0c0c8;
+      padding: 5px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.8rem;
+      white-space: nowrap;
     }
     #narr-play-btn:hover { background: #e4e4ec; }
   </style>
 </head>
 <body>
 
+<!-- ── Sidebar ── -->
+<nav id="om-sidebar">
+  <div id="om-sidebar-header">
+    <div id="om-course-title">${escHtml(courseName)}</div>
+    <div id="om-progress-label">0 / ${totalScenes} completades</div>
+    <div id="om-progress-bar"><div id="om-progress-fill"></div></div>
+  </div>
+  <ul id="om-scene-list">
+${sidebarItems}
+  </ul>
+</nav>
+
 <!-- ── All scene sections ── -->
 ${sceneSections}
 
 <!-- ── Fixed navigation bar ── -->
 <div id="nav-bar">
-  <button class="nav-btn" id="prev-btn" onclick="prevScene()" disabled>&#8592; Prev</button>
+  <button class="om-nav-btn" id="prev-btn" onclick="prevScene()" disabled>&#8592; Prev</button>
 
   <div id="nav-center">
-    <span id="scene-title"></span>
-    <span id="scene-counter"></span>
+    <span id="scene-counter">1 / ${totalScenes}</span>
   </div>
 
-  <!-- Narration audio controls (only visible for slide scenes with TTS) -->
+  <!-- Narration controls (visible only for slides with TTS) -->
   <div id="narr-ctrl">
     <button id="narr-play-btn" onclick="toggleNarration()">&#9654; Play</button>
-    <button class="nav-btn" onclick="restartNarration()" title="Restart narration">&#8635;</button>
+    <button class="om-nav-btn" onclick="restartNarration()" title="Restart narration">&#8635;</button>
   </div>
 
-  <button class="nav-btn" id="next-btn" onclick="nextScene()">Next &#8594;</button>
+  <button class="om-nav-btn" id="next-btn" onclick="nextScene()">Next &#8594;</button>
 </div>
 
 <script>
@@ -258,7 +389,11 @@ ${sceneSections}
 var SCENES = ${metasJson};
 var TOTAL = ${totalScenes};
 var currentIdx = 0;
-var quizScores = {}; // sceneIdx → 0-100
+var quizScores = {};
+
+// ── Visit tracking ──
+var visitedArr = [];
+for (var _vi = 0; _vi < TOTAL; _vi++) visitedArr.push(false);
 
 // ── Narration state ──
 var narrEls = [];
@@ -331,6 +466,7 @@ function rescaleSlide(scene) {
   var s = Math.min(availW / scene.cw, availH / scene.ch);
   var scaler = document.getElementById(scene.scalerId);
   var canvas = document.getElementById(scene.canvasId);
+  if (!scaler || !canvas) return;
   scaler.style.width  = (scene.cw * s) + 'px';
   scaler.style.height = (scene.ch * s) + 'px';
   canvas.style.transform = 'scale(' + s + ')';
@@ -340,6 +476,34 @@ window.addEventListener('resize', function() {
   var s = SCENES[currentIdx];
   if (s && s.type === 'slide') rescaleSlide(s);
 });
+
+// ── Sidebar ──
+function updateSidebar(idx) {
+  var visitedCount = 0;
+  for (var i = 0; i < TOTAL; i++) {
+    if (visitedArr[i]) visitedCount++;
+    var item = document.getElementById('om-nav-' + i);
+    if (!item) continue;
+    var cls = 'om-nav-item';
+    if (visitedArr[i]) cls += ' om-visited';
+    if (i === idx) cls += ' om-active';
+    item.className = cls;
+    var dot = item.querySelector('.om-nav-dot');
+    if (dot) dot.textContent = visitedArr[i] ? '\\u2713' : '';
+    // Scroll active item into view
+    if (i === idx) {
+      item.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+  document.getElementById('om-progress-label').textContent =
+    visitedCount + ' / ' + TOTAL + ' completades';
+  document.getElementById('om-progress-fill').style.width =
+    Math.round((visitedCount / TOTAL) * 100) + '%';
+}
+
+function sidebarGo(idx) {
+  showScene(idx);
+}
 
 // ── Scene navigation ──
 function showScene(idx) {
@@ -355,14 +519,15 @@ function showScene(idx) {
   if (sceneEl) sceneEl.style.display = '';
   currentIdx = idx;
 
-  // Update nav bar text
-  document.getElementById('scene-title').textContent = scene.title || '';
+  // Mark visited
+  visitedArr[idx] = true;
+
+  // Sidebar + counter
+  updateSidebar(idx);
   document.getElementById('scene-counter').textContent = (idx + 1) + ' / ' + TOTAL;
 
-  // Prev button
+  // Prev / Next buttons
   document.getElementById('prev-btn').disabled = (idx === 0);
-
-  // Next button: disabled on last scene, or quiz not yet submitted
   var isLast = (idx === TOTAL - 1);
   var isQuizNotDone = scene.type === 'quiz' && quizScores[idx] === undefined;
   document.getElementById('next-btn').disabled = isLast || isQuizNotDone;
@@ -378,18 +543,18 @@ function showScene(idx) {
 
   // Rescale slides
   if (scene.type === 'slide') {
-    // small timeout to let the browser render first
     setTimeout(function() { rescaleSlide(scene); }, 0);
   }
 
-  // SCORM: report progress
-  var progress = Math.round(((idx + 1) / TOTAL) * 100);
+  // SCORM: report progress as % scenes visited
+  var visitedCount = 0;
+  for (var j = 0; j < TOTAL; j++) if (visitedArr[j]) visitedCount++;
+  var progress = Math.round((visitedCount / TOTAL) * 100);
   SCORM.setValue('cmi.core.score.raw', progress);
   SCORM.setValue('cmi.core.score.min', '0');
   SCORM.setValue('cmi.core.score.max', '100');
   SCORM.commit();
 
-  // SCORM: complete only on last scene
   if (isLast) {
     SCORM.setCompleted();
   }
@@ -406,11 +571,9 @@ function nextScene() {
 // Called by quiz sections after submit
 window.onQuizSubmitted = function(sceneIdx, score) {
   quizScores[sceneIdx] = score;
-  // Enable Next (unless it was the last scene)
   if (sceneIdx < TOTAL - 1) {
     document.getElementById('next-btn').disabled = false;
   } else {
-    // Last scene is a quiz — complete now
     SCORM.setScore(score, 0, 100);
     if (score >= ${QUIZ_PASS_THRESHOLD}) {
       SCORM.setPassed();
@@ -424,28 +587,12 @@ window.onQuizSubmitted = function(sceneIdx, score) {
 window.addEventListener('load', function() {
   SCORM.init();
   SCORM.setValue('cmi.core.lesson_status', 'incomplete');
-
-  // Set title on each scene (used in showScene)
-  var sceneTitles = ${JSON.stringify(sections.map((s) => s.meta.type === 'slide'
-    ? '' // title comes from scene data passed via JS — we embed it differently
-    : ''))};
-  // Titles are embedded directly in the SCENES array below:
-  // (done at build time, no runtime injection needed)
-
   showScene(0);
 });
 
 window.addEventListener('beforeunload', function() {
   SCORM.finish();
 });
-
-// Patch scene titles from DOM (each section has a data-title attribute)
-(function() {
-  SCENES.forEach(function(s, i) {
-    var el = document.getElementById(s.id);
-    if (el) s.title = el.getAttribute('data-title') || s.id;
-  });
-})();
 </script>
 </body>
 </html>`;
