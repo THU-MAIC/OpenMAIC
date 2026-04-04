@@ -505,6 +505,17 @@ function sidebarGo(idx) {
   showScene(idx);
 }
 
+// ── SCORM suspend_data persistence ──
+function saveSuspendData() {
+  var visitedStr = '';
+  for (var i = 0; i < TOTAL; i++) {
+    visitedStr += visitedArr[i] ? '1' : '0';
+  }
+  var suspendData = JSON.stringify({ v: visitedStr, q: quizScores });
+  SCORM.setValue('cmi.core.lesson_location', String(currentIdx));
+  SCORM.setValue('cmi.suspend_data', suspendData);
+}
+
 // ── Scene navigation ──
 function showScene(idx) {
   stopNarration();
@@ -553,6 +564,7 @@ function showScene(idx) {
   SCORM.setValue('cmi.core.score.raw', progress);
   SCORM.setValue('cmi.core.score.min', '0');
   SCORM.setValue('cmi.core.score.max', '100');
+  saveSuspendData();
   SCORM.commit();
 
   if (isLast) {
@@ -571,6 +583,8 @@ function nextScene() {
 // Called by quiz sections after submit
 window.onQuizSubmitted = function(sceneIdx, score) {
   quizScores[sceneIdx] = score;
+  saveSuspendData();
+  SCORM.commit();
   if (sceneIdx < TOTAL - 1) {
     document.getElementById('next-btn').disabled = false;
   } else {
@@ -586,8 +600,43 @@ window.onQuizSubmitted = function(sceneIdx, score) {
 // ── Init ──
 window.addEventListener('load', function() {
   SCORM.init();
-  SCORM.setValue('cmi.core.lesson_status', 'incomplete');
-  showScene(0);
+
+  // Restore suspend_data (visited scenes + quiz scores)
+  var savedData = SCORM.getValue('cmi.suspend_data');
+  if (savedData) {
+    try {
+      var state = JSON.parse(savedData);
+      if (state.v) {
+        for (var i = 0; i < state.v.length && i < TOTAL; i++) {
+          visitedArr[i] = state.v[i] === '1';
+        }
+      }
+      if (state.q) {
+        var keys = Object.keys(state.q);
+        for (var ki = 0; ki < keys.length; ki++) {
+          quizScores[parseInt(keys[ki], 10)] = state.q[keys[ki]];
+        }
+      }
+    } catch (e) {}
+  }
+
+  // Do not overwrite 'completed'/'passed' with 'incomplete'
+  var currentStatus = SCORM.getValue('cmi.core.lesson_status');
+  if (currentStatus !== 'completed' && currentStatus !== 'passed') {
+    SCORM.setValue('cmi.core.lesson_status', 'incomplete');
+  }
+
+  // Resume at last saved position
+  var startIdx = 0;
+  var savedLocation = SCORM.getValue('cmi.core.lesson_location');
+  if (savedLocation) {
+    var parsed = parseInt(savedLocation, 10);
+    if (!isNaN(parsed) && parsed >= 0 && parsed < TOTAL) {
+      startIdx = parsed;
+    }
+  }
+
+  showScene(startIdx);
 });
 
 window.addEventListener('beforeunload', function() {
