@@ -9,6 +9,8 @@ import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 const log = createLogger('Parse PDF');
 
 export async function POST(req: NextRequest) {
+  let pdfFileName: string | undefined;
+  let resolvedProviderId: string | undefined;
   try {
     const contentType = req.headers.get('content-type') || '';
     if (!contentType.includes('multipart/form-data')) {
@@ -32,6 +34,8 @@ export async function POST(req: NextRequest) {
 
     // providerId is required from the client — no server-side store to fall back to
     const effectiveProviderId = providerId || ('unpdf' as PDFProviderId);
+    pdfFileName = pdfFile?.name;
+    resolvedProviderId = effectiveProviderId;
 
     const clientBaseUrl = baseUrl || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
@@ -71,7 +75,10 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ data: resultWithMetadata });
   } catch (error) {
-    log.error('Error parsing PDF:', error);
+    log.error(
+      `PDF parsing failed [provider=${resolvedProviderId ?? 'unknown'}, file="${pdfFileName ?? 'unknown'}"]:`,
+      error,
+    );
     return apiError('PARSE_FAILED', 500, error instanceof Error ? error.message : 'Unknown error');
   }
 }

@@ -36,6 +36,10 @@
 </p>
 
 
+## 🗞️ News
+
+- **2026-03-26** — [v0.1.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0) Discussion TTS, immersive mode, keyboard shortcuts, whiteboard enhancements, new providers, and more. See [changelog](CHANGELOG.md).
+
 ## 📖 Overview
 
 **OpenMAIC** (Open Multi-Agent Interactive Classroom) is an open-source AI platform that turns any topic or document into a rich, interactive classroom experience. Powered by multi-agent orchestration, it generates slides, quizzes, interactive simulations, and project-based learning activities — all delivered by AI teachers and AI classmates who can speak, draw on a whiteboard, and engage in real-time discussions with you. With built-in [OpenClaw](https://github.com/openclaw/openclaw) integration, you can generate classrooms directly from messaging apps like Feishu, Slack, or Telegram.
@@ -110,11 +114,30 @@ providers:
     apiKey: sk-ant-...
 ```
 
-Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Grok (xAI)**, and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **MiniMax**, **Grok (xAI)**, and any OpenAI-compatible API.
+
+MiniMax quick examples:
+
+```env
+MINIMAX_API_KEY=...
+MINIMAX_BASE_URL=https://api.minimaxi.com/anthropic/v1
+DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed
+
+TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_BASE_URL=https://api.minimaxi.com
+
+IMAGE_MINIMAX_API_KEY=...
+IMAGE_MINIMAX_BASE_URL=https://api.minimaxi.com
+
+VIDEO_MINIMAX_API_KEY=...
+VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
+```
 
 > **Recommended model:** **Gemini 3 Flash** — best balance of quality and speed. For highest quality (at slower speed), try **Gemini 3.1 Pro**.
 >
 > If you want OpenMAIC server APIs to use Gemini by default, also set `DEFAULT_MODEL=google:gemini-3-flash-preview`.
+>
+> If you want to use MiniMax as the default server model, set `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`.
 
 ### 3. Run
 
@@ -479,3 +502,4 @@ If you find OpenMAIC useful in your research, please consider citing:
 ## 📄 License
 
 This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+

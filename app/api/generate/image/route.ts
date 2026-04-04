@@ -82,7 +82,10 @@ export async function POST(request: NextRequest) {
       log.warn(`Image blocked by content safety filter: ${message}`);
       return apiError('CONTENT_SENSITIVE', 400, message);
     }
-    log.error('Image generation error:', error);
+    log.error(
+      `Image generation failed [provider=${request.headers.get('x-image-provider') ?? 'seedream'}, model=${request.headers.get('x-image-model') ?? 'default'}]:`,
+      error,
+    );
     return apiError('INTERNAL_ERROR', 500, message);
   }
 }

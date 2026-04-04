@@ -88,7 +88,9 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
+    'doubao-tts': t('settings.providerDoubaoTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
+    'minimax-tts': t('settings.providerMiniMaxTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
   };
   return names[providerId] || providerId;
@@ -269,6 +271,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: ttsProviderId,
+        modelId: providerConfig?.modelId,
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
@@ -416,56 +419,9 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               enabled={ttsEnabled}
               onToggle={setTTSEnabled}
             >
-              {/* Provider + Voice grouped select + preview */}
-              <div className="flex items-center gap-2">
-                <div className="flex-1 min-w-0">
-                  <GroupedSelect
-                    groups={ttsGroups}
-                    selectedGroupId={ttsProviderId}
-                    selectedItemId={ttsVoice}
-                    onSelect={(gid, iid) => {
-                      if (gid !== ttsProviderId) {
-                        setTTSProvider(gid as TTSProviderId);
-                      }
-                      setTTSVoice(iid);
-                    }}
-                  />
-                </div>
-                <button
-                  onClick={handlePreview}
-                  className={cn(
-                    'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all shrink-0',
-                    previewing
-                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
-                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
-                  )}
-                >
-                  {previewing ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <Play className="size-3" />
-                  )}
-                  {previewing ? t('toolbar.ttsPreviewing') : t('toolbar.ttsPreview')}
-                </button>
-              </div>
-              {ttsSpeedRange && (
-                <div className="flex items-center gap-2.5 mt-2.5">
-                  <span className="text-[10px] text-muted-foreground/60 shrink-0">
-                    {t('media.speed')}
-                  </span>
-                  <Slider
-                    value={[ttsSpeed]}
-                    onValueChange={(value) => setTTSSpeed(value[0])}
-                    min={ttsSpeedRange.min}
-                    max={ttsSpeedRange.max}
-                    step={0.1}
-                    className="flex-1"
-                  />
-                  <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">
-                    {ttsSpeed.toFixed(1)}x
-                  </span>
-                </div>
-              )}
+              <p className="text-[11px] text-muted-foreground/60">
+                {t('settings.ttsVoiceConfigHint')}
+              </p>
             </TabPanel>
           )}
 
