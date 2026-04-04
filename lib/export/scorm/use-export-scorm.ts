@@ -10,11 +10,12 @@ import { createLogger } from '@/lib/logger';
 import type { Scene, InteractiveContent } from '@/lib/types/stage';
 
 import { collectAssets, getSceneAssetHrefs } from './asset-collector';
-import { buildManifest, type ScoEntry } from './manifest';
+import { buildManifest } from './manifest';
 import { getScormBridgeJs } from './scorm-bridge';
-import { buildSlideSco } from './slide-sco';
-import { buildQuizSco } from './quiz-sco';
-import { buildInteractiveSco } from './interactive-sco';
+import { buildSlideSection } from './slide-sco';
+import { buildQuizSection } from './quiz-sco';
+import { buildInteractiveSection } from './interactive-sco';
+import { buildCourseHtml, type SceneMeta } from './course-builder';
 
 const log = createLogger('ExportSCORM');
 
@@ -24,10 +25,6 @@ export interface ScormExportOptions {
 
 function sanitizeId(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'course';
-}
-
-function pad2(n: number): string {
-  return String(n + 1).padStart(2, '0');
 }
 
 function isExportableScene(scene: Scene): boolean {
@@ -41,13 +38,13 @@ function isExportableScene(scene: Scene): boolean {
 /**
  * React hook for SCORM 1.2 export.
  *
- * Mirrors the useExportPPTX pattern: guard against concurrent exports,
- * show toast on success/failure, lazy-import JSZip for code splitting.
+ * Generates a single-SCO package: all scenes in one index.html with internal
+ * JS navigation. Fixes LMS iframe navigation issues from multi-SCO approach.
  *
  * What gets exported:
- * - slide scenes → HTML SCO with absolutepositioned canvas + TTS narration
- * - quiz scenes  → HTML SCO with single/multiple choice questions + SCORM scoring
- * - interactive scenes (with html) → HTML SCO wrapping content in an iframe
+ * - slide scenes → <section> with absolute-positioned canvas + TTS narration
+ * - quiz scenes  → <section> with single/multiple choice questions + SCORM scoring
+ * - interactive scenes (with html) → <section> wrapping content in an iframe
  *
  * Excluded: pbl scenes, interactive scenes without html,
  *           whiteboards, multi-agent chat, short-answer questions.
@@ -91,6 +88,7 @@ export function useExportScorm(): {
 
         const fileName = stage?.name || 'course';
         const courseId = sanitizeId(fileName);
+        const courseTitle = stage?.name ?? fileName;
 
         // 1. Filter to exportable scenes only
         const exportableScenes = scenes.filter(isExportableScene);
@@ -100,73 +98,57 @@ export function useExportScorm(): {
           return;
         }
 
-        // 2. Build SCO href list (used in every SCO for navigation)
-        const allScoHrefs = exportableScenes.map(
-          (_, i) => `scos/scene_${pad2(i)}.html`,
-        );
-
-        // 3. Collect all media assets (fetch blobs, resolve placeholders)
+        // 2. Collect all media assets (fetch blobs, resolve placeholders)
         const assetMap = await collectAssets(exportableScenes, options.includeVideos);
 
-        // 4. Write asset blobs into ZIP
+        // 3. Write asset blobs into ZIP
         for (const entry of assetMap.entries()) {
           zip.file(entry.zipPath, entry.blob);
         }
 
-        // 5. Build SCO HTML pages + collect ScoEntry metadata for manifest
-        const scoEntries: ScoEntry[] = [];
+        // 4. Build scene section fragments
+        const sectionResults: Array<{ html: string; meta: SceneMeta }> = [];
+        let needsKatex = false;
+        let hasQuiz = false;
 
         for (let i = 0; i < exportableScenes.length; i++) {
           const scene = exportableScenes[i];
-          const href = allScoHrefs[i];
-          const sceneId = `scene_${pad2(i)}`;
-          let html = '';
 
           if (scene.content.type === 'slide') {
-            html = buildSlideSco({
-              scene,
-              sceneIndex: i,
-              totalScenes: exportableScenes.length,
-              allScoHrefs,
-              assetMap,
-              includeVideos: options.includeVideos,
-            });
+            const res = buildSlideSection({ scene, sceneIndex: i, assetMap, includeVideos: options.includeVideos });
+            sectionResults.push({ html: res.html, meta: res.meta });
+            if (res.needsKatex) needsKatex = true;
           } else if (scene.content.type === 'quiz') {
-            html = buildQuizSco({
-              scene,
-              sceneIndex: i,
-              totalScenes: exportableScenes.length,
-              allScoHrefs,
-            });
+            const res = buildQuizSection(scene, i);
+            sectionResults.push({ html: res.html, meta: res.meta });
+            hasQuiz = true;
           } else if (scene.content.type === 'interactive') {
-            html = buildInteractiveSco({
-              scene,
-              sceneIndex: i,
-              totalScenes: exportableScenes.length,
-              allScoHrefs,
-            });
+            const res = buildInteractiveSection(scene, i);
+            sectionResults.push({ html: res.html, meta: res.meta });
           }
-
-          if (!html) continue;
-
-          zip.file(href, html);
-
-          const assetHrefs = getSceneAssetHrefs(scene, i, assetMap, options.includeVideos);
-
-          scoEntries.push({
-            id: sceneId,
-            title: scene.title,
-            href,
-            isQuiz: scene.content.type === 'quiz',
-            assetHrefs,
-          });
         }
+
+        // 5. Assemble single index.html
+        const courseHtml = buildCourseHtml({
+          courseName: courseTitle,
+          sections: sectionResults,
+          needsKatex,
+        });
+        zip.file('index.html', courseHtml);
 
         // 6. Write scorm_bridge.js
         zip.file('scorm_bridge.js', getScormBridgeJs());
 
-        // 7. Write imsmanifest.xml
-        const manifest = buildManifest(courseId, stage?.name ?? fileName, scoEntries);
+        // 7. Write imsmanifest.xml (single-SCO pointing to index.html)
+        const allAssetHrefs = exportableScenes.flatMap((scene, i) =>
+          getSceneAssetHrefs(scene, i, assetMap, options.includeVideos),
+        );
+        const manifest = buildManifest({
+          courseId,
+          courseTitle,
+          assetHrefs: allAssetHrefs,
+          masteryScore: hasQuiz ? 80 : undefined,
+        });
         zip.file('imsmanifest.xml', manifest);
 
         // 8. Generate ZIP and trigger download

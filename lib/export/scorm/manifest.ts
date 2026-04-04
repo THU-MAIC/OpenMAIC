@@ -1,50 +1,34 @@
-export interface ScoEntry {
-  id: string;     // e.g. "scene_01"
-  title: string;
-  href: string;   // e.g. "scos/scene_01.html"
-  isQuiz: boolean;
-  assetHrefs: string[]; // all asset paths referenced by this SCO
+export interface ScormManifestOptions {
+  courseId: string;
+  courseTitle: string;
+  /** All asset zip paths referenced by the single SCO */
+  assetHrefs: string[];
+  /** Pass threshold (0-100). Set only if course has quiz scenes. */
+  masteryScore?: number;
 }
 
-const PASS_SCORE = 80;
-
 /**
- * Builds the imsmanifest.xml string for a SCORM 1.2 package.
+ * Builds the imsmanifest.xml string for a single-SCO SCORM 1.2 package.
+ * All course content lives in one index.html file at the package root.
  */
-export function buildManifest(
-  courseId: string,
-  courseTitle: string,
-  scos: ScoEntry[],
-): string {
+export function buildManifest(opts: ScormManifestOptions): string {
+  const { courseId, courseTitle, assetHrefs, masteryScore } = opts;
+
   const escXml = (s: string) =>
     s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
   const orgId = `${courseId}_org`;
 
-  const items = scos
-    .map(
-      (sco) => `
-      <item identifier="item_${sco.id}" identifierref="res_${sco.id}">
-        <title>${escXml(sco.title)}</title>${sco.isQuiz ? `\n        <adlcp:masteryscore>${PASS_SCORE}</adlcp:masteryscore>` : ''}
-      </item>`,
-    )
-    .join('');
+  const masteryLine =
+    masteryScore !== undefined
+      ? `\n        <adlcp:masteryscore>${masteryScore}</adlcp:masteryscore>`
+      : '';
 
-  const resources = scos
-    .map((sco) => {
-      const files = [`<file href="${escXml(sco.href)}"/>`, `<file href="scorm_bridge.js"/>`];
-      for (const asset of sco.assetHrefs) {
-        files.push(`<file href="${escXml(asset)}"/>`);
-      }
-      return `
-    <resource identifier="res_${sco.id}"
-              type="webcontent"
-              adlcp:scormtype="sco"
-              href="${escXml(sco.href)}">
-      ${files.join('\n      ')}
-    </resource>`;
-    })
-    .join('');
+  const fileEntries = [
+    `<file href="index.html"/>`,
+    `<file href="scorm_bridge.js"/>`,
+    ...assetHrefs.map((h) => `<file href="${escXml(h)}"/>`),
+  ].join('\n      ');
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <manifest identifier="${escXml(courseId)}"
@@ -61,11 +45,20 @@ export function buildManifest(
 
   <organizations default="${escXml(orgId)}">
     <organization identifier="${escXml(orgId)}">
-      <title>${escXml(courseTitle)}</title>${items}
+      <title>${escXml(courseTitle)}</title>
+      <item identifier="item_1" identifierref="res_1">
+        <title>${escXml(courseTitle)}</title>${masteryLine}
+      </item>
     </organization>
   </organizations>
 
-  <resources>${resources}
+  <resources>
+    <resource identifier="res_1"
+              type="webcontent"
+              adlcp:scormtype="sco"
+              href="index.html">
+      ${fileEntries}
+    </resource>
   </resources>
 
 </manifest>`;
