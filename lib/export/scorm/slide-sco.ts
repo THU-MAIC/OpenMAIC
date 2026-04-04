@@ -137,9 +137,28 @@ function renderImage(el: PPTImageElement, assetMap: AssetMap): string {
 </div>`;
 }
 
+/**
+ * Build an SVG <defs> gradient block and return the fill reference.
+ * SVG fill attribute does not support CSS gradient syntax — must use <defs>.
+ */
+function svgGradientDef(el: PPTShapeElement): { defs: string; fillRef: string } {
+  if (!el.gradient) return { defs: '', fillRef: escHtml(el.fill || 'none') };
+  const gradId = `grad-${el.id}`;
+  const stops = el.gradient.colors
+    .map((c) => `<stop offset="${c.pos}%" stop-color="${escHtml(c.color)}"/>`)
+    .join('');
+  let defs: string;
+  if (el.gradient.type === 'radial') {
+    defs = `<defs><radialGradient id="${gradId}" cx="50%" cy="50%" r="50%" gradientUnits="objectBoundingBox">${stops}</radialGradient></defs>`;
+  } else {
+    // Linear: default direction left→right, rotated by el.gradient.rotate around center
+    defs = `<defs><linearGradient id="${gradId}" x1="0" y1="0.5" x2="1" y2="0.5" gradientUnits="objectBoundingBox" gradientTransform="rotate(${el.gradient.rotate},0.5,0.5)">${stops}</linearGradient></defs>`;
+  }
+  return { defs, fillRef: `url(#${gradId})` };
+}
+
 function renderShape(el: PPTShapeElement): string {
   const [vw, vh] = el.viewBox;
-  const fill = el.gradient ? gradientCss(el.gradient) : el.fill;
   const opacity = el.opacity !== undefined ? `opacity:${el.opacity};` : '';
   const flipH = el.flipH ? 'scale(-1,1)' : '';
   const flipV = el.flipV ? 'scale(1,-1)' : '';
@@ -153,9 +172,10 @@ function renderShape(el: PPTShapeElement): string {
     const va = t.align === 'top' ? 'flex-start' : t.align === 'bottom' ? 'flex-end' : 'center';
     text = `<div style="position:absolute;inset:0;display:flex;align-items:${va};justify-content:center;padding:4px;overflow:hidden;font-family:${escHtml(t.defaultFontName || 'sans-serif')};color:${t.defaultColor || '#000'};line-height:${t.lineHeight ?? 1.5};">${t.content}</div>`;
   }
+  const { defs, fillRef } = svgGradientDef(el);
   return `<div style="${elBaseStyle(el)}${opacity}overflow:visible;">
   <svg viewBox="0 0 ${vw} ${vh}" style="width:100%;height:100%;"${svgTransform}>
-    <path d="${escHtml(el.path)}" fill="${escHtml(fill)}" ${outline} fill-rule="nonzero"/>
+    ${defs}<path d="${escHtml(el.path)}" fill="${fillRef}" ${outline} fill-rule="nonzero"/>
   </svg>${text}
 </div>`;
 }
@@ -316,6 +336,7 @@ export function buildSlideSection(opts: SlideSectionOptions): SlideSectionResult
     .join('\n    ');
 
   // TTS narration audio elements
+  // Look up by audioUrl first, then by idb:{audioId} (for IndexedDB-stored audio)
   const narrIds: string[] = [];
   let narrTags = '';
   if (scene.actions) {
@@ -323,8 +344,9 @@ export function buildSlideSection(opts: SlideSectionOptions): SlideSectionResult
     for (const action of scene.actions) {
       if (action.type === 'speech') {
         const speech = action as SpeechAction;
-        if (speech.audioUrl) {
-          const p = assetMap.get(speech.audioUrl);
+        const mapKey = speech.audioUrl || (speech.audioId ? `idb:${speech.audioId}` : '');
+        if (mapKey) {
+          const p = assetMap.get(mapKey);
           if (p) {
             const id = `narr-${sceneIndex}-${idx}`;
             narrIds.push(id);

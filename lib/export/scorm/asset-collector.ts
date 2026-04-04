@@ -1,6 +1,7 @@
 import { isMediaPlaceholder, useMediaGenerationStore } from '@/lib/store/media-generation';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
+import { db } from '@/lib/utils/database';
 
 export interface AssetEntry {
   zipPath: string;
@@ -179,6 +180,7 @@ export async function collectAssets(
       }
 
       // TTS narration from SpeechActions
+      // Primary: use server-hosted audioUrl (if set). Fallback: read blob from IndexedDB by audioId.
       if (scene.actions) {
         let speechIdx = 0;
         for (const action of scene.actions) {
@@ -187,6 +189,19 @@ export async function collectAssets(
             if (speech.audioUrl) {
               await add(speech.audioUrl, 'audio', i, `speech_${speechIdx}`);
               speechIdx++;
+            } else if (speech.audioId) {
+              try {
+                const record = await db.audioFiles.get(speech.audioId);
+                if (record) {
+                  const ext = record.format || 'mp3';
+                  const mimeType = ext === 'mp3' ? 'audio/mpeg' : `audio/${ext}`;
+                  const zipPath = `assets/audio/scene_${pad2(i)}_speech_${speechIdx}.${ext}`;
+                  map.set(`idb:${speech.audioId}`, zipPath, record.blob, mimeType);
+                  speechIdx++;
+                }
+              } catch {
+                // IndexedDB access failed — skip this audio
+              }
             }
           }
         }
