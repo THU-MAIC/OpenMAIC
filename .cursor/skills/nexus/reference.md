@@ -1,5 +1,7 @@
 # Nexus — reference layout
 
+**Canonical fork for Nexus work:** [github.com/MycallAI/OpenMAIC-1](https://github.com/MycallAI/OpenMAIC-1) (`origin`). Upstream: [THU-MAIC/OpenMAIC](https://github.com/THU-MAIC/OpenMAIC) (`upstream`).
+
 Suggested paths (adjust if repo conventions differ):
 
 ## Track A — Homeroom

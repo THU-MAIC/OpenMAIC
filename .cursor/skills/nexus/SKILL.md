@@ -9,6 +9,8 @@ description: >-
 
 # Nexus
 
+**Target repo:** [MycallAI/OpenMAIC-1](https://github.com/MycallAI/OpenMAIC-1) (`origin`). Use [THU-MAIC/OpenMAIC](https://github.com/THU-MAIC/OpenMAIC) (`upstream`) only to sync or cherry-pick upstream changes—not as the default push or PR destination for this workspace.
+
 Two tracks share **`lib/nexus/`**, **Vitest**, and **`app/api/nexus/`**; keep subfolders separate (`homeroom/` vs `assessment/`). Do not entangle with classroom lesson generation unless reusing server LLM resolution only.
 
 ## Track A — Homeroom (MVP 1–4)
