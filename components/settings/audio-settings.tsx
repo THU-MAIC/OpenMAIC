@@ -500,6 +500,32 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
               </div>
             </>
           )}
+
+          {/* Voice selector — shown for providers with voices defined in constants
+              (azure-tts uses the separate locale-filter + big JSON, so excluded) */}
+          {ttsProviderId !== 'azure-tts' && getTTSVoices(ttsProviderId).length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-sm">{t('settings.ttsVoice')}</Label>
+              <Select
+                value={ttsVoice}
+                onValueChange={(v) => {
+                  setTTSVoice(v);
+                  onSave?.();
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {getTTSVoices(ttsProviderId).map((voice) => (
+                    <SelectItem key={voice.id} value={voice.id}>
+                      {voice.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       </div>
 

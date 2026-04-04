@@ -223,6 +223,10 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
       { id: 'en-US-AndrewNeural', name: 'Andrew', language: 'en-US', gender: 'male'   as const },
       { id: 'en-US-EmmaNeural',   name: 'Emma',   language: 'en-US', gender: 'female' as const },
       { id: 'en-US-BrianNeural',  name: 'Brian',  language: 'en-US', gender: 'male'   as const },
+      // Multilingual Neural voices (support multiple languages dynamically)
+      { id: 'en-US-AvaMultilingualNeural',    name: 'Ava Multilingual',    language: 'en-US', gender: 'female' as const },
+      { id: 'en-US-AndrewMultilingualNeural', name: 'Andrew Multilingual', language: 'en-US', gender: 'male'   as const },
+      { id: 'en-US-AdamMultilingualNeural',   name: 'Adam Multilingual',   language: 'en-US', gender: 'male'   as const },
       { id: 'zh-CN-XiaoxiaoNeural', name: '晓晓 (女)', language: 'zh-CN', gender: 'female' as const },
       { id: 'zh-CN-YunxiNeural',    name: '云希 (男)', language: 'zh-CN', gender: 'male'   as const },
       { id: 'ca-ES-AlbaNeural',   name: 'Alba (Català)',    language: 'ca-ES', gender: 'female' as const },
@@ -232,6 +236,7 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
       // HD Neural voices (Azure AI Foundry — premium DragonHD quality)
       { id: 'en-US-Ava:DragonHDLatestNeural',    name: 'Ava HD',              language: 'en-US', gender: 'female' as const, description: 'DragonHD' },
       { id: 'en-US-Andrew:DragonHDLatestNeural', name: 'Andrew HD',           language: 'en-US', gender: 'male'   as const, description: 'DragonHD' },
+      { id: 'en-US-Adam:DragonHDLatestNeural',   name: 'Adam HD',             language: 'en-US', gender: 'male'   as const, description: 'DragonHD' },
       { id: 'en-US-Emma:DragonHDLatestNeural',   name: 'Emma HD',             language: 'en-US', gender: 'female' as const, description: 'DragonHD' },
       { id: 'en-US-Brian:DragonHDLatestNeural',  name: 'Brian HD',            language: 'en-US', gender: 'male'   as const, description: 'DragonHD' },
       { id: 'ca-ES-Alba:DragonHDLatestNeural',   name: 'Alba HD (Català)',    language: 'ca-ES', gender: 'female' as const, description: 'DragonHD' },
