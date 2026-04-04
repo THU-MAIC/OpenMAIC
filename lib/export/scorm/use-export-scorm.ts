@@ -8,6 +8,7 @@ import { useStageStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
 import type { Scene, InteractiveContent } from '@/lib/types/stage';
+import type { SpeechAction } from '@/lib/types/action';
 
 import { collectAssets, getSceneAssetHrefs } from './asset-collector';
 import { buildManifest } from './manifest';
@@ -151,7 +152,27 @@ export function useExportScorm(): {
         });
         zip.file('imsmanifest.xml', manifest);
 
-        // 8. Generate ZIP and trigger download
+        // 8. Generate notes.txt (scene titles + TTS narration text)
+        const notesLines: string[] = [courseTitle, '='.repeat(courseTitle.length), ''];
+        for (let i = 0; i < exportableScenes.length; i++) {
+          const scene = exportableScenes[i];
+          notesLines.push(`[${i + 1}] ${scene.title}`);
+          notesLines.push('');
+          if (scene.content.type === 'slide' && scene.actions?.length) {
+            for (const action of scene.actions) {
+              if (action.type === 'speech') {
+                const text = (action as SpeechAction).text;
+                if (text) {
+                  notesLines.push(text);
+                  notesLines.push('');
+                }
+              }
+            }
+          }
+        }
+        zip.file('notes.txt', notesLines.join('\n'));
+
+        // 9. Generate ZIP and trigger download
         const zipBlob = await zip.generateAsync({
           type: 'blob',
           compression: 'DEFLATE',
