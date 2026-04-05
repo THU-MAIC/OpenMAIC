@@ -229,7 +229,7 @@ export async function generateClassroom(
 
   // Resolve agents based on agentMode
   let agents: AgentInfo[];
-  const agentMode = input.agentMode || 'default';
+  let agentMode = input.agentMode || 'default';
   if (agentMode === 'generate') {
     log.info('Generating custom agent profiles via LLM...');
     try {
@@ -238,6 +238,7 @@ export async function generateClassroom(
     } catch (e) {
       log.warn('Agent profile generation failed, falling back to defaults:', e);
       agents = getDefaultAgents();
+      agentMode = 'default';
     }
   } else {
     agents = getDefaultAgents();
@@ -328,17 +329,24 @@ export async function generateClassroom(
     style: 'interactive',
     createdAt: Date.now(),
     updatedAt: Date.now(),
-    // Embed agent configs so API-generated classrooms can hydrate
-    // the client-side agent registry without IndexedDB
-    generatedAgentConfigs: agents.map((a, i) => ({
-      id: a.id,
-      name: a.name,
-      role: a.role,
-      persona: a.persona || '',
-      avatar: AGENT_DEFAULT_AVATARS[i % AGENT_DEFAULT_AVATARS.length],
-      color: AGENT_COLOR_PALETTE[i % AGENT_COLOR_PALETTE.length],
-      priority: a.role === 'teacher' ? 10 : a.role === 'assistant' ? 7 : 5,
-    })),
+    // For LLM-generated agents, embed full configs so the client can
+    // hydrate the agent registry without prior IndexedDB data.
+    // For default agents, just record IDs — the client already has them.
+    ...(agentMode === 'generate'
+      ? {
+          generatedAgentConfigs: agents.map((a, i) => ({
+            id: a.id,
+            name: a.name,
+            role: a.role,
+            persona: a.persona || '',
+            avatar: AGENT_DEFAULT_AVATARS[i % AGENT_DEFAULT_AVATARS.length],
+            color: AGENT_COLOR_PALETTE[i % AGENT_COLOR_PALETTE.length],
+            priority: a.role === 'teacher' ? 10 : a.role === 'assistant' ? 7 : 5,
+          })),
+        }
+      : {
+          agentIds: agents.map((a) => a.id),
+        }),
   };
 
   const store = createInMemoryStore(stage);
