@@ -313,7 +313,8 @@
     "outlineGenerateFailed": "大纲生成失败，请稍后重试",
     "webSearching": "网络搜索",
     "webSearchingDesc": "正在搜索网络获取最新资料",
-    "webSearchFailed": "网络搜索失败"
+    "webSearchFailed": "网络搜索失败",
+    "regenerateScene": "重新生成场景"
   },
   "settings": {
     "title": "设置",
