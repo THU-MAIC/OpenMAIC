@@ -127,28 +127,27 @@ export function parseActionsFromStructuredOutput(
   }
 
   // Step 6: Filter out slide-only actions for non-slide scenes (defense in depth)
+  let result = actions;
   if (sceneType && sceneType !== 'slide') {
-    const before = actions.length;
-    const filtered = actions.filter((a) => !SLIDE_ONLY_ACTIONS.includes(a.type as ActionType));
-    if (filtered.length < before) {
-      log.info(`Stripped ${before - filtered.length} slide-only action(s) from ${sceneType} scene`);
+    const before = result.length;
+    result = result.filter((a) => !SLIDE_ONLY_ACTIONS.includes(a.type as ActionType));
+    if (result.length < before) {
+      log.info(`Stripped ${before - result.length} slide-only action(s) from ${sceneType} scene`);
     }
-    return filtered;
   }
 
   // Step 7: Filter by allowedActions whitelist (defense in depth for role-based isolation)
   // Catches hallucinated actions not in the agent's permitted set, e.g. a student agent
   // mimicking spotlight/laser after seeing teacher actions in chat history.
   if (allowedActions && allowedActions.length > 0) {
-    const before = actions.length;
-    const filtered = actions.filter((a) => a.type === 'speech' || allowedActions.includes(a.type));
-    if (filtered.length < before) {
+    const before = result.length;
+    result = result.filter((a) => a.type === 'speech' || allowedActions.includes(a.type));
+    if (result.length < before) {
       log.info(
-        `Stripped ${before - filtered.length} disallowed action(s) by allowedActions whitelist`,
+        `Stripped ${before - result.length} disallowed action(s) by allowedActions whitelist`,
       );
     }
-    return filtered;
   }
 
-  return actions;
+  return result;
 }
