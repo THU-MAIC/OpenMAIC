@@ -10,12 +10,28 @@ import { describe, test, expect } from 'vitest';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 
+interface DefaultModeFields {
+  agentIds: string[];
+}
+
+interface GenerateModeFields {
+  generatedAgentConfigs: Array<{
+    id: string;
+    name: string;
+    role: string;
+    persona: string;
+    avatar: string;
+    color: string;
+    priority: number;
+  }>;
+}
+
 describe('#353: generatedAgentConfigs conditional on agentMode', () => {
   // Replicate the Stage construction logic from classroom-generation.ts L322-349
   function buildStageAgentFields(
     agentMode: 'default' | 'generate',
     agents: Array<{ id: string; name: string; role: string; persona?: string }>,
-  ) {
+  ): DefaultModeFields | GenerateModeFields {
     return agentMode === 'generate'
       ? {
           generatedAgentConfigs: agents.map((a, i) => ({
@@ -39,7 +55,7 @@ describe('#353: generatedAgentConfigs conditional on agentMode', () => {
 
     // Should have agentIds
     expect(fields).toHaveProperty('agentIds');
-    expect((fields as any).agentIds).toEqual([
+    expect((fields as DefaultModeFields).agentIds).toEqual([
       'default-1',
       'default-2',
       'default-3',
@@ -62,8 +78,8 @@ describe('#353: generatedAgentConfigs conditional on agentMode', () => {
 
     // Should have generatedAgentConfigs
     expect(fields).toHaveProperty('generatedAgentConfigs');
-    expect((fields as any).generatedAgentConfigs).toHaveLength(3);
-    expect((fields as any).generatedAgentConfigs[0].id).toBe('gen-server-0');
+    expect((fields as GenerateModeFields).generatedAgentConfigs).toHaveLength(3);
+    expect((fields as GenerateModeFields).generatedAgentConfigs[0].id).toBe('gen-server-0');
 
     // Should NOT have agentIds
     expect(fields).not.toHaveProperty('agentIds');
@@ -87,7 +103,7 @@ describe('#353: generatedAgentConfigs conditional on agentMode', () => {
     // Should behave exactly like default mode
     expect(fields).toHaveProperty('agentIds');
     expect(fields).not.toHaveProperty('generatedAgentConfigs');
-    expect((fields as any).agentIds).toEqual([
+    expect((fields as DefaultModeFields).agentIds).toEqual([
       'default-1',
       'default-2',
       'default-3',
