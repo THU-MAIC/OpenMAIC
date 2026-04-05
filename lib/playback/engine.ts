@@ -81,6 +81,8 @@ export class PlaybackEngine {
   private browserTTSChunks: string[] = []; // sentence-level chunks for sequential playback
   private browserTTSChunkIndex: number = 0; // current chunk being spoken
   private browserTTSPausedChunks: string[] = []; // remaining chunks saved on pause (for cancel+re-speak)
+  private browserTTSBoundaryIndex: number = 0; // charIndex within current chunk from onboundary (for resume-from-position)
+  private browserTTSCurrentLang: string = ''; // resolved lang of current chunk (preserved across pause+resume)
   private speechTimerRemaining: number = 0; // remaining ms (set on pause)
 
   constructor(
@@ -167,7 +169,14 @@ export class PlaybackEngine {
           // Cancel+re-speak pattern: save remaining chunks for resume.
           // speechSynthesis.pause()/resume() is broken on Firefox, so we
           // cancel now and re-speak from current chunk onward on resume.
-          this.browserTTSPausedChunks = this.browserTTSChunks.slice(this.browserTTSChunkIndex);
+          // Slice the current chunk from the last word boundary so resume
+          // continues from approximate pause position, not chunk start (#250).
+          const currentChunk = this.browserTTSChunks[this.browserTTSChunkIndex];
+          const remainingText = currentChunk?.slice(this.browserTTSBoundaryIndex) ?? '';
+          const futureChunks = this.browserTTSChunks.slice(this.browserTTSChunkIndex + 1);
+          this.browserTTSPausedChunks = remainingText.trim()
+            ? [remainingText, ...futureChunks]
+            : futureChunks;
           window.speechSynthesis?.cancel();
           // Note: cancel fires onerror('canceled'), which we ignore (see playBrowserTTSChunk)
         } else if (this.audioPlayer.isPlaying()) {
@@ -619,6 +628,8 @@ export class PlaybackEngine {
   private playBrowserTTS(speechAction: SpeechAction): void {
     this.browserTTSChunks = this.splitIntoChunks(speechAction.text);
     this.browserTTSChunkIndex = 0;
+    this.browserTTSBoundaryIndex = 0;
+    this.browserTTSCurrentLang = '';
     this.browserTTSPausedChunks = [];
     this.browserTTSActive = true;
     this.playBrowserTTSChunk();
@@ -637,7 +648,23 @@ export class PlaybackEngine {
 
     const settings = useSettingsStore.getState();
     const chunkText = this.browserTTSChunks[this.browserTTSChunkIndex];
+    this.browserTTSBoundaryIndex = 0; // reset for new chunk
     const utterance = new SpeechSynthesisUtterance(chunkText);
+
+    // If we have a saved lang from a previous chunk (e.g., from pause+resume),
+    // use it to prevent voice switching at language boundaries.
+    if (this.browserTTSCurrentLang) {
+      utterance.lang = this.browserTTSCurrentLang;
+    }
+
+    // Track word boundaries for resume-from-position (#250).
+    // Save charIndex + charLength (= end of word) so resume skips the
+    // word that was already spoken, rather than repeating it.
+    utterance.onboundary = (event) => {
+      if (event.name === 'word') {
+        this.browserTTSBoundaryIndex = event.charIndex + (event.charLength ?? 0);
+      }
+    };
 
     // Apply settings
     const speed = this.callbacks.getPlaybackSpeed?.() ?? 1;
@@ -666,6 +693,9 @@ export class PlaybackEngine {
           : 0;
       utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
     }
+    // Save resolved lang so sliced resume chunks use the same language
+    // (prevents voice switching when pause point is at a language boundary)
+    this.browserTTSCurrentLang = utterance.lang;
 
     utterance.onend = () => {
       this.browserTTSChunkIndex++;
@@ -734,6 +764,8 @@ export class PlaybackEngine {
       this.browserTTSActive = false;
       this.browserTTSChunks = [];
       this.browserTTSChunkIndex = 0;
+      this.browserTTSBoundaryIndex = 0;
+      this.browserTTSCurrentLang = '';
       this.browserTTSPausedChunks = [];
       window.speechSynthesis?.cancel();
     }

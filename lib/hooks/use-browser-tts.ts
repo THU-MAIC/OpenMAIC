@@ -34,6 +34,22 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
   const utteranceRef = useRef<SpeechSynthesisUtterance | null>(null);
 
+  /**
+   * Cancel+re-speak state for instant pause & resume-from-position.
+   *
+   * Approach (same pattern as PlaybackEngine):
+   * - pause():  call cancel() for instant silence; save text + last word boundary
+   * - resume(): re-speak text.slice(lastBoundaryIndex) with the same voice
+   *
+   * This avoids the ~300ms delay of speechSynthesis.pause() and enables
+   * resuming from approximate pause position rather than sentence start.
+   */
+  const pausedTextRef = useRef<string | null>(null);
+  const pausedVoiceURIRef = useRef<string | undefined>(undefined);
+  const lastBoundaryIndexRef = useRef(0);
+  /** Flag to suppress onEnd/onError callbacks fired synchronously by cancel-for-pause */
+  const cancellingForPauseRef = useRef(false);
+
   // Load available voices
   useEffect(() => {
     if (typeof window === 'undefined' || !window.speechSynthesis) {
@@ -59,12 +75,22 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
     };
   }, []);
 
-  const speak = useCallback(
-    (text: string, voiceURI?: string) => {
+  /**
+   * Internal speak helper — shared by public speak() and resume().
+   * @param isResume  When true, suppresses the onStart callback to avoid
+   *                  duplicate side effects when resuming from pause.
+   */
+  const speakInternal = useCallback(
+    (text: string, voiceURI?: string, isResume?: boolean) => {
       if (typeof window === 'undefined' || !window.speechSynthesis) {
         onError?.('浏览器不支持 Web Speech API');
         return;
       }
+
+      // Reset pause-cancel flag — new speech (from speak() or resume()) means
+      // any pending async onEnd/onError from a previous cancel-for-pause should
+      // no longer be suppressed (they've either already fired or are stale).
+      cancellingForPauseRef.current = false;
 
       // Cancel any ongoing speech
       window.speechSynthesis.cancel();
@@ -83,54 +109,95 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
         }
       }
 
+      // Track word boundaries for resume-from-position.
+      // Save charIndex + charLength (= end of word) so resume skips the
+      // word that was already spoken, rather than repeating it.
+      utterance.onboundary = (event) => {
+        if (event.name === 'word') {
+          lastBoundaryIndexRef.current = event.charIndex + (event.charLength ?? 0);
+        }
+      };
+
       utterance.onstart = () => {
         setIsSpeaking(true);
         setIsPaused(false);
-        onStart?.();
+        if (!isResume) onStart?.();
       };
 
       utterance.onend = () => {
+        if (cancellingForPauseRef.current) return; // suppress — pause handler owns state
         setIsSpeaking(false);
         setIsPaused(false);
         utteranceRef.current = null;
+        pausedTextRef.current = null;
         onEnd?.();
       };
 
       utterance.onerror = (event) => {
+        if (cancellingForPauseRef.current) return; // suppress — cancel-for-pause fires 'canceled'
         setIsSpeaking(false);
         setIsPaused(false);
         utteranceRef.current = null;
+        pausedTextRef.current = null;
         onError?.(event.error);
       };
 
-      utterance.onpause = () => {
-        setIsPaused(true);
-      };
-
-      utterance.onresume = () => {
-        setIsPaused(false);
-      };
-
       utteranceRef.current = utterance;
+      // Save full text + voice for potential pause+re-speak
+      pausedTextRef.current = text;
+      pausedVoiceURIRef.current = voiceURI;
+      lastBoundaryIndexRef.current = 0;
       window.speechSynthesis.speak(utterance);
     },
     [rate, pitch, volume, lang, availableVoices, onStart, onEnd, onError],
   );
 
+  const speak = useCallback(
+    (text: string, voiceURI?: string) => {
+      speakInternal(text, voiceURI, false);
+    },
+    [speakInternal],
+  );
+
   const pause = useCallback(() => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.pause();
+      // Cancel+re-speak pattern: cancel() is instant — no ~300ms delay
+      // like speechSynthesis.pause(). Text + boundary position are already
+      // saved by speakInternal, so resume() can re-speak from there.
+      cancellingForPauseRef.current = true;
+      window.speechSynthesis.cancel();
+      // Keep cancellingForPauseRef = true for the entire pause period.
+      // Chrome fires onend/onerror asynchronously after cancel(), so we
+      // must NOT reset the flag here. It is reset in speakInternal() when
+      // new speech starts (from speak() or resume()).
+      setIsPaused(true);
     }
   }, []);
 
   const resume = useCallback(() => {
-    if (typeof window !== 'undefined' && window.speechSynthesis) {
-      window.speechSynthesis.resume();
+    if (typeof window !== 'undefined' && window.speechSynthesis && pausedTextRef.current) {
+      const fullText = pausedTextRef.current;
+      const voiceURI = pausedVoiceURIRef.current;
+      // Slice from last word boundary for resume-from-position
+      const remaining = fullText.slice(lastBoundaryIndexRef.current);
+      pausedTextRef.current = null;
+      setIsPaused(false);
+      if (remaining.trim()) {
+        speakInternal(remaining, voiceURI, true);
+      } else {
+        // Nothing left to speak — treat as natural end
+        setIsSpeaking(false);
+        utteranceRef.current = null;
+        onEnd?.();
+      }
     }
-  }, []);
+  }, [speakInternal, onEnd]);
 
   const cancel = useCallback(() => {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
+      pausedTextRef.current = null;
+      cancellingForPauseRef.current = false;
+      lastBoundaryIndexRef.current = 0;
       window.speechSynthesis.cancel();
       setIsSpeaking(false);
       setIsPaused(false);
