@@ -521,7 +521,10 @@ async function generateSlideContent(
 
     if (mediaParts.length > 0) {
       const mediaText = mediaParts.join('\n\n');
-      if (assignedImagesText.includes('Do NOT insert') || assignedImagesText.includes('No images')) {
+      if (
+        assignedImagesText.includes('Do NOT insert') ||
+        assignedImagesText.includes('No images')
+      ) {
         assignedImagesText = mediaText;
       } else {
         assignedImagesText += `\n\n${mediaText}`;

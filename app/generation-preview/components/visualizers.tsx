@@ -145,67 +145,67 @@ function WebSearchVisualizer({ sources }: { sources: Array<{ title: string; url:
 
           {sources.length === 0
             ? // Skeleton: pulsing result placeholders
-            skeletonResults.map((item, i) => (
-              <motion.div
-                key={i}
-                className="px-2 py-1.5 space-y-1"
-                animate={{ opacity: [0.3, 0.7, 0.3] }}
-                transition={{
-                  duration: 1.4,
-                  repeat: Infinity,
-                  delay: i * 0.15,
-                }}
-              >
-                <div
-                  className="h-1.5 bg-teal-200/40 dark:bg-teal-800/30 rounded"
-                  style={{ width: `${item.titleW}%` }}
-                />
-                <div
-                  className="h-1 bg-slate-100 dark:bg-slate-700 rounded"
-                  style={{ width: `${item.urlW}%` }}
-                />
-                <div className="flex gap-1">
-                  {item.snippetW.map((w, j) => (
-                    <div
-                      key={j}
-                      className="h-1 bg-slate-100 dark:bg-slate-700 rounded"
-                      style={{ width: `${w * 0.5}%` }}
-                    />
-                  ))}
-                </div>
-              </motion.div>
-            ))
-            : // Live results
-            sources.slice(0, 4).map((source, i) => {
-              const isActive = i === activeResult;
-              return (
+              skeletonResults.map((item, i) => (
                 <motion.div
-                  key={source.url}
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: i * 0.08, duration: 0.25 }}
-                  className="relative px-2 py-1.5 space-y-0.5"
+                  key={i}
+                  className="px-2 py-1.5 space-y-1"
+                  animate={{ opacity: [0.3, 0.7, 0.3] }}
+                  transition={{
+                    duration: 1.4,
+                    repeat: Infinity,
+                    delay: i * 0.15,
+                  }}
                 >
                   <div
-                    className={cn(
-                      'text-[8px] font-semibold truncate transition-colors duration-300 leading-tight',
-                      isActive
-                        ? 'text-teal-600 dark:text-teal-400'
-                        : 'text-slate-600 dark:text-slate-400',
-                    )}
-                  >
-                    {source.title}
-                  </div>
-                  <div className="text-[6px] text-teal-500/50 truncate leading-tight">
-                    {source.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 32)}
-                  </div>
+                    className="h-1.5 bg-teal-200/40 dark:bg-teal-800/30 rounded"
+                    style={{ width: `${item.titleW}%` }}
+                  />
+                  <div
+                    className="h-1 bg-slate-100 dark:bg-slate-700 rounded"
+                    style={{ width: `${item.urlW}%` }}
+                  />
                   <div className="flex gap-1">
-                    <div className="h-0.5 flex-1 bg-slate-100 dark:bg-slate-700 rounded-full" />
-                    <div className="h-0.5 w-1/3 bg-slate-100 dark:bg-slate-700 rounded-full" />
+                    {item.snippetW.map((w, j) => (
+                      <div
+                        key={j}
+                        className="h-1 bg-slate-100 dark:bg-slate-700 rounded"
+                        style={{ width: `${w * 0.5}%` }}
+                      />
+                    ))}
                   </div>
                 </motion.div>
-              );
-            })}
+              ))
+            : // Live results
+              sources.slice(0, 4).map((source, i) => {
+                const isActive = i === activeResult;
+                return (
+                  <motion.div
+                    key={source.url}
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.08, duration: 0.25 }}
+                    className="relative px-2 py-1.5 space-y-0.5"
+                  >
+                    <div
+                      className={cn(
+                        'text-[8px] font-semibold truncate transition-colors duration-300 leading-tight',
+                        isActive
+                          ? 'text-teal-600 dark:text-teal-400'
+                          : 'text-slate-600 dark:text-slate-400',
+                      )}
+                    >
+                      {source.title}
+                    </div>
+                    <div className="text-[6px] text-teal-500/50 truncate leading-tight">
+                      {source.url.replace(/^https?:\/\/(www\.)?/, '').slice(0, 32)}
+                    </div>
+                    <div className="flex gap-1">
+                      <div className="h-0.5 flex-1 bg-slate-100 dark:bg-slate-700 rounded-full" />
+                      <div className="h-0.5 w-1/3 bg-slate-100 dark:bg-slate-700 rounded-full" />
+                    </div>
+                  </motion.div>
+                );
+              })}
         </div>
 
         {/* Scanning beam */}

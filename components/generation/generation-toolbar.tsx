@@ -362,14 +362,27 @@ export function GenerationToolbar({
         <TooltipTrigger asChild>
           <button
             onClick={() => {
-              const langs: import('@/lib/types/generation').CourseLanguage[] = ['zh-CN', 'en-US', 'ja-JP', 'ru-RU'];
+              const langs: import('@/lib/types/generation').CourseLanguage[] = [
+                'zh-CN',
+                'en-US',
+                'ja-JP',
+                'ru-RU',
+              ];
               const idx = langs.indexOf(language);
               onLanguageChange(langs[(idx + 1) % langs.length]);
             }}
             className={pillMuted}
           >
             <Globe className="size-3.5" />
-            <span>{language === 'zh-CN' ? '中文' : language === 'en-US' ? 'EN' : language === 'ja-JP' ? 'JA' : 'RU'}</span>
+            <span>
+              {language === 'zh-CN'
+                ? '中文'
+                : language === 'en-US'
+                  ? 'EN'
+                  : language === 'ja-JP'
+                    ? 'JA'
+                    : 'RU'}
+            </span>
           </button>
         </TooltipTrigger>
         <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
