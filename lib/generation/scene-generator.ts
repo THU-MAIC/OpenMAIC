@@ -1038,16 +1038,19 @@ export async function generateSceneActions(
 function generateDefaultPBLActions(outline: SceneOutline): Action[] {
   const lang = outline.language || 'zh-CN';
   let title = 'PBL Project Intro';
-  let text = 'Let\'s start a Project-Based Learning activity. Choose your role, check the issue board, and collaborate to complete the project.';
+  let text =
+    "Let's start a Project-Based Learning activity. Choose your role, check the issue board, and collaborate to complete the project.";
   if (lang === 'zh-CN') {
     title = 'PBL 项目介绍';
     text = '现在让我们开始一个项目式学习活动。请选择你的角色，查看任务看板，开始协作完成项目。';
   } else if (lang === 'ja-JP') {
     title = 'PBLプロジェクト紹介';
-    text = 'プロジェクトベース学習活動を開始しましょう。役割を選択し、課題ボードを確認して、協力してプロジェクトを完了させてください。';
+    text =
+      'プロジェクトベース学習活動を開始しましょう。役割を選択し、課題ボードを確認して、協力してプロジェクトを完了させてください。';
   } else if (lang === 'de-DE') {
     title = 'PBL Projekt-Einführung';
-    text = 'Beginnen wir mit einer projektbasierten Lernaktivität. Wählen Sie Ihre Rolle, prüfen Sie das Aufgabenboard und arbeiten Sie zusammen, um das Projekt abzuschließen.';
+    text =
+      'Beginnen wir mit einer projektbasierten Lernaktivität. Wählen Sie Ihre Rolle, prüfen Sie das Aufgabenboard und arbeiten Sie zusammen, um das Projekt abzuschließen.';
   }
 
   return [
@@ -1202,7 +1205,7 @@ function generateDefaultSlideActions(outline: SceneOutline, elements: PPTElement
 function generateDefaultQuizActions(outline: SceneOutline): Action[] {
   const lang = outline.language || 'zh-CN';
   let title = 'Quiz Intro';
-  let text = 'Now let\'s take a short quiz to test what we\'ve learned.';
+  let text = "Now let's take a short quiz to test what we've learned.";
   if (lang === 'zh-CN') {
     title = '测验引导';
     text = '现在让我们来做一个小测验，检验一下学习成果。';
@@ -1230,16 +1233,19 @@ function generateDefaultQuizActions(outline: SceneOutline): Action[] {
 function generateDefaultInteractiveActions(outline: SceneOutline): Action[] {
   const lang = outline.language || 'zh-CN';
   let title = 'Interactive Intro';
-  let text = 'Now let\'s explore this concept through interactive visualization. Try interacting with the elements on the page to see how they change.';
+  let text =
+    "Now let's explore this concept through interactive visualization. Try interacting with the elements on the page to see how they change.";
   if (lang === 'zh-CN') {
     title = '交互引导';
     text = '现在让我们通过交互式可视化来探索这个概念。请尝试操作页面中的元素，观察变化。';
   } else if (lang === 'ja-JP') {
     title = 'インタラクティブ案内';
-    text = 'インタラクティブな視覚化を通じて、この概念を探求しましょう。ページ上の要素を操作して、どのように変化するか確認してください。';
+    text =
+      'インタラクティブな視覚化を通じて、この概念を探求しましょう。ページ上の要素を操作して、どのように変化するか確認してください。';
   } else if (lang === 'de-DE') {
     title = 'Interaktive Einführung';
-    text = 'Erforschen wir nun dieses Konzept durch eine interaktive Visualisierung. Versuchen Sie, mit den Elementen auf der Seite zu interagieren, um zu sehen, wie sie sich verändern.';
+    text =
+      'Erforschen wir nun dieses Konzept durch eine interaktive Visualisierung. Versuchen Sie, mit den Elementen auf der Seite zu interagieren, um zu sehen, wie sie sich verändern.';
   }
 
   return [

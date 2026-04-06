@@ -74,7 +74,8 @@ export function GenerationToolbar({
     onLanguageChange(supportedLocales[nextIndex].code);
   };
 
-  const currentLocaleInfo = supportedLocales.find((l) => l.code === language) || supportedLocales[0];
+  const currentLocaleInfo =
+    supportedLocales.find((l) => l.code === language) || supportedLocales[0];
 
   // Check if the selected web search provider has a valid config (API key or server-configured)
   const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];

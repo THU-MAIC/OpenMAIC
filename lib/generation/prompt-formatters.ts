@@ -80,14 +80,18 @@ export function formatImageDescription(img: PdfImage, language: string): string 
   if (img.width && img.height) {
     const ratio = (img.width / img.height).toFixed(2);
     if (language === 'zh-CN') dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
-    else if (language === 'ja-JP') dimInfo = ` | サイズ: ${img.width}×${img.height} (アスペクト比${ratio})`;
-    else if (language === 'de-DE') dimInfo = ` | Größe: ${img.width}×${img.height} (Seitenverhältnis${ratio})`;
+    else if (language === 'ja-JP')
+      dimInfo = ` | サイズ: ${img.width}×${img.height} (アスペクト比${ratio})`;
+    else if (language === 'de-DE')
+      dimInfo = ` | Größe: ${img.width}×${img.height} (Seitenverhältnis${ratio})`;
     else dimInfo = ` | size: ${img.width}×${img.height} (ratio ${ratio})`;
   }
   const desc = img.description ? ` | ${img.description}` : '';
   if (language === 'zh-CN') return `- **${img.id}**: 来自PDF第${img.pageNumber}页${dimInfo}${desc}`;
-  if (language === 'ja-JP') return `- **${img.id}**: PDFの${img.pageNumber}ページ目から${dimInfo}${desc}`;
-  if (language === 'de-DE') return `- **${img.id}**: von PDF-Seite ${img.pageNumber}${dimInfo}${desc}`;
+  if (language === 'ja-JP')
+    return `- **${img.id}**: PDFの${img.pageNumber}ページ目から${dimInfo}${desc}`;
+  if (language === 'de-DE')
+    return `- **${img.id}**: von PDF-Seite ${img.pageNumber}${dimInfo}${desc}`;
   return `- **${img.id}**: from PDF page ${img.pageNumber}${dimInfo}${desc}`;
 }
 
@@ -100,13 +104,18 @@ export function formatImagePlaceholder(img: PdfImage, language: string): string 
   if (img.width && img.height) {
     const ratio = (img.width / img.height).toFixed(2);
     if (language === 'zh-CN') dimInfo = ` | 尺寸: ${img.width}×${img.height} (宽高比${ratio})`;
-    else if (language === 'ja-JP') dimInfo = ` | サイズ: ${img.width}×${img.height} (アスペクト比${ratio})`;
-    else if (language === 'de-DE') dimInfo = ` | Größe: ${img.width}×${img.height} (Seitenverhältnis${ratio})`;
+    else if (language === 'ja-JP')
+      dimInfo = ` | サイズ: ${img.width}×${img.height} (アスペクト比${ratio})`;
+    else if (language === 'de-DE')
+      dimInfo = ` | Größe: ${img.width}×${img.height} (Seitenverhältnis${ratio})`;
     else dimInfo = ` | size: ${img.width}×${img.height} (ratio ${ratio})`;
   }
-  if (language === 'zh-CN') return `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`;
-  if (language === 'ja-JP') return `- **${img.id}**: PDFの${img.pageNumber}ページ目の画像${dimInfo} [添付画像参照]`;
-  if (language === 'de-DE') return `- **${img.id}**: Bild von PDF-Seite ${img.pageNumber}${dimInfo} [siehe Anhang]`;
+  if (language === 'zh-CN')
+    return `- **${img.id}**: PDF第${img.pageNumber}页的图片${dimInfo} [参见附图]`;
+  if (language === 'ja-JP')
+    return `- **${img.id}**: PDFの${img.pageNumber}ページ目の画像${dimInfo} [添付画像参照]`;
+  if (language === 'de-DE')
+    return `- **${img.id}**: Bild von PDF-Seite ${img.pageNumber}${dimInfo} [siehe Anhang]`;
   return `- **${img.id}**: image from PDF page ${img.pageNumber}${dimInfo} [see attached]`;
 }
 
