@@ -462,6 +462,9 @@ export function Roundtable({
     isVoiceOpen,
     isRecording,
     isProcessing,
+    cancelRecording,
+    handleToggleInput,
+    handleToggleVoice,
   ]);
 
   const isPresentationInteractionActive = isInputOpen || isVoiceOpen || isRecording || isProcessing;

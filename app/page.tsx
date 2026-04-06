@@ -32,6 +32,8 @@ import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
 import type { UserRequirements } from '@/lib/types/generation';
+import type { Locale } from '@/lib/i18n/types';
+import { supportedLocales } from '@/lib/i18n/locales';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
@@ -58,7 +60,7 @@ const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 interface FormState {
   pdfFile: File | null;
   requirement: string;
-  language: 'zh-CN' | 'en-US';
+  language: Locale;
   webSearch: boolean;
 }
 
@@ -98,14 +100,21 @@ function HomePage() {
     }
     try {
       const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
-      const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
+      const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY) as Locale | null;
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
-      if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US') {
+
+      const isSupported = (lang: string | null): lang is Locale =>
+        !!lang && supportedLocales.some((l) => l.code === lang);
+
+      if (isSupported(savedLanguage)) {
         updates.language = savedLanguage;
       } else {
-        const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
-        updates.language = detected;
+        const browserLang = navigator.language;
+        const matched =
+          supportedLocales.find((l) => browserLang.startsWith(l.code.split('-')[0]))?.code ||
+          (browserLang.startsWith('zh') ? 'zh-CN' : 'en-US');
+        updates.language = matched as Locale;
       }
       if (Object.keys(updates).length > 0) {
         setForm((prev) => ({ ...prev, ...updates }));

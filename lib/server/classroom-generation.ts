@@ -28,6 +28,8 @@ import {
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
 import type { UserRequirements } from '@/lib/types/generation';
+import type { Locale } from '@/lib/i18n/types';
+import { supportedLocales } from '@/lib/i18n/locales';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 
@@ -98,8 +100,10 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
+function normalizeLanguage(language?: string): Locale {
+  const isSupported = (lang: string | undefined): lang is Locale =>
+    !!lang && supportedLocales.some((l) => l.code === lang);
+  return isSupported(language) ? language : 'zh-CN';
 }
 
 function stripCodeFences(text: string): string {

@@ -22,14 +22,17 @@ import type { ProviderId } from '@/lib/ai/providers';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
 
+import type { Locale } from '@/lib/i18n/types';
+import { supportedLocales } from '@/lib/i18n/locales';
+
 // ─── Constants ───────────────────────────────────────────────
 const MAX_PDF_SIZE_MB = 50;
 const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
-  language: 'zh-CN' | 'en-US';
-  onLanguageChange: (lang: 'zh-CN' | 'en-US') => void;
+  language: Locale;
+  onLanguageChange: (lang: Locale) => void;
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
@@ -63,6 +66,16 @@ export function GenerationToolbar({
   const setWebSearchProvider = useSettingsStore((s) => s.setWebSearchProvider);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+
+  // Cycle language among supported locales
+  const cycleLanguage = () => {
+    const currentIndex = supportedLocales.findIndex((l) => l.code === language);
+    const nextIndex = (currentIndex + 1) % supportedLocales.length;
+    onLanguageChange(supportedLocales[nextIndex].code);
+  };
+
+  const currentLocaleInfo =
+    supportedLocales.find((l) => l.code === language) || supportedLocales[0];
 
   // Check if the selected web search provider has a valid config (API key or server-configured)
   const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
@@ -360,12 +373,9 @@ export function GenerationToolbar({
       {/* ── Language pill ── */}
       <Tooltip>
         <TooltipTrigger asChild>
-          <button
-            onClick={() => onLanguageChange(language === 'zh-CN' ? 'en-US' : 'zh-CN')}
-            className={pillMuted}
-          >
+          <button onClick={cycleLanguage} className={pillMuted}>
             <Globe className="size-3.5" />
-            <span>{language === 'zh-CN' ? '中文' : 'EN'}</span>
+            <span>{currentLocaleInfo.shortLabel}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
