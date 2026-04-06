@@ -1035,13 +1035,27 @@ export async function generateSceneActions(
 /**
  * Generate default PBL Actions (fallback)
  */
-function generateDefaultPBLActions(_outline: SceneOutline): Action[] {
+function generateDefaultPBLActions(outline: SceneOutline): Action[] {
+  const lang = outline.language || 'zh-CN';
+  let title = 'PBL Project Intro';
+  let text = 'Let\'s start a Project-Based Learning activity. Choose your role, check the issue board, and collaborate to complete the project.';
+  if (lang === 'zh-CN') {
+    title = 'PBL 项目介绍';
+    text = '现在让我们开始一个项目式学习活动。请选择你的角色，查看任务看板，开始协作完成项目。';
+  } else if (lang === 'ja-JP') {
+    title = 'PBLプロジェクト紹介';
+    text = 'プロジェクトベース学習活動を開始しましょう。役割を選択し、課題ボードを確認して、協力してプロジェクトを完了させてください。';
+  } else if (lang === 'de-DE') {
+    title = 'PBL Projekt-Einführung';
+    text = 'Beginnen wir mit einer projektbasierten Lernaktivität. Wählen Sie Ihre Rolle, prüfen Sie das Aufgabenboard und arbeiten Sie zusammen, um das Projekt abzuschließen.';
+  }
+
   return [
     {
       id: `action_${nanoid(8)}`,
       type: 'speech',
-      title: 'PBL 项目介绍',
-      text: '现在让我们开始一个项目式学习活动。请选择你的角色，查看任务看板，开始协作完成项目。',
+      title,
+      text,
     },
   ];
 }
@@ -1143,26 +1157,39 @@ function processActions(actions: Action[], elements: PPTElement[], agents?: Agen
  */
 function generateDefaultSlideActions(outline: SceneOutline, elements: PPTElement[]): Action[] {
   const actions: Action[] = [];
+  const lang = outline.language || 'zh-CN';
 
   // Add spotlight for text elements
   const textElements = elements.filter((el) => el.type === 'text');
   if (textElements.length > 0) {
+    let spotlightTitle = 'Focus';
+    if (lang === 'zh-CN') spotlightTitle = '聚焦重点';
+    else if (lang === 'ja-JP') spotlightTitle = '重要ポイント';
+    else if (lang === 'de-DE') spotlightTitle = 'Fokus';
+
     actions.push({
       id: `action_${nanoid(8)}`,
       type: 'spotlight',
-      title: '聚焦重点',
+      title: spotlightTitle,
       elementId: textElements[0].id,
     });
   }
 
   // Add opening speech based on key points
+  let speechTitle = 'Scene Explanation';
+  if (lang === 'zh-CN') speechTitle = '场景讲解';
+  else if (lang === 'ja-JP') speechTitle = 'シーン解説';
+  else if (lang === 'de-DE') speechTitle = 'Szenenerklärung';
+
+  const separator = lang === 'zh-CN' || lang === 'ja-JP' ? '。' : '. ';
   const speechText = outline.keyPoints?.length
-    ? outline.keyPoints.join('。') + '。'
+    ? outline.keyPoints.join(separator) + (lang === 'zh-CN' || lang === 'ja-JP' ? '。' : '.')
     : outline.description || outline.title;
+
   actions.push({
     id: `action_${nanoid(8)}`,
     type: 'speech',
-    title: '场景讲解',
+    title: speechTitle,
     text: speechText,
   });
 
@@ -1172,13 +1199,27 @@ function generateDefaultSlideActions(outline: SceneOutline, elements: PPTElement
 /**
  * Generate default quiz Actions (fallback)
  */
-function generateDefaultQuizActions(_outline: SceneOutline): Action[] {
+function generateDefaultQuizActions(outline: SceneOutline): Action[] {
+  const lang = outline.language || 'zh-CN';
+  let title = 'Quiz Intro';
+  let text = 'Now let\'s take a short quiz to test what we\'ve learned.';
+  if (lang === 'zh-CN') {
+    title = '测验引导';
+    text = '现在让我们来做一个小测验，检验一下学习成果。';
+  } else if (lang === 'ja-JP') {
+    title = 'クイズ案内';
+    text = '学んだことをテストするために、短いクイズに答えましょう。';
+  } else if (lang === 'de-DE') {
+    title = 'Quiz-Einführung';
+    text = 'Machen wir nun ein kurzes Quiz, um das Gelernte zu testen.';
+  }
+
   return [
     {
       id: `action_${nanoid(8)}`,
       type: 'speech',
-      title: '测验引导',
-      text: '现在让我们来做一个小测验，检验一下学习成果。',
+      title,
+      text,
     },
   ];
 }
@@ -1186,13 +1227,27 @@ function generateDefaultQuizActions(_outline: SceneOutline): Action[] {
 /**
  * Generate default interactive Actions (fallback)
  */
-function generateDefaultInteractiveActions(_outline: SceneOutline): Action[] {
+function generateDefaultInteractiveActions(outline: SceneOutline): Action[] {
+  const lang = outline.language || 'zh-CN';
+  let title = 'Interactive Intro';
+  let text = 'Now let\'s explore this concept through interactive visualization. Try interacting with the elements on the page to see how they change.';
+  if (lang === 'zh-CN') {
+    title = '交互引导';
+    text = '现在让我们通过交互式可视化来探索这个概念。请尝试操作页面中的元素，观察变化。';
+  } else if (lang === 'ja-JP') {
+    title = 'インタラクティブ案内';
+    text = 'インタラクティブな視覚化を通じて、この概念を探求しましょう。ページ上の要素を操作して、どのように変化するか確認してください。';
+  } else if (lang === 'de-DE') {
+    title = 'Interaktive Einführung';
+    text = 'Erforschen wir nun dieses Konzept durch eine interaktive Visualisierung. Versuchen Sie, mit den Elementen auf der Seite zu interagieren, um zu sehen, wie sie sich verändern.';
+  }
+
   return [
     {
       id: `action_${nanoid(8)}`,
       type: 'speech',
-      title: '交互引导',
-      text: '现在让我们通过交互式可视化来探索这个概念。请尝试操作页面中的元素，观察变化。',
+      title,
+      text,
     },
   ];
 }

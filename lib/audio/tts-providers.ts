@@ -212,11 +212,16 @@ async function generateAzureTTS(
 ): Promise<TTSGenerationResult> {
   const baseUrl = config.baseUrl || TTS_PROVIDERS['azure-tts'].defaultBaseUrl;
 
+  // Extract language from voice ID (e.g., "zh-CN-XiaoxiaoNeural" -> "zh-CN")
+  // Fallback to "zh-CN" if no match
+  const langMatch = config.voice.match(/^[a-z]{2}-[A-Z]{2}/);
+  const lang = langMatch ? langMatch[0] : 'zh-CN';
+
   // Build SSML
   const rate = config.speed ? `${((config.speed - 1) * 100).toFixed(0)}%` : '0%';
   const ssml = `
-    <speak version='1.0' xml:lang='zh-CN'>
-      <voice xml:lang='zh-CN' name='${config.voice}'>
+    <speak version='1.0' xml:lang='${lang}'>
+      <voice xml:lang='${lang}' name='${config.voice}'>
         <prosody rate='${rate}'>${escapeXml(text)}</prosody>
       </voice>
     </speak>

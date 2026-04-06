@@ -17,4 +17,5 @@ export const supportedLocales = [
   { code: 'zh-CN', label: '简体中文', shortLabel: 'CN' },
   { code: 'en-US', label: 'English', shortLabel: 'EN' },
   { code: 'ja-JP', label: '日本語', shortLabel: 'JA' },
+  { code: 'de-DE', label: 'Deutsch', shortLabel: 'DE' },
 ] as const satisfies readonly LocaleEntry[];

@@ -98,8 +98,10 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
+function normalizeLanguage(language?: string): Locale {
+  const isSupported = (lang: string | undefined): lang is Locale =>
+    !!lang && supportedLocales.some((l) => l.code === lang);
+  return isSupported(language) ? language : 'zh-CN';
 }
 
 function stripCodeFences(text: string): string {
