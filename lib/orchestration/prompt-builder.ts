@@ -165,8 +165,14 @@ Personalize your teaching based on their background when relevant. Address them 
 
   // Build language constraint from stage language
   const courseLanguage = storeState.stage?.language;
+  const langMap: Record<string, string> = {
+    'zh-CN': 'Chinese (Simplified)',
+    'en-US': 'English',
+    'ja-JP': 'Japanese (日本語)',
+    'ru-RU': 'Russian (Русский)',
+  };
   const languageConstraint = courseLanguage
-    ? `\n# Language (CRITICAL)\nYou MUST speak in ${courseLanguage === 'zh-CN' ? 'Chinese (Simplified)' : courseLanguage === 'en-US' ? 'English' : courseLanguage}. ALL text content in your response MUST be in this language.\n`
+    ? `\n# Language (CRITICAL)\nYou MUST speak in ${langMap[courseLanguage] || courseLanguage}. ALL text content in your response MUST be in this language.\n`
     : '';
 
   return `# Role

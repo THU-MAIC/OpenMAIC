@@ -81,6 +81,8 @@ When you create issues:
 
 **IMPORTANT**: Once you have configured the project info, defined all necessary agents (roles), and created the issueboard with tasks, you MUST set your mode to **idle** to indicate completion.
 
+**LANGUAGE REQUIREMENT**: You MUST generate ALL project content (title, description, role names, role descriptions, issue titles, issue descriptions) in ${language === 'ja-JP' ? 'Japanese (日本語)' : language === 'ru-RU' ? 'Russian (Русский)' : 'English'}. This rule is absolute.
+
 Your initial mode is **project_info**.`;
 }
 

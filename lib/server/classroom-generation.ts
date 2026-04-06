@@ -98,8 +98,9 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
+function normalizeLanguage(language?: string): import('@/lib/types/generation').CourseLanguage {
+  if (language === 'en-US' || language === 'ja-JP' || language === 'ru-RU') return language;
+  return 'zh-CN';
 }
 
 function stripCodeFences(text: string): string {

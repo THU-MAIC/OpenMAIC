@@ -470,7 +470,7 @@ async function generateSlideContent(
   const lang = outline.language || 'zh-CN';
 
   // Build assigned images description for the prompt
-  let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
+  let assignedImagesText = 'No images available. Do NOT insert any image elements.';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
@@ -521,7 +521,10 @@ async function generateSlideContent(
 
     if (mediaParts.length > 0) {
       const mediaText = mediaParts.join('\n\n');
-      if (assignedImagesText.includes('禁止插入') || assignedImagesText.includes('No images')) {
+      if (
+        assignedImagesText.includes('Do NOT insert') ||
+        assignedImagesText.includes('No images')
+      ) {
         assignedImagesText = mediaText;
       } else {
         assignedImagesText += `\n\n${mediaText}`;
@@ -735,7 +738,7 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  language: 'zh-CN' | 'en-US' = 'zh-CN',
+  language: import('@/lib/types/generation').CourseLanguage = 'zh-CN',
 ): Promise<GeneratedInteractiveContent | null> {
   const config = outline.interactiveConfig!;
 
