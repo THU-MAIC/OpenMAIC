@@ -120,13 +120,13 @@ export function SceneSidebar({
 
       <div className={cn('flex flex-col w-full h-full overflow-hidden', collapsed && 'hidden')}>
         {/* Logo Header */}
-        <div className="h-10 flex items-center justify-between shrink-0 relative mt-3 mb-1 px-3">
+        <div className="h-24 flex items-center justify-between shrink-0 relative mt-3 mb-1 px-3">
           <button
             onClick={() => router.push('/')}
             className="flex items-center gap-2 cursor-pointer rounded-lg px-1.5 -mx-1.5 py-1 -my-1 hover:bg-gray-100/80 dark:hover:bg-gray-800/60 active:scale-[0.97] transition-all duration-150"
             title={t('generation.backToHome')}
           >
-            <img src="/logo-horizontal.png" alt="Slate" className="h-6" />
+            <img src="/logo-horizontal.png" alt="Slate" className="h-18" />
           </button>
           <button
             onClick={() => onCollapseChange(true)}
