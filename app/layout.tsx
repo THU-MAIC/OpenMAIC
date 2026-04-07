@@ -18,7 +18,7 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'Youngerly',
+  title: 'Slate',
   description:
     'The open-source AI interactive classroom. Upload a PDF to instantly generate an immersive, multi-agent learning experience.',
 };
