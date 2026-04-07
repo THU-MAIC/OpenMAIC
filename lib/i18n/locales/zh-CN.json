@@ -403,7 +403,9 @@
       "kimi": "Kimi",
       "minimax": "MiniMax",
       "glm": "GLM",
-      "siliconflow": "硅基流动"
+      "siliconflow": "硅基流动",
+      "doubao": "豆包",
+      "ollama": "Ollama（本地模型）"
     },
     "providerTypes": {
       "openai": "OpenAI 协议",

@@ -166,8 +166,8 @@ function loadEnvSection(
       continue;
     }
 
-    // Activate on API key; or on base URL alone for baseUrl-only sections (PDF)
-    if (requiresBaseUrl ? !envBaseUrl : !envApiKey) continue;
+    // Activate on API key or base URL (supports keyless providers like Ollama)
+    if (requiresBaseUrl ? !envBaseUrl : !(envApiKey || envBaseUrl)) continue;
     result[providerId] = {
       apiKey: envApiKey || '',
       baseUrl: envBaseUrl,

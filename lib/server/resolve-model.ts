@@ -33,6 +33,9 @@ export function resolveModel(params: {
   const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-4o-mini';
   const { providerId, modelId } = parseModelString(modelString);
 
+  // SSRF validation applies only to client-supplied base URLs.
+  // Server-configured URLs (e.g. OLLAMA_BASE_URL from env/YAML) flow through
+  // resolveBaseUrl() and bypass this check — they're trusted by the operator.
   const clientBaseUrl = params.baseUrl || undefined;
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
     const ssrfError = validateUrlForSSRF(clientBaseUrl);
