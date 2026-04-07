@@ -195,7 +195,7 @@ services:
       - "3000:3000"
 ```
 
-Full deployment guide:
+Full deployment guide (community-maintained):
 
 https://github.com/855princekumar/openmaic-docker
 
@@ -218,6 +218,7 @@ Local LLM support (e.g., via Ollama or OpenAI-compatible endpoints) would signif
 * Privacy-focused use cases
 
 A community effort is underway to explore local LLM integration, with potential future contributions once validated.
+This is a community-maintained deployment option and is not officially maintained by the OpenMAIC team.
 
 ### Optional: MinerU (Advanced Document Parsing)
 
