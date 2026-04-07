@@ -28,6 +28,12 @@ export function validateUrlForSSRF(url: string): string | null {
     return 'Only HTTP(S) URLs are allowed';
   }
 
+  // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to skip private-IP checks
+  const allowLocal = process.env.ALLOW_LOCAL_NETWORKS;
+  if (allowLocal === 'true' || allowLocal === '1') {
+    return null;
+  }
+
   const hostname = parsed.hostname.toLowerCase();
   if (
     hostname === 'localhost' ||

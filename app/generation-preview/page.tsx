@@ -278,15 +278,11 @@ function GenerationPreviewContent() {
         // Truncation warnings
         const warnings: string[] = [];
         if ((parseResult.data.text as string).length > MAX_PDF_CONTENT_CHARS) {
-          warnings.push(
-            t('generation.textTruncated').replace('{n}', String(MAX_PDF_CONTENT_CHARS)),
-          );
+          warnings.push(t('generation.textTruncated', { n: MAX_PDF_CONTENT_CHARS }));
         }
         if (images.length > MAX_VISION_IMAGES) {
           warnings.push(
-            t('generation.imageTruncated')
-              .replace('{total}', String(images.length))
-              .replace('{max}', String(MAX_VISION_IMAGES)),
+            t('generation.imageTruncated', { total: images.length, max: MAX_VISION_IMAGES }),
           );
         }
         if (warnings.length > 0) {

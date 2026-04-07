@@ -111,10 +111,15 @@ export function tryParseJson<T>(jsonStr: string): T | null {
 
     // Fix 1: Handle LaTeX-style escapes that break JSON (e.g., \frac, \left, \right, \times, etc.)
     // These are common in math content and need to be double-escaped
-    // Match backslash followed by letters (LaTeX commands) inside strings
-    fixed = fixed.replace(/"([^"]*?)"/g, (_match, content) => {
-      // Double-escape any backslash followed by a letter (except valid JSON escapes)
-      const fixedContent = content.replace(/\\([a-zA-Z])/g, '\\\\$1');
+    // Match backslash followed by letters (LaTeX commands) inside strings,
+    // but skip valid JSON escape sequences (\b, \f, \n, \r, \t, \u)
+    fixed = fixed.replace(/"([^"\\]*(?:\\.[^"\\]*)*)"/g, (_match, content) => {
+      // Double-escape backslash+letter ONLY for non-JSON-escape letters
+      const fixedContent = content.replace(/\\([a-zA-Z])/g, (_m: string, ch: string) => {
+        // Preserve valid JSON escape sequences
+        if ('bfnrtu'.includes(ch)) return `\\${ch}`;
+        return `\\\\${ch}`;
+      });
       return `"${fixedContent}"`;
     });
 
