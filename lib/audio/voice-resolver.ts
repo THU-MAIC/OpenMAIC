@@ -78,11 +78,17 @@ export interface ProviderWithVoices {
  * Get all available providers and their voices for the voice picker UI.
  * A provider is available if it has an API key or is server-configured.
  * Browser-native-tts is excluded (no static voice list).
+ * Includes both built-in models and custom models for OpenAI-compatible providers.
  */
 export function getAvailableProvidersWithVoices(
   ttsProvidersConfig: Record<
     string,
-    { apiKey?: string; enabled?: boolean; isServerConfigured?: boolean }
+    {
+      apiKey?: string;
+      enabled?: boolean;
+      isServerConfigured?: boolean;
+      customModels?: Array<{ id: string; name: string }>;
+    }
   >,
 ): ProviderWithVoices[] {
   const result: ProviderWithVoices[] = [];
@@ -101,6 +107,8 @@ export function getAvailableProvidersWithVoices(
 
       // Build model groups
       const modelGroups: ModelVoiceGroup[] = [];
+      
+      // Add built-in models
       if (config.models.length > 0) {
         for (const model of config.models) {
           const compatibleVoices = config.voices
@@ -112,8 +120,23 @@ export function getAvailableProvidersWithVoices(
             voices: compatibleVoices,
           });
         }
-      } else {
-        // Provider has no model concept (Azure, Browser Native, Doubao)
+      }
+      
+      // Add custom models for OpenAI-compatible TTS
+      const customModels = providerConfig?.customModels || [];
+      if (providerId === 'openai-compatible-tts' && customModels.length > 0) {
+        for (const model of customModels) {
+          // All voices are compatible with custom models
+          modelGroups.push({
+            modelId: model.id,
+            modelName: model.name,
+            voices: allVoices,
+          });
+        }
+      }
+      
+      // If no models at all, add default group (for providers without model concept)
+      if (modelGroups.length === 0) {
         modelGroups.push({
           modelId: '',
           modelName: config.name,

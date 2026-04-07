@@ -130,6 +130,17 @@ export async function generateAndStoreTTS(
   if (settings.ttsProviderId === 'browser-native-tts') return;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+  
+  // For OpenAI Compatible TTS, prioritize custom models
+  let ttsModelId = ttsProviderConfig?.modelId;
+  if (
+    settings.ttsProviderId === 'openai-compatible-tts' &&
+    ttsProviderConfig?.customModels?.length
+  ) {
+    // Use first custom model if available
+    ttsModelId = ttsProviderConfig.customModels[0].id;
+  }
+  
   const response = await fetch('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -137,7 +148,7 @@ export async function generateAndStoreTTS(
       text,
       audioId,
       ttsProviderId: settings.ttsProviderId,
-      ttsModelId: ttsProviderConfig?.modelId,
+      ttsModelId,
       ttsVoice: settings.ttsVoice,
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,

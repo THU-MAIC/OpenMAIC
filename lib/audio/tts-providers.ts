@@ -172,12 +172,21 @@ export async function generateTTS(
 
 /**
  * OpenAI TTS implementation (direct API call with explicit UTF-8 encoding)
+ * Supports both official OpenAI TTS and OpenAI-compatible TTS APIs
  */
 async function generateOpenAITTS(
   config: TTSModelConfig,
   text: string,
 ): Promise<TTSGenerationResult> {
-  const baseUrl = config.baseUrl || TTS_PROVIDERS['openai-tts'].defaultBaseUrl;
+  // Determine baseUrl based on provider type
+  let baseUrl: string;
+  
+  if (config.baseUrl) {
+    baseUrl = config.baseUrl;
+  } else {
+    // For official OpenAI TTS, use default baseUrl
+    baseUrl = TTS_PROVIDERS['openai-tts'].defaultBaseUrl || 'https://api.openai.com/v1';
+  }
 
   // Use gpt-4o-mini-tts for best quality and intelligent realtime applications
   const response = await fetch(`${baseUrl}/audio/speech`, {
@@ -200,9 +209,30 @@ async function generateOpenAITTS(
   }
 
   const arrayBuffer = await response.arrayBuffer();
+  
+  // Extract audio format from Content-Type header
+  const contentType = response.headers.get('content-type') || 'audio/mpeg';
+  let format = 'mp3'; // default
+  
+  if (contentType.includes('audio/wav')) {
+    format = 'wav';
+  } else if (contentType.includes('audio/mpeg') || contentType.includes('audio/mp3')) {
+    format = 'mp3';
+  } else if (contentType.includes('audio/ogg')) {
+    format = 'ogg';
+  } else if (contentType.includes('audio/aac')) {
+    format = 'aac';
+  } else if (contentType.includes('audio/flac')) {
+    format = 'flac';
+  } else if (contentType.includes('audio/webm')) {
+    format = 'webm';
+  } else if (contentType.includes('audio/opus')) {
+    format = 'opus';
+  }
+
   return {
     audio: new Uint8Array(arrayBuffer),
-    format: 'mp3',
+    format,
   };
 }
 

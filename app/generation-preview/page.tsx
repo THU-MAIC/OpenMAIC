@@ -722,6 +722,16 @@ function GenerationPreviewContent() {
           const audioId = `tts_${action.id}`;
           action.audioId = audioId;
           try {
+            // For OpenAI Compatible TTS, prioritize custom models
+            let ttsModelId = ttsProviderConfig?.modelId;
+            if (
+              settings.ttsProviderId === 'openai-compatible-tts' &&
+              ttsProviderConfig?.customModels?.length
+            ) {
+              // Use first custom model if available
+              ttsModelId = ttsProviderConfig.customModels[0].id;
+            }
+            
             const resp = await fetch('/api/generate/tts', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -729,7 +739,7 @@ function GenerationPreviewContent() {
                 text: action.text,
                 audioId,
                 ttsProviderId: settings.ttsProviderId,
-                ttsModelId: ttsProviderConfig?.modelId,
+                ttsModelId,
                 ttsVoice: settings.ttsVoice,
                 ttsSpeed: settings.ttsSpeed,
                 ttsApiKey: ttsProviderConfig?.apiKey || undefined,
