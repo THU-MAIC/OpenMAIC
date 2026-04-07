@@ -17,6 +17,9 @@ import {
   Plus,
   Settings2,
   Trash2,
+  ChevronUp,
+  ChevronDown,
+  Star,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { ImageProviderId } from '@/lib/media/types';
@@ -74,11 +77,17 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
     setTestStatus('idle');
     setTestMessage('');
     try {
+      // For OpenAI Compatible, use first custom model if available
+      let model = imageModelId || '';
+      if (selectedProviderId === 'openai-compatible-image' && customModels.length > 0) {
+        model = customModels[0].id;
+      }
+
       const response = await fetch('/api/verify-image-provider', {
         method: 'POST',
         headers: {
           'x-image-provider': selectedProviderId,
-          'x-image-model': imageModelId || '',
+          'x-image-model': model,
           'x-api-key': currentConfig?.apiKey || '',
           'x-base-url': currentConfig?.baseUrl || '',
         },
@@ -134,6 +143,20 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
 
   const handleDeleteModel = (index: number) => {
     const newCustomModels = customModels.filter((_, i) => i !== index);
+    setImageProviderConfig(selectedProviderId, {
+      customModels: newCustomModels,
+    });
+  };
+
+  const handleMoveModel = (fromIndex: number, direction: 'up' | 'down') => {
+    const toIndex = direction === 'up' ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= customModels.length) return;
+
+    const newCustomModels = [...customModels];
+    [newCustomModels[fromIndex], newCustomModels[toIndex]] = [
+      newCustomModels[toIndex],
+      newCustomModels[fromIndex],
+    ];
     setImageProviderConfig(selectedProviderId, {
       customModels: newCustomModels,
     });
@@ -273,13 +296,50 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
           {customModels.map((model, index) => (
             <div
               key={`custom-${index}`}
-              className="flex items-center justify-between p-3 rounded-lg border border-border/50 bg-card"
+              className={cn(
+                'flex items-center justify-between p-3 rounded-lg border transition-colors',
+                index === 0
+                  ? 'border-emerald-500/50 bg-emerald-50 dark:bg-emerald-950/20'
+                  : 'border-border/50 bg-card',
+              )}
             >
-              <div className="flex-1 min-w-0">
-                <div className="font-mono text-sm font-medium">{model.name}</div>
-                <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
+              <div className="flex items-start gap-2 flex-1 min-w-0">
+                {index === 0 && (
+                  <Star className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400 mt-0.5 shrink-0" />
+                )}
+                <div className="flex-1 min-w-0">
+                  <div className="font-mono text-sm font-medium flex items-center gap-2">
+                    {model.name}
+                    {index === 0 && (
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-normal">
+                        {t('settings.defaultModel')}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground font-mono mt-0.5">{model.id}</div>
+                </div>
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 shrink-0">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2"
+                  onClick={() => handleMoveModel(index, 'up')}
+                  disabled={index === 0}
+                  title="Move up"
+                >
+                  <ChevronUp className="h-3.5 w-3.5" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 px-2"
+                  onClick={() => handleMoveModel(index, 'down')}
+                  disabled={index === customModels.length - 1}
+                  title="Move down"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </Button>
                 <Button
                   variant="outline"
                   size="sm"
