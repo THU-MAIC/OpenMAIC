@@ -359,28 +359,6 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         </div>
       )}
 
-      {/* Model Selection */}
-      {asrProvider.models.length > 0 && (
-        <div className="space-y-2">
-          <Label className="text-sm">{t('settings.ttsModel')}</Label>
-          <Select
-            value={asrProvidersConfig[selectedProviderId]?.modelId || asrProvider.defaultModelId}
-            onValueChange={(value) => setASRProviderConfig(selectedProviderId, { modelId: value })}
-          >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {asrProvider.models.map((model) => (
-                <SelectItem key={model.id} value={model.id}>
-                  {model.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
       {/* Custom Models Section (OpenAI Compatible) */}
       {selectedProviderId === 'openai-compatible-asr' && (
         <div className="space-y-3">
