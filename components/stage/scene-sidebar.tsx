@@ -126,7 +126,7 @@ export function SceneSidebar({
             className="flex items-center gap-2 cursor-pointer rounded-lg px-1.5 -mx-1.5 py-1 -my-1 hover:bg-gray-100/80 dark:hover:bg-gray-800/60 active:scale-[0.97] transition-all duration-150"
             title={t('generation.backToHome')}
           >
-            <img src="/logo-horizontal.png" alt="OpenMAIC" className="h-6" />
+            <img src="/logo-horizontal.png" alt="Youngerly" className="h-6" />
           </button>
           <button
             onClick={() => onCollapseChange(true)}
@@ -350,8 +350,8 @@ export function SceneSidebar({
                       : 'cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/50',
                     !isFailed && !isActive && 'opacity-60',
                     isActive &&
-                      !isFailed &&
-                      'bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-200 dark:ring-purple-700 opacity-100',
+                    !isFailed &&
+                    'bg-purple-50 dark:bg-purple-900/20 ring-1 ring-purple-200 dark:ring-purple-700 opacity-100',
                   )}
                 >
                   {/* Scene Header */}
