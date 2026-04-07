@@ -37,6 +37,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@types/js-yaml": "^4.0.9",
+    "@vercel/analytics": "^2.0.1",
     "@xyflow/react": "^12.10.0",
     "ai": "^6.0.42",
     "animate.css": "^4.1.1",
