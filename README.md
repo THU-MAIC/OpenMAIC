@@ -172,6 +172,53 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
+---
+### Community Prebuilt Docker Image
+
+For users who prefer not to build locally, a prebuilt Docker image is available:
+
+#### Run directly (30 seconds setup)
+
+```bash
+docker run -p 3000:3000 --env-file .env.local devprincekumar/openmaic:latest
+```
+
+#### Or using docker compose
+
+```yaml
+services:
+  openmaic:
+    image: devprincekumar/openmaic:latest
+    env_file:
+      - .env.local
+    ports:
+      - "3000:3000"
+```
+
+Full deployment guide:
+
+https://github.com/855princekumar/openmaic-docker
+
+This image provides:
+
+* No local build requirement
+* Faster onboarding
+* Simplified setup using environment configuration
+
+---
+
+### Note on Local LLM Support
+
+Currently, OpenMAIC relies on external LLM providers.
+
+Local LLM support (e.g., via Ollama or OpenAI-compatible endpoints) would significantly enhance usability for:
+
+* Offline environments
+* Cost-sensitive deployments
+* Privacy-focused use cases
+
+A community effort is underway to explore local LLM integration, with potential future contributions once validated.
+
 ### Optional: MinerU (Advanced Document Parsing)
 
 [MinerU](https://github.com/opendatalab/MinerU) provides enhanced parsing for complex tables, formulas, and OCR. You can use the [MinerU official API](https://mineru.net/) or [self-host your own instance](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/).
