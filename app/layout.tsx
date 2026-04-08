@@ -10,6 +10,7 @@ import { I18nProvider } from '@/lib/hooks/use-i18n';
 import { Toaster } from '@/components/ui/sonner';
 import { ServerProvidersInit } from '@/components/server-providers-init';
 import { Analytics } from '@vercel/analytics/next';
+import Script from 'next/script';
 
 const inter = localFont({
   src: '../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2',
@@ -34,6 +35,19 @@ export default function RootLayout({
         className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
         suppressHydrationWarning
       >
+        <Script
+          async
+          src="https://www.googletagmanager.com/gtag/js?id=G-05Q10VRYSH"
+        />
+        <Script id="google-analytics">
+          {`
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+
+              gtag('config', 'G-05Q10VRYSH');
+            `}
+        </Script>
         <ThemeProvider>
           <I18nProvider>
             <ServerProvidersInit />
