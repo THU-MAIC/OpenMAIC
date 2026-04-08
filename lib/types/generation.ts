@@ -64,7 +64,7 @@ export interface UploadedDocument {
  */
 export interface UserRequirements {
   requirement: string; // Single free-form text for all user input
-  language: 'zh-CN' | 'en-US'; // Course language - critical for generation
+  language: 'zh-CN' | 'en-US'; // Legacy fallback language (actual language is inferred by LLM via languageDirective)
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
@@ -100,7 +100,9 @@ export interface SceneOutline {
   teachingObjective?: string;
   estimatedDuration?: number; // seconds
   order: number;
-  language?: 'zh-CN' | 'en-US'; // Generation language (inherited from requirements)
+  language?: 'zh-CN' | 'en-US'; // Legacy language code (fallback for image descriptions etc.)
+  /** LLM-inferred language directive — takes precedence over `language` when present */
+  languageDirective?: string;
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)

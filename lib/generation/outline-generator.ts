@@ -133,12 +133,13 @@ export async function generateSceneOutlinesFromRequirements(
         error: 'Failed to parse scene outlines response',
       };
     }
-    // Ensure IDs, order, and language
+    // Ensure IDs, order, language, and propagate languageDirective
     const enriched = outlines.map((outline, index) => ({
       ...outline,
       id: outline.id || nanoid(),
       order: index + 1,
       language: requirements.language,
+      ...(options?.languageDirective ? { languageDirective: options.languageDirective } : {}),
     }));
 
     // Replace sequential gen_img_N/gen_vid_N with globally unique IDs

@@ -10,7 +10,6 @@
     "greetingWithName": "Привет, {{name}}"
   },
   "toolbar": {
-    "languageHint": "Курс будет сгенерирован на этом языке",
     "pdfParser": "Парсер",
     "pdfUpload": "Загрузить PDF",
     "removePdf": "Удалить файл",

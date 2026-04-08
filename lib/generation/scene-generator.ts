@@ -193,7 +193,11 @@ export async function generateSceneContent(
     case 'quiz':
       return generateQuizContent(outline, aiCall);
     case 'interactive':
-      return generateInteractiveContent(outline, aiCall, outline.language);
+      return generateInteractiveContent(
+        outline,
+        aiCall,
+        outline.languageDirective || outline.language,
+      );
     case 'pbl':
       return generatePBLSceneContent(outline, languageModel);
     default:
@@ -735,7 +739,7 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  language: 'zh-CN' | 'en-US' = 'zh-CN',
+  language: string = 'zh-CN',
 ): Promise<GeneratedInteractiveContent | null> {
   const config = outline.interactiveConfig!;
 

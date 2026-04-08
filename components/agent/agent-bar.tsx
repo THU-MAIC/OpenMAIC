@@ -38,6 +38,7 @@ function AgentVoicePill({
   availableProviders: ProviderWithVoices[];
   disabled?: boolean;
 }) {
+  const { locale } = useI18n();
   const updateAgent = useAgentRegistry((s) => s.updateAgent);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const resolved = resolveAgentVoice(agent, agentIndex, availableProviders);
@@ -80,10 +81,7 @@ function AgentVoicePill({
       stopPreview();
       setPreviewingId(key);
 
-      const courseLanguage =
-        (typeof localStorage !== 'undefined' && localStorage.getItem('generationLanguage')) ||
-        'zh-CN';
-      const previewText = courseLanguage === 'en-US' ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
+      const previewText = locale.startsWith('en') ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
 
       if (providerId === 'browser-native-tts') {
         const { promise, cancel } = playBrowserTTSPreview({ text: previewText, voice: voiceId });
@@ -260,6 +258,7 @@ function TeacherVoicePill({
   availableProviders: ProviderWithVoices[];
   disabled?: boolean;
 }) {
+  const { locale } = useI18n();
   const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const setTTSProvider = useSettingsStore((s) => s.setTTSProvider);
@@ -305,10 +304,7 @@ function TeacherVoicePill({
       stopPreview();
       setPreviewingId(key);
 
-      const courseLanguage =
-        (typeof localStorage !== 'undefined' && localStorage.getItem('generationLanguage')) ||
-        'zh-CN';
-      const previewText = courseLanguage === 'en-US' ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
+      const previewText = locale.startsWith('en') ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
 
       if (providerId === 'browser-native-tts') {
         const { promise, cancel } = playBrowserTTSPreview({ text: previewText, voice: voiceId });
@@ -471,7 +467,7 @@ function TeacherVoicePill({
 }
 
 export function AgentBar() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { listAgents } = useAgentRegistry();
   const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
   const setSelectedAgentIds = useSettingsStore((s) => s.setSelectedAgentIds);

@@ -10,7 +10,6 @@
     "greetingWithName": "こんにちは、{{name}}さん"
   },
   "toolbar": {
-    "languageHint": "コースはこの言語で生成されます",
     "pdfParser": "パーサー",
     "pdfUpload": "PDFをアップロード",
     "removePdf": "ファイルを削除",

@@ -10,7 +10,6 @@
     "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
-    "languageHint": "课程将以此语言生成",
     "pdfParser": "解析器",
     "pdfUpload": "上传 PDF",
     "removePdf": "移除文件",

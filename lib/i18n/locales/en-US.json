@@ -10,7 +10,6 @@
     "greetingWithName": "Hi, {{name}}"
   },
   "toolbar": {
-    "languageHint": "Course will be generated in this language",
     "pdfParser": "Parser",
     "pdfUpload": "Upload PDF",
     "removePdf": "Remove file",
