@@ -88,6 +88,7 @@ export function getAvailableProvidersWithVoices(
       enabled?: boolean;
       isServerConfigured?: boolean;
       customModels?: Array<{ id: string; name: string }>;
+      providerOptions?: Record<string, unknown>;
     }
   >,
 ): ProviderWithVoices[] {
@@ -125,12 +126,21 @@ export function getAvailableProvidersWithVoices(
       // Add custom models for OpenAI-compatible TTS
       const customModels = providerConfig?.customModels || [];
       if (providerId === 'openai-compatible-tts' && customModels.length > 0) {
+        // Get supported voices from provider options
+        const supportedVoicesStr = (providerConfig?.providerOptions?.supportedVoices as string) || '';
+        const supportedVoices = supportedVoicesStr
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean)
+          .map((voice) => ({ id: voice, name: voice }));
+        
         for (const model of customModels) {
-          // All voices are compatible with custom models
+          // Use configured supported voices, or fall back to all predefined voices
+          const modelVoices = supportedVoices.length > 0 ? supportedVoices : allVoices;
           modelGroups.push({
             modelId: model.id,
             modelName: model.name,
-            voices: allVoices,
+            voices: modelVoices,
           });
         }
       }

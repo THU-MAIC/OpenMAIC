@@ -732,6 +732,15 @@ function GenerationPreviewContent() {
               ttsModelId = ttsProviderConfig.customModels[0].id;
             }
             
+            // For OpenAI Compatible TTS, use custom voice if configured
+            let ttsVoice = settings.ttsVoice;
+            if (settings.ttsProviderId === 'openai-compatible-tts') {
+              const customVoice = ttsProviderConfig?.providerOptions?.customVoice as string | undefined;
+              if (customVoice?.trim()) {
+                ttsVoice = customVoice.trim();
+              }
+            }
+            
             const resp = await fetch('/api/generate/tts', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -740,7 +749,7 @@ function GenerationPreviewContent() {
                 audioId,
                 ttsProviderId: settings.ttsProviderId,
                 ttsModelId,
-                ttsVoice: settings.ttsVoice,
+                ttsVoice,
                 ttsSpeed: settings.ttsSpeed,
                 ttsApiKey: ttsProviderConfig?.apiKey || undefined,
                 ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,

@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
@@ -98,12 +99,21 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       if (selectedProviderId === 'openai-compatible-tts' && customModels.length > 0) {
         modelId = customModels[0].id;
       }
+      
+      // For OpenAI Compatible TTS, use custom voice if configured
+      let voiceToTest = effectiveVoice;
+      if (selectedProviderId === 'openai-compatible-tts') {
+        const customVoice = ttsProvidersConfig[selectedProviderId]?.providerOptions?.customVoice as string | undefined;
+        if (customVoice?.trim()) {
+          voiceToTest = customVoice.trim();
+        }
+      }
 
       await startPreview({
         text: testText,
         providerId: selectedProviderId,
         modelId,
-        voice: effectiveVoice,
+        voice: voiceToTest,
         speed: ttsSpeed,
         apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
         baseUrl: ttsProvidersConfig[selectedProviderId]?.baseUrl,
@@ -487,6 +497,78 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Supported Voices & Custom Voice Selection (OpenAI Compatible) */}
+      {selectedProviderId === 'openai-compatible-tts' && (
+        <>
+          {/* Supported Voices List */}
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.supportedVoices')}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t('settings.supportedVoicesDescription')}
+            </p>
+            <Input
+              placeholder="e.g., aiden, dylan, eric, ryan, serena, vivian"
+              value={(ttsProvidersConfig[selectedProviderId]?.providerOptions?.supportedVoices as string) || ''}
+              onChange={(e) => {
+                const voices = e.target.value.split(',').map((v) => v.trim()).filter(Boolean);
+                setTTSProviderConfig(selectedProviderId, {
+                  providerOptions: {
+                    ...ttsProvidersConfig[selectedProviderId]?.providerOptions,
+                    supportedVoices: voices.length > 0 ? voices.join(',') : undefined,
+                    // Reset customVoice if it's not in the new list
+                    customVoice: voices.length > 0 ? voices[0] : undefined,
+                  },
+                });
+              }}
+              className="text-sm"
+            />
+            <p className="text-xs text-muted-foreground/60">
+              {t('settings.supportedVoicesHint')}
+            </p>
+          </div>
+
+          {/* Custom Voice Selection */}
+          {(() => {
+            const supportedVoicesStr = (ttsProvidersConfig[selectedProviderId]?.providerOptions?.supportedVoices as string) || '';
+            const voiceList = supportedVoicesStr.split(',').map((v) => v.trim()).filter(Boolean);
+            if (voiceList.length === 0) return null;
+            
+            const selectedVoice = (ttsProvidersConfig[selectedProviderId]?.providerOptions?.customVoice as string) || voiceList[0];
+            
+            return (
+              <div className="space-y-2">
+                <Label className="text-sm">{t('settings.defaultVoice')}</Label>
+                <Select
+                  value={selectedVoice}
+                  onValueChange={(value) =>
+                    setTTSProviderConfig(selectedProviderId, {
+                      providerOptions: {
+                        ...ttsProvidersConfig[selectedProviderId]?.providerOptions,
+                        customVoice: value,
+                      },
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {voiceList.map((voice) => (
+                      <SelectItem key={voice} value={voice}>
+                        {voice}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground/60">
+                  {t('settings.defaultVoiceHint')}
+                </p>
+              </div>
+            );
+          })()}
+        </>
       )}
 
       {/* Model Edit Dialog */}

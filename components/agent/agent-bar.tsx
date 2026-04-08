@@ -102,6 +102,16 @@ function AgentVoicePill({
         const controller = new AbortController();
         previewAbortRef.current = controller;
         const providerConfig = ttsProvidersConfig[providerId];
+        
+        // For OpenAI Compatible TTS, use custom voice if configured
+        let ttsVoice = voiceId;
+        if (providerId === 'openai-compatible-tts') {
+          const customVoice = providerConfig?.providerOptions?.customVoice as string | undefined;
+          if (customVoice?.trim()) {
+            ttsVoice = customVoice.trim();
+          }
+        }
+        
         const res = await fetch('/api/generate/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -110,7 +120,7 @@ function AgentVoicePill({
             audioId: 'voice-preview',
             ttsProviderId: providerId,
             ttsModelId: modelId || providerConfig?.modelId,
-            ttsVoice: voiceId,
+            ttsVoice,
             ttsSpeed: 1,
             ttsApiKey: providerConfig?.apiKey,
             ttsBaseUrl: providerConfig?.serverBaseUrl || providerConfig?.baseUrl,

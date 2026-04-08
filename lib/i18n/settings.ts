@@ -570,6 +570,11 @@ export const settingsZhCN = {
     customizeModel: '自定义模型设置',
     modelDisplayName: '模型显示名称',
     customModels: '自定义模型',
+    supportedVoices: '支持的语音列表',
+    supportedVoicesDescription: '配置此 API 支持的所有语音/讲话人',
+    supportedVoicesHint: '用逗号分隔，例如：aiden, dylan, eric, ryan。列表为空时使用默认语音',
+    defaultVoice: '默认语音',
+    defaultVoiceHint: '这个语音将作为默认选项，在角色配置中可以选择其他语音',
     testRequiresConfig: '请先配置API密钥和BaseURL才能测试',
   },
   profile: {
@@ -1184,6 +1189,11 @@ export const settingsEnUS = {
     customizeModel: 'Customize model settings',
     modelDisplayName: 'Model Display Name',
     customModels: 'Custom Models',
+    supportedVoices: 'Supported Voices',
+    supportedVoicesDescription: 'Configure all voices/speakers supported by this API',
+    supportedVoicesHint: 'Comma-separated list, e.g.: aiden, dylan, eric, ryan. Empty list uses default voice',
+    defaultVoice: 'Default Voice',
+    defaultVoiceHint: 'This voice will be used as the default option. You can select other voices in role configuration',
     testRequiresConfig: 'Please configure API key and Base URL to test',
   },
   profile: {
