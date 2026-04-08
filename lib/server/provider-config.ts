@@ -128,14 +128,21 @@ function loadYamlFile(filename: string): YamlData {
 function loadEnvSection(
   envMap: Record<string, string>,
   yamlSection: Record<string, Partial<ServerProviderEntry>> | undefined,
-  { requiresBaseUrl = false, keylessProviders = new Set<string>() }: { requiresBaseUrl?: boolean; keylessProviders?: Set<string> } = {},
+  {
+    requiresBaseUrl = false,
+    keylessProviders = new Set<string>(),
+  }: { requiresBaseUrl?: boolean; keylessProviders?: Set<string> } = {},
 ): Record<string, ServerProviderEntry> {
   const result: Record<string, ServerProviderEntry> = {};
 
   // First, add everything from YAML as defaults
   if (yamlSection) {
     for (const [id, entry] of Object.entries(yamlSection)) {
-      if (requiresBaseUrl ? !!entry?.baseUrl : (entry?.apiKey || (entry?.baseUrl && keylessProviders.has(id)))) {
+      if (
+        requiresBaseUrl
+          ? !!entry?.baseUrl
+          : entry?.apiKey || (entry?.baseUrl && keylessProviders.has(id))
+      ) {
         result[id] = {
           apiKey: entry.apiKey || '',
           baseUrl: entry.baseUrl,
@@ -167,7 +174,12 @@ function loadEnvSection(
     }
 
     // Activate on API key, or base URL alone for keyless providers (e.g. Ollama)
-    if (requiresBaseUrl ? !envBaseUrl : !(envApiKey || (envBaseUrl && keylessProviders.has(providerId)))) continue;
+    if (
+      requiresBaseUrl
+        ? !envBaseUrl
+        : !(envApiKey || (envBaseUrl && keylessProviders.has(providerId)))
+    )
+      continue;
     result[providerId] = {
       apiKey: envApiKey || '',
       baseUrl: envBaseUrl,
