@@ -101,5 +101,4 @@ export interface ModelConfig {
   baseUrl?: string;
   proxy?: string; // Optional: HTTP proxy URL for this provider
   providerType?: ProviderType; // Optional: for custom providers on server-side
-  requiresApiKey?: boolean; // Optional: for custom providers on server-side
 }

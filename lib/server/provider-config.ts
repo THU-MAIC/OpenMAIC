@@ -128,14 +128,14 @@ function loadYamlFile(filename: string): YamlData {
 function loadEnvSection(
   envMap: Record<string, string>,
   yamlSection: Record<string, Partial<ServerProviderEntry>> | undefined,
-  { requiresBaseUrl = false }: { requiresBaseUrl?: boolean } = {},
+  { requiresBaseUrl = false, keylessProviders = new Set<string>() }: { requiresBaseUrl?: boolean; keylessProviders?: Set<string> } = {},
 ): Record<string, ServerProviderEntry> {
   const result: Record<string, ServerProviderEntry> = {};
 
   // First, add everything from YAML as defaults
   if (yamlSection) {
     for (const [id, entry] of Object.entries(yamlSection)) {
-      if (requiresBaseUrl ? !!entry?.baseUrl : entry?.apiKey || entry?.baseUrl) {
+      if (requiresBaseUrl ? !!entry?.baseUrl : (entry?.apiKey || (entry?.baseUrl && keylessProviders.has(id)))) {
         result[id] = {
           apiKey: entry.apiKey || '',
           baseUrl: entry.baseUrl,
@@ -166,8 +166,8 @@ function loadEnvSection(
       continue;
     }
 
-    // Activate on API key or base URL (supports keyless providers like Ollama)
-    if (requiresBaseUrl ? !envBaseUrl : !(envApiKey || envBaseUrl)) continue;
+    // Activate on API key, or base URL alone for keyless providers (e.g. Ollama)
+    if (requiresBaseUrl ? !envBaseUrl : !(envApiKey || (envBaseUrl && keylessProviders.has(providerId)))) continue;
     result[providerId] = {
       apiKey: envApiKey || '',
       baseUrl: envBaseUrl,
@@ -189,7 +189,9 @@ const _configs: Map<string, ServerConfig> = new Map();
 
 function buildConfig(yamlData: YamlData): ServerConfig {
   return {
-    providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers),
+    providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
+      keylessProviders: new Set(['ollama']),
+    }),
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr),
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),

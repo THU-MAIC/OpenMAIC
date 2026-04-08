@@ -1132,10 +1132,9 @@ export function isProviderKeyRequired(providerId: string): boolean {
  */
 export function getModel(config: ModelConfig): ModelWithInfo {
   // providerType can come from client for custom providers; fall back to registry.
-  // requiresApiKey: registry is authoritative; config.requiresApiKey only for custom providers not in registry.
   let providerType = config.providerType;
   const provider = getProviderConfig(config.providerId);
-  const requiresApiKey = provider?.requiresApiKey ?? config.requiresApiKey ?? true;
+  const requiresApiKey = provider?.requiresApiKey ?? true;
 
   if (!providerType) {
     if (provider) {
