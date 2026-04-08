@@ -577,9 +577,13 @@ async function buildPptxBlob(
           }
           pptxSlide.addImage(imgOptions);
         } else {
+          const vb = Array.isArray(el.viewBox) ? el.viewBox : (() => {
+            const parts = String(el.viewBox).trim().split(/\s+/).map(Number);
+            return parts.length >= 4 ? [parts[2], parts[3]] : parts.length >= 2 ? [parts[0], parts[1]] : [0, 0];
+          })();
           const scale = {
-            x: el.width / el.viewBox[0],
-            y: el.height / el.viewBox[1],
+            x: vb[0] > 0 ? el.width / vb[0] : 1,
+            y: vb[1] > 0 ? el.height / vb[1] : 1,
           };
           const points = formatPoints(toPoints(el.path), ratioPx2Inch, scale);
 
