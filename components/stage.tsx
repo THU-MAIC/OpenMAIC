@@ -292,7 +292,7 @@ export function Stage({
   // Keyboard escape hook for web-only fullscreen exit
   useEffect(() => {
     if (!isPresenting) return;
-    
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !isPresentationInteractionActive) {
         setIsPresenting(false);
@@ -883,12 +883,12 @@ export function Stage({
   // Build discussion request for Roundtable ProactiveCard from trigger
   const discussionRequest: DiscussionAction | null = discussionTrigger
     ? {
-        type: 'discussion',
-        id: discussionTrigger.id,
-        topic: discussionTrigger.question,
-        prompt: discussionTrigger.prompt,
-        agentId: discussionTrigger.agentId || 'default-1',
-      }
+      type: 'discussion',
+      id: discussionTrigger.id,
+      topic: discussionTrigger.question,
+      prompt: discussionTrigger.prompt,
+      agentId: discussionTrigger.agentId || 'default-1',
+    }
     : null;
 
 
@@ -911,7 +911,7 @@ export function Stage({
 
       {/* Main Content Area */}
       <div className={cn(
-        "flex-1 min-w-0 relative h-full overflow-hidden",
+        "flex-1 min-w-0 relative h-full overflow-hidden flex flex-col",
         !isPresenting && "grid grid-rows-[auto_1fr_auto]"
       )}>
         {/* Header Row */}
@@ -923,7 +923,10 @@ export function Stage({
 
         {/* Canvas Area Row */}
         <div
-          className="relative min-h-0 overflow-hidden isolate"
+          className={cn(
+            'relative min-h-0 overflow-hidden isolate',
+            isPresenting && 'flex-1'
+          )}
           suppressHydrationWarning
         >
           <CanvasArea
