@@ -449,7 +449,7 @@ export function SceneSidebar({
         </div>
 
         {/* Mobile Reflow Toggle */}
-        <div className="p-3 border-t border-gray-100 dark:border-gray-800">
+        {/* <div className="p-3 border-t border-gray-100 dark:border-gray-800">
           <button
             onClick={() => useSettingsStore.getState().setMobileReflowPreferred(!useSettingsStore.getState().mobileReflowPreferred)}
             className={cn(
@@ -462,7 +462,7 @@ export function SceneSidebar({
             <Smartphone className="w-4 h-4" />
             <span>Vertical View: {useSettingsStore((s) => s.mobileReflowPreferred) ? "ON" : "OFF"}</span>
           </button>
-        </div>
+        </div> */}
       </div>
     </div>
   );
