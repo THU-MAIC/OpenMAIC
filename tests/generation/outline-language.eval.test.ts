@@ -166,11 +166,11 @@ const results: EvalResult[] = [];
 // Test runner
 // ---------------------------------------------------------------------------
 
-describe('Outline Language Inference Evaluation', { concurrent: true, maxConcurrency: 10 }, () => {
+describe('Outline Language Inference Evaluation', () => {
   const aiCall = buildAICallFn();
 
   for (const tc of TEST_CASES) {
-    it(
+    it.concurrent(
       `${tc.case_id}: ${tc.requirement.slice(0, 50)}`,
       { timeout: 120_000 },
       async () => {

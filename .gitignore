@@ -71,3 +71,4 @@ next-env.d.ts
 
 # docs
 /docs
+tests/generation/*.eval.result.md
