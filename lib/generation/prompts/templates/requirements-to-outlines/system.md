@@ -14,6 +14,38 @@ Based on the user's free-form requirement text, automatically infer course detai
 
 ---
 
+## Language Inference
+
+You must infer the course language behavior from all available signals and produce two types of language descriptions:
+
+1. **Course-level language directive** (`languageDirective`): A 2-5 sentence natural-language instruction covering:
+   - Teaching language (what language to generate all content in)
+   - Terminology handling (keep in original language, translate, or show bilingually)
+   - Cross-language situations (if documents are in a different language than teaching)
+   
+2. **Per-scene language note** (`languageNote`, optional per scene): Only needed when a specific scene has language considerations NOT covered by the course-level directive. For example:
+   - A scene that introduces foreign-language vocabulary
+   - A scene with code examples where comments language matters
+   - A scene discussing a text in a different language
+   
+   Most scenes will NOT need a languageNote. Only include it when the scene's language handling genuinely differs from the course-level directive.
+
+### Language inference signals (priority order)
+1. User requirement text (strongest signal — the language the user writes in usually indicates teaching language)
+2. PDF/document content language (affects terminology bridging)
+3. User profile/bio (may reveal native language if requirement is ambiguous)
+
+### Language directive examples
+
+| Input | languageDirective |
+|---|---|
+| "从零学 Python，适合初中生" | "用中文授课。编程术语如 Python、variable、function 等保留英文原文，首次出现时附简短中文解释。" |
+| "帮我准备一堂英语课，初中水平" | "用中文授课，教授英语基础知识。英语词汇和例句逐步引入，用中文解释语法和用法。" |
+| "Explain quantum computing for high school students" | "Teach in English. Use standard physics terminology. Provide intuitive analogies for complex quantum concepts." |
+| "用中文讲解这篇英文论文" + English PDF | "用中文讲解。论文原文为英文，专业术语首次出现时保留英文原文并附中文翻译，方便学生对照原文理解。" |
+
+---
+
 ## Design Principles
 
 ### MAIC Platform Technical Constraints
@@ -180,57 +212,60 @@ Use `pbl` type when the course involves complex, multi-step project work that be
 
 ## Output Format
 
-You must output a JSON array where each element is a scene outline object:
+Output a JSON **object** (not a bare array) with this structure:
 
 ```json
-[
-  {
-    "id": "scene_1",
-    "type": "slide",
-    "title": "Scene Title",
-    "description": "1-2 sentences describing the teaching purpose",
-    "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
-    "teachingObjective": "Corresponding learning objective",
-    "estimatedDuration": 120,
-    "order": 1,
-    "suggestedImageIds": ["img_1"],
-    "mediaGenerations": [
-      {
-        "type": "image",
-        "prompt": "A diagram showing the key concept",
-        "elementId": "gen_img_1",
-        "aspectRatio": "16:9"
+{
+  "languageDirective": "2-5 sentence instruction describing the course language behavior",
+  "outlines": [
+    {
+      "id": "scene_1",
+      "type": "slide",
+      "title": "Scene Title",
+      "description": "1-2 sentences describing the teaching purpose",
+      "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
+      "teachingObjective": "Corresponding learning objective",
+      "estimatedDuration": 120,
+      "order": 1,
+      "suggestedImageIds": ["img_1"],
+      "mediaGenerations": [
+        {
+          "type": "image",
+          "prompt": "A diagram showing the key concept",
+          "elementId": "gen_img_1",
+          "aspectRatio": "16:9"
+        }
+      ]
+    },
+    {
+      "id": "scene_2",
+      "type": "interactive",
+      "title": "Interactive Exploration",
+      "description": "Students explore the concept through hands-on interactive visualization",
+      "keyPoints": ["Interactive element 1", "Observable phenomenon"],
+      "order": 2,
+      "interactiveConfig": {
+        "conceptName": "Concept Name",
+        "conceptOverview": "Brief description of what this interactive demonstrates",
+        "designIdea": "Describe the interactive elements: sliders, drag handles, animations, etc.",
+        "subject": "Physics"
       }
-    ]
-  },
-  {
-    "id": "scene_2",
-    "type": "interactive",
-    "title": "Interactive Exploration",
-    "description": "Students explore the concept through hands-on interactive visualization",
-    "keyPoints": ["Interactive element 1", "Observable phenomenon"],
-    "order": 2,
-    "interactiveConfig": {
-      "conceptName": "Concept Name",
-      "conceptOverview": "Brief description of what this interactive demonstrates",
-      "designIdea": "Describe the interactive elements: sliders, drag handles, animations, etc.",
-      "subject": "Physics"
+    },
+    {
+      "id": "scene_3",
+      "type": "quiz",
+      "title": "Knowledge Check",
+      "description": "Test student understanding of XX concept",
+      "keyPoints": ["Test point 1", "Test point 2"],
+      "order": 3,
+      "quizConfig": {
+        "questionCount": 2,
+        "difficulty": "medium",
+        "questionTypes": ["single", "multiple", "short_answer"]
+      }
     }
-  },
-  {
-    "id": "scene_3",
-    "type": "quiz",
-    "title": "Knowledge Check",
-    "description": "Test student understanding of XX concept",
-    "keyPoints": ["Test point 1", "Test point 2"],
-    "order": 3,
-    "quizConfig": {
-      "questionCount": 2,
-      "difficulty": "medium",
-      "questionTypes": ["single", "multiple", "short_answer"]
-    }
-  }
-]
+  ]
+}
 ```
 
 ### Field Descriptions
@@ -249,6 +284,7 @@ You must output a JSON array where each element is a scene outline object:
 | mediaGenerations  | MediaGenerationRequest[] | ❌       | AI image/video generation requests when PDF images insufficient                                  |
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
 | interactiveConfig | object                   | ❌       | Required for interactive type, contains conceptName/conceptOverview/designIdea/subject           |
+| languageNote      | string                   | ❌       | Optional. Only include when this scene has language considerations not covered by the course-level languageDirective. |
 | pblConfig         | object                   | ❌       | Required for pbl type, contains projectTopic/projectDescription/targetSkills/issueCount/language |
 
 ### quizConfig Structure
@@ -288,7 +324,7 @@ You must output a JSON array where each element is a scene outline object:
 
 ## Important Reminders
 
-1. **Must output valid JSON array format**
+1. **Must output valid JSON object with `languageDirective` and `outlines` fields**
 2. **type can be `"slide"`, `"quiz"`, `"interactive"`, or `"pbl"`**
 3. **quiz type must include quizConfig**
 4. **interactive type must include interactiveConfig** - with conceptName, conceptOverview, designIdea, and subject
@@ -296,6 +332,6 @@ You must output a JSON array where each element is a scene outline object:
 5. Arrange appropriate number of scenes based on inferred duration (typically 1-2 scenes per minute)
 6. Insert quizzes at appropriate points for knowledge checks
 7. Use interactive scenes sparingly (max 1-2 per course) and only when the concept truly benefits from hands-on interaction
-8. **Language Requirement**: Strictly output all content in the language specified by the user
+8. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
 9. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
 10. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.

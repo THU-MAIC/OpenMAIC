@@ -135,3 +135,16 @@ export function buildVisionUserContent(
   }
   return parts;
 }
+
+/**
+ * Build language instruction text from course-level directive and optional per-scene note.
+ * Used by scene content and action generators to inject into prompt templates.
+ */
+export function buildLanguageText(directive?: string, sceneNote?: string): string {
+  if (!directive && !sceneNote) return '';
+  let text = directive || '';
+  if (sceneNote) {
+    text += (text ? '\n\n' : '') + `Additional language note for this scene: ${sceneNote}`;
+  }
+  return text;
+}

@@ -23,6 +23,7 @@ export {
   formatImageDescription,
   formatImagePlaceholder,
   buildVisionUserContent,
+  buildLanguageText,
 } from './prompt-formatters';
 
 // JSON repair
