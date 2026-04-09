@@ -1,89 +1,37 @@
 'use client';
 
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import {
+  useRef,
+  useState,
+  useEffect,
+  useCallback,
+  useMemo,
+  forwardRef,
+  useImperativeHandle,
+} from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
-import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
-import { elementFingerprint } from '@/lib/utils/element-fingerprint';
-import type { PPTElement, PPTLineElement } from '@/lib/types/slides';
+import type { PPTElement } from '@/lib/types/slides';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { getElementRange } from '@/lib/utils/element';
 
-type ElementBounds = {
-  minX: number;
-  minY: number;
-  maxX: number;
-  maxY: number;
+export type WhiteboardCanvasHandle = {
+  resetView: () => void;
 };
 
 type InteractiveWhiteboardCanvasProps = {
-  autoFitTransform: {
-    scale: number;
-    tx: number;
-    ty: number;
-  };
   canvasHeight: number;
   canvasWidth: number;
+  containerWidth: number;
+  containerHeight: number;
   containerScale: number;
   elements: PPTElement[];
   isClearing: boolean;
+  onViewModifiedChange?: (modified: boolean) => void;
   readyHintText: string;
   readyText: string;
-  resetViewText: string;
-  zoomHintText: string;
 };
-
-function getLineBounds(element: PPTLineElement): ElementBounds {
-  const originX = element.left ?? 0;
-  const originY = element.top ?? 0;
-  const points: Array<[number, number]> = [element.start, element.end];
-
-  if (element.broken) {
-    points.push(element.broken);
-  }
-
-  if (element.broken2) {
-    const horizontalFirst =
-      Math.abs(element.end[0] - element.start[0]) >= Math.abs(element.end[1] - element.start[1]);
-
-    if (horizontalFirst) {
-      points.push([element.broken2[0], element.start[1]], [element.broken2[0], element.end[1]]);
-    } else {
-      points.push([element.start[0], element.broken2[1]], [element.end[0], element.broken2[1]]);
-    }
-  }
-
-  if (element.curve) {
-    points.push(element.curve);
-  }
-
-  if (element.cubic) {
-    points.push(...element.cubic);
-  }
-
-  const xs = points.map(([x]) => originX + x);
-  const ys = points.map(([, y]) => originY + y);
-  const strokePad = Math.max(element.width ?? 0, 1) / 2;
-  const markerPad = element.points.some(Boolean) ? Math.max(element.width ?? 0, 1) * 1.5 : 0;
-  const pad = strokePad + markerPad;
-
-  return {
-    minX: Math.min(...xs) - pad,
-    minY: Math.min(...ys) - pad,
-    maxX: Math.max(...xs) + pad,
-    maxY: Math.max(...ys) + pad,
-  };
-}
-
-function getWhiteboardElementBounds(element: PPTElement): ElementBounds {
-  if (element.type === 'line') {
-    return getLineBounds(element);
-  }
-
-  return getElementRange(element);
-}
 
 function AnimatedElement({
   element,
@@ -145,100 +93,53 @@ function AnimatedElement({
   );
 }
 
-function InteractiveWhiteboardCanvas({
-  autoFitTransform,
-  canvasHeight,
-  canvasWidth,
-  containerScale,
-  elements,
-  isClearing,
-  readyHintText,
-  readyText,
-  resetViewText,
-  zoomHintText,
-}: InteractiveWhiteboardCanvasProps) {
+const InteractiveWhiteboardCanvas = forwardRef<
+  WhiteboardCanvasHandle,
+  InteractiveWhiteboardCanvasProps
+>(function InteractiveWhiteboardCanvas(
+  {
+    canvasHeight,
+    canvasWidth,
+    containerWidth,
+    containerHeight,
+    containerScale,
+    elements,
+    isClearing,
+    onViewModifiedChange,
+    readyHintText,
+    readyText,
+  },
+  ref,
+) {
   const [viewZoom, setViewZoom] = useState(1);
   const [panX, setPanX] = useState(0);
   const [panY, setPanY] = useState(0);
   const [isPanning, setIsPanning] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
-  const [hintTimedOut, setHintTimedOut] = useState(false);
   const panStartRef = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const prevElementsLengthRef = useRef(elements.length);
   const resetTimerRef = useRef<number | null>(null);
-  const hintTimerRef = useRef<number | null>(null);
-  const hintEpochRef = useRef(0);
-  const canvasRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
 
   const isViewModified = viewZoom !== 1 || panX !== 0 || panY !== 0;
-  const hasOverflow = autoFitTransform.scale < 1;
-  const canPan = elements.length > 0 && (hasOverflow || isViewModified);
-  const hintEpoch = elements.length > 0 && !isViewModified ? 1 : 0;
-  const showHint = hintEpoch === 1 && !hintTimedOut;
 
-  useEffect(() => {
-    if (hintEpoch === 0) {
-      return;
-    }
-
-    const epoch = ++hintEpochRef.current;
-    hintTimerRef.current = window.setTimeout(() => {
-      if (hintEpochRef.current === epoch) {
-        setHintTimedOut(true);
-      }
-    }, 3000);
-
-    return () => {
-      if (hintTimerRef.current !== null) {
-        window.clearTimeout(hintTimerRef.current);
-        hintTimerRef.current = null;
-      }
-    };
-  }, [hintEpoch]);
-
-  const handlePointerDown = useCallback(
-    (e: React.PointerEvent) => {
-      if (e.button !== 0 || !canPan) {
-        return;
-      }
-
-      e.preventDefault();
-      setIsPanning(true);
-      setHintTimedOut(false);
-      panStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
-      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  // Zoom-aware pan boundary: ensure at least an edge of the canvas stays visible
+  const clampPan = useCallback(
+    (x: number, y: number, zoom: number) => {
+      const totalScale = containerScale * zoom;
+      const maxPanX = canvasWidth / 2 + containerWidth / (2 * totalScale);
+      const maxPanY = canvasHeight / 2 + containerHeight / (2 * totalScale);
+      return {
+        x: Math.max(-maxPanX, Math.min(maxPanX, x)),
+        y: Math.max(-maxPanY, Math.min(maxPanY, y)),
+      };
     },
-    [canPan, panX, panY],
+    [canvasWidth, canvasHeight, containerWidth, containerHeight, containerScale],
   );
-
-  const handlePointerMove = useCallback(
-    (e: React.PointerEvent) => {
-      if (!isPanning) {
-        return;
-      }
-
-      const dx = e.clientX - panStartRef.current.x;
-      const dy = e.clientY - panStartRef.current.y;
-      const effectiveScale = Math.max(containerScale, 0.001);
-
-      setPanX(panStartRef.current.panX + dx / effectiveScale);
-      setPanY(panStartRef.current.panY + dy / effectiveScale);
-    },
-    [containerScale, isPanning],
-  );
-
-  const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    if ((e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    }
-
-    setIsPanning(false);
-  }, []);
 
   const resetView = useCallback((animate: boolean) => {
     setIsPanning(false);
     setIsResetting(animate);
-    setHintTimedOut(false);
     setViewZoom(1);
     setPanX(0);
     setPanY(0);
@@ -258,8 +159,65 @@ function InteractiveWhiteboardCanvas({
     }, 250);
   }, []);
 
+  useImperativeHandle(
+    ref,
+    () => ({
+      resetView: () => resetView(true),
+    }),
+    [resetView],
+  );
+
+  // Notify parent when view modified state changes
   useEffect(() => {
-    const el = canvasRef.current;
+    onViewModifiedChange?.(isViewModified);
+  }, [isViewModified, onViewModifiedChange]);
+
+  // Always-on drag/pan — no toggle needed
+  const handlePointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (e.button !== 0) {
+        return;
+      }
+
+      e.preventDefault();
+      setIsPanning(true);
+      panStartRef.current = { x: e.clientX, y: e.clientY, panX, panY };
+      (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [panX, panY],
+  );
+
+  const handlePointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!isPanning) {
+        return;
+      }
+
+      const dx = e.clientX - panStartRef.current.x;
+      const dy = e.clientY - panStartRef.current.y;
+      // Convert screen-space drag to canvas-space (accounts for both container scale and zoom)
+      const effectiveScale = Math.max(containerScale * viewZoom, 0.001);
+
+      const newPanX = panStartRef.current.panX + dx / effectiveScale;
+      const newPanY = panStartRef.current.panY + dy / effectiveScale;
+      const clamped = clampPan(newPanX, newPanY, viewZoom);
+      setPanX(clamped.x);
+      setPanY(clamped.y);
+    },
+    [containerScale, viewZoom, isPanning, clampPan],
+  );
+
+  const handlePointerUp = useCallback((e: React.PointerEvent) => {
+    if ((e.currentTarget as HTMLElement).hasPointerCapture(e.pointerId)) {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    }
+
+    setIsPanning(false);
+  }, []);
+
+  // Zoom toward cursor
+  useEffect(() => {
+    const el = viewportRef.current;
     if (!el) {
       return;
     }
@@ -270,14 +228,39 @@ function InteractiveWhiteboardCanvas({
         return;
       }
 
-      setHintTimedOut(false);
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      setViewZoom((prev) => Math.min(5, Math.max(0.2, prev * zoomFactor)));
+
+      setViewZoom((prevZoom) => {
+        const newZoom = Math.min(5, Math.max(0.2, prevZoom * zoomFactor));
+
+        // Adjust pan to keep the point under the cursor stationary
+        const rect = el.getBoundingClientRect();
+        const cursorX = e.clientX - rect.left;
+        const cursorY = e.clientY - rect.top;
+
+        const oldScale = containerScale * prevZoom;
+        const newScale = containerScale * newZoom;
+        const scaleDiff = 1 / newScale - 1 / oldScale;
+
+        setPanX((prevPanX) => {
+          const newPanX = prevPanX + (cursorX - containerWidth / 2) * scaleDiff;
+          const maxPX = canvasWidth / 2 + containerWidth / (2 * newScale);
+          return Math.max(-maxPX, Math.min(maxPX, newPanX));
+        });
+
+        setPanY((prevPanY) => {
+          const newPanY = prevPanY + (cursorY - containerHeight / 2) * scaleDiff;
+          const maxPY = canvasHeight / 2 + containerHeight / (2 * newScale);
+          return Math.max(-maxPY, Math.min(maxPY, newPanY));
+        });
+
+        return newZoom;
+      });
     };
 
     el.addEventListener('wheel', onWheel, { passive: false });
     return () => el.removeEventListener('wheel', onWheel);
-  }, [elements.length]);
+  }, [elements.length, containerScale, containerWidth, containerHeight, canvasWidth, canvasHeight]);
 
   useEffect(() => {
     return () => {
@@ -318,23 +301,19 @@ function InteractiveWhiteboardCanvas({
     [resetView],
   );
 
-  const contentTransform = useMemo(() => {
-    const scale = autoFitTransform.scale * viewZoom;
-    const tx = autoFitTransform.tx + panX;
-    const ty = autoFitTransform.ty + panY;
-    return `translate(${tx}px, ${ty}px) scale(${scale})`;
-  }, [autoFitTransform, panX, panY, viewZoom]);
+  // Canvas position: centered in workspace, offset by pan, scaled by containerScale * viewZoom
+  const totalScale = containerScale * viewZoom;
+  const canvasScreenX = (containerWidth - canvasWidth * totalScale) / 2 + panX * totalScale;
+  const canvasScreenY = (containerHeight - canvasHeight * totalScale) / 2 + panY * totalScale;
+  const canvasTransform = `translate(${canvasScreenX}px, ${canvasScreenY}px) scale(${totalScale})`;
 
   return (
+    /* Viewport — fills workspace, handles pointer events, no clipping */
     <div
-      ref={canvasRef}
-      className="relative bg-white shadow-2xl rounded-lg overflow-hidden select-none"
+      ref={viewportRef}
+      className="w-full h-full relative select-none"
       style={{
-        width: canvasWidth,
-        height: canvasHeight,
-        transform: `scale(${containerScale})`,
-        transformOrigin: 'top left',
-        cursor: isPanning ? 'grabbing' : canPan ? 'grab' : undefined,
+        cursor: isPanning ? 'grabbing' : 'grab',
       }}
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
@@ -342,234 +321,125 @@ function InteractiveWhiteboardCanvas({
       onPointerCancel={handlePointerUp}
       onDoubleClick={handleDoubleClick}
     >
-      <AnimatePresence>
-        {elements.length === 0 && !isClearing && (
-          <motion.div
-            key="placeholder"
-            initial={{ opacity: 0 }}
-            animate={{
-              opacity: 1,
-              transition: { delay: 0.25, duration: 0.4 },
-            }}
-            exit={{ opacity: 0, transition: { duration: 0.15 } }}
-            className="absolute inset-0 flex items-center justify-center"
-          >
-            <div className="text-center text-gray-400">
-              <p className="text-lg font-medium">{readyText}</p>
-              <p className="text-sm mt-1">{readyHintText}</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
+      {/* Bounded canvas — white background, positioned and scaled. No overflow-hidden so elements can spill into transparent space. */}
       <div
-        className="absolute inset-0"
+        className="absolute bg-white shadow-2xl rounded-lg border border-gray-200 dark:border-gray-600"
         style={{
-          transform: contentTransform,
+          width: canvasWidth,
+          height: canvasHeight,
+          left: 0,
+          top: 0,
+          transform: canvasTransform,
           transformOrigin: '0 0',
           transition: isResetting ? 'transform 0.25s ease-out' : undefined,
         }}
       >
-        <AnimatePresence mode="popLayout">
-          {elements.map((element, index) => (
-            <AnimatedElement
-              key={element.id}
-              element={element}
-              index={index}
-              isClearing={isClearing}
-              totalElements={elements.length}
-            />
-          ))}
+        {/* Empty state placeholder */}
+        <AnimatePresence>
+          {elements.length === 0 && !isClearing && (
+            <motion.div
+              key="placeholder"
+              initial={{ opacity: 0 }}
+              animate={{
+                opacity: 1,
+                transition: { delay: 0.25, duration: 0.4 },
+              }}
+              exit={{ opacity: 0, transition: { duration: 0.15 } }}
+              className="absolute inset-0 flex items-center justify-center"
+            >
+              <div className="text-center text-gray-400">
+                <p className="text-lg font-medium">{readyText}</p>
+                <p className="text-sm mt-1">{readyHintText}</p>
+              </div>
+            </motion.div>
+          )}
         </AnimatePresence>
+
+        {/* Content layer — elements rendered at their raw coordinates */}
+        <div className="absolute inset-0">
+          <AnimatePresence mode="popLayout">
+            {elements.map((element, index) => (
+              <AnimatedElement
+                key={element.id}
+                element={element}
+                index={index}
+                isClearing={isClearing}
+                totalElements={elements.length}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
       </div>
-
-      <AnimatePresence>
-        {showHint && !isViewModified && elements.length > 0 && (
-          <motion.div
-            key="zoom-hint"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 0.5, transition: { delay: 0.6, duration: 0.4 } }}
-            exit={{ opacity: 0, transition: { duration: 0.3 } }}
-            className="absolute bottom-3 left-3 z-50 px-2.5 py-1 rounded-md
-              bg-black/40 text-white text-xs backdrop-blur-sm select-none pointer-events-none"
-          >
-            {zoomHintText}
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {isViewModified && elements.length > 0 && (
-          <motion.button
-            initial={{ opacity: 0, y: 4 }}
-            animate={{ opacity: 0.7 }}
-            exit={{ opacity: 0 }}
-            whileHover={{ opacity: 1 }}
-            onPointerDown={(e) => e.stopPropagation()}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDoubleClick();
-            }}
-            className="absolute bottom-3 right-3 z-50 px-2.5 py-1 rounded-md
-              bg-black/60 text-white text-xs backdrop-blur-sm
-              hover:bg-black/80 transition-colors cursor-pointer select-none"
-          >
-            {resetViewText}
-          </motion.button>
-        )}
-      </AnimatePresence>
     </div>
   );
-}
+});
 
 /**
- * Whiteboard canvas with pan, zoom, auto-fit, and history auto-snapshot support.
+ * Whiteboard canvas with pan, zoom, auto-fit, and bounded viewport.
  */
-export function WhiteboardCanvas() {
-  const { t } = useI18n();
-  const stage = useStageStore.use.stage();
-  const isClearing = useCanvasStore.use.whiteboardClearing();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [containerScale, setContainerScale] = useState(1);
+export type WhiteboardCanvasProps = {
+  onViewModifiedChange?: (modified: boolean) => void;
+};
 
-  const whiteboard = stage?.whiteboard?.[0];
-  const rawElements = whiteboard?.elements;
-  const elements = useMemo(() => rawElements ?? [], [rawElements]);
-  const elementsKey = useMemo(() => elementFingerprint(elements), [elements]);
-  const elementsRef = useRef(elements);
-  const snapshotTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+export const WhiteboardCanvas = forwardRef<WhiteboardCanvasHandle, WhiteboardCanvasProps>(
+  function WhiteboardCanvas({ onViewModifiedChange }, ref) {
+    const { t } = useI18n();
+    const stage = useStageStore.use.stage();
+    const isClearing = useCanvasStore.use.whiteboardClearing();
+    const containerRef = useRef<HTMLDivElement>(null);
+    const [containerSize, setContainerSize] = useState({ width: 0, height: 0 });
 
-  useEffect(() => {
-    elementsRef.current = elements;
-  }, [elements]);
+    const whiteboard = stage?.whiteboard?.[0];
+    const rawElements = whiteboard?.elements;
+    const elements = useMemo(() => rawElements ?? [], [rawElements]);
 
-  useEffect(() => {
-    if (snapshotTimerRef.current) {
-      clearTimeout(snapshotTimerRef.current);
-      snapshotTimerRef.current = null;
-    }
+    const canvasWidth = 1000;
+    const canvasHeight = 562.5;
 
-    if (elements.length === 0 || isClearing) {
-      return;
-    }
+    const containerScale = useMemo(() => {
+      if (containerSize.width === 0 || containerSize.height === 0) return 1;
+      return Math.min(containerSize.width / canvasWidth, containerSize.height / canvasHeight);
+    }, [containerSize.width, containerSize.height, canvasWidth, canvasHeight]);
 
-    const historyStore = useWhiteboardHistoryStore.getState();
-    if (historyStore.restoredKey && historyStore.restoredKey === elementsKey) {
-      historyStore.setRestoredKey(null);
-      return;
-    }
-
-    snapshotTimerRef.current = setTimeout(() => {
-      const current = elementsRef.current;
-      if (current.length > 0) {
-        useWhiteboardHistoryStore.getState().pushSnapshot(current);
+    useEffect(() => {
+      const container = containerRef.current;
+      if (!container) {
+        return;
       }
-    }, 2000);
 
-    return () => {
-      if (snapshotTimerRef.current) {
-        clearTimeout(snapshotTimerRef.current);
-        snapshotTimerRef.current = null;
-      }
-    };
-  }, [elements.length, elementsKey, isClearing]);
+      const observer = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (entry) {
+          setContainerSize({
+            width: entry.contentRect.width,
+            height: entry.contentRect.height,
+          });
+        }
+      });
+      observer.observe(container);
 
-  useEffect(() => {
-    return () => {
-      if (snapshotTimerRef.current) {
-        clearTimeout(snapshotTimerRef.current);
-      }
-    };
-  }, []);
+      // Initial measurement
+      setContainerSize({ width: container.clientWidth, height: container.clientHeight });
 
-  const canvasWidth = 1000;
-  const canvasHeight = 562.5;
-  const padding = 24;
+      return () => observer.disconnect();
+    }, []);
 
-  const updateContainerScale = useCallback(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-
-    const { clientWidth, clientHeight } = container;
-    const scaleX = clientWidth / canvasWidth;
-    const scaleY = clientHeight / canvasHeight;
-    setContainerScale(Math.min(scaleX, scaleY));
-  }, [canvasWidth, canvasHeight]);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-
-    const observer = new ResizeObserver(updateContainerScale);
-    observer.observe(container);
-    updateContainerScale();
-
-    return () => observer.disconnect();
-  }, [updateContainerScale]);
-
-  const autoFitTransform = useMemo(() => {
-    if (elements.length === 0) {
-      return { scale: 1, tx: 0, ty: 0 };
-    }
-
-    let minX = Infinity;
-    let minY = Infinity;
-    let maxX = -Infinity;
-    let maxY = -Infinity;
-
-    for (const element of elements) {
-      const bounds = getWhiteboardElementBounds(element);
-      minX = Math.min(minX, bounds.minX);
-      minY = Math.min(minY, bounds.minY);
-      maxX = Math.max(maxX, bounds.maxX);
-      maxY = Math.max(maxY, bounds.maxY);
-    }
-
-    const contentWidth = maxX - minX;
-    const contentHeight = maxY - minY;
-    const overflowsX = minX < 0 || maxX > canvasWidth;
-    const overflowsY = minY < 0 || maxY > canvasHeight;
-
-    if (!overflowsX && !overflowsY) {
-      return { scale: 1, tx: 0, ty: 0 };
-    }
-
-    const availableWidth = canvasWidth - padding * 2;
-    const availableHeight = canvasHeight - padding * 2;
-    const fitScale = Math.min(1, availableWidth / contentWidth, availableHeight / contentHeight);
-    const scaledWidth = contentWidth * fitScale;
-    const scaledHeight = contentHeight * fitScale;
-
-    return {
-      scale: fitScale,
-      tx: (canvasWidth - scaledWidth) / 2 - minX * fitScale,
-      ty: (canvasHeight - scaledHeight) / 2 - minY * fitScale,
-    };
-  }, [canvasHeight, canvasWidth, elements, padding]);
-
-  return (
-    <div
-      ref={containerRef}
-      className="w-full h-full flex items-center justify-center overflow-hidden"
-    >
-      <div style={{ width: canvasWidth * containerScale, height: canvasHeight * containerScale }}>
+    return (
+      <div ref={containerRef} className="w-full h-full overflow-hidden">
         <InteractiveWhiteboardCanvas
-          autoFitTransform={autoFitTransform}
+          ref={ref}
           canvasHeight={canvasHeight}
           canvasWidth={canvasWidth}
+          containerWidth={containerSize.width}
+          containerHeight={containerSize.height}
           containerScale={containerScale}
           elements={elements}
           isClearing={isClearing}
+          onViewModifiedChange={onViewModifiedChange}
           readyHintText={t('whiteboard.readyHint')}
           readyText={t('whiteboard.ready')}
-          resetViewText={t('whiteboard.resetView')}
-          zoomHintText={t('whiteboard.zoomHint')}
         />
       </div>
-    </div>
-  );
-}
+    );
+  },
+);

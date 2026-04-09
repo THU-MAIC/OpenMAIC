@@ -48,15 +48,18 @@ const IMAGE_PROVIDER_ICONS: Record<string, string> = {
   seedream: '/logos/doubao.svg',
   'qwen-image': '/logos/bailian.svg',
   'nano-banana': '/logos/gemini.svg',
+  'grok-image': '/logos/grok.svg',
 };
 const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
   kling: '/logos/kling.svg',
   veo: '/logos/gemini.svg',
   sora: '/logos/openai.svg',
+  'grok-video': '/logos/grok.svg',
 };
 
 type TabId = 'image' | 'video' | 'tts' | 'asr' | 'outline';
+type MediaSettingsTabId = Exclude<TabId, 'outline'>;
 
 const LANG_LABELS: Record<string, string> = {
   zh: '中文',
@@ -81,6 +84,10 @@ const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
   { id: 'outline', icon: ListTree, label: 'Outline' },
 ];
 
+function isSettingsTab(tab: TabId): tab is MediaSettingsTabId {
+  return tab !== 'outline';
+}
+
 /** Localized TTS provider name (mirrors audio-settings.tsx) */
 function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => string): string {
   const names: Record<TTSProviderId, string> = {
@@ -88,6 +95,9 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
+    'doubao-tts': t('settings.providerDoubaoTTS'),
+    'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
+    'minimax-tts': t('settings.providerMiniMaxTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
   };
   return names[providerId] || providerId;
@@ -273,6 +283,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: ttsProviderId,
+        modelId: providerConfig?.modelId,
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
@@ -423,7 +434,6 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               enabled={ttsEnabled}
               onToggle={setTTSEnabled}
             >
-              {/* Provider + Voice grouped select + preview */}
               <div className="flex items-center gap-2">
                 <div className="flex-1 min-w-0">
                   <GroupedSelect
@@ -510,7 +520,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
         </div>
 
         {/* ── Footer ── */}
-        {activeTab !== 'outline' && (
+        {isSettingsTab(activeTab) && (
           <div className="border-t border-border/40">
             <button
               onClick={() => {

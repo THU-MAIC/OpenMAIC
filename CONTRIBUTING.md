@@ -8,11 +8,11 @@ Thank you for your interest in contributing to OpenMAIC! This guide will help yo
 | --- | --- |
 | **Bug fix** | Open a PR directly (link the issue if one exists) |
 | **Extending existing features** (e.g. adding a new model provider, new TTS engine) | Open a PR directly |
-| **New feature or architecture change** | Start a [GitHub Discussion](https://github.com/THU-MAIC/OpenMAIC/discussions) or ask in [Discord](https://discord.gg/PtZaaTbH) **before** opening a PR |
+| **New feature or architecture change** | Start a [GitHub Discussion](https://github.com/THU-MAIC/OpenMAIC/discussions) or ask in [Discord](https://discord.gg/uJRzqXuC) **before** opening a PR |
 | **Design / UI change** | Discuss in a GitHub Discussion or Discord first — include mockups or screenshots |
 | **Refactor-only PR** | Not accepted unless a maintainer explicitly requests it |
 | **Documentation** | Open a PR directly |
-| **Question** | Ask in [Discord](https://discord.gg/PtZaaTbH) |
+| **Question** | Ask in [Discord](https://discord.gg/uJRzqXuC) |
 
 ## Claiming Issues
 

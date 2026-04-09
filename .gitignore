@@ -19,6 +19,12 @@ CLAUDE.local.md
 # testing
 /coverage
 
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
 # next.js
 /.next/
 /out/

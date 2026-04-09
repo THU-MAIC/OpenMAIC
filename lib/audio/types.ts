@@ -9,6 +9,7 @@
  * - Azure TTS (https://learn.microsoft.com/en-us/azure/ai-services/speech-service/text-to-speech)
  * - GLM TTS (https://docs.bigmodel.cn/cn/guide/models/sound-and-video/glm-tts)
  * - Qwen TTS (https://bailian.console.aliyun.com/)
+ * - Doubao TTS (https://www.volcengine.com/docs/6561/1257543)
  * - Browser Native TTS (Web Speech API, client-side only)
  *
  * Currently Supported ASR Providers:
@@ -82,9 +83,11 @@ export type TTSProviderId =
   | 'azure-tts'
   | 'glm-tts'
   | 'qwen-tts'
+  | 'doubao-tts'
+  | 'elevenlabs-tts'
+  | 'minimax-tts'
   | 'browser-native-tts';
 // Add new TTS providers below (uncomment and modify):
-// | 'elevenlabs-tts'
 // | 'fish-audio-tts'
 // | 'cartesia-tts'
 // | 'playht-tts'
@@ -99,6 +102,8 @@ export interface TTSVoiceInfo {
   localeName?: string; // Language name in its native script (e.g., "中文（简体，中国）", "日本語")
   gender?: 'male' | 'female' | 'neutral';
   description?: string;
+  /** Model IDs this voice is compatible with. Undefined = all models. */
+  compatibleModels?: string[];
 }
 
 /**
@@ -110,6 +115,10 @@ export interface TTSProviderConfig {
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   icon?: string;
+  /** Available models. Empty array means provider has no model concept (e.g. Azure, Browser Native). */
+  models: Array<{ id: string; name: string }>;
+  /** Default model ID used when user hasn't selected one. Empty string if no models. */
+  defaultModelId: string;
   voices: TTSVoiceInfo[];
   supportedFormats: string[]; // ['mp3', 'wav', 'opus', etc.]
   speedRange?: {
@@ -124,11 +133,13 @@ export interface TTSProviderConfig {
  */
 export interface TTSModelConfig {
   providerId: TTSProviderId;
+  modelId?: string;
   apiKey?: string;
   baseUrl?: string;
   voice: string;
   speed?: number;
   format?: string;
+  providerOptions?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -157,6 +168,8 @@ export interface ASRProviderConfig {
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
   icon?: string;
+  models: Array<{ id: string; name: string }>;
+  defaultModelId: string;
   supportedLanguages: string[];
   supportedFormats: string[];
 }
@@ -166,6 +179,7 @@ export interface ASRProviderConfig {
  */
 export interface ASRModelConfig {
   providerId: ASRProviderId;
+  modelId?: string;
   apiKey?: string;
   baseUrl?: string;
   language?: string;

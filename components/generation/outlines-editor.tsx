@@ -86,7 +86,7 @@ export function OutlinesEditor({
         <div>
           <h2 className="text-lg font-semibold">{t('generation.outlineEditorTitle')}</h2>
           <p className="text-sm text-muted-foreground">
-            {t('generation.outlineEditorSummary').replace('{count}', String(outlines.length))}
+            {t('generation.outlineEditorSummary', { count: outlines.length })}
           </p>
         </div>
         <Button variant="outline" onClick={addOutline} disabled={isLoading}>

@@ -36,6 +36,10 @@
 </p>
 
 
+## 🗞️ 动态
+
+- **2026-03-26** — [v0.1.0 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0) 讨论语音、沉浸模式、键盘快捷键、白板增强、新 provider 等。查看[更新日志](CHANGELOG.md)。
+
 ## 📖 项目简介
 
 **OpenMAIC**（Open Multi-Agent Interactive Classroom）是一个开源的 AI 互动课堂平台，能够将任何主题或文档转化为丰富的互动学习体验。基于多智能体协作引擎，它可以自动生成演示幻灯片、测验、交互式模拟实验和项目制学习活动——由 AI 教师和 AI 同学进行语音讲解、白板绘图，并与你展开实时讨论。内置 [OpenClaw](https://github.com/openclaw/openclaw) 集成，你还可以直接在飞书、Slack、Telegram 等聊天应用中生成课堂。
@@ -97,6 +101,7 @@ cp .env.example .env.local
 OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=...
+GROK_API_KEY=xai-...
 ```
 
 也可以通过 `server-providers.yml` 配置服务商：
@@ -109,11 +114,30 @@ providers:
     apiKey: sk-ant-...
 ```
 
-支持的服务商：**OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek** 以及任何兼容 OpenAI API 的服务。
+支持的服务商：**OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**MiniMax**、**Grok (xAI)** 以及任何兼容 OpenAI API 的服务。
+
+MiniMax 快速示例：
+
+```env
+MINIMAX_API_KEY=...
+MINIMAX_BASE_URL=https://api.minimaxi.com/anthropic/v1
+DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed
+
+TTS_MINIMAX_API_KEY=...
+TTS_MINIMAX_BASE_URL=https://api.minimaxi.com
+
+IMAGE_MINIMAX_API_KEY=...
+IMAGE_MINIMAX_BASE_URL=https://api.minimaxi.com
+
+VIDEO_MINIMAX_API_KEY=...
+VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
+```
 
 > **推荐模型：** **Gemini 3 Flash** — 效果与速度的最佳平衡。追求最高质量可选 **Gemini 3.1 Pro**（速度较慢）。
 >
 > 如果希望 OpenMAIC 服务端默认走 Gemini，还需要额外设置 `DEFAULT_MODEL=google:gemini-3-flash-preview`。
+>
+> 如果希望默认走 MiniMax，可设置 `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`。
 
 ### 3. 启动
 

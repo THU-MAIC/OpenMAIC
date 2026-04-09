@@ -67,7 +67,7 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
       {notes.map((note, index) => {
         const isCurrent = note.sceneId === currentSceneId;
         const pageNum = index + 1;
-        const pageLabel = t('chat.lectureNotes.pageLabel').replace('{n}', String(pageNum));
+        const pageLabel = t('chat.lectureNotes.pageLabel', { n: pageNum });
 
         return (
           <div
