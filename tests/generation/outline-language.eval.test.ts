@@ -1,19 +1,19 @@
 /**
  * Outline Language Inference — Real LLM Evaluation Tests
  *
- * Tests the language directive inferred during outline generation.
- * Uses the actual outline system prompt to infer languageDirective,
- * then an LLM-as-judge to evaluate against ground truth.
+ * Tests the languageDirective inferred during REAL outline generation.
+ * Calls the actual generateSceneOutlinesFromRequirements function,
+ * then uses an LLM-as-judge to evaluate the directive against ground truth.
  *
  * Calls real LLM APIs — meant to be run locally, NOT in CI/CD.
  *
  * Environment variables:
- *   EVAL_INFERENCE_MODEL  Model for language inference (default: DEFAULT_MODEL or gpt-4o-mini)
- *   EVAL_JUDGE_MODEL      Model for LLM-as-judge (default: gpt-4o-mini)
+ *   EVAL_INFERENCE_MODEL  Model for outline generation (default: DEFAULT_MODEL or gpt-4o-mini)
+ *   EVAL_JUDGE_MODEL      Model for LLM-as-judge (default: openai:gpt-4o-mini)
  *
  * Usage:
- *   EVAL_INFERENCE_MODEL=google/gemini-2.5-flash-preview-04-17 \
- *   EVAL_JUDGE_MODEL=openai/gpt-4o-mini \
+ *   EVAL_INFERENCE_MODEL=google:gemini-3-flash-preview \
+ *   EVAL_JUDGE_MODEL=openai:gpt-4o-mini \
  *   pnpm vitest run tests/generation/outline-language.eval.test.ts
  *
  * Results are written to tests/generation/outline-language.eval.result.md
@@ -23,9 +23,10 @@ import { describe, it, expect, afterAll } from 'vitest';
 import { writeFileSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { generateText } from 'ai';
-import { buildPrompt, PROMPT_IDS } from '@/lib/generation/prompts';
+import { generateSceneOutlinesFromRequirements } from '@/lib/generation/outline-generator';
 import { resolveModel } from '@/lib/server/resolve-model';
-import { parseJsonResponse } from '@/lib/generation/json-repair';
+import type { AICallFn } from '@/lib/generation/pipeline-types';
+import { callLLM } from '@/lib/ai/llm';
 
 // ---------------------------------------------------------------------------
 // Test case definition
@@ -53,7 +54,7 @@ const TEST_CASES: LanguageTestCase[] = JSON.parse(
 // Model resolution
 // ---------------------------------------------------------------------------
 
-const JUDGE_MODEL_DEFAULT = 'openai/gpt-4o-mini';
+const JUDGE_MODEL_DEFAULT = 'openai:gpt-4o-mini';
 
 /** Resolve the inference model (EVAL_INFERENCE_MODEL → DEFAULT_MODEL → gpt-4o-mini) */
 function getInferenceModel() {
@@ -70,61 +71,29 @@ function getJudgeModel() {
 }
 
 // ---------------------------------------------------------------------------
-// Language directive extraction via outline prompt
+// Build AICallFn from the inference model
 // ---------------------------------------------------------------------------
 
-/**
- * Call the outline generation prompt but only ask for the languageDirective.
- * Uses the real system prompt to ensure we test the actual inference behavior,
- * but overrides the user prompt to skip full outline generation (saves tokens).
- */
-async function inferLanguageDirectiveViaOutlinePrompt(
-  requirement: string,
-  pdfTextSample?: string,
-): Promise<string> {
-  const { model } = getInferenceModel();
-
-  // Build the real system prompt (same one used in production)
-  const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
-    requirement,
-    pdfContent: 'None',
-    availableImages: 'No images available',
-    userProfile: '',
-    mediaGenerationPolicy:
-      '**IMPORTANT: Do NOT include any mediaGenerations in the outlines. Both image and video generation are disabled.**',
-    researchContext: 'None',
-    teacherContext: '',
-    pdfLanguageSample: pdfTextSample || '',
-  });
-
-  if (!prompts) {
-    throw new Error('Failed to build outline prompt');
-  }
-
-  // Override user prompt: ask for ONLY the languageDirective, skip outlines
-  const userPrompt = `${prompts.user}
-
-**IMPORTANT: For this request, ONLY output the languageDirective field. Do NOT generate outlines.**
-
-Output format:
-{"languageDirective": "your 2-5 sentence directive here"}`;
-
-  const result = await generateText({
-    model,
-    system: prompts.system,
-    prompt: userPrompt,
-    temperature: 0,
-  });
-
-  const parsed = parseJsonResponse<{ languageDirective: string }>(result.text);
-  if (!parsed?.languageDirective) {
-    throw new Error(`Failed to parse languageDirective: ${result.text.slice(0, 200)}`);
-  }
-  return parsed.languageDirective;
+function buildAICallFn(): AICallFn {
+  const { model: languageModel, modelInfo } = getInferenceModel();
+  return async (systemPrompt, userPrompt, _images) => {
+    const result = await callLLM(
+      {
+        model: languageModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        maxOutputTokens: modelInfo?.outputWindow,
+      },
+      'eval-outline-language',
+    );
+    return result.text;
+  };
 }
 
 // ---------------------------------------------------------------------------
-// LLM Judge (uses a small/fast model)
+// LLM Judge
 // ---------------------------------------------------------------------------
 
 const JUDGE_SYSTEM_PROMPT = `You are evaluating whether a language directive for an AI course generation system is reasonable given the expected behavior.
@@ -184,6 +153,7 @@ interface EvalResult {
   requirement: string;
   groundTruth: string;
   directive: string;
+  outlinesCount: number;
   judgePassed: boolean;
   judgeReason: string;
 }
@@ -195,24 +165,39 @@ const results: EvalResult[] = [];
 // ---------------------------------------------------------------------------
 
 describe('Outline Language Inference Evaluation', () => {
+  const aiCall = buildAICallFn();
+
   for (const tc of TEST_CASES) {
     it(
       `${tc.case_id}: ${tc.requirement.slice(0, 50)}`,
-      { timeout: 60_000 },
+      { timeout: 120_000 },
       async () => {
-        // Step 1: Infer language directive via outline prompt
-        const directive = await inferLanguageDirectiveViaOutlinePrompt(tc.requirement);
-        expect(directive, 'directive should not be empty').toBeTruthy();
+        // Call the REAL outline generation function
+        const result = await generateSceneOutlinesFromRequirements(
+          { requirement: tc.requirement },
+          undefined, // no PDF text
+          undefined, // no PDF images
+          aiCall,
+          undefined, // no callbacks
+        );
 
-        // Step 2: LLM-as-judge
-        const judge = await judgeDirective(tc.requirement, directive, tc.ground_truth);
+        expect(result.success, `Outline generation failed: ${result.error}`).toBe(true);
+        expect(result.data).toBeDefined();
+
+        const { languageDirective, outlines } = result.data!;
+        expect(languageDirective, 'languageDirective should not be empty').toBeTruthy();
+        expect(outlines.length, 'should generate at least 1 outline').toBeGreaterThan(0);
+
+        // LLM-as-judge
+        const judge = await judgeDirective(tc.requirement, languageDirective, tc.ground_truth);
 
         results.push({
           case_id: tc.case_id,
           category: tc.category,
           requirement: tc.requirement,
           groundTruth: tc.ground_truth,
-          directive,
+          directive: languageDirective,
+          outlinesCount: outlines.length,
           judgePassed: judge.pass,
           judgeReason: judge.reason,
         });
@@ -228,8 +213,8 @@ describe('Outline Language Inference Evaluation', () => {
 
     const passed = results.filter((r) => r.judgePassed).length;
     const total = results.length;
-
-    const inferenceModelStr = process.env.EVAL_INFERENCE_MODEL || process.env.DEFAULT_MODEL || '(default: gpt-4o-mini)';
+    const inferenceModelStr =
+      process.env.EVAL_INFERENCE_MODEL || process.env.DEFAULT_MODEL || '(default: gpt-4o-mini)';
     const judgeModelStr = process.env.EVAL_JUDGE_MODEL || JUDGE_MODEL_DEFAULT;
 
     const lines: string[] = [
@@ -239,7 +224,7 @@ describe('Outline Language Inference Evaluation', () => {
       `- **Passed**: ${passed}/${total} (${((passed / total) * 100).toFixed(0)}%)`,
       `- **Inference model**: ${inferenceModelStr}`,
       `- **Judge model**: ${judgeModelStr}`,
-      `- **Method**: outline system prompt + LLM-as-judge`,
+      `- **Method**: real outline generation (generateSceneOutlinesFromRequirements) + LLM-as-judge`,
       `- **Test cases**: curated from production data`,
       ``,
       `## Detail`,
@@ -255,19 +240,22 @@ describe('Outline Language Inference Evaluation', () => {
       lines.push(`- **Input**: \`${r.requirement}\``);
       lines.push(`- **Ground truth**: ${r.groundTruth}`);
       lines.push(`- **Directive**: ${r.directive}`);
-      lines.push(`- **Judge**: ${r.judgePassed ? 'PASS' : 'FAIL'} — ${r.judgeReason}`);
+      lines.push(`- **Outlines generated**: ${r.outlinesCount}`);
+      lines.push(
+        `- **Judge**: ${r.judgePassed ? 'PASS' : 'FAIL'} — ${r.judgeReason}`,
+      );
       lines.push(``);
     }
 
     lines.push(`## Summary`);
     lines.push(``);
-    lines.push(`| # | Case | Category | Result | Judge reason |`);
-    lines.push(`|---|------|----------|--------|--------------|`);
+    lines.push(`| # | Case | Category | Outlines | Result | Judge reason |`);
+    lines.push(`|---|------|----------|----------|--------|--------------|`);
     for (let i = 0; i < results.length; i++) {
       const r = results[i];
       const icon = r.judgePassed ? 'PASS' : 'FAIL';
       lines.push(
-        `| ${i + 1} | ${r.case_id} | ${r.category} | ${icon} | ${r.judgeReason} |`,
+        `| ${i + 1} | ${r.case_id} | ${r.category} | ${r.outlinesCount} | ${icon} | ${r.judgeReason} |`,
       );
     }
     lines.push(``);
