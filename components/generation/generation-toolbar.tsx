@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Check, ChevronLeft, Paperclip, FileText, X, Globe2 } from 'lucide-react';
+import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2, Sparkles } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -31,6 +31,8 @@ const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 export interface GenerationToolbarProps {
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
+  ultraMode: boolean;
+  onUltraModeChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
   // PDF
   pdfFile: File | null;
@@ -42,6 +44,8 @@ export interface GenerationToolbarProps {
 export function GenerationToolbar({
   webSearch,
   onWebSearchChange,
+  ultraMode,
+  onUltraModeChange,
   onSettingsOpen,
   pdfFile,
   onPdfFileChange,
@@ -355,6 +359,19 @@ export function GenerationToolbar({
           <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
         </Tooltip>
       )}
+
+      {/* ── Ultra Mode ── */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() => onUltraModeChange(!ultraMode)}
+            className={ultraMode ? pillActive : pillMuted}
+          >
+            <Sparkles className={cn('size-3.5', ultraMode && 'animate-pulse')} />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{t('toolbar.ultraModeHint')}</TooltipContent>
+      </Tooltip>
 
       {/* ── Separator ── */}
       <div className="w-px h-4 bg-border/60 mx-1" />

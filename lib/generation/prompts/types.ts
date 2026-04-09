@@ -7,6 +7,7 @@
  */
 export type PromptId =
   | 'requirements-to-outlines'
+  | 'ultra-outlines'
   | 'web-search-query-rewrite'
   | 'slide-content'
   | 'quiz-content'
@@ -15,6 +16,12 @@ export type PromptId =
   | 'interactive-scientific-model'
   | 'interactive-html'
   | 'interactive-actions'
+  | 'simulation-content'
+  | 'diagram-content'
+  | 'code-content'
+  | 'game-content'
+  | 'visualization3d-content'
+  | 'widget-teacher-actions'
   | 'pbl-actions';
 
 /**

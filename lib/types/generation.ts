@@ -51,6 +51,7 @@ export interface UserRequirements {
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
+  ultraMode?: boolean; // Enable Ultra Mode for interactive-first generation
 }
 
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
@@ -93,6 +94,22 @@ export interface SceneOutline {
     targetSkills: string[];
     issueCount?: number;
   };
+  // Ultra Mode widget fields
+  widgetType?: WidgetType;
+  widgetOutline?: {
+    concept?: string;
+    keyVariables?: string[];
+    diagramType?: string;
+    nodeCount?: number;
+    language?: string;
+    challengeType?: string;
+    gameType?: string;
+    questionCount?: number;
+    visualizationType?: string;
+    objectCount?: number;
+    objects?: string[];
+    interactions?: string[];
+  };
 }
 
 // ==================== Stage 3 Output: Generated Content ====================
@@ -129,6 +146,8 @@ export interface GeneratedPBLContent {
 
 // ==================== Interactive Generation Types ====================
 
+import type { WidgetConfig, TeacherAction, WidgetType } from './widgets';
+
 /**
  * Scientific model output from scientific modeling stage
  */
@@ -145,6 +164,9 @@ export interface ScientificModel {
 export interface GeneratedInteractiveContent {
   html: string;
   scientificModel?: ScientificModel;
+  widgetType?: WidgetType;
+  widgetConfig?: WidgetConfig;
+  teacherActions?: TeacherAction[];
 }
 
 // ==================== Legacy Types (for compatibility) ====================

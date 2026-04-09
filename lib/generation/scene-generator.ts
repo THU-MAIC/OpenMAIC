@@ -18,6 +18,8 @@ import type {
   PdfImage,
   ImageMapping,
 } from '@/lib/types/generation';
+import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
+import type { PromptId } from './prompts/types';
 import type { LanguageModel } from 'ai';
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
@@ -188,6 +190,15 @@ export async function generateSceneContent(
     agents,
     languageDirective,
   } = options;
+
+  // Ultra Mode: Check for widget-based interactive first
+  if (outline.type === 'interactive' && outline.widgetType && outline.widgetOutline) {
+    log.info(
+      `Routing to widget generation: type=${outline.widgetType}, title="${outline.title}"`,
+    );
+    return generateWidgetContent(outline, aiCall, outline.language || 'zh-CN');
+  }
+
   // If outline is interactive but missing interactiveConfig, fall back to slide
   if (outline.type === 'interactive' && !outline.interactiveConfig) {
     log.warn(
@@ -930,6 +941,179 @@ function extractHtml(response: string): string | null {
   log.error('Could not extract HTML from response');
   log.error('Response preview:', response.substring(0, 200));
   return null;
+}
+
+// ==================== Ultra Mode Widget Generation ====================
+
+/**
+ * Generate widget content based on widget type (Ultra Mode)
+ */
+async function generateWidgetContent(
+  outline: SceneOutline,
+  aiCall: AICallFn,
+  language: 'zh-CN' | 'en-US',
+): Promise<GeneratedInteractiveContent | null> {
+  const widgetType = outline.widgetType;
+  const widgetOutline = outline.widgetOutline;
+
+  if (!widgetType || !widgetOutline) {
+    log.warn(`Interactive outline missing widget config, falling back to standard interactive`);
+    return null;
+  }
+
+  // Select appropriate prompt based on widget type
+  let promptId: PromptId;
+  let variables: Record<string, unknown>;
+
+  switch (widgetType) {
+    case 'simulation':
+      promptId = PROMPT_IDS.SIMULATION_CONTENT;
+      variables = {
+        conceptName: widgetOutline.concept || outline.title,
+        conceptOverview: outline.description,
+        keyPoints: (outline.keyPoints || []).join('\n'),
+        variables: widgetOutline.keyVariables?.join(', ') || '',
+        designIdea: '',
+        language,
+      };
+      break;
+
+    case 'diagram':
+      promptId = PROMPT_IDS.DIAGRAM_CONTENT;
+      variables = {
+        title: outline.title,
+        diagramType: widgetOutline.diagramType || 'flowchart',
+        description: outline.description,
+        keyPoints: (outline.keyPoints || []).join('\n'),
+        language,
+      };
+      break;
+
+    case 'code':
+      promptId = PROMPT_IDS.CODE_CONTENT;
+      variables = {
+        title: outline.title,
+        programmingLanguage: widgetOutline.language || 'python',
+        description: outline.description,
+        keyPoints: (outline.keyPoints || []).join('\n'),
+        starterCode: '',
+        testCases: 'Generate appropriate test cases',
+        hints: 'Generate 3 progressive hints',
+        language,
+      };
+      break;
+
+    case 'game':
+      promptId = PROMPT_IDS.GAME_CONTENT;
+      variables = {
+        title: outline.title,
+        gameType: widgetOutline.gameType || 'quiz',
+        description: outline.description,
+        keyPoints: (outline.keyPoints || []).join('\n'),
+        questions: 'Generate questions based on key points',
+        scoring: { correctPoints: 10, speedBonus: 5 },
+        language,
+      };
+      break;
+
+    case 'visualization3d':
+      promptId = PROMPT_IDS.VISUALIZATION3D_CONTENT;
+      variables = {
+        title: outline.title,
+        visualizationType: widgetOutline.visualizationType || 'custom',
+        description: outline.description,
+        keyPoints: (outline.keyPoints || []).join('\n'),
+        objects: widgetOutline.objects || [],
+        interactions: widgetOutline.interactions || [],
+        language,
+      };
+      break;
+
+    default:
+      log.warn(`Unknown widget type: ${widgetType}`);
+      return null;
+  }
+
+  const prompts = buildPrompt(promptId, variables);
+  if (!prompts) {
+    log.error(`Failed to build ${widgetType} prompt for: ${outline.title}`);
+    return null;
+  }
+
+  log.info(`Generating ${widgetType} widget for: ${outline.title}`);
+  const response = await aiCall(prompts.system, prompts.user);
+  const html = extractHtml(response);
+
+  if (!html) {
+    log.error(`Failed to extract HTML from ${widgetType} response for: ${outline.title}`);
+    return null;
+  }
+
+  // Extract widget config from HTML if present
+  const widgetConfig = extractWidgetConfig(html);
+
+  // Generate teacher actions
+  const teacherActions = await generateWidgetTeacherActions(
+    widgetType,
+    outline,
+    widgetConfig,
+    aiCall,
+    language,
+  );
+  log.info(`[Ultra Mode] Generated ${teacherActions?.length || 0} teacher actions for "${outline.title}" (${widgetType})`);
+  if (teacherActions && teacherActions.length > 0) {
+    log.info(`[Ultra Mode] Teacher actions for "${outline.title}": ${JSON.stringify(teacherActions, null, 2)}`);
+  }
+
+  return {
+    html: postProcessInteractiveHtml(html),
+    widgetType,
+    widgetConfig,
+    teacherActions,
+  };
+}
+
+/**
+ * Extract widget config from embedded JSON in HTML
+ */
+function extractWidgetConfig(html: string): WidgetConfig | undefined {
+  const match = html.match(/<script type="application\/json" id="widget-config">([\s\S]*?)<\/script>/);
+  if (!match) return undefined;
+
+  try {
+    return JSON.parse(match[1]);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Generate teacher actions for a widget
+ */
+async function generateWidgetTeacherActions(
+  widgetType: WidgetType,
+  outline: SceneOutline,
+  widgetConfig: WidgetConfig | undefined,
+  aiCall: AICallFn,
+  language: 'zh-CN' | 'en-US',
+): Promise<TeacherAction[] | undefined> {
+  const prompts = buildPrompt(PROMPT_IDS.WIDGET_TEACHER_ACTIONS, {
+    widgetType,
+    description: outline.description,
+    keyPoints: (outline.keyPoints || []).join('\n'),
+    widgetConfig: JSON.stringify(widgetConfig || {}),
+    language,
+  });
+
+  if (!prompts) return undefined;
+
+  try {
+    const response = await aiCall(prompts.system, prompts.user);
+    const parsed = parseJsonResponse<{ actions: TeacherAction[] }>(response);
+    return parsed?.actions;
+  } catch {
+    return undefined;
+  }
 }
 
 /**

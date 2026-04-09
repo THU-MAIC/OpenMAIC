@@ -19,6 +19,7 @@ import {
   BotOff,
   ChevronUp,
   Upload,
+  Sparkles,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -55,17 +56,20 @@ const log = createLogger('Home');
 
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
+const ULTRA_MODE_STORAGE_KEY = 'ultraModeEnabled';
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
   webSearch: boolean;
+  ultraMode: boolean;
 }
 
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
   webSearch: false,
+  ultraMode: false,
 };
 
 function HomePage() {
@@ -97,8 +101,10 @@ function HomePage() {
     }
     try {
       const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
+      const savedUltraMode = localStorage.getItem(ULTRA_MODE_STORAGE_KEY);
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
+      if (savedUltraMode === 'true') updates.ultraMode = true;
       if (Object.keys(updates).length > 0) {
         setForm((prev) => ({ ...prev, ...updates }));
       }
@@ -198,6 +204,7 @@ function HomePage() {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
       if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
+      if (field === 'ultraMode') localStorage.setItem(ULTRA_MODE_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
     } catch {
       /* ignore */
@@ -260,6 +267,7 @@ function HomePage() {
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: form.webSearch || undefined,
+        ultraMode: form.ultraMode,
       };
 
       let pdfStorageKey: string | undefined;
@@ -505,6 +513,8 @@ function HomePage() {
                 <GenerationToolbar
                   webSearch={form.webSearch}
                   onWebSearchChange={(v) => updateForm('webSearch', v)}
+                  ultraMode={form.ultraMode}
+                  onUltraModeChange={(v) => updateForm('ultraMode', v)}
                   onSettingsOpen={(section) => {
                     setSettingsSection(section);
                     setSettingsOpen(true);
