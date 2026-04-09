@@ -169,5 +169,35 @@
     "prod_id": "from_en_cases",
     "prod_name": "",
     "ground_truth": "Teaching language: English. The user is an advanced Chinese English learner (TEM-8) who can fully understand English but lacks native-level spoken fluency and complexity. Course should be in English, encouraging use of more sophisticated and precise expressions instead of defaulting to simple phrasing."
+  },
+  {
+    "case_id": "zh_translate_en_pdf",
+    "category": "zh_requirement_english_pdf",
+    "requirement": "讲文献翻译为中文，并给出一份文献总结",
+    "prod_language": "en-US",
+    "prod_id": "pdf_case_1",
+    "prod_name": "",
+    "ground_truth": "Teaching language: Chinese. The source document is an English academic paper (SPE/petroleum engineering). Teach in Chinese, with English technical terms preserved on first mention alongside Chinese translations, to help the student understand and summarize the paper.",
+    "pdfTextSample": "SPE-230629-MS\nPhysics-Based Interpretation of RFS-DSS for Far-Field Monitoring of\nFracture Conductivity\nQueendarlyn A. Nwabueze and Smith Leggett, Bob L. Herd Department of Petroleum Engineering, Texa"
+  },
+  {
+    "case_id": "zh_esl_teacher_en_article",
+    "category": "zh_teacher_english_article",
+    "requirement": "作为ESL老师，我要教学生这篇文章，一是要掌握生词，二是要掌握文章结构，三是其他你觉得适合ESL学生学习的技巧。比如summary skills。",
+    "prod_language": "zh-CN",
+    "prod_id": "pdf_case_2",
+    "prod_name": "",
+    "ground_truth": "Teaching language: Chinese. This is a Chinese ESL teacher preparing a lesson using an English article. Course should be taught in Chinese, with the English article content used as learning material. English vocabulary, sentence structures, and summary skills should be explicitly taught.",
+    "pdfTextSample": "Before You Read\nU7A-p.94\n7A\nA. Discussion. Look at the information and captions, paying attention to the \nwords in bold. Then answer the questions below.\n1. What kind of animals were dinosaurs? When d"
+  },
+  {
+    "case_id": "zh_cpp_chinese_pdf",
+    "category": "zh_requirement_chinese_pdf",
+    "requirement": "根据我上传的PDF大纲，帮我生成第五周的C++学习课程",
+    "prod_language": "zh-CN",
+    "prod_id": "pdf_case_3",
+    "prod_name": "",
+    "ground_truth": "Teaching language: Chinese. Both the requirement and the PDF syllabus are in Chinese. C++ programming terms should be kept in English. Teach in Chinese following the uploaded syllabus.",
+    "pdfTextSample": "第5 周：复杂一点的判断\n学习主题: 多分支与逻辑运算符\n知识要点:\n多分支结构: else-if 语句\n逻辑运算符: 与(&&)、或(||)、非(!)\n运算符的优先级\n多区间判断问题(如成绩等级划分)\n学习意义: 掌握处理复杂、多条件组合的判断场景，让程序能够应对更丰富的现实问题。"
   }
 ]

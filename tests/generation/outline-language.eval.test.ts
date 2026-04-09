@@ -40,6 +40,7 @@ interface LanguageTestCase {
   prod_id: string;
   prod_name: string;
   ground_truth: string;
+  pdfTextSample?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +152,7 @@ interface EvalResult {
   case_id: string;
   category: string;
   requirement: string;
+  pdfTextSample?: string;
   groundTruth: string;
   directive: string;
   outlinesCount: number;
@@ -164,7 +166,7 @@ const results: EvalResult[] = [];
 // Test runner
 // ---------------------------------------------------------------------------
 
-describe('Outline Language Inference Evaluation', () => {
+describe('Outline Language Inference Evaluation', { concurrent: true, maxConcurrency: 10 }, () => {
   const aiCall = buildAICallFn();
 
   for (const tc of TEST_CASES) {
@@ -175,7 +177,7 @@ describe('Outline Language Inference Evaluation', () => {
         // Call the REAL outline generation function
         const result = await generateSceneOutlinesFromRequirements(
           { requirement: tc.requirement },
-          undefined, // no PDF text
+          tc.pdfTextSample || undefined, // pass PDF text if available
           undefined, // no PDF images
           aiCall,
           undefined, // no callbacks
@@ -195,6 +197,7 @@ describe('Outline Language Inference Evaluation', () => {
           case_id: tc.case_id,
           category: tc.category,
           requirement: tc.requirement,
+          pdfTextSample: tc.pdfTextSample,
           groundTruth: tc.ground_truth,
           directive: languageDirective,
           outlinesCount: outlines.length,
@@ -238,6 +241,9 @@ describe('Outline Language Inference Evaluation', () => {
       lines.push(``);
       lines.push(`- **Category**: ${r.category}`);
       lines.push(`- **Input**: \`${r.requirement}\``);
+      if (r.pdfTextSample) {
+        lines.push(`- **PDF sample**: \`${r.pdfTextSample.slice(0, 80)}...\``);
+      }
       lines.push(`- **Ground truth**: ${r.groundTruth}`);
       lines.push(`- **Directive**: ${r.directive}`);
       lines.push(`- **Outlines generated**: ${r.outlinesCount}`);

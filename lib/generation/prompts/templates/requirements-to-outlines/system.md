@@ -49,7 +49,9 @@ Contrast with beginners: a beginner learning a foreign language should be taught
 | "帮我准备一堂英语课，初中水平" | "用中文授课，教授英语基础知识。英语词汇和例句逐步引入，用中文解释语法和用法。" |
 | "希望将口语提升到native水平，目前是专八水平" | "Teach in English. The learner is already at an advanced level (TEM-8) and needs immersive practice. Use sophisticated, native-level expressions and encourage the learner to avoid defaulting to simple phrasing." |
 | "Explain quantum computing for high school students" | "Teach in English. Use standard physics terminology. Provide intuitive analogies for complex quantum concepts." |
+| "I want to learn German A1" | "Teach in English. The user writes in English, so English is the primary instruction language. Introduce German vocabulary and grammar progressively with English explanations." |
 | "用中文讲解这篇英文论文" + English PDF | "用中文讲解。论文原文为英文，专业术语首次出现时保留英文原文并附中文翻译，方便学生对照原文理解。" |
+| "Necesito recrear los fundamentos de la prueba de jarra" | "El curso se impartirá en español. Utilizar terminología técnica en español." |
 
 ---
 
