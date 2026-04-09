@@ -1,7 +1,9 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useRef, useState, useEffect } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
+import type { TeacherAction } from '@/lib/types/widgets';
+import { TeacherOverlay } from '@/components/widgets/TeacherOverlay';
 
 interface InteractiveRendererProps {
   readonly content: InteractiveContent;
@@ -9,21 +11,55 @@ interface InteractiveRendererProps {
   readonly sceneId: string;
 }
 
-export function InteractiveRenderer({ content, mode: _mode, sceneId }: InteractiveRendererProps) {
+export function InteractiveRenderer({ content, mode, sceneId }: InteractiveRendererProps) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [widgetConfig, setWidgetConfig] = useState<InteractiveContent['widgetConfig']>(undefined);
+
   const patchedHtml = useMemo(
     () => (content.html ? patchHtmlForIframe(content.html) : undefined),
     [content.html],
   );
 
+  // Extract widget config from HTML on mount
+  useEffect(() => {
+    if (content.widgetConfig) {
+      setWidgetConfig(content.widgetConfig);
+    } else if (content.html) {
+      // Try to extract from embedded JSON
+      const match = content.html.match(/<script type="application\/json" id="widget-config">([\s\S]*?)<\/script>/);
+      if (match) {
+        try {
+          setWidgetConfig(JSON.parse(match[1]));
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    }
+  }, [content.html, content.widgetConfig]);
+
+  const hasWidget = content.widgetType && widgetConfig;
+  const hasTeacherActions = hasWidget && (content.teacherActions?.length ?? 0) > 0;
+  const inPlaybackMode = mode === 'playback';
+
   return (
     <div className="w-full h-full relative">
       <iframe
+        ref={iframeRef}
         srcDoc={patchedHtml}
         src={patchedHtml ? undefined : content.url}
         className="absolute inset-0 w-full h-full border-0"
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
       />
+
+      {/* Teacher overlay for widgets with teacher actions */}
+      {hasTeacherActions && (
+        <TeacherOverlay
+          actions={content.teacherActions!}
+          iframeRef={iframeRef}
+          inPlaybackMode={inPlaybackMode}
+        />
+      )}
     </div>
   );
 }
