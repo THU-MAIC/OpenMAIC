@@ -10,6 +10,7 @@ export type PromptId =
   | 'web-search-query-rewrite'
   | 'slide-content'
   | 'slide-portrait-content'
+  | 'slide-landscape-content'
   | 'quiz-content'
   | 'slide-actions'
   | 'quiz-actions'

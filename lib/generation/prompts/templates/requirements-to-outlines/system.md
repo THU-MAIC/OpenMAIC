@@ -24,6 +24,9 @@ Based on the user's free-form requirement text, automatically infer course detai
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
 - **Duration Control**: Each scene should be 1-3 minutes (PBL scenes are longer, typically 15-30 minutes)
+- **Aspect Ratio Awareness**: The course will be primarily displayed in **{{aspectRatio}}** mode.
+  - **Portrait (4:5)**: Focus on vertical stacking, scannable lists, and avoid side-by-side elements. Ideal for mobile and vertical displays.
+  - **Landscape (16:9)**: Standard wide-screen layout. Supports multiple columns and side-by-side content.
 
 ### Instructional Design Principles
 

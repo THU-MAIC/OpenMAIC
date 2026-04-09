@@ -68,6 +68,7 @@ export interface UserRequirements {
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
+  aspectRatio?: 'portrait' | 'landscape'; // Preferred aspect ratio for generation
 }
 
 /**
@@ -126,6 +127,7 @@ export interface SceneOutline {
     issueCount?: number;
     language: 'zh-CN' | 'en-US';
   };
+  aspectRatio?: 'portrait' | 'landscape'; // Generation aspect ratio (inherited from requirements)
 }
 
 // ==================== Stage 3 Output: Generated Content ====================
@@ -141,6 +143,8 @@ export interface GeneratedSlideContent {
   background?: SlideBackground;
   portraitElements?: PPTElement[];
   portraitBackground?: SlideBackground;
+  landscapeElements?: PPTElement[];
+  landscapeBackground?: SlideBackground;
   remark?: string;
 }
 

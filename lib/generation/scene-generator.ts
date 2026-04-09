@@ -126,28 +126,71 @@ async function generateSingleScene(
   api: ReturnType<typeof createStageAPI>,
   aiCall: AICallFn,
 ): Promise<string | null> {
-  // Step 3.1: Generate content (landscape)
-  log.info(`Step 3.1: Generating content for: ${outline.title}`);
-  const content = await generateSceneContent(outline, aiCall);
+  const isPortraitPrimary = outline.aspectRatio === 'portrait';
+  
+  // Dimensions
+  const LANDSCAPE_WIDTH = 1000;
+  const LANDSCAPE_HEIGHT = 562.5;
+  const PORTRAIT_WIDTH = 800;
+  const PORTRAIT_HEIGHT = 1000;
+
+  const primaryWidth = isPortraitPrimary ? PORTRAIT_WIDTH : LANDSCAPE_WIDTH;
+  const primaryHeight = isPortraitPrimary ? PORTRAIT_HEIGHT : LANDSCAPE_HEIGHT;
+  const secondaryWidth = isPortraitPrimary ? LANDSCAPE_WIDTH : PORTRAIT_WIDTH;
+  const secondaryHeight = isPortraitPrimary ? LANDSCAPE_HEIGHT : PORTRAIT_HEIGHT;
+
+  // Step 3.1: Generate content (Primary Orientation)
+  log.info(`Step 3.1: Generating ${outline.aspectRatio || 'landscape'} content for: ${outline.title}`);
+  const content = await generateSceneContent(
+    outline, 
+    aiCall, 
+    undefined, 
+    undefined, 
+    undefined, 
+    undefined, 
+    undefined, 
+    undefined, 
+    primaryWidth, 
+    primaryHeight
+  );
+  
   if (!content) {
     log.error(`Failed to generate content for: ${outline.title}`);
     return null;
   }
 
-  // Step 3.2: Generate Actions + Step 3.3: Generate Portrait Layout (if slide)
-  log.info(`Step 3.2: Generating actions and portrait layout for: ${outline.title}`);
+  // Step 3.2: Generate Actions + Step 3.3: Generate Secondary Layout (if slide)
+  log.info(`Step 3.2: Generating actions and secondary layout for: ${outline.title}`);
   
-  const [actions, portraitResult] = await Promise.all([
+  const [actions, secondaryResult] = await Promise.all([
     generateSceneActions(outline, content, aiCall),
     outline.type === 'slide' 
-      ? generateSlidePortraitContent(outline, content as GeneratedSlideContent, aiCall)
+      ? generateSlideTransformLayout(
+          outline, 
+          content as GeneratedSlideContent, 
+          aiCall,
+          secondaryWidth,
+          secondaryHeight,
+          isPortraitPrimary ? 'landscape' : 'portrait'
+        )
       : Promise.resolve(null)
   ]);
 
-  if (portraitResult && 'elements' in content) {
-    (content as GeneratedSlideContent).portraitElements = portraitResult.elements;
-    (content as GeneratedSlideContent).portraitBackground = portraitResult.background;
-    log.info(`Generated portrait layout for: ${outline.title}`);
+  if (secondaryResult && 'elements' in content) {
+    const slideContent = content as GeneratedSlideContent;
+    if (isPortraitPrimary) {
+      // Primary was portrait, secondary is landscape
+      // We need to swap them for createSceneWithActions which expects landscape in .elements
+      // Actually, createSceneWithActions uses content.elements as the FIRST canvas.
+      // We should keep the primary as content.elements.
+      slideContent.landscapeElements = secondaryResult.elements;
+      slideContent.landscapeBackground = secondaryResult.background;
+    } else {
+      // Primary was landscape, secondary is portrait
+      slideContent.portraitElements = secondaryResult.elements;
+      slideContent.portraitBackground = secondaryResult.background;
+    }
+    log.info(`Generated secondary layout for: ${outline.title}`);
   }
 
   log.info(`Generated ${actions.length} actions for: ${outline.title}`);
@@ -168,6 +211,8 @@ export async function generateSceneContent(
   visionEnabled?: boolean,
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
+  customWidth?: number,
+  customHeight?: number,
 ): Promise<
   | GeneratedSlideContent
   | GeneratedQuizContent
@@ -189,6 +234,8 @@ export async function generateSceneContent(
       visionEnabled,
       generatedMediaMapping,
       agents,
+      customWidth,
+      customHeight,
     );
   }
 
@@ -202,6 +249,8 @@ export async function generateSceneContent(
         visionEnabled,
         generatedMediaMapping,
         agents,
+        customWidth,
+        customHeight,
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall);
@@ -479,6 +528,8 @@ async function generateSlideContent(
   visionEnabled?: boolean,
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
+  customWidth?: number,
+  customHeight?: number,
 ): Promise<GeneratedSlideContent | null> {
   const lang = outline.language || 'zh-CN';
 
@@ -543,8 +594,8 @@ async function generateSlideContent(
   }
 
   // Canvas dimensions (matching viewportSize and viewportRatio)
-  const canvasWidth = 1000;
-  const canvasHeight = 562.5;
+  const canvasWidth = customWidth ?? 1000;
+  const canvasHeight = customHeight ?? 562.5;
 
   const teacherContext = formatTeacherPersonaForPrompt(agents);
 
@@ -1234,25 +1285,43 @@ export function createSceneWithActions(
       shadow: { h: 0, v: 0, blur: 10, color: '#000000' },
     };
 
+    const isPortraitPrimary = outline.aspectRatio === 'portrait';
+    
+    // 1. Identify Landscape Elements
+    const landscapeElements = isPortraitPrimary 
+      ? content.landscapeElements || [] 
+      : content.elements;
+    const landscapeBackground = isPortraitPrimary
+      ? content.landscapeBackground
+      : content.background;
+
+    // 2. Identify Portrait Elements
+    const portraitElements = isPortraitPrimary
+      ? content.elements
+      : content.portraitElements;
+    const portraitBackground = isPortraitPrimary
+      ? content.background
+      : content.portraitBackground;
+
     const slide: Slide = {
       id: nanoid(),
       viewportSize: 1000,
       viewportRatio: 0.5625,
       theme: defaultTheme,
-      elements: content.elements,
-      background: content.background,
+      elements: landscapeElements,
+      background: landscapeBackground,
     };
 
-    // Build portrait Slide object if content exists
+    // Build portrait Slide object if elements exist
     let portraitCanvas: Slide | undefined;
-    if (content.portraitElements) {
+    if (portraitElements && portraitElements.length > 0) {
       portraitCanvas = {
         id: nanoid(),
         viewportSize: 800,
         viewportRatio: 1.25, // 5 / 4
         theme: defaultTheme,
-        elements: content.portraitElements,
-        background: content.portraitBackground,
+        elements: portraitElements,
+        background: portraitBackground,
       };
     }
 
@@ -1321,47 +1390,52 @@ export function createSceneWithActions(
 }
 
 /**
- * Generate portrait version of a slide scene from landscape elements
+ * Generate a transformed version of a slide scene (e.g. Portrait -> Landscape or vice versa)
  */
-export async function generateSlidePortraitContent(
+export async function generateSlideTransformLayout(
   outline: SceneOutline,
-  landscapeContent: GeneratedSlideContent,
+  sourceContent: GeneratedSlideContent,
   aiCall: AICallFn,
+  targetWidth: number,
+  targetHeight: number,
+  targetOrientation: 'portrait' | 'landscape',
 ): Promise<{ elements: PPTElement[]; background?: SlideBackground } | null> {
-  const canvasWidth = 800;
-  const canvasHeight = 1000;
+  const canvasWidth = targetWidth;
+  const canvasHeight = targetHeight;
 
   // Filter out internal fields from elements to keep prompt clean
-  const cleanElements = landscapeContent.elements.map((el) => {
+  const cleanElements = sourceContent.elements.map((el) => {
     const { id, type, left, top, width, height, ...rest } = el as any;
     return { id, type, left, top, width, height, ...rest };
   });
 
-  const prompts = buildPrompt(PROMPT_IDS.SLIDE_PORTRAIT_CONTENT, {
+  const promptId = targetOrientation === 'portrait' 
+    ? PROMPT_IDS.SLIDE_PORTRAIT_CONTENT 
+    : PROMPT_IDS.SLIDE_LANDSCAPE_CONTENT;
+
+  const prompts = buildPrompt(promptId, {
     title: outline.title,
     description: outline.description,
-    landscape_elements: JSON.stringify(cleanElements, null, 2),
-    landscape_background: JSON.stringify(landscapeContent.background || {}, null, 2),
+    source_elements: JSON.stringify(cleanElements, null, 2),
+    source_background: JSON.stringify(sourceContent.background || {}, null, 2),
     canvas_width: canvasWidth,
     canvas_height: canvasHeight,
   });
 
   if (!prompts) return null;
 
-  log.debug(`Generating portrait content for: ${outline.title}`);
+  log.debug(`Generating ${targetOrientation} content for: ${outline.title}`);
   try {
     const response = await aiCall(prompts.system, prompts.user);
     const generatedData = parseJsonResponse<GeneratedSlideData>(response);
 
     if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
-      log.error(`Failed to parse AI portrait response for: ${outline.title}`);
+      log.error(`Failed to parse AI ${targetOrientation} response for: ${outline.title}`);
       return null;
     }
 
-    // Process portrait elements - maintain original IDs from landscape
-    const portraitElements: PPTElement[] = generatedData.elements.map((el) => {
-      // Find original element to preserve its unique ID if LLM tried to change it
-      // though the prompt says "use same ID"
+    // Process transformed elements - maintain original IDs from source
+    const transformedElements: PPTElement[] = generatedData.elements.map((el) => {
       return {
         ...el,
         rotate: 0,
@@ -1381,11 +1455,11 @@ export async function generateSlidePortraitContent(
     }
 
     return {
-      elements: portraitElements,
+      elements: transformedElements,
       background,
     };
   } catch (error) {
-    log.error(`Portrait generation failed for ${outline.title}: ${error}`);
+    log.error(`${targetOrientation} layout generation failed for ${outline.title}: ${error}`);
     return null;
   }
 }

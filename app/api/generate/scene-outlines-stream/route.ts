@@ -188,6 +188,7 @@ export async function POST(req: NextRequest) {
       researchContext: researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
       mediaGenerationPolicy,
       teacherContext,
+      aspectRatio: requirements.aspectRatio || 'landscape',
     });
 
     if (!prompts) {
@@ -263,11 +264,12 @@ export async function POST(req: NextRequest) {
                 const newOutlines = extractNewOutlines(fullText, parsedOutlines.length);
                 for (const outline of newOutlines) {
                   // Ensure ID and order
-                  const enriched = {
-                    ...outline,
-                    id: outline.id || nanoid(),
-                    order: parsedOutlines.length + 1,
-                  };
+                    const enriched = {
+                      ...outline,
+                      id: outline.id || nanoid(),
+                      order: parsedOutlines.length + 1,
+                      aspectRatio: requirements.aspectRatio,
+                    };
                   parsedOutlines.push(enriched);
 
                   const event = JSON.stringify({

@@ -260,13 +260,16 @@ function HomePage() {
     setError(null);
 
     try {
+      const isPortrait = window.matchMedia('(orientation: portrait)').matches;
       const userProfile = useUserProfileStore.getState();
+
       const requirements: UserRequirements = {
         requirement: form.requirement,
         language: form.language,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: form.webSearch || undefined,
+        aspectRatio: isPortrait ? 'portrait' : 'landscape',
       };
 
       let pdfStorageKey: string | undefined;
@@ -335,316 +338,316 @@ function HomePage() {
   return (
     <div className="h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center overflow-hidden">
       <div className="flex-1 w-full overflow-y-auto px-4 pt-16 md:p-8 md:pt-16 flex flex-col items-center">
-      {/* ═══ Top-right pill (Admin only) ═══ */}
-      {isAdmin && (
-        <div
-          ref={toolbarRef}
-          className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
-        >
-          {/* Language Selector */}
-          <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
+        {/* ═══ Top-right pill (Admin only) ═══ */}
+        {isAdmin && (
+          <div
+            ref={toolbarRef}
+            className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
+          >
+            {/* Language Selector */}
+            <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
 
-          <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
+            <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
 
-          {/* Theme Selector */}
-          <div className="relative">
-            <button
-              onClick={() => {
-                setThemeOpen(!themeOpen);
-              }}
-              className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
-            >
-              {theme === 'light' && <Sun className="w-4 h-4" />}
-              {theme === 'dark' && <Moon className="w-4 h-4" />}
-              {theme === 'system' && <Monitor className="w-4 h-4" />}
-            </button>
-            {themeOpen && (
-              <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[140px]">
-                <button
-                  onClick={() => {
-                    setTheme('light');
-                    setThemeOpen(false);
-                  }}
-                  className={cn(
-                    'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                    theme === 'light' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                  )}
-                >
-                  <Sun className="w-4 h-4" />
-                  {t('settings.themeOptions.light')}
-                </button>
-                <button
-                  onClick={() => {
-                    setTheme('dark');
-                    setThemeOpen(false);
-                  }}
-                  className={cn(
-                    'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                    theme === 'dark' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                  )}
-                >
-                  <Moon className="w-4 h-4" />
-                  {t('settings.themeOptions.dark')}
-                </button>
-                <button
-                  onClick={() => {
-                    setTheme('system');
-                    setThemeOpen(false);
-                  }}
-                  className={cn(
-                    'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                    theme === 'system' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                  )}
-                >
-                  <Monitor className="w-4 h-4" />
-                  {t('settings.themeOptions.system')}
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
-
-          {/* Settings Button */}
-          <div className="relative">
-            <button
-              onClick={() => setSettingsOpen(true)}
-              className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
-            >
-              <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
-            </button>
-          </div>
-        </div>
-      )}
-      <SettingsDialog
-        open={settingsOpen}
-        onOpenChange={(open) => {
-          setSettingsOpen(open);
-          if (!open) setSettingsSection(undefined);
-        }}
-        initialSection={settingsSection}
-      />
-
-      {/* Floating shapes */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden h-full w-full">
-        <div className="floating-shape absolute top-[8%] left-[4%] w-16 h-16 md:w-24 md:h-24 bg-[#FFD166] rounded-full border-4 border-[#073B4C] opacity-50" style={{ animationDelay: "0s" }} />
-        <div className="floating-shape-reverse absolute top-[15%] right-[8%] w-14 h-14 md:w-20 md:h-20 bg-[#EF476F] rounded-2xl border-4 border-[#073B4C] opacity-50" style={{ animationDelay: "1s" }} />
-        <div className="floating-shape absolute bottom-[12%] left-[12%] w-20 h-20 md:w-28 md:h-28 bg-[#118AB2] rounded-full border-4 border-[#073B4C] opacity-30" style={{ animationDelay: "2s" }} />
-        <div className="floating-shape-reverse absolute bottom-[20%] right-[6%] w-12 h-12 md:w-16 md:h-16 bg-[#06D6A0] rounded-3xl border-4 border-[#073B4C] opacity-40" style={{ animationDelay: "0.5s" }} />
-        <div className="floating-shape absolute top-[45%] left-[50%] w-10 h-10 bg-[#8338EC] rounded-full border-4 border-[#073B4C] opacity-25" style={{ animationDelay: "1.5s" }} />
-        <div className="floating-shape-reverse absolute top-[60%] left-[25%] w-8 h-8 bg-[#FF6B35] rounded-lg border-3 border-[#073B4C] opacity-30" style={{ animationDelay: "3s" }} />
-      </div>
-
-      {/* ═══ Hero section: title + input (centered, wider) ═══ */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        className={cn(
-          'relative z-20 w-full max-w-[800px] flex flex-col items-center',
-          classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
-        )}
-      >
-        {/* ── Logo ── */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{
-            delay: 0.1,
-            type: 'spring',
-            stiffness: 200,
-            damping: 20,
-          }}
-          className="flex items-center gap-3 mb-6"
-        >
-          <h1 className="text-6xl md:text-8xl font-black text-[#073b4c] tracking-tighter">SLATE</h1>
-          <span className="px-3 py-1 bg-[#ef476f] text-white text-xs md:text-sm font-bold rounded-full border-2 border-[#073b4c] shadow-[2px_2px_0_#073b4c] uppercase tracking-widest mt-2 md:mt-4">BETA</span>
-        </motion.div>
-
-        {/* ── Tagline ── */}
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.25 }}
-          className="text-base md:text-lg text-[#073b4c]/80 font-semibold mb-8 text-center px-4"
-        >
-          AI-powered interactive classroom. Learn anything, with anyone, anytime.
-        </motion.p>
-
-        {/* ── Unified input area ── */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.97 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.35 }}
-          className="w-full"
-        >
-          <div className="w-full rounded-3xl border-[3px] border-[#073b4c] bg-white shadow-[8px_8px_0_#073b4c] transition-all hover:translate-y-[1px] hover:shadow-[7px_7px_0_#073b4c] focus-within:translate-y-[-2px] focus-within:shadow-[10px_10px_0_#073b4c] flex flex-col pt-1 pb-2">
-            {/* ── Greeting + Profile + Agents ── */}
-            <div className="relative z-20 flex items-start justify-between">
-              <GreetingBar />
-              <div className="pr-3 pt-3.5 shrink-0">
-                <AgentBar />
-              </div>
+            {/* Theme Selector */}
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setThemeOpen(!themeOpen);
+                }}
+                className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
+              >
+                {theme === 'light' && <Sun className="w-4 h-4" />}
+                {theme === 'dark' && <Moon className="w-4 h-4" />}
+                {theme === 'system' && <Monitor className="w-4 h-4" />}
+              </button>
+              {themeOpen && (
+                <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[140px]">
+                  <button
+                    onClick={() => {
+                      setTheme('light');
+                      setThemeOpen(false);
+                    }}
+                    className={cn(
+                      'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
+                      theme === 'light' &&
+                      'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+                    )}
+                  >
+                    <Sun className="w-4 h-4" />
+                    {t('settings.themeOptions.light')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTheme('dark');
+                      setThemeOpen(false);
+                    }}
+                    className={cn(
+                      'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
+                      theme === 'dark' &&
+                      'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+                    )}
+                  >
+                    <Moon className="w-4 h-4" />
+                    {t('settings.themeOptions.dark')}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setTheme('system');
+                      setThemeOpen(false);
+                    }}
+                    className={cn(
+                      'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
+                      theme === 'system' &&
+                      'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+                    )}
+                  >
+                    <Monitor className="w-4 h-4" />
+                    {t('settings.themeOptions.system')}
+                  </button>
+                </div>
+              )}
             </div>
 
-            {/* Textarea */}
-            <textarea
-              ref={textareaRef}
-              placeholder={t('upload.requirementPlaceholder')}
-              className="w-full resize-none border-0 bg-transparent px-4 pt-1 pb-2 text-base md:text-sm font-medium leading-relaxed placeholder:text-[#073b4c]/60 focus:outline-none min-h-[140px] max-h-[300px] text-[#073b4c]"
-              value={form.requirement}
-              onChange={(e) => updateForm('requirement', e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={4}
-            />
+            <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
 
-            {/* Toolbar row */}
-            <div className="px-3 pb-3 flex items-end gap-2">
-              <div className="flex-1 min-w-0">
-                <GenerationToolbar
-                  language={form.language}
-                  onLanguageChange={(lang) => updateForm('language', lang)}
-                  webSearch={form.webSearch}
-                  onWebSearchChange={(v) => updateForm('webSearch', v)}
-                  onSettingsOpen={(section) => {
-                    setSettingsSection(section);
-                    setSettingsOpen(true);
-                  }}
-                  pdfFile={form.pdfFile}
-                  onPdfFileChange={(f) => updateForm('pdfFile', f)}
-                  onPdfError={setError}
-                />
-              </div>
-
-              {/* Voice input */}
-              <SpeechButton
-                size="md"
-                onTranscription={(text) => {
-                  setForm((prev) => {
-                    const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
-                    updateRequirementCache(next);
-                    return { ...prev, requirement: next };
-                  });
-                }}
-              />
-
-              {/* Send button */}
+            {/* Settings Button */}
+            <div className="relative">
               <button
-                onClick={handleGenerate}
-                disabled={!canGenerate}
-                className={cn(
-                  'shrink-0 h-10 px-5 md:px-6 rounded-full flex items-center justify-center gap-2 transition-all font-bold border-2 border-[#073b4c]',
-                  canGenerate
-                    ? 'bg-[#ef476f] text-white hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] cursor-pointer'
-                    : 'bg-[#f0f4f8] text-[#073b4c]/40 cursor-not-allowed',
-                )}
+                onClick={() => setSettingsOpen(true)}
+                className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
               >
-                <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
-                <ArrowUp className="size-3.5" />
+                <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
               </button>
             </div>
           </div>
-        </motion.div>
+        )}
+        <SettingsDialog
+          open={settingsOpen}
+          onOpenChange={(open) => {
+            setSettingsOpen(open);
+            if (!open) setSettingsSection(undefined);
+          }}
+          initialSection={settingsSection}
+        />
 
-        {/* ── Error ── */}
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-3 w-full p-3 bg-destructive/10 border border-destructive/20 rounded-lg"
-            >
-              <p className="text-sm text-destructive">{error}</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+        {/* Floating shapes */}
+        <div className="absolute inset-0 pointer-events-none overflow-hidden h-full w-full">
+          <div className="floating-shape absolute top-[8%] left-[4%] w-16 h-16 md:w-24 md:h-24 bg-[#FFD166] rounded-full border-4 border-[#073B4C] opacity-50" style={{ animationDelay: "0s" }} />
+          <div className="floating-shape-reverse absolute top-[15%] right-[8%] w-14 h-14 md:w-20 md:h-20 bg-[#EF476F] rounded-2xl border-4 border-[#073B4C] opacity-50" style={{ animationDelay: "1s" }} />
+          <div className="floating-shape absolute bottom-[12%] left-[12%] w-20 h-20 md:w-28 md:h-28 bg-[#118AB2] rounded-full border-4 border-[#073B4C] opacity-30" style={{ animationDelay: "2s" }} />
+          <div className="floating-shape-reverse absolute bottom-[20%] right-[6%] w-12 h-12 md:w-16 md:h-16 bg-[#06D6A0] rounded-3xl border-4 border-[#073B4C] opacity-40" style={{ animationDelay: "0.5s" }} />
+          <div className="floating-shape absolute top-[45%] left-[50%] w-10 h-10 bg-[#8338EC] rounded-full border-4 border-[#073B4C] opacity-25" style={{ animationDelay: "1.5s" }} />
+          <div className="floating-shape-reverse absolute top-[60%] left-[25%] w-8 h-8 bg-[#FF6B35] rounded-lg border-3 border-[#073B4C] opacity-30" style={{ animationDelay: "3s" }} />
+        </div>
 
-      {/* ═══ Recent classrooms — collapsible ═══ */}
-      {classrooms.length > 0 && (
+        {/* ═══ Hero section: title + input (centered, wider) ═══ */}
         <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className={cn(
+            'relative z-20 w-full max-w-[800px] flex flex-col items-center',
+            classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
+          )}
         >
-          {/* Trigger — divider-line with centered text */}
-          <button
-            onClick={() => {
-              const next = !recentOpen;
-              setRecentOpen(next);
-              try {
-                localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
-              } catch {
-                /* ignore */
-              }
+          {/* ── Logo ── */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{
+              delay: 0.1,
+              type: 'spring',
+              stiffness: 200,
+              damping: 20,
             }}
-            className="group w-full flex items-center gap-4 py-2 cursor-pointer"
+            className="flex items-center gap-3 mb-6"
           >
-            <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-            <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
-              <Clock className="size-3.5" />
-              {t('classroom.recentClassrooms')}
-              <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
-              <motion.div
-                animate={{ rotate: recentOpen ? 180 : 0 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
-              >
-                <ChevronDown className="size-3.5" />
-              </motion.div>
-            </span>
-            <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-          </button>
+            <h1 className="text-6xl md:text-8xl font-black text-[#073b4c] tracking-tighter">SLATE</h1>
+            <span className="px-3 py-1 bg-[#ef476f] text-white text-xs md:text-sm font-bold rounded-full border-2 border-[#073b4c] shadow-[2px_2px_0_#073b4c] uppercase tracking-widest mt-2 md:mt-4">BETA</span>
+          </motion.div>
 
-          {/* Expandable content */}
-          <AnimatePresence>
-            {recentOpen && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
-                className="w-full overflow-hidden"
-              >
-                <div className="pt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8">
-                  {classrooms.map((classroom, i) => (
-                    <motion.div
-                      key={classroom.id}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        delay: i * 0.04,
-                        duration: 0.35,
-                        ease: 'easeOut',
-                      }}
-                    >
-                      <ClassroomCard
-                        classroom={classroom}
-                        slide={thumbnails[classroom.id]}
-                        formatDate={formatDate}
-                        onDelete={handleDelete}
-                        onRename={handleRename}
-                        confirmingDelete={pendingDeleteId === classroom.id}
-                        onConfirmDelete={() => confirmDelete(classroom.id)}
-                        onCancelDelete={() => setPendingDeleteId(null)}
-                        onClick={() => router.push(`/classroom/${classroom.id}`)}
-                      />
-                    </motion.div>
-                  ))}
+          {/* ── Tagline ── */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.25 }}
+            className="text-base md:text-lg text-[#073b4c]/80 font-semibold mb-8 text-center px-4"
+          >
+            AI-powered interactive classroom. Learn anything, with anyone, anytime.
+          </motion.p>
+
+          {/* ── Unified input area ── */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.97 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ delay: 0.35 }}
+            className="w-full"
+          >
+            <div className="w-full rounded-3xl border-[3px] border-[#073b4c] bg-white shadow-[8px_8px_0_#073b4c] transition-all hover:translate-y-[1px] hover:shadow-[7px_7px_0_#073b4c] focus-within:translate-y-[-2px] focus-within:shadow-[10px_10px_0_#073b4c] flex flex-col pt-1 pb-2">
+              {/* ── Greeting + Profile + Agents ── */}
+              <div className="relative z-20 flex items-start justify-between">
+                <GreetingBar />
+                <div className="pr-3 pt-3.5 shrink-0">
+                  <AgentBar />
                 </div>
+              </div>
+
+              {/* Textarea */}
+              <textarea
+                ref={textareaRef}
+                placeholder={t('upload.requirementPlaceholder')}
+                className="w-full resize-none border-0 bg-transparent px-4 pt-1 pb-2 text-base md:text-sm font-medium leading-relaxed placeholder:text-[#073b4c]/60 focus:outline-none min-h-[140px] max-h-[300px] text-[#073b4c]"
+                value={form.requirement}
+                onChange={(e) => updateForm('requirement', e.target.value)}
+                onKeyDown={handleKeyDown}
+                rows={4}
+              />
+
+              {/* Toolbar row */}
+              <div className="px-3 pb-3 flex items-end gap-2">
+                <div className="flex-1 min-w-0">
+                  <GenerationToolbar
+                    language={form.language}
+                    onLanguageChange={(lang) => updateForm('language', lang)}
+                    webSearch={form.webSearch}
+                    onWebSearchChange={(v) => updateForm('webSearch', v)}
+                    onSettingsOpen={(section) => {
+                      setSettingsSection(section);
+                      setSettingsOpen(true);
+                    }}
+                    pdfFile={form.pdfFile}
+                    onPdfFileChange={(f) => updateForm('pdfFile', f)}
+                    onPdfError={setError}
+                  />
+                </div>
+
+                {/* Voice input */}
+                <SpeechButton
+                  size="md"
+                  onTranscription={(text) => {
+                    setForm((prev) => {
+                      const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
+                      updateRequirementCache(next);
+                      return { ...prev, requirement: next };
+                    });
+                  }}
+                />
+
+                {/* Send button */}
+                <button
+                  onClick={handleGenerate}
+                  disabled={!canGenerate}
+                  className={cn(
+                    'shrink-0 h-10 px-5 md:px-6 rounded-full flex items-center justify-center gap-2 transition-all font-bold border-2 border-[#073b4c]',
+                    canGenerate
+                      ? 'bg-[#ef476f] text-white hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] cursor-pointer'
+                      : 'bg-[#f0f4f8] text-[#073b4c]/40 cursor-not-allowed',
+                  )}
+                >
+                  <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
+                  <ArrowUp className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* ── Error ── */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mt-3 w-full p-3 bg-destructive/10 border border-destructive/20 rounded-lg"
+              >
+                <p className="text-sm text-destructive">{error}</p>
               </motion.div>
             )}
           </AnimatePresence>
         </motion.div>
-      )}
+
+        {/* ═══ Recent classrooms — collapsible ═══ */}
+        {classrooms.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
+          >
+            {/* Trigger — divider-line with centered text */}
+            <button
+              onClick={() => {
+                const next = !recentOpen;
+                setRecentOpen(next);
+                try {
+                  localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
+                } catch {
+                  /* ignore */
+                }
+              }}
+              className="group w-full flex items-center gap-4 py-2 cursor-pointer"
+            >
+              <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
+              <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
+                <Clock className="size-3.5" />
+                {t('classroom.recentClassrooms')}
+                <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
+                <motion.div
+                  animate={{ rotate: recentOpen ? 180 : 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                >
+                  <ChevronDown className="size-3.5" />
+                </motion.div>
+              </span>
+              <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
+            </button>
+
+            {/* Expandable content */}
+            <AnimatePresence>
+              {recentOpen && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
+                  className="w-full overflow-hidden"
+                >
+                  <div className="pt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8">
+                    {classrooms.map((classroom, i) => (
+                      <motion.div
+                        key={classroom.id}
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                          delay: i * 0.04,
+                          duration: 0.35,
+                          ease: 'easeOut',
+                        }}
+                      >
+                        <ClassroomCard
+                          classroom={classroom}
+                          slide={thumbnails[classroom.id]}
+                          formatDate={formatDate}
+                          onDelete={handleDelete}
+                          onRename={handleRename}
+                          confirmingDelete={pendingDeleteId === classroom.id}
+                          onConfirmDelete={() => confirmDelete(classroom.id)}
+                          onCancelDelete={() => setPendingDeleteId(null)}
+                          onClick={() => router.push(`/classroom/${classroom.id}`)}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
 
       </div>
       {/* Footer — flows with content, at the very end */}
-      <div className="w-full shrink-0 pt-6 pb-4 text-center text-xs text-muted-foreground/40 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm border-t border-border/10">
+      <div className="w-full shrink-0 pt-6 pb-4 text-center text-xs text-muted-foreground/100 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm border-t border-border/10">
         Slate by Chalk Labs
       </div>
     </div>
