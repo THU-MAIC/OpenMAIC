@@ -45,7 +45,12 @@ export const maxDuration = 300;
  */
 function extractLanguageDirective(buffer: string): string | null {
   const match = buffer.match(/"languageDirective"\s*:\s*"((?:[^"\\]|\\.)*)"/);
-  if (match) return match[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  if (match)
+    return match[1]
+      .replace(/\\n/g, '\n')
+      .replace(/\\t/g, '\t')
+      .replace(/\\"/g, '"')
+      .replace(/\\\\/g, '\\');
   return null;
 }
 
@@ -145,6 +150,12 @@ export async function POST(req: NextRequest) {
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
+    // Build user profile string for language inference context
+    const userProfileText =
+      requirements.userNickname || requirements.userBio
+        ? `## Student Profile\n\nStudent: ${requirements.userNickname || 'Unknown'}${requirements.userBio ? ` — ${requirements.userBio}` : ''}\n\nConsider this student's background when designing the course. Adapt difficulty, examples, and teaching approach accordingly.\n\n---`
+        : '';
+
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
@@ -203,6 +214,7 @@ export async function POST(req: NextRequest) {
       researchContext: researchContext || 'None',
       mediaGenerationPolicy,
       teacherContext,
+      userProfile: userProfileText,
       pdfLanguageSample: pdfText?.substring(0, 200) || '',
     });
 
