@@ -59,6 +59,10 @@ export function Stage({
   const setChatAreaWidth = useSettingsStore((s) => s.setChatAreaWidth);
   const chatAreaCollapsed = useSettingsStore((s) => s.chatAreaCollapsed);
   const setChatAreaCollapsed = useSettingsStore((s) => s.setChatAreaCollapsed);
+  const roundtableCollapsed = useSettingsStore((s) => s.roundtableCollapsed);
+  const setRoundtableCollapsed = useSettingsStore((s) => s.setRoundtableCollapsed);
+  const captionsCollapsed = useSettingsStore((s) => s.captionsCollapsed);
+  const setCaptionsCollapsed = useSettingsStore((s) => s.setCaptionsCollapsed);
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
   const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);
   const initializedRef = useRef(false);
@@ -971,8 +975,12 @@ export function Stage({
         {mode === 'playback' && (
           <div
             className={cn(
-              'transition-opacity duration-300',
-              !isPresenting ? 'h-52' : 'absolute inset-x-0 bottom-0 z-20',
+              'transition-all duration-300',
+              !isPresenting
+                ? roundtableCollapsed
+                  ? 'h-10'
+                  : 'h-52'
+                : 'absolute inset-x-0 bottom-0 z-20',
             )}
           >
             <Roundtable
@@ -1103,6 +1111,10 @@ export function Stage({
               onTogglePresentation={togglePresentation}
               onPresentationInteractionChange={setIsPresentationInteractionActive}
               fullscreenContainerRef={stageRef}
+              roundtableCollapsed={roundtableCollapsed}
+              onToggleRoundtable={() => setRoundtableCollapsed(!roundtableCollapsed)}
+              captionsCollapsed={captionsCollapsed}
+              onToggleCaptions={() => setCaptionsCollapsed(!captionsCollapsed)}
             />
           </div>
         )}

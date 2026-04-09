@@ -25,6 +25,7 @@ interface PresentationSpeechOverlayProps {
   readonly audioIndicatorState?: AudioIndicatorState;
   readonly buttonState?: 'play' | 'bars' | 'restart' | 'none';
   readonly isPaused?: boolean;
+  readonly captionsCollapsed?: boolean;
 }
 
 export interface PresentationBubbleModel {
@@ -396,6 +397,7 @@ export function PresentationSpeechOverlay({
   audioIndicatorState,
   buttonState,
   isPaused,
+  captionsCollapsed = true,
 }: PresentationSpeechOverlayProps) {
   const { t } = useI18n();
 
@@ -413,7 +415,7 @@ export function PresentationSpeechOverlay({
   // Persistent collapse: once collapsed, stay collapsed until user explicitly expands.
   // Left/right sides are separate component instances so they track independently.
   // Right-side agents share a single instance, so all agents share the same collapse state.
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(captionsCollapsed);
 
   const matchesSide = !!(bubble && bubble.side === side);
 

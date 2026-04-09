@@ -91,6 +91,10 @@ interface RoundtableProps {
   /** Ref to the fullscreen container — passed to ProactiveCard so its portal
    *  renders inside the top-layer during presentation mode. */
   readonly fullscreenContainerRef?: React.RefObject<HTMLDivElement | null>;
+  readonly roundtableCollapsed?: boolean;
+  readonly onToggleRoundtable?: () => void;
+  readonly captionsCollapsed?: boolean;
+  readonly onToggleCaptions?: () => void;
 }
 
 const VOICE_WAVE_BARS = [
@@ -174,6 +178,10 @@ export function Roundtable({
   onTogglePresentation,
   onPresentationInteractionChange,
   fullscreenContainerRef,
+  roundtableCollapsed = false,
+  onToggleRoundtable,
+  captionsCollapsed = true,
+  onToggleCaptions,
 }: RoundtableProps) {
   const { t } = useI18n();
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -651,6 +659,19 @@ export function Roundtable({
     />
   );
 
+  const collapsedView = (
+    <div className="flex items-center justify-between h-full px-4 gap-4 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md">
+      <div className="flex-1 min-w-0">{toolbar}</div>
+      <button
+        onClick={onToggleRoundtable}
+        className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+        title={t('roundtable.expand')}
+      >
+        <ChevronRight className="w-4 h-4 text-gray-400 rotate-180" />
+      </button>
+    </div>
+  );
+
   if (isPresenting) {
     return (
       <div className="h-0 w-full relative z-10 overflow-visible">
@@ -665,6 +686,7 @@ export function Roundtable({
           audioIndicatorState={audioIndicatorState ?? 'idle'}
           buttonState={enrichedPlaybackView?.buttonState}
           isPaused={isDiscussionPaused || engineMode === 'paused'}
+          captionsCollapsed={captionsCollapsed}
         />
 
         {/* Click-outside backdrop to dismiss input/voice */}
@@ -877,6 +899,7 @@ export function Roundtable({
             audioIndicatorState={audioIndicatorState ?? 'idle'}
             buttonState={enrichedPlaybackView?.buttonState}
             isPaused={isDiscussionPaused || engineMode === 'paused'}
+            captionsCollapsed={captionsCollapsed}
           />
 
           {/* Dock */}
@@ -944,45 +967,36 @@ export function Roundtable({
                       </div>
                     </div>
                   ) : (
-                    <>
-                      <button
-                        aria-label={
-                          asrEnabled
-                            ? t('roundtable.voiceInput')
-                            : t('roundtable.voiceInputDisabled')
-                        }
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (asrEnabled) handleToggleVoice();
-                        }}
-                        disabled={!asrEnabled}
-                        className={cn(
-                          'w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95',
-                          !asrEnabled
-                            ? 'text-gray-500 cursor-not-allowed'
-                            : isVoiceOpen
-                              ? 'bg-purple-600 text-white'
-                              : 'text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/10',
-                        )}
-                      >
-                        {asrEnabled ? <Mic className="w-4 h-4" /> : <MicOff className="w-4 h-4" />}
-                      </button>
-                      <button
-                        aria-label={t('roundtable.textInput')}
-                        onClick={(e) => {
-                          e.stopPropagation();
+                    <button
+                      aria-label={
+                        asrEnabled
+                          ? t('roundtable.voiceInput')
+                          : t('roundtable.voiceInputDisabled')
+                      }
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Primary action is now voice
+                        if (asrEnabled) {
+                          handleToggleVoice();
+                        } else {
                           handleToggleInput();
-                        }}
-                        className={cn(
-                          'w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95',
-                          isInputOpen
-                            ? 'bg-purple-600 text-white'
-                            : 'text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/10',
-                        )}
-                      >
+                        }
+                      }}
+                      className={cn(
+                        'w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95',
+                        isVoiceOpen || isInputOpen
+                          ? 'bg-purple-600 text-white'
+                          : 'text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/10',
+                      )}
+                    >
+                      {isInputOpen ? (
                         <MessageSquare className="w-4 h-4" />
-                      </button>
-                    </>
+                      ) : asrEnabled ? (
+                        <Mic className="w-4 h-4" />
+                      ) : (
+                        <MicOff className="w-4 h-4" />
+                      )}
+                    </button>
                   )}
 
                   <button
@@ -991,7 +1005,11 @@ export function Roundtable({
                     className="relative group cursor-pointer shrink-0 bg-transparent border-none p-0"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleToggleInput();
+                      if (asrEnabled) {
+                        handleToggleVoice();
+                      } else {
+                        handleToggleInput();
+                      }
                     }}
                   >
                     <div
@@ -1046,6 +1064,14 @@ export function Roundtable({
             )}
           </AnimatePresence>
         </div>
+      </div>
+    );
+  }
+
+  if (roundtableCollapsed) {
+    return (
+      <div className="sm:h-10 h-10 w-full flex flex-col relative z-20 transition-all duration-300 border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md overflow-hidden">
+        {collapsedView}
       </div>
     );
   }
@@ -1234,6 +1260,39 @@ export function Roundtable({
             }}
             className="relative w-full h-full rounded-[2.5rem] bg-gradient-to-b from-white/40 to-white/80 dark:from-gray-800/40 dark:to-gray-800/80 backdrop-blur-xl border border-white/50 dark:border-gray-700/50 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.05),inset_0_1px_0_0_rgba(255,255,255,0.9)] dark:shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] flex flex-col justify-center px-6 overflow-hidden group transition-all duration-700 cursor-default"
           >
+            {/* Collapse/Expand Roundtable button (non-presenting only) */}
+            {!isPresenting && onToggleRoundtable && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleRoundtable();
+                  }}
+                  className="absolute top-3 right-4 p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity z-30"
+                  title={roundtableCollapsed ? t('roundtable.expand') : t('roundtable.collapse')}
+                >
+                  <ChevronLeft className={cn("w-4 h-4 rotate-90 transition-transform", roundtableCollapsed && "rotate-[-90deg]")} />
+                </button>
+              )}
+
+              {/* Captions Toggle button */}
+              {bubbleRole && onToggleCaptions && (
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleCaptions();
+                  }}
+                  className={cn(
+                    'absolute top-3 right-12 p-1.5 rounded-full transition-all z-30',
+                    captionsCollapsed
+                      ? 'bg-purple-100 dark:bg-purple-900/40 text-purple-600 dark:text-purple-400'
+                      : 'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400',
+                  )}
+                  title={captionsCollapsed ? t('roundtable.showCaptions') : t('roundtable.hideCaptions')}
+                >
+                  <BookOpen className="w-4 h-4" />
+                </button>
+              )}
+
             {/* Text input box */}
             <AnimatePresence>
               {isInputOpen && (
@@ -1522,7 +1581,7 @@ export function Roundtable({
 
             {/* Chat bubble */}
             <AnimatePresence mode="wait">
-              {bubbleRole && (
+              {bubbleRole && !captionsCollapsed && (
                 <motion.div
                   key={bubbleKey}
                   initial={{ opacity: 0, y: 8 }}
@@ -1995,37 +2054,26 @@ export function Roundtable({
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      if (asrEnabled) handleToggleVoice();
-                    }}
-                    disabled={!asrEnabled}
-                    className={cn(
-                      'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
-                      !asrEnabled
-                        ? 'bg-gray-100 dark:bg-gray-800/50 text-gray-300 dark:text-gray-600 border-gray-200 dark:border-gray-700 cursor-not-allowed'
-                        : isVoiceOpen
-                          ? 'bg-purple-600 dark:bg-purple-500 border-purple-600 dark:border-purple-500 text-white shadow-purple-200 dark:shadow-purple-800'
-                          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-700',
-                    )}
-                  >
-                    {asrEnabled ? (
-                      <Mic className="w-3.5 h-3.5" />
-                    ) : (
-                      <MicOff className="w-3.5 h-3.5" />
-                    )}
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleToggleInput();
+                      if (asrEnabled) {
+                        handleToggleVoice();
+                      } else {
+                        handleToggleInput();
+                      }
                     }}
                     className={cn(
                       'w-8 h-8 rounded-full border flex items-center justify-center transition-all active:scale-95 shadow-sm',
-                      isInputOpen
+                      isVoiceOpen || isInputOpen
                         ? 'bg-purple-600 dark:bg-purple-500 border-purple-600 dark:border-purple-500 text-white shadow-purple-200 dark:shadow-purple-800'
                         : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-400 dark:text-gray-500 hover:bg-purple-50 dark:hover:bg-purple-900/20 hover:text-purple-600 dark:hover:text-purple-400 hover:border-purple-200 dark:hover:border-purple-700',
                     )}
                   >
-                    <MessageSquare className="w-3.5 h-3.5" />
+                    {isInputOpen ? (
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    ) : asrEnabled ? (
+                      <Mic className="w-3.5 h-3.5" />
+                    ) : (
+                      <MicOff className="w-3.5 h-3.5" />
+                    )}
                   </button>
                 </div>
               )}
@@ -2036,7 +2084,11 @@ export function Roundtable({
               className="relative group cursor-pointer shrink-0"
               onClick={(e) => {
                 e.stopPropagation();
-                handleToggleInput();
+                if (asrEnabled) {
+                  handleToggleVoice();
+                } else {
+                  handleToggleInput();
+                }
               }}
             >
               <div
