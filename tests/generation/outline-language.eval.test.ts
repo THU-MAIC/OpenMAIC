@@ -3,11 +3,17 @@
  *
  * Tests the language directive inferred during outline generation.
  * Uses the actual outline system prompt to infer languageDirective,
- * then an LLM-as-judge (small model) to evaluate against ground truth.
+ * then an LLM-as-judge to evaluate against ground truth.
  *
  * Calls real LLM APIs — meant to be run locally, NOT in CI/CD.
  *
+ * Environment variables:
+ *   EVAL_INFERENCE_MODEL  Model for language inference (default: DEFAULT_MODEL or gpt-4o-mini)
+ *   EVAL_JUDGE_MODEL      Model for LLM-as-judge (default: gpt-4o-mini)
+ *
  * Usage:
+ *   EVAL_INFERENCE_MODEL=google/gemini-2.5-flash-preview-04-17 \
+ *   EVAL_JUDGE_MODEL=openai/gpt-4o-mini \
  *   pnpm vitest run tests/generation/outline-language.eval.test.ts
  *
  * Results are written to tests/generation/outline-language.eval.result.md
@@ -44,6 +50,26 @@ const TEST_CASES: LanguageTestCase[] = JSON.parse(
 );
 
 // ---------------------------------------------------------------------------
+// Model resolution
+// ---------------------------------------------------------------------------
+
+const JUDGE_MODEL_DEFAULT = 'openai/gpt-4o-mini';
+
+/** Resolve the inference model (EVAL_INFERENCE_MODEL → DEFAULT_MODEL → gpt-4o-mini) */
+function getInferenceModel() {
+  return resolveModel({
+    modelString: process.env.EVAL_INFERENCE_MODEL || undefined,
+  });
+}
+
+/** Resolve the judge model (EVAL_JUDGE_MODEL → gpt-4o-mini) */
+function getJudgeModel() {
+  return resolveModel({
+    modelString: process.env.EVAL_JUDGE_MODEL || JUDGE_MODEL_DEFAULT,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Language directive extraction via outline prompt
 // ---------------------------------------------------------------------------
 
@@ -56,7 +82,7 @@ async function inferLanguageDirectiveViaOutlinePrompt(
   requirement: string,
   pdfTextSample?: string,
 ): Promise<string> {
-  const { model } = resolveModel({});
+  const { model } = getInferenceModel();
 
   // Build the real system prompt (same one used in production)
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
@@ -132,8 +158,7 @@ async function judgeDirective(
   directive: string,
   groundTruth: string,
 ): Promise<JudgeResult> {
-  // Use the same model for judging (resolveModel returns the configured default)
-  const { model } = resolveModel({});
+  const { model } = getJudgeModel();
   const result = await generateText({
     model,
     system: JUDGE_SYSTEM_PROMPT,
@@ -204,12 +229,16 @@ describe('Outline Language Inference Evaluation', () => {
     const passed = results.filter((r) => r.judgePassed).length;
     const total = results.length;
 
+    const inferenceModelStr = process.env.EVAL_INFERENCE_MODEL || process.env.DEFAULT_MODEL || '(default: gpt-4o-mini)';
+    const judgeModelStr = process.env.EVAL_JUDGE_MODEL || JUDGE_MODEL_DEFAULT;
+
     const lines: string[] = [
       `# Outline Language Inference Eval Results`,
       ``,
       `- **Date**: ${new Date().toISOString()}`,
       `- **Passed**: ${passed}/${total} (${((passed / total) * 100).toFixed(0)}%)`,
-      `- **Model**: ${process.env.DEFAULT_MODEL || '(default)'}`,
+      `- **Inference model**: ${inferenceModelStr}`,
+      `- **Judge model**: ${judgeModelStr}`,
       `- **Method**: outline system prompt + LLM-as-judge`,
       `- **Test cases**: curated from production data`,
       ``,
