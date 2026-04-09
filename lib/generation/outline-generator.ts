@@ -39,8 +39,7 @@ export async function generateSceneOutlinesFromRequirements(
   },
 ): Promise<GenerationResult<SceneOutline[]>> {
   // Build available images description for the prompt
-  let availableImagesText =
-    requirements.language === 'zh-CN' ? '无可用图片' : 'No images available';
+  let availableImagesText = 'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (pdfImages && pdfImages.length > 0) {
@@ -51,11 +50,9 @@ export async function generateSceneOutlinesFromRequirements(
       const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
       const noSrcImages = pdfImages.filter((img) => !options.imageMapping![img.id]);
 
-      const visionDescriptions = visionSlice.map((img) =>
-        formatImagePlaceholder(img, requirements.language),
-      );
+      const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
-        formatImageDescription(img, requirements.language),
+        formatImageDescription(img),
       );
       availableImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
@@ -67,9 +64,7 @@ export async function generateSceneOutlinesFromRequirements(
       }));
     } else {
       // Text-only mode: full descriptions
-      availableImagesText = pdfImages
-        .map((img) => formatImageDescription(img, requirements.language))
-        .join('\n');
+      availableImagesText = pdfImages.map((img) => formatImageDescription(img)).join('\n');
     }
   }
 
@@ -98,17 +93,11 @@ export async function generateSceneOutlinesFromRequirements(
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     // New simplified variables
     requirement: requirements.requirement,
-    language: requirements.language,
-    pdfContent: pdfText
-      ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-      : requirements.language === 'zh-CN'
-        ? '无'
-        : 'None',
+    pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
     availableImages: availableImagesText,
     userProfile: userProfileText,
     mediaGenerationPolicy,
-    researchContext:
-      options?.researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+    researchContext: options?.researchContext || 'None',
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
   });
@@ -141,7 +130,6 @@ export async function generateSceneOutlinesFromRequirements(
       ...outline,
       id: outline.id || nanoid(),
       order: index + 1,
-      language: requirements.language,
     }));
 
     // Replace sequential gen_img_N/gen_vid_N with globally unique IDs

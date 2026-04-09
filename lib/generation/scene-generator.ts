@@ -467,10 +467,8 @@ async function generateSlideContent(
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
 ): Promise<GeneratedSlideContent | null> {
-  const lang = outline.language || 'zh-CN';
-
   // Build assigned images description for the prompt
-  let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
+  let assignedImagesText = 'No images available. Do NOT insert any image elements.';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
@@ -481,9 +479,9 @@ async function generateSlideContent(
       const textOnlySlice = withSrc.slice(MAX_VISION_IMAGES);
       const noSrcImages = assignedImages.filter((img) => !imageMapping[img.id]);
 
-      const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img, lang));
+      const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
-        formatImageDescription(img, lang),
+        formatImageDescription(img),
       );
       assignedImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
@@ -494,9 +492,7 @@ async function generateSlideContent(
         height: img.height,
       }));
     } else {
-      assignedImagesText = assignedImages
-        .map((img) => formatImageDescription(img, lang))
-        .join('\n');
+      assignedImagesText = assignedImages.map((img) => formatImageDescription(img)).join('\n');
     }
   }
 
@@ -521,7 +517,7 @@ async function generateSlideContent(
 
     if (mediaParts.length > 0) {
       const mediaText = mediaParts.join('\n\n');
-      if (assignedImagesText.includes('禁止插入') || assignedImagesText.includes('No images')) {
+      if (assignedImagesText.includes('No images')) {
         assignedImagesText = mediaText;
       } else {
         assignedImagesText += `\n\n${mediaText}`;

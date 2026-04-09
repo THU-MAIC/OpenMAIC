@@ -98,10 +98,6 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
-}
-
 function stripCodeFences(text: string): string {
   let cleaned = text.trim();
   if (cleaned.startsWith('```')) {
@@ -218,10 +214,8 @@ export async function generateClassroom(
     return result.text;
   };
 
-  const lang = normalizeLanguage(input.language);
   const requirements: UserRequirements = {
     requirement,
-    language: lang,
   };
   const pdfText = pdfContent?.text || undefined;
 
@@ -231,7 +225,7 @@ export async function generateClassroom(
   if (agentMode === 'generate') {
     log.info('Generating custom agent profiles via LLM...');
     try {
-      agents = await generateAgentProfiles(requirement, lang, aiCall);
+      agents = await generateAgentProfiles(requirement, 'en-US', aiCall);
       log.info(`Generated ${agents.length} agent profiles`);
     } catch (e) {
       log.warn('Agent profile generation failed, falling back to defaults:', e);
@@ -322,7 +316,7 @@ export async function generateClassroom(
     id: stageId,
     name: outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
-    language: lang,
+    language: input.language, // passthrough for backward compat (may be undefined)
     style: 'interactive',
     createdAt: Date.now(),
     updatedAt: Date.now(),
