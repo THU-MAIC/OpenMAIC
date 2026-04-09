@@ -31,6 +31,8 @@ The following constraints must be strictly obeyed in all JavaScript logic and vi
 
 (All UI text, labels, instructions, and descriptions must be in this language)
 
+{{languageDirective}}
+
 ---
 
 ## Requirements

@@ -28,6 +28,7 @@ import { parseActionsFromStructuredOutput } from './action-parser';
 import { parseJsonResponse } from './json-repair';
 import {
   buildCourseContext,
+  buildLanguageText,
   formatAgentsForPrompt,
   formatTeacherPersonaForPrompt,
   formatImageDescription,
@@ -155,6 +156,7 @@ export async function generateSceneContent(
   visionEnabled?: boolean,
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
+  languageDirective?: string,
 ): Promise<
   | GeneratedSlideContent
   | GeneratedQuizContent
@@ -176,6 +178,7 @@ export async function generateSceneContent(
       visionEnabled,
       generatedMediaMapping,
       agents,
+      languageDirective,
     );
   }
 
@@ -189,11 +192,12 @@ export async function generateSceneContent(
         visionEnabled,
         generatedMediaMapping,
         agents,
+        languageDirective,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall);
+      return generateQuizContent(outline, aiCall, languageDirective);
     case 'interactive':
-      return generateInteractiveContent(outline, aiCall, outline.language);
+      return generateInteractiveContent(outline, aiCall, outline.language, languageDirective);
     case 'pbl':
       return generatePBLSceneContent(outline, languageModel);
     default:
@@ -466,6 +470,7 @@ async function generateSlideContent(
   visionEnabled?: boolean,
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
+  languageDirective?: string,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = 'No images available. Do NOT insert any image elements.';
@@ -540,6 +545,7 @@ async function generateSlideContent(
     canvas_width: canvasWidth,
     canvas_height: canvasHeight,
     teacherContext,
+    languageDirective: buildLanguageText(languageDirective, outline.languageNote),
   });
 
   if (!prompts) {
@@ -628,6 +634,7 @@ async function generateSlideContent(
 async function generateQuizContent(
   outline: SceneOutline,
   aiCall: AICallFn,
+  languageDirective?: string,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -642,6 +649,7 @@ async function generateQuizContent(
     questionCount: quizConfig.questionCount,
     difficulty: quizConfig.difficulty,
     questionTypes: quizConfig.questionTypes.join(', '),
+    languageDirective: buildLanguageText(languageDirective, outline.languageNote),
   });
 
   if (!prompts) {
@@ -732,6 +740,7 @@ async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   language: 'zh-CN' | 'en-US' = 'zh-CN',
+  languageDirective?: string,
 ): Promise<GeneratedInteractiveContent | null> {
   const config = outline.interactiveConfig!;
 
@@ -789,6 +798,7 @@ async function generateInteractiveContent(
     scientificConstraints,
     designIdea: config.designIdea,
     language,
+    languageDirective: buildLanguageText(languageDirective, outline.languageNote),
   });
 
   if (!htmlPrompts) {
@@ -912,6 +922,7 @@ export async function generateSceneActions(
   ctx?: SceneGenerationContext,
   agents?: AgentInfo[],
   userProfile?: string,
+  languageDirective?: string,
 ): Promise<Action[]> {
   const agentsText = formatAgentsForPrompt(agents);
 
@@ -927,6 +938,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       userProfile: userProfile || '',
+      languageDirective: buildLanguageText(languageDirective, outline.languageNote),
     });
 
     if (!prompts) {
@@ -955,6 +967,7 @@ export async function generateSceneActions(
       questions: questionsText,
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
+      languageDirective: buildLanguageText(languageDirective, outline.languageNote),
     });
 
     if (!prompts) {
@@ -982,6 +995,7 @@ export async function generateSceneActions(
       designIdea: config?.designIdea || '',
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
+      languageDirective: buildLanguageText(languageDirective, outline.languageNote),
     });
 
     if (!prompts) {
@@ -1009,6 +1023,7 @@ export async function generateSceneActions(
       projectDescription: pblConfig?.projectDescription || outline.description,
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
+      languageDirective: buildLanguageText(languageDirective, outline.languageNote),
     });
 
     if (!prompts) {
