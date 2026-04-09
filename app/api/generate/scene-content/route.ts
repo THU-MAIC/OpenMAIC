@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       allOutlines,
       pdfImages,
       imageMapping,
-      stageInfo,
+      stageInfo: _stageInfo,
       stageId,
       agents,
       languageDirective,
