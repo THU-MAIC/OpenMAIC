@@ -6,8 +6,9 @@
  * so the frontend can display them incrementally.
  *
  * SSE events:
+ *   { type: 'languageDirective', data: string }
  *   { type: 'outline', data: SceneOutline, index: number }
- *   { type: 'done', outlines: SceneOutline[] }
+ *   { type: 'done', outlines: SceneOutline[], languageDirective: string }
  *   { type: 'error', error: string }
  */
 
@@ -38,16 +39,40 @@ const log = createLogger('Outlines Stream');
 export const maxDuration = 300;
 
 /**
+ * Extract the languageDirective from the streamed wrapper JSON.
+ * Matches `"languageDirective":"<value>"` in partial JSON like:
+ *   {"languageDirective":"用中文授课...","outlines":[...
+ */
+function extractLanguageDirective(buffer: string): string | null {
+  const match = buffer.match(/"languageDirective"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  if (match) return match[1].replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+  return null;
+}
+
+/**
  * Incremental JSON array parser.
  * Extracts complete top-level objects from a partially-streamed JSON array.
+ * Supports both a flat array `[{...},{...}]` and a wrapper object
+ * `{"languageDirective":"...","outlines":[{...},{...}]}`.
  * Returns newly found objects (skipping `alreadyParsed` count).
  */
 function extractNewOutlines(buffer: string, alreadyParsed: number): SceneOutline[] {
   const results: SceneOutline[] = [];
 
-  // Find the start of the JSON array (skip any markdown fencing)
-  const stripped = buffer.replace(/^[\s\S]*?(?=\[)/, '');
-  const arrayStart = stripped.indexOf('[');
+  // Strip markdown fencing if present
+  const stripped = buffer.replace(/^[\s\S]*?(?=[\[{])/, '');
+
+  // Find the outlines array — either nested in {"outlines": [...]} or a flat array
+  let arrayStart = -1;
+  const outlinesKeyIdx = stripped.indexOf('"outlines"');
+  if (outlinesKeyIdx >= 0) {
+    // Wrapper format: find [ after "outlines":
+    arrayStart = stripped.indexOf('[', outlinesKeyIdx);
+  } else {
+    // Flat array fallback
+    arrayStart = stripped.indexOf('[');
+  }
+
   if (arrayStart === -1) return results;
 
   let depth = 0;
@@ -178,6 +203,7 @@ export async function POST(req: NextRequest) {
       researchContext: researchContext || 'None',
       mediaGenerationPolicy,
       teacherContext,
+      pdfLanguageSample: pdfText?.substring(0, 200) || '',
     });
 
     if (!prompts) {
@@ -237,6 +263,7 @@ export async function POST(req: NextRequest) {
               };
 
           let parsedOutlines: SceneOutline[] = [];
+          let languageDirective: string | null = null;
           let lastError: string | undefined;
 
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
@@ -245,9 +272,22 @@ export async function POST(req: NextRequest) {
 
               let fullText = '';
               parsedOutlines = [];
+              languageDirective = null;
 
               for await (const chunk of result.textStream) {
                 fullText += chunk;
+
+                // Try to extract language directive early
+                if (!languageDirective) {
+                  languageDirective = extractLanguageDirective(fullText);
+                  if (languageDirective) {
+                    const ldEvent = JSON.stringify({
+                      type: 'languageDirective',
+                      data: languageDirective,
+                    });
+                    controller.enqueue(encoder.encode(`data: ${ldEvent}\n\n`));
+                  }
+                }
 
                 // Try to extract new outlines from the accumulated text
                 const newOutlines = extractNewOutlines(fullText, parsedOutlines.length);
@@ -315,6 +355,8 @@ export async function POST(req: NextRequest) {
             const doneEvent = JSON.stringify({
               type: 'done',
               outlines: uniquifiedOutlines,
+              languageDirective:
+                languageDirective || 'Teach in the language that matches the user requirement.',
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else {
