@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Get model config from headers
-    const { model } = resolveModelFromHeaders(req);
+    const { model } = await resolveModelFromHeaders(req);
 
     // Build context for the agent, differentiating question vs judge
     let issueContext = '';
