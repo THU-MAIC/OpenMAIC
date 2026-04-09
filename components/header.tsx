@@ -72,7 +72,7 @@ export function Header({ currentSceneTitle }: HeaderProps) {
 
   return (
     <>
-      <header className="h-20 px-8 flex items-center justify-between z-10 bg-transparent gap-4">
+      <header className="sm:h-20 h-16 sm:px-8 px-4 flex items-center justify-between z-10 bg-transparent gap-4">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             onClick={() => router.push('/')}

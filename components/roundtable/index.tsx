@@ -1053,7 +1053,7 @@ export function Roundtable({
   return (
     <div
       className={cn(
-        'h-[192px] w-full flex flex-col relative z-10 transition-all duration-300',
+        'sm:h-[192px] h-[160px] w-full flex flex-col relative z-10 transition-all duration-300',
         isPresenting && !controlsVisible
           ? 'border-t border-transparent bg-transparent backdrop-blur-none'
           : 'border-t border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
@@ -1073,7 +1073,7 @@ export function Roundtable({
         {/* Left: Teacher identity */}
         <div
           className={cn(
-            'w-[90px] shrink-0 flex flex-col border-r border-gray-100/50 dark:border-gray-700/50 bg-white/40 dark:bg-gray-900/40 overflow-visible relative transition-opacity duration-300',
+            'sm:w-[90px] w-16 shrink-0 flex flex-col border-r border-gray-100/50 dark:border-gray-700/50 bg-white/40 dark:bg-gray-900/40 overflow-visible relative transition-opacity duration-300',
             isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
           )}
         >
@@ -1085,7 +1085,7 @@ export function Roundtable({
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 flex items-center justify-center gap-3 px-2 min-h-0 pb-1 pt-8">
+          <div className="flex-1 flex items-center justify-center gap-1.5 sm:gap-3 px-1 sm:px-2 min-h-0 pb-1 pt-4 sm:pt-8">
             {/* Avatar Group (Left) */}
             <div
               ref={teacherAvatarRef}
@@ -1126,7 +1126,7 @@ export function Roundtable({
 
                     <span
                       className={cn(
-                        'max-w-[80px] truncate px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shadow-sm transition-all duration-300 bg-white/90 dark:bg-gray-800/90',
+                        'max-w-[80px] truncate px-2 py-0.5 rounded-full text-[10px] font-bold tracking-wider uppercase border shadow-sm transition-all duration-300 bg-white/90 dark:bg-gray-800/90 hidden sm:block',
                         activeRole === 'teacher' && !speakingStudent
                           ? 'text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-700'
                           : 'text-gray-400 dark:text-gray-500 border-gray-100 dark:border-gray-700 group-hover:text-purple-500 dark:group-hover:text-purple-400 group-hover:border-purple-200 dark:group-hover:border-purple-600',
@@ -1767,7 +1767,7 @@ export function Roundtable({
         {/* Right: Participants area */}
         <div
           className={cn(
-            'w-[140px] shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300',
+            'sm:w-[140px] w-20 shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300',
             isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
           )}
         >
@@ -1963,11 +1963,11 @@ export function Roundtable({
           </div>
 
           {/* Divider */}
-          <div className="mx-auto my-1.5 w-8 h-px bg-gray-200 dark:bg-gray-700 opacity-50 shrink-0" />
+          <div className="mx-auto my-1.5 w-8 h-px bg-gray-200 dark:bg-gray-700 opacity-50 shrink-0 hidden sm:block" />
 
           {/* User avatar + interaction buttons */}
           <div className="flex-1 flex items-center justify-center gap-3 px-2 min-h-0">
-            <div className="flex flex-col gap-1.5 shrink-0">
+            <div className="flex flex-col gap-1.5 shrink-0 sm:flex-col flex-row">
               {isSendCooldown ? (
                 /* Unified cooldown indicator — replaces both buttons with a single dot wave */
                 <div className="flex items-center justify-center w-8 h-8">
@@ -1991,7 +1991,7 @@ export function Roundtable({
                   </div>
                 </div>
               ) : (
-                <>
+                <div className="flex flex-row sm:flex-col gap-1.5">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -2027,7 +2027,7 @@ export function Roundtable({
                   >
                     <MessageSquare className="w-3.5 h-3.5" />
                   </button>
-                </>
+                </div>
               )}
             </div>
 
@@ -2041,7 +2041,7 @@ export function Roundtable({
             >
               <div
                 className={cn(
-                  'relative w-16 h-16 rounded-full transition-all duration-300 flex items-center justify-center',
+                  'relative sm:w-16 sm:h-16 w-12 h-12 rounded-full transition-all duration-300 flex items-center justify-center',
                   activeRole === 'user' || isInputOpen || isCueUser
                     ? 'scale-105'
                     : 'opacity-50 grayscale-[0.2] scale-95 group-hover:opacity-100 group-hover:grayscale-0 group-hover:scale-100',
@@ -2057,10 +2057,10 @@ export function Roundtable({
                         : 'border-white dark:border-gray-700 group-hover:border-purple-200 dark:group-hover:border-purple-600',
                   )}
                 />
-                <div className="w-14 h-14 rounded-full bg-gray-50 dark:bg-gray-800 overflow-hidden relative z-10 shadow-sm border border-gray-50 dark:border-gray-700 text-2xl">
+                <div className="sm:w-14 sm:h-14 w-10 h-10 rounded-full bg-gray-50 dark:bg-gray-800 overflow-hidden relative z-10 shadow-sm border border-gray-50 dark:border-gray-700 text-lg sm:text-2xl">
                   <AvatarDisplay src={userAvatar} alt={t('roundtable.you')} />
                 </div>
-                <div className="absolute top-0 right-0 w-5 h-5 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center shadow-md border border-gray-100 dark:border-gray-700 z-20">
+                <div className="absolute top-0 right-0 sm:w-5 sm:h-5 w-4 h-4 bg-white dark:bg-gray-800 rounded-full flex items-center justify-center shadow-md border border-gray-100 dark:border-gray-700 z-20">
                   <div
                     className={cn(
                       'w-1.5 h-1.5 rounded-full',

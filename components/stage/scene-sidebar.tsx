@@ -11,10 +11,11 @@ import {
   Globe,
   AlertCircle,
   RefreshCw,
+  Smartphone,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
-import { useStageStore, useCanvasStore } from '@/lib/store';
+import { useStageStore, useCanvasStore, useSettingsStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { SceneType, SlideContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
@@ -447,8 +448,21 @@ export function SceneSidebar({
             })()}
         </div>
 
-        {/* Spacer to push toggle button area */}
-        <div className="mt-auto" />
+        {/* Mobile Reflow Toggle */}
+        <div className="p-3 border-t border-gray-100 dark:border-gray-800">
+          <button
+            onClick={() => useSettingsStore.getState().setMobileReflowPreferred(!useSettingsStore.getState().mobileReflowPreferred)}
+            className={cn(
+              "w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 border shadow-[2px_2px_0_#073b4c] active:shadow-none active:translate-x-[1px] active:translate-y-[1px]",
+              useSettingsStore((s) => s.mobileReflowPreferred)
+                ? "bg-[#073b4c] text-white border-[#073b4c]"
+                : "bg-white text-[#073b4c] border-[#073b4c]"
+            )}
+          >
+            <Smartphone className="w-4 h-4" />
+            <span>Vertical View: {useSettingsStore((s) => s.mobileReflowPreferred) ? "ON" : "OFF"}</span>
+          </button>
+        </div>
       </div>
     </div>
   );

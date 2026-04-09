@@ -61,6 +61,16 @@ export function Stage({
   const setChatAreaCollapsed = useSettingsStore((s) => s.setChatAreaCollapsed);
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
   const setTTSVolume = useSettingsStore((s) => s.setTTSVolume);
+  const initializedRef = useRef(false);
+
+  // Default to full screen (collapsed sidebars) on mount (#DefaultFullScreen)
+  useEffect(() => {
+    if (!initializedRef.current) {
+      setSidebarCollapsed(true);
+      setChatAreaCollapsed(true);
+      initializedRef.current = true;
+    }
+  }, [setSidebarCollapsed, setChatAreaCollapsed]);
 
   // PlaybackEngine state
   const [engineMode, setEngineMode] = useState<EngineMode>('idle');
@@ -915,18 +925,13 @@ export function Stage({
       }
     : null;
 
-  // Calculate scene viewer height (subtract Header's 80px height)
-  const sceneViewerHeight = (() => {
-    const headerHeight = isPresenting ? 0 : 80; // Header h-20 = 80px
-    const roundtableHeight = mode === 'playback' && !isPresenting ? 192 : 0;
-    return `calc(100% - ${headerHeight + roundtableHeight}px)`;
-  })();
+
 
   return (
     <div
       ref={stageRef}
       className={cn(
-        'flex-1 flex overflow-hidden bg-gray-50 dark:bg-gray-900',
+        'flex-1 flex h-full overflow-hidden bg-gray-50 dark:bg-gray-900',
         isPresenting && !controlsVisible && 'cursor-none',
       )}
     >
@@ -939,16 +944,17 @@ export function Stage({
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
+      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0 relative">
         {/* Header */}
-        {!isPresenting && <Header currentSceneTitle={currentScene?.title || ''} />}
+        {!isPresenting && (
+          <div className="h-20 shrink-0">
+            <Header currentSceneTitle={currentScene?.title || ''} />
+          </div>
+        )}
 
         {/* Canvas Area */}
         <div
           className="overflow-hidden relative flex-1 min-h-0 isolate"
-          style={{
-            height: sceneViewerHeight,
-          }}
           suppressHydrationWarning
         >
           <CanvasArea

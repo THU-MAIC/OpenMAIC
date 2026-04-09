@@ -8,6 +8,7 @@ import { I18nProvider } from '@/lib/hooks/use-i18n';
 import { Toaster } from '@/components/ui/sonner';
 import { ServerProvidersInit } from '@/components/server-providers-init';
 import { Analytics } from '@vercel/analytics/next';
+import { cn } from '@/lib/utils';
 import Script from 'next/script';
 
 const nunito = Nunito({
@@ -28,9 +29,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={nunito.variable} suppressHydrationWarning>
+    <html lang="en" className={cn(nunito.variable, 'h-full')} suppressHydrationWarning>
       <body
-        className={`font-sans antialiased`}
+        className={`font-sans antialiased h-full`}
         suppressHydrationWarning
       >
         <Script

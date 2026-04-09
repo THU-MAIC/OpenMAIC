@@ -1,5 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { Slide, PPTElement } from '@/lib/types/slides';
+import { useSettingsStore } from '@/lib/store/settings';
+import { useCanvasStore } from '@/lib/store/canvas';
 
 // Reflow configuration
 const PORTRAIT_WIDTH = 800; // Virtual width for portrait mode
@@ -30,7 +32,7 @@ export function reflowToPortrait(originalSlide: Slide): Slide {
 
   // Set new virtual dimensions (9:16 aspect ratio)
   slide.viewportSize = PORTRAIT_WIDTH;
-  slide.viewportRatio = 9 / 16;
+  slide.viewportRatio = 16 / 9; // Portrait: height is 16/9 of width
 
   if (!slide.elements || slide.elements.length === 0) {
     return slide;
@@ -101,7 +103,12 @@ export function reflowToPortrait(originalSlide: Slide): Slide {
   return slide;
 }
 
-export function usePortraitReflow(slide: Slide): Slide {
+export function usePortraitReflow(slide: Slide, options: { syncToStore?: boolean } = {}): Slide {
+  const { syncToStore = false } = options;
+  const mobileReflowPreferred = useSettingsStore((state) => state.mobileReflowPreferred);
+  const setViewportRatio = useCanvasStore((state) => state.setViewportRatio);
+  const setViewportSize = useCanvasStore((state) => state.setViewportSize);
+
   const [isPortrait, setIsPortrait] = useState(false);
 
   useEffect(() => {
@@ -120,8 +127,24 @@ export function usePortraitReflow(slide: Slide): Slide {
     return () => mediaQuery.removeEventListener('change', handleOrientationChange);
   }, []);
 
+  const active = isPortrait && mobileReflowPreferred;
+
+  // Sync with CanvasStore if requested
+  useEffect(() => {
+    if (!syncToStore) return;
+
+    if (active) {
+      setViewportSize(PORTRAIT_WIDTH);
+      setViewportRatio(16 / 9); // Portrait ratio
+    } else {
+      // Restore standard 16:9
+      setViewportSize(1000);
+      setViewportRatio(0.5625);
+    }
+  }, [active, syncToStore, setViewportSize, setViewportRatio]);
+
   return useMemo(() => {
     if (!slide) return slide;
-    return isPortrait ? reflowToPortrait(slide) : slide;
-  }, [slide, isPortrait]);
+    return active ? reflowToPortrait(slide) : slide;
+  }, [slide, active]);
 }

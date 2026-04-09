@@ -148,7 +148,7 @@ export function CanvasToolbar({
             onClick={onToggleSidebar}
             className={cn(
               ctrlBtn,
-              'w-6 h-6',
+              'w-6 h-6 hidden sm:flex',
               sidebarCollapsed
                 ? 'text-gray-400 dark:text-gray-500'
                 : 'text-gray-600 dark:text-gray-300',
@@ -158,14 +158,16 @@ export function CanvasToolbar({
             <LayoutList className="w-3.5 h-3.5" />
           </button>
         )}
-        <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums select-none font-medium">
+        <span className="text-[11px] text-gray-400 dark:text-gray-500 tabular-nums select-none font-medium px-1">
           {currentSceneIndex + 1}
           <span className="opacity-35 mx-px">/</span>
           {scenesCount}
         </span>
       </div>
 
-      <CtrlDivider />
+      <div className="hidden sm:block">
+        <CtrlDivider />
+      </div>
 
       {/* ── Center: unified playback controls ── */}
       <div className="flex-1 flex items-center justify-center min-w-0">
@@ -252,7 +254,7 @@ export function CanvasToolbar({
                   <button
                     onClick={onCycleSpeed}
                     className={cn(
-                      'w-8 h-5 rounded flex items-center justify-center',
+                      'w-8 h-5 rounded hidden min-[400px]:flex items-center justify-center',
                       'transition-all duration-150 outline-none cursor-pointer',
                       'text-[11px] font-semibold tabular-nums leading-none',
                       'active:scale-90',
@@ -272,7 +274,9 @@ export function CanvasToolbar({
             </TooltipProvider>
           )}
 
-          <CtrlDivider />
+          <div className="hidden min-[400px]:block">
+            <CtrlDivider />
+          </div>
 
           {/* Prev scene */}
           {scenesCount > 1 && (
@@ -356,7 +360,7 @@ export function CanvasToolbar({
                     onClick={onToggleAutoPlay}
                     className={cn(
                       ctrlBtn,
-                      'w-8 h-6',
+                      'w-8 h-6 hidden min-[400px]:flex',
                       autoPlayLecture
                         ? 'text-violet-600 dark:text-violet-400'
                         : 'text-gray-500 dark:text-gray-400',
@@ -398,7 +402,9 @@ export function CanvasToolbar({
 
       {/* ── Right: fullscreen + chat toggle ── */}
       <div className="flex items-center justify-end gap-px shrink-0 pr-1">
-        <CtrlDivider />
+        <div className="hidden sm:block">
+          <CtrlDivider />
+        </div>
         {onTogglePresentation && (
           <button
             onClick={onTogglePresentation}
@@ -424,7 +430,7 @@ export function CanvasToolbar({
             onClick={onToggleChat}
             className={cn(
               ctrlBtn,
-              'w-6 h-6',
+              'w-6 h-6 hidden sm:flex',
               chatCollapsed
                 ? 'text-gray-400 dark:text-gray-500'
                 : 'text-gray-600 dark:text-gray-300',

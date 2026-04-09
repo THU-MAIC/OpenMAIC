@@ -333,7 +333,8 @@ function HomePage() {
   };
 
   return (
-    <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
+    <div className="h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center overflow-hidden">
+      <div className="flex-1 w-full overflow-y-auto px-4 pt-16 md:p-8 md:pt-16 flex flex-col items-center">
       {/* ═══ Top-right pill (Admin only) ═══ */}
       {isAdmin && (
         <div
@@ -633,8 +634,9 @@ function HomePage() {
         </motion.div>
       )}
 
+      </div>
       {/* Footer — flows with content, at the very end */}
-      <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
+      <div className="w-full shrink-0 pt-6 pb-4 text-center text-xs text-muted-foreground/40 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm border-t border-border/10">
         Slate by Chalk Labs
       </div>
     </div>

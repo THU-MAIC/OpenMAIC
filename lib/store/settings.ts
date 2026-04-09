@@ -156,6 +156,7 @@ export interface SettingsState {
   sidebarCollapsed: boolean;
   chatAreaCollapsed: boolean;
   chatAreaWidth: number;
+  mobileReflowPreferred: boolean;
 
   // Actions
   setModel: (providerId: ProviderId, modelId: string) => void;
@@ -175,6 +176,7 @@ export interface SettingsState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setChatAreaCollapsed: (collapsed: boolean) => void;
   setChatAreaWidth: (width: number) => void;
+  setMobileReflowPreferred: (preferred: boolean) => void;
 
   // Audio actions
   setTTSProvider: (providerId: TTSProviderId) => void;
@@ -564,6 +566,7 @@ export const useSettingsStore = create<SettingsState>()(
         sidebarCollapsed: true,
         chatAreaCollapsed: true,
         chatAreaWidth: 320,
+        mobileReflowPreferred: true,
 
         // Audio settings (use defaults)
         ...defaultAudioConfig,
@@ -626,6 +629,7 @@ export const useSettingsStore = create<SettingsState>()(
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
         setChatAreaCollapsed: (collapsed) => set({ chatAreaCollapsed: collapsed }),
         setChatAreaWidth: (width) => set({ chatAreaWidth: width }),
+        setMobileReflowPreferred: (preferred) => set({ mobileReflowPreferred: preferred }),
 
         // Audio actions
         setTTSProvider: (providerId) =>
