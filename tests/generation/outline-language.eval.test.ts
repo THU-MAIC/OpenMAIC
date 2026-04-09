@@ -247,9 +247,7 @@ describe('Outline Language Inference Evaluation', () => {
       lines.push(`- **Ground truth**: ${r.groundTruth}`);
       lines.push(`- **Directive**: ${r.directive}`);
       lines.push(`- **Outlines generated**: ${r.outlinesCount}`);
-      lines.push(
-        `- **Judge**: ${r.judgePassed ? 'PASS' : 'FAIL'} — ${r.judgeReason}`,
-      );
+      lines.push(`- **Judge**: ${r.judgePassed ? 'PASS' : 'FAIL'} — ${r.judgeReason}`);
       lines.push(``);
     }
 
