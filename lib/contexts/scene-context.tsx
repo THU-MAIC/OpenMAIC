@@ -51,7 +51,10 @@ export function SceneProvider({ children }: { children: React.ReactNode }) {
 
   const reflowedSlide = usePortraitReflow(
     rawSceneData && rawSceneData.type === 'slide' ? (rawSceneData as any).canvas : null,
-    { syncToStore: true }
+    { 
+      syncToStore: true,
+      portraitSlide: rawSceneData && rawSceneData.type === 'slide' ? (rawSceneData as any).portraitCanvas : undefined
+    }
   );
 
   const sceneData = useMemo(() => {

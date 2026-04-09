@@ -108,7 +108,7 @@ export function Stage({
 
   // Scene switch confirmation dialog state
   const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
-  const [isPresenting, setIsPresenting] = useState(false);
+  const [isPresenting, setIsPresenting] = useState(true);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
 
@@ -280,49 +280,28 @@ export function Stage({
   }, [clearPresentationIdleTimer, isPresenting, isPresentationInteractionActive]);
 
   const togglePresentation = useCallback(async () => {
-    const stageElement = stageRef.current;
-    if (!stageElement) return;
-
-    try {
-      if (document.fullscreenElement === stageElement) {
-        // Unlock Escape key before exiting fullscreen
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (navigator as any).keyboard?.unlock?.();
-        await document.exitFullscreen();
-        return;
-      }
-
-      setControlsVisible(true);
-      await stageElement.requestFullscreen();
-      // Lock Escape key so it doesn't auto-exit fullscreen (#255)
-      // Escape is handled manually in our keydown handler instead
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (navigator as any).keyboard?.lock?.(['Escape']).catch(() => {});
+    const nextState = !isPresenting;
+    setIsPresenting(nextState);
+    setControlsVisible(true);
+    if (nextState) {
       setSidebarCollapsed(true);
       setChatAreaCollapsed(true);
-    } catch {
-      // Firefox may deny fullscreen from certain keyboard events (e.g. F11)
-      console.warn('[Presentation] Fullscreen request denied — browser policy');
     }
-  }, [setChatAreaCollapsed, setSidebarCollapsed]);
+  }, [isPresenting, setChatAreaCollapsed, setSidebarCollapsed]);
 
+  // Keyboard escape hook for web-only fullscreen exit
   useEffect(() => {
-    const onFullscreenChange = () => {
-      const active = document.fullscreenElement === stageRef.current;
-      setIsPresenting(active);
-
-      if (!active) {
-        // Ensure keyboard unlock on any fullscreen exit
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (navigator as any).keyboard?.unlock?.();
+    if (!isPresenting) return;
+    
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !isPresentationInteractionActive) {
+        setIsPresenting(false);
         setControlsVisible(true);
-        clearPresentationIdleTimer();
       }
     };
-
-    document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
-  }, [clearPresentationIdleTimer]);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isPresenting, isPresentationInteractionActive]);
 
   useEffect(() => {
     if (!isPresenting) {
@@ -887,19 +866,6 @@ export function Stage({
     ttsVolume,
   ]);
 
-  // Intercept F11 to use our presentation fullscreen instead of browser fullscreen
-  // This way ESC can exit fullscreen (browser F11 fullscreen requires F11 to exit)
-  useEffect(() => {
-    const onF11 = (event: KeyboardEvent) => {
-      if (event.key === 'F11') {
-        event.preventDefault();
-        togglePresentation();
-      }
-    };
-
-    window.addEventListener('keydown', onF11);
-    return () => window.removeEventListener('keydown', onF11);
-  }, [togglePresentation]);
 
   // Map engine mode to the CanvasArea's expected engine state
   const canvasEngineState = (() => {
@@ -944,17 +910,20 @@ export function Stage({
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden min-w-0 relative">
-        {/* Header */}
+      <div className={cn(
+        "flex-1 min-w-0 relative h-full overflow-hidden",
+        !isPresenting && "grid grid-rows-[auto_1fr_auto]"
+      )}>
+        {/* Header Row */}
         {!isPresenting && (
-          <div className="h-20 shrink-0">
+          <div className="h-20 border-b border-gray-100 dark:border-gray-800">
             <Header currentSceneTitle={currentScene?.title || ''} />
           </div>
         )}
 
-        {/* Canvas Area */}
+        {/* Canvas Area Row */}
         <div
-          className="overflow-hidden relative flex-1 min-h-0 isolate"
+          className="relative min-h-0 overflow-hidden isolate"
           suppressHydrationWarning
         >
           <CanvasArea
@@ -995,13 +964,12 @@ export function Stage({
           />
         </div>
 
-        {/* Roundtable Area */}
+        {/* Roundtable Area Row */}
         {mode === 'playback' && (
           <div
             className={cn(
               'transition-opacity duration-300',
-              !isPresenting && 'shrink-0',
-              isPresenting && 'absolute inset-x-0 bottom-0 z-20',
+              !isPresenting ? 'h-52' : 'absolute inset-x-0 bottom-0 z-20',
             )}
           >
             <Roundtable

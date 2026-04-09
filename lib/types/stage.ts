@@ -85,6 +85,8 @@ export interface SlideContent {
   type: 'slide';
   // PPTist slide data structure
   canvas: Slide;
+  // Optional: AI-generated portrait version of the canvas (e.g. 4:5 ratio)
+  portraitCanvas?: Slide;
 }
 
 /**

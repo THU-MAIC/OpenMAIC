@@ -9,6 +9,7 @@ export type PromptId =
   | 'requirements-to-outlines'
   | 'web-search-query-rewrite'
   | 'slide-content'
+  | 'slide-portrait-content'
   | 'quiz-content'
   | 'slide-actions'
   | 'quiz-actions'

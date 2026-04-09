@@ -24,6 +24,7 @@ export const PROMPT_IDS = {
   REQUIREMENTS_TO_OUTLINES: 'requirements-to-outlines',
   WEB_SEARCH_QUERY_REWRITE: 'web-search-query-rewrite',
   SLIDE_CONTENT: 'slide-content',
+  SLIDE_PORTRAIT_CONTENT: 'slide-portrait-content',
   QUIZ_CONTENT: 'quiz-content',
   SLIDE_ACTIONS: 'slide-actions',
   QUIZ_ACTIONS: 'quiz-actions',

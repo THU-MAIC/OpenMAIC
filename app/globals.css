@@ -194,3 +194,22 @@
     transform: translateX(100%);
   }
 }
+
+/* Floating Shapes Animations */
+@keyframes floating {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(-20px) rotate(5deg); }
+}
+
+@keyframes floating-reverse {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  50% { transform: translateY(20px) rotate(-5deg); }
+}
+
+.floating-shape {
+  animation: floating 6s ease-in-out infinite;
+}
+
+.floating-shape-reverse {
+  animation: floating-reverse 7s ease-in-out infinite;
+}

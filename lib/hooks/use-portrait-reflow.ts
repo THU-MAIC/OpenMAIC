@@ -167,8 +167,11 @@ export function reflowToPortrait(originalSlide: Slide): Slide {
   return slide;
 }
 
-export function usePortraitReflow(slide: Slide, options: { syncToStore?: boolean } = {}): Slide {
-  const { syncToStore = false } = options;
+export function usePortraitReflow(
+  slide: Slide,
+  options: { syncToStore?: boolean; portraitSlide?: Slide } = {},
+): Slide {
+  const { syncToStore = false, portraitSlide } = options;
   const mobileReflowPreferred = useSettingsStore((state) => state.mobileReflowPreferred);
   const setViewportRatio = useCanvasStore((state) => state.setViewportRatio);
   const setViewportSize = useCanvasStore((state) => state.setViewportSize);
@@ -209,6 +212,10 @@ export function usePortraitReflow(slide: Slide, options: { syncToStore?: boolean
 
   return useMemo(() => {
     if (!slide) return slide;
-    return active ? reflowToPortrait(slide) : slide;
-  }, [slide, active]);
+    if (active) {
+      if (portraitSlide) return portraitSlide;
+      return reflowToPortrait(slide);
+    }
+    return slide;
+  }, [slide, active, portraitSlide]);
 }

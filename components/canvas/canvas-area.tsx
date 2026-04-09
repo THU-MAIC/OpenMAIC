@@ -55,6 +55,11 @@ export function CanvasArea({
     !isLiveSession &&
     !isPendingScene;
 
+  const viewportRatio = currentScene?.type === 'slide'
+    ? (currentScene.content as any).canvas?.viewportRatio || 0.5625
+    : 0.5625;
+  const isPortraitRatio = viewportRatio > 1;
+
   const handleSlideClick = useCallback(
     (e: React.MouseEvent) => {
       if (!showControls || isLiveSession || currentScene?.type !== 'slide') return;
@@ -92,12 +97,13 @@ export function CanvasArea({
       >
         <div
           className={cn(
-            'aspect-[16/9] h-full max-h-full max-w-full bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-all duration-700',
+            'h-full max-h-full max-w-full bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-all duration-700 mx-auto',
             showControls && !isLiveSession && currentScene?.type === 'slide' && 'cursor-pointer',
             currentScene?.type === 'interactive'
               ? 'shadow-blue-200/50 dark:shadow-blue-900/50 ring-1 ring-blue-900/5 dark:ring-blue-500/10'
               : 'shadow-gray-200/50 dark:shadow-gray-800/50 ring-1 ring-gray-950/5 dark:ring-white/5',
           )}
+          style={{ aspectRatio: `1 / ${viewportRatio}` }}
           onClick={handleSlideClick}
         >
           {/* Whiteboard Layer */}
@@ -187,13 +193,16 @@ export function CanvasArea({
           {/* Play hint — breathing button when idle or paused (slides only) */}
           <AnimatePresence>
             {showPlayHint && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.3 }}
-                className="absolute inset-0 z-[102] flex items-center justify-center pointer-events-none"
-              >
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.3 }}
+                  className={cn(
+                    'absolute inset-0 z-[102] flex justify-center pointer-events-none',
+                    isPortraitRatio ? 'items-end pb-12' : 'items-center',
+                  )}
+                >
                 <motion.div
                   className="opacity-50 group-hover/canvas:opacity-100 transition-opacity duration-300 pointer-events-auto cursor-pointer"
                   exit={{ pointerEvents: 'none' }}

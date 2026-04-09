@@ -1085,7 +1085,7 @@ export function Roundtable({
           </div>
 
           {/* Main Content */}
-          <div className="flex-1 flex items-center justify-center gap-1.5 sm:gap-3 px-1 sm:px-2 min-h-0 pb-1 pt-4 sm:pt-8">
+          <div className="flex-1 flex items-center justify-center gap-1 sm:gap-3 px-1 sm:px-2 min-h-0 pb-1 pt-2 sm:pt-4">
             {/* Avatar Group (Left) */}
             <div
               ref={teacherAvatarRef}
@@ -1767,7 +1767,7 @@ export function Roundtable({
         {/* Right: Participants area */}
         <div
           className={cn(
-            'sm:w-[140px] w-20 shrink-0 flex flex-col py-3 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300',
+            'sm:w-[140px] w-20 shrink-0 flex flex-col py-1.5 border-l border-gray-100/50 dark:border-gray-700/50 bg-gray-50/30 dark:bg-gray-900/30 overflow-visible transition-opacity duration-300',
             isPresenting && !controlsVisible && 'opacity-0 pointer-events-none',
           )}
         >
@@ -1967,7 +1967,7 @@ export function Roundtable({
 
           {/* User avatar + interaction buttons */}
           <div className="flex-1 flex items-center justify-center gap-3 px-2 min-h-0">
-            <div className="flex flex-col gap-1.5 shrink-0 sm:flex-col flex-row">
+            <div className="flex flex-col gap-1 shrink-0 sm:flex-col flex-row">
               {isSendCooldown ? (
                 /* Unified cooldown indicator — replaces both buttons with a single dot wave */
                 <div className="flex items-center justify-center w-8 h-8">
@@ -1991,7 +1991,7 @@ export function Roundtable({
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-row sm:flex-col gap-1.5">
+                <div className="flex flex-row sm:flex-col gap-1">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
@@ -2041,7 +2041,7 @@ export function Roundtable({
             >
               <div
                 className={cn(
-                  'relative sm:w-16 sm:h-16 w-12 h-12 rounded-full transition-all duration-300 flex items-center justify-center',
+                  'relative sm:w-14 sm:h-14 w-10 h-10 rounded-full transition-all duration-300 flex items-center justify-center',
                   activeRole === 'user' || isInputOpen || isCueUser
                     ? 'scale-105'
                     : 'opacity-50 grayscale-[0.2] scale-95 group-hover:opacity-100 group-hover:grayscale-0 group-hover:scale-100',

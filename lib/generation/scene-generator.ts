@@ -126,7 +126,7 @@ async function generateSingleScene(
   api: ReturnType<typeof createStageAPI>,
   aiCall: AICallFn,
 ): Promise<string | null> {
-  // Step 3.1: Generate content
+  // Step 3.1: Generate content (landscape)
   log.info(`Step 3.1: Generating content for: ${outline.title}`);
   const content = await generateSceneContent(outline, aiCall);
   if (!content) {
@@ -134,9 +134,22 @@ async function generateSingleScene(
     return null;
   }
 
-  // Step 3.2: Generate Actions
-  log.info(`Step 3.2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(outline, content, aiCall);
+  // Step 3.2: Generate Actions + Step 3.3: Generate Portrait Layout (if slide)
+  log.info(`Step 3.2: Generating actions and portrait layout for: ${outline.title}`);
+  
+  const [actions, portraitResult] = await Promise.all([
+    generateSceneActions(outline, content, aiCall),
+    outline.type === 'slide' 
+      ? generateSlidePortraitContent(outline, content as GeneratedSlideContent, aiCall)
+      : Promise.resolve(null)
+  ]);
+
+  if (portraitResult && 'elements' in content) {
+    (content as GeneratedSlideContent).portraitElements = portraitResult.elements;
+    (content as GeneratedSlideContent).portraitBackground = portraitResult.background;
+    log.info(`Generated portrait layout for: ${outline.title}`);
+  }
+
   log.info(`Generated ${actions.length} actions for: ${outline.title}`);
 
   // Create complete Scene
@@ -1230,6 +1243,19 @@ export function createSceneWithActions(
       background: content.background,
     };
 
+    // Build portrait Slide object if content exists
+    let portraitCanvas: Slide | undefined;
+    if (content.portraitElements) {
+      portraitCanvas = {
+        id: nanoid(),
+        viewportSize: 800,
+        viewportRatio: 1.25, // 5 / 4
+        theme: defaultTheme,
+        elements: content.portraitElements,
+        background: content.portraitBackground,
+      };
+    }
+
     const sceneResult = api.scene.create({
       type: 'slide',
       title: outline.title,
@@ -1237,6 +1263,7 @@ export function createSceneWithActions(
       content: {
         type: 'slide',
         canvas: slide,
+        portraitCanvas,
       },
       actions,
     });
@@ -1291,4 +1318,74 @@ export function createSceneWithActions(
   }
 
   return null;
+}
+
+/**
+ * Generate portrait version of a slide scene from landscape elements
+ */
+export async function generateSlidePortraitContent(
+  outline: SceneOutline,
+  landscapeContent: GeneratedSlideContent,
+  aiCall: AICallFn,
+): Promise<{ elements: PPTElement[]; background?: SlideBackground } | null> {
+  const canvasWidth = 800;
+  const canvasHeight = 1000;
+
+  // Filter out internal fields from elements to keep prompt clean
+  const cleanElements = landscapeContent.elements.map((el) => {
+    const { id, type, left, top, width, height, ...rest } = el as any;
+    return { id, type, left, top, width, height, ...rest };
+  });
+
+  const prompts = buildPrompt(PROMPT_IDS.SLIDE_PORTRAIT_CONTENT, {
+    title: outline.title,
+    description: outline.description,
+    landscape_elements: JSON.stringify(cleanElements, null, 2),
+    landscape_background: JSON.stringify(landscapeContent.background || {}, null, 2),
+    canvas_width: canvasWidth,
+    canvas_height: canvasHeight,
+  });
+
+  if (!prompts) return null;
+
+  log.debug(`Generating portrait content for: ${outline.title}`);
+  try {
+    const response = await aiCall(prompts.system, prompts.user);
+    const generatedData = parseJsonResponse<GeneratedSlideData>(response);
+
+    if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
+      log.error(`Failed to parse AI portrait response for: ${outline.title}`);
+      return null;
+    }
+
+    // Process portrait elements - maintain original IDs from landscape
+    const portraitElements: PPTElement[] = generatedData.elements.map((el) => {
+      // Find original element to preserve its unique ID if LLM tried to change it
+      // though the prompt says "use same ID"
+      return {
+        ...el,
+        rotate: 0,
+      } as PPTElement;
+    });
+
+    let background: SlideBackground | undefined;
+    if (generatedData.background) {
+      if (generatedData.background.type === 'solid' && generatedData.background.color) {
+        background = { type: 'solid', color: generatedData.background.color };
+      } else if (generatedData.background.type === 'gradient' && generatedData.background.gradient) {
+        background = {
+          type: 'gradient',
+          gradient: generatedData.background.gradient,
+        };
+      }
+    }
+
+    return {
+      elements: portraitElements,
+      background,
+    };
+  } catch (error) {
+    log.error(`Portrait generation failed for ${outline.title}: ${error}`);
+    return null;
+  }
 }

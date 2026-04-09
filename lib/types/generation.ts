@@ -139,6 +139,8 @@ import type { QuizQuestion } from './stage';
 export interface GeneratedSlideContent {
   elements: PPTElement[];
   background?: SlideBackground;
+  portraitElements?: PPTElement[];
+  portraitBackground?: SlideBackground;
   remark?: string;
 }
 

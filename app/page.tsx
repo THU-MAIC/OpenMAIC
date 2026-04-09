@@ -428,7 +428,15 @@ function HomePage() {
         initialSection={settingsSection}
       />
 
-      {/* Background Decor Removed for clean aesthetic */}
+      {/* Floating shapes */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden h-full w-full">
+        <div className="floating-shape absolute top-[8%] left-[4%] w-16 h-16 md:w-24 md:h-24 bg-[#FFD166] rounded-full border-4 border-[#073B4C] opacity-50" style={{ animationDelay: "0s" }} />
+        <div className="floating-shape-reverse absolute top-[15%] right-[8%] w-14 h-14 md:w-20 md:h-20 bg-[#EF476F] rounded-2xl border-4 border-[#073B4C] opacity-50" style={{ animationDelay: "1s" }} />
+        <div className="floating-shape absolute bottom-[12%] left-[12%] w-20 h-20 md:w-28 md:h-28 bg-[#118AB2] rounded-full border-4 border-[#073B4C] opacity-30" style={{ animationDelay: "2s" }} />
+        <div className="floating-shape-reverse absolute bottom-[20%] right-[6%] w-12 h-12 md:w-16 md:h-16 bg-[#06D6A0] rounded-3xl border-4 border-[#073B4C] opacity-40" style={{ animationDelay: "0.5s" }} />
+        <div className="floating-shape absolute top-[45%] left-[50%] w-10 h-10 bg-[#8338EC] rounded-full border-4 border-[#073B4C] opacity-25" style={{ animationDelay: "1.5s" }} />
+        <div className="floating-shape-reverse absolute top-[60%] left-[25%] w-8 h-8 bg-[#FF6B35] rounded-lg border-3 border-[#073B4C] opacity-30" style={{ animationDelay: "3s" }} />
+      </div>
 
       {/* ═══ Hero section: title + input (centered, wider) ═══ */}
       <motion.div
