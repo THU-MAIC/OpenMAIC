@@ -91,7 +91,7 @@ Start playback of a video element on the slide. This is a synchronous action —
 - `elementId`: ID of the video element to play, **must** be from the provided element list and must be a `video` type element
 - Use a speech action BEFORE play_video to introduce the video, e.g. "Let's watch a short clip demonstrating..."
 - Do NOT place speech actions after play_video expecting them to overlap — the next action only runs after the video ends
-- Videos do NOT autoplay when entering a slide — they wait for a `play_video` action
+- Videos will autoplay if their `autoplay` property is set to true in the slide content. Use the `play_video` action for explicit, synchronized playback control during a specific point in the narration.
 - Only use this action when the slide contains a video element with a valid `src`
 
 ### discussion (Interactive Discussion)

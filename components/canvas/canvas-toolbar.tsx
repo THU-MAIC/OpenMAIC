@@ -15,6 +15,7 @@ import {
   Repeat,
   Maximize2,
   Minimize2,
+  Home,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store';
@@ -50,6 +51,7 @@ export interface CanvasToolbarProps {
   readonly onToggleAutoPlay?: () => void;
   readonly playbackSpeed?: number;
   readonly onCycleSpeed?: () => void;
+  readonly onHome?: () => void;
 }
 
 /* Compact control button */
@@ -108,6 +110,7 @@ export function CanvasToolbar({
   onToggleAutoPlay,
   playbackSpeed = 1,
   onCycleSpeed,
+  onHome,
 }: CanvasToolbarProps) {
   const { t } = useI18n();
   const canGoPrev = currentSceneIndex > 0;
@@ -143,6 +146,23 @@ export function CanvasToolbar({
     <div className={cn('flex items-center gap-2', className)}>
       {/* ── Left: sidebar toggle + page indicator ── */}
       <div className="flex items-center gap-1 shrink-0 pl-1">
+        {onHome && (
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={onHome}
+                  className={cn(ctrlBtn, 'text-gray-500 hover:text-purple-600')}
+                >
+                  <Home className="w-4 h-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                <p className="text-xs">{t('common.home') || 'Home'}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        )}
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}

@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useStageStore } from '@/lib/store';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -46,6 +47,7 @@ export function Stage({
   onRetryOutline?: (outlineId: string) => Promise<void>;
 }) {
   const { t } = useI18n();
+  const router = useRouter();
   const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
@@ -266,6 +268,10 @@ export function Stage({
     doSessionCleanup();
   }, [doSessionCleanup]);
 
+  const handleHome = useCallback(() => {
+    router.push('/');
+  }, [router]);
+
   const clearPresentationIdleTimer = useCallback(() => {
     if (presentationIdleTimerRef.current) {
       clearTimeout(presentationIdleTimerRef.current);
@@ -276,12 +282,7 @@ export function Stage({
   const resetPresentationIdleTimer = useCallback(() => {
     setControlsVisible(true);
     clearPresentationIdleTimer();
-    if (isPresenting && !isPresentationInteractionActive) {
-      presentationIdleTimerRef.current = setTimeout(() => {
-        setControlsVisible(false);
-      }, 3000);
-    }
-  }, [clearPresentationIdleTimer, isPresenting, isPresentationInteractionActive]);
+  }, [clearPresentationIdleTimer]);
 
   const togglePresentation = useCallback(async () => {
     const nextState = !isPresenting;
@@ -314,32 +315,9 @@ export function Stage({
       return;
     }
 
-    const handleActivity = () => {
-      resetPresentationIdleTimer();
-    };
-
-    window.addEventListener('mousemove', handleActivity);
-    window.addEventListener('mousedown', handleActivity);
-    window.addEventListener('touchstart', handleActivity);
-    if (isPresentationInteractionActive) {
-      setControlsVisible(true);
-      clearPresentationIdleTimer();
-    } else {
-      resetPresentationIdleTimer();
-    }
-
-    return () => {
-      window.removeEventListener('mousemove', handleActivity);
-      window.removeEventListener('mousedown', handleActivity);
-      window.removeEventListener('touchstart', handleActivity);
-      clearPresentationIdleTimer();
-    };
-  }, [
-    clearPresentationIdleTimer,
-    isPresenting,
-    isPresentationInteractionActive,
-    resetPresentationIdleTimer,
-  ]);
+    setControlsVisible(true);
+    clearPresentationIdleTimer();
+  }, [clearPresentationIdleTimer, isPresenting]);
 
   // Initialize playback engine when scene changes
   useEffect(() => {
@@ -968,6 +946,7 @@ export function Stage({
                 ? () => onRetryOutline(generatingOutlines[0].id)
                 : undefined
             }
+            onHome={handleHome}
           />
         </div>
 
@@ -1115,6 +1094,7 @@ export function Stage({
               onToggleRoundtable={() => setRoundtableCollapsed(!roundtableCollapsed)}
               captionsCollapsed={captionsCollapsed}
               onToggleCaptions={() => setCaptionsCollapsed(!captionsCollapsed)}
+              onHome={handleHome}
             />
           </div>
         )}

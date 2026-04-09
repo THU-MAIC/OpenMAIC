@@ -563,7 +563,7 @@ export const useSettingsStore = create<SettingsState>()(
         // Playback controls
         ttsMuted: false,
         ttsVolume: 1,
-        autoPlayLecture: false,
+        autoPlayLecture: true,
         playbackSpeed: 1,
 
         // Layout preferences

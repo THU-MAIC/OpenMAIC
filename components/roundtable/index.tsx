@@ -95,6 +95,7 @@ interface RoundtableProps {
   readonly onToggleRoundtable?: () => void;
   readonly captionsCollapsed?: boolean;
   readonly onToggleCaptions?: () => void;
+  readonly onHome?: () => void;
 }
 
 const VOICE_WAVE_BARS = [
@@ -182,6 +183,7 @@ export function Roundtable({
   onToggleRoundtable,
   captionsCollapsed = true,
   onToggleCaptions,
+  onHome,
 }: RoundtableProps) {
   const { t } = useI18n();
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -656,6 +658,7 @@ export function Roundtable({
       onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}
       playbackSpeed={playbackSpeed}
       onCycleSpeed={handleCycleSpeed}
+      onHome={onHome}
     />
   );
 
@@ -884,7 +887,7 @@ export function Roundtable({
 
         {/* ── Right-side stack: bubble + dock — flex column, no hardcoded px ── */}
         <div
-          className="fixed bottom-5 z-[48] flex flex-col items-end gap-3 pointer-events-none transition-[right] duration-300"
+          className="fixed bottom-16 z-[48] flex flex-col items-end gap-3 pointer-events-none transition-[right] duration-300"
           style={{ right: chatCollapsed ? 20 : 20 + (chatAreaWidth ?? 320) }}
         >
           {/* Right-side speech bubble (flows above dock via flex) */}
@@ -914,7 +917,7 @@ export function Roundtable({
               >
                 <div
                   ref={presentationActionAnchorRef}
-                  className="flex items-center gap-2.5 rounded-full bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-gray-200/60 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] px-2.5 py-2"
+                  className="flex items-center gap-2.5 rounded-full bg-white/70 dark:bg-black/60 backdrop-blur-xl border border-gray-200/60 dark:border-white/10 shadow-[0_8px_32px_rgba(0,0,0,0.08)] dark:shadow-[0_8px_32px_rgba(0,0,0,0.4)] px-3 py-2"
                 >
                   {/* Speaking / discussion-requesting agent avatar — shows when
                       a student agent is actively speaking OR a discussion request
@@ -931,9 +934,9 @@ export function Roundtable({
                         transition={{ duration: 0.2, ease: 'easeOut' }}
                         className="shrink-0 overflow-hidden"
                       >
-                        <div className="relative w-10 h-10 rounded-full flex items-center justify-center">
-                          <div className="absolute inset-0 rounded-full border-2 border-blue-500 shadow-[0_0_6px_rgba(59,130,246,0.3)] transition-all duration-300" />
-                          <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden relative z-10 text-lg">
+                        <div className="relative w-6 h-6 rounded-full flex items-center justify-center">
+                          <div className="absolute inset-0 rounded-full border border-blue-500/50 shadow-[0_0_4px_rgba(59,130,246,0.2)] transition-all duration-300" />
+                          <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden relative z-10 text-xs">
                             <AvatarDisplay
                               src={
                                 (speakingStudent || presentationDiscussionParticipant)?.avatar ||
@@ -949,8 +952,8 @@ export function Roundtable({
                     )}
                   </AnimatePresence>
                   {isSendCooldown ? (
-                    <div className="flex items-center justify-center w-8 h-8">
-                      <div className="flex items-center gap-[3px]">
+                    <div className="flex items-center justify-center w-6 h-6">
+                      <div className="flex items-center gap-[2px]">
                         {[0, 1, 2].map((i) => (
                           <motion.div
                             key={i}
@@ -983,18 +986,18 @@ export function Roundtable({
                         }
                       }}
                       className={cn(
-                        'w-8 h-8 rounded-full flex items-center justify-center transition-all active:scale-95',
+                        'w-6 h-6 rounded-full flex items-center justify-center transition-all active:scale-95',
                         isVoiceOpen || isInputOpen
                           ? 'bg-purple-600 text-white'
                           : 'text-gray-500 dark:text-gray-300 hover:text-gray-700 dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/10',
                       )}
                     >
                       {isInputOpen ? (
-                        <MessageSquare className="w-4 h-4" />
+                        <MessageSquare className="w-3.5 h-3.5" />
                       ) : asrEnabled ? (
-                        <Mic className="w-4 h-4" />
+                        <Mic className="w-3.5 h-3.5" />
                       ) : (
-                        <MicOff className="w-4 h-4" />
+                        <MicOff className="w-3.5 h-3.5" />
                       )}
                     </button>
                   )}
@@ -1014,7 +1017,7 @@ export function Roundtable({
                   >
                     <div
                       className={cn(
-                        'relative w-10 h-10 rounded-full transition-all duration-300 flex items-center justify-center',
+                        'relative w-6 h-6 rounded-full transition-all duration-300 flex items-center justify-center',
                         activeRole === 'user' || isInputOpen || isCueUser
                           ? 'scale-105'
                           : 'opacity-70 group-hover:opacity-100 group-hover:scale-100',
@@ -1024,13 +1027,13 @@ export function Roundtable({
                         className={cn(
                           'absolute inset-0 rounded-full border-2 transition-all duration-300',
                           isCueUser
-                            ? 'border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.4)] animate-pulse'
+                            ? 'border-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.3)] animate-pulse'
                             : activeRole === 'user' || isInputOpen
-                              ? 'border-purple-500 shadow-[0_0_6px_rgba(168,85,247,0.3)]'
-                              : 'border-gray-300/40 dark:border-white/20 group-hover:border-purple-400/50',
+                              ? 'border-purple-500 shadow-[0_0_4px_rgba(168,85,247,0.2)]'
+                              : 'border-gray-300/40 dark:border-white/20 group-hover:border-purple-400/40',
                         )}
                       />
-                      <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden relative z-10 text-lg">
+                      <div className="w-6 h-6 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden relative z-10">
                         <AvatarDisplay src={userAvatar} alt={t('roundtable.you')} />
                       </div>
                     </div>

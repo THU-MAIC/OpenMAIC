@@ -73,11 +73,11 @@ export function buildPresentationBubbleModel({
   const teacherParticipant = participants.find((participant) => participant.role === 'teacher');
   const speakingStudent = speakingAgentId
     ? participants.find(
-        (participant) =>
-          participant.id === speakingAgentId &&
-          participant.role !== 'teacher' &&
-          participant.role !== 'user',
-      )
+      (participant) =>
+        participant.id === speakingAgentId &&
+        participant.role !== 'teacher' &&
+        participant.role !== 'user',
+    )
     : null;
 
   if (bubbleRole === 'teacher') {
@@ -161,7 +161,7 @@ function CollapsedBubblePill({
         </span>
         <ChevronUp className="w-3 h-3 text-gray-400 dark:text-gray-500 shrink-0" />
       </div>
-      {onPlayPause && (
+      {/* {onPlayPause && (
         <div
           onClick={(e) => {
             e.stopPropagation();
@@ -183,7 +183,7 @@ function CollapsedBubblePill({
             <Pause className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
           )}
         </div>
-      )}
+      )} */}
     </div>
   );
 }
@@ -470,7 +470,7 @@ export function PresentationSpeechOverlay({
               animate={{ opacity: 1, x: 0, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
               transition={{ duration: 0.22, ease: [0.21, 1, 0.36, 1] }}
-              className="absolute bottom-6 left-6 z-30 pointer-events-auto"
+              className="absolute bottom-16 left-6 z-30 pointer-events-auto"
             >
               {renderContent(bubble)}
             </motion.div>

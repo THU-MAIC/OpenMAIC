@@ -152,7 +152,7 @@ If the scene outline includes `mediaGenerations`, you may also use generated ima
   "width": 500,
   "height": 281,
   "src": "gen_vid_1",
-  "autoplay": false
+  "autoplay": true
 }
 ```
 

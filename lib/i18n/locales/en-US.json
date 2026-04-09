@@ -3,7 +3,8 @@
     "you": "You",
     "confirm": "Confirm",
     "cancel": "Cancel",
-    "loading": "Loading..."
+    "loading": "Loading...",
+    "home": "Home"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
