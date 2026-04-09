@@ -37,7 +37,7 @@ export async function generateSceneOutlinesFromRequirements(
     researchContext?: string;
     teacherContext?: string;
   },
-): Promise<GenerationResult<SceneOutline[]>> {
+): Promise<GenerationResult<{ languageDirective: string; outlines: SceneOutline[] }>> {
   // Build available images description for the prompt
   let availableImagesText = 'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
@@ -100,6 +100,7 @@ export async function generateSceneOutlinesFromRequirements(
     researchContext: options?.researchContext || 'None',
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
+    pdfLanguageSample: pdfText ? pdfText.substring(0, 200) : '',
   });
 
   if (!prompts) {
@@ -117,16 +118,31 @@ export async function generateSceneOutlinesFromRequirements(
     });
 
     const response = await aiCall(prompts.system, prompts.user, visionImages);
-    const outlines = parseJsonResponse<SceneOutline[]>(response);
+    const parsed = parseJsonResponse<
+      { languageDirective: string; outlines: SceneOutline[] } | SceneOutline[]
+    >(response);
 
-    if (!outlines || !Array.isArray(outlines)) {
-      return {
-        success: false,
-        error: 'Failed to parse scene outlines response',
-      };
+    let languageDirective: string;
+    let rawOutlines: SceneOutline[];
+
+    if (Array.isArray(parsed)) {
+      // Fallback: LLM returned old flat array format
+      languageDirective = 'Teach in the language that matches the user requirement.';
+      rawOutlines = parsed;
+    } else if (parsed && parsed.outlines) {
+      languageDirective =
+        parsed.languageDirective || 'Teach in the language that matches the user requirement.';
+      rawOutlines = parsed.outlines;
+    } else {
+      return { success: false, error: 'Failed to parse scene outlines response' };
     }
-    // Ensure IDs, order, and language
-    const enriched = outlines.map((outline, index) => ({
+
+    if (!Array.isArray(rawOutlines)) {
+      return { success: false, error: 'Failed to parse scene outlines response' };
+    }
+
+    // Ensure IDs and order
+    const enriched = rawOutlines.map((outline, index) => ({
       ...outline,
       id: outline.id || nanoid(),
       order: index + 1,
@@ -144,7 +160,7 @@ export async function generateSceneOutlinesFromRequirements(
       totalScenes: result.length,
     });
 
-    return { success: true, data: result };
+    return { success: true, data: { languageDirective, outlines: result } };
   } catch (error) {
     return { success: false, error: String(error) };
   }
