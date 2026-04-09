@@ -35,12 +35,19 @@ You must infer the course language behavior from all available signals and produ
 2. PDF/document content language (affects terminology bridging)
 3. User profile/bio (may reveal native language if requirement is ambiguous)
 
+### Special case: advanced foreign language learners
+
+When the user's goal is to **improve fluency or reach native-level proficiency** in a foreign language, and they already demonstrate high proficiency (e.g., mentioning advanced certifications like TEM-8/专八, DALF C1, JLPT N1, or describing themselves as advanced/fluent), the course should be taught **in the target language**, not the user's native language. Immersion in the target language is essential for advanced learners to break through fluency plateaus. The directive should encourage sophisticated, native-like expression rather than simplified language.
+
+Contrast with beginners: a beginner learning a foreign language should be taught in their native language with the target language introduced progressively.
+
 ### Language directive examples
 
 | Input | languageDirective |
 |---|---|
 | "从零学 Python，适合初中生" | "用中文授课。编程术语如 Python、variable、function 等保留英文原文，首次出现时附简短中文解释。" |
 | "帮我准备一堂英语课，初中水平" | "用中文授课，教授英语基础知识。英语词汇和例句逐步引入，用中文解释语法和用法。" |
+| "希望将口语提升到native水平，目前是专八水平" | "Teach in English. The learner is already at an advanced level (TEM-8) and needs immersive practice. Use sophisticated, native-level expressions and encourage the learner to avoid defaulting to simple phrasing." |
 | "Explain quantum computing for high school students" | "Teach in English. Use standard physics terminology. Provide intuitive analogies for complex quantum concepts." |
 | "用中文讲解这篇英文论文" + English PDF | "用中文讲解。论文原文为英文，专业术语首次出现时保留英文原文并附中文翻译，方便学生对照原文理解。" |
 

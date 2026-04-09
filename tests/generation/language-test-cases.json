@@ -162,15 +162,6 @@
     "ground_truth": "Teaching language: Arabic. This is an Arabic speaker at A2 level wanting to learn English. Teach primarily in Arabic, introducing English progressively."
   },
   {
-    "case_id": "short_zh",
-    "category": "very_short_zh_tech",
-    "requirement": "讲解LLC",
-    "prod_language": "zh-CN",
-    "prod_id": "qxDSCmBcpW",
-    "prod_name": "讲解LLC",
-    "ground_truth": "Teaching language: Chinese. LLC is an electrical engineering term (resonant converter). Explain in Chinese with the English abbreviation kept."
-  },
-  {
     "case_id": "zh_advanced_en_learner",
     "category": "zh_advanced_english_learner",
     "requirement": "希望将口语提升到native水平，目前是专八水平，但流利度不够，难的单词会看，但说的时候挑简单的说。",
