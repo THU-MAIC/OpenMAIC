@@ -9,6 +9,9 @@ import type {
   ImageGenerationResult,
   ImageProviderConfig,
 } from './types';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('ImageGen');
 import { generateWithSeedream, testSeedreamConnectivity } from './adapters/seedream-adapter';
 import { generateWithQwenImage, testQwenImageConnectivity } from './adapters/qwen-image-adapter';
 import { generateWithNanoBanana, testNanoBananaConnectivity } from './adapters/nano-banana-adapter';
@@ -121,6 +124,12 @@ export async function generateImage(
   config: ImageGenerationConfig,
   options: ImageGenerationOptions,
 ): Promise<ImageGenerationResult> {
+  log.info('[TOKEN_USAGE] image-generation', {
+    service: 'image',
+    provider: config.providerId,
+    usage: 1,
+  });
+
   switch (config.providerId) {
     case 'seedream':
       return generateWithSeedream(config, options);

@@ -8,11 +8,11 @@ import type { WebSearchProviderId, WebSearchProviderConfig } from './types';
  * Web Search Provider Registry
  */
 export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProviderConfig> = {
-  tavily: {
-    id: 'tavily',
-    name: 'Tavily',
+  exa: {
+    id: 'exa',
+    name: 'Exa',
     requiresApiKey: true,
-    defaultBaseUrl: 'https://api.tavily.com',
+    defaultBaseUrl: 'https://api.exa.ai',
   },
 };
 

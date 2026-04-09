@@ -94,6 +94,9 @@
 
 import type { TTSModelConfig } from './types';
 import { TTS_PROVIDERS } from './constants';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('TTSGen');
 
 /**
  * Result of TTS generation
@@ -136,6 +139,13 @@ export async function generateTTS(
   if (provider.requiresApiKey && !config.apiKey) {
     throw new Error(`API key required for TTS provider: ${config.providerId}`);
   }
+
+  log.info('[TOKEN_USAGE] tts-generation', {
+    service: 'tts',
+    provider: config.providerId,
+    usageChars: text.length,
+    usage: 1,
+  });
 
   switch (config.providerId) {
     case 'openai-tts':

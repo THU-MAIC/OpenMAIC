@@ -318,6 +318,17 @@ export async function callLLM<T extends GenerateTextParams>(
         continue;
       }
 
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const usage = result.usage as any;
+      const { promptTokens, completionTokens, totalTokens } = usage || {};
+      log.info(`[TOKEN_USAGE] ${source}`, {
+        service: 'llm',
+        provider: getModelId(params),
+        promptTokens,
+        completionTokens,
+        totalTokens,
+      });
+
       return result;
     } catch (error) {
       lastError = error;
@@ -353,6 +364,21 @@ export function streamLLM<T extends StreamTextParams>(
   const effectiveThinking = thinking ?? getGlobalThinkingConfig();
   const injectedParams = injectProviderOptions(params, effectiveThinking);
   const result = thinkingContext.run(effectiveThinking, () => streamText(injectedParams));
+
+  // Background token logging for streams
+  Promise.resolve(result.usage).then((usage: any) => {
+    if (usage) {
+      log.info(`[TOKEN_USAGE] ${source}`, {
+        service: 'llm',
+        provider: getModelId(params),
+        promptTokens: usage.promptTokens,
+        completionTokens: usage.completionTokens,
+        totalTokens: usage.totalTokens,
+      });
+    }
+  }).catch((err: any) => {
+    log.warn(`[TOKEN_USAGE] ${source} failed to get usage:`, err);
+  });
 
   return result;
 }

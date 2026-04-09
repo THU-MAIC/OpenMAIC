@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowUp,
@@ -73,6 +73,9 @@ function HomePage() {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isAdmin = searchParams.get('admin') === 'true';
+
   const [form, setForm] = useState<FormState>(initialFormState);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
@@ -331,11 +334,12 @@ function HomePage() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
-      {/* ═══ Top-right pill (unchanged) ═══ */}
-      <div
-        ref={toolbarRef}
-        className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
-      >
+      {/* ═══ Top-right pill (Admin only) ═══ */}
+      {isAdmin && (
+        <div
+          ref={toolbarRef}
+          className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
+        >
         {/* Language Selector */}
         <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
 
@@ -413,6 +417,7 @@ function HomePage() {
           </button>
         </div>
       </div>
+      )}
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={(open) => {
@@ -422,17 +427,7 @@ function HomePage() {
         initialSection={settingsSection}
       />
 
-      {/* ═══ Background Decor ═══ */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div
-          className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: '4s' }}
-        />
-        <div
-          className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: '6s' }}
-        />
-      </div>
+      {/* Background Decor Removed for clean aesthetic */}
 
       {/* ═══ Hero section: title + input (centered, wider) ═══ */}
       <motion.div
@@ -445,9 +440,7 @@ function HomePage() {
         )}
       >
         {/* ── Logo ── */}
-        <motion.img
-          src="/logo-horizontal.png"
-          alt="Slate"
+        <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{
@@ -456,17 +449,20 @@ function HomePage() {
             stiffness: 200,
             damping: 20,
           }}
-          className="h-36 md:h-48 mb-6 -ml-6 md:-ml-9"
-        />
+          className="flex items-center gap-3 mb-6"
+        >
+          <h1 className="text-6xl md:text-8xl font-black text-[#073b4c] tracking-tighter">SLATE</h1>
+          <span className="px-3 py-1 bg-[#ef476f] text-white text-xs md:text-sm font-bold rounded-full border-2 border-[#073b4c] shadow-[2px_2px_0_#073b4c] uppercase tracking-widest mt-2 md:mt-4">BETA</span>
+        </motion.div>
 
-        {/* ── Slogan ── */}
+        {/* ── Tagline ── */}
         <motion.p
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.25 }}
-          className="text-sm text-muted-foreground/60 mb-8"
+          className="text-base md:text-lg text-[#073b4c]/80 font-semibold mb-8 text-center px-4"
         >
-          {t('home.slogan')}
+          AI-powered interactive classroom. Learn anything, with anyone, anytime.
         </motion.p>
 
         {/* ── Unified input area ── */}
@@ -476,7 +472,7 @@ function HomePage() {
           transition={{ delay: 0.35 }}
           className="w-full"
         >
-          <div className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]">
+          <div className="w-full rounded-3xl border-[3px] border-[#073b4c] bg-white shadow-[8px_8px_0_#073b4c] transition-all hover:translate-y-[1px] hover:shadow-[7px_7px_0_#073b4c] focus-within:translate-y-[-2px] focus-within:shadow-[10px_10px_0_#073b4c] flex flex-col pt-1 pb-2">
             {/* ── Greeting + Profile + Agents ── */}
             <div className="relative z-20 flex items-start justify-between">
               <GreetingBar />
@@ -489,7 +485,7 @@ function HomePage() {
             <textarea
               ref={textareaRef}
               placeholder={t('upload.requirementPlaceholder')}
-              className="w-full resize-none border-0 bg-transparent px-4 pt-1 pb-2 text-[13px] leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none min-h-[140px] max-h-[300px]"
+              className="w-full resize-none border-0 bg-transparent px-4 pt-1 pb-2 text-base md:text-lg font-medium leading-relaxed placeholder:text-[#073b4c]/60 focus:outline-none min-h-[140px] max-h-[300px] text-[#073b4c]"
               value={form.requirement}
               onChange={(e) => updateForm('requirement', e.target.value)}
               onKeyDown={handleKeyDown}
@@ -531,10 +527,10 @@ function HomePage() {
                 onClick={handleGenerate}
                 disabled={!canGenerate}
                 className={cn(
-                  'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
+                  'shrink-0 h-10 px-5 md:px-6 rounded-full flex items-center justify-center gap-2 transition-all font-bold border-2 border-[#073b4c]',
                   canGenerate
-                    ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
-                    : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
+                    ? 'bg-[#ef476f] text-white hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] cursor-pointer'
+                    : 'bg-[#f0f4f8] text-[#073b4c]/40 cursor-not-allowed',
                 )}
               >
                 <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>

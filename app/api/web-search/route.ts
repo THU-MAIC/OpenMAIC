@@ -2,12 +2,12 @@
  * Web Search API
  *
  * POST /api/web-search
- * Simple JSON request/response using Tavily search.
+ * Simple JSON request/response using Exa search.
  */
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
-import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
+import { searchWithExa, formatSearchResultsAsContext } from '@/lib/web-search/exa';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       return apiError(
         'MISSING_API_KEY',
         400,
-        'Tavily API key is not configured. Set it in Settings → Web Search or set TAVILY_API_KEY env var.',
+        'Exa API key is not configured. Set it in Settings → Web Search or set EXA_API_KEY env var.',
       );
     }
 
@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    const result = await searchWithTavily({ query: searchQuery.query, apiKey });
+    const result = await searchWithExa({ query: searchQuery.query, apiKey });
     const context = formatSearchResultsAsContext(result);
 
     return apiSuccess({

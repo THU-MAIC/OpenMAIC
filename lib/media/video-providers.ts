@@ -17,6 +17,9 @@ import {
   testMiniMaxVideoConnectivity,
 } from './adapters/minimax-video-adapter';
 import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('VideoGen');
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
@@ -176,6 +179,15 @@ export async function generateVideo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
+  const normalizedOptions = normalizeVideoOptions(config.providerId, options);
+
+  log.info('[TOKEN_USAGE] video-generation', {
+    service: 'video',
+    provider: config.providerId,
+    durationMs: normalizedOptions.duration ? normalizedOptions.duration * 1000 : 0,
+    usage: 1,
+  });
+
   switch (config.providerId) {
     case 'seedance':
       return generateWithSeedance(config, options);

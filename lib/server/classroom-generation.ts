@@ -20,7 +20,7 @@ import { parseModelString } from '@/lib/ai/providers';
 import { resolveApiKey, resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
-import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
+import { searchWithExa, formatSearchResultsAsContext } from '@/lib/web-search/exa';
 import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
@@ -254,8 +254,8 @@ export async function generateClassroom(
   // Web search (optional, graceful degradation)
   let researchContext: string | undefined;
   if (input.enableWebSearch) {
-    const tavilyKey = resolveWebSearchApiKey();
-    if (tavilyKey) {
+    const exaKey = resolveWebSearchApiKey();
+    if (exaKey) {
       try {
         const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
 
@@ -266,9 +266,9 @@ export async function generateClassroom(
           finalQueryLength: searchQuery.finalQueryLength,
         });
 
-        const searchResult = await searchWithTavily({
+        const searchResult = await searchWithExa({
           query: searchQuery.query,
-          apiKey: tavilyKey,
+          apiKey: exaKey,
         });
         researchContext = formatSearchResultsAsContext(searchResult);
         if (researchContext) {
@@ -278,7 +278,7 @@ export async function generateClassroom(
         log.warn('Web search failed, continuing without search context:', e);
       }
     } else {
-      log.warn('enableWebSearch is true but no Tavily API key configured, skipping web search');
+      log.warn('enableWebSearch is true but no Exa API key configured, skipping web search');
     }
   }
 

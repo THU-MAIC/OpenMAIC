@@ -89,7 +89,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 };
 
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
-  TAVILY: 'tavily',
+  EXA: 'exa',
 };
 
 // ---------------------------------------------------------------------------
@@ -385,7 +385,7 @@ export function resolveVideoBaseUrl(
 }
 
 // ---------------------------------------------------------------------------
-// Public API — Web Search (Tavily)
+// Public API — Web Search (Exa)
 // ---------------------------------------------------------------------------
 
 /** Returns server-configured web search providers (no apiKeys exposed) */
@@ -399,10 +399,10 @@ export function getServerWebSearchProviders(): Record<string, { baseUrl?: string
   return result;
 }
 
-/** Resolve Tavily API key: client key > server key > TAVILY_API_KEY env > empty */
+/** Resolve Exa API key: client key > server key > EXA_API_KEY env > empty */
 export function resolveWebSearchApiKey(clientKey?: string): string {
   if (clientKey) return clientKey;
-  const serverKey = getConfig().webSearch.tavily?.apiKey;
+  const serverKey = getConfig().webSearch.exa?.apiKey;
   if (serverKey) return serverKey;
-  return process.env.TAVILY_API_KEY || '';
+  return process.env.EXA_API_KEY || '';
 }

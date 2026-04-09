@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -63,6 +64,8 @@ export function GenerationToolbar({
   const setWebSearchProvider = useSettingsStore((s) => s.setWebSearchProvider);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const searchParams = useSearchParams();
+  const isAdmin = searchParams.get('admin') === 'true';
 
   // Check if the selected web search provider has a valid config (API key or server-configured)
   const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
@@ -116,36 +119,40 @@ export function GenerationToolbar({
   return (
     <div className="flex items-center gap-1 flex-wrap">
       {/* ── Model selector ── */}
-      {configuredProviders.length > 0 ? (
-        <ModelSelectorPopover
-          configuredProviders={configuredProviders}
-          currentProviderId={currentProviderId}
-          currentModelId={currentModelId}
-          currentProviderConfig={currentProviderConfig}
-          setModel={setModel}
-          t={t}
-        />
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              onClick={() => onSettingsOpen('providers')}
-              className={cn(
-                pillCls,
-                'text-amber-600 dark:text-amber-400 animate-pulse',
-                'bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50',
-              )}
-            >
-              <Bot className="size-3.5" />
-              <span>{t('toolbar.configureProvider')}</span>
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>{t('toolbar.configureProviderHint')}</TooltipContent>
-        </Tooltip>
-      )}
+      {isAdmin && (
+        <>
+          {configuredProviders.length > 0 ? (
+            <ModelSelectorPopover
+              configuredProviders={configuredProviders}
+              currentProviderId={currentProviderId}
+              currentModelId={currentModelId}
+              currentProviderConfig={currentProviderConfig}
+              setModel={setModel}
+              t={t}
+            />
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={() => onSettingsOpen('providers')}
+                  className={cn(
+                    pillCls,
+                    'text-amber-600 dark:text-amber-400 animate-pulse',
+                    'bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50',
+                  )}
+                >
+                  <Bot className="size-3.5" />
+                  <span>{t('toolbar.configureProvider')}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t('toolbar.configureProviderHint')}</TooltipContent>
+            </Tooltip>
+          )}
 
-      {/* ── Separator ── */}
-      <div className="w-px h-4 bg-border/60 mx-1" />
+          {/* ── Separator ── */}
+          <div className="w-px h-4 bg-border/60 mx-1" />
+        </>
+      )}
 
       {/* ── PDF (parser + upload) combined Popover ── */}
       <Popover>
@@ -172,42 +179,8 @@ export function GenerationToolbar({
           )}
         </PopoverTrigger>
         <PopoverContent align="start" className="w-72 p-0">
-          {/* Parser selector */}
-          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-            <span className="text-xs font-medium text-muted-foreground shrink-0">
-              {t('toolbar.pdfParser')}
-            </span>
-            <Select value={pdfProviderId} onValueChange={(v) => setPDFProvider(v as PDFProviderId)}>
-              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.values(PDF_PROVIDERS).map((provider) => {
-                  const cfg = pdfProvidersConfig[provider.id];
-                  const available =
-                    !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
-                  return (
-                    <SelectItem key={provider.id} value={provider.id} disabled={!available}>
-                      <div className={cn('flex items-center gap-1.5', !available && 'opacity-50')}>
-                        {provider.icon && (
-                          <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
-                        )}
-                        {provider.name}
-                        {cfg?.isServerConfigured && (
-                          <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
-                            {t('settings.serverConfigured')}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
           {/* Upload area / file info */}
-          <div className="px-3 pb-3">
+          <div className="p-3">
             <input
               type="file"
               ref={fileInputRef}
@@ -271,111 +244,115 @@ export function GenerationToolbar({
         </PopoverContent>
       </Popover>
 
-      {/* ── Web Search ── */}
-      {webSearchAvailable ? (
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className={webSearch ? pillActive : pillMuted}>
-              <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
-              {webSearch && (
-                <span>{WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || 'Search'}</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-3 space-y-3">
-            {/* Toggle */}
-            <button
-              onClick={() => onWebSearchChange(!webSearch)}
-              className={cn(
-                'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
-                webSearch
-                  ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
-                  : 'border-border hover:bg-muted/50',
-              )}
-            >
-              <Globe2
-                className={cn(
-                  'size-4 shrink-0',
-                  webSearch ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground',
-                )}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium">
-                  {webSearch ? t('toolbar.webSearchOn') : t('toolbar.webSearchOff')}
-                </p>
-                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                  {t('toolbar.webSearchDesc')}
-                </p>
-              </div>
-            </button>
+      {isAdmin && (
+        <>
+          {/* ── Web Search ── */}
+          {webSearchAvailable ? (
+            <Popover>
+              <PopoverTrigger asChild>
+                <button className={webSearch ? pillActive : pillMuted}>
+                  <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
+                  {webSearch && (
+                    <span>{WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || 'Search'}</span>
+                  )}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-3 space-y-3">
+                {/* Toggle */}
+                <button
+                  onClick={() => onWebSearchChange(!webSearch)}
+                  className={cn(
+                    'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
+                    webSearch
+                      ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
+                      : 'border-border hover:bg-muted/50',
+                  )}
+                >
+                  <Globe2
+                    className={cn(
+                      'size-4 shrink-0',
+                      webSearch ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground',
+                    )}
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium">
+                      {webSearch ? t('toolbar.webSearchOn') : t('toolbar.webSearchOff')}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                      {t('toolbar.webSearchDesc')}
+                    </p>
+                  </div>
+                </button>
 
-            {/* Provider selector */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground shrink-0">
-                {t('toolbar.webSearchProvider')}
-              </span>
-              <Select
-                value={webSearchProviderId}
-                onValueChange={(v) => setWebSearchProvider(v as WebSearchProviderId)}
+                {/* Provider selector */}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-muted-foreground shrink-0">
+                    {t('toolbar.webSearchProvider')}
+                  </span>
+                  <Select
+                    value={webSearchProviderId}
+                    onValueChange={(v) => setWebSearchProvider(v as WebSearchProviderId)}
+                  >
+                    <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.values(WEB_SEARCH_PROVIDERS).map((provider) => {
+                        const cfg = webSearchProvidersConfig[provider.id];
+                        const available =
+                          !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
+                        return (
+                          <SelectItem key={provider.id} value={provider.id} disabled={!available}>
+                            <div
+                              className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
+                            >
+                              {provider.name}
+                              {cfg?.isServerConfigured && (
+                                <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
+                                  {t('settings.serverConfigured')}
+                                </span>
+                              )}
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </PopoverContent>
+            </Popover>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button className={cn(pillCls, 'text-muted-foreground/40 cursor-not-allowed')} disabled>
+                  <Globe2 className="size-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
+            </Tooltip>
+          )}
+
+          {/* ── Language pill ── */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                onClick={() => onLanguageChange(language === 'zh-CN' ? 'en-US' : 'zh-CN')}
+                className={pillMuted}
               >
-                <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(WEB_SEARCH_PROVIDERS).map((provider) => {
-                    const cfg = webSearchProvidersConfig[provider.id];
-                    const available =
-                      !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
-                    return (
-                      <SelectItem key={provider.id} value={provider.id} disabled={!available}>
-                        <div
-                          className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
-                        >
-                          {provider.name}
-                          {cfg?.isServerConfigured && (
-                            <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
-                              {t('settings.serverConfigured')}
-                            </span>
-                          )}
-                        </div>
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          </PopoverContent>
-        </Popover>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button className={cn(pillCls, 'text-muted-foreground/40 cursor-not-allowed')} disabled>
-              <Globe2 className="size-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
-        </Tooltip>
+                <Globe className="size-3.5" />
+                <span>{language === 'zh-CN' ? '中文' : 'EN'}</span>
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
+          </Tooltip>
+
+          {/* ── Separator ── */}
+          <div className="w-px h-4 bg-border/60 mx-1" />
+
+          {/* ── Media popover ── */}
+          <MediaPopover onSettingsOpen={onSettingsOpen} />
+        </>
       )}
-
-      {/* ── Language pill ── */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => onLanguageChange(language === 'zh-CN' ? 'en-US' : 'zh-CN')}
-            className={pillMuted}
-          >
-            <Globe className="size-3.5" />
-            <span>{language === 'zh-CN' ? '中文' : 'EN'}</span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
-      </Tooltip>
-
-      {/* ── Separator ── */}
-      <div className="w-px h-4 bg-border/60 mx-1" />
-
-      {/* ── Media popover ── */}
-      <MediaPopover onSettingsOpen={onSettingsOpen} />
     </div>
   );
 }

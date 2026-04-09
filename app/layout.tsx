@@ -1,7 +1,5 @@
 import type { Metadata } from 'next';
-import localFont from 'next/font/local';
-import { GeistSans } from 'geist/font/sans';
-import { GeistMono } from 'geist/font/mono';
+import { Nunito } from 'next/font/google';
 import './globals.css';
 import 'animate.css';
 import 'katex/dist/katex.min.css';
@@ -12,16 +10,16 @@ import { ServerProvidersInit } from '@/components/server-providers-init';
 import { Analytics } from '@vercel/analytics/next';
 import Script from 'next/script';
 
-const inter = localFont({
-  src: '../node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2',
+const nunito = Nunito({
+  subsets: ['latin'],
   variable: '--font-sans',
-  weight: '100 900',
+  display: 'swap',
 });
 
 export const metadata: Metadata = {
   title: 'Slate',
   description:
-    'The open-source AI interactive classroom. Upload a PDF to instantly generate an immersive, multi-agent learning experience.',
+    'AI-powered interactive classroom. Learn anything, with anyone, anytime.',
 };
 
 export default function RootLayout({
@@ -30,9 +28,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={inter.variable} suppressHydrationWarning>
+    <html lang="en" className={nunito.variable} suppressHydrationWarning>
       <body
-        className={`${GeistSans.variable} ${GeistMono.variable} antialiased`}
+        className={`font-sans antialiased`}
         suppressHydrationWarning
       >
         <Script

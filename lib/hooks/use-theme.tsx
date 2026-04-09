@@ -13,47 +13,17 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>('system');
-  const [systemTheme, setSystemTheme] = useState<'light' | 'dark'>('light');
+  // Production: always force light mode
+  const [theme] = useState<Theme>('light');
+  const resolvedTheme: 'light' | 'dark' = 'light';
 
-  const resolvedTheme = theme === 'system' ? systemTheme : theme;
-
-  // Hydrate from localStorage after mount (avoids SSR mismatch)
-  /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
+  // Apply theme to document on mount
   useEffect(() => {
-    const stored = localStorage.getItem('theme') as Theme | null;
-    if (stored && ['light', 'dark', 'system'].includes(stored)) {
-      setThemeState(stored);
-    }
-    setSystemTheme(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
-  }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
-
-  // Apply theme to document
-  useEffect(() => {
-    const root = document.documentElement;
-    if (resolvedTheme === 'dark') {
-      root.classList.add('dark');
-    } else {
-      root.classList.remove('dark');
-    }
-  }, [resolvedTheme]);
-
-  // Listen to system theme changes
-  useEffect(() => {
-    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
-    const handleChange = () => {
-      setSystemTheme(mediaQuery.matches ? 'dark' : 'light');
-    };
-    mediaQuery.addEventListener('change', handleChange);
-    return () => mediaQuery.removeEventListener('change', handleChange);
+    document.documentElement.classList.remove('dark');
   }, []);
 
-  // Save theme to localStorage
-  const handleSetTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
-    localStorage.setItem('theme', newTheme);
-  };
+  // no-op setter — light mode is locked
+  const handleSetTheme = (_newTheme: Theme) => {};
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme: handleSetTheme, resolvedTheme }}>

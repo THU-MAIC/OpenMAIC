@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -482,6 +483,9 @@ export function AgentBar() {
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
 
+  const searchParams = useSearchParams();
+  const isAdmin = searchParams.get('admin') === 'true';
+
   const [open, setOpen] = useState(false);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -681,8 +685,12 @@ export function AgentBar() {
     );
   };
 
+  if (!isAdmin) {
+    return null;
+  }
+
   return (
-    <div ref={containerRef} className="relative w-96">
+    <div ref={containerRef} className="relative w-96 flex justify-end">
       <Tooltip>
         <TooltipTrigger asChild>
           <button

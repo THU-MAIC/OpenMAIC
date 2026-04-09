@@ -277,11 +277,11 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
 
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
-  ttsProviderId: 'browser-native-tts' as TTSProviderId,
-  ttsVoice: 'default',
+  ttsProviderId: 'openai-tts' as TTSProviderId,
+  ttsVoice: 'alloy',
   ttsSpeed: 1.0,
-  asrProviderId: 'browser-native' as ASRProviderId,
-  asrLanguage: 'zh',
+  asrProviderId: 'openai-whisper' as ASRProviderId,
+  asrLanguage: 'auto',
   ttsProvidersConfig: {
     'openai-tts': { apiKey: '', baseUrl: '', enabled: true },
     'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
@@ -313,8 +313,8 @@ const getDefaultPDFConfig = () => ({
 
 // Initialize default Image config
 const getDefaultImageConfig = () => ({
-  imageProviderId: 'seedream' as ImageProviderId,
-  imageModelId: 'doubao-seedream-5-0-260128',
+  imageProviderId: 'nano-banana' as ImageProviderId,
+  imageModelId: 'gemini-3.1-flash-image-preview',
   imageProvidersConfig: {
     seedream: { apiKey: '', baseUrl: '', enabled: false },
     'qwen-image': { apiKey: '', baseUrl: '', enabled: false },
@@ -326,8 +326,8 @@ const getDefaultImageConfig = () => ({
 
 // Initialize default Video config
 const getDefaultVideoConfig = () => ({
-  videoProviderId: 'seedance' as VideoProviderId,
-  videoModelId: 'doubao-seedance-1-5-pro-251215',
+  videoProviderId: 'veo' as VideoProviderId,
+  videoModelId: 'veo-3.1-fast-generate-001',
   videoProvidersConfig: {
     seedance: { apiKey: '', baseUrl: '', enabled: false },
     kling: { apiKey: '', baseUrl: '', enabled: false },
@@ -340,9 +340,9 @@ const getDefaultVideoConfig = () => ({
 
 // Initialize default Web Search config
 const getDefaultWebSearchConfig = () => ({
-  webSearchProviderId: 'tavily' as WebSearchProviderId,
+  webSearchProviderId: 'exa' as WebSearchProviderId,
   webSearchProvidersConfig: {
-    tavily: { apiKey: '', baseUrl: '', enabled: true },
+    exa: { apiKey: '', baseUrl: '', enabled: true },
   } as Record<WebSearchProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
 
@@ -538,14 +538,21 @@ export const useSettingsStore = create<SettingsState>()(
 
       return {
         // Initial state (use migrated data if available)
-        providerId: migratedData?.providerId || 'openai',
-        modelId: migratedData?.modelId || '',
+        providerId: migratedData?.providerId || 'google',
+        modelId: migratedData?.modelId || 'gemini-3-flash-preview',
         providersConfig: migratedData?.providersConfig || getDefaultProvidersConfig(),
         ttsModel: migratedData?.ttsModel || 'openai-tts',
-        selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
+        selectedAgentIds: migratedData?.selectedAgentIds || [
+          'default-1',
+          'default-2',
+          'default-3',
+          'default-4',
+          'default-5',
+          'default-6',
+        ],
         maxTurns: migratedData?.maxTurns?.toString() || '10',
-        agentMode: 'auto' as const,
-        autoAgentCount: 3,
+        agentMode: 'preset' as const,
+        autoAgentCount: 6,
 
         // Playback controls
         ttsMuted: false,
@@ -1321,9 +1328,9 @@ export const useSettingsStore = create<SettingsState>()(
           const oldApiKey = (stateRecord.webSearchApiKey as string) || '';
           const oldIsServerConfigured =
             (stateRecord.webSearchIsServerConfigured as boolean) || false;
-          state.webSearchProviderId = 'tavily' as WebSearchProviderId;
+          state.webSearchProviderId = 'exa' as WebSearchProviderId;
           state.webSearchProvidersConfig = {
-            tavily: {
+            exa: {
               apiKey: oldApiKey,
               baseUrl: '',
               enabled: true,
