@@ -196,25 +196,31 @@ async function transcribeOpenAIWhisper(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
 ): Promise<ASRTranscriptionResult> {
+  // Determine if we should use a custom base URL
+  const defaultOpenAIBaseUrl = ASR_PROVIDERS['openai-whisper'].defaultBaseUrl;
+  const isCustomBaseUrl = config.baseUrl && config.baseUrl !== defaultOpenAIBaseUrl;
+
+  const baseUrl = (config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl || 'https://api.openai.com/v1').replace(/\/+$/, '') + '/';
+
   const openai = createOpenAI({
     apiKey: config.apiKey!,
-    baseURL: config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl,
+    baseURL: baseUrl,
   });
 
-  // Convert to Buffer or Uint8Array (which is required by the AI SDK)
+  // Convert audioBuffer to a format supported by experimental_transcribe (Buffer or Uint8Array)
   let audioData: Buffer | Uint8Array;
-  if (audioBuffer instanceof Buffer) {
+  if (Buffer.isBuffer(audioBuffer)) {
     audioData = audioBuffer;
-  } else if (audioBuffer instanceof Blob) {
-    const arrayBuffer = await audioBuffer.arrayBuffer();
-    audioData = new Uint8Array(arrayBuffer);
   } else {
-    throw new Error('Invalid audio buffer type');
+    // Convert Blob/File to Uint8Array for server-side compatibility
+    const arrayBuffer = await (audioBuffer as Blob).arrayBuffer();
+    audioData = new Uint8Array(arrayBuffer);
   }
 
   try {
+    const model = openai.transcription(config.modelId || 'gpt-4o-mini-transcribe');
     const result = await transcribe({
-      model: openai.transcription(config.modelId || 'gpt-4o-mini-transcribe'),
+      model,
       audio: audioData,
       providerOptions: {
         openai: {
@@ -245,7 +251,7 @@ async function transcribeQwenASR(
 
   // Convert audio to base64
   let base64Audio: string;
-  if (audioBuffer instanceof Buffer) {
+  if (Buffer.isBuffer(audioBuffer)) {
     base64Audio = audioBuffer.toString('base64');
   } else if (audioBuffer instanceof Blob) {
     const arrayBuffer = await audioBuffer.arrayBuffer();

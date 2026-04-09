@@ -914,9 +914,10 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
     defaultBaseUrl: 'https://api.openai.com/v1',
     icon: '/logos/openai.svg',
     models: [
-      { id: 'gpt-4o-mini-transcribe', name: 'GPT-4o Mini Transcribe' },
-      { id: 'gpt-4o-transcribe', name: 'GPT-4o Transcribe' },
+      { id: 'gpt-4o-mini-transcribe', name: 'GPT-4o Mini (Transcribe)' },
       { id: 'whisper-1', name: 'Whisper-1' },
+      { id: 'gpt-4o-mini', name: 'GPT-4o Mini (Experimental)' },
+      { id: 'gpt-4o', name: 'GPT-4o (Experimental)' },
     ],
     defaultModelId: 'gpt-4o-mini-transcribe',
     supportedLanguages: [

@@ -50,12 +50,9 @@ export async function POST(req: NextRequest) {
         : resolveASRBaseUrl(effectiveProviderId, baseUrl || undefined),
     };
 
-    // Convert audio file to buffer
-    const arrayBuffer = await audioFile.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
     // Transcribe using the provider system
-    const result = await transcribeAudio(config, buffer);
+    // We pass the File object directly to preserve metadata (name, type)
+    const result = await transcribeAudio(config, audioFile);
 
     return apiSuccess({ text: result.text });
   } catch (error) {

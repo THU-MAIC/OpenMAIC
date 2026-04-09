@@ -75,7 +75,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
         if (!response.ok) {
           const error = await response.json();
-          throw new Error(error.error || 'Transcription failed');
+          throw new Error(error.details || error.error || 'Transcription failed');
         }
 
         const result = await response.json();
