@@ -668,6 +668,64 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.7, max: 1.2, default: 1.0 },
   },
 
+  'cartesia-tts': {
+    id: 'cartesia-tts',
+    name: 'Cartesia TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.cartesia.ai',
+    icon: '/logos/cartesia.svg',
+    // Cartesia Sonic-2. Voice IDs below are public preset voices from
+    // https://docs.cartesia.ai/api-reference/tts/voices. For the full catalog
+    // (including Spanish voices) the user can type any voice UUID in the
+    // voice selector.
+    voices: [
+      {
+        id: '5c43e078-4bbe-498f-8dd5-3f08da3b4fad',
+        name: 'Javier (es)',
+        language: 'es-ES',
+        gender: 'male',
+        description: 'Clear neutral Spanish narrator voice',
+      },
+      {
+        id: 'db229dfe-f5de-4be4-91fd-7b077c158578',
+        name: 'Lucía (es)',
+        language: 'es-ES',
+        gender: 'female',
+        description: 'Warm Spanish female voice for educational narration',
+      },
+      {
+        id: '846d6cb0-2301-48b6-9683-48f5618ea2f6',
+        name: 'Sofía (es-MX)',
+        language: 'es-MX',
+        gender: 'female',
+        description: 'Latin American Spanish voice',
+      },
+      {
+        id: 'a0e99841-438c-4a64-b679-ae501e7d6091',
+        name: 'Barbershop Man',
+        language: 'en-US',
+        gender: 'male',
+        description: 'Confident English male voice',
+      },
+      {
+        id: '79a125e8-cd45-4c13-8a67-188112f4dd22',
+        name: 'British Lady',
+        language: 'en-GB',
+        gender: 'female',
+        description: 'Clear British English female voice',
+      },
+      {
+        id: '95856005-0332-41b0-935f-352e296aa0df',
+        name: 'Classy British Man',
+        language: 'en-GB',
+        gender: 'male',
+        description: 'Formal British male voice',
+      },
+    ],
+    supportedFormats: ['mp3', 'wav', 'pcm'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -806,6 +864,49 @@ export const ASR_PROVIDERS: Record<ASRProviderId, ASRProviderConfig> = {
     supportedFormats: ['mp3', 'wav', 'webm', 'm4a', 'flac'],
   },
 
+  'assemblyai-asr': {
+    id: 'assemblyai-asr',
+    name: 'AssemblyAI',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.assemblyai.com/v2',
+    icon: '/logos/assemblyai.svg',
+    // AssemblyAI Universal-2 model supports 99+ languages. Language codes
+    // follow ISO 639-1. See https://www.assemblyai.com/docs/speech-to-text/pre-recorded-audio/supported-languages
+    supportedLanguages: [
+      'auto',
+      'en',
+      'es',
+      'fr',
+      'de',
+      'it',
+      'pt',
+      'nl',
+      'pl',
+      'ru',
+      'ja',
+      'zh',
+      'ko',
+      'ar',
+      'hi',
+      'tr',
+      'vi',
+      'id',
+      'th',
+      'uk',
+      'cs',
+      'sv',
+      'da',
+      'no',
+      'fi',
+      'el',
+      'hu',
+      'ro',
+      'bg',
+      'he',
+    ],
+    supportedFormats: ['mp3', 'mp4', 'wav', 'webm', 'm4a', 'flac', 'ogg'],
+  },
+
   'browser-native': {
     id: 'browser-native',
     name: '浏览器原生 ASR (Web Speech API)',
@@ -896,6 +997,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
+  'cartesia-tts': '5c43e078-4bbe-498f-8dd5-3f08da3b4fad',
   'browser-native-tts': 'default',
 };
 

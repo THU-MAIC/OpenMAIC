@@ -8,29 +8,79 @@ export interface ResolvedVoice {
 }
 
 /**
+ * Extract the base language code from a locale.
+ * 'es-MX' → 'es', 'en-US' → 'en', 'zh-CN' → 'zh', 'es' → 'es'.
+ */
+function baseLang(locale: string | undefined): string | null {
+  if (!locale) return null;
+  return locale.toLowerCase().split('-')[0] || null;
+}
+
+/**
+ * Check whether a voice matches a target language.
+ * Matches on the base code ('es' matches 'es-MX', 'es-ES', 'es-AR', ...).
+ */
+function voiceMatchesLang(
+  voice: { language?: string },
+  targetLang: string | null,
+): boolean {
+  if (!targetLang) return true;
+  const vLang = baseLang(voice.language);
+  return vLang === targetLang;
+}
+
+/**
  * Resolve the TTS provider + voice for an agent.
- * 1. If agent has voiceConfig and the voice is still valid, use it
- * 2. Otherwise, use the first available provider + deterministic voice by index
+ *
+ * Priority:
+ *   1. If agent has voiceConfig AND the voice matches the locale (or no
+ *      locale filter), use it as-is.
+ *   2. If agent has voiceConfig but its language does NOT match the current
+ *      locale, discard it and pick a matching one — this prevents an English
+ *      voice from reading Spanish text when the UI is in Spanish.
+ *   3. Otherwise, pick the first available provider that has at least one
+ *      voice matching the locale; fall back to any voice if none match.
+ *
+ * @param locale - Optional UI locale (e.g. 'es-MX'). When provided, voice
+ *                 selection is filtered by matching base language.
  */
 export function resolveAgentVoice(
   agent: AgentConfig,
   agentIndex: number,
   availableProviders: ProviderWithVoices[],
+  locale?: string,
 ): ResolvedVoice {
+  const targetLang = baseLang(locale);
+
   // Agent-specific config
   if (agent.voiceConfig) {
     // Browser-native voices are dynamic (not in static registry), so skip validation
     if (agent.voiceConfig.providerId === 'browser-native-tts') {
       return agent.voiceConfig;
     }
-    const list = getServerVoiceList(agent.voiceConfig.providerId);
-    if (list.includes(agent.voiceConfig.voiceId)) {
+    const provider = TTS_PROVIDERS[agent.voiceConfig.providerId];
+    const voice = provider?.voices.find((v) => v.id === agent.voiceConfig!.voiceId);
+    if (voice && voiceMatchesLang(voice, targetLang)) {
       return agent.voiceConfig;
     }
+    // Voice exists but in wrong language → fall through to pick a new one.
   }
 
-  // Fallback: first available provider, deterministic voice
+  // Fallback: pick the first available provider with at least one voice that
+  // matches the target language. If none match, use the first provider's
+  // deterministic voice regardless.
   if (availableProviders.length > 0) {
+    if (targetLang) {
+      for (const p of availableProviders) {
+        const matching = p.voices.filter((v) => voiceMatchesLang(v, targetLang));
+        if (matching.length > 0) {
+          return {
+            providerId: p.providerId,
+            voiceId: matching[agentIndex % matching.length].id,
+          };
+        }
+      }
+    }
     const first = availableProviders[0];
     return {
       providerId: first.providerId,
@@ -55,7 +105,7 @@ export function getServerVoiceList(providerId: TTSProviderId): string[] {
 export interface ProviderWithVoices {
   providerId: TTSProviderId;
   providerName: string;
-  voices: Array<{ id: string; name: string }>;
+  voices: Array<{ id: string; name: string; language?: string }>;
 }
 
 /**
@@ -84,7 +134,11 @@ export function getAvailableProvidersWithVoices(
       result.push({
         providerId,
         providerName: config.name,
-        voices: config.voices.map((v) => ({ id: v.id, name: v.name })),
+        voices: config.voices.map((v) => ({
+          id: v.id,
+          name: v.name,
+          language: v.language,
+        })),
       });
     }
   }

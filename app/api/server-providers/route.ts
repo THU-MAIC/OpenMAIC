@@ -6,6 +6,7 @@ import {
   getServerImageProviders,
   getServerVideoProviders,
   getServerWebSearchProviders,
+  ensureProviderOverridesLoaded,
 } from '@/lib/server/provider-config';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
@@ -14,6 +15,7 @@ const log = createLogger('ServerProviders');
 
 export async function GET() {
   try {
+    await ensureProviderOverridesLoaded();
     return apiSuccess({
       providers: getServerProviders(),
       tts: getServerTTSProviders(),

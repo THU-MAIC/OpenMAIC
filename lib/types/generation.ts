@@ -68,6 +68,17 @@ export interface UserRequirements {
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
+  /**
+   * Optional pedagogical philosophy for the course (Addon 2: Complete Courses).
+   * When present, its `systemPrompt` and `generationGuidelines` are injected
+   * into all generation prompts so the entire course follows one approach.
+   */
+  coursePhilosophy?: {
+    id: string;
+    name: string;
+    systemPrompt: string;
+    generationGuidelines: string[];
+  };
 }
 
 /**

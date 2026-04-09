@@ -184,6 +184,9 @@ export async function transcribeAudio(
     case 'qwen-asr':
       return await transcribeQwenASR(config, audioBuffer);
 
+    case 'assemblyai-asr':
+      return await transcribeAssemblyAI(config, audioBuffer);
+
     default:
       throw new Error(`Unsupported ASR provider: ${config.providerId}`);
   }
@@ -324,6 +327,103 @@ async function transcribeQwenASR(
   // Extract text from first content item
   const transcribedText = messageContent[0]?.text || '';
   return { text: transcribedText };
+}
+
+/**
+ * AssemblyAI transcription (upload + poll pattern).
+ * Docs: https://www.assemblyai.com/docs/api-reference/transcripts
+ *
+ * Flow:
+ *   1. POST /upload with raw audio bytes → get upload_url
+ *   2. POST /transcript with { audio_url, language_code } → get id
+ *   3. GET /transcript/{id} until status == 'completed' or 'error'
+ */
+async function transcribeAssemblyAI(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const baseUrl = config.baseUrl || ASR_PROVIDERS['assemblyai-asr'].defaultBaseUrl;
+  const apiKey = config.apiKey!;
+
+  // --- Step 1: upload audio bytes ---
+  let audioBytes: ArrayBuffer;
+  if (audioBuffer instanceof Buffer) {
+    const copy = new ArrayBuffer(audioBuffer.byteLength);
+    new Uint8Array(copy).set(audioBuffer);
+    audioBytes = copy;
+  } else if (audioBuffer instanceof Blob) {
+    audioBytes = await audioBuffer.arrayBuffer();
+  } else {
+    throw new Error('Invalid audio buffer type');
+  }
+
+  if (audioBytes.byteLength === 0) return { text: '' };
+
+  const uploadRes = await fetch(`${baseUrl}/upload`, {
+    method: 'POST',
+    headers: {
+      Authorization: apiKey,
+      'Content-Type': 'application/octet-stream',
+    },
+    body: audioBytes,
+  });
+  if (!uploadRes.ok) {
+    const errorText = await uploadRes.text().catch(() => uploadRes.statusText);
+    throw new Error(`AssemblyAI upload error: ${errorText}`);
+  }
+  const { upload_url } = (await uploadRes.json()) as { upload_url: string };
+
+  // --- Step 2: create transcript job ---
+  const transcriptBody: Record<string, unknown> = {
+    audio_url: upload_url,
+    speech_model: 'universal',
+  };
+  if (config.language && config.language !== 'auto') {
+    transcriptBody.language_code = config.language;
+  } else {
+    transcriptBody.language_detection = true;
+  }
+
+  const createRes = await fetch(`${baseUrl}/transcript`, {
+    method: 'POST',
+    headers: {
+      Authorization: apiKey,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(transcriptBody),
+  });
+  if (!createRes.ok) {
+    const errorText = await createRes.text().catch(() => createRes.statusText);
+    throw new Error(`AssemblyAI transcript create error: ${errorText}`);
+  }
+  const { id } = (await createRes.json()) as { id: string };
+
+  // --- Step 3: poll for completion ---
+  const pollUrl = `${baseUrl}/transcript/${id}`;
+  const maxAttempts = 60; // ~60s cap for short audio typical in this app
+  const pollIntervalMs = 1000;
+  for (let i = 0; i < maxAttempts; i++) {
+    const pollRes = await fetch(pollUrl, {
+      headers: { Authorization: apiKey },
+    });
+    if (!pollRes.ok) {
+      const errorText = await pollRes.text().catch(() => pollRes.statusText);
+      throw new Error(`AssemblyAI poll error: ${errorText}`);
+    }
+    const poll = (await pollRes.json()) as {
+      status: 'queued' | 'processing' | 'completed' | 'error';
+      text?: string;
+      error?: string;
+    };
+    if (poll.status === 'completed') {
+      return { text: poll.text || '' };
+    }
+    if (poll.status === 'error') {
+      throw new Error(`AssemblyAI transcription failed: ${poll.error || 'unknown'}`);
+    }
+    await new Promise((r) => setTimeout(r, pollIntervalMs));
+  }
+  throw new Error('AssemblyAI transcription timed out');
 }
 
 /**

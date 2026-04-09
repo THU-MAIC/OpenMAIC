@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="{{LANGUAGE}}">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{COURSE_TITLE}}</title>
+    <link rel="stylesheet" href="runtime/player.css" />
+  </head>
+  <body>
+    <div id="app">
+      <div id="sidebar">
+        <h1 id="course-title">{{COURSE_TITLE}}</h1>
+        <nav id="module-nav"></nav>
+        <div id="progress-summary"></div>
+      </div>
+      <main id="main">
+        <div id="scene-container">
+          <div id="loading">Cargando…</div>
+        </div>
+        <div id="nav-bar">
+          <button id="prev-btn" type="button">◀ Anterior</button>
+          <div id="scene-dots"></div>
+          <button id="next-btn" type="button">Siguiente ▶</button>
+        </div>
+      </main>
+    </div>
+    <script src="runtime/scorm-api-wrapper.js"></script>
+    <script src="runtime/player.js"></script>
+  </body>
+</html>

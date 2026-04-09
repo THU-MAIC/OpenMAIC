@@ -134,6 +134,9 @@ export async function generateTTS(
     case 'elevenlabs-tts':
       return await generateElevenLabsTTS(config, text);
 
+    case 'cartesia-tts':
+      return await generateCartesiaTTS(config, text);
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -369,6 +372,63 @@ async function generateElevenLabsTTS(
   return {
     audio: new Uint8Array(arrayBuffer),
     format: requestedFormat,
+  };
+}
+
+/**
+ * Cartesia TTS implementation (Sonic-2)
+ * API docs: https://docs.cartesia.ai/api-reference/tts/bytes
+ */
+async function generateCartesiaTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['cartesia-tts'].defaultBaseUrl;
+  const requestedFormat = (config.format || 'mp3').toLowerCase();
+  const speed = Math.max(0.5, Math.min(2.0, config.speed || 1.0));
+
+  // Cartesia maps speed to a qualitative control. Use the numeric "speed"
+  // parameter supported by Sonic-2.
+  const containerMap: Record<string, { container: string; encoding: string; format: string }> = {
+    mp3: { container: 'mp3', encoding: 'mp3', format: 'mp3' },
+    wav: { container: 'wav', encoding: 'pcm_s16le', format: 'wav' },
+    pcm: { container: 'raw', encoding: 'pcm_s16le', format: 'pcm' },
+  };
+  const outputFormat = containerMap[requestedFormat] || containerMap.mp3;
+
+  const response = await fetch(`${baseUrl}/tts/bytes`, {
+    method: 'POST',
+    headers: {
+      'X-API-Key': config.apiKey!,
+      'Cartesia-Version': '2024-11-13',
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      model_id: 'sonic-2',
+      transcript: text,
+      voice: {
+        mode: 'id',
+        id: config.voice,
+      },
+      output_format: {
+        container: outputFormat.container,
+        encoding: outputFormat.encoding,
+        sample_rate: 44100,
+      },
+      language: undefined, // Cartesia auto-detects; can be overridden per-call
+      speed,
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Cartesia TTS API error: ${errorText || response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    audio: new Uint8Array(arrayBuffer),
+    format: outputFormat.format,
   };
 }
 

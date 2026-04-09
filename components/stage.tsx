@@ -782,6 +782,16 @@ export function Stage({
     }
   }, [currentSceneId, gatedSceneSwitch, hasNextPending, isPendingScene, scenes, setCurrentSceneId]);
 
+  // Go to a specific scene by index (for progress bar)
+  const handleGoToScene = useCallback(
+    (index: number) => {
+      if (index >= 0 && index < scenes.length) {
+        gatedSceneSwitch(scenes[index].id);
+      }
+    },
+    [gatedSceneSwitch, scenes],
+  );
+
   const currentSceneIndex = isPendingScene
     ? scenes.length
     : scenes.findIndex((s) => s.id === currentSceneId);
@@ -975,6 +985,8 @@ export function Stage({
         >
           <CanvasArea
             currentScene={currentScene}
+            scenes={scenes}
+            onGoToScene={handleGoToScene}
             currentSceneIndex={currentSceneIndex}
             scenesCount={totalScenesCount}
             mode={mode}

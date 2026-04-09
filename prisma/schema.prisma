@@ -1,0 +1,242 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ==================== Authentication ====================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String?  @unique
+  name      String?
+  nickname  String?
+  image     String?
+  password  String? // Hashed password for credentials provider
+  role      Role     @default(STUDENT)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  accounts    Account[]
+  sessions    Session[]
+  enrollments Enrollment[]
+  grades      Grade[]
+  courses     Course[]    @relation("CourseCreator")
+}
+
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ==================== Courses & Enrollment ====================
+
+model Course {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  philosophyId String?
+  language     String   @default("en-US")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  createdById  String?
+
+  createdBy   User?        @relation("CourseCreator", fields: [createdById], references: [id])
+  modules     Module[]
+  enrollments Enrollment[]
+}
+
+model Module {
+  id          String @id @default(cuid())
+  courseId     String
+  title       String
+  description String?
+  order       Int
+
+  course  Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  lessons Lesson[]
+}
+
+model Lesson {
+  id       String @id @default(cuid())
+  moduleId String
+  stageId  String // References file-based classroom JSON (/data/classrooms/{stageId}.json)
+  title    String
+  order    Int
+
+  module   Module            @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  grades   Grade[]
+  progress StudentProgress[]
+}
+
+model Enrollment {
+  id         String         @id @default(cuid())
+  userId     String
+  courseId    String
+  role       EnrollmentRole @default(STUDENT)
+  enrolledAt DateTime       @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, courseId])
+}
+
+enum EnrollmentRole {
+  STUDENT
+  TEACHING_ASSISTANT
+  INSTRUCTOR
+  OBSERVER
+}
+
+// ==================== Grading & Progress ====================
+
+model Grade {
+  id         String   @id @default(cuid())
+  userId     String
+  lessonId   String
+  sceneId    String? // Specific scene (e.g., quiz) that was graded
+  score      Float // 0-100
+  maxScore   Float    @default(100)
+  feedback   String?
+  gradedAt   DateTime @default(now())
+  gradedBy   String? // "system" for auto-grading, userId for manual grading
+  synced     Boolean  @default(false) // Whether synced to external LMS
+  externalId String? // ID in external system (e.g., Moodle grade item ID)
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+
+model StudentProgress {
+  id          String    @id @default(cuid())
+  userId      String
+  lessonId    String
+  sceneIndex  Int // Last viewed scene index
+  completed   Boolean   @default(false)
+  completedAt DateTime?
+  timeSpent   Int       @default(0) // seconds
+  updatedAt   DateTime  @updatedAt
+
+  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, lessonId])
+}
+
+// ==================== LTI Integration ====================
+
+model LTIPlatform {
+  id            String @id @default(cuid())
+  name          String
+  issuer        String @unique // LTI 1.3 issuer URL
+  clientId      String
+  authEndpoint  String
+  tokenEndpoint String
+  jwksEndpoint  String
+  deploymentId  String?
+  publicKey     String? // Platform's public key for verifying JWTs
+
+  createdAt DateTime    @default(now())
+  launches  LTILaunch[]
+}
+
+model LTILaunch {
+  id         String   @id @default(cuid())
+  platformId String
+  userId     String? // Linked OpenMAIC user
+  ltiUserId  String // User ID from LTI claim
+  courseId    String? // Target OpenMAIC course
+  lessonId   String? // Target lesson
+  roles      String[] // LTI roles
+  nonce      String   @unique
+  state      String?
+  launchedAt DateTime @default(now())
+
+  platform LTIPlatform @relation(fields: [platformId], references: [id])
+}
+
+// ==================== LMS Sync Configuration ====================
+
+model LMSIntegration {
+  id         String   @id @default(cuid())
+  providerId String // 'moodle', 'odoo', 'dolibarr'
+  name       String // User-friendly name
+  config     Json // Provider-specific config (base URL, credentials, etc.)
+  enabled    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  syncRules SyncRule[]
+}
+
+model SyncRule {
+  id               String  @id @default(cuid())
+  integrationId    String
+  courseId          String
+  externalCourseId String
+  syncGrades       Boolean @default(true)
+  syncEnrollments  Boolean @default(false)
+
+  integration LMSIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+}
+
+// ==================== Provider Configuration ====================
+// Admin-editable provider credentials and metadata. Persistent override on
+// top of server-providers.yml + environment variables. The category tells
+// getConfig() which section of the runtime config to merge the entry into.
+//
+// Categories: "llm" | "tts" | "asr" | "image" | "video" | "webSearch" | "pdf"
+
+model ProviderConfigOverride {
+  id         String   @id @default(cuid())
+  category   String // "llm" | "tts" | "asr" | ...
+  providerId String // e.g. "openai", "cartesia-tts", "assemblyai-asr"
+  apiKey     String? // Nullable: may be set from env only, not DB
+  baseUrl    String?
+  models     String? // Comma-separated list (for LLM providers)
+  proxy      String?
+  enabled    Boolean  @default(true)
+  updatedAt  DateTime @updatedAt
+  updatedBy  String? // User id of the admin who last changed this
+
+  @@unique([category, providerId])
+  @@index([category])
+}

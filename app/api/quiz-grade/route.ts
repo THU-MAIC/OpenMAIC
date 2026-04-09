@@ -10,6 +10,8 @@ import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { auth } from '@/lib/auth/auth';
+import { gradeService } from '@/lib/grading/grade-service';
 const log = createLogger('Quiz Grade');
 
 interface GradeRequest {
@@ -18,6 +20,9 @@ interface GradeRequest {
   points: number;
   commentPrompt?: string;
   language?: string;
+  // Optional persistence context: present when the quiz is part of a tracked lesson
+  lessonId?: string;
+  sceneId?: string;
 }
 
 interface GradeResponse {
@@ -28,7 +33,7 @@ interface GradeResponse {
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as GradeRequest;
-    const { question, userAnswer, points, commentPrompt, language } = body;
+    const { question, userAnswer, points, commentPrompt, language, lessonId, sceneId } = body;
 
     if (!question || !userAnswer) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'question and userAnswer are required');
@@ -85,6 +90,26 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
           ? '已作答，请参考标准答案。'
           : 'Answer received. Please refer to the standard answer.',
       };
+    }
+
+    // Persist grade if user is authenticated and lesson context is provided
+    if (lessonId) {
+      try {
+        const session = await auth();
+        if (session?.user?.id) {
+          await gradeService.recordQuizGrade(session.user.id, lessonId, sceneId ?? '', [
+            {
+              questionId: sceneId ?? 'text',
+              selected: [userAnswer],
+              correct: gradeResult.score === points,
+              points: gradeResult.score,
+              maxPoints: points,
+            },
+          ]);
+        }
+      } catch (persistErr) {
+        log.warn('Failed to persist grade:', persistErr);
+      }
     }
 
     return apiSuccess({ ...gradeResult });

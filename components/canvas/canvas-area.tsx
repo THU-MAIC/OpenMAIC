@@ -9,11 +9,15 @@ import { SceneProvider } from '@/lib/contexts/scene-context';
 import { Whiteboard } from '@/components/whiteboard';
 import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
 import type { CanvasToolbarProps } from '@/components/canvas/canvas-toolbar';
-import type { Scene, StageMode } from '@/lib/types/stage';
+import { SceneNavigationOverlay } from '@/components/canvas/scene-navigation-overlay';
+import { SceneProgressBar } from '@/components/canvas/scene-progress-bar';
+import type { Scene, SceneType, StageMode } from '@/lib/types/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
 interface CanvasAreaProps extends CanvasToolbarProps {
   readonly currentScene: Scene | null;
+  readonly scenes?: ReadonlyArray<{ id: string; title: string; type: SceneType }>;
+  readonly onGoToScene?: (index: number) => void;
   readonly mode: StageMode;
   readonly hideToolbar?: boolean;
   readonly isPendingScene?: boolean;
@@ -23,6 +27,8 @@ interface CanvasAreaProps extends CanvasToolbarProps {
 
 export function CanvasArea({
   currentScene,
+  scenes: scenesForProgress,
+  onGoToScene,
   currentSceneIndex,
   scenesCount,
   mode,
@@ -224,6 +230,26 @@ export function CanvasArea({
               </motion.div>
             )}
           </AnimatePresence>
+
+          {/* Floating Navigation Overlay — large prev/next buttons on sides */}
+          {!whiteboardOpen && scenesCount > 1 && (
+            <SceneNavigationOverlay
+              currentSceneIndex={currentSceneIndex}
+              scenesCount={scenesCount}
+              onPrevSlide={onPrevSlide}
+              onNextSlide={onNextSlide}
+              isPresenting={isPresenting}
+            />
+          )}
+
+          {/* Scene Progress Bar — thin segmented bar at the bottom */}
+          {!whiteboardOpen && scenesForProgress && scenesForProgress.length > 1 && onGoToScene && (
+            <SceneProgressBar
+              currentIndex={currentSceneIndex}
+              scenes={scenesForProgress}
+              onGoToScene={onGoToScene}
+            />
+          )}
         </div>
       </div>
 

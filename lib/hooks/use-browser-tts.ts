@@ -26,7 +26,7 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
     rate = 1.0,
     pitch = 1.0,
     volume = 1.0,
-    lang = 'zh-CN',
+    lang = typeof navigator !== 'undefined' ? navigator.language : 'en-US',
   } = options;
 
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -75,11 +75,20 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
       utterance.volume = volume;
       utterance.lang = lang;
 
-      // Set voice if specified
-      if (voiceURI) {
+      // Set voice if specified, otherwise find one matching the language
+      if (voiceURI && voiceURI !== 'default') {
         const voice = availableVoices.find((v) => v.voiceURI === voiceURI);
         if (voice) {
           utterance.voice = voice;
+        }
+      }
+      if (!utterance.voice && lang) {
+        const langPrefix = lang.split('-')[0];
+        const langVoice =
+          availableVoices.find((v) => v.lang === lang) ||
+          availableVoices.find((v) => v.lang.startsWith(langPrefix + '-'));
+        if (langVoice) {
+          utterance.voice = langVoice;
         }
       }
 

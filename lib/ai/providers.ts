@@ -945,6 +945,83 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
+  openrouter: {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    type: 'openai',
+    defaultBaseUrl: 'https://openrouter.ai/api/v1',
+    requiresApiKey: true,
+    icon: '/logos/openrouter.svg',
+    // OpenRouter aggregates 300+ models across providers. This list is a
+    // curated starter set — users can override via OPENROUTER_MODELS env or
+    // the admin provider config. See https://openrouter.ai/models for the
+    // full catalog.
+    models: [
+      {
+        id: 'anthropic/claude-sonnet-4.5',
+        name: 'Claude Sonnet 4.5 (OpenRouter)',
+        contextWindow: 200000,
+        outputWindow: 64000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'anthropic/claude-opus-4.1',
+        name: 'Claude Opus 4.1 (OpenRouter)',
+        contextWindow: 200000,
+        outputWindow: 32000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'openai/gpt-5',
+        name: 'GPT-5 (OpenRouter)',
+        contextWindow: 400000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'openai/gpt-5-mini',
+        name: 'GPT-5 mini (OpenRouter)',
+        contextWindow: 128000,
+        outputWindow: 16000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'google/gemini-2.5-pro',
+        name: 'Gemini 2.5 Pro (OpenRouter)',
+        contextWindow: 1000000,
+        outputWindow: 65000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'google/gemini-2.5-flash',
+        name: 'Gemini 2.5 Flash (OpenRouter)',
+        contextWindow: 1000000,
+        outputWindow: 65000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'meta-llama/llama-3.3-70b-instruct',
+        name: 'Llama 3.3 70B (OpenRouter)',
+        contextWindow: 131072,
+        outputWindow: 16000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'deepseek/deepseek-chat',
+        name: 'DeepSeek Chat (OpenRouter)',
+        contextWindow: 128000,
+        outputWindow: 8000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'qwen/qwen3-235b-a22b-instruct',
+        name: 'Qwen3 235B (OpenRouter)',
+        contextWindow: 131072,
+        outputWindow: 16000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+    ],
+  },
 };
 
 /**

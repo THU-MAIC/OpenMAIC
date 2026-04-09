@@ -127,7 +127,15 @@ export async function generateSceneOutlinesFromRequirements(
       totalScenes: 0,
     });
 
-    const response = await aiCall(prompts.system, prompts.user, visionImages);
+    // Inject course philosophy into the system prompt (Addon 2: Complete Courses)
+    let systemPrompt = prompts.system;
+    if (requirements.coursePhilosophy) {
+      const p = requirements.coursePhilosophy;
+      const guidelines = p.generationGuidelines.map((g) => `- ${g}`).join('\n');
+      systemPrompt = `## Pedagogical Philosophy: ${p.name}\n\n${p.systemPrompt}\n\n### Generation Guidelines\n${guidelines}\n\n---\n\n${systemPrompt}`;
+    }
+
+    const response = await aiCall(systemPrompt, prompts.user, visionImages);
     const outlines = parseJsonResponse<SceneOutline[]>(response);
 
     if (!outlines || !Array.isArray(outlines)) {

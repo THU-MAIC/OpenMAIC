@@ -49,6 +49,7 @@ const LLM_ENV_MAP: Record<string, string> = {
   SILICONFLOW: 'siliconflow',
   DOUBAO: 'doubao',
   GROK: 'grok',
+  OPENROUTER: 'openrouter',
 };
 
 const TTS_ENV_MAP: Record<string, string> = {
@@ -57,11 +58,13 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_GLM: 'glm-tts',
   TTS_QWEN: 'qwen-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
+  TTS_CARTESIA: 'cartesia-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {
   ASR_OPENAI: 'openai-whisper',
   ASR_QWEN: 'qwen-asr',
+  ASR_ASSEMBLYAI: 'assemblyai-asr',
 };
 
 const PDF_ENV_MAP: Record<string, string> = {
@@ -221,6 +224,99 @@ function getConfig(): ServerConfig {
   logConfig(config, DEFAULT_FILENAME);
   _configs.set('', config);
   return config;
+}
+
+// ---------------------------------------------------------------------------
+// Database overlay (admin-editable overrides persisted in Prisma)
+// ---------------------------------------------------------------------------
+//
+// Precedence (high → low): env vars > DB overrides > YAML.
+//
+// The DB overlay is applied lazily on top of getConfig()'s synchronous result
+// the first time it is needed. applyDbOverrides() mutates the cached config
+// and returns it; subsequent calls are cheap. Call invalidateProviderCache()
+// after writing overrides from the admin API.
+
+let _dbOverlayApplied = false;
+
+async function applyDbOverrides(): Promise<ServerConfig> {
+  const config = getConfig();
+  if (_dbOverlayApplied) return config;
+  try {
+    // Dynamic import avoids pulling Prisma into edge-runtime bundles.
+    const { prisma } = await import('@/lib/db/prisma');
+    const rows = await prisma.providerConfigOverride.findMany({
+      where: { enabled: true },
+    });
+    for (const row of rows) {
+      const section = sectionFor(config, row.category);
+      if (!section) continue;
+      const models = row.models
+        ? row.models
+            .split(',')
+            .map((m) => m.trim())
+            .filter(Boolean)
+        : undefined;
+      const existing = section[row.providerId];
+      const envApiKey = existing?.apiKey && !row.apiKey ? existing.apiKey : undefined;
+      const envBaseUrl = existing?.baseUrl && !row.baseUrl ? existing.baseUrl : undefined;
+      section[row.providerId] = {
+        apiKey: envApiKey || row.apiKey || existing?.apiKey || '',
+        baseUrl: envBaseUrl || row.baseUrl || existing?.baseUrl,
+        models: models || existing?.models,
+        proxy: row.proxy || existing?.proxy,
+      };
+    }
+    _dbOverlayApplied = true;
+    log.info(`[ServerProviderConfig] Applied ${rows.length} DB overrides`);
+  } catch (err) {
+    // DB may not be available (e.g. during prerender, tests). Skip silently.
+    log.warn('[ServerProviderConfig] Could not apply DB overrides:', err);
+    _dbOverlayApplied = true;
+  }
+  return config;
+}
+
+function sectionFor(
+  config: ServerConfig,
+  category: string,
+): Record<string, ServerProviderEntry> | null {
+  switch (category) {
+    case 'llm':
+      return config.providers;
+    case 'tts':
+      return config.tts;
+    case 'asr':
+      return config.asr;
+    case 'pdf':
+      return config.pdf;
+    case 'image':
+      return config.image;
+    case 'video':
+      return config.video;
+    case 'webSearch':
+      return config.webSearch;
+    default:
+      return null;
+  }
+}
+
+/**
+ * Invalidate the in-memory provider cache. Call after writing DB overrides
+ * via the admin API so the next getConfig() call reloads fresh values.
+ */
+export function invalidateProviderCache(): void {
+  _configs.clear();
+  _dbOverlayApplied = false;
+}
+
+/**
+ * Ensure DB overrides have been applied at least once. Call this from API
+ * routes before using any resolver that reads from the config. Safe to call
+ * repeatedly — it's a no-op after the first successful run.
+ */
+export async function ensureProviderOverridesLoaded(): Promise<void> {
+  await applyDbOverrides();
 }
 
 // ---------------------------------------------------------------------------

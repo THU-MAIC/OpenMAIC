@@ -20,7 +20,13 @@ function createAbortError(): Error {
 function inferPreviewLang(text: string): string {
   const cjkCount = (text.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
   const ratio = text.length > 0 ? cjkCount / text.length : 0;
-  return ratio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
+  if (ratio > CJK_LANG_THRESHOLD) return 'zh-CN';
+
+  // Detect Spanish by checking for common Spanish-specific characters and words
+  const spanishIndicators = (text.match(/[áéíóúüñ¿¡]/gi) || []).length;
+  if (spanishIndicators > 0) return 'es-US';
+
+  return 'en-US';
 }
 
 export function isBrowserTTSAbortError(error: unknown): boolean {
@@ -75,16 +81,29 @@ export function resolveBrowserVoice(
   text: string,
 ): { voice: SpeechSynthesisVoice | null; lang: string } {
   const target = voiceNameOrLang.trim();
-  const matchedVoice =
-    target && target !== 'default'
-      ? voices.find(
-          (voice) => voice.voiceURI === target || voice.name === target || voice.lang === target,
-        ) || null
-      : null;
+
+  // Try exact match by voiceURI, name, or lang
+  if (target && target !== 'default') {
+    const matchedVoice =
+      voices.find(
+        (voice) => voice.voiceURI === target || voice.name === target || voice.lang === target,
+      ) || null;
+    if (matchedVoice) {
+      return { voice: matchedVoice, lang: matchedVoice.lang };
+    }
+  }
+
+  // No explicit voice — infer language from text and find a matching voice
+  const inferredLang = inferPreviewLang(text);
+  const langPrefix = inferredLang.split('-')[0]; // 'es', 'zh', 'en'
+  const langVoice =
+    voices.find((v) => v.lang === inferredLang) ||
+    voices.find((v) => v.lang.startsWith(langPrefix + '-')) ||
+    null;
 
   return {
-    voice: matchedVoice,
-    lang: matchedVoice?.lang || inferPreviewLang(text),
+    voice: langVoice,
+    lang: langVoice?.lang || inferredLang,
   };
 }
 

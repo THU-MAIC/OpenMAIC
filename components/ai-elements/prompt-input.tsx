@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { useSettingsStore } from '@/lib/store/settings';
 import { createLogger } from '@/lib/logger';
 import type { ChatStatus, FileUIPart } from 'ai';
 
@@ -1052,7 +1053,8 @@ export const PromptInputSpeechButton = ({
 
       speechRecognition.continuous = true;
       speechRecognition.interimResults = true;
-      speechRecognition.lang = 'en-US';
+      const { asrLanguage } = useSettingsStore.getState();
+      speechRecognition.lang = asrLanguage || 'es-US';
 
       speechRecognition.onstart = () => {
         setIsListening(true);

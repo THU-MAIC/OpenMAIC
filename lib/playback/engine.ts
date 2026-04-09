@@ -656,11 +656,25 @@ export class PlaybackEngine {
       }
     }
     if (!voiceFound) {
-      // No usable voice configured — detect text language so the browser
-      // auto-selects an appropriate voice.
-      const cjkRatio =
-        (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / chunkText.length;
-      utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
+      // No usable voice configured — detect text language and find a matching voice.
+      const cjkCount = (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length;
+      const cjkRatio = chunkText.length > 0 ? cjkCount / chunkText.length : 0;
+      const spanishChars = (chunkText.match(/[áéíóúüñ¿¡]/gi) || []).length;
+      const detectedLang =
+        cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : spanishChars > 0 ? 'es-US' : 'en-US';
+      const langPrefix = detectedLang.split('-')[0];
+
+      // Try to find a browser voice matching the detected language
+      // Prefer es-US over es-ES for Latin American Spanish
+      const langVoice =
+        voices.find((v) => v.lang === detectedLang) ||
+        voices.find((v) => v.lang.startsWith(langPrefix + '-'));
+      if (langVoice) {
+        utterance.voice = langVoice;
+        utterance.lang = langVoice.lang;
+      } else {
+        utterance.lang = detectedLang;
+      }
     }
 
     utterance.onend = () => {

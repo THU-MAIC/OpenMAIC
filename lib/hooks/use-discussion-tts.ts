@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef } from 'react';
 import { useSettingsStore } from '@/lib/store/settings';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { useBrowserTTS } from '@/lib/hooks/use-browser-tts';
 import { resolveAgentVoice, getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
@@ -24,6 +25,7 @@ interface QueueItem {
 }
 
 export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: DiscussionTTSOptions) {
+  const { locale } = useI18n();
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -52,6 +54,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     cancel: browserCancel,
   } = useBrowserTTS({
     rate: ttsSpeed,
+    lang: locale,
     onEnd: () => {
       isPlayingRef.current = false;
       segmentDoneCounterRef.current++;
