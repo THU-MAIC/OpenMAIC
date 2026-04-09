@@ -39,6 +39,7 @@ export {
   generateSceneActions,
   createSceneWithActions,
 } from './scene-generator';
+export type { SceneContentOptions, SceneActionsOptions } from './scene-generator';
 
 // Scene builder (standalone)
 export {

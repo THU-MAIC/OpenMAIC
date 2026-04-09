@@ -134,15 +134,12 @@ export async function POST(req: NextRequest) {
     // ── Generate actions ──
     log.info(`Generating actions: "${outline.title}" (${outline.type}) [model=${modelString}]`);
 
-    const actions = await generateSceneActions(
-      outline,
-      content,
-      aiCall,
+    const actions = await generateSceneActions(outline, content, aiCall, {
       ctx,
       agents,
       userProfile,
       languageDirective,
-    );
+    });
 
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 

@@ -350,31 +350,16 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    const content = await generateSceneContent(
-      safeOutline,
-      aiCall,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      agents,
-      languageDirective,
-    );
+    const content = await generateSceneContent(safeOutline, aiCall, { agents, languageDirective });
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;
     }
 
-    const actions = await generateSceneActions(
-      safeOutline,
-      content,
-      aiCall,
-      undefined,
+    const actions = await generateSceneActions(safeOutline, content, aiCall, {
       agents,
-      undefined,
       languageDirective,
-    );
+    });
     log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
 
     const sceneId = createSceneWithActions(safeOutline, content, actions, api);

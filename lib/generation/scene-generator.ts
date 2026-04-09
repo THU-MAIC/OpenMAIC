@@ -48,6 +48,25 @@ import type {
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
+// ── Options interfaces for scene generation functions ──
+
+export interface SceneContentOptions {
+  assignedImages?: PdfImage[];
+  imageMapping?: ImageMapping;
+  languageModel?: LanguageModel;
+  visionEnabled?: boolean;
+  generatedMediaMapping?: ImageMapping;
+  agents?: AgentInfo[];
+  languageDirective?: string;
+}
+
+export interface SceneActionsOptions {
+  ctx?: SceneGenerationContext;
+  agents?: AgentInfo[];
+  userProfile?: string;
+  languageDirective?: string;
+}
+
 // ==================== Stage 2: Full Scenes (Two-Step) ====================
 
 /**
@@ -131,17 +150,7 @@ async function generateSingleScene(
 ): Promise<string | null> {
   // Step 3.1: Generate content
   log.info(`Step 3.1: Generating content for: ${outline.title}`);
-  const content = await generateSceneContent(
-    outline,
-    aiCall,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    undefined,
-    languageDirective,
-  );
+  const content = await generateSceneContent(outline, aiCall, { languageDirective });
   if (!content) {
     log.error(`Failed to generate content for: ${outline.title}`);
     return null;
@@ -149,15 +158,7 @@ async function generateSingleScene(
 
   // Step 3.2: Generate Actions
   log.info(`Step 3.2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(
-    outline,
-    content,
-    aiCall,
-    undefined,
-    undefined,
-    undefined,
-    languageDirective,
-  );
+  const actions = await generateSceneActions(outline, content, aiCall, { languageDirective });
   log.info(`Generated ${actions.length} actions for: ${outline.title}`);
 
   // Create complete Scene
@@ -170,13 +171,7 @@ async function generateSingleScene(
 export async function generateSceneContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  assignedImages?: PdfImage[],
-  imageMapping?: ImageMapping,
-  languageModel?: LanguageModel,
-  visionEnabled?: boolean,
-  generatedMediaMapping?: ImageMapping,
-  agents?: AgentInfo[],
-  languageDirective?: string,
+  options: SceneContentOptions = {},
 ): Promise<
   | GeneratedSlideContent
   | GeneratedQuizContent
@@ -184,6 +179,15 @@ export async function generateSceneContent(
   | GeneratedPBLContent
   | null
 > {
+  const {
+    assignedImages,
+    imageMapping,
+    languageModel,
+    visionEnabled,
+    generatedMediaMapping,
+    agents,
+    languageDirective,
+  } = options;
   // If outline is interactive but missing interactiveConfig, fall back to slide
   if (outline.type === 'interactive' && !outline.interactiveConfig) {
     log.warn(
@@ -937,11 +941,9 @@ export async function generateSceneActions(
     | GeneratedInteractiveContent
     | GeneratedPBLContent,
   aiCall: AICallFn,
-  ctx?: SceneGenerationContext,
-  agents?: AgentInfo[],
-  userProfile?: string,
-  languageDirective?: string,
+  options: SceneActionsOptions = {},
 ): Promise<Action[]> {
+  const { ctx, agents, userProfile, languageDirective } = options;
   const agentsText = formatAgentsForPrompt(agents);
 
   if (outline.type === 'slide' && 'elements' in content) {
