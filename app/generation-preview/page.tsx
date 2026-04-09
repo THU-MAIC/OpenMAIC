@@ -429,7 +429,9 @@ function GenerationPreviewContent() {
                           directive = evt.languageDirective || directive;
                           resolve({
                             outlines: evt.outlines || collected,
-                            languageDirective: directive || '',
+                            languageDirective:
+                              directive ||
+                              'Teach in the language that matches the user requirement.',
                           });
                           return;
                         } else if (evt.type === 'error') {
@@ -445,7 +447,8 @@ function GenerationPreviewContent() {
                     if (collected.length > 0) {
                       resolve({
                         outlines: collected,
-                        languageDirective: directive || '',
+                        languageDirective:
+                          directive || 'Teach in the language that matches the user requirement.',
                       });
                     } else {
                       reject(new Error(t('generation.outlineEmptyResponse')));

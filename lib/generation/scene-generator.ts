@@ -64,6 +64,7 @@ export async function generateFullScenes(
   store: StageStore,
   aiCall: AICallFn,
   callbacks?: GenerationCallbacks,
+  languageDirective?: string,
 ): Promise<GenerationResult<string[]>> {
   const api = createStageAPI(store);
   const totalScenes = sceneOutlines.length;
@@ -82,7 +83,7 @@ export async function generateFullScenes(
   const results = await Promise.all(
     sceneOutlines.map(async (outline, index) => {
       try {
-        const sceneId = await generateSingleScene(outline, api, aiCall);
+        const sceneId = await generateSingleScene(outline, api, aiCall, languageDirective);
 
         // Update progress (not atomic, but sufficient for UI display)
         completedCount++;
@@ -126,10 +127,21 @@ async function generateSingleScene(
   outline: SceneOutline,
   api: ReturnType<typeof createStageAPI>,
   aiCall: AICallFn,
+  languageDirective?: string,
 ): Promise<string | null> {
   // Step 3.1: Generate content
   log.info(`Step 3.1: Generating content for: ${outline.title}`);
-  const content = await generateSceneContent(outline, aiCall);
+  const content = await generateSceneContent(
+    outline,
+    aiCall,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    languageDirective,
+  );
   if (!content) {
     log.error(`Failed to generate content for: ${outline.title}`);
     return null;
@@ -137,7 +149,15 @@ async function generateSingleScene(
 
   // Step 3.2: Generate Actions
   log.info(`Step 3.2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(outline, content, aiCall);
+  const actions = await generateSceneActions(
+    outline,
+    content,
+    aiCall,
+    undefined,
+    undefined,
+    undefined,
+    languageDirective,
+  );
   log.info(`Generated ${actions.length} actions for: ${outline.title}`);
 
   // Create complete Scene
