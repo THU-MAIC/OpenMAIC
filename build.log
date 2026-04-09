@@ -1,0 +1,30 @@
+
+> slate@0.1.0 build
+> next build
+
+▲ Next.js 16.1.2 (Turbopack)
+- Environments: .env
+- Experiments (use with caution):
+  · proxyClientMaxBodySize: "200mb"
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 4.9s
+  Running TypeScript ...
+  Collecting page data using 13 workers ...
+  Generating static pages using 13 workers (0/27) ...
+  Generating static pages using 13 workers (6/27) 
+  Generating static pages using 13 workers (13/27) 
+⨯ useSearchParams() should be wrapped in a suspense boundary at page "/". Read more: https://nextjs.org/docs/messages/missing-suspense-with-csr-bailout
+    at Q (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/.next/server/chunks/ssr/_b243acf8._.js:2:2111)
+    at o (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/.next/server/chunks/ssr/_b243acf8._.js:4:5311)
+    at bv (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/.next/server/chunks/ssr/app_page_tsx_55b2e5ee._.js:1:52059)
+    at an (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/node_modules/.pnpm/next@16.1.2_@babel+core@7.29.0_@opentelemetry+api@1.9.0_@playwright+test@1.58.2_react-d_73d26e8a224c7af85a4dde0601bbbcd7/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:84360)
+    at ai (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/node_modules/.pnpm/next@16.1.2_@babel+core@7.29.0_@opentelemetry+api@1.9.0_@playwright+test@1.58.2_react-d_73d26e8a224c7af85a4dde0601bbbcd7/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:86179)
+    at al (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/node_modules/.pnpm/next@16.1.2_@babel+core@7.29.0_@opentelemetry+api@1.9.0_@playwright+test@1.58.2_react-d_73d26e8a224c7af85a4dde0601bbbcd7/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:107953)
+    at as (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/node_modules/.pnpm/next@16.1.2_@babel+core@7.29.0_@opentelemetry+api@1.9.0_@playwright+test@1.58.2_react-d_73d26e8a224c7af85a4dde0601bbbcd7/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:105368)
+    at aa (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/node_modules/.pnpm/next@16.1.2_@babel+core@7.29.0_@opentelemetry+api@1.9.0_@playwright+test@1.58.2_react-d_73d26e8a224c7af85a4dde0601bbbcd7/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:84712)
+    at ai (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/node_modules/.pnpm/next@16.1.2_@babel+core@7.29.0_@opentelemetry+api@1.9.0_@playwright+test@1.58.2_react-d_73d26e8a224c7af85a4dde0601bbbcd7/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:86228)
+    at al (/Users/thunderbolt/Documents/projects/youngerly-maic/OpenMAIC/node_modules/.pnpm/next@16.1.2_@babel+core@7.29.0_@opentelemetry+api@1.9.0_@playwright+test@1.58.2_react-d_73d26e8a224c7af85a4dde0601bbbcd7/node_modules/next/dist/compiled/next-server/app-page-turbo.runtime.prod.js:2:107953)
+Error occurred prerendering page "/". Read more: https://nextjs.org/docs/messages/prerender-error
+Export encountered an error on /page: /, exiting the build.
+⨯ Next.js build worker exited with code: 1 and signal: null
