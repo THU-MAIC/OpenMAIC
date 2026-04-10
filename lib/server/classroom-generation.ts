@@ -270,9 +270,7 @@ export async function generateClassroom(
     }
     const searchKey = resolveWebSearchApiKey(providerId);
     if (searchKey) {
-      const ssrfError = input.webSearchBaseUrl
-        ? validateUrlForSSRF(input.webSearchBaseUrl)
-        : null;
+      const ssrfError = input.webSearchBaseUrl ? validateUrlForSSRF(input.webSearchBaseUrl) : null;
       if (ssrfError) {
         log.warn(`webSearchBaseUrl rejected by SSRF guard (${ssrfError}), skipping web search`);
       } else {
