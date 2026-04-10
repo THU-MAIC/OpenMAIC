@@ -52,6 +52,7 @@ const LLM_ENV_MAP: Record<string, string> = {
 };
 
 const TTS_ENV_MAP: Record<string, string> = {
+  TTS_SMALLEST: 'smallest-tts',
   TTS_OPENAI: 'openai-tts',
   TTS_AZURE: 'azure-tts',
   TTS_GLM: 'glm-tts',

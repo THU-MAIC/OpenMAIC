@@ -283,8 +283,8 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
 
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
-  ttsProviderId: 'openai-tts' as TTSProviderId,
-  ttsVoice: 'alloy',
+  ttsProviderId: 'smallest-tts' as TTSProviderId,
+  ttsVoice: 'voice_ZPoOA6GhOT',
   ttsSpeed: 1.0,
   asrProviderId: 'openai-whisper' as ASRProviderId,
   asrLanguage: 'auto',
@@ -296,6 +296,7 @@ const getDefaultAudioConfig = () => ({
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: false },
+    'smallest-tts': { apiKey: '', baseUrl: '', enabled: true },
     'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
   } as Record<
     TTSProviderId,
@@ -394,6 +395,29 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
   if (!hasProviderId(ASR_PROVIDERS, state.asrProviderId)) {
     state.asrProviderId = defaultAudioConfig.asrProviderId;
   }
+
+  // Ensure LLM is configured
+  if (
+    !state.providerId ||
+    !(state.providerId in PROVIDERS) ||
+    !state.providersConfig?.[state.providerId as ProviderId]
+  ) {
+    state.providerId = 'google' as ProviderId;
+  }
+
+  if (!state.modelId && state.providerId) {
+    const provider = PROVIDERS[state.providerId as ProviderId];
+    if (provider) {
+      // Find flash model if possible, otherwise first one
+      const flashModel = provider.models.find((m) => m.id.includes('flash'))?.id;
+      state.modelId = flashModel || provider.models[0]?.id || '';
+    }
+  }
+
+  // Specifically ensure Gemini 3 Flash if it's a fresh or broken state
+  if (!state.modelId || (state.providerId === 'google' && !state.modelId)) {
+    state.modelId = 'gemini-3-flash-preview';
+  }
 }
 
 /**
@@ -459,6 +483,20 @@ function ensureBuiltInVideoProviders(state: Partial<SettingsState>): void {
     const providerId = pid as VideoProviderId;
     if (!state.videoProvidersConfig![providerId]) {
       state.videoProvidersConfig![providerId] = defaultConfig[providerId];
+    }
+  });
+}
+
+/**
+ * Ensure ttsProvidersConfig includes all built-in TTS providers.
+ */
+function ensureBuiltInTTSProviders(state: Partial<SettingsState>): void {
+  if (!state.ttsProvidersConfig) return;
+  const defaultConfig = getDefaultAudioConfig().ttsProvidersConfig;
+  Object.keys(TTS_PROVIDERS).forEach((pid) => {
+    const providerId = pid as TTSProviderId;
+    if (!state.ttsProvidersConfig![providerId]) {
+      state.ttsProvidersConfig![providerId] = defaultConfig[providerId];
     }
   });
 }
@@ -979,6 +1017,7 @@ export const useSettingsStore = create<SettingsState>()(
                 state.providerId,
                 newProvidersConfig,
                 llmFallback,
+                'google' as ProviderId,
               );
               const validTTSProvider = validateProvider(
                 state.ttsProviderId,
@@ -1234,6 +1273,7 @@ export const useSettingsStore = create<SettingsState>()(
         // Ensure image/video configs have all built-in providers
         ensureBuiltInImageProviders(state);
         ensureBuiltInVideoProviders(state);
+        ensureBuiltInTTSProviders(state);
 
         // Migrate from old ttsModel to new ttsProviderId
         if (state.ttsModel && !state.ttsProviderId) {
@@ -1364,6 +1404,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInProviders(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
+        ensureBuiltInTTSProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
         return merged as SettingsState;
       },

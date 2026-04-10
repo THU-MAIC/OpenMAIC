@@ -51,6 +51,27 @@ export const MINIMAX_TTS_MODELS = [
 ] as const;
 
 export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
+  'smallest-tts': {
+    id: 'smallest-tts',
+    name: 'Smallest AI (Waves)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.smallest.ai/waves/v1/lightning-v3.1/get_speech',
+    icon: '/logos/smallest.svg',
+    models: [
+      { id: 'lightning-v3.1', name: 'Lightning v3.1' },
+      { id: 'lightning-v3.0', name: 'Lightning v3.0' },
+    ],
+    defaultModelId: 'lightning-v3.1',
+    voices: [
+      {
+        id: 'voice_ZPoOA6GhOT',
+        name: 'Smallest AI Voice',
+        language: 'en',
+        gender: 'female',
+        description: 'Smallest AI Premium Voice',
+      },
+    ],
+  },
   'openai-tts': {
     id: 'openai-tts',
     name: 'OpenAI TTS',
@@ -1119,6 +1140,7 @@ export function getTTSProvider(providerId: TTSProviderId): TTSProviderConfig | u
  * Used when switching providers or testing a non-active provider.
  */
 export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
+  'smallest-tts': 'voice_ZPoOA6GhOT',
   'openai-tts': 'alloy',
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
@@ -1130,6 +1152,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
 };
 
 export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
+  'smallest-tts': 'lightning-v3.1',
   'openai-tts': 'gpt-4o-mini-tts',
   'azure-tts': '',
   'glm-tts': 'glm-tts',

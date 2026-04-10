@@ -226,7 +226,7 @@ function buildThinkingProviderOptions(
  */
 function getDefaultProviderOptions(modelId: string): ProviderOptions | undefined {
   if (modelId === 'gemini-3.1-pro-preview') {
-    return { google: { thinkingConfig: { thinkingLevel: 'high' } } };
+    return { google: { thinkingConfig: { thinkingLevel: 'low' } } };
   }
   return undefined;
 }

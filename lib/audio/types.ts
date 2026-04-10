@@ -86,6 +86,7 @@ export type TTSProviderId =
   | 'doubao-tts'
   | 'elevenlabs-tts'
   | 'minimax-tts'
+  | 'smallest-tts'
   | 'browser-native-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'fish-audio-tts'

@@ -1,3 +1,5 @@
+import { trace, context } from '@opentelemetry/api';
+
 const LOG_LEVELS = { debug: 0, info: 1, warn: 2, error: 3 } as const;
 type LogLevel = keyof typeof LOG_LEVELS;
 
@@ -30,6 +32,18 @@ export function createLogger(tag: string) {
     if (LOG_LEVELS[level] < LOG_LEVELS[getMinLevel()]) return;
 
     const line = formatLine(level, tag, args);
+
+    // OpenTelemetry integration: Add log as an event to the current span
+    const activeSpan = trace.getSpan(context.active());
+    if (activeSpan) {
+      activeSpan.addEvent('log', {
+        level,
+        tag,
+        message: args
+          .map((a) => (typeof a === 'string' ? a : JSON.stringify(a)))
+          .join(' '),
+      });
+    }
 
     // Console output
     const fn =

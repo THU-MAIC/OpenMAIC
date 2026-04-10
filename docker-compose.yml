@@ -11,5 +11,13 @@ services:
       - openmaic-data:/app/data
     restart: unless-stopped
 
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4317:4317"   # OTLP gRPC collector
+      - "4318:4318"   # OTLP HTTP collector
+    restart: unless-stopped
+
 volumes:
   openmaic-data:

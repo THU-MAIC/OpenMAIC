@@ -341,7 +341,8 @@
     "ttsModelPlaceholder": "Enter or select TTS model name",
     "ttsModelOptions": {
       "openaiTts": "OpenAI TTS",
-      "azureTts": "Azure TTS"
+      "azureTts": "Azure TTS",
+      "smallestTts": "Smallest AI (Waves)"
     },
     "availableModels": "Available Models",
     "modelSelectedViaVoice": "Model is determined by voice selection",
@@ -533,6 +534,7 @@
     "providerQwenTTS": "Qwen TTS (Alibaba Cloud Bailian)",
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
+    "providerSmallestTTS": "Smallest AI (Waves)",
     "providerMiniMaxTTS": "MiniMax TTS",
     "providerBrowserNativeTTS": "Browser Native TTS",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",

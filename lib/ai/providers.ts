@@ -327,7 +327,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
       {
         id: 'gemini-3-flash-preview',
-        name: 'Gemini 3 Flash Preview',
+        name: 'Gemini 3 Flash',
         contextWindow: 1048576,
         outputWindow: 65536,
         capabilities: {

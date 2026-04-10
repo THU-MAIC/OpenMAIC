@@ -167,6 +167,26 @@ export async function generateTTS(
     case 'elevenlabs-tts':
       return await generateElevenLabsTTS(config, text);
 
+    case 'smallest-tts':
+      try {
+        return await generateSmallestTTS(config, text);
+      } catch (e) {
+        const error = e as Error;
+        log.error('Smallest TTS failed, falling back to OpenAI', {
+          error: error.message,
+          provider: 'smallest-tts',
+        });
+
+        // Use OpenAI TTS as backup
+        const openaiConfig: TTSModelConfig = {
+          providerId: 'openai-tts',
+          apiKey: process.env.TTS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || config.apiKey,
+          voice: 'alloy', // Generic fallback voice
+          speed: config.speed || 1.0,
+        };
+        return await generateOpenAITTS(openaiConfig, text);
+      }
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -589,6 +609,46 @@ async function generateDoubaoTTS(
   }
 
   return { audio: combined, format: 'mp3' };
+}
+
+
+/**
+ * Smallest AI Waves TTS implementation (Lightning v3.1)
+ * https://waves-docs.smallest.ai/v4.0.0/content/getting-started/introduction
+ */
+async function generateSmallestTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  // Use model-specific endpoint if provided, otherwise default to lightning-v3.1
+  const modelId = config.modelId || 'lightning-v3.1';
+  const baseUrl = config.baseUrl || `https://api.smallest.ai/waves/v1/${modelId}/get_speech`;
+
+  const response = await fetch(baseUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      text,
+      voice_id: config.voice || 'voice_ZPoOA6GhOT',
+      sample_rate: 44100,
+      speed: config.speed || 1.0,
+      output_format: 'wav',
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Smallest AI TTS API error: ${errorText || response.statusText}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  return {
+    audio: new Uint8Array(arrayBuffer),
+    format: 'wav',
+  };
 }
 
 /**

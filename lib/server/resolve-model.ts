@@ -29,7 +29,8 @@ export function resolveModel(params: {
   providerType?: string;
   requiresApiKey?: boolean;
 }): ResolvedModel {
-  const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-4o-mini';
+  const modelString =
+    params.modelString || process.env.DEFAULT_MODEL || 'google:gemini-3-flash-preview';
   const { providerId, modelId } = parseModelString(modelString);
 
   const clientBaseUrl = params.baseUrl || undefined;
