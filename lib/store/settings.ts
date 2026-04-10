@@ -849,8 +849,12 @@ export const useSettingsStore = create<SettingsState>()(
                 ...state.webSearchProvidersConfig,
                 [providerId]: updatedProviderConfig,
               };
-              const otherUsableProviderId = (Object.keys(updatedConfig) as WebSearchProviderId[]).find(
-                (id) => id !== providerId && (updatedConfig[id].isServerConfigured || updatedConfig[id].apiKey),
+              const otherUsableProviderId = (
+                Object.keys(updatedConfig) as WebSearchProviderId[]
+              ).find(
+                (id) =>
+                  id !== providerId &&
+                  (updatedConfig[id].isServerConfigured || updatedConfig[id].apiKey),
               );
               extraUpdates = {
                 webSearchProviderId: otherUsableProviderId ?? null,
