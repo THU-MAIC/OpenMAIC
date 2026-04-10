@@ -78,7 +78,8 @@ export async function searchWithClaude(params: {
   baseUrl: string;
   tools?: Array<{ type: string; name: string }>;
 }): Promise<WebSearchResult> {
-  const { query, apiKey, modelId = 'claude-sonnet-4-6', baseUrl, tools } = params;
+  const { query, apiKey, modelId: rawModelId, baseUrl, tools } = params;
+  const modelId = rawModelId?.trim() || 'claude-sonnet-4-6';
 
   const apiVersion = '2023-06-01';
 

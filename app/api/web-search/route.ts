@@ -110,16 +110,16 @@ export async function POST(req: NextRequest) {
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    const effectiveBaseUrl =
-      providerConfig?.baseUrl || WEB_SEARCH_PROVIDERS[providerId].defaultBaseUrl || '';
-
-    // Validate client-supplied base URL against SSRF in production
-    if (providerConfig?.baseUrl && process.env.NODE_ENV === 'production') {
+    // Validate client-supplied base URL against SSRF in all environments
+    if (providerConfig?.baseUrl) {
       const ssrfError = validateUrlForSSRF(providerConfig.baseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 400, ssrfError);
       }
     }
+
+    const effectiveBaseUrl =
+      providerConfig?.baseUrl || WEB_SEARCH_PROVIDERS[providerId].defaultBaseUrl || '';
 
     let result;
     if (providerId === 'claude') {

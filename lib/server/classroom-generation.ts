@@ -23,6 +23,7 @@ import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
 import { searchWithClaude } from '@/lib/web-search/claude';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
@@ -269,43 +270,50 @@ export async function generateClassroom(
     }
     const searchKey = resolveWebSearchApiKey(providerId);
     if (searchKey) {
-      try {
-        const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
+      const ssrfError = input.webSearchBaseUrl
+        ? validateUrlForSSRF(input.webSearchBaseUrl)
+        : null;
+      if (ssrfError) {
+        log.warn(`webSearchBaseUrl rejected by SSRF guard (${ssrfError}), skipping web search`);
+      } else {
+        try {
+          const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
 
-        log.info('Running web search for classroom generation', {
-          provider: providerId,
-          hasPdfContext: searchQuery.hasPdfContext,
-          rawRequirementLength: searchQuery.rawRequirementLength,
-          rewriteAttempted: searchQuery.rewriteAttempted,
-          finalQueryLength: searchQuery.finalQueryLength,
-        });
-
-        const effectiveBaseUrl =
-          input.webSearchBaseUrl || WEB_SEARCH_PROVIDERS[providerId]?.defaultBaseUrl || '';
-
-        let searchResult;
-        if (providerId === 'claude') {
-          searchResult = await searchWithClaude({
-            query: searchQuery.query,
-            apiKey: searchKey,
-            baseUrl: effectiveBaseUrl,
-            modelId: input.webSearchModelId,
-            tools: input.webSearchTools,
+          log.info('Running web search for classroom generation', {
+            provider: providerId,
+            hasPdfContext: searchQuery.hasPdfContext,
+            rawRequirementLength: searchQuery.rawRequirementLength,
+            rewriteAttempted: searchQuery.rewriteAttempted,
+            finalQueryLength: searchQuery.finalQueryLength,
           });
-        } else {
-          searchResult = await searchWithTavily({
-            query: searchQuery.query,
-            apiKey: searchKey,
-            baseUrl: effectiveBaseUrl,
-          });
-        }
 
-        researchContext = formatSearchResultsAsContext(searchResult);
-        if (researchContext) {
-          log.info(`Web search returned ${searchResult.sources.length} sources`);
+          const effectiveBaseUrl =
+            input.webSearchBaseUrl || WEB_SEARCH_PROVIDERS[providerId]?.defaultBaseUrl || '';
+
+          let searchResult;
+          if (providerId === 'claude') {
+            searchResult = await searchWithClaude({
+              query: searchQuery.query,
+              apiKey: searchKey,
+              baseUrl: effectiveBaseUrl,
+              modelId: input.webSearchModelId,
+              tools: input.webSearchTools,
+            });
+          } else {
+            searchResult = await searchWithTavily({
+              query: searchQuery.query,
+              apiKey: searchKey,
+              baseUrl: effectiveBaseUrl,
+            });
+          }
+
+          researchContext = formatSearchResultsAsContext(searchResult);
+          if (researchContext) {
+            log.info(`Web search returned ${searchResult.sources.length} sources`);
+          }
+        } catch (e) {
+          log.warn('Web search failed, continuing without search context:', e);
         }
-      } catch (e) {
-        log.warn('Web search failed, continuing without search context:', e);
       }
     } else {
       log.warn(
