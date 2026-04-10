@@ -12,6 +12,25 @@ import type { WebSearchResult, WebSearchSource } from '@/lib/types/web-search';
 const PAGE_CONTENT_MAX_LENGTH = 2000;
 const PAGE_FETCH_TIMEOUT_MS = 5000;
 
+interface SearchContent {
+  url: string;
+  title: string;
+  content?: string;
+  type?: string;
+  cited_text?: string;
+}
+
+interface SearchResultItem {
+  type: string;
+  content?: SearchContent[];
+  citations?: SearchContent[];
+  text?: string;
+}
+
+interface SearchResult {
+  content: SearchResultItem[];
+}
+
 /** Fetch a URL and return plain text extracted from its HTML. Returns empty string on any failure. */
 async function fetchPageContent(url: string): Promise<string> {
   log.info(`Fetching page content: ${url}`);
@@ -87,8 +106,8 @@ export async function searchWithClaude(params: {
       throw new Error(`Claude API error (${res.status}): ${errorText || res.statusText}`);
     }
 
-    const data = (await res.json()) as any;
-    const contentBlocks: any[] = data.content || [];
+    const data = (await res.json()) as SearchResult;
+    const contentBlocks: SearchResultItem[] = data.content || [];
 
     // Extract search results from web_search_tool_result blocks
     const searchResultMap = new Map<string, WebSearchSource>();

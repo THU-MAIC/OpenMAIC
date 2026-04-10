@@ -77,7 +77,12 @@ describe('searchWithClaude', () => {
   it('uses provided tools when non-empty', async () => {
     mockApiResponse();
     const customTools = [{ type: 'web_search_custom', name: 'my_search' }];
-    await search({ query: 'test', apiKey: 'sk-test', tools: customTools });
+    await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+      tools: customTools,
+    });
 
     const body = JSON.parse(mockProxyFetch.mock.calls[0][1].body);
     expect(body.tools).toEqual(customTools);
@@ -85,7 +90,7 @@ describe('searchWithClaude', () => {
 
   it('uses default web_search tool when tools is undefined', async () => {
     mockApiResponse();
-    await search({ query: 'test', apiKey: 'sk-test' });
+    await search({ query: 'test', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com' });
 
     const body = JSON.parse(mockProxyFetch.mock.calls[0][1].body);
     expect(body.tools).toEqual([{ type: 'web_search_20260209', name: 'web_search' }]);
@@ -93,7 +98,12 @@ describe('searchWithClaude', () => {
 
   it('uses default web_search tool when tools is an empty array', async () => {
     mockApiResponse();
-    await search({ query: 'test', apiKey: 'sk-test', tools: [] });
+    await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+      tools: [],
+    });
 
     const body = JSON.parse(mockProxyFetch.mock.calls[0][1].body);
     expect(body.tools).toEqual([{ type: 'web_search_20260209', name: 'web_search' }]);
@@ -113,7 +123,11 @@ describe('searchWithClaude', () => {
     });
     mockPageResponse('<html><body><p>Page content here</p></body></html>');
 
-    const result = await search({ query: 'test', apiKey: 'sk-test' });
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0].content).toBe('Page content here');
@@ -142,7 +156,11 @@ describe('searchWithClaude', () => {
       </html>
     `);
 
-    const result = await search({ query: 'test', apiKey: 'sk-test' });
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     expect(result.sources[0].content).not.toContain('<');
     expect(result.sources[0].content).not.toContain('alert');
@@ -168,7 +186,11 @@ describe('searchWithClaude', () => {
       ],
     });
 
-    const result = await search({ query: 'test', apiKey: 'sk-test' });
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     // Only 1 proxyFetch call — the API call; no page fetch
     expect(mockProxyFetch).toHaveBeenCalledTimes(1);
@@ -191,11 +213,15 @@ describe('searchWithClaude', () => {
     mockPageResponse('<p>Content A</p>');
     mockPageResponse('<p>Content B</p>');
 
-    const result = await search({ query: 'test', apiKey: 'sk-test' });
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     expect(result.sources).toHaveLength(2);
     // Both pages should have been fetched
-    const fetchedUrls = mockProxyFetch.mock.calls.slice(1).map(([url]: [string]) => url);
+    const fetchedUrls = mockProxyFetch.mock.calls.slice(1).map((call: string[]) => call[0]);
     expect(fetchedUrls).toContain('https://a.com');
     expect(fetchedUrls).toContain('https://b.com');
     expect(result.sources.find((s) => s.url === 'https://a.com')?.content).toContain('Content A');
@@ -214,7 +240,11 @@ describe('searchWithClaude', () => {
     });
     mockPageFailure();
 
-    const result = await search({ query: 'test', apiKey: 'sk-test' });
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     expect(result.sources).toHaveLength(0);
   });
@@ -231,7 +261,11 @@ describe('searchWithClaude', () => {
     });
     mockProxyFetch.mockRejectedValueOnce(new Error('Network timeout'));
 
-    const result = await search({ query: 'test', apiKey: 'sk-test' });
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     expect(result.sources).toHaveLength(0);
   });
@@ -252,7 +286,11 @@ describe('searchWithClaude', () => {
     mockPageResponse('<p>Good content</p>');
     mockPageFailure();
 
-    const result = await search({ query: 'test', apiKey: 'sk-test' });
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0].url).toBe('https://good.com');
@@ -268,14 +306,16 @@ describe('searchWithClaude', () => {
       text: async () => 'invalid api key',
     });
 
-    await expect(search({ query: 'test', apiKey: 'bad-key' })).rejects.toThrow(
-      /Claude API error \(401\)/,
-    );
+    await expect(
+      search({ query: 'test', apiKey: 'bad-key', baseUrl: 'https://api.anthropic.com' }),
+    ).rejects.toThrow(/Claude API error \(401\)/);
   });
 
   it('throws when proxyFetch rejects (network error)', async () => {
     mockProxyFetch.mockRejectedValueOnce(new Error('Network failure'));
 
-    await expect(search({ query: 'test', apiKey: 'sk-test' })).rejects.toThrow('Network failure');
+    await expect(
+      search({ query: 'test', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com' }),
+    ).rejects.toThrow('Network failure');
   });
 });
