@@ -6,6 +6,7 @@
  */
 
 import { proxyFetch } from '@/lib/server/proxy-fetch';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { createLogger } from '@/lib/logger';
 import type { WebSearchResult, WebSearchSource } from '@/lib/types/web-search';
 
@@ -31,8 +32,15 @@ interface SearchResult {
   content: SearchResultItem[];
 }
 
+const log = createLogger('ClaudeSearch');
+
 /** Fetch a URL and return plain text extracted from its HTML. Returns empty string on any failure. */
 async function fetchPageContent(url: string): Promise<string> {
+  const ssrfError = validateUrlForSSRF(url);
+  if (ssrfError) {
+    log.warn(`Blocked page fetch due to SSRF check [url="${url}" reason="${ssrfError}"]`);
+    return '';
+  }
   log.info(`Fetching page content: ${url}`);
   try {
     const res = await proxyFetch(url, {
@@ -59,8 +67,6 @@ async function fetchPageContent(url: string): Promise<string> {
     return '';
   }
 }
-
-const log = createLogger('ClaudeSearch');
 
 /**
  * Search the web using Claude's native web search tool.

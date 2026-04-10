@@ -270,6 +270,101 @@ describe('searchWithClaude', () => {
     expect(result.sources).toHaveLength(0);
   });
 
+  // ── SSRF protection ───────────────────────────────────────────────────────
+
+  it('skips page fetch for localhost URLs (SSRF protection)', async () => {
+    mockApiResponse({
+      content: [
+        {
+          type: 'web_search_tool_result',
+          content: [{ type: 'web_search_result', url: 'http://localhost/secret', title: 'Local' }],
+        },
+        { type: 'text', text: 'Answer', citations: [] },
+      ],
+    });
+
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+
+    // Only the API call should have been made; no page fetch
+    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
+    expect(result.sources).toHaveLength(0);
+  });
+
+  it('skips page fetch for private IP URLs (SSRF protection)', async () => {
+    mockApiResponse({
+      content: [
+        {
+          type: 'web_search_tool_result',
+          content: [
+            { type: 'web_search_result', url: 'http://192.168.1.1/admin', title: 'Private' },
+          ],
+        },
+        { type: 'text', text: 'Answer', citations: [] },
+      ],
+    });
+
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+
+    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
+    expect(result.sources).toHaveLength(0);
+  });
+
+  it('skips page fetch for non-HTTP(S) URLs (SSRF protection)', async () => {
+    mockApiResponse({
+      content: [
+        {
+          type: 'web_search_tool_result',
+          content: [{ type: 'web_search_result', url: 'file:///etc/passwd', title: 'File' }],
+        },
+        { type: 'text', text: 'Answer', citations: [] },
+      ],
+    });
+
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+
+    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
+    expect(result.sources).toHaveLength(0);
+  });
+
+  it('skips page fetch for metadata endpoint URLs (SSRF protection)', async () => {
+    mockApiResponse({
+      content: [
+        {
+          type: 'web_search_tool_result',
+          content: [
+            {
+              type: 'web_search_result',
+              url: 'http://169.254.169.254/latest/meta-data/',
+              title: 'Metadata',
+            },
+          ],
+        },
+        { type: 'text', text: 'Answer', citations: [] },
+      ],
+    });
+
+    const result = await search({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+
+    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
+    expect(result.sources).toHaveLength(0);
+  });
+
   it('keeps sources with content and drops sources without after mixed page fetches', async () => {
     mockApiResponse({
       content: [
