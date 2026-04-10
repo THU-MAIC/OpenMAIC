@@ -95,7 +95,6 @@ async function gradeShortAnswerQuestion(
     };
     if (modelConfig.baseUrl) headers['x-base-url'] = modelConfig.baseUrl;
     if (modelConfig.providerType) headers['x-provider-type'] = modelConfig.providerType;
-    if (modelConfig.requiresApiKey) headers['x-requires-api-key'] = 'true';
 
     const res = await fetch('/api/quiz-grade', {
       method: 'POST',

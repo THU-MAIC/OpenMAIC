@@ -403,7 +403,9 @@
       "kimi": "Kimi",
       "minimax": "MiniMax",
       "glm": "GLM",
-      "siliconflow": "SiliconFlow"
+      "siliconflow": "SiliconFlow",
+      "doubao": "Doubao",
+      "ollama": "Ollama (Локальный)"
     },
     "providerTypes": {
       "openai": "Протокол OpenAI",

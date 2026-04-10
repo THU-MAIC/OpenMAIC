@@ -13,6 +13,8 @@ import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
   modelString: string;
+  /** Resolved provider ID (e.g. "openai", "ollama") */
+  providerId: string;
   /** Effective API key after server-side fallback resolution */
   apiKey: string;
 }
@@ -27,11 +29,13 @@ export function resolveModel(params: {
   apiKey?: string;
   baseUrl?: string;
   providerType?: string;
-  requiresApiKey?: boolean;
 }): ResolvedModel {
   const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-4o-mini';
   const { providerId, modelId } = parseModelString(modelString);
 
+  // SSRF validation applies only to client-supplied base URLs.
+  // Server-configured URLs (e.g. OLLAMA_BASE_URL from env/YAML) flow through
+  // resolveBaseUrl() and bypass this check — they're trusted by the operator.
   const clientBaseUrl = params.baseUrl || undefined;
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
     const ssrfError = validateUrlForSSRF(clientBaseUrl);
@@ -52,16 +56,17 @@ export function resolveModel(params: {
     baseUrl,
     proxy,
     providerType: params.providerType as 'openai' | 'anthropic' | 'google' | undefined,
-    requiresApiKey: params.requiresApiKey,
   });
 
-  return { model, modelInfo, modelString, apiKey };
+  return { model, modelInfo, modelString, providerId, apiKey };
 }
 
 /**
  * Resolve a language model from standard request headers.
  *
- * Reads: x-model, x-api-key, x-base-url, x-provider-type, x-requires-api-key
+ * Reads: x-model, x-api-key, x-base-url, x-provider-type
+ * Note: requiresApiKey is derived server-side from the provider registry,
+ * never from client headers, to prevent auth bypass.
  */
 export function resolveModelFromHeaders(req: NextRequest): ResolvedModel {
   return resolveModel({
@@ -69,6 +74,5 @@ export function resolveModelFromHeaders(req: NextRequest): ResolvedModel {
     apiKey: req.headers.get('x-api-key') || undefined,
     baseUrl: req.headers.get('x-base-url') || undefined,
     providerType: req.headers.get('x-provider-type') || undefined,
-    requiresApiKey: req.headers.get('x-requires-api-key') === 'true' ? true : undefined,
   });
 }
