@@ -157,13 +157,19 @@ providers:
   describe('resolveWebSearchApiKey', () => {
     it('returns client key first', async () => {
       const { resolveWebSearchApiKey } = await import('@/lib/server/provider-config');
-      expect(resolveWebSearchApiKey('client-key')).toBe('client-key');
+      expect(resolveWebSearchApiKey('tavily', 'client-key')).toBe('client-key');
     });
 
-    it('falls back to TAVILY_API_KEY env var', async () => {
+    it('falls back to TAVILY_API_KEY env var for tavily provider', async () => {
       vi.stubEnv('TAVILY_API_KEY', 'tvly-bare-env');
       const { resolveWebSearchApiKey } = await import('@/lib/server/provider-config');
-      expect(resolveWebSearchApiKey()).toBe('tvly-bare-env');
+      expect(resolveWebSearchApiKey('tavily')).toBe('tvly-bare-env');
+    });
+
+    it('falls back to ANTHROPIC_API_KEY env var for claude provider', async () => {
+      vi.stubEnv('ANTHROPIC_API_KEY', 'claude-bare-env');
+      const { resolveWebSearchApiKey } = await import('@/lib/server/provider-config');
+      expect(resolveWebSearchApiKey('claude')).toBe('claude-bare-env');
     });
   });
 
