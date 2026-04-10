@@ -59,8 +59,6 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
 
     const config = webSearchProvidersConfig[selectedProviderId];
     const apiKey = config?.apiKey || '';
-    const baseUrl =
-      config?.baseUrl || WEB_SEARCH_PROVIDERS[selectedProviderId]?.defaultBaseUrl || '';
 
     try {
       if (selectedProviderId === 'claude') {

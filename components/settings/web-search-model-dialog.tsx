@@ -70,7 +70,7 @@ export function WebSearchModelDialog({
       setTestStatus('error');
       setTestMessage(t('settings.connectionFailed'));
     }
-  }, [canTest, model, apiKey, baseUrl, t]);
+  }, [canTest, model, apiKey, t]);
 
   const handleOpenChange = (open: boolean) => {
     if (!open) {
