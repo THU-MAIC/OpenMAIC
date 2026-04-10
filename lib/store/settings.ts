@@ -334,7 +334,7 @@ const getDefaultImageConfig = () => ({
 // Initialize default Video config
 const getDefaultVideoConfig = () => ({
   videoProviderId: 'veo' as VideoProviderId,
-  videoModelId: 'veo-3.1-fast-generate-001',
+  videoModelId: 'veo-3.1-fast-generate-preview',
   videoProvidersConfig: {
     seedance: { apiKey: '', baseUrl: '', enabled: false },
     kling: { apiKey: '', baseUrl: '', enabled: false },
@@ -383,9 +383,19 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
   if (!hasProviderId(IMAGE_PROVIDERS, state.imageProviderId)) {
     state.imageProviderId = defaultImageConfig.imageProviderId;
   }
+  // Validate image model selection
+  const imageProvider = IMAGE_PROVIDERS[state.imageProviderId as ImageProviderId];
+  if (imageProvider && state.imageModelId) {
+    state.imageModelId = validateModel(state.imageModelId, imageProvider.models);
+  }
 
   if (!hasProviderId(VIDEO_PROVIDERS, state.videoProviderId)) {
     state.videoProviderId = defaultVideoConfig.videoProviderId;
+  }
+  // Validate video model selection (fixes stale IDs like broken Veo 001 suffix)
+  const videoProvider = VIDEO_PROVIDERS[state.videoProviderId as VideoProviderId];
+  if (videoProvider && state.videoModelId) {
+    state.videoModelId = validateModel(state.videoModelId, videoProvider.models);
   }
 
   if (!hasProviderId(TTS_PROVIDERS, state.ttsProviderId)) {

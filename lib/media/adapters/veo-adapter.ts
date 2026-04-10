@@ -9,12 +9,12 @@
  * - Poll:     POST /v1beta/models/{model}:fetchPredictOperation  { operationName }
  *   Returns inline base64 video data in response.videos[]
  *
- * Supported models:
- * - veo-3.1-fast-generate-001  (fast, $0.15/sec)
- * - veo-3.1-generate-001       (quality, $0.40/sec)
- * - veo-3.0-fast-generate-001  (fast, $0.15/sec)
- * - veo-3.0-generate-001       (quality, $0.40/sec)
- * - veo-2.0-generate-001       (legacy, $0.50/sec)
+ * Supported models (Gemini API / AI Studio names):
+ * - veo-3.1-fast-generate-preview  (fast, $0.15/sec)
+ * - veo-3.1-generate-preview       (quality, $0.40/sec)
+ * - veo-3.0-fast-generate-preview  (fast, $0.15/sec)
+ * - veo-3.0-generate-preview       (quality, $0.40/sec)
+ * - veo-2.0-generate-preview       (legacy, $0.50/sec)
  *
  * Authentication: x-goog-api-key header
  *
@@ -28,7 +28,7 @@ import type {
   VideoGenerationResult,
 } from '../types';
 
-const DEFAULT_MODEL = 'veo-3.0-generate-001';
+const DEFAULT_MODEL = 'veo-3.1-fast-generate-preview';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
 const POLL_INTERVAL_MS = 10_000; // 10 seconds
 const MAX_POLL_ATTEMPTS = 60; // 10 minutes max
