@@ -74,6 +74,8 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
       { id: 'robert', name: 'Robert', language: 'en', gender: 'male' },
       { id: 'voice_ZPoOA6GhOT', name: 'Rahil', language: 'en', gender: 'male' },
     ],
+    supportedFormats: ['wav'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.25 },
   },
   'openai-tts': {
     id: 'openai-tts',
