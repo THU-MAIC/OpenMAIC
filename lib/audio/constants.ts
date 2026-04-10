@@ -59,17 +59,20 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     icon: '/logos/smallest.svg',
     models: [
       { id: 'lightning-v3.1', name: 'Lightning v3.1' },
-      { id: 'lightning-v3.0', name: 'Lightning v3.0' },
     ],
     defaultModelId: 'lightning-v3.1',
     voices: [
-      {
-        id: 'voice_ZPoOA6GhOT',
-        name: 'Smallest AI Voice',
-        language: 'en',
-        gender: 'female',
-        description: 'Smallest AI Premium Voice',
-      },
+      { id: 'daniel', name: 'Daniel', language: 'en', gender: 'male' },
+      { id: 'magnus', name: 'Magnus', language: 'en', gender: 'male' },
+      { id: 'alex', name: 'Alex', language: 'en', gender: 'neutral' },
+      { id: 'lucas', name: 'Lucas', language: 'en', gender: 'male' },
+      { id: 'brian', name: 'Brian', language: 'en', gender: 'male' },
+      { id: 'kyle', name: 'Kyle', language: 'en', gender: 'male' },
+      { id: 'jordan', name: 'Jordan', language: 'en', gender: 'neutral' },
+      { id: 'ethan', name: 'Ethan', language: 'en', gender: 'male' },
+      { id: 'johnny', name: 'Johnny', language: 'en', gender: 'male' },
+      { id: 'robert', name: 'Robert', language: 'en', gender: 'male' },
+      { id: 'voice_ZPoOA6GhOT', name: 'Rahil', language: 'en', gender: 'male' },
     ],
   },
   'openai-tts': {
@@ -1140,7 +1143,7 @@ export function getTTSProvider(providerId: TTSProviderId): TTSProviderConfig | u
  * Used when switching providers or testing a non-active provider.
  */
 export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
-  'smallest-tts': 'voice_ZPoOA6GhOT',
+  'smallest-tts': 'ethan',
   'openai-tts': 'alloy',
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',

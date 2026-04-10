@@ -90,6 +90,7 @@ export function getAvailableProvidersWithVoices(
   for (const [id, config] of Object.entries(TTS_PROVIDERS)) {
     const providerId = id as TTSProviderId;
     if (providerId === 'browser-native-tts') continue;
+    if (providerId === 'openai-tts') continue;
     if (config.voices.length === 0) continue;
 
     const providerConfig = ttsProvidersConfig[providerId];

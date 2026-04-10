@@ -284,8 +284,8 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
   ttsProviderId: 'smallest-tts' as TTSProviderId,
-  ttsVoice: 'voice_ZPoOA6GhOT',
-  ttsSpeed: 1.0,
+  ttsVoice: 'ethan',
+  ttsSpeed: 1.25,
   asrProviderId: 'openai-whisper' as ASRProviderId,
   asrLanguage: 'auto',
   ttsProvidersConfig: {
@@ -998,13 +998,13 @@ export const useSettingsStore = create<SettingsState>()(
               const buildFallback = <T extends string>(
                 config: Record<string, { isServerConfigured?: boolean; apiKey?: string }>,
               ): T[] => [
-                ...Object.entries(config)
-                  .filter(([, c]) => c.isServerConfigured)
-                  .map(([id]) => id as T),
-                ...Object.entries(config)
-                  .filter(([, c]) => !c.isServerConfigured && !!c.apiKey)
-                  .map(([id]) => id as T),
-              ];
+                  ...Object.entries(config)
+                    .filter(([, c]) => c.isServerConfigured)
+                    .map(([id]) => id as T),
+                  ...Object.entries(config)
+                    .filter(([, c]) => !c.isServerConfigured && !!c.apiKey)
+                    .map(([id]) => id as T),
+                ];
 
               const llmFallback = buildFallback<ProviderId>(newProvidersConfig);
               const ttsFallback = buildFallback<TTSProviderId>(newTTSConfig);
@@ -1064,26 +1064,26 @@ export const useSettingsStore = create<SettingsState>()(
 
               const validLLMModel = validLLMProvider
                 ? validateModel(
-                    state.modelId,
-                    newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [],
-                  )
+                  state.modelId,
+                  newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [],
+                )
                 : '';
               const imageModels =
                 IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [];
               const validImageModel = validImageProvider
                 ? recoveredImageModel ||
-                  validateModel(state.imageModelId, imageModels) ||
-                  // validateModel('', ...) returns '' — fallback to first model when modelId is empty
-                  imageModels[0]?.id ||
-                  ''
+                validateModel(state.imageModelId, imageModels) ||
+                // validateModel('', ...) returns '' — fallback to first model when modelId is empty
+                imageModels[0]?.id ||
+                ''
                 : '';
               const videoModels =
                 VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [];
               const validVideoModel = validVideoProvider
                 ? recoveredVideoModel ||
-                  validateModel(state.videoModelId, videoModels) ||
-                  videoModels[0]?.id ||
-                  ''
+                validateModel(state.videoModelId, videoModels) ||
+                videoModels[0]?.id ||
+                ''
                 : '';
 
               const validTTSVoice =

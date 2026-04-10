@@ -508,22 +508,22 @@ export function AgentBar() {
   const serverProviders = getAvailableProvidersWithVoices(ttsProvidersConfig);
   const availableProviders: ProviderWithVoices[] = [
     ...serverProviders,
-    ...(browserVoices.length > 0
-      ? [
-          {
-            providerId: 'browser-native-tts' as TTSProviderId,
-            providerName: 'Browser Native',
-            voices: browserVoices.map((v) => ({ id: v.voiceURI, name: v.name })),
-            modelGroups: [
-              {
-                modelId: '',
-                modelName: 'Browser Native',
-                voices: browserVoices.map((v) => ({ id: v.voiceURI, name: v.name })),
-              },
-            ],
-          },
-        ]
-      : []),
+    // ...(browserVoices.length > 0
+    //   ? [
+    //     {
+    //       providerId: 'browser-native-tts' as TTSProviderId,
+    //       providerName: 'Browser Native',
+    //       voices: browserVoices.map((v) => ({ id: v.voiceURI, name: v.name })),
+    //       modelGroups: [
+    //         {
+    //           modelId: '',
+    //           modelName: 'Browser Native',
+    //           voices: browserVoices.map((v) => ({ id: v.voiceURI, name: v.name })),
+    //         },
+    //       ],
+    //     },
+    //   ]
+    //   : []),
   ];
   const showVoice = availableProviders.length > 0;
 
@@ -685,12 +685,12 @@ export function AgentBar() {
     );
   };
 
-  if (!isAdmin) {
-    return null;
-  }
+  // if (!isAdmin) {
+  //   return null;
+  // }
 
   return (
-    <div ref={containerRef} className="relative w-96 flex justify-end">
+    <div ref={containerRef} className="relative w-72 flex justify-end">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -754,7 +754,7 @@ export function AgentBar() {
               )}
 
               {/* Mode tabs */}
-              <div className="flex rounded-lg border bg-muted/30 p-0.5 mb-2">
+              {/* <div className="flex rounded-lg border bg-muted/30 p-0.5 mb-2">
                 <button
                   onClick={() => handleModeChange('preset')}
                   className={cn(
@@ -778,9 +778,9 @@ export function AgentBar() {
                   <Sparkles className="h-3 w-3" />
                   {t('settings.agentModeAuto')}
                 </button>
-              </div>
+              </div> */}
 
-              {agentMode === 'preset' ? (
+              {/* {agentMode === 'preset' ? (
                 <div className="max-h-56 overflow-y-auto -mx-0.5">
                   {agents
                     .filter((a) => a.role !== 'teacher')
@@ -803,10 +803,10 @@ export function AgentBar() {
                     </p>
                   </div>
                 </div>
-              )}
+              )} */}
 
               {/* Max turns — compact stepper */}
-              <div className="flex items-center gap-1.5 px-2 py-1 mt-1 border-t border-border/30">
+              {/* <div className="flex items-center gap-1.5 px-2 py-1 mt-1 border-t border-border/30">
                 <MessageSquare className="size-3 text-muted-foreground/40 shrink-0" />
                 <span className="text-[11px] text-muted-foreground/50 flex-1">
                   {t('settings.maxTurns')}
@@ -854,7 +854,7 @@ export function AgentBar() {
                     <Plus className="size-2.5" />
                   </button>
                 </div>
-              </div>
+              </div> */}
             </div>
           </motion.div>
         )}

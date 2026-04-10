@@ -65,8 +65,8 @@ interface FormState {
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
-  language: 'zh-CN',
-  webSearch: false,
+  language: 'en-US',
+  webSearch: true,
 };
 
 function HomePage() {
@@ -103,7 +103,7 @@ function HomePage() {
       const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
       const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
       const updates: Partial<FormState> = {};
-      if (savedWebSearch === 'true') updates.webSearch = true;
+      if (savedWebSearch !== null) updates.webSearch = savedWebSearch === 'true';
       if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US') {
         updates.language = savedLanguage;
       } else {

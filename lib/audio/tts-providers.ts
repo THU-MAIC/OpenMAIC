@@ -632,9 +632,9 @@ async function generateSmallestTTS(
     },
     body: JSON.stringify({
       text,
-      voice_id: config.voice || 'voice_ZPoOA6GhOT',
+      voice_id: config.voice || 'ethan',
       sample_rate: 44100,
-      speed: config.speed || 1.0,
+      speed: config.speed || 1.25,
       output_format: 'wav',
     }),
   });

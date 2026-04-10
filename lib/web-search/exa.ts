@@ -22,7 +22,7 @@ export async function searchWithExa(params: {
   apiKey: string;
   maxResults?: number;
 }): Promise<WebSearchResult> {
-  const { query, apiKey, maxResults = 5 } = params;
+  const { query, apiKey, maxResults = 10 } = params;
 
   const truncatedQuery = query.slice(0, EXA_MAX_QUERY_LENGTH);
 
@@ -36,11 +36,12 @@ export async function searchWithExa(params: {
     },
     body: JSON.stringify({
       query: truncatedQuery,
-      type: 'auto',
-      numResults: maxResults,
-      highlights: {
-        numSentences: 3,
-        highlightsPerUrl: 1,
+      type: 'deep',
+      num_results: maxResults,
+      contents: {
+        text: {
+          max_characters: 20000,
+        },
       },
     }),
   });
@@ -54,7 +55,7 @@ export async function searchWithExa(params: {
     results: Array<{
       title: string;
       url: string;
-      highlights?: string[];
+      text?: string;
       score: number;
     }>;
     requestId?: string;
@@ -65,7 +66,7 @@ export async function searchWithExa(params: {
   const sources: WebSearchSource[] = (data.results || []).map((r) => ({
     title: r.title,
     url: r.url,
-    content: r.highlights?.join(' ') || '',
+    content: r.text || '',
     score: r.score,
   }));
 
@@ -104,7 +105,7 @@ export function formatSearchResultsAsContext(result: WebSearchResult): string {
   if (result.sources.length > 0) {
     lines.push('Sources:');
     for (const src of result.sources) {
-      lines.push(`- [${src.title}](${src.url}): ${src.content.slice(0, 200)}`);
+      lines.push(`- [${src.title}](${src.url}): ${src.content.slice(0, 5000)}`);
     }
   }
 
