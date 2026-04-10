@@ -92,6 +92,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
+    'smallest-tts': t('settings.providerSmallestTTS'),
   };
   return names[providerId] || providerId;
 }

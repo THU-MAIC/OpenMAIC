@@ -125,6 +125,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
+    'smallest-tts': t('settings.providerSmallestTTS'),
   };
   return names[providerId];
 }
@@ -318,14 +319,14 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
   const selectedProvider = providersConfig[selectedProviderId]
     ? {
-        id: selectedProviderId,
-        name: providersConfig[selectedProviderId].name,
-        type: providersConfig[selectedProviderId].type,
-        defaultBaseUrl: providersConfig[selectedProviderId].defaultBaseUrl,
-        icon: providersConfig[selectedProviderId].icon,
-        requiresApiKey: providersConfig[selectedProviderId].requiresApiKey,
-        models: providersConfig[selectedProviderId].models,
-      }
+      id: selectedProviderId,
+      name: providersConfig[selectedProviderId].name,
+      type: providersConfig[selectedProviderId].type,
+      defaultBaseUrl: providersConfig[selectedProviderId].defaultBaseUrl,
+      icon: providersConfig[selectedProviderId].icon,
+      requiresApiKey: providersConfig[selectedProviderId].requiresApiKey,
+      models: providersConfig[selectedProviderId].models,
+    }
     : undefined;
 
   // Handle model editing
@@ -457,7 +458,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
       const firstRemainingPid = Object.keys(updatedConfig)[0] as ProviderId | undefined;
       const firstModel = firstRemainingPid
         ? updatedConfig[firstRemainingPid]?.serverModels?.[0] ||
-          updatedConfig[firstRemainingPid]?.models?.[0]?.id
+        updatedConfig[firstRemainingPid]?.models?.[0]?.id
         : undefined;
       if (firstRemainingPid && firstModel) {
         setModel(firstRemainingPid, firstModel);

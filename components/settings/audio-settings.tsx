@@ -41,6 +41,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
+    'smallest-tts': t('settings.providerSmallestTTS'),
   };
   return names[providerId];
 }
@@ -453,52 +454,52 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
 
           {(ttsProvider.requiresApiKey ||
             ttsProvidersConfig[ttsProviderId]?.isServerConfigured) && (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
-                  <div className="relative">
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
+                    <div className="relative">
+                      <Input
+                        type={showTTSApiKey ? 'text' : 'password'}
+                        placeholder={
+                          ttsProvidersConfig[ttsProviderId]?.isServerConfigured
+                            ? t('settings.optionalOverride')
+                            : t('settings.enterApiKey')
+                        }
+                        value={ttsProvidersConfig[ttsProviderId]?.apiKey || ''}
+                        onChange={(e) =>
+                          handleTTSProviderConfigChange(ttsProviderId, {
+                            apiKey: e.target.value,
+                          })
+                        }
+                        className="font-mono text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTTSApiKey(!showTTSApiKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showTTSApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
                     <Input
-                      type={showTTSApiKey ? 'text' : 'password'}
-                      placeholder={
-                        ttsProvidersConfig[ttsProviderId]?.isServerConfigured
-                          ? t('settings.optionalOverride')
-                          : t('settings.enterApiKey')
-                      }
-                      value={ttsProvidersConfig[ttsProviderId]?.apiKey || ''}
+                      placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
+                      value={ttsProvidersConfig[ttsProviderId]?.baseUrl || ''}
                       onChange={(e) =>
                         handleTTSProviderConfigChange(ttsProviderId, {
-                          apiKey: e.target.value,
+                          baseUrl: e.target.value,
                         })
                       }
-                      className="font-mono text-sm pr-10"
+                      className="text-sm"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowTTSApiKey(!showTTSApiKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showTTSApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>
-                  <Input
-                    placeholder={ttsProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
-                    value={ttsProvidersConfig[ttsProviderId]?.baseUrl || ''}
-                    onChange={(e) =>
-                      handleTTSProviderConfigChange(ttsProviderId, {
-                        baseUrl: e.target.value,
-                      })
-                    }
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-            </>
-          )}
+              </>
+            )}
         </div>
       </div>
 
@@ -581,78 +582,78 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
 
           {(asrProvider.requiresApiKey ||
             asrProvidersConfig[asrProviderId]?.isServerConfigured) && (
-            <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.asrApiKey')}</Label>
-                  <div className="relative">
+              <>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label className="text-sm">{t('settings.asrApiKey')}</Label>
+                    <div className="relative">
+                      <Input
+                        type={showASRApiKey ? 'text' : 'password'}
+                        placeholder={
+                          asrProvidersConfig[asrProviderId]?.isServerConfigured
+                            ? t('settings.optionalOverride')
+                            : t('settings.enterApiKey')
+                        }
+                        value={asrProvidersConfig[asrProviderId]?.apiKey || ''}
+                        onChange={(e) =>
+                          handleASRProviderConfigChange(asrProviderId, {
+                            apiKey: e.target.value,
+                          })
+                        }
+                        className="font-mono text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowASRApiKey(!showASRApiKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showASRApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-sm">{t('settings.asrBaseUrl')}</Label>
                     <Input
-                      type={showASRApiKey ? 'text' : 'password'}
-                      placeholder={
-                        asrProvidersConfig[asrProviderId]?.isServerConfigured
-                          ? t('settings.optionalOverride')
-                          : t('settings.enterApiKey')
-                      }
-                      value={asrProvidersConfig[asrProviderId]?.apiKey || ''}
+                      placeholder={asrProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
+                      value={asrProvidersConfig[asrProviderId]?.baseUrl || ''}
                       onChange={(e) =>
                         handleASRProviderConfigChange(asrProviderId, {
-                          apiKey: e.target.value,
+                          baseUrl: e.target.value,
                         })
                       }
-                      className="font-mono text-sm pr-10"
+                      className="text-sm"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowASRApiKey(!showASRApiKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showASRApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
                 </div>
+                {(() => {
+                  const effectiveBaseUrl =
+                    asrProvidersConfig[asrProviderId]?.baseUrl || asrProvider.defaultBaseUrl || '';
+                  if (!effectiveBaseUrl) return null;
 
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.asrBaseUrl')}</Label>
-                  <Input
-                    placeholder={asrProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
-                    value={asrProvidersConfig[asrProviderId]?.baseUrl || ''}
-                    onChange={(e) =>
-                      handleASRProviderConfigChange(asrProviderId, {
-                        baseUrl: e.target.value,
-                      })
-                    }
-                    className="text-sm"
-                  />
-                </div>
-              </div>
-              {(() => {
-                const effectiveBaseUrl =
-                  asrProvidersConfig[asrProviderId]?.baseUrl || asrProvider.defaultBaseUrl || '';
-                if (!effectiveBaseUrl) return null;
+                  // Get endpoint path based on provider
+                  let endpointPath = '';
+                  switch (asrProviderId) {
+                    case 'openai-whisper':
+                      endpointPath = '/audio/transcriptions';
+                      break;
+                    case 'qwen-asr':
+                      endpointPath = '/services/aigc/multimodal-generation/generation';
+                      break;
+                    default:
+                      endpointPath = '';
+                  }
 
-                // Get endpoint path based on provider
-                let endpointPath = '';
-                switch (asrProviderId) {
-                  case 'openai-whisper':
-                    endpointPath = '/audio/transcriptions';
-                    break;
-                  case 'qwen-asr':
-                    endpointPath = '/services/aigc/multimodal-generation/generation';
-                    break;
-                  default:
-                    endpointPath = '';
-                }
-
-                if (!endpointPath) return null;
-                const fullUrl = effectiveBaseUrl + endpointPath;
-                return (
-                  <p className="text-xs text-muted-foreground break-all">
-                    {t('settings.requestUrl')}: {fullUrl}
-                  </p>
-                );
-              })()}
-            </>
-          )}
+                  if (!endpointPath) return null;
+                  const fullUrl = effectiveBaseUrl + endpointPath;
+                  return (
+                    <p className="text-xs text-muted-foreground break-all">
+                      {t('settings.requestUrl')}: {fullUrl}
+                    </p>
+                  );
+                })()}
+              </>
+            )}
 
           {(() => {
             const supportedLanguages = getASRSupportedLanguages(asrProviderId);
@@ -724,9 +725,9 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
               className={cn(
                 'rounded-lg p-3 text-sm overflow-hidden',
                 asrTestStatus === 'success' &&
-                  'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
+                'bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/50 dark:text-green-400 dark:border-green-800',
                 asrTestStatus === 'error' &&
-                  'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
+                'bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/50 dark:text-red-400 dark:border-red-800',
               )}
             >
               <div className="flex items-start gap-2 min-w-0">
