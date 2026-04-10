@@ -800,14 +800,14 @@ export const useSettingsStore = create<SettingsState>()(
           if (enabled) {
             const state = get();
             const cfg = state.webSearchProvidersConfig;
-            const firstUsable = (Object.keys(cfg) as WebSearchProviderId[]).find(
+            const firstUsableProviderId = (Object.keys(cfg) as WebSearchProviderId[]).find(
               (id) => cfg[id].isServerConfigured || cfg[id].apiKey,
             );
-            if (!firstUsable) return;
+            if (!firstUsableProviderId) return;
             set({ webSearchEnabled: true });
             // Auto-select a provider when none is selected yet
             if (!state.webSearchProviderId) {
-              get().setWebSearchProvider(firstUsable);
+              get().setWebSearchProvider(firstUsableProviderId);
             }
           } else {
             set({ webSearchEnabled: false });
@@ -849,12 +849,12 @@ export const useSettingsStore = create<SettingsState>()(
                 ...state.webSearchProvidersConfig,
                 [providerId]: updatedProviderConfig,
               };
-              const otherUsable = (Object.keys(updatedConfig) as WebSearchProviderId[]).find(
+              const otherUsableProviderId = (Object.keys(updatedConfig) as WebSearchProviderId[]).find(
                 (id) => id !== providerId && (updatedConfig[id].isServerConfigured || updatedConfig[id].apiKey),
               );
               extraUpdates = {
-                webSearchProviderId: otherUsable ?? null,
-                ...(otherUsable ? {} : { webSearchEnabled: false }),
+                webSearchProviderId: otherUsableProviderId ?? null,
+                ...(otherUsableProviderId ? {} : { webSearchEnabled: false }),
               };
             }
 
