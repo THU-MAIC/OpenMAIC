@@ -7,6 +7,7 @@ import {
   Video,
   Volume2,
   Mic,
+  ListTree,
   SlidersHorizontal,
   ChevronRight,
   Play,
@@ -57,7 +58,8 @@ const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   'grok-video': '/logos/grok.svg',
 };
 
-type TabId = 'image' | 'video' | 'tts' | 'asr';
+type TabId = 'image' | 'video' | 'tts' | 'asr' | 'outline';
+type MediaSettingsTabId = Exclude<TabId, 'outline'>;
 
 const LANG_LABELS: Record<string, string> = {
   zh: '中文',
@@ -79,7 +81,12 @@ const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
   { id: 'video', icon: Video, label: 'Video' },
   { id: 'tts', icon: Volume2, label: 'TTS' },
   { id: 'asr', icon: Mic, label: 'ASR' },
+  { id: 'outline', icon: ListTree, label: 'Outline' },
 ];
+
+function isSettingsTab(tab: TabId): tab is MediaSettingsTabId {
+  return tab !== 'outline';
+}
 
 /** Localized TTS provider name (mirrors audio-settings.tsx) */
 function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => string): string {
@@ -116,10 +123,12 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const videoGenerationEnabled = useSettingsStore((s) => s.videoGenerationEnabled);
   const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
   const asrEnabled = useSettingsStore((s) => s.asrEnabled);
+  const reviewOutlineEnabled = useSettingsStore((s) => s.reviewOutlineEnabled);
   const setImageGenerationEnabled = useSettingsStore((s) => s.setImageGenerationEnabled);
   const setVideoGenerationEnabled = useSettingsStore((s) => s.setVideoGenerationEnabled);
   const setTTSEnabled = useSettingsStore((s) => s.setTTSEnabled);
   const setASREnabled = useSettingsStore((s) => s.setASREnabled);
+  const setReviewOutlineEnabled = useSettingsStore((s) => s.setReviewOutlineEnabled);
 
   const imageProviderId = useSettingsStore((s) => s.imageProviderId);
   const imageModelId = useSettingsStore((s) => s.imageModelId);
@@ -152,6 +161,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     video: videoGenerationEnabled,
     tts: ttsEnabled,
     asr: asrEnabled,
+    outline: reviewOutlineEnabled,
   };
 
   const enabledCount = [
@@ -159,6 +169,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     videoGenerationEnabled,
     ttsEnabled,
     asrEnabled,
+    reviewOutlineEnabled,
   ].filter(Boolean).length;
 
   const cfgOk = (
@@ -239,6 +250,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
             groupName: `${providerName} · ${langLabel}`,
             groupIcon: p.icon,
             available: true,
+            compositePrefix: `${p.id}::${langKey}`,
             items: voices.map((v) => ({ id: v.voiceURI, name: v.name })),
           });
         }
@@ -318,7 +330,9 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     }
     setOpen(isOpen);
     if (isOpen) {
-      const first = (['image', 'video', 'tts', 'asr'] as TabId[]).find((id) => enabledMap[id]);
+      const first = (['image', 'video', 'tts', 'asr', 'outline'] as TabId[]).find(
+        (id) => enabledMap[id],
+      );
       setActiveTab(first || 'image');
     }
   };
@@ -339,13 +353,14 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
           {videoGenerationEnabled && <Video className="size-3.5" />}
           {ttsEnabled && <Volume2 className="size-3.5" />}
           {asrEnabled && <Mic className="size-3.5" />}
+          {reviewOutlineEnabled && <ListTree className="size-3.5" />}
         </button>
       </PopoverTrigger>
 
-      <PopoverContent align="start" side="bottom" avoidCollisions={false} className="w-80 p-0">
+      <PopoverContent align="start" side="bottom" avoidCollisions={false} className="w-[23rem] p-0">
         {/* ── Tab bar (segmented control) ── */}
         <div className="p-2 pb-0">
-          <div className="flex gap-0.5 p-0.5 bg-muted/60 rounded-lg">
+          <div className="grid grid-cols-5 gap-0.5 p-0.5 bg-muted/60 rounded-lg">
             {TABS.map((tab) => {
               const isActive = activeTab === tab.id;
               const isEnabled = enabledMap[tab.id];
@@ -355,7 +370,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium transition-all relative',
+                    'min-w-0 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-[11px] font-medium transition-all relative',
                     isActive
                       ? 'bg-background text-foreground shadow-sm'
                       : 'text-muted-foreground hover:text-foreground/80',
@@ -419,9 +434,55 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               enabled={ttsEnabled}
               onToggle={setTTSEnabled}
             >
-              <p className="text-[11px] text-muted-foreground/60">
-                {t('settings.ttsVoiceConfigHint')}
-              </p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <GroupedSelect
+                    groups={ttsGroups}
+                    selectedGroupId={ttsProviderId}
+                    selectedItemId={ttsVoice}
+                    onSelect={(gid, iid) => {
+                      if (gid !== ttsProviderId) {
+                        setTTSProvider(gid as TTSProviderId);
+                      }
+                      setTTSVoice(iid);
+                    }}
+                  />
+                </div>
+                <button
+                  onClick={handlePreview}
+                  className={cn(
+                    'inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-[11px] font-medium transition-all shrink-0',
+                    previewing
+                      ? 'bg-violet-100 dark:bg-violet-900/40 text-violet-700 dark:text-violet-300'
+                      : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  {previewing ? (
+                    <Loader2 className="size-3 animate-spin" />
+                  ) : (
+                    <Play className="size-3" />
+                  )}
+                  {previewing ? t('toolbar.ttsPreviewing') : t('toolbar.ttsPreview')}
+                </button>
+              </div>
+              {ttsSpeedRange && (
+                <div className="flex items-center gap-2.5 mt-2.5">
+                  <span className="text-[10px] text-muted-foreground/60 shrink-0">
+                    {t('media.speed')}
+                  </span>
+                  <Slider
+                    value={[ttsSpeed]}
+                    onValueChange={(value) => setTTSSpeed(value[0])}
+                    min={ttsSpeedRange.min}
+                    max={ttsSpeedRange.max}
+                    step={0.1}
+                    className="flex-1"
+                  />
+                  <span className="text-[10px] text-muted-foreground tabular-nums w-7 text-right">
+                    {ttsSpeed.toFixed(1)}x
+                  </span>
+                </div>
+              )}
             </TabPanel>
           )}
 
@@ -443,21 +504,36 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               />
             </TabPanel>
           )}
+
+          {activeTab === 'outline' && (
+            <TabPanel
+              icon={ListTree}
+              label={t('media.reviewOutline')}
+              enabled={reviewOutlineEnabled}
+              onToggle={setReviewOutlineEnabled}
+            >
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {t('media.reviewOutlineHint')}
+              </p>
+            </TabPanel>
+          )}
         </div>
 
         {/* ── Footer ── */}
-        <div className="border-t border-border/40">
-          <button
-            onClick={() => {
-              setOpen(false);
-              onSettingsOpen(activeTab);
-            }}
-            className="w-full flex items-center justify-between px-3.5 py-2.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
-          >
-            <span>{t('toolbar.advancedSettings')}</span>
-            <ChevronRight className="size-3" />
-          </button>
-        </div>
+        {isSettingsTab(activeTab) && (
+          <div className="border-t border-border/40">
+            <button
+              onClick={() => {
+                setOpen(false);
+                onSettingsOpen(activeTab);
+              }}
+              className="w-full flex items-center justify-between px-3.5 py-2.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
+            >
+              <span>{t('toolbar.advancedSettings')}</span>
+              <ChevronRight className="size-3" />
+            </button>
+          </div>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -512,6 +588,7 @@ interface SelectGroupData {
   groupIcon?: string;
   available: boolean;
   items: Array<{ id: string; name: string }>;
+  compositePrefix?: string;
 }
 
 function GroupedSelect({
@@ -525,7 +602,6 @@ function GroupedSelect({
   selectedItemId: string;
   onSelect: (groupId: string, itemId: string) => void;
 }) {
-  const composite = `${selectedGroupId}::${selectedItemId}`;
   // When multiple groups share the same groupId (e.g. browser-native-tts split by language),
   // find the sub-group that actually contains the selected item.
   const selectedGroup =
@@ -533,13 +609,18 @@ function GroupedSelect({
       (g) => g.groupId === selectedGroupId && g.items.some((item) => item.id === selectedItemId),
     ) || groups.find((g) => g.groupId === selectedGroupId);
 
+  const selectedGroupCompositePrefix = selectedGroup?.compositePrefix ?? selectedGroupId;
+  const composite = `${selectedGroupCompositePrefix}::${selectedItemId}`;
+
   return (
     <Select
       value={composite}
       onValueChange={(v) => {
-        const sep = v.indexOf('::');
-        if (sep === -1) return;
-        onSelect(v.slice(0, sep), v.slice(sep + 2));
+        const parts = v.split('::');
+        if (parts.length < 2) return;
+        const itemId = parts.at(-1);
+        if (!itemId) return;
+        onSelect(parts[0], itemId);
       }}
     >
       <SelectTrigger className="h-8 w-full rounded-lg border-border/40 bg-background/80 hover:bg-muted/40 shadow-none text-xs focus:ring-1 focus:ring-ring/30 px-2.5">
@@ -569,16 +650,21 @@ function GroupedSelect({
                 )}
                 {group.groupName}
               </SelectLabel>
-              {group.items.map((item) => (
-                <SelectItem
-                  key={`${group.groupId}::${item.id}`}
-                  value={`${group.groupId}::${item.id}`}
-                  disabled={!group.available}
-                  className="text-xs"
-                >
-                  {item.name}
-                </SelectItem>
-              ))}
+              {group.items.map((item) => {
+                const compositePrefix = group.compositePrefix ?? group.groupId;
+                const itemValue = `${compositePrefix}::${item.id}`;
+
+                return (
+                  <SelectItem
+                    key={itemValue}
+                    value={itemValue}
+                    disabled={!group.available}
+                    className="text-xs"
+                  >
+                    {item.name}
+                  </SelectItem>
+                );
+              })}
             </SelectGroup>
           </Fragment>
         ))}
