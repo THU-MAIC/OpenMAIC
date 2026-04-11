@@ -15,6 +15,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import type { ASRProviderId } from '@/lib/audio/types';
+import { isCustomASRProvider } from '@/lib/audio/types';
 import { Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
@@ -31,9 +32,15 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
   const asrLanguage = useSettingsStore((state) => state.asrLanguage);
   const asrProvidersConfig = useSettingsStore((state) => state.asrProvidersConfig);
   const setASRProviderConfig = useSettingsStore((state) => state.setASRProviderConfig);
+  const removeCustomASRProvider = useSettingsStore((state) => state.removeCustomASRProvider);
 
-  const asrProvider = ASR_PROVIDERS[selectedProviderId] ?? ASR_PROVIDERS['openai-whisper'];
-  const isServerConfigured = !!asrProvidersConfig[selectedProviderId]?.isServerConfigured;
+  const asrProvider = ASR_PROVIDERS[selectedProviderId as keyof typeof ASR_PROVIDERS];
+  const isCustom = isCustomASRProvider(selectedProviderId);
+  const providerConfig = asrProvidersConfig[selectedProviderId];
+  const isServerConfigured = !!providerConfig?.isServerConfigured;
+  const requiresApiKey = isCustom
+    ? !!(providerConfig as Record<string, unknown>)?.requiresApiKey
+    : !!asrProvider?.requiresApiKey;
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
@@ -113,7 +120,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             formData.append('providerId', selectedProviderId);
             formData.append(
               'modelId',
-              asrProvidersConfig[selectedProviderId]?.modelId || asrProvider.defaultModelId,
+              asrProvidersConfig[selectedProviderId]?.modelId || asrProvider?.defaultModelId || '',
             );
             formData.append('language', asrLanguage);
             const apiKeyValue = asrProvidersConfig[selectedProviderId]?.apiKey;
@@ -165,7 +172,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
       )}
 
       {/* API Key & Base URL */}
-      {(asrProvider.requiresApiKey || isServerConfigured) && (
+      {(requiresApiKey || isServerConfigured || isCustom) && (
         <>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -206,7 +213,12 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder={asrProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
+                placeholder={
+                  isCustom
+                    ? ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
+                      'http://localhost:8000/v1'
+                    : asrProvider?.defaultBaseUrl || t('settings.enterCustomBaseUrl')
+                }
                 value={asrProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
                   setASRProviderConfig(selectedProviderId, {
@@ -220,16 +232,24 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           {/* Request URL Preview */}
           {(() => {
             const effectiveBaseUrl =
-              asrProvidersConfig[selectedProviderId]?.baseUrl || asrProvider.defaultBaseUrl || '';
+              asrProvidersConfig[selectedProviderId]?.baseUrl ||
+              (isCustom
+                ? ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string)
+                : asrProvider?.defaultBaseUrl) ||
+              '';
             if (!effectiveBaseUrl) return null;
             let endpointPath = '';
-            switch (selectedProviderId) {
-              case 'openai-whisper':
-                endpointPath = '/audio/transcriptions';
-                break;
-              case 'qwen-asr':
-                endpointPath = '/services/aigc/multimodal-generation/generation';
-                break;
+            if (isCustom) {
+              endpointPath = '/audio/transcriptions';
+            } else {
+              switch (selectedProviderId) {
+                case 'openai-whisper':
+                  endpointPath = '/audio/transcriptions';
+                  break;
+                case 'qwen-asr':
+                  endpointPath = '/services/aigc/multimodal-generation/generation';
+                  break;
+              }
             }
             if (!endpointPath) return null;
             return (
@@ -254,7 +274,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           <Button
             onClick={handleToggleASRRecording}
             disabled={
-              asrProvider.requiresApiKey &&
+              requiresApiKey &&
               !asrProvidersConfig[selectedProviderId]?.apiKey?.trim() &&
               !isServerConfigured
             }
@@ -294,24 +314,37 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
       )}
 
       {/* Model Selection */}
-      {asrProvider.models.length > 0 && (
+      {asrProvider?.models?.length > 0 && (
         <div className="space-y-2">
           <Label className="text-sm">{t('settings.ttsModel')}</Label>
           <Select
-            value={asrProvidersConfig[selectedProviderId]?.modelId || asrProvider.defaultModelId}
+            value={asrProvidersConfig[selectedProviderId]?.modelId || asrProvider?.defaultModelId}
             onValueChange={(value) => setASRProviderConfig(selectedProviderId, { modelId: value })}
           >
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {asrProvider.models.map((model) => (
+              {asrProvider?.models.map((model) => (
                 <SelectItem key={model.id} value={model.id}>
                   {model.name}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+        </div>
+      )}
+
+      {/* Delete Custom Provider */}
+      {isCustom && (
+        <div className="pt-4 border-t">
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => removeCustomASRProvider(selectedProviderId)}
+          >
+            {t('settings.deleteProvider')}
+          </Button>
         </div>
       )}
     </div>
