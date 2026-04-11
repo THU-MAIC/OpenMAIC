@@ -539,6 +539,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ブラウザネイティブASR",
     "providerQwenASR": "Qwen ASR（Alibaba Cloud百錬）",
+    "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（組み込み）",
     "providerMinerU": "MinerU",
     "browserNativeTTSNote": "ブラウザネイティブTTSは設定不要で完全無料です。システム内蔵のボイスを使用します",

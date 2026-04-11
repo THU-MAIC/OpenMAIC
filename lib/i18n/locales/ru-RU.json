@@ -539,6 +539,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Встроенный ASR браузера",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (встроенный)",
     "providerMinerU": "MinerU",
     "browserNativeTTSNote": "Встроенный TTS браузера не требует настройки и полностью бесплатен, использует системные голоса",
