@@ -195,6 +195,10 @@ export function buildCompleteScene(
         type: 'interactive',
         url: '',
         html: content.html,
+        // Ultra Mode widget fields
+        widgetType: content.widgetType,
+        widgetConfig: content.widgetConfig,
+        teacherActions: content.teacherActions,
       },
       actions,
       createdAt: Date.now(),
