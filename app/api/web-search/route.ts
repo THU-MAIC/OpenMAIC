@@ -13,7 +13,7 @@ import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { API_ERROR_CODES, apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   buildSearchQuery,
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
@@ -112,9 +112,9 @@ export async function POST(req: NextRequest) {
 
     // Validate client-supplied base URL against SSRF in all environments
     if (providerConfig?.baseUrl) {
-      const ssrfError = validateUrlForSSRF(providerConfig.baseUrl);
+      const ssrfError = await validateUrlForSSRF(providerConfig.baseUrl);
       if (ssrfError) {
-        return apiError('INVALID_URL', 400, ssrfError);
+        return apiError(API_ERROR_CODES.INVALID_URL, 400, ssrfError);
       }
     }
 
