@@ -100,7 +100,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         voice: effectiveVoice,
         speed: ttsSpeed,
         apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
-        baseUrl: ttsProvidersConfig[selectedProviderId]?.baseUrl,
+        baseUrl:
+          ttsProvidersConfig[selectedProviderId]?.baseUrl ||
+          ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
+          '',
       });
       setTestStatus('success');
       setTestMessage(t('settings.ttsTestSuccess'));
