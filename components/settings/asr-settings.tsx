@@ -125,7 +125,10 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             formData.append('language', asrLanguage);
             const apiKeyValue = asrProvidersConfig[selectedProviderId]?.apiKey;
             if (apiKeyValue?.trim()) formData.append('apiKey', apiKeyValue);
-            const baseUrlValue = asrProvidersConfig[selectedProviderId]?.baseUrl;
+            const baseUrlValue =
+              asrProvidersConfig[selectedProviderId]?.baseUrl ||
+              ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
+              '';
             if (baseUrlValue?.trim()) formData.append('baseUrl', baseUrlValue);
 
             try {
@@ -215,8 +218,8 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
                 spellCheck={false}
                 placeholder={
                   isCustom
-                    ? ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
-                      'http://localhost:8000/v1'
+                    ? ((providerConfig as Record<string, unknown>)
+                        ?.customDefaultBaseUrl as string) || 'http://localhost:8000/v1'
                     : asrProvider?.defaultBaseUrl || t('settings.enterCustomBaseUrl')
                 }
                 value={asrProvidersConfig[selectedProviderId]?.baseUrl || ''}

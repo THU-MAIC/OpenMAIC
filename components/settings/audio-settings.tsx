@@ -328,7 +328,11 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
             if (apiKeyValue && apiKeyValue.trim()) {
               formData.append('apiKey', apiKeyValue);
             }
-            const baseUrlValue = asrProvidersConfig[asrProviderId]?.baseUrl;
+            const baseUrlValue =
+              asrProvidersConfig[asrProviderId]?.baseUrl ||
+              ((asrProvidersConfig[asrProviderId] as Record<string, unknown>)
+                ?.customDefaultBaseUrl as string) ||
+              '';
             if (baseUrlValue && baseUrlValue.trim()) {
               formData.append('baseUrl', baseUrlValue);
             }
