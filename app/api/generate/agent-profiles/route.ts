@@ -66,7 +66,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Model resolution from request headers ──
-    const { model: languageModel, modelString: _modelString } = resolveModelFromHeaders(req);
+    const { model: languageModel, modelString: _modelString } = await resolveModelFromHeaders(req);
     modelString = _modelString;
 
     // ── Build prompt ──
