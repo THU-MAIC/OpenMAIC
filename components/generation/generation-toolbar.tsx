@@ -19,6 +19,7 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type { ProviderId } from '@/lib/ai/providers';
+import { MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
 
@@ -436,7 +437,10 @@ function ModelSelectorPopover({
                 <img
                   src={currentProviderConfig.icon}
                   alt={currentProviderConfig.name}
-                  className="size-4 rounded-sm"
+                  className={cn(
+                    'size-4 rounded-sm',
+                    MONO_LOGO_PROVIDERS.has(currentProviderId) && 'dark:invert',
+                  )}
                 />
               ) : (
                 <Bot className="size-3.5 text-muted-foreground" />
@@ -475,7 +479,10 @@ function ModelSelectorPopover({
                     <img
                       src={provider.icon}
                       alt={provider.name}
-                      className="size-5 rounded-sm shrink-0"
+                      className={cn(
+                        'size-5 rounded-sm shrink-0',
+                        MONO_LOGO_PROVIDERS.has(provider.id) && 'dark:invert',
+                      )}
                     />
                   ) : (
                     <Bot className="size-5 text-muted-foreground shrink-0" />
@@ -512,7 +519,10 @@ function ModelSelectorPopover({
                 <img
                   src={activeProvider.icon}
                   alt={activeProvider.name}
-                  className="size-4 rounded-sm"
+                  className={cn(
+                    'size-4 rounded-sm',
+                    MONO_LOGO_PROVIDERS.has(activeProvider.id) && 'dark:invert',
+                  )}
                 />
               ) : (
                 <Bot className="size-4 text-muted-foreground" />
