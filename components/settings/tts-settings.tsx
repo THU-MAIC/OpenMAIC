@@ -28,6 +28,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
+  const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
   const removeCustomTTSProvider = useSettingsStore((state) => state.removeCustomTTSProvider);
 
   const ttsProvider = TTS_PROVIDERS[selectedProviderId as keyof typeof TTS_PROVIDERS];
@@ -435,6 +436,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               setTTSProviderConfig(selectedProviderId, {
                 customVoices: voices,
               } as Record<string, unknown>);
+              // Auto-select the first voice if current voice is 'default'
+              if (ttsVoice === 'default' && selectedProviderId === activeProviderId) {
+                setTTSVoice(voiceId);
+              }
             }}
           />
         </div>
