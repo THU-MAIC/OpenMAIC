@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Resolve model from request headers
-    const { model: languageModel } = resolveModelFromHeaders(req);
+    const { model: languageModel } = await resolveModelFromHeaders(req);
 
     const isZh = language === 'zh-CN';
 

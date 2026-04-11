@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Block local/private network URLs to prevent SSRF
-    const ssrfError = validateUrlForSSRF(url);
+    const ssrfError = await validateUrlForSSRF(url);
     if (ssrfError) {
       return apiError('INVALID_URL', 403, ssrfError);
     }

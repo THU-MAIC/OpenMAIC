@@ -520,7 +520,12 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                 <Box className="h-8 w-8 text-muted-foreground" />
               )}
               <div>
-                <h2 className="text-lg font-semibold">{selectedProvider.name}</h2>
+                <h2 className="text-lg font-semibold">
+                  {t(`settings.providerNames.${selectedProvider.id}`) !==
+                  `settings.providerNames.${selectedProvider.id}`
+                    ? t(`settings.providerNames.${selectedProvider.id}`)
+                    : selectedProvider.name}
+                </h2>
                 <p className="text-xs text-muted-foreground">
                   {getProviderTypeLabel(selectedProvider.type, t)}
                 </p>

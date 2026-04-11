@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     let aiCall: AICallFn | undefined;
     try {
-      const { model: languageModel } = resolveModelFromHeaders(req);
+      const { model: languageModel } = await resolveModelFromHeaders(req);
       aiCall = async (systemPrompt, userPrompt) => {
         const result = await callLLM(
           {
