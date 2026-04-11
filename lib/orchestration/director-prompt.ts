@@ -21,6 +21,8 @@ export interface WhiteboardActionRecord {
     | 'wb_draw_latex'
     | 'wb_draw_table'
     | 'wb_draw_line'
+    | 'wb_draw_code'
+    | 'wb_edit_code'
     | 'wb_clear'
     | 'wb_delete'
     | 'wb_open'
@@ -180,6 +182,17 @@ function summarizeAgentWhiteboardActions(actions: WhiteboardActionRecord[]): str
         const pts = a.params.points as string[] | undefined;
         const hasArrow = pts?.includes('arrow') ? ' arrow' : '';
         parts.push(`drew${hasArrow} line`);
+        break;
+      }
+      case 'wb_draw_code': {
+        const lang = String(a.params.language || '');
+        const codeFileName = a.params.fileName ? ` "${a.params.fileName}"` : '';
+        parts.push(`drew code block${codeFileName} (${lang})`);
+        break;
+      }
+      case 'wb_edit_code': {
+        const op = a.params.operation || 'edit';
+        parts.push(`edited code (${op})`);
         break;
       }
       case 'wb_clear':

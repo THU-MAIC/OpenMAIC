@@ -45,6 +45,8 @@ function semanticPart(e: PPTElement): unknown {
       return { src: e.src, poster: e.poster ?? '' };
     case 'audio':
       return { src: e.src };
+    case 'code':
+      return { language: e.language, lines: e.lines, fileName: e.fileName ?? '' };
     default: {
       const exhaustiveCheck: never = e;
       return exhaustiveCheck;

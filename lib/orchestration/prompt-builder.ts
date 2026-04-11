@@ -223,9 +223,10 @@ ${buildWhiteboardGuidelines(agentConfig.role)}
 ${actionDescriptions}
 
 ## Action Usage Guidelines
-${slideActionGuidelines}- Whiteboard actions (wb_open, wb_draw_text, wb_draw_shape, wb_draw_chart, wb_draw_latex, wb_draw_table, wb_draw_line, wb_delete, wb_clear, wb_close): Use when explaining concepts that benefit from diagrams, formulas, data charts, tables, connecting lines, or step-by-step derivations. Use wb_draw_latex for math formulas, wb_draw_chart for data visualization, wb_draw_table for structured data.
+${slideActionGuidelines}- Whiteboard actions (wb_open, wb_draw_text, wb_draw_shape, wb_draw_chart, wb_draw_latex, wb_draw_table, wb_draw_line, wb_draw_code, wb_edit_code, wb_delete, wb_clear, wb_close): Use when explaining concepts that benefit from diagrams, formulas, data charts, tables, connecting lines, code demonstrations, or step-by-step derivations. Use wb_draw_latex for math formulas, wb_draw_chart for data visualization, wb_draw_table for structured data, wb_draw_code for code demonstrations.
 - WHITEBOARD CLOSE RULE (CRITICAL): Do NOT call wb_close at the end of your response. Leave the whiteboard OPEN so students can read what you drew. Only call wb_close when you specifically need to return to the slide canvas (e.g., to use spotlight or laser on slide elements). Frequent open/close is distracting.
 - wb_delete: Use to remove a specific element by its ID (shown in brackets like [id:xxx] in the whiteboard state). Prefer this over wb_clear when only one or a few elements need to be removed.
+- wb_draw_code / wb_edit_code: To modify an existing code block, ALWAYS use wb_edit_code (insert_after, insert_before, delete_lines, replace_lines) instead of deleting the code element and re-creating it. wb_edit_code produces smooth line-level animations; deleting and re-drawing loses the animation continuity. Only use wb_draw_code for creating a brand-new code block.
 ${mutualExclusionNote}
 
 # Current State
@@ -334,6 +335,7 @@ This project uses KaTeX for formula rendering, which supports virtually all stan
 - Use chart elements for data visualization (bar charts, line graphs, pie charts, etc.).
 - Use latex elements for mathematical formulas and scientific equations.
 - Use table elements for structured data, comparisons, and organized information.
+- Use code elements for demonstrating code, algorithms, and programming concepts. Code blocks have syntax highlighting and support line-by-line editing.
 - Use shape elements sparingly — only for simple diagrams. Do not add large numbers of meaningless shapes.
 - Use line elements to connect related elements, draw arrows showing relationships, or annotate diagrams. Specify arrow markers via the points parameter.
 - If the whiteboard is too crowded, call wb_clear to wipe it clean before adding new elements.
@@ -373,6 +375,12 @@ The whiteboard canvas is 1000 × 562 pixels. Follow these rules to prevent eleme
 - Check existing elements' positions in the whiteboard state
 - Ensure your new element's bounding box does not overlap with any existing element
 - If space is insufficient, use wb_delete to remove unneeded elements or wb_clear to start fresh
+
+### Code Element Layout & Usage
+- Code blocks have a **header bar (~32px)** showing the file name and language. The actual code content starts below the header. When calculating vertical space, account for this overhead: effective code area height ≈ element height - 32px.
+- Each code line is ~22px tall (at default fontSize 14). Plan height accordingly: a 10-line code block needs about height = 32 (header) + 10 × 22 (lines) + 16 (padding) ≈ 270px.
+- Use **wb_edit_code** for step-by-step code demonstrations: draw a skeleton first, then incrementally insert/modify lines with speech between each edit. This creates a "live coding" effect.
+- When editing code, reference lines by their stable IDs (L1, L2, ...) shown in the whiteboard state. Do NOT guess line IDs — always check the current whiteboard state first.
 ${latexGuidelines}
 ${common}`;
   }
@@ -448,6 +456,18 @@ function summarizeElement(el: any): string {
       const ex = el.end?.[0] ?? 0;
       const ey = el.end?.[1] ?? 0;
       return `${id} line: (${lx + sx},${ly + sy}) → (${lx + ex},${ly + ey})`;
+    }
+    case 'code': {
+      const lang = el.language || 'unknown';
+      const lineCount = el.lines?.length || 0;
+      const codeFn = el.fileName ? ` "${el.fileName}"` : '';
+      const linePreview = (el.lines || [])
+        .slice(0, 10)
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((l: any) => `    ${l.id}: ${l.content}`)
+        .join('\n');
+      const moreLines = lineCount > 10 ? `\n    ... and ${lineCount - 10} more lines` : '';
+      return `${id} code${codeFn} (${lang}, ${lineCount} lines) ${pos}${size}\n${linePreview}${moreLines}`;
     }
     case 'video':
       return `${id} video ${pos}${size}`;
@@ -588,6 +608,30 @@ function buildVirtualWhiteboardContext(
         elements.push({
           agentName: record.agentName,
           summary: `line${hasArrow}: (${sx},${sy}) → (${ex},${ey})`,
+        });
+        break;
+      }
+      case 'wb_draw_code': {
+        const lang = String(record.params.language || '');
+        const codeFileName = record.params.fileName ? ` "${record.params.fileName}"` : '';
+        const x = record.params.x ?? '?';
+        const y = record.params.y ?? '?';
+        const w = record.params.width ?? 500;
+        const h = record.params.height ?? 300;
+        const code = String(record.params.code || '');
+        const lineCount = code.split('\n').length;
+        elements.push({
+          agentName: record.agentName,
+          summary: `code block${codeFileName} (${lang}, ${lineCount} lines) at (${x},${y}), size ${w}x${h}`,
+        });
+        break;
+      }
+      case 'wb_edit_code': {
+        const op = record.params.operation || 'edit';
+        const targetId = record.params.elementId || '?';
+        elements.push({
+          agentName: record.agentName,
+          summary: `edited code "${targetId}" (${op})`,
         });
         break;
       }
