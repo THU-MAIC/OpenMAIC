@@ -148,6 +148,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { experimental_transcribe as transcribe } from 'ai';
 import type { ASRModelConfig } from './types';
+import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
 
 /**
@@ -164,7 +165,7 @@ export async function transcribeAudio(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
 ): Promise<ASRTranscriptionResult> {
-  const provider = ASR_PROVIDERS[config.providerId];
+  const provider = ASR_PROVIDERS[config.providerId as keyof typeof ASR_PROVIDERS];
   if (!provider) {
     throw new Error(`Unknown ASR provider: ${config.providerId}`);
   }
@@ -185,6 +186,9 @@ export async function transcribeAudio(
       return await transcribeQwenASR(config, audioBuffer);
 
     default:
+      if (isCustomASRProvider(config.providerId)) {
+        return await transcribeOpenAIWhisper(config, audioBuffer);
+      }
       throw new Error(`Unsupported ASR provider: ${config.providerId}`);
   }
 }

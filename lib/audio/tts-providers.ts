@@ -93,6 +93,7 @@
  */
 
 import type { TTSModelConfig } from './types';
+import { isCustomTTSProvider } from './types';
 import { TTS_PROVIDERS } from './constants';
 
 /**
@@ -127,7 +128,7 @@ export async function generateTTS(
   config: TTSModelConfig,
   text: string,
 ): Promise<TTSGenerationResult> {
-  const provider = TTS_PROVIDERS[config.providerId];
+  const provider = TTS_PROVIDERS[config.providerId as keyof typeof TTS_PROVIDERS];
   if (!provider) {
     throw new Error(`Unknown TTS provider: ${config.providerId}`);
   }
@@ -163,6 +164,9 @@ export async function generateTTS(
       );
 
     default:
+      if (isCustomTTSProvider(config.providerId)) {
+        return await generateOpenAITTS(config, text);
+      }
       throw new Error(`Unsupported TTS provider: ${config.providerId}`);
   }
 }
