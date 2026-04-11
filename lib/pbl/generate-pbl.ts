@@ -63,7 +63,13 @@ export async function generatePBLContent(
   const agentMCP = new AgentMCP(projectConfig);
   const issueboardMCP = new IssueboardMCP(projectConfig, agentMCP, language);
 
-  callbacks?.onProgress?.('Starting PBL project generation...');
+  callbacks?.onProgress?.(
+    language === 'zh-CN'
+      ? '开始生成 PBL 项目...'
+      : language === 'ru-RU'
+        ? 'Запускаю генерацию PBL-проекта...'
+        : 'Starting PBL project generation...',
+  );
 
   // Define tools with Zod schemas, delegating to MCP instances
   const pblTools = {
@@ -290,16 +296,30 @@ export async function generatePBLContent(
       prompt:
         language === 'zh-CN'
           ? `请设计一个PBL项目。现在从 project_info 模式开始，先设置项目标题和描述。`
-          : `Design a PBL project. Start in project_info mode by setting the project title and description.`,
+          : language === 'ru-RU'
+            ? `Спроектируй PBL-проект. Начни с режима project_info и сначала задай название и описание проекта.`
+            : `Design a PBL project. Start in project_info mode by setting the project title and description.`,
       tools: pblTools,
       stopWhen: stepCountIs(30),
       onStepFinish: ({ toolCalls, text }) => {
         if (text) {
-          callbacks?.onProgress?.(`Thinking: ${text.slice(0, 100)}...`);
+          callbacks?.onProgress?.(
+            language === 'zh-CN'
+              ? `思考中: ${text.slice(0, 100)}...`
+              : language === 'ru-RU'
+                ? `Думаю: ${text.slice(0, 100)}...`
+                : `Thinking: ${text.slice(0, 100)}...`,
+          );
         }
         if (toolCalls) {
           for (const tc of toolCalls) {
-            callbacks?.onProgress?.(`Tool: ${tc.toolName}`);
+            callbacks?.onProgress?.(
+              language === 'zh-CN'
+                ? `工具: ${tc.toolName}`
+                : language === 'ru-RU'
+                  ? `Инструмент: ${tc.toolName}`
+                  : `Tool: ${tc.toolName}`,
+            );
           }
         }
       },
@@ -310,16 +330,32 @@ export async function generatePBLContent(
   // Check if mode reached idle; if not, the LLM may have stopped early
   if (modeMCP.getCurrentMode() !== 'idle') {
     callbacks?.onProgress?.(
-      'Warning: Generation did not reach idle mode. Project may be incomplete.',
+      language === 'zh-CN'
+        ? '警告：生成流程未进入 idle 模式，项目可能不完整。'
+        : language === 'ru-RU'
+          ? 'Предупреждение: генерация не дошла до режима idle, проект может быть неполным.'
+          : 'Warning: Generation did not reach idle mode. Project may be incomplete.',
     );
   }
 
-  callbacks?.onProgress?.('PBL structure generated. Running post-processing...');
+  callbacks?.onProgress?.(
+    language === 'zh-CN'
+      ? 'PBL 结构已生成，开始后处理...'
+      : language === 'ru-RU'
+        ? 'PBL-структура создана, запускаю постобработку...'
+        : 'PBL structure generated. Running post-processing...',
+  );
 
   // Post-processing: activate first issue and generate initial questions
   await postProcessPBL(projectConfig, model, language, callbacks);
 
-  callbacks?.onProgress?.('PBL project generation complete!');
+  callbacks?.onProgress?.(
+    language === 'zh-CN'
+      ? 'PBL 项目生成完成！'
+      : language === 'ru-RU'
+        ? 'Генерация PBL-проекта завершена!'
+        : 'PBL project generation complete!',
+  );
 
   return projectConfig;
 }
@@ -348,17 +384,35 @@ async function postProcessPBL(
   firstIssue.is_active = true;
   issueboard.current_issue_id = firstIssue.id;
 
-  callbacks?.onProgress?.(`Activating first issue: ${firstIssue.title}`);
+  callbacks?.onProgress?.(
+    language === 'zh-CN'
+      ? `激活第一个任务: ${firstIssue.title}`
+      : language === 'ru-RU'
+        ? `Активирую первую задачу: ${firstIssue.title}`
+        : `Activating first issue: ${firstIssue.title}`,
+  );
 
   // Generate initial questions for the first issue
   const questionAgent = agents.find((a) => a.name === firstIssue.question_agent_name);
   if (!questionAgent) {
-    callbacks?.onProgress?.('Warning: Question agent not found for first issue.');
+    callbacks?.onProgress?.(
+      language === 'zh-CN'
+        ? '警告：未找到首个任务的 Question Agent。'
+        : language === 'ru-RU'
+          ? 'Предупреждение: для первой задачи не найден Question Agent.'
+          : 'Warning: Question agent not found for first issue.',
+    );
     return;
   }
 
   try {
-    callbacks?.onProgress?.('Generating initial questions for first issue...');
+    callbacks?.onProgress?.(
+      language === 'zh-CN'
+        ? '为首个任务生成初始问题...'
+        : language === 'ru-RU'
+          ? 'Генерирую стартовые вопросы для первой задачи...'
+          : 'Generating initial questions for first issue...',
+    );
 
     const context =
       language === 'zh-CN'
@@ -379,7 +433,25 @@ ${firstIssue.notes ? `**备注**: ${firstIssue.notes}` : ''}
 - 鼓励批判性思考
 
 请以编号列表格式回答。`
-        : `## Issue Information
+        : language === 'ru-RU'
+          ? `## Информация по задаче
+
+**Заголовок**: ${firstIssue.title}
+**Описание**: ${firstIssue.description}
+**Ответственный**: ${firstIssue.person_in_charge}
+${firstIssue.participants.length > 0 ? `**Участники**: ${firstIssue.participants.join(', ')}` : ''}
+${firstIssue.notes ? `**Примечания**: ${firstIssue.notes}` : ''}
+
+## Твоя задача
+
+На основе информации выше сгенерируй 1-3 конкретных и практичных вопроса, которые помогут студенту понять и выполнить эту задачу. Каждый вопрос должен:
+- вести к ключевым учебным целям
+- быть конкретным и применимым
+- помогать разбить проблему на части
+- стимулировать критическое мышление
+
+Ответь нумерованным списком.`
+          : `## Issue Information
 
 **Title**: ${firstIssue.title}
 **Description**: ${firstIssue.description}
@@ -423,10 +495,20 @@ Format your response as a numbered list.`;
       read_by: [],
     });
 
-    callbacks?.onProgress?.('Initial questions generated and welcome message added.');
+    callbacks?.onProgress?.(
+      language === 'zh-CN'
+        ? '已生成初始问题并写入欢迎消息。'
+        : language === 'ru-RU'
+          ? 'Стартовые вопросы сгенерированы, приветственное сообщение добавлено.'
+          : 'Initial questions generated and welcome message added.',
+    );
   } catch (error) {
     callbacks?.onProgress?.(
-      `Warning: Failed to generate initial questions: ${error instanceof Error ? error.message : String(error)}`,
+      language === 'zh-CN'
+        ? `警告：生成初始问题失败: ${error instanceof Error ? error.message : String(error)}`
+        : language === 'ru-RU'
+          ? `Предупреждение: не удалось сгенерировать стартовые вопросы: ${error instanceof Error ? error.message : String(error)}`
+          : `Warning: Failed to generate initial questions: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }
