@@ -166,12 +166,9 @@ export async function transcribeAudio(
   audioBuffer: Buffer | Blob,
 ): Promise<ASRTranscriptionResult> {
   const provider = ASR_PROVIDERS[config.providerId as keyof typeof ASR_PROVIDERS];
-  if (!provider) {
-    throw new Error(`Unknown ASR provider: ${config.providerId}`);
-  }
 
-  // Validate API key if required
-  if (provider.requiresApiKey && !config.apiKey) {
+  // Validate API key if required (only for built-in providers with known config)
+  if (provider?.requiresApiKey && !config.apiKey) {
     throw new Error(`API key required for ASR provider: ${config.providerId}`);
   }
 

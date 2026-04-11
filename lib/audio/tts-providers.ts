@@ -129,12 +129,9 @@ export async function generateTTS(
   text: string,
 ): Promise<TTSGenerationResult> {
   const provider = TTS_PROVIDERS[config.providerId as keyof typeof TTS_PROVIDERS];
-  if (!provider) {
-    throw new Error(`Unknown TTS provider: ${config.providerId}`);
-  }
 
-  // Validate API key if required
-  if (provider.requiresApiKey && !config.apiKey) {
+  // Validate API key if required (only for built-in providers with known config)
+  if (provider?.requiresApiKey && !config.apiKey) {
     throw new Error(`API key required for TTS provider: ${config.providerId}`);
   }
 
