@@ -463,6 +463,8 @@
     "voiceIdPlaceholder": "Voice ID (e.g. alloy)",
     "voiceNamePlaceholder": "Display Name",
     "addVoice": "Add",
+    "defaultModelHint": "Model name sent in API requests (e.g. kokoro, tts-1)",
+    "noVoicesAdded": "No voices added yet. Add voices below for per-agent selection.",
     "cannotDeleteBuiltIn": "Cannot delete built-in provider",
     "resetToDefault": "Reset to Default",
     "resetToDefaultDescription": "Restore model list to default configuration (API key and Base URL will be preserved)",

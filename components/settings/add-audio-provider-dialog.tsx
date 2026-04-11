@@ -12,6 +12,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 export interface NewAudioProviderData {
   name: string;
   baseUrl: string;
+  defaultModel: string;
   requiresApiKey: boolean;
 }
 
@@ -32,6 +33,7 @@ export function AddAudioProviderDialog({
 
   const [name, setName] = useState('');
   const [baseUrl, setBaseUrl] = useState('');
+  const [defaultModel, setDefaultModel] = useState('');
   const [requiresApiKey, setRequiresApiKey] = useState(false);
 
   // Reset form when dialog closes
@@ -41,13 +43,19 @@ export function AddAudioProviderDialog({
     if (!open) {
       setName('');
       setBaseUrl('');
+      setDefaultModel('');
       setRequiresApiKey(false);
     }
   }
 
   const handleAdd = () => {
     if (!name.trim() || !baseUrl.trim()) return;
-    onAdd({ name: name.trim(), baseUrl: baseUrl.trim(), requiresApiKey });
+    onAdd({
+      name: name.trim(),
+      baseUrl: baseUrl.trim(),
+      defaultModel: defaultModel.trim(),
+      requiresApiKey,
+    });
     onOpenChange(false);
   };
 
@@ -83,6 +91,16 @@ export function AddAudioProviderDialog({
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
             />
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t('settings.defaultModel')}</Label>
+            <Input
+              placeholder={type === 'tts' ? 'tts-1' : 'whisper-1'}
+              value={defaultModel}
+              onChange={(e) => setDefaultModel(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">{t('settings.defaultModelHint')}</p>
           </div>
 
           <div className="flex items-center space-x-2">

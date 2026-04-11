@@ -463,6 +463,8 @@
     "voiceIdPlaceholder": "ID голоса (напр. alloy)",
     "voiceNamePlaceholder": "Отображаемое имя",
     "addVoice": "Добавить",
+    "defaultModelHint": "Имя модели в API-запросах (напр. kokoro, tts-1)",
+    "noVoicesAdded": "Голоса ещё не добавлены. Добавьте ниже для выбора в агентах.",
     "cannotDeleteBuiltIn": "Нельзя удалить встроенного провайдера",
     "resetToDefault": "Сбросить на стандартные",
     "resetToDefaultDescription": "Восстановить список моделей по умолчанию (API-ключ и Base URL будут сохранены)",

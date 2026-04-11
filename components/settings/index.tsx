@@ -264,12 +264,12 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
   const handleAddTTSProvider = (data: NewAudioProviderData) => {
     const id = `custom-tts-${Date.now()}` as TTSProviderId;
-    addCustomTTSProvider(id, data.name, data.baseUrl, data.requiresApiKey);
+    addCustomTTSProvider(id, data.name, data.baseUrl, data.requiresApiKey, data.defaultModel);
   };
 
   const handleAddASRProvider = (data: NewAudioProviderData) => {
     const id = `custom-asr-${Date.now()}` as ASRProviderId;
-    addCustomASRProvider(id, data.name, data.baseUrl, data.requiresApiKey);
+    addCustomASRProvider(id, data.name, data.baseUrl, data.requiresApiKey, data.defaultModel);
   };
 
   // Save status indicator
@@ -945,8 +945,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                     .filter(([id]) => isCustomTTSProvider(id))
                     .map(([id, cfg]) => ({
                       id: id as TTSProviderId,
-                      name:
-                        ((cfg as Record<string, unknown>).customName as string) || id,
+                      name: ((cfg as Record<string, unknown>).customName as string) || id,
                       icon: undefined,
                     })),
                 ]}
@@ -979,8 +978,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                     .filter(([id]) => isCustomASRProvider(id))
                     .map(([id, cfg]) => ({
                       id: id as ASRProviderId,
-                      name:
-                        ((cfg as Record<string, unknown>).customName as string) || id,
+                      name: ((cfg as Record<string, unknown>).customName as string) || id,
                       icon: undefined,
                     })),
                 ]}

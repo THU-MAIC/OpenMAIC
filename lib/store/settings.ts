@@ -209,9 +209,21 @@ export interface SettingsState {
   setASREnabled: (enabled: boolean) => void;
 
   // Custom audio provider actions
-  addCustomTTSProvider: (id: TTSProviderId, name: string, baseUrl: string, requiresApiKey: boolean) => void;
+  addCustomTTSProvider: (
+    id: TTSProviderId,
+    name: string,
+    baseUrl: string,
+    requiresApiKey: boolean,
+    defaultModel?: string,
+  ) => void;
   removeCustomTTSProvider: (id: TTSProviderId) => void;
-  addCustomASRProvider: (id: ASRProviderId, name: string, baseUrl: string, requiresApiKey: boolean) => void;
+  addCustomASRProvider: (
+    id: ASRProviderId,
+    name: string,
+    baseUrl: string,
+    requiresApiKey: boolean,
+    defaultModel?: string,
+  ) => void;
   removeCustomASRProvider: (id: ASRProviderId) => void;
 
   // PDF actions
@@ -390,16 +402,24 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
 
   if (
     !hasProviderId(TTS_PROVIDERS, state.ttsProviderId) &&
-    !(state.ttsProviderId && isCustomTTSProvider(state.ttsProviderId) &&
-      state.ttsProvidersConfig && state.ttsProviderId in state.ttsProvidersConfig)
+    !(
+      state.ttsProviderId &&
+      isCustomTTSProvider(state.ttsProviderId) &&
+      state.ttsProvidersConfig &&
+      state.ttsProviderId in state.ttsProvidersConfig
+    )
   ) {
     state.ttsProviderId = defaultAudioConfig.ttsProviderId;
   }
 
   if (
     !hasProviderId(ASR_PROVIDERS, state.asrProviderId) &&
-    !(state.asrProviderId && isCustomASRProvider(state.asrProviderId) &&
-      state.asrProvidersConfig && state.asrProviderId in state.asrProvidersConfig)
+    !(
+      state.asrProviderId &&
+      isCustomASRProvider(state.asrProviderId) &&
+      state.asrProvidersConfig &&
+      state.asrProviderId in state.asrProvidersConfig
+    )
   ) {
     state.asrProviderId = defaultAudioConfig.asrProviderId;
   }
@@ -641,7 +661,10 @@ export const useSettingsStore = create<SettingsState>()(
             // If switching provider, set default voice for that provider
             const shouldUpdateVoice = state.ttsProviderId !== providerId;
             const defaultVoice = isCustomTTSProvider(providerId)
-              ? ((state.ttsProvidersConfig[providerId] as Record<string, unknown>)?.customVoices as Array<{ id: string }> | undefined)?.[0]?.id || 'default'
+              ? (
+                  (state.ttsProvidersConfig[providerId] as Record<string, unknown>)
+                    ?.customVoices as Array<{ id: string }> | undefined
+                )?.[0]?.id || 'default'
               : DEFAULT_TTS_VOICES[providerId as BuiltInTTSProviderId] || 'default';
             return {
               ttsProviderId: providerId,
@@ -661,7 +684,8 @@ export const useSettingsStore = create<SettingsState>()(
             if (isCustomASRProvider(providerId)) {
               supportedLanguages = ['auto'];
             } else {
-              supportedLanguages = ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS]?.supportedLanguages || [];
+              supportedLanguages =
+                ASR_PROVIDERS[providerId as keyof typeof ASR_PROVIDERS]?.supportedLanguages || [];
             }
             const isLanguageValid = supportedLanguages.includes(state.asrLanguage);
             return {
@@ -759,7 +783,7 @@ export const useSettingsStore = create<SettingsState>()(
         setASREnabled: (enabled) => set({ asrEnabled: enabled }),
 
         // Custom audio provider actions
-        addCustomTTSProvider: (id, name, baseUrl, requiresApiKey) =>
+        addCustomTTSProvider: (id, name, baseUrl, requiresApiKey, defaultModel) =>
           set((state) => ({
             ttsProvidersConfig: {
               ...state.ttsProvidersConfig,
@@ -767,6 +791,7 @@ export const useSettingsStore = create<SettingsState>()(
                 apiKey: '',
                 baseUrl: '',
                 enabled: true,
+                modelId: defaultModel || '',
                 customName: name,
                 customDefaultBaseUrl: baseUrl,
                 customVoices: [],
@@ -790,7 +815,7 @@ export const useSettingsStore = create<SettingsState>()(
             };
           }),
 
-        addCustomASRProvider: (id, name, baseUrl, requiresApiKey) =>
+        addCustomASRProvider: (id, name, baseUrl, requiresApiKey, defaultModel) =>
           set((state) => ({
             asrProvidersConfig: {
               ...state.asrProvidersConfig,
@@ -798,6 +823,7 @@ export const useSettingsStore = create<SettingsState>()(
                 apiKey: '',
                 baseUrl: '',
                 enabled: true,
+                modelId: defaultModel || '',
                 customName: name,
                 customDefaultBaseUrl: baseUrl,
                 isBuiltIn: false,
@@ -1147,7 +1173,8 @@ export const useSettingsStore = create<SettingsState>()(
                   !newTTSConfig[state.ttsProviderId]?.isServerConfigured
                 ) {
                   autoTtsProvider = serverTtsIds[0];
-                  autoTtsVoice = DEFAULT_TTS_VOICES[autoTtsProvider as BuiltInTTSProviderId] || 'default';
+                  autoTtsVoice =
+                    DEFAULT_TTS_VOICES[autoTtsProvider as BuiltInTTSProviderId] || 'default';
                 }
 
                 // ASR: select first server provider if current is not server-configured

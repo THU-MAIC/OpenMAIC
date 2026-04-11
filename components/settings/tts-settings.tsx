@@ -44,11 +44,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     selectedProviderId === activeProviderId
       ? ttsVoice
       : isCustomTTSProvider(selectedProviderId)
-        ? (
-            ((providerConfig as Record<string, unknown>)?.customVoices as
-              | Array<{ id: string }>
-              | undefined) || []
-          )[0]?.id || 'default'
+        ? (((providerConfig as Record<string, unknown>)?.customVoices as
+            | Array<{ id: string }>
+            | undefined) || [])[0]?.id || 'default'
         : DEFAULT_TTS_VOICES[selectedProviderId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
 
   const [showApiKey, setShowApiKey] = useState(false);
@@ -97,7 +95,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       await startPreview({
         text: testText,
         providerId: selectedProviderId,
-        modelId: ttsProvidersConfig[selectedProviderId]?.modelId || ttsProvider?.defaultModelId || '',
+        modelId:
+          ttsProvidersConfig[selectedProviderId]?.modelId || ttsProvider?.defaultModelId || '',
         voice: effectiveVoice,
         speed: ttsSpeed,
         apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
@@ -232,8 +231,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                 spellCheck={false}
                 placeholder={
                   isCustom
-                    ? ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
-                      'http://localhost:8000/v1'
+                    ? ((providerConfig as Record<string, unknown>)
+                        ?.customDefaultBaseUrl as string) || 'http://localhost:8000/v1'
                     : ttsProvider?.defaultBaseUrl || t('settings.enterCustomBaseUrl')
                 }
                 value={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
@@ -363,36 +362,65 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       {isCustom && (
         <div className="space-y-3">
           <Label className="text-sm">{t('settings.customVoices')}</Label>
-          <div className="space-y-2">
-            {(
-              ((providerConfig as Record<string, unknown>)?.customVoices as
-                | Array<{ id: string; name: string }>
-                | undefined) || []
-            ).map((voice, index) => (
-              <div key={voice.id} className="flex items-center gap-2">
-                <Input value={voice.id} readOnly className="flex-1 text-sm font-mono" />
-                <Input value={voice.name} readOnly className="flex-1 text-sm" />
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    const voices = [
-                      ...(((providerConfig as Record<string, unknown>)?.customVoices as
-                        | Array<{ id: string; name: string }>
-                        | undefined) || []),
-                    ];
-                    voices.splice(index, 1);
-                    setTTSProviderConfig(selectedProviderId, {
-                      customVoices: voices,
-                    } as Record<string, unknown>);
-                  }}
-                  className="shrink-0 text-destructive hover:text-destructive"
-                >
-                  <XCircle className="h-4 w-4" />
-                </Button>
+          {(
+            (providerConfig as Record<string, unknown>)?.customVoices as
+              | Array<{ id: string; name: string }>
+              | undefined
+          )?.length ? (
+            <div className="rounded-lg border border-border/60 overflow-hidden">
+              {/* Column headers */}
+              <div className="grid grid-cols-[1fr_1fr_36px] gap-0 bg-muted/40 px-3 py-1.5 border-b border-border/40">
+                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  ID
+                </span>
+                <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                  {t('settings.voiceNamePlaceholder')}
+                </span>
+                <span />
               </div>
-            ))}
-          </div>
+              {/* Voice rows */}
+              {(
+                (providerConfig as Record<string, unknown>)?.customVoices as Array<{
+                  id: string;
+                  name: string;
+                }>
+              ).map((voice, index) => (
+                <div
+                  key={voice.id}
+                  className={cn(
+                    'grid grid-cols-[1fr_1fr_36px] gap-0 items-center px-3 py-2 group hover:bg-muted/20 transition-colors',
+                    index > 0 && 'border-t border-border/30',
+                  )}
+                >
+                  <span className="text-sm font-mono text-foreground/80 truncate pr-3">
+                    {voice.id}
+                  </span>
+                  <span className="text-sm text-foreground/60 truncate pr-3">{voice.name}</span>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => {
+                      const voices = [
+                        ...((providerConfig as Record<string, unknown>)?.customVoices as Array<{
+                          id: string;
+                          name: string;
+                        }>),
+                      ];
+                      voices.splice(index, 1);
+                      setTTSProviderConfig(selectedProviderId, {
+                        customVoices: voices,
+                      } as Record<string, unknown>);
+                    }}
+                    className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                  >
+                    <XCircle className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-muted-foreground/50 italic">{t('settings.noVoicesAdded')}</p>
+          )}
           <AddVoiceRow
             onAdd={(voiceId, voiceName) => {
               const voices = [
@@ -438,17 +466,19 @@ function AddVoiceRow({ onAdd }: { onAdd: (id: string, name: string) => void }) {
   };
 
   return (
-    <div className="flex items-center gap-2">
+    <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
       <Input
         value={voiceId}
         onChange={(e) => setVoiceId(e.target.value)}
-        className="flex-1 text-sm font-mono"
+        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+        className="text-sm font-mono"
         placeholder={t('settings.voiceIdPlaceholder')}
       />
       <Input
         value={voiceName}
         onChange={(e) => setVoiceName(e.target.value)}
-        className="flex-1 text-sm"
+        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+        className="text-sm"
         placeholder={t('settings.voiceNamePlaceholder')}
       />
       <Button
