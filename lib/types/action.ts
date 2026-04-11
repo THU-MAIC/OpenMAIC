@@ -184,6 +184,36 @@ export interface DiscussionAction extends ActionBase {
   agentId?: string;
 }
 
+// ==================== Widget Interaction Actions ====================
+
+/** Widget Highlight — highlight an element in a widget iframe */
+export interface WidgetHighlightAction extends ActionBase {
+  type: 'widget_highlight';
+  target: string; // CSS selector or element ID in the iframe
+  content?: string; // Speech text to accompany the highlight
+}
+
+/** Widget SetState — set widget state (e.g., simulation variables) */
+export interface WidgetSetStateAction extends ActionBase {
+  type: 'widget_setState';
+  state: Record<string, unknown>;
+  content?: string; // Speech text to accompany the state change
+}
+
+/** Widget Annotation — add floating annotation to an element */
+export interface WidgetAnnotationAction extends ActionBase {
+  type: 'widget_annotation';
+  target: string;
+  content?: string;
+}
+
+/** Widget Reveal — reveal hidden content in widget */
+export interface WidgetRevealAction extends ActionBase {
+  type: 'widget_reveal';
+  target: string;
+  content?: string;
+}
+
 // ==================== Union type ====================
 
 export type Action =
@@ -203,7 +233,11 @@ export type Action =
   | WbCloseAction
   | WbDrawCodeAction
   | WbEditCodeAction
-  | DiscussionAction;
+  | DiscussionAction
+  | WidgetHighlightAction
+  | WidgetSetStateAction
+  | WidgetAnnotationAction
+  | WidgetRevealAction;
 
 export type ActionType = Action['type'];
 
@@ -230,6 +264,10 @@ export const SYNC_ACTIONS: ActionType[] = [
   'wb_delete',
   'wb_close',
   'discussion',
+  'widget_highlight',
+  'widget_setState',
+  'widget_annotation',
+  'widget_reveal',
 ];
 
 // ==================== Canvas utility types (non-action) ====================

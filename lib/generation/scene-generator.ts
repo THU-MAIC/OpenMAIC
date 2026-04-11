@@ -38,7 +38,7 @@ import {
 } from './prompt-formatters';
 import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@/lib/types/slides';
 import type { QuizQuestion } from '@/lib/types/stage';
-import type { Action } from '@/lib/types/action';
+import type { Action, SpeechAction, WidgetHighlightAction, WidgetSetStateAction, WidgetAnnotationAction, WidgetRevealAction } from '@/lib/types/action';
 import type {
   AgentInfo,
   SceneGenerationContext,
@@ -1132,6 +1132,20 @@ export async function generateSceneActions(
   const { ctx, agents, userProfile, languageDirective } = options;
   const agentsText = formatAgentsForPrompt(agents);
 
+  // Debug: Log content type and teacherActions presence for interactive scenes
+  if (outline.type === 'interactive') {
+    const hasHtml = 'html' in content;
+    const teacherActionsCount = hasHtml ? (content.teacherActions?.length || 0) : 0;
+    log.info(`[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, teacherActions=${teacherActionsCount}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`);
+  }
+
+  // Ultra Mode: If interactive content has teacherActions, convert and use them
+  // Skip normal action generation for widget-based interactive scenes
+  if (outline.type === 'interactive' && 'html' in content && content.teacherActions?.length) {
+    log.info(`[Ultra Mode] Converting ${content.teacherActions.length} teacherActions to Actions for: ${outline.title}`);
+    return convertTeacherActionsToActions(content.teacherActions);
+  }
+
   if (outline.type === 'slide' && 'elements' in content) {
     // Format element list for AI to select from
     const elementsText = formatElementsForPrompt(content.elements);
@@ -1302,6 +1316,125 @@ function formatQuestionsForPrompt(questions: QuizQuestion[]): string {
       return `Q${i + 1} (${q.type}): ${q.question}\n${optionsText}`;
     })
     .join('\n\n');
+}
+
+/**
+ * Convert Ultra Mode teacherActions to standard Actions for playback.
+ *
+ * TeacherAction types: speech, highlight, annotation, reveal, setState
+ * Action types: speech, widget_highlight, widget_setState, widget_annotation, widget_reveal
+ *
+ * Conversion strategy:
+ * - speech → single speech Action
+ * - highlight/setState/annotation/reveal with content → TWO Actions:
+ *   1. widget action (visual/state change) - quick, non-blocking
+ *   2. speech action (narration) - PlaybackEngine handles TTS
+ * - highlight/setState/annotation/reveal without content → single widget action
+ */
+function convertTeacherActionsToActions(teacherActions: TeacherAction[]): Action[] {
+  const actions: Action[] = [];
+
+  for (const ta of teacherActions) {
+    // Always use nanoid for unique action IDs to prevent audio ID collisions
+    // Ultra Mode generates sequential IDs like "action_1" which are NOT unique across scenes
+    const actionId = `action_${nanoid(8)}`;
+    const base = {
+      id: actionId,
+      title: ta.label || '',
+    };
+
+    switch (ta.type) {
+      case 'speech':
+        actions.push({
+          ...base,
+          type: 'speech',
+          text: ta.content || '',
+        } as SpeechAction);
+        break;
+
+      case 'highlight':
+        // Add widget highlight action (visual, quick)
+        actions.push({
+          ...base,
+          type: 'widget_highlight',
+          target: ta.target || '',
+          content: undefined, // No speech in widget action
+        } as WidgetHighlightAction);
+        // Add speech action for narration (if content exists)
+        if (ta.content) {
+          actions.push({
+            id: `${base.id}_speech`,
+            type: 'speech',
+            text: ta.content,
+            title: base.title,
+          } as SpeechAction);
+        }
+        break;
+
+      case 'setState':
+        // Add widget setState action
+        actions.push({
+          ...base,
+          type: 'widget_setState',
+          state: ta.state || {},
+          content: undefined,
+        } as WidgetSetStateAction);
+        // Add speech action for narration
+        if (ta.content) {
+          actions.push({
+            id: `${base.id}_speech`,
+            type: 'speech',
+            text: ta.content,
+            title: base.title,
+          } as SpeechAction);
+        }
+        break;
+
+      case 'annotation':
+        actions.push({
+          ...base,
+          type: 'widget_annotation',
+          target: ta.target || '',
+          content: undefined,
+        } as WidgetAnnotationAction);
+        if (ta.content) {
+          actions.push({
+            id: `${base.id}_speech`,
+            type: 'speech',
+            text: ta.content,
+            title: base.title,
+          } as SpeechAction);
+        }
+        break;
+
+      case 'reveal':
+        actions.push({
+          ...base,
+          type: 'widget_reveal',
+          target: ta.target || '',
+          content: undefined,
+        } as WidgetRevealAction);
+        if (ta.content) {
+          actions.push({
+            id: `${base.id}_speech`,
+            type: 'speech',
+            text: ta.content,
+            title: base.title,
+          } as SpeechAction);
+        }
+        break;
+
+      default:
+        // Fallback to speech for unknown types
+        actions.push({
+          ...base,
+          type: 'speech',
+          text: ta.content || '',
+        } as SpeechAction);
+    }
+  }
+
+  return actions;
 }
 
 /**
@@ -1485,6 +1618,10 @@ export function createSceneWithActions(
         type: 'interactive',
         url: '',
         html: content.html,
+        // Ultra Mode widget fields
+        widgetType: content.widgetType,
+        widgetConfig: content.widgetConfig,
+        teacherActions: content.teacherActions,
       },
       actions,
     });

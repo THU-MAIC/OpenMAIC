@@ -1,9 +1,9 @@
 'use client';
 
-import { useMemo, useRef, useState, useEffect } from 'react';
+import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
-import type { TeacherAction } from '@/lib/types/widgets';
 import { TeacherOverlay } from '@/components/widgets/TeacherOverlay';
+import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 
 interface InteractiveRendererProps {
   readonly content: InteractiveContent;
@@ -14,11 +14,25 @@ interface InteractiveRendererProps {
 export function InteractiveRenderer({ content, mode, sceneId }: InteractiveRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const [widgetConfig, setWidgetConfig] = useState<InteractiveContent['widgetConfig']>(undefined);
+  const registerIframe = useWidgetIframeStore((state) => state.registerIframe);
 
   const patchedHtml = useMemo(
     () => (content.html ? patchHtmlForIframe(content.html) : undefined),
     [content.html],
   );
+
+  // Create iframe messaging callback
+  const sendMessageToIframe = useCallback((type: string, payload: Record<string, unknown>) => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage({ type, ...payload }, '*');
+    }
+  }, []);
+
+  // Register iframe messaging callback on mount, unregister on unmount
+  useEffect(() => {
+    registerIframe(sendMessageToIframe);
+    return () => registerIframe(null);
+  }, [registerIframe, sendMessageToIframe]);
 
   // Extract widget config from HTML on mount
   useEffect(() => {
@@ -41,6 +55,10 @@ export function InteractiveRenderer({ content, mode, sceneId }: InteractiveRende
   const hasTeacherActions = hasWidget && (content.teacherActions?.length ?? 0) > 0;
   const inPlaybackMode = mode === 'playback';
 
+  // TeacherOverlay is only shown in autonomous mode (not playback)
+  // During playback, ActionEngine handles all TeacherActions via PlaybackEngine
+  const showTeacherOverlay = hasTeacherActions && !inPlaybackMode;
+
   return (
     <div className="w-full h-full relative">
       <iframe
@@ -52,12 +70,12 @@ export function InteractiveRenderer({ content, mode, sceneId }: InteractiveRende
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
       />
 
-      {/* Teacher overlay for widgets with teacher actions */}
-      {hasTeacherActions && (
+      {/* Teacher overlay only for autonomous mode (manual navigation) */}
+      {showTeacherOverlay && (
         <TeacherOverlay
           actions={content.teacherActions!}
           iframeRef={iframeRef}
-          inPlaybackMode={inPlaybackMode}
+          inPlaybackMode={false}
         />
       )}
     </div>
