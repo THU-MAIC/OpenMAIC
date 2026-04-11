@@ -479,7 +479,10 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 
   return {
     providerId: ttsProviderId,
-    modelId: providerConfig?.modelId || TTS_PROVIDERS[ttsProviderId]?.defaultModelId || '',
+    modelId:
+      providerConfig?.modelId ||
+      TTS_PROVIDERS[ttsProviderId as keyof typeof TTS_PROVIDERS]?.defaultModelId ||
+      '',
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
     voice: ttsVoice,

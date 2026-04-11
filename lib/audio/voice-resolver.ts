@@ -56,7 +56,7 @@ export function resolveAgentVoice(
  */
 export function getServerVoiceList(providerId: TTSProviderId): string[] {
   if (providerId === 'browser-native-tts') return [];
-  const provider = TTS_PROVIDERS[providerId];
+  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   if (!provider) return [];
   return provider.voices.map((v) => v.id);
 }
@@ -137,7 +137,7 @@ export function getAvailableProvidersWithVoices(
  * Find a voice display name across all providers.
  */
 export function findVoiceDisplayName(providerId: TTSProviderId, voiceId: string): string {
-  const provider = TTS_PROVIDERS[providerId];
+  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
   if (!provider) return voiceId;
   const voice = provider.voices.find((v) => v.id === voiceId);
   return voice?.name ?? voiceId;

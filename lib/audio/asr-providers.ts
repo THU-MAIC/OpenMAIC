@@ -347,7 +347,10 @@ export async function getCurrentASRConfig(): Promise<ASRModelConfig> {
 
   return {
     providerId: asrProviderId,
-    modelId: providerConfig?.modelId || ASR_PROVIDERS[asrProviderId]?.defaultModelId || '',
+    modelId:
+      providerConfig?.modelId ||
+      ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
+      '',
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
     language: asrLanguage,

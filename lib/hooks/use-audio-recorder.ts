@@ -53,7 +53,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           formData.append(
             'modelId',
             asrProvidersConfig?.[asrProviderId]?.modelId ||
-              ASR_PROVIDERS[asrProviderId]?.defaultModelId ||
+              ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
               '',
           );
           formData.append('language', asrLanguage);

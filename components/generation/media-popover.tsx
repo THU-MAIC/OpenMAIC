@@ -167,7 +167,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     needsKey: boolean,
   ) => !needsKey || !!configs[id]?.apiKey || !!configs[id]?.isServerConfigured;
 
-  const ttsSpeedRange = TTS_PROVIDERS[ttsProviderId]?.speedRange;
+  const ttsSpeedRange = TTS_PROVIDERS[ttsProviderId as keyof typeof TTS_PROVIDERS]?.speedRange;
 
   // ─── Dynamic browser voices ───
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);

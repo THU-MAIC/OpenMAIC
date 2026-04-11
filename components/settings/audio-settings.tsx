@@ -89,7 +89,8 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
   const setTTSEnabled = useSettingsStore((state) => state.setTTSEnabled);
   const setASREnabled = useSettingsStore((state) => state.setASREnabled);
 
-  const ttsProvider = TTS_PROVIDERS[ttsProviderId] ?? TTS_PROVIDERS['openai-tts'];
+  const ttsProvider =
+    TTS_PROVIDERS[ttsProviderId as keyof typeof TTS_PROVIDERS] ?? TTS_PROVIDERS['openai-tts'];
 
   // Azure voices - load from static JSON
   const azureVoices = useMemo(() => azureVoicesData.voices, []);
@@ -146,7 +147,8 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
   const ttsTestRequestIdRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
-  const asrProvider = ASR_PROVIDERS[asrProviderId] ?? ASR_PROVIDERS['openai-whisper'];
+  const asrProvider =
+    ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS] ?? ASR_PROVIDERS['openai-whisper'];
 
   // Reset locale filter when provider changes (derived state pattern)
   const [prevTTSProviderId, setPrevTTSProviderId] = useState(ttsProviderId);
