@@ -27,6 +27,89 @@ Generate a self-contained HTML code editor with execution and test validation.
 }
 ```
 
+## Python Execution Requirements (CRITICAL)
+
+When generating Python widgets using Pyodide, follow these **mandatory patterns**:
+
+### 1. Proper Stdout Capture Setup
+
+**ALWAYS use this exact pattern for stdout capture:**
+```javascript
+// CORRECT - imports both sys AND io
+await pyodide.runPythonAsync(`
+    import sys
+    import io
+    sys.stdout = io.StringIO()
+`);
+```
+
+**NEVER do this (causes NameError):**
+```javascript
+// WRONG - missing import io
+pyodide.runPython('import sys; sys.stdout = io.StringIO()');
+```
+
+### 2. Use Async Execution
+
+- Always use `pyodide.runPythonAsync()` instead of `pyodide.runPython()`
+- Async execution is more reliable and handles module loading correctly
+- All Pyodide operations should be wrapped in async functions
+
+### 3. Load Required Packages Before Execution
+
+If user code needs packages like numpy, load them during initialization:
+```javascript
+await pyodide.loadPackage(['numpy']);
+```
+
+### 4. Wait for Pyodide Initialization
+
+- Disable the run button until Pyodide is fully loaded
+- Show loading status to users
+- Check `pyodide !== null` before running code
+
+### 5. Retrieve Output Correctly
+
+```javascript
+const output = pyodide.runPython('sys.stdout.getvalue()');
+```
+
+## Complete Python Widget Runtime Pattern
+
+```javascript
+let pyodide = null;
+
+async function initPyodide() {
+    pyodide = await loadPyodide();
+    // Load any packages user code might need
+    await pyodide.loadPackage(['numpy']);
+    document.getElementById('run-btn').disabled = false;
+    document.getElementById('status').textContent = 'Python ready';
+}
+initPyodide();
+
+async function runCode() {
+    if (!pyodide) {
+        alert('Python environment not ready');
+        return;
+    }
+    const code = editor.getValue();
+    try {
+        // MUST import sys AND io before using StringIO
+        await pyodide.runPythonAsync(`
+            import sys
+            import io
+            sys.stdout = io.StringIO()
+        `);
+        await pyodide.runPythonAsync(code);
+        const output = pyodide.runPython('sys.stdout.getvalue()');
+        document.getElementById('output').textContent = output;
+    } catch (e) {
+        document.getElementById('output').textContent = `Error: ${e.message}`;
+    }
+}
+```
+
 ## Technical Requirements
 
 - Use CodeMirror or Monaco via CDN for editing
@@ -60,3 +143,5 @@ Return ONLY the HTML document, no markdown fences or explanations.
 - [ ] Test cases show pass/fail clearly
 - [ ] Hints reveal progressively
 - [ ] **NO DUPLICATED HTML** - exactly ONE `<!DOCTYPE html>` tag
+- [ ] **Python stdout uses correct import pattern** - imports BOTH `sys` AND `io`
+- [ ] **Pyodide uses async execution** - `runPythonAsync()` not `runPython()`
