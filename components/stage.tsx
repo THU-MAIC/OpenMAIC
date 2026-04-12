@@ -703,6 +703,7 @@ export function Stage({
         modifyAudio: !(params.skipAudio ?? false),
         mediaType: params.mediaType,
         mediaPrompt: params.mediaPrompt ?? '',
+        themeId: params.themeId ?? '',
       });
       // Capture backup in local vars — setState calls are async (batched),
       // so closure-captured state would be stale in the failure/undo branches.

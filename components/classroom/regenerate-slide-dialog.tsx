@@ -13,6 +13,15 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { useSettingsStore } from '@/lib/store/settings';
+import type { ThemeListItem } from '@/lib/types/theme';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { outlineToIndication, indicationToOutline } from '@/lib/hooks/use-scene-regenerator';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
@@ -27,6 +36,7 @@ export interface RegenerateFormValues {
   modifyAudio: boolean;
   mediaType: 'none' | 'image' | 'video' | 'keep';
   mediaPrompt: string;
+  themeId: string;
 }
 
 interface RegenerateSlideDialogProps {
@@ -71,16 +81,19 @@ export function RegenerateSlideDialog({
   onClose,
 }: RegenerateSlideDialogProps) {
   const { t } = useI18n();
+  const defaultThemeId = useSettingsStore((s) => s.themeId);
 
   const [indication, setIndication] = useState('');
   const [audioText, setAudioText] = useState('');
   const [modifyAudio, setModifyAudio] = useState(false);
   const [mediaType, setMediaType] = useState<'none' | 'image' | 'video' | 'keep'>('none');
   const [mediaPrompt, setMediaPrompt] = useState('');
+  const [themeId, setThemeId] = useState(defaultThemeId);
+  const [themes, setThemes] = useState<ThemeListItem[]>([]);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
   const promptAbortRef = useRef<AbortController | null>(null);
 
-  // Initialise form values on open
+  // Initialise form values on open + fetch theme list
   useEffect(() => {
     if (!open) return;
     if (initialValues) {
@@ -89,6 +102,7 @@ export function RegenerateSlideDialog({
       setModifyAudio(initialValues.modifyAudio);
       setMediaType(initialValues.mediaType);
       setMediaPrompt(initialValues.mediaPrompt);
+      setThemeId(initialValues.themeId || defaultThemeId);
     } else {
       setIndication(outlineToIndication(outline.description, outline.keyPoints));
       setAudioText(sceneToAudioText(scene));
@@ -96,8 +110,14 @@ export function RegenerateSlideDialog({
       const mt = outlineToMediaType(outline);
       setMediaType(mt);
       setMediaPrompt(mt === 'keep' ? '' : outlineToMediaPrompt(outline, mt));
+      setThemeId(defaultThemeId);
     }
-  }, [open, outline, scene, initialValues]);
+    // Fetch available themes
+    fetch('/api/themes')
+      .then((r) => r.json())
+      .then((data: ThemeListItem[]) => setThemes(data))
+      .catch(() => {/* theme list stays empty, selector hidden */});
+  }, [open, outline, scene, initialValues, defaultThemeId]);
 
   // Abort in-flight media-prompt fetch when dialog closes
   useEffect(() => {
@@ -187,10 +207,12 @@ export function RegenerateSlideDialog({
       mediaType,
       mediaPrompt: mediaType !== 'none' && mediaType !== 'keep' ? mediaPrompt : undefined,
       skipAudio: !modifyAudio,
+      themeId: themeId || undefined,
     });
   };
 
-  const isSubmitDisabled = isGeneratingPrompt || (mediaType !== 'none' && !mediaPrompt.trim());
+  const isSubmitDisabled =
+    isGeneratingPrompt || (mediaType !== 'none' && mediaType !== 'keep' && !mediaPrompt.trim());
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -225,6 +247,48 @@ export function RegenerateSlideDialog({
               placeholder={t('stage.regen.indicationPlaceholder')}
             />
           </div>
+
+          {/* Theme selector — only shown when themes are available */}
+          {themes.length > 0 && (
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('stage.regen.theme')}
+              </Label>
+              <Select value={themeId} onValueChange={setThemeId}>
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue>
+                    {(() => {
+                      const active = themes.find((th) => th.id === themeId);
+                      return active ? (
+                        <span className="flex items-center gap-2">
+                          <span
+                            className="w-3 h-3 rounded-sm border border-border/50 shrink-0"
+                            style={{ background: active.colors.primary }}
+                          />
+                          {active.name}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">{t('stage.regen.theme')}</span>
+                      );
+                    })()}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {themes.map((theme) => (
+                    <SelectItem key={theme.id} value={theme.id}>
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-sm border border-border/50 shrink-0"
+                          style={{ background: theme.colors.primary }}
+                        />
+                        {theme.name}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {/* Audio text */}
           <div className="space-y-1.5">

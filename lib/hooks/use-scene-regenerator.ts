@@ -73,6 +73,8 @@ export interface RegenerateParams {
   mediaPrompt?: string;
   /** When true, skip TTS generation and preserve existing speech audio from the scene. */
   skipAudio?: boolean;
+  /** Theme to apply during content generation. Falls back to server-side stage default. */
+  themeId?: string;
 }
 
 export type RegenerateProgress = 'idle' | 'content' | 'audio' | 'media' | 'done' | 'error';
@@ -185,7 +187,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
       const contentRes = await fetch('/api/generate/scene-content-only', {
         method: 'POST',
         headers: getApiHeaders(),
-        body: JSON.stringify({ outline, stageId }),
+        body: JSON.stringify({ outline, stageId, themeId: params.themeId }),
         signal,
       });
       const json = await contentRes.json();
