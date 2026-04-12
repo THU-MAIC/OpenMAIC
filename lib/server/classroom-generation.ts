@@ -13,7 +13,6 @@ import {
 } from '@/lib/generation/scene-generator';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
-import { formatTeacherPersonaForPrompt } from '@/lib/generation/prompt-formatters';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
@@ -98,10 +97,6 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
-}
-
 function stripCodeFences(text: string): string {
   let cleaned = text.trim();
   if (cleaned.startsWith('```')) {
@@ -112,7 +107,7 @@ function stripCodeFences(text: string): string {
 
 async function generateAgentProfiles(
   requirement: string,
-  language: string,
+  languageDirective: string,
   aiCall: AICallFn,
 ): Promise<AgentInfo[]> {
   const systemPrompt =
@@ -125,7 +120,8 @@ Requirements:
 - Decide the appropriate number of agents based on the course content (typically 3-5)
 - Exactly 1 agent must have role "teacher", the rest can be "assistant" or "student"
 - Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
-- Names and personas must be in language: ${language}
+- Language directive for this course: ${languageDirective}
+  Agent names and personas must follow this language directive.
 
 Return a JSON object with this exact structure:
 {
@@ -224,30 +220,10 @@ export async function generateClassroom(
     return result.text;
   };
 
-  const lang = normalizeLanguage(input.language);
   const requirements: UserRequirements = {
     requirement,
-    language: lang,
   };
   const pdfText = pdfContent?.text || undefined;
-
-  // Resolve agents based on agentMode
-  let agents: AgentInfo[];
-  let agentMode = input.agentMode || 'default';
-  if (agentMode === 'generate') {
-    log.info('Generating custom agent profiles via LLM...');
-    try {
-      agents = await generateAgentProfiles(requirement, lang, aiCall);
-      log.info(`Generated ${agents.length} agent profiles`);
-    } catch (e) {
-      log.warn('Agent profile generation failed, falling back to defaults:', e);
-      agents = getDefaultAgents();
-      agentMode = 'default';
-    }
-  } else {
-    agents = getDefaultAgents();
-  }
-  const teacherContext = formatTeacherPersonaForPrompt(agents);
 
   await options.onProgress?.({
     step: 'researching',
@@ -304,7 +280,7 @@ export async function generateClassroom(
       imageGenerationEnabled: input.enableImageGeneration,
       videoGenerationEnabled: input.enableVideoGeneration,
       researchContext,
-      teacherContext,
+      // NO teacherContext — agents haven't been generated yet
     },
   );
 
@@ -313,8 +289,8 @@ export async function generateClassroom(
     throw new Error(outlinesResult.error || 'Failed to generate scene outlines');
   }
 
-  const outlines = outlinesResult.data;
-  log.info(`Generated ${outlines.length} scene outlines`);
+  const { languageDirective, outlines } = outlinesResult.data;
+  log.info(`Generated ${outlines.length} scene outlines (languageDirective: ${languageDirective})`);
 
   await options.onProgress?.({
     step: 'generating_outlines',
@@ -324,12 +300,28 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
+  // Resolve agents based on agentMode — now AFTER outlines so we can use languageDirective
+  let agents: AgentInfo[];
+  const agentMode = input.agentMode || 'default';
+  if (agentMode === 'generate') {
+    log.info('Generating custom agent profiles via LLM...');
+    try {
+      agents = await generateAgentProfiles(requirement, languageDirective, aiCall);
+      log.info(`Generated ${agents.length} agent profiles`);
+    } catch (e) {
+      log.warn('Agent profile generation failed, falling back to defaults:', e);
+      agents = getDefaultAgents();
+    }
+  } else {
+    agents = getDefaultAgents();
+  }
+
   const stageId = nanoid(10);
   const stage: Stage = {
     id: stageId,
     name: outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
-    language: lang,
+    languageDirective,
     style: 'interactive',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -371,22 +363,16 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    const content = await generateSceneContent(
-      safeOutline,
-      aiCall,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      agents,
-    );
+    const content = await generateSceneContent(safeOutline, aiCall, { agents, languageDirective });
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;
     }
 
-    const actions = await generateSceneActions(safeOutline, content, aiCall, undefined, agents);
+    const actions = await generateSceneActions(safeOutline, content, aiCall, {
+      agents,
+      languageDirective,
+    });
     log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
 
     const sceneId = createSceneWithActions(safeOutline, content, actions, api);

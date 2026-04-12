@@ -8,6 +8,8 @@
 {{courseContext}}
 {{agents}}
 
+**Language Directive**: {{languageDirective}}
+
 Please generate the speech content for this PBL scene.
 
 Output as a JSON array directly (no explanation, no code fences):

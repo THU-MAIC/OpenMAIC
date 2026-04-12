@@ -91,16 +91,13 @@ export async function buildSceneFromOutline(
   log.debug(
     `imageMapping available: ${imageMapping ? Object.keys(imageMapping).length + ' keys' : 'undefined'}`,
   );
-  const content = await generateSceneContent(
-    outline,
-    aiCall,
+  const content = await generateSceneContent(outline, aiCall, {
     assignedImages,
     imageMapping,
     languageModel,
     visionEnabled,
-    undefined,
     agents,
-  );
+  });
   if (!content) {
     log.error(`Failed to generate content for: ${outline.title}`);
     return null;
@@ -109,7 +106,11 @@ export async function buildSceneFromOutline(
   // Step 2: Generate Actions
   onPhaseChange?.('actions');
   log.debug(`Step 2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(outline, content, aiCall, ctx, agents, userProfile);
+  const actions = await generateSceneActions(outline, content, aiCall, {
+    ctx,
+    agents,
+    userProfile,
+  });
   log.debug(`Generated ${actions.length} actions for: ${outline.title}`);
 
   // Build complete Scene object

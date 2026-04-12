@@ -10,11 +10,12 @@ Please generate scene outlines based on the following course requirements.
 
 {{userProfile}}
 
-## Course Language
+## Language Context
 
-**Required language**: {{language}}
-
-(If language is zh-CN, all content must be in Chinese; if en-US, all content must be in English)
+Infer the course language directive by applying the decision rules from the system prompt. Key reminders:
+- Requirement language = teaching language (unless overridden by explicit request or learner context)
+- Foreign language learning → teach in user's native language, not the target language
+- PDF language does NOT override teaching language — translate/explain document content instead
 
 ---
 
@@ -46,16 +47,21 @@ Please automatically infer the following from user requirements:
 - Teaching style (formal/casual/interactive/academic)
 - Visual style (minimal/colorful/professional/playful)
 
-Then output a JSON array containing all scene outlines. Each scene must include:
+Then output a JSON object with `languageDirective` and `outlines`. Each scene in the `outlines` array must include:
 
 ```json
 {
-  "id": "scene_1",
-  "type": "slide" or "quiz" or "interactive",
-  "title": "Scene Title",
-  "description": "Teaching purpose description",
-  "keyPoints": ["Point 1", "Point 2", "Point 3"],
-  "order": 1
+  "languageDirective": "2-5 sentence instruction describing the course language behavior",
+  "outlines": [
+    {
+      "id": "scene_1",
+      "type": "slide" or "quiz" or "interactive",
+      "title": "Scene Title",
+      "description": "Teaching purpose description",
+      "keyPoints": ["Point 1", "Point 2", "Point 3"],
+      "order": 1
+    }
+  ]
 }
 ```
 
@@ -73,10 +79,10 @@ Then output a JSON array containing all scene outlines. Each scene must include:
 3. **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use `"type": "interactive"` with an `interactiveConfig` object containing `conceptName`, `conceptOverview`, `designIdea`, and `subject`. Limit to 1-2 per course.
 4. **Scene count**: Based on inferred duration, typically 1-2 scenes per minute
 5. **Quiz placement**: Recommend inserting a quiz every 3-5 slides for assessment
-6. **Language**: Strictly output all content in the specified course language
+6. **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
 7. **If no suitable PDF images exist** for a slide scene that would benefit from visuals, add `mediaGenerations` array with image generation prompts. Write prompts in English. Use `elementId` format like "gen_img_1", "gen_img_2" — IDs must be **globally unique across all scenes** (do NOT restart numbering per scene). To reuse a generated image in a different scene, reference the same elementId without re-declaring it in mediaGenerations. Each generated image should be visually distinct — avoid near-identical media across slides.
 8. **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
 
 {{mediaGenerationPolicy}}
 
-Please output JSON array directly without additional explanatory text.
+Please output a JSON object with `languageDirective` (string) and `outlines` (array) directly without additional explanatory text.

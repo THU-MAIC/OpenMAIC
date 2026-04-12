@@ -33,9 +33,10 @@ export async function POST(req: NextRequest) {
       allOutlines,
       pdfImages,
       imageMapping,
-      stageInfo,
+      stageInfo: _stageInfo,
       stageId,
       agents,
+      languageDirective,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -49,6 +50,7 @@ export async function POST(req: NextRequest) {
       };
       stageId: string;
       agents?: AgentInfo[];
+      languageDirective?: string;
     };
 
     // Validate required fields
@@ -66,11 +68,7 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
-    // Ensure outline has language from stageInfo (fallback for older outlines)
-    const outline: SceneOutline = {
-      ...rawOutline,
-      language: rawOutline.language || (stageInfo?.language as 'zh-CN' | 'en-US') || 'zh-CN',
-    };
+    const outline: SceneOutline = { ...rawOutline };
 
     // ── Model resolution from request headers ──
     const { model: languageModel, modelInfo, modelString } = await resolveModelFromHeaders(req);
@@ -140,16 +138,15 @@ export async function POST(req: NextRequest) {
       `Generating content: "${effectiveOutline.title}" (${effectiveOutline.type}) [model=${modelString}]`,
     );
 
-    const content = await generateSceneContent(
-      effectiveOutline,
-      aiCall,
+    const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping,
-      effectiveOutline.type === 'pbl' ? languageModel : undefined,
-      hasVision,
+      languageModel: effectiveOutline.type === 'pbl' ? languageModel : undefined,
+      visionEnabled: hasVision,
       generatedMediaMapping,
       agents,
-    );
+      languageDirective,
+    });
 
     if (!content) {
       log.error(`Failed to generate content for: "${effectiveOutline.title}"`);
