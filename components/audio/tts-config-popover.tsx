@@ -68,7 +68,7 @@ export function TtsConfigPopover() {
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
-        baseUrl: providerConfig?.baseUrl,
+        baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
       });
     } catch (error) {
       const message =

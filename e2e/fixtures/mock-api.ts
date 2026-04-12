@@ -44,13 +44,24 @@ export class MockApi {
     });
   }
 
-  /** Mock the scene actions generation endpoint */
-  async mockSceneActions(stageId = 'test-stage') {
-    await this.page.route('**/api/generate/scene-actions', (route) => {
-      route.fulfill({
+  /** Mock the scene actions generation endpoint.
+   *  When no stageId is provided, it is extracted from the request body
+   *  so the mock response matches the dynamically-generated stage id. */
+  async mockSceneActions(stageId?: string) {
+    await this.page.route('**/api/generate/scene-actions', async (route) => {
+      let id = stageId ?? 'test-stage';
+      if (!stageId) {
+        try {
+          const body = route.request().postDataJSON();
+          if (body?.stageId) id = body.stageId;
+        } catch {
+          // fallback to default
+        }
+      }
+      await route.fulfill({
         status: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(createMockSceneActionsResponse(stageId)),
+        body: JSON.stringify(createMockSceneActionsResponse(id)),
       });
     });
   }
@@ -67,7 +78,7 @@ export class MockApi {
   }
 
   /** Set up API mocks for the generation flow. Note: server-providers is already mocked by the base fixture. */
-  async setupGenerationMocks(stageId = 'test-stage') {
+  async setupGenerationMocks(stageId?: string) {
     await this.mockSceneOutlinesStream();
     await this.mockSceneContent();
     await this.mockSceneActions(stageId);

@@ -19,7 +19,7 @@
  * Results are written to tests/generation/outline-language.eval.result.md
  */
 
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import { writeFileSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 import { generateText } from 'ai';
@@ -75,8 +75,8 @@ function getJudgeModel() {
 // Build AICallFn from the inference model
 // ---------------------------------------------------------------------------
 
-function buildAICallFn(): AICallFn {
-  const { model: languageModel, modelInfo } = getInferenceModel();
+async function buildAICallFn(): Promise<AICallFn> {
+  const { model: languageModel, modelInfo } = await getInferenceModel();
   return async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(
       {
@@ -128,7 +128,7 @@ async function judgeDirective(
   directive: string,
   groundTruth: string,
 ): Promise<JudgeResult> {
-  const { model } = getJudgeModel();
+  const { model } = await getJudgeModel();
   const result = await generateText({
     model,
     system: JUDGE_SYSTEM_PROMPT,
@@ -167,7 +167,11 @@ const results: EvalResult[] = [];
 // ---------------------------------------------------------------------------
 
 describe('Outline Language Inference Evaluation', () => {
-  const aiCall = buildAICallFn();
+  let aiCall: AICallFn;
+
+  beforeAll(async () => {
+    aiCall = await buildAICallFn();
+  });
 
   for (const tc of TEST_CASES) {
     it.concurrent(

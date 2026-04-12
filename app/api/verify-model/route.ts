@@ -19,7 +19,7 @@ export async function POST(req: NextRequest) {
     // Parse model string and resolve server-side fallback
     let languageModel;
     try {
-      const result = resolveModel({
+      const result = await resolveModel({
         modelString: model,
         apiKey: apiKey || '',
         baseUrl: baseUrl || undefined,

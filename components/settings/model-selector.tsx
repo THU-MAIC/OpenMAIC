@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderId } from '@/lib/ai/providers';
+import { MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { formatContextWindow } from './utils';
 
@@ -214,7 +215,10 @@ export function ModelSelector({
                   <img
                     src={provider.icon}
                     alt={getProviderDisplayName(provider.id, provider.name)}
-                    className="w-5 h-5 shrink-0"
+                    className={cn(
+                      'w-5 h-5 shrink-0',
+                      MONO_LOGO_PROVIDERS.has(provider.id) && 'dark:invert',
+                    )}
                     onError={(e) => {
                       (e.target as HTMLImageElement).style.display = 'none';
                     }}
