@@ -166,7 +166,7 @@ export function isPrivateIP(ip: string): boolean {
  * Validate a URL against SSRF attacks.
  * Returns null if the URL is safe, or an error message string if blocked.
  */
-export async function validateUrlForSSRF(url: string): Promise<string | null> {
+export async function validateUrlForSSRF(url: string): Promise<string> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -181,7 +181,7 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to skip private-IP checks
   const allowLocal = process.env.ALLOW_LOCAL_NETWORKS;
   if (allowLocal === 'true' || allowLocal === '1') {
-    return null;
+    return '';
   }
 
   const hostname = normalizeAddress(parsed.hostname);
@@ -196,7 +196,7 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   }
 
   if (isIP(hostname)) {
-    return null;
+    return '';
   }
 
   let resolvedAddresses: Array<{ address: string; family: number }>;
@@ -214,5 +214,5 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     return 'Local/private network URLs are not allowed';
   }
 
-  return null;
+  return '';
 }

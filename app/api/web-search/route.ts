@@ -2,21 +2,25 @@
  * Web Search API
  *
  * POST /api/web-search
- * Simple JSON request/response using Tavily search.
+ * Supports multiple search providers (Tavily, Claude).
  */
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
+import { searchWithClaude } from '@/lib/web-search/claude';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { createLogger } from '@/lib/logger';
-import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { API_ERROR_CODES, apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   buildSearchQuery,
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
 } from '@/lib/server/search-query-builder';
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
+import type { WebSearchProviderId } from '@/lib/web-search/types';
 
 const log = createLogger('WebSearch');
 
@@ -28,23 +32,47 @@ export async function POST(req: NextRequest) {
       query: requestQuery,
       pdfText,
       apiKey: clientApiKey,
+      providerId: requestProviderId,
+      providerConfig,
     } = body as {
       query?: string;
       pdfText?: string;
       apiKey?: string;
+      providerId?: WebSearchProviderId;
+      providerConfig?: {
+        modelId?: string;
+        baseUrl?: string;
+        tools?: Array<{ type: string; name: string }>;
+      };
     };
     query = requestQuery;
+
+    // Provider must be explicitly specified
+    const providerId: WebSearchProviderId | null = requestProviderId ?? null;
 
     if (!query || !query.trim()) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'query is required');
     }
 
-    const apiKey = resolveWebSearchApiKey(clientApiKey);
+    if (!providerId) {
+      return apiError(
+        'MISSING_PROVIDER',
+        400,
+        'Web search provider is not selected. Please select a provider in the toolbar.',
+      );
+    }
+
+    if (!(providerId in WEB_SEARCH_PROVIDERS)) {
+      return apiError('INVALID_REQUEST', 400, `Unknown web search provider: ${providerId}`);
+    }
+
+    const apiKey = resolveWebSearchApiKey(providerId, clientApiKey);
     if (!apiKey) {
+      const envVar = providerId === 'claude' ? 'ANTHROPIC_API_KEY' : 'TAVILY_API_KEY';
       return apiError(
         'MISSING_API_KEY',
         400,
-        'Tavily API key is not configured. Set it in Settings → Web Search or set TAVILY_API_KEY env var.',
+        `${providerId} API key is not configured. Set it in Settings → Web Search or set ${envVar} env var.`,
       );
     }
 
@@ -75,13 +103,40 @@ export async function POST(req: NextRequest) {
     const searchQuery = await buildSearchQuery(query, boundedPdfText, aiCall);
 
     log.info('Running web search API request', {
+      provider: providerId,
       hasPdfContext: searchQuery.hasPdfContext,
       rawRequirementLength: searchQuery.rawRequirementLength,
       rewriteAttempted: searchQuery.rewriteAttempted,
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    const result = await searchWithTavily({ query: searchQuery.query, apiKey });
+    // Validate client-supplied base URL against SSRF in all environments
+    if (providerConfig?.baseUrl) {
+      const ssrfError = await validateUrlForSSRF(providerConfig.baseUrl);
+      if (ssrfError) {
+        return apiError(API_ERROR_CODES.INVALID_URL, 400, ssrfError);
+      }
+    }
+
+    const effectiveBaseUrl =
+      providerConfig?.baseUrl || WEB_SEARCH_PROVIDERS[providerId].defaultBaseUrl || '';
+
+    let result;
+    if (providerId === 'claude') {
+      result = await searchWithClaude({
+        query: searchQuery.query,
+        apiKey,
+        baseUrl: effectiveBaseUrl,
+        modelId: providerConfig?.modelId,
+        tools: providerConfig?.tools,
+      });
+    } else {
+      result = await searchWithTavily({
+        query: searchQuery.query,
+        apiKey,
+        baseUrl: effectiveBaseUrl,
+      });
+    }
     const context = formatSearchResultsAsContext(result);
 
     return apiSuccess({

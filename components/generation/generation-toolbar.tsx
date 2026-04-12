@@ -1,7 +1,17 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2 } from 'lucide-react';
+import {
+  Bot,
+  Check,
+  ChevronLeft,
+  Globe,
+  Paperclip,
+  FileText,
+  X,
+  Globe2,
+  ChevronRight,
+} from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -11,6 +21,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -62,17 +73,19 @@ export function GenerationToolbar({
   const webSearchProviderId = useSettingsStore((s) => s.webSearchProviderId);
   const webSearchProvidersConfig = useSettingsStore((s) => s.webSearchProvidersConfig);
   const setWebSearchProvider = useSettingsStore((s) => s.setWebSearchProvider);
+  const setWebSearchProviderConfig = useSettingsStore((s) => s.setWebSearchProviderConfig);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [webSearchPopoverOpen, setWebSearchPopoverOpen] = useState(false);
+  const [drillWebSearchProvider, setDrillWebSearchProvider] = useState<WebSearchProviderId | null>(
+    null,
+  );
 
-  // Check if the selected web search provider has a valid config (API key or server-configured)
-  const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
-  const webSearchConfig = webSearchProvidersConfig[webSearchProviderId];
-  const webSearchAvailable = webSearchProvider
-    ? !webSearchProvider.requiresApiKey ||
-      !!webSearchConfig?.apiKey ||
-      !!webSearchConfig?.isServerConfigured
-    : false;
+  // Check if any web search provider has a valid config (API key or server-configured)
+  const webSearchAvailable = Object.values(WEB_SEARCH_PROVIDERS).some((provider) => {
+    const config = webSearchProvidersConfig[provider.id];
+    return !provider.requiresApiKey || !!config?.apiKey || !!config?.isServerConfigured;
+  });
 
   // Configured LLM providers (only those with valid credentials + models + endpoint)
   const configuredProviders = providersConfig
@@ -273,90 +286,242 @@ export function GenerationToolbar({
       </Popover>
 
       {/* ── Web Search ── */}
-      {webSearchAvailable ? (
-        <Popover>
-          <PopoverTrigger asChild>
-            <button className={webSearch ? pillActive : pillMuted}>
-              <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
-              {webSearch && (
-                <span>{WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || 'Search'}</span>
-              )}
-            </button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-3 space-y-3">
-            {/* Toggle */}
-            <button
-              onClick={() => onWebSearchChange(!webSearch)}
-              className={cn(
-                'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
-                webSearch
-                  ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
-                  : 'border-border hover:bg-muted/50',
-              )}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span>
+            <Popover
+              open={webSearchPopoverOpen}
+              onOpenChange={(open) => {
+                setWebSearchPopoverOpen(open);
+                setDrillWebSearchProvider(null);
+                if (!open && webSearch && !webSearchProviderId) {
+                  onWebSearchChange(false);
+                }
+              }}
             >
-              <Globe2
-                className={cn(
-                  'size-4 shrink-0',
-                  webSearch ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground',
-                )}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium">
-                  {webSearch ? t('toolbar.webSearchOn') : t('toolbar.webSearchOff')}
-                </p>
-                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                  {t('toolbar.webSearchDesc')}
-                </p>
-              </div>
-            </button>
+              <PopoverTrigger asChild>
+                <button
+                  className={cn(
+                    webSearch && webSearchProviderId ? pillActive : pillMuted,
+                    !webSearchAvailable && 'opacity-40 cursor-not-allowed',
+                  )}
+                  disabled={!webSearchAvailable}
+                >
+                  {(() => {
+                    if (!webSearch || !webSearchProviderId) {
+                      return <Globe2 className="size-3.5" />;
+                    }
+                    const activeProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
+                    if (activeProvider?.icon) {
+                      return (
+                        <img
+                          src={activeProvider.icon}
+                          alt={activeProvider.name}
+                          className="size-3.5 rounded-sm animate-pulse"
+                        />
+                      );
+                    }
+                    return <Globe2 className="size-3.5 animate-pulse" />;
+                  })()}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-64 p-0">
+                {/* Level 1: Provider list */}
+                {!drillWebSearchProvider && (
+                  <div className="max-h-72 overflow-y-auto">
+                    <div className="px-3 py-2 border-b bg-muted/30 flex items-center gap-2.5">
+                      <Globe2
+                        className={cn(
+                          'size-4 shrink-0 transition-colors',
+                          webSearch
+                            ? 'text-violet-600 dark:text-violet-400'
+                            : 'text-muted-foreground/50',
+                        )}
+                      />
+                      <span
+                        className={cn(
+                          'flex-1 text-sm font-medium transition-colors',
+                          !webSearch && 'text-muted-foreground',
+                        )}
+                      >
+                        {t('toolbar.webSearchProvider')}
+                      </span>
+                      <Switch
+                        checked={webSearch}
+                        onCheckedChange={(enabled) => {
+                          onWebSearchChange(enabled);
+                        }}
+                        className="scale-[0.85] origin-right"
+                      />
+                    </div>
+                    <div className="p-1">
+                      {Object.values(WEB_SEARCH_PROVIDERS)
+                        .filter((provider) => {
+                          const cfg = webSearchProvidersConfig[provider.id];
+                          return (
+                            !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured
+                          );
+                        })
+                        .map((provider) => {
+                          const cfg = webSearchProvidersConfig[provider.id as WebSearchProviderId];
+                          const isActive = webSearchProviderId === provider.id && webSearch;
+                          const builtinModels =
+                            WEB_SEARCH_PROVIDERS[provider.id as WebSearchProviderId]?.models || [];
+                          const effectiveModels = cfg?.models?.length ? cfg.models : builtinModels;
+                          const hasModels = effectiveModels.length > 0;
 
-            {/* Provider selector */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-medium text-muted-foreground shrink-0">
-                {t('toolbar.webSearchProvider')}
-              </span>
-              <Select
-                value={webSearchProviderId}
-                onValueChange={(v) => setWebSearchProvider(v as WebSearchProviderId)}
-              >
-                <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {Object.values(WEB_SEARCH_PROVIDERS).map((provider) => {
-                    const cfg = webSearchProvidersConfig[provider.id];
-                    const available =
-                      !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
+                          return (
+                            <button
+                              key={provider.id}
+                              disabled={!webSearch}
+                              onClick={() => {
+                                if (!webSearch) return;
+                                if (hasModels) {
+                                  setDrillWebSearchProvider(provider.id as WebSearchProviderId);
+                                } else {
+                                  setWebSearchProvider(provider.id as WebSearchProviderId);
+                                  setWebSearchPopoverOpen(false);
+                                }
+                              }}
+                              className={cn(
+                                'w-full flex items-center justify-between px-3 py-2 rounded-md text-left transition-colors mb-1',
+                                isActive
+                                  ? 'bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-300 font-medium'
+                                  : 'hover:bg-muted/50 text-foreground/80',
+                                !webSearch && 'opacity-50 cursor-not-allowed hover:bg-muted/50',
+                              )}
+                            >
+                              <div className="flex items-center gap-2 truncate">
+                                {provider.icon ? (
+                                  <img
+                                    src={provider.icon}
+                                    alt={provider.name}
+                                    className="size-3.5 rounded-sm shrink-0"
+                                  />
+                                ) : (
+                                  <Globe2
+                                    className={cn(
+                                      'size-3.5',
+                                      isActive
+                                        ? 'text-violet-600 dark:text-violet-400'
+                                        : 'text-muted-foreground',
+                                    )}
+                                  />
+                                )}
+                                <span className="text-sm">{provider.name}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                {cfg?.isServerConfigured && (
+                                  <span className="text-[9px] px-1 py-0 rounded border border-border text-muted-foreground bg-background">
+                                    {t('settings.serverConfigured')}
+                                  </span>
+                                )}
+                                {hasModels && cfg?.modelId && (
+                                  <span className="text-[10px] text-muted-foreground truncate max-w-[80px] font-mono">
+                                    {effectiveModels.find((m) => m.id === cfg.modelId)?.name ||
+                                      cfg.modelId}
+                                  </span>
+                                )}
+                                {isActive && !hasModels && (
+                                  <Check className="size-3.5 text-violet-600 dark:text-violet-400" />
+                                )}
+                                {hasModels && (
+                                  <ChevronRight className="size-3.5 text-muted-foreground" />
+                                )}
+                              </div>
+                            </button>
+                          );
+                        })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Level 2: Model list for the drilled provider */}
+                {drillWebSearchProvider &&
+                  (() => {
+                    const cfg = webSearchProvidersConfig[drillWebSearchProvider];
+                    const provider = WEB_SEARCH_PROVIDERS[drillWebSearchProvider];
+                    const models = cfg?.models?.length ? cfg.models : provider?.models || [];
+                    const selectedModelId = cfg?.modelId || '';
                     return (
-                      <SelectItem key={provider.id} value={provider.id} disabled={!available}>
-                        <div
-                          className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
+                      <div className="max-h-72 overflow-y-auto">
+                        <button
+                          onClick={() => setDrillWebSearchProvider(null)}
+                          className="w-full flex items-center gap-2 px-3 py-2 border-b bg-muted/40 hover:bg-muted/60 transition-colors"
                         >
-                          {provider.name}
-                          {cfg?.isServerConfigured && (
-                            <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
-                              {t('settings.serverConfigured')}
-                            </span>
+                          <ChevronLeft className="size-3.5 text-muted-foreground" />
+                          {provider?.icon ? (
+                            <img
+                              src={provider.icon}
+                              alt={provider.name}
+                              className="size-4 rounded-sm"
+                            />
+                          ) : (
+                            <Globe2 className="size-4 text-muted-foreground" />
                           )}
-                        </div>
-                      </SelectItem>
+                          <span className="text-xs font-semibold">{provider?.name}</span>
+                          <span className="text-[10px] text-muted-foreground ml-auto">
+                            {models.length} {t('settings.modelCount')}
+                          </span>
+                        </button>
+                        {models.map((model) => {
+                          const isSelected = selectedModelId === model.id;
+                          return (
+                            <button
+                              key={model.id}
+                              onClick={() => {
+                                setWebSearchProvider(drillWebSearchProvider);
+                                setWebSearchProviderConfig(drillWebSearchProvider, {
+                                  modelId: model.id,
+                                });
+                                setWebSearchPopoverOpen(false);
+                              }}
+                              className={cn(
+                                'w-full flex items-center gap-2 px-3 py-2 text-left transition-colors border-b border-border/30',
+                                isSelected
+                                  ? 'bg-violet-50 dark:bg-violet-950/20 text-violet-700 dark:text-violet-300'
+                                  : 'hover:bg-muted/50',
+                              )}
+                            >
+                              <span className="flex-1 truncate font-mono text-xs">
+                                {model.name}
+                              </span>
+                              {isSelected && (
+                                <Check className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
                     );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-          </PopoverContent>
-        </Popover>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button className={cn(pillCls, 'text-muted-foreground/40 cursor-not-allowed')} disabled>
-              <Globe2 className="size-3.5" />
-            </button>
-          </TooltipTrigger>
+                  })()}
+              </PopoverContent>
+            </Popover>
+          </span>
+        </TooltipTrigger>
+        {!webSearchAvailable ? (
           <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
-        </Tooltip>
-      )}
+        ) : webSearch && webSearchProviderId ? (
+          <TooltipContent>
+            {(() => {
+              const providerName =
+                WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || webSearchProviderId;
+              const cfg = webSearchProvidersConfig[webSearchProviderId];
+              const builtinModels =
+                WEB_SEARCH_PROVIDERS[webSearchProviderId as WebSearchProviderId]?.models || [];
+              const effectiveModels = cfg?.models?.length ? cfg.models : builtinModels;
+              if (cfg?.modelId) {
+                const modelName =
+                  effectiveModels.find((m) => m.id === cfg.modelId)?.name || cfg.modelId;
+                return `${providerName} / ${modelName}`;
+              }
+              return providerName;
+            })()}
+          </TooltipContent>
+        ) : (
+          <TooltipContent>{t('toolbar.webSearchProvider')}</TooltipContent>
+        )}
+      </Tooltip>
 
       {/* ── Language pill ── */}
       <Tooltip>
