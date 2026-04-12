@@ -38,6 +38,26 @@ import type {
 } from './types';
 
 /**
+ * Default supported languages for custom OpenAI-compatible ASR providers.
+ * A practical subset of commonly used languages + auto-detect.
+ */
+export const CUSTOM_ASR_DEFAULT_LANGUAGES = [
+  'auto',
+  'zh',
+  'en',
+  'ja',
+  'ko',
+  'es',
+  'fr',
+  'de',
+  'ru',
+  'ar',
+  'pt',
+  'it',
+  'hi',
+];
+
+/**
  * TTS Provider Registry
  *
  * Central registry for all TTS providers.

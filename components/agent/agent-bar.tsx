@@ -116,7 +116,7 @@ function AgentVoicePill({
             ttsBaseUrl:
               providerConfig?.serverBaseUrl ||
               providerConfig?.baseUrl ||
-              ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string),
+              providerConfig?.customDefaultBaseUrl,
           }),
           signal: controller.signal,
         });
@@ -343,7 +343,7 @@ function TeacherVoicePill({
             ttsBaseUrl:
               providerConfig?.serverBaseUrl ||
               providerConfig?.baseUrl ||
-              ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string),
+              providerConfig?.customDefaultBaseUrl,
           }),
           signal: controller.signal,
         });

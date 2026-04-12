@@ -331,8 +331,7 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
             }
             const baseUrlValue =
               asrProvidersConfig[asrProviderId]?.baseUrl ||
-              ((asrProvidersConfig[asrProviderId] as Record<string, unknown>)
-                ?.customDefaultBaseUrl as string) ||
+              asrProvidersConfig[asrProviderId]?.customDefaultBaseUrl ||
               '';
             if (baseUrlValue && baseUrlValue.trim()) {
               formData.append('baseUrl', baseUrlValue);
@@ -586,9 +585,7 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
                   .filter(([id]) => isCustomASRProvider(id))
                   .map(([id, cfg]) => (
                     <SelectItem key={id} value={id}>
-                      <div className="flex items-center gap-2">
-                        {((cfg as Record<string, unknown>).customName as string) || id}
-                      </div>
+                      <div className="flex items-center gap-2">{cfg.customName || id}</div>
                     </SelectItem>
                   ))}
               </SelectContent>
@@ -633,8 +630,8 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
                   <Input
                     placeholder={
                       isCustomASR
-                        ? ((asrProvidersConfig[asrProviderId] as Record<string, unknown>)
-                            ?.customDefaultBaseUrl as string) || 'http://localhost:8000/v1'
+                        ? asrProvidersConfig[asrProviderId]?.customDefaultBaseUrl ||
+                          'http://localhost:8000/v1'
                         : asrProvider?.defaultBaseUrl || t('settings.enterCustomBaseUrl')
                     }
                     value={asrProvidersConfig[asrProviderId]?.baseUrl || ''}
@@ -651,8 +648,7 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
                 const effectiveBaseUrl =
                   asrProvidersConfig[asrProviderId]?.baseUrl ||
                   (isCustomASR
-                    ? ((asrProvidersConfig[asrProviderId] as Record<string, unknown>)
-                        ?.customDefaultBaseUrl as string)
+                    ? asrProvidersConfig[asrProviderId]?.customDefaultBaseUrl
                     : asrProvider?.defaultBaseUrl) ||
                   '';
                 if (!effectiveBaseUrl) return null;

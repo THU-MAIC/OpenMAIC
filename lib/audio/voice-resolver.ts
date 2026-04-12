@@ -99,7 +99,14 @@ export interface ProviderWithVoices {
 export function getAvailableProvidersWithVoices(
   ttsProvidersConfig: Record<
     string,
-    { apiKey?: string; enabled?: boolean; isServerConfigured?: boolean }
+    {
+      apiKey?: string;
+      enabled?: boolean;
+      isServerConfigured?: boolean;
+      modelId?: string;
+      customName?: string;
+      customVoices?: Array<{ id: string; name: string }>;
+    }
   >,
 ): ProviderWithVoices[] {
   const result: ProviderWithVoices[] = [];
@@ -150,12 +157,11 @@ export function getAvailableProvidersWithVoices(
   // Custom providers
   for (const [id, providerConfig] of Object.entries(ttsProvidersConfig)) {
     if (!isCustomTTSProvider(id)) continue;
-    const cfg = providerConfig as Record<string, unknown>;
-    const customVoices = (cfg.customVoices as Array<{ id: string; name: string }>) || [];
+    const customVoices = providerConfig.customVoices || [];
     if (customVoices.length === 0) continue;
 
     const providerId = id as TTSProviderId;
-    const providerName = (cfg.customName as string) || id;
+    const providerName = providerConfig.customName || id;
     const voices = customVoices.map((v) => ({ id: v.id, name: v.name }));
 
     result.push({

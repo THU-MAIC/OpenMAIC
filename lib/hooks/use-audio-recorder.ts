@@ -64,9 +64,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
             formData.append('apiKey', providerConfig.apiKey);
           }
           const effectiveBaseUrl =
-            providerConfig?.baseUrl?.trim() ||
-            ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
-            '';
+            providerConfig?.baseUrl?.trim() || providerConfig?.customDefaultBaseUrl || '';
           if (effectiveBaseUrl) {
             formData.append('baseUrl', effectiveBaseUrl);
           }

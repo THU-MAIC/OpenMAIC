@@ -4,12 +4,23 @@ import { useState, useEffect } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { TTS_PROVIDERS, DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { Volume2, Loader2, CheckCircle2, XCircle, Eye, EyeOff, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import { isCustomTTSProvider } from '@/lib/audio/types';
@@ -36,7 +47,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const providerConfig = ttsProvidersConfig[selectedProviderId];
   const isServerConfigured = !!providerConfig?.isServerConfigured;
   const requiresApiKey = isCustom
-    ? !!(providerConfig as Record<string, unknown>)?.requiresApiKey
+    ? !!providerConfig?.requiresApiKey
     : !!ttsProvider?.requiresApiKey;
 
   // When testing a non-active provider, use that provider's default voice
@@ -45,12 +56,12 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     selectedProviderId === activeProviderId
       ? ttsVoice
       : isCustomTTSProvider(selectedProviderId)
-        ? (((providerConfig as Record<string, unknown>)?.customVoices as
-            | Array<{ id: string }>
-            | undefined) || [])[0]?.id || 'default'
+        ? ((providerConfig?.customVoices as Array<{ id: string }> | undefined) || [])[0]?.id ||
+          'default'
         : DEFAULT_TTS_VOICES[selectedProviderId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
 
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [testText, setTestText] = useState(t('settings.ttsTestTextDefault'));
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
@@ -103,7 +114,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
         baseUrl:
           ttsProvidersConfig[selectedProviderId]?.baseUrl ||
-          ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
+          providerConfig?.customDefaultBaseUrl ||
           '',
       });
       setTestStatus('success');
@@ -235,8 +246,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                 spellCheck={false}
                 placeholder={
                   isCustom
-                    ? ((providerConfig as Record<string, unknown>)
-                        ?.customDefaultBaseUrl as string) || 'http://localhost:8000/v1'
+                    ? providerConfig?.customDefaultBaseUrl || 'http://localhost:8000/v1'
                     : ttsProvider?.defaultBaseUrl || t('settings.enterCustomBaseUrl')
                 }
                 value={ttsProvidersConfig[selectedProviderId]?.baseUrl || ''}
@@ -253,9 +263,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           {(() => {
             const effectiveBaseUrl =
               ttsProvidersConfig[selectedProviderId]?.baseUrl ||
-              (isCustom
-                ? ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string)
-                : ttsProvider?.defaultBaseUrl) ||
+              (isCustom ? providerConfig?.customDefaultBaseUrl : ttsProvider?.defaultBaseUrl) ||
               '';
             if (!effectiveBaseUrl) return null;
             let endpointPath = '';
@@ -366,11 +374,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       {isCustom && (
         <div className="space-y-3">
           <Label className="text-sm">{t('settings.customVoices')}</Label>
-          {(
-            (providerConfig as Record<string, unknown>)?.customVoices as
-              | Array<{ id: string; name: string }>
-              | undefined
-          )?.length ? (
+          {(providerConfig?.customVoices as Array<{ id: string; name: string }> | undefined)
+            ?.length ? (
             <div className="rounded-lg border border-border/60 overflow-hidden">
               {/* Column headers */}
               <div className="grid grid-cols-[1fr_1fr_36px] gap-0 bg-muted/40 px-3 py-1.5 border-b border-border/40">
@@ -384,7 +389,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               </div>
               {/* Voice rows */}
               {(
-                (providerConfig as Record<string, unknown>)?.customVoices as Array<{
+                providerConfig?.customVoices as Array<{
                   id: string;
                   name: string;
                 }>
@@ -405,7 +410,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                     size="icon"
                     onClick={() => {
                       const voices = [
-                        ...((providerConfig as Record<string, unknown>)?.customVoices as Array<{
+                        ...(providerConfig?.customVoices as Array<{
                           id: string;
                           name: string;
                         }>),
@@ -413,7 +418,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                       voices.splice(index, 1);
                       setTTSProviderConfig(selectedProviderId, {
                         customVoices: voices,
-                      } as Record<string, unknown>);
+                      });
                     }}
                     className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
                   >
@@ -426,9 +431,13 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             <p className="text-sm text-muted-foreground/50 italic">{t('settings.noVoicesAdded')}</p>
           )}
           <AddVoiceRow
+            existingIds={(
+              (providerConfig?.customVoices as Array<{ id: string; name: string }> | undefined) ||
+              []
+            ).map((v) => v.id)}
             onAdd={(voiceId, voiceName) => {
               const voices = [
-                ...(((providerConfig as Record<string, unknown>)?.customVoices as
+                ...((providerConfig?.customVoices as
                   | Array<{ id: string; name: string }>
                   | undefined) || []),
                 { id: voiceId, name: voiceName },
@@ -448,26 +457,56 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       {/* Delete Custom Provider */}
       {isCustom && (
         <div className="pt-4 border-t">
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => removeCustomTTSProvider(selectedProviderId)}
-          >
+          <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
             {t('settings.deleteProvider')}
           </Button>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={showDeleteConfirm}
+        onOpenChange={(open) => !open && setShowDeleteConfirm(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('settings.deleteProvider')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('settings.deleteProviderConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('settings.cancelEdit')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                removeCustomTTSProvider(selectedProviderId);
+                setShowDeleteConfirm(false);
+              }}
+            >
+              {t('settings.deleteProvider')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function AddVoiceRow({ onAdd }: { onAdd: (id: string, name: string) => void }) {
+function AddVoiceRow({
+  onAdd,
+  existingIds,
+}: {
+  onAdd: (id: string, name: string) => void;
+  existingIds: string[];
+}) {
   const { t } = useI18n();
   const [voiceId, setVoiceId] = useState('');
   const [voiceName, setVoiceName] = useState('');
 
   const handleAdd = () => {
     if (!voiceId.trim()) return;
+    if (existingIds.includes(voiceId.trim())) {
+      toast.error('Duplicate ID');
+      return;
+    }
     onAdd(voiceId.trim(), voiceName.trim() || voiceId.trim());
     setVoiceId('');
     setVoiceName('');

@@ -5,6 +5,16 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -18,6 +28,7 @@ import type { ASRProviderId } from '@/lib/audio/types';
 import { isCustomASRProvider } from '@/lib/audio/types';
 import { Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff, Plus, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ASRSettings');
@@ -39,10 +50,11 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
   const providerConfig = asrProvidersConfig[selectedProviderId];
   const isServerConfigured = !!providerConfig?.isServerConfigured;
   const requiresApiKey = isCustom
-    ? !!(providerConfig as Record<string, unknown>)?.requiresApiKey
+    ? !!providerConfig?.requiresApiKey
     : !!asrProvider?.requiresApiKey;
 
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [asrResult, setASRResult] = useState('');
@@ -129,7 +141,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             if (apiKeyValue?.trim()) formData.append('apiKey', apiKeyValue);
             const baseUrlValue =
               asrProvidersConfig[selectedProviderId]?.baseUrl ||
-              ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
+              providerConfig?.customDefaultBaseUrl ||
               '';
             if (baseUrlValue?.trim()) formData.append('baseUrl', baseUrlValue);
 
@@ -187,6 +199,13 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         </div>
       )}
 
+      {/* No models warning for custom providers */}
+      {isCustom && ((providerConfig?.customModels as Array<{ id: string }>) || []).length === 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
+          {t('settings.noModelsWarning')}
+        </div>
+      )}
+
       {/* API Key & Base URL */}
       {(requiresApiKey || isServerConfigured || isCustom) && (
         <>
@@ -231,8 +250,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
                 spellCheck={false}
                 placeholder={
                   isCustom
-                    ? ((providerConfig as Record<string, unknown>)
-                        ?.customDefaultBaseUrl as string) || 'http://localhost:8000/v1'
+                    ? providerConfig?.customDefaultBaseUrl || 'http://localhost:8000/v1'
                     : asrProvider?.defaultBaseUrl || t('settings.enterCustomBaseUrl')
                 }
                 value={asrProvidersConfig[selectedProviderId]?.baseUrl || ''}
@@ -249,9 +267,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           {(() => {
             const effectiveBaseUrl =
               asrProvidersConfig[selectedProviderId]?.baseUrl ||
-              (isCustom
-                ? ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string)
-                : asrProvider?.defaultBaseUrl) ||
+              (isCustom ? providerConfig?.customDefaultBaseUrl : asrProvider?.defaultBaseUrl) ||
               '';
             if (!effectiveBaseUrl) return null;
             let endpointPath = '';
@@ -300,7 +316,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             {isProcessing ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                {t('processing')}
+                {t('settings.asrProcessing')}
               </>
             ) : isRecording ? (
               <>
@@ -364,50 +380,74 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           {(() => {
             const customModels =
               (providerConfig?.customModels as Array<{ id: string; name: string }>) || [];
+            const activeModelId =
+              asrProvidersConfig[selectedProviderId]?.modelId || customModels[0]?.id || '';
             return (
               <>
                 {customModels.length > 0 ? (
                   <div className="rounded-lg border border-border/60 overflow-hidden">
-                    <div className="grid grid-cols-[1fr_1fr_36px] gap-0 bg-muted/40 px-3 py-1.5 border-b border-border/40">
+                    <div className="grid grid-cols-[20px_1fr_1fr_36px] gap-0 bg-muted/40 px-3 py-1.5 border-b border-border/40">
+                      <span />
                       <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
                         ID
                       </span>
                       <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
-                        {t('settings.voiceNamePlaceholder')}
+                        {t('settings.modelNamePlaceholder')}
                       </span>
                       <span />
                     </div>
-                    {customModels.map((model, index) => (
-                      <div
-                        key={model.id}
-                        className={cn(
-                          'grid grid-cols-[1fr_1fr_36px] gap-0 items-center px-3 py-2 group hover:bg-muted/20 transition-colors',
-                          index > 0 && 'border-t border-border/30',
-                        )}
-                      >
-                        <span className="text-sm font-mono text-foreground/80 truncate pr-3">
-                          {model.id}
-                        </span>
-                        <span className="text-sm text-foreground/60 truncate pr-3">
-                          {model.name}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            const models = [...customModels];
-                            models.splice(index, 1);
-                            setASRProviderConfig(selectedProviderId, {
-                              customModels: models,
-                              modelId: models[0]?.id || '',
-                            });
-                          }}
-                          className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                    {customModels.map((model, index) => {
+                      const isActive = model.id === activeModelId;
+                      return (
+                        <div
+                          key={model.id}
+                          onClick={() =>
+                            setASRProviderConfig(selectedProviderId, { modelId: model.id })
+                          }
+                          className={cn(
+                            'grid grid-cols-[20px_1fr_1fr_36px] gap-0 items-center px-3 py-2 group cursor-pointer transition-colors',
+                            isActive ? 'bg-primary/5' : 'hover:bg-muted/20',
+                            index > 0 && 'border-t border-border/30',
+                          )}
                         >
-                          <XCircle className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ))}
+                          <div className="flex items-center -ml-1">
+                            <div
+                              className={cn(
+                                'size-4 rounded-full border-2 flex items-center justify-center transition-colors',
+                                isActive
+                                  ? 'border-primary'
+                                  : 'border-muted-foreground/30 group-hover:border-muted-foreground/50',
+                              )}
+                            >
+                              {isActive && <div className="size-2 rounded-full bg-primary" />}
+                            </div>
+                          </div>
+                          <span className="text-sm font-mono text-foreground/80 truncate pr-3">
+                            {model.id}
+                          </span>
+                          <span className="text-sm text-foreground/60 truncate pr-3">
+                            {model.name}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const models = [...customModels];
+                              models.splice(index, 1);
+                              const newModelId = isActive ? models[0]?.id || '' : activeModelId;
+                              setASRProviderConfig(selectedProviderId, {
+                                customModels: models,
+                                modelId: newModelId,
+                              });
+                            }}
+                            className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                          >
+                            <XCircle className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      );
+                    })}
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground/50 italic">
@@ -415,6 +455,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
                   </p>
                 )}
                 <AddModelRow
+                  existingIds={customModels.map((m) => m.id)}
                   onAdd={(modelId, modelName) => {
                     const models = [...customModels, { id: modelId, name: modelName }];
                     setASRProviderConfig(selectedProviderId, {
@@ -432,26 +473,56 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
       {/* Delete Custom Provider */}
       {isCustom && (
         <div className="pt-4 border-t">
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => removeCustomASRProvider(selectedProviderId)}
-          >
+          <Button variant="destructive" size="sm" onClick={() => setShowDeleteConfirm(true)}>
             {t('settings.deleteProvider')}
           </Button>
         </div>
       )}
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog
+        open={showDeleteConfirm}
+        onOpenChange={(open) => !open && setShowDeleteConfirm(false)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t('settings.deleteProvider')}</AlertDialogTitle>
+            <AlertDialogDescription>{t('settings.deleteProviderConfirm')}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t('settings.cancelEdit')}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                removeCustomASRProvider(selectedProviderId);
+                setShowDeleteConfirm(false);
+              }}
+            >
+              {t('settings.deleteProvider')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function AddModelRow({ onAdd }: { onAdd: (id: string, name: string) => void }) {
+function AddModelRow({
+  onAdd,
+  existingIds,
+}: {
+  onAdd: (id: string, name: string) => void;
+  existingIds: string[];
+}) {
   const { t } = useI18n();
   const [modelId, setModelId] = useState('');
   const [modelName, setModelName] = useState('');
 
   const handleAdd = () => {
     if (!modelId.trim()) return;
+    if (existingIds.includes(modelId.trim())) {
+      toast.error('Duplicate ID');
+      return;
+    }
     onAdd(modelId.trim(), modelName.trim() || modelId.trim());
     setModelId('');
     setModelName('');
@@ -471,7 +542,7 @@ function AddModelRow({ onAdd }: { onAdd: (id: string, name: string) => void }) {
         onChange={(e) => setModelName(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
         className="text-sm"
-        placeholder={t('settings.voiceNamePlaceholder')}
+        placeholder={t('settings.modelNamePlaceholder')}
       />
       <Button
         variant="outline"
@@ -481,7 +552,7 @@ function AddModelRow({ onAdd }: { onAdd: (id: string, name: string) => void }) {
         className="shrink-0 gap-1"
       >
         <Plus className="h-3.5 w-3.5" />
-        {t('settings.addVoice')}
+        {t('settings.addModel')}
       </Button>
     </div>
   );

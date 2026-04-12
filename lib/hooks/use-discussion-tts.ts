@@ -162,7 +162,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
           ttsBaseUrl:
             providerConfig?.serverBaseUrl ||
             providerConfig?.baseUrl ||
-            ((providerConfig as Record<string, unknown>)?.customDefaultBaseUrl as string),
+            providerConfig?.customDefaultBaseUrl,
         }),
         signal: controller.signal,
       });

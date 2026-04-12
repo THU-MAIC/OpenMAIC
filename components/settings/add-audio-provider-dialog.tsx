@@ -72,6 +72,9 @@ export function AddAudioProviderDialog({
         <div className="space-y-4">
           <div className="pb-3 border-b">
             <h2 className="text-lg font-semibold">{t(titleKey)}</h2>
+            <p className="text-xs text-muted-foreground mt-1">
+              {t('settings.addCustomAudioProviderDescription')}
+            </p>
           </div>
 
           <div className="space-y-2">

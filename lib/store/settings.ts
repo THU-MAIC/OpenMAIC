@@ -57,6 +57,12 @@ export interface SettingsState {
       providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
+      // Custom provider fields
+      customName?: string;
+      customDefaultBaseUrl?: string;
+      customVoices?: Array<{ id: string; name: string }>;
+      isBuiltIn?: boolean;
+      requiresApiKey?: boolean;
     }
   >;
 
@@ -71,6 +77,11 @@ export interface SettingsState {
       providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
+      // Custom provider fields
+      customName?: string;
+      customDefaultBaseUrl?: string;
+      isBuiltIn?: boolean;
+      requiresApiKey?: boolean;
     }
   >;
 
@@ -191,6 +202,7 @@ export interface SettingsState {
       enabled: boolean;
       modelId: string;
       customModels: Array<{ id: string; name: string }>;
+      customVoices: Array<{ id: string; name: string }>;
       providerOptions: Record<string, unknown>;
     }>,
   ) => void;
@@ -660,10 +672,7 @@ export const useSettingsStore = create<SettingsState>()(
             // If switching provider, set default voice for that provider
             const shouldUpdateVoice = state.ttsProviderId !== providerId;
             const defaultVoice = isCustomTTSProvider(providerId)
-              ? (
-                  (state.ttsProvidersConfig[providerId] as Record<string, unknown>)
-                    ?.customVoices as Array<{ id: string }> | undefined
-                )?.[0]?.id || 'default'
+              ? state.ttsProvidersConfig[providerId]?.customVoices?.[0]?.id || 'default'
               : DEFAULT_TTS_VOICES[providerId as BuiltInTTSProviderId] || 'default';
             return {
               ttsProviderId: providerId,

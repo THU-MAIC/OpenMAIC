@@ -134,7 +134,7 @@ function ProviderListColumn<T extends string>({
 function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => string): string {
   if (isCustomTTSProvider(providerId)) {
     const cfg = useSettingsStore.getState().ttsProvidersConfig[providerId];
-    return ((cfg as Record<string, unknown>)?.customName as string) || providerId;
+    return cfg?.customName || providerId;
   }
   const names: Record<string, string> = {
     'openai-tts': t('settings.providerOpenAITTS'),
@@ -152,7 +152,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
 function getASRProviderName(providerId: ASRProviderId, t: (key: string) => string): string {
   if (isCustomASRProvider(providerId)) {
     const cfg = useSettingsStore.getState().asrProvidersConfig[providerId];
-    return ((cfg as Record<string, unknown>)?.customName as string) || providerId;
+    return cfg?.customName || providerId;
   }
   const names: Record<string, string> = {
     'openai-whisper': t('settings.providerOpenAIWhisper'),
@@ -945,7 +945,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                     .filter(([id]) => isCustomTTSProvider(id))
                     .map(([id, cfg]) => ({
                       id: id as TTSProviderId,
-                      name: ((cfg as Record<string, unknown>).customName as string) || id,
+                      name: cfg.customName || id,
                       icon: undefined,
                     })),
                 ]}
@@ -978,7 +978,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                     .filter(([id]) => isCustomASRProvider(id))
                     .map(([id, cfg]) => ({
                       id: id as ASRProviderId,
-                      name: ((cfg as Record<string, unknown>).customName as string) || id,
+                      name: cfg.customName || id,
                       icon: undefined,
                     })),
                 ]}

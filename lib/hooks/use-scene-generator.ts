@@ -141,9 +141,7 @@ export async function generateAndStoreTTS(
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,
       ttsBaseUrl:
-        ttsProviderConfig?.baseUrl ||
-        ((ttsProviderConfig as Record<string, unknown>)?.customDefaultBaseUrl as string) ||
-        undefined,
+        ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
     }),
     signal,
   });
