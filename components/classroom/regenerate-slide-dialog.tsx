@@ -253,15 +253,16 @@ export function RegenerateSlideDialog({
     [outline, generatePromptForType, indication],
   );
 
+  // Conflict: new media requested without slide toggle, but slide has no existing media slot
+  const hasExistingMedia = outlineToMediaType(outline) !== 'none';
+  const needsNewMedia = mediaType === 'image' || mediaType === 'video';
+  const showSlideWarning = !regenerateSlide && needsNewMedia && !hasExistingMedia;
+
   const handleSubmit = () => {
-    const { description, keyPoints } = indicationToOutline(indication);
-    const updatedOutline: SceneOutline = {
-      ...outline,
-      title: regenerateSlide ? title : outline.title,
-      description,
-      keyPoints,
-    };
     const forceSlideRegen = !regenerateSlide && needsNewMedia && !hasExistingMedia;
+    const updatedOutline: SceneOutline = regenerateSlide || forceSlideRegen
+      ? { ...outline, title, ...indicationToOutline(indication) }
+      : { ...outline };
     // Do NOT call onClose() here — Stage closes the dialog by transitioning
     // regenState from 'dialog_open' to 'regenerating'. Calling onClose() would
     // race with setRegenState('regenerating') and the batch winner is 'idle',
@@ -276,11 +277,6 @@ export function RegenerateSlideDialog({
       themeId: themeId || undefined,
     });
   };
-
-  // Conflict: new media requested without slide toggle, but slide has no existing media slot
-  const hasExistingMedia = outlineToMediaType(outline) !== 'none';
-  const needsNewMedia = mediaType === 'image' || mediaType === 'video';
-  const showSlideWarning = !regenerateSlide && needsNewMedia && !hasExistingMedia;
 
   const isSubmitDisabled =
     isGeneratingPrompt || (mediaType !== 'none' && mediaType !== 'keep' && !mediaPrompt.trim());

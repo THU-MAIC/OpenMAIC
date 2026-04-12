@@ -695,6 +695,8 @@ export function Stage({
             .join('\n\n')
         : params.audioTextOverride;
       setLastRegenValues({
+        title: params.outline.title,
+        regenerateSlide: !(params.skipSlide ?? false),
         indication: outlineToIndication(
           outline?.description ?? params.outline.description,
           outline?.keyPoints ?? params.outline.keyPoints,
