@@ -414,10 +414,13 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
         if (!signal.aborted && newContent.type === 'slide') {
           const newMediaUrl = useMediaGenerationStore.getState().tasks[elementId]?.objectUrl;
           if (newMediaUrl) {
+            // Append cache-busting timestamp so the browser fetches the newly generated
+            // image/video instead of serving the previous cached response for the same URL.
+            const cacheBustedUrl = `${newMediaUrl}?t=${Date.now()}`;
             const slideContent = newContent as SlideContent;
             const mediaElType = params.mediaType as 'image' | 'video';
             const patchedElements = slideContent.canvas.elements.map((el) =>
-              el.type === mediaElType ? { ...el, src: newMediaUrl } : el,
+              el.type === mediaElType ? { ...el, src: cacheBustedUrl } : el,
             );
             newContent = {
               ...slideContent,
