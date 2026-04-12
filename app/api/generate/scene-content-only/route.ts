@@ -7,7 +7,8 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { generateSceneContentFromInput } from '@/lib/server/scene-content-generation';
 import { getStorageBackend } from '@/lib/server/storage';
-import type { SceneOutline } from '@/lib/types/generation';
+import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import type { SceneOutline, GeneratedSlideContent } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 
 const log = createLogger('SceneContentOnly API');
@@ -32,7 +33,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (outline.type !== 'slide') {
-      return apiError('INVALID_REQUEST', 400, 'scene-content-only only supports slide-type outlines');
+      return apiError('INVALID_REQUEST', 400, 'Only slide-type outlines are supported');
     }
 
     // Load stage metadata and outlines from server storage
@@ -42,21 +43,21 @@ export async function POST(req: NextRequest) {
       backend.loadOutlines(stageId),
     ]);
 
+    if (!stageData) {
+      return apiError('NOT_FOUND', 404, 'Stage not found');
+    }
+
     const allOutlines = savedOutlines ?? [outline];
     const stageInfo = {
-      name: stageData?.stage.name ?? '',
-      description: stageData?.stage.description,
-      language: stageData?.stage.language,
-      style: stageData?.stage.style,
+      name: stageData.stage.name ?? '',
+      description: stageData.stage.description,
+      language: stageData.stage.language,
+      style: stageData.stage.style,
       themeId: themeId,
     };
 
-    const modelConfig = {
-      modelString: req.headers.get('x-model') || undefined,
-      apiKey: req.headers.get('x-api-key') || undefined,
-      baseUrl: req.headers.get('x-base-url') || undefined,
-      providerType: req.headers.get('x-provider-type') || undefined,
-    };
+    // ── Model resolution from request headers ──
+    const { modelString } = await resolveModelFromHeaders(req);
 
     const result = await generateSceneContentFromInput({
       outline,
@@ -64,15 +65,15 @@ export async function POST(req: NextRequest) {
       stageId,
       stageInfo,
       agents,
-      modelConfig,
+      modelConfig: { modelString },
     });
 
     // Return only the slide content fields (elements + background)
-    const content = result.content as { elements?: unknown[]; background?: unknown };
+    const slideContent = result.content as GeneratedSlideContent;
     return apiSuccess({
       data: {
-        elements: content.elements ?? [],
-        background: content.background,
+        elements: slideContent.elements ?? [],
+        background: slideContent.background,
       },
     });
   } catch (error) {

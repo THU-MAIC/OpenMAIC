@@ -74,4 +74,17 @@ describe('POST /api/generate/scene-content-only', () => {
     const res = await POST(req as never);
     expect(res.status).toBe(400);
   });
+
+  it('returns 400 when stageId is missing', async () => {
+    const { POST } = await import('@/app/api/generate/scene-content-only/route');
+    const req = new Request('http://localhost/api/generate/scene-content-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outline: { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+      }),
+    });
+    const res = await POST(req as never);
+    expect(res.status).toBe(400);
+  });
 });
