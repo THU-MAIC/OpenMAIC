@@ -692,23 +692,24 @@ export function Stage({
         mediaType: params.mediaType,
         mediaPrompt: params.mediaPrompt ?? '',
       });
-      setBackupScene({ ...scene });
+      // Capture backup in local var — setBackupScene is async (batched),
+      // so the closure-captured `backupScene` state would be stale in the failure branch.
+      const backup = { ...scene };
+      setBackupScene(backup);
       setRegenState('regenerating');
       const success = await sceneRegenerator.regenerate(scene.id, params);
       if (!success) {
         // Restore backup and re-open dialog so user can retry
-        if (backupScene) {
-          useStageStore.getState().updateScene(scene.id, {
-            content: backupScene.content,
-            actions: backupScene.actions,
-          });
-        }
+        useStageStore.getState().updateScene(scene.id, {
+          content: backup.content,
+          actions: backup.actions,
+        });
         setRegenState('dialog_open');
         return;
       }
       setRegenState('review');
     },
-    [getCurrentScene, sceneRegenerator, backupScene],
+    [getCurrentScene, sceneRegenerator],
   );
 
   /** Accept the new version: clear backup, return to idle */
