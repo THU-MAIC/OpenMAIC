@@ -162,7 +162,8 @@ async function submitTask(
   const body: Record<string, unknown> = {
     model_name: model,
     prompt: options.prompt,
-    negative_prompt: '',
+    // Explicitly exclude audio from negative prompt — audio is handled via TTS
+    negative_prompt: 'audio, sound, music, voice, narration',
     mode: 'pro',
   };
 

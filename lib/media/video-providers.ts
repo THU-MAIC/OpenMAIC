@@ -169,6 +169,13 @@ export function normalizeVideoOptions(
     }
   }
 
+  // Videos are always silent — audio is handled separately via TTS.
+  // Append a no-audio instruction to the prompt so all providers produce muted output.
+  const NO_AUDIO_SUFFIX = ', no audio, no sound, no music, silent video loop';
+  if (!normalized.prompt.includes('no audio')) {
+    normalized.prompt = normalized.prompt + NO_AUDIO_SUFFIX;
+  }
+
   return normalized;
 }
 
