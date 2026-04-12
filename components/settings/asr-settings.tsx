@@ -16,7 +16,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { isCustomASRProvider } from '@/lib/audio/types';
-import { Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff, Plus } from 'lucide-react';
+import { Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff, Plus, Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
 
@@ -44,6 +44,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [asrResult, setASRResult] = useState('');
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
@@ -114,6 +115,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           };
           mediaRecorder.onstop = async () => {
             stream.getTracks().forEach((track) => track.stop());
+            setIsProcessing(true);
             const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
             const formData = new FormData();
             formData.append('audio', audioBlob, 'recording.webm');
@@ -138,9 +140,14 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
               });
               if (response.ok) {
                 const data = await response.json();
-                setASRResult(data.text);
-                setTestStatus('success');
-                setTestMessage(t('settings.asrTestSuccess'));
+                if (data.text?.trim()) {
+                  setASRResult(data.text);
+                  setTestStatus('success');
+                  setTestMessage(t('settings.asrTestSuccess'));
+                } else {
+                  setTestStatus('error');
+                  setTestMessage(data.error || t('settings.asrNoTranscription'));
+                }
               } else {
                 setTestStatus('error');
                 const errorData = await response
@@ -151,7 +158,13 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
             } catch (error) {
               log.error('ASR test failed:', error);
               setTestStatus('error');
-              setTestMessage(t('settings.asrTestFailed'));
+              setTestMessage(
+                error instanceof Error && error.message
+                  ? `${t('settings.asrTestFailed')}: ${error.message}`
+                  : t('settings.asrTestFailed'),
+              );
+            } finally {
+              setIsProcessing(false);
             }
           };
           mediaRecorder.start();
@@ -277,13 +290,19 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           <Button
             onClick={handleToggleASRRecording}
             disabled={
-              requiresApiKey &&
-              !asrProvidersConfig[selectedProviderId]?.apiKey?.trim() &&
-              !isServerConfigured
+              isProcessing ||
+              (requiresApiKey &&
+                !asrProvidersConfig[selectedProviderId]?.apiKey?.trim() &&
+                !isServerConfigured)
             }
             className="gap-2 w-[140px]"
           >
-            {isRecording ? (
+            {isProcessing ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t('settings.processing')}
+              </>
+            ) : isRecording ? (
               <>
                 <MicOff className="h-4 w-4" />
                 {t('settings.stopRecording')}

@@ -466,6 +466,7 @@
     "defaultModelHint": "APIリクエストで送信されるモデル名（例: kokoro、tts-1）",
     "noVoicesAdded": "音声がまだ追加されていません。エージェントごとの音声選択のために下で追加してください。",
     "noModelsAdded": "モデルがまだ追加されていません。モデル選択のために下で追加してください。",
+    "asrNoTranscription": "文字起こし結果がありません。もう少し大きな声で、長めに話してみてください。",
     "cannotDeleteBuiltIn": "組み込みプロバイダーは削除できません",
     "resetToDefault": "デフォルトに戻す",
     "resetToDefaultDescription": "モデルリストをデフォルト設定に復元します（APIキーとベースURLは保持されます）",
