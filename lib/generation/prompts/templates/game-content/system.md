@@ -224,3 +224,96 @@ Return ONLY the HTML document, no markdown fences or explanations.
 - [ ] **NO DUPLICATED HTML** - exactly ONE `<!DOCTYPE html>` tag
 - [ ] Game objects are VISIBLE and not hidden under UI overlays
 - [ ] Positioning accounts for control panel and HUD heights
+
+## Critical Technical Requirements (MANDATORY)
+
+### 1. Event Binding: Use Inline onclick for Start Button
+**ALWAYS use inline onclick for the game start button.** This is more reliable than addEventListener.
+
+```html
+<!-- CORRECT: Inline onclick - guaranteed to work -->
+<button onclick="startGame()">开始游戏</button>
+
+<!-- WRONG: addEventListener can fail if script has errors -->
+<button id="start-btn">开始游戏</button>
+<script>
+  // If any error occurs before this line, click does nothing
+  document.getElementById('start-btn').addEventListener('click', startGame);
+</script>
+```
+
+**Rule**: For critical game-start buttons, use inline onclick. For other UI elements, you may use addEventListener inside a DOMContentLoaded wrapper.
+
+### 2. CSS: Prefer Custom CSS Over Tailwind CDN
+**Use custom CSS instead of Tailwind CDN for game widgets.** Tailwind CDN with `@layer utilities` may not compile correctly, causing elements to be unstyled or invisible.
+
+```html
+<!-- CORRECT: Custom CSS - reliable and predictable -->
+<style>
+  .game-button { background: #3498db; padding: 12px 30px; }
+</style>
+
+<!-- WRONG: Tailwind @layer utilities may fail -->
+<style type="text/tailwindcss">
+  @layer utilities { .game-button { @apply bg-blue-500 px-6; } }
+</style>
+```
+
+**Exception**: You may use basic Tailwind utility classes (like `flex`, `text-center`) directly on elements, but avoid `@layer utilities` blocks.
+
+### 3. Script Placement: Wrap in DOMContentLoaded or Place at End
+**Either wrap the entire game script in DOMContentLoaded, or place it at the very end of body.**
+
+```html
+<!-- Option A: DOMContentLoaded wrapper -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // All game code here - elements are guaranteed to exist
+  const canvas = document.getElementById('gameCanvas');
+  function startGame() { ... }
+});
+</script>
+
+<!-- Option B: Script at end of body (after all elements) -->
+</body>
+<!-- No elements after this point -->
+</html>
+```
+
+### 4. Global Functions for onclick Handlers
+**Functions called by inline onclick must be globally accessible.**
+
+```javascript
+// CORRECT: Define function globally (outside DOMContentLoaded)
+function startGame() {
+  document.getElementById('start-screen').classList.add('hidden');
+  gameActive = true;
+  initLevel();
+}
+
+// If using DOMContentLoaded, expose function to window
+document.addEventListener('DOMContentLoaded', function() {
+  // ... other setup ...
+});
+// Define startGame outside or assign to window
+window.startGame = function() { ... };
+```
+
+### 5. Simple Initialization Flow
+**The game initialization should be simple and direct:**
+
+```javascript
+function startGame() {
+  // 1. Hide start overlay
+  document.getElementById('start-screen').classList.add('hidden');
+  // 2. Set game state
+  gameActive = true;
+  startTime = Date.now();
+  // 3. Initialize first level
+  initLevel();
+  // 4. Start game loop
+  requestAnimationFrame(gameLoop);
+}
+```
+
+**Avoid**: Complex dependencies like reading localStorage before events are bound, multiple async operations during init, or chained promises for game start.

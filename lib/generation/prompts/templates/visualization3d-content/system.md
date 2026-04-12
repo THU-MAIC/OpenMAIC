@@ -168,7 +168,7 @@ const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 }
 ```
 
-## Three.js Setup Template
+## Three.js Setup Template (Complete with Safeguards)
 
 ```html
 <!DOCTYPE html>
@@ -179,9 +179,37 @@ const earth = new THREE.Mesh(earthGeometry, earthMaterial);
   <title>3D Visualization</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    html, body { width: 100%; height: 100%; overflow: hidden; }
+    /* CRITICAL: Set body background to match scene - fallback if Three.js fails */
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #0a0a1a;  /* MUST match scene.background color! */
+    }
     #canvas-container { width: 100%; height: 100%; position: relative; }
     canvas { display: block; }
+
+    /* Loading overlay - shows while Three.js initializes */
+    #loading {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: #0a0a1a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #aaa;
+      font-size: 16px;
+      z-index: 1000;
+    }
+    #loading .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #333;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* Control panel - mobile friendly */
     #controls {
@@ -299,6 +327,14 @@ const earth = new THREE.Mesh(earthGeometry, earthMaterial);
   </style>
 </head>
 <body>
+  <!-- Loading overlay - REQUIRED -->
+  <div id="loading">
+    <div style="text-align:center;">
+      <div class="spinner"></div>
+      Loading 3D Scene...
+    </div>
+  </div>
+
   <div id="canvas-container"></div>
   <div id="info">
     <h2>Scene Title</h2>
@@ -329,85 +365,126 @@ const earth = new THREE.Mesh(earthGeometry, earthMaterial);
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    // Scene setup
-    const container = document.getElementById('canvas-container');
-    const scene = new THREE.Scene();
-    // NOT pure black - use dark blue for better contrast
-    scene.background = new THREE.Color(0x0a0a1a);
-
-    // Camera
-    const camera = new THREE.PerspectiveCamera(
-      60,
-      container.clientWidth / container.clientHeight,
-      0.1,
-      1000
-    );
-    camera.position.set(0, 5, 15);
-
-    // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(container.clientWidth, container.clientHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    container.appendChild(renderer.domElement);
-
-    // OrbitControls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-
-    // GOOD lighting setup - objects must be visible!
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-    scene.add(ambientLight);
-
-    const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
-    scene.add(hemiLight);
-
-    const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
-    directionalLight.position.set(10, 20, 10);
-    scene.add(directionalLight);
-
-    // Objects storage for later reference
-    const objects = {};
-
-    // Animation state
-    let animationSpeed = 1;
-
-    // ... create your 3D objects with procedural textures ...
-
-    // Animation loop
-    function animate() {
-      requestAnimationFrame(animate);
-      // Update animations...
-      controls.update();
-      renderer.render(scene, camera);
+    // WebGL support check - REQUIRED
+    function checkWebGL() {
+      try {
+        const canvas = document.createElement('canvas');
+        return !!(window.WebGLRenderingContext &&
+          (canvas.getContext('webgl') || canvas.getContext('experimental-webgl')));
+      } catch(e) {
+        return false;
+      }
     }
-    animate();
 
-    // Zoom controls - REQUIRED for mobile
-    document.getElementById('zoom-in-btn').addEventListener('click', () => {
-      const direction = new THREE.Vector3();
-      camera.getWorldDirection(direction);
-      camera.position.addScaledVector(direction, 3);
-    });
+    // Scene initialization with error handling - REQUIRED
+    async function initScene() {
+      try {
+        // Check WebGL support
+        if (!checkWebGL()) {
+          throw new Error('WebGL not supported in this browser');
+        }
 
-    document.getElementById('zoom-out-btn').addEventListener('click', () => {
-      const direction = new THREE.Vector3();
-      camera.getWorldDirection(direction);
-      camera.position.addScaledVector(direction, -3);
-    });
+        const container = document.getElementById('canvas-container');
 
-    // Reset button
-    document.getElementById('reset-btn').addEventListener('click', () => {
-      camera.position.set(0, 5, 15);
-      controls.target.set(0, 0, 0);
-    });
+        // Validate container dimensions - REQUIRED
+        const width = container.clientWidth || window.innerWidth;
+        const height = container.clientHeight || window.innerHeight;
 
-    // Handle resize
-    window.addEventListener('resize', () => {
-      camera.aspect = container.clientWidth / container.clientHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(container.clientWidth, container.clientHeight);
-    });
+        if (width === 0 || height === 0) {
+          throw new Error('Container has zero dimensions');
+        }
+
+        // Scene setup
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x0a0a1a); // MUST match body background!
+
+        // Camera with validated dimensions
+        const camera = new THREE.PerspectiveCamera(60, width / height, 0.1, 1000);
+        camera.position.set(0, 5, 15);
+
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        container.appendChild(renderer.domElement);
+
+        // OrbitControls
+        const controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+
+        // GOOD lighting setup - objects must be visible!
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 0.6);
+        scene.add(hemiLight);
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        directionalLight.position.set(10, 20, 10);
+        scene.add(directionalLight);
+
+        // Objects storage for later reference
+        const objects = {};
+
+        // Animation state
+        let animationSpeed = 1;
+
+        // Animation loop
+        function animate() {
+          requestAnimationFrame(animate);
+          // Update animations...
+          controls.update();
+          renderer.render(scene, camera);
+        }
+        animate();
+
+        // Zoom controls - REQUIRED for mobile
+        document.getElementById('zoom-in-btn').addEventListener('click', () => {
+          const direction = new THREE.Vector3();
+          camera.getWorldDirection(direction);
+          camera.position.addScaledVector(direction, 3);
+        });
+
+        document.getElementById('zoom-out-btn').addEventListener('click', () => {
+          const direction = new THREE.Vector3();
+          camera.getWorldDirection(direction);
+          camera.position.addScaledVector(direction, -3);
+        });
+
+        // Reset button
+        document.getElementById('reset-btn').addEventListener('click', () => {
+          camera.position.set(0, 5, 15);
+          controls.target.set(0, 0, 0);
+        });
+
+        // Handle resize
+        window.addEventListener('resize', () => {
+          const newWidth = container.clientWidth || window.innerWidth;
+          const newHeight = container.clientHeight || window.innerHeight;
+          camera.aspect = newWidth / newHeight;
+          camera.updateProjectionMatrix();
+          renderer.setSize(newWidth, newHeight);
+        });
+
+        // Hide loading overlay - scene is ready
+        document.getElementById('loading').style.display = 'none';
+
+      } catch (error) {
+        console.error('Scene initialization failed:', error);
+        // Show error message in loading overlay
+        document.getElementById('loading').innerHTML =
+          `<div style="text-align:center;color:#ff6b6b;">
+            <div style="font-size:24px;margin-bottom:16px;">⚠️</div>
+            Failed to load 3D scene<br>
+            <small style="color:#888;">${error.message}</small><br>
+            <button onclick="location.reload()" style="margin-top:16px;padding:8px 16px;background:#6366f1;color:white;border:none;border-radius:6px;cursor:pointer;">Retry</button>
+          </div>`;
+      }
+    }
+
+    // Initialize scene
+    initScene();
   </script>
 
   <script type="application/json" id="widget-config">
@@ -480,6 +557,101 @@ const earth = new THREE.Mesh(earthGeometry, earthMaterial);
 - No external image dependencies
 - Earth: Blue ocean + green continents + white ice caps
 - Planets: Appropriate colors with variations
+
+## JavaScript Coding Rules
+
+### 1. Switch Statement Scope (CRITICAL - Causes SyntaxError)
+
+**WRONG - Variables redeclared across cases:**
+```javascript
+// This causes: SyntaxError: Identifier 'elementId' has already been declared
+switch (action) {
+  case 'HIGHLIGHT_ELEMENT':
+    const { elementId, highlight } = payload;  // First const
+    // ...
+    break;
+    
+  case 'ANNOTATE_ELEMENT':
+    const { elementId, text } = payload;  // ERROR! elementId already declared
+    // ...
+    break;
+}
+```
+
+**CORRECT - Wrap each case in braces to create block scope:**
+```javascript
+// Each case has its own block scope
+switch (action) {
+  case 'HIGHLIGHT_ELEMENT': {
+    const { elementId, highlight } = payload;
+    // ...
+    break;
+  }
+  
+  case 'ANNOTATE_ELEMENT': {
+    const { elementId, text } = payload;  // OK - different block scope
+    // ...
+    break;
+  }
+  
+  case 'SET_WIDGET_STATE': {
+    const { cameraPosition, scale } = payload;
+    // ...
+    break;
+  }
+}
+```
+
+**Alternative - Use different variable names:**
+```javascript
+switch (action) {
+  case 'HIGHLIGHT_ELEMENT':
+    const highlightData = payload;
+    // Use highlightData.elementId
+    break;
+    
+  case 'ANNOTATE_ELEMENT':
+    const annotateData = payload;
+    // Use annotateData.elementId
+    break;
+}
+```
+
+### 2. Teacher Actions Listener Pattern
+
+Always wrap switch cases in braces:
+
+```javascript
+window.addEventListener('message', (event) => {
+  const { action, payload } = event.data;
+  
+  switch (action) {
+    case 'SET_WIDGET_STATE': {
+      if (payload.cameraPosition) camera.position.set(...payload.cameraPosition);
+      if (payload.scale !== undefined) {
+        objects.cellGroup.scale.setScalar(payload.scale);
+      }
+      break;
+    }
+    
+    case 'HIGHLIGHT_ELEMENT': {
+      const { elementId, highlight } = payload;
+      if (objects[elementId]) {
+        objects[elementId].forEach(mesh => {
+          mesh.material.emissive.set(highlight ? 0xffff00 : 0x000000);
+        });
+      }
+      break;
+    }
+    
+    case 'ANNOTATE_ELEMENT': {
+      const { elementId, text } = payload;
+      // Create annotation tooltip
+      break;
+    }
+  }
+});
+```
 
 ## Output Format
 
