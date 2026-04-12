@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { outlineToIndication, indicationToOutline } from '@/lib/hooks/use-scene-regenerator';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
@@ -23,6 +24,7 @@ import type { RegenerateParams } from '@/lib/hooks/use-scene-regenerator';
 export interface RegenerateFormValues {
   indication: string;
   audioText: string;
+  modifyAudio: boolean;
   mediaType: 'none' | 'image' | 'video';
   mediaPrompt: string;
 }
@@ -71,6 +73,7 @@ export function RegenerateSlideDialog({
 
   const [indication, setIndication] = useState('');
   const [audioText, setAudioText] = useState('');
+  const [modifyAudio, setModifyAudio] = useState(false);
   const [mediaType, setMediaType] = useState<'none' | 'image' | 'video'>('none');
   const [mediaPrompt, setMediaPrompt] = useState('');
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
@@ -82,11 +85,13 @@ export function RegenerateSlideDialog({
     if (initialValues) {
       setIndication(initialValues.indication);
       setAudioText(initialValues.audioText);
+      setModifyAudio(initialValues.modifyAudio);
       setMediaType(initialValues.mediaType);
       setMediaPrompt(initialValues.mediaPrompt);
     } else {
       setIndication(outlineToIndication(outline.description, outline.keyPoints));
       setAudioText(sceneToAudioText(scene));
+      setModifyAudio(false);
       const mt = outlineToMediaType(outline);
       setMediaType(mt);
       setMediaPrompt(outlineToMediaPrompt(outline, mt));
@@ -176,9 +181,10 @@ export function RegenerateSlideDialog({
     // leaving the dialog open throughout the entire regeneration.
     onRegenerate({
       outline: updatedOutline,
-      audioTextOverride: audioText,
+      audioTextOverride: modifyAudio ? audioText : '',
       mediaType,
       mediaPrompt: mediaType !== 'none' ? mediaPrompt : undefined,
+      skipAudio: !modifyAudio,
     });
   };
 
@@ -220,17 +226,33 @@ export function RegenerateSlideDialog({
 
           {/* Audio text */}
           <div className="space-y-1.5">
-            <Label htmlFor="regen-audio-text" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('stage.regen.audioText')}
-            </Label>
-            <Textarea
-              id="regen-audio-text"
-              value={audioText}
-              onChange={(e) => setAudioText(e.target.value)}
-              rows={6}
-              className="resize-none text-sm"
-              placeholder={t('stage.regen.audioTextPlaceholder')}
-            />
+            <div className="flex items-center justify-between">
+              <Label htmlFor="regen-audio-text" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('stage.regen.audioText')}
+              </Label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t('stage.regen.modifyAudio')}</span>
+                <Switch
+                  id="regen-modify-audio"
+                  checked={modifyAudio}
+                  onCheckedChange={setModifyAudio}
+                />
+              </div>
+            </div>
+            {modifyAudio ? (
+              <Textarea
+                id="regen-audio-text"
+                value={audioText}
+                onChange={(e) => setAudioText(e.target.value)}
+                rows={6}
+                className="resize-none text-sm"
+                placeholder={t('stage.regen.audioTextPlaceholder')}
+              />
+            ) : (
+              <p className="text-xs text-muted-foreground py-1">
+                {t('stage.regen.audioKeep')}
+              </p>
+            )}
           </div>
 
           {/* Media selector */}

@@ -692,6 +692,7 @@ export function Stage({
           outline?.keyPoints ?? params.outline.keyPoints,
         ),
         audioText: params.audioTextOverride,
+        modifyAudio: !(params.skipAudio ?? false),
         mediaType: params.mediaType,
         mediaPrompt: params.mediaPrompt ?? '',
       });

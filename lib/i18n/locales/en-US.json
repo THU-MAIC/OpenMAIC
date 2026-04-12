@@ -146,7 +146,9 @@
       "inProgress": "Regenerating slide…",
       "stepContent": "Generating content…",
       "stepAudio": "Generating audio…",
-      "stepMedia": "Generating media…"
+      "stepMedia": "Generating media…",
+      "modifyAudio": "Modify narration",
+      "audioKeep": "Existing narration will be preserved — no new audio generated."
     }
   },
   "whiteboard": {

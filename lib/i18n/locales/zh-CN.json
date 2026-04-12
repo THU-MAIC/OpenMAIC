@@ -146,7 +146,9 @@
       "inProgress": "正在重新生成幻灯片…",
       "stepContent": "正在生成内容…",
       "stepAudio": "正在生成音频…",
-      "stepMedia": "正在生成媒体…"
+      "stepMedia": "正在生成媒体…",
+      "modifyAudio": "修改旁白",
+      "audioKeep": "将保留现有旁白 — 不会生成新音频。"
     }
   },
   "whiteboard": {

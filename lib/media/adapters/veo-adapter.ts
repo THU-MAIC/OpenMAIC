@@ -92,15 +92,19 @@ export async function generateWithVeo(
     baseURL: config.baseUrl,
   });
 
+  // Only Veo 3+ non-fast models expose the generateAudio parameter.
+  // Fast variants and Veo 2.0 reject it at the API level, so we gate it.
+  const supportsAudioParam = !model.includes('fast') && !model.startsWith('veo-2');
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = await experimental_generateVideo({
     model: google.video(model as Parameters<typeof google.video>[0]),
     prompt: options.prompt,
     ...(options.aspectRatio && { aspectRatio: options.aspectRatio as `${number}:${number}` }),
     ...(options.duration && { duration: options.duration }),
-    // Explicitly disable Veo 3+ audio generation — audio is handled separately via TTS.
+    // Disable audio generation on models that support it — audio is handled via TTS.
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    providerOptions: { google: { generateAudio: false } } as any,
+    ...(supportsAudioParam && { providerOptions: { google: { generateAudio: false } } as any }),
   });
 
   const video = result.videos[0];

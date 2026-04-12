@@ -71,6 +71,8 @@ export interface RegenerateParams {
   audioTextOverride: string;
   mediaType: 'none' | 'image' | 'video';
   mediaPrompt?: string;
+  /** When true, skip TTS generation and preserve existing speech audio from the scene. */
+  skipAudio?: boolean;
 }
 
 export type RegenerateProgress = 'idle' | 'content' | 'audio' | 'media' | 'done' | 'error';
@@ -141,6 +143,15 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
       return { success: false, error: 'No active stage found' };
     }
 
+    // Pre-step: capture existing speech audio if we'll skip TTS (before any scene update)
+    const existingSpeechActions: SpeechAction[] = [];
+    if (params.skipAudio) {
+      const oldScene = store.getState().scenes.find((s) => s.id === sceneId);
+      for (const action of oldScene?.actions ?? []) {
+        if (action.type === 'speech') existingSpeechActions.push(action as SpeechAction);
+      }
+    }
+
     // Pre-step: set outline.mediaGenerations based on user's media selection
     const outline: SceneOutline = {
       ...params.outline,
@@ -209,40 +220,61 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     store.getState().updateScene(sceneId, { content: newContent, actions: newActions });
 
     // ── Step 2: Audio ──
-    setProgress('audio');
-
-    // Apply user audio override text to speech actions
-    const overriddenActions = params.audioTextOverride
-      ? applyAudioOverride(newActions, params.audioTextOverride)
-      : newActions;
-
-    // Split long speech actions per provider limits
-    const ttsProviderId = useSettingsStore.getState().ttsProviderId;
-    const speechActions = splitLongSpeechActions(overriddenActions, ttsProviderId);
-
-    // Commit overridden text to store immediately (before TTS — so text is always saved even if TTS fails)
-    store.getState().updateScene(sceneId, { actions: [...speechActions] });
-
-    const { ttsEnabled } = useUserPrefsStore.getState();
-    if (ttsEnabled && ttsProviderId !== 'browser-native-tts') {
-      for (let i = 0; i < speechActions.length; i++) {
-        if (signal.aborted) return { success: false };
-        const action = speechActions[i];
-        if (action.type !== 'speech') continue;
-        // TypeScript doesn't narrow Action to SpeechAction via type guard in this context
-        const speechAction = action as SpeechAction;
-        if (!speechAction.text) continue;
-        const audioId = `tts_${speechAction.id}`;
-        let audioUrl: string | undefined;
-        try {
-          audioUrl = (await generateAndStoreTTS(audioId, speechAction.text, signal)) ?? undefined;
-        } catch (err) {
-          if (signal.aborted) return { success: false };
-          log.warn('TTS failed for action', speechAction.id, ':', err);
+    if (params.skipAudio) {
+      // Preserve existing audio — map old speech actions (text + audioId + audioUrl) onto
+      // the new actions by index, so the narration stays unchanged without re-running TTS.
+      let speechIdx = 0;
+      const preservedActions = newActions.map((action) => {
+        if (action.type === 'speech') {
+          const old = existingSpeechActions[speechIdx++];
+          if (old) {
+            return {
+              ...action,
+              text: old.text,
+              ...(old.audioId ? { audioId: old.audioId } : {}),
+              ...(old.audioUrl ? { audioUrl: old.audioUrl } : {}),
+            } as SpeechAction;
+          }
         }
-        speechActions[i] = { ...speechAction, audioId, ...(audioUrl ? { audioUrl } : {}) } as SpeechAction;
-        // Update scene progressively as each TTS clip is ready
-        store.getState().updateScene(sceneId, { actions: [...speechActions] });
+        return action;
+      });
+      store.getState().updateScene(sceneId, { actions: preservedActions });
+    } else {
+      setProgress('audio');
+
+      // Apply user audio override text to speech actions
+      const overriddenActions = params.audioTextOverride
+        ? applyAudioOverride(newActions, params.audioTextOverride)
+        : newActions;
+
+      // Split long speech actions per provider limits
+      const ttsProviderId = useSettingsStore.getState().ttsProviderId;
+      const speechActions = splitLongSpeechActions(overriddenActions, ttsProviderId);
+
+      // Commit overridden text to store immediately (before TTS — so text is always saved even if TTS fails)
+      store.getState().updateScene(sceneId, { actions: [...speechActions] });
+
+      const { ttsEnabled } = useUserPrefsStore.getState();
+      if (ttsEnabled && ttsProviderId !== 'browser-native-tts') {
+        for (let i = 0; i < speechActions.length; i++) {
+          if (signal.aborted) return { success: false };
+          const action = speechActions[i];
+          if (action.type !== 'speech') continue;
+          // TypeScript doesn't narrow Action to SpeechAction via type guard in this context
+          const speechAction = action as SpeechAction;
+          if (!speechAction.text) continue;
+          const audioId = `tts_${speechAction.id}`;
+          let audioUrl: string | undefined;
+          try {
+            audioUrl = (await generateAndStoreTTS(audioId, speechAction.text, signal)) ?? undefined;
+          } catch (err) {
+            if (signal.aborted) return { success: false };
+            log.warn('TTS failed for action', speechAction.id, ':', err);
+          }
+          speechActions[i] = { ...speechAction, audioId, ...(audioUrl ? { audioUrl } : {}) } as SpeechAction;
+          // Update scene progressively as each TTS clip is ready
+          store.getState().updateScene(sceneId, { actions: [...speechActions] });
+        }
       }
     }
 
