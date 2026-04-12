@@ -13,8 +13,6 @@ export type PromptId =
   | 'quiz-content'
   | 'slide-actions'
   | 'quiz-actions'
-  | 'interactive-scientific-model'
-  | 'interactive-html'
   | 'interactive-actions'
   | 'simulation-content'
   | 'diagram-content'

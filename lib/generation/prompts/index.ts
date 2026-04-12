@@ -28,8 +28,6 @@ export const PROMPT_IDS = {
   QUIZ_CONTENT: 'quiz-content',
   SLIDE_ACTIONS: 'slide-actions',
   QUIZ_ACTIONS: 'quiz-actions',
-  INTERACTIVE_SCIENTIFIC_MODEL: 'interactive-scientific-model',
-  INTERACTIVE_HTML: 'interactive-html',
   INTERACTIVE_ACTIONS: 'interactive-actions',
   SIMULATION_CONTENT: 'simulation-content',
   DIAGRAM_CONTENT: 'diagram-content',
