@@ -36,15 +36,12 @@ interface LanguageTestCase {
   case_id: string;
   category: string;
   requirement: string;
-  prod_language: string;
-  prod_id: string;
-  prod_name: string;
   ground_truth: string;
   pdfTextSample?: string;
 }
 
 // ---------------------------------------------------------------------------
-// Load test cases from JSON (curated from production data)
+// Load test cases from JSON
 // ---------------------------------------------------------------------------
 
 const TEST_CASES: LanguageTestCase[] = JSON.parse(
