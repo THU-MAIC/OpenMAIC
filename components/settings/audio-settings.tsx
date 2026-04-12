@@ -21,6 +21,7 @@ import {
   getASRSupportedLanguages,
 } from '@/lib/audio/constants';
 import type { TTSProviderId, ASRProviderId } from '@/lib/audio/types';
+import { isCustomASRProvider } from '@/lib/audio/types';
 import { Volume2, Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import azureVoicesData from '@/lib/audio/azure.json';
@@ -147,8 +148,8 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
   const ttsTestRequestIdRef = useRef(0);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
 
-  const asrProvider =
-    ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS] ?? ASR_PROVIDERS['openai-whisper'];
+  const asrProvider = ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS];
+  const isCustomASR = isCustomASRProvider(asrProviderId);
 
   // Reset locale filter when provider changes (derived state pattern)
   const [prevTTSProviderId, setPrevTTSProviderId] = useState(ttsProviderId);
@@ -581,11 +582,21 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
                     </div>
                   </SelectItem>
                 ))}
+                {Object.entries(asrProvidersConfig)
+                  .filter(([id]) => isCustomASRProvider(id))
+                  .map(([id, cfg]) => (
+                    <SelectItem key={id} value={id}>
+                      <div className="flex items-center gap-2">
+                        {((cfg as Record<string, unknown>).customName as string) || id}
+                      </div>
+                    </SelectItem>
+                  ))}
               </SelectContent>
             </Select>
           </div>
 
-          {(asrProvider.requiresApiKey ||
+          {(asrProvider?.requiresApiKey ||
+            isCustomASR ||
             asrProvidersConfig[asrProviderId]?.isServerConfigured) && (
             <>
               <div className="grid grid-cols-2 gap-4">
@@ -620,7 +631,12 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
                 <div className="space-y-2">
                   <Label className="text-sm">{t('settings.asrBaseUrl')}</Label>
                   <Input
-                    placeholder={asrProvider.defaultBaseUrl || t('settings.enterCustomBaseUrl')}
+                    placeholder={
+                      isCustomASR
+                        ? ((asrProvidersConfig[asrProviderId] as Record<string, unknown>)
+                            ?.customDefaultBaseUrl as string) || 'http://localhost:8000/v1'
+                        : asrProvider?.defaultBaseUrl || t('settings.enterCustomBaseUrl')
+                    }
                     value={asrProvidersConfig[asrProviderId]?.baseUrl || ''}
                     onChange={(e) =>
                       handleASRProviderConfigChange(asrProviderId, {
@@ -633,20 +649,29 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
               </div>
               {(() => {
                 const effectiveBaseUrl =
-                  asrProvidersConfig[asrProviderId]?.baseUrl || asrProvider.defaultBaseUrl || '';
+                  asrProvidersConfig[asrProviderId]?.baseUrl ||
+                  (isCustomASR
+                    ? ((asrProvidersConfig[asrProviderId] as Record<string, unknown>)
+                        ?.customDefaultBaseUrl as string)
+                    : asrProvider?.defaultBaseUrl) ||
+                  '';
                 if (!effectiveBaseUrl) return null;
 
                 // Get endpoint path based on provider
                 let endpointPath = '';
-                switch (asrProviderId) {
-                  case 'openai-whisper':
-                    endpointPath = '/audio/transcriptions';
-                    break;
-                  case 'qwen-asr':
-                    endpointPath = '/services/aigc/multimodal-generation/generation';
-                    break;
-                  default:
-                    endpointPath = '';
+                if (isCustomASR) {
+                  endpointPath = '/audio/transcriptions';
+                } else {
+                  switch (asrProviderId) {
+                    case 'openai-whisper':
+                      endpointPath = '/audio/transcriptions';
+                      break;
+                    case 'qwen-asr':
+                      endpointPath = '/services/aigc/multimodal-generation/generation';
+                      break;
+                    default:
+                      endpointPath = '';
+                  }
                 }
 
                 if (!endpointPath) return null;

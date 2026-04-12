@@ -16,7 +16,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { isCustomASRProvider } from '@/lib/audio/types';
-import { Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide-react';
+import { Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { createLogger } from '@/lib/logger';
 
@@ -316,8 +316,8 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         </div>
       )}
 
-      {/* Model Selection */}
-      {asrProvider?.models?.length > 0 && (
+      {/* Model Selection — built-in providers */}
+      {!isCustom && asrProvider?.models?.length > 0 && (
         <div className="space-y-2">
           <Label className="text-sm">{t('settings.ttsModel')}</Label>
           <Select
@@ -338,6 +338,101 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         </div>
       )}
 
+      {/* Model Selection + Management — custom providers */}
+      {isCustom && (
+        <div className="space-y-3">
+          <Label className="text-sm">{t('settings.ttsModel')}</Label>
+          {(() => {
+            const customModels =
+              (providerConfig?.customModels as Array<{ id: string; name: string }>) || [];
+            const currentModelId = providerConfig?.modelId || '';
+            return (
+              <>
+                {customModels.length > 0 && (
+                  <Select
+                    value={currentModelId || customModels[0]?.id}
+                    onValueChange={(value) =>
+                      setASRProviderConfig(selectedProviderId, { modelId: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {customModels.map((model) => (
+                        <SelectItem key={model.id} value={model.id}>
+                          {model.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+                {customModels.length > 0 && (
+                  <div className="rounded-lg border border-border/60 overflow-hidden">
+                    <div className="grid grid-cols-[1fr_1fr_36px] gap-0 bg-muted/40 px-3 py-1.5 border-b border-border/40">
+                      <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                        ID
+                      </span>
+                      <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
+                        {t('settings.voiceNamePlaceholder')}
+                      </span>
+                      <span />
+                    </div>
+                    {customModels.map((model, index) => (
+                      <div
+                        key={model.id}
+                        className={cn(
+                          'grid grid-cols-[1fr_1fr_36px] gap-0 items-center px-3 py-2 group hover:bg-muted/20 transition-colors',
+                          index > 0 && 'border-t border-border/30',
+                        )}
+                      >
+                        <span className="text-sm font-mono text-foreground/80 truncate pr-3">
+                          {model.id}
+                        </span>
+                        <span className="text-sm text-foreground/60 truncate pr-3">
+                          {model.name}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            const models = [...customModels];
+                            models.splice(index, 1);
+                            setASRProviderConfig(selectedProviderId, {
+                              customModels: models,
+                            });
+                            if (currentModelId === model.id && models.length > 0) {
+                              setASRProviderConfig(selectedProviderId, { modelId: models[0].id });
+                            }
+                          }}
+                          className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                        >
+                          <XCircle className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {customModels.length === 0 && (
+                  <p className="text-sm text-muted-foreground/50 italic">
+                    {t('settings.noModelsAdded')}
+                  </p>
+                )}
+                <AddModelRow
+                  onAdd={(modelId, modelName) => {
+                    const models = [...customModels, { id: modelId, name: modelName }];
+                    setASRProviderConfig(selectedProviderId, { customModels: models });
+                    if (!currentModelId) {
+                      setASRProviderConfig(selectedProviderId, { modelId: modelId });
+                    }
+                  }}
+                />
+              </>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Delete Custom Provider */}
       {isCustom && (
         <div className="pt-4 border-t">
@@ -350,6 +445,48 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+function AddModelRow({ onAdd }: { onAdd: (id: string, name: string) => void }) {
+  const { t } = useI18n();
+  const [modelId, setModelId] = useState('');
+  const [modelName, setModelName] = useState('');
+
+  const handleAdd = () => {
+    if (!modelId.trim()) return;
+    onAdd(modelId.trim(), modelName.trim() || modelId.trim());
+    setModelId('');
+    setModelName('');
+  };
+
+  return (
+    <div className="grid grid-cols-[1fr_1fr_auto] gap-2 items-center">
+      <Input
+        value={modelId}
+        onChange={(e) => setModelId(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+        className="text-sm font-mono"
+        placeholder={t('settings.modelIdPlaceholder')}
+      />
+      <Input
+        value={modelName}
+        onChange={(e) => setModelName(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && handleAdd()}
+        className="text-sm"
+        placeholder={t('settings.voiceNamePlaceholder')}
+      />
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleAdd}
+        disabled={!modelId.trim()}
+        className="shrink-0 gap-1"
+      >
+        <Plus className="h-3.5 w-3.5" />
+        {t('settings.addVoice')}
+      </Button>
     </div>
   );
 }

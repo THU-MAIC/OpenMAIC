@@ -465,6 +465,7 @@
     "addVoice": "添加",
     "defaultModelHint": "API 请求中的模型名（如 kokoro、tts-1）",
     "noVoicesAdded": "暂无音色，请在下方添加以支持 Agent 选择不同音色。",
+    "noModelsAdded": "暂无模型，请在下方添加以支持模型选择。",
     "cannotDeleteBuiltIn": "无法删除内置提供方",
     "resetToDefault": "重置为默认配置",
     "resetToDefaultDescription": "将模型列表恢复到默认状态（保留 API 密钥和 Base URL）",
