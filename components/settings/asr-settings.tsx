@@ -338,36 +338,16 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
         </div>
       )}
 
-      {/* Model Selection + Management — custom providers */}
+      {/* Model Management — custom providers */}
       {isCustom && (
         <div className="space-y-3">
-          <Label className="text-sm">{t('settings.defaultModel')}</Label>
+          <Label className="text-sm">{t('settings.availableModels')}</Label>
           {(() => {
             const customModels =
               (providerConfig?.customModels as Array<{ id: string; name: string }>) || [];
-            const currentModelId = providerConfig?.modelId || '';
             return (
               <>
-                {customModels.length > 0 && (
-                  <Select
-                    value={currentModelId || customModels[0]?.id}
-                    onValueChange={(value) =>
-                      setASRProviderConfig(selectedProviderId, { modelId: value })
-                    }
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {customModels.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {customModels.length > 0 && (
+                {customModels.length > 0 ? (
                   <div className="rounded-lg border border-border/60 overflow-hidden">
                     <div className="grid grid-cols-[1fr_1fr_36px] gap-0 bg-muted/40 px-3 py-1.5 border-b border-border/40">
                       <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -400,10 +380,8 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
                             models.splice(index, 1);
                             setASRProviderConfig(selectedProviderId, {
                               customModels: models,
+                              modelId: models[0]?.id || '',
                             });
-                            if (currentModelId === model.id && models.length > 0) {
-                              setASRProviderConfig(selectedProviderId, { modelId: models[0].id });
-                            }
                           }}
                           className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
                         >
@@ -412,8 +390,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
                       </div>
                     ))}
                   </div>
-                )}
-                {customModels.length === 0 && (
+                ) : (
                   <p className="text-sm text-muted-foreground/50 italic">
                     {t('settings.noModelsAdded')}
                   </p>
@@ -421,10 +398,10 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
                 <AddModelRow
                   onAdd={(modelId, modelName) => {
                     const models = [...customModels, { id: modelId, name: modelName }];
-                    setASRProviderConfig(selectedProviderId, { customModels: models });
-                    if (!currentModelId) {
-                      setASRProviderConfig(selectedProviderId, { modelId: modelId });
-                    }
+                    setASRProviderConfig(selectedProviderId, {
+                      customModels: models,
+                      modelId: models[0].id,
+                    });
                   }}
                 />
               </>
