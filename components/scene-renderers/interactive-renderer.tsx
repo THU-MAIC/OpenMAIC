@@ -1,19 +1,16 @@
 'use client';
 
-import { useMemo, useRef, useState, useEffect, useCallback } from 'react';
+import { useMemo, useRef, useEffect, useCallback } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
-import { TeacherOverlay } from '@/components/widgets/TeacherOverlay';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 
 interface InteractiveRendererProps {
   readonly content: InteractiveContent;
-  readonly mode: 'autonomous' | 'playback';
   readonly sceneId: string;
 }
 
-export function InteractiveRenderer({ content, mode, sceneId }: InteractiveRendererProps) {
+export function InteractiveRenderer({ content, sceneId }: InteractiveRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [widgetConfig, setWidgetConfig] = useState<InteractiveContent['widgetConfig']>(undefined);
   const registerIframe = useWidgetIframeStore((state) => state.registerIframe);
 
   const patchedHtml = useMemo(
@@ -34,31 +31,6 @@ export function InteractiveRenderer({ content, mode, sceneId }: InteractiveRende
     return () => registerIframe(null);
   }, [registerIframe, sendMessageToIframe]);
 
-  // Extract widget config from HTML on mount
-  useEffect(() => {
-    if (content.widgetConfig) {
-      setWidgetConfig(content.widgetConfig);
-    } else if (content.html) {
-      // Try to extract from embedded JSON
-      const match = content.html.match(/<script type="application\/json" id="widget-config">([\s\S]*?)<\/script>/);
-      if (match) {
-        try {
-          setWidgetConfig(JSON.parse(match[1]));
-        } catch {
-          // Ignore parse errors
-        }
-      }
-    }
-  }, [content.html, content.widgetConfig]);
-
-  const hasWidget = content.widgetType && widgetConfig;
-  const hasTeacherActions = hasWidget && (content.teacherActions?.length ?? 0) > 0;
-  const inPlaybackMode = mode === 'playback';
-
-  // TeacherOverlay is only shown in autonomous mode (not playback)
-  // During playback, ActionEngine handles all TeacherActions via PlaybackEngine
-  const showTeacherOverlay = hasTeacherActions && !inPlaybackMode;
-
   return (
     <div className="w-full h-full relative">
       <iframe
@@ -69,15 +41,6 @@ export function InteractiveRenderer({ content, mode, sceneId }: InteractiveRende
         title={`Interactive Scene ${sceneId}`}
         sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
       />
-
-      {/* Teacher overlay only for autonomous mode (manual navigation) */}
-      {showTeacherOverlay && (
-        <TeacherOverlay
-          actions={content.teacherActions!}
-          iframeRef={iframeRef}
-          inPlaybackMode={false}
-        />
-      )}
     </div>
   );
 }
