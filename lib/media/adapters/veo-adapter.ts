@@ -1,27 +1,25 @@
 /**
  * Veo (Google) Video Generation Adapter
  *
- * Direct REST API calls for video generation with Google's Veo models.
- * Async task pattern: submit → poll → return inline base64 video.
+ * Uses @ai-sdk/google provider + experimental_generateVideo from 'ai'.
+ * The SDK handles the submit/poll lifecycle correctly against the Gemini API.
  *
- * REST endpoints (Gemini API):
- * - Submit:   POST /v1beta/models/{model}:predictLongRunning
- * - Poll:     POST /v1beta/models/{model}:fetchPredictOperation  { operationName }
- *   Returns inline base64 video data in response.videos[]
+ * Supported models (Gemini API, API key auth):
+ * - veo-3.1-fast-generate-preview  (fast)
+ * - veo-3.1-generate-preview       (quality)
+ * - veo-3.1-generate               (stable)
+ * - veo-3.0-fast-generate-001      (fast)
+ * - veo-3.0-generate-001           (quality)
+ * - veo-2.0-generate-001           (legacy)
  *
- * Supported models:
- * - veo-3.1-fast-generate-001  (fast, $0.15/sec)
- * - veo-3.1-generate-001       (quality, $0.40/sec)
- * - veo-3.0-fast-generate-001  (fast, $0.15/sec)
- * - veo-3.0-generate-001       (quality, $0.40/sec)
- * - veo-2.0-generate-001       (legacy, $0.50/sec)
- *
- * Authentication: x-goog-api-key header
+ * Authentication: Google AI Studio API key (x-goog-api-key)
  *
  * Stateless: video content is returned as a base64 data URL.
  * No files are saved on the server.
  */
 
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { experimental_generateVideo } from 'ai';
 import type {
   VideoGenerationConfig,
   VideoGenerationOptions,
@@ -30,18 +28,9 @@ import type {
 
 const DEFAULT_MODEL = 'veo-3.0-generate-001';
 const DEFAULT_BASE_URL = 'https://generativelanguage.googleapis.com';
-const POLL_INTERVAL_MS = 10_000; // 10 seconds
-const MAX_POLL_ATTEMPTS = 60; // 10 minutes max
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** Dimension defaults per aspect ratio */
-function getDimensions(aspectRatio?: string): {
-  width: number;
-  height: number;
-} {
+function getDimensions(aspectRatio?: string): { width: number; height: number } {
   switch (aspectRatio) {
     case '9:16':
       return { width: 720, height: 1280 };
@@ -54,141 +43,36 @@ function getDimensions(aspectRatio?: string): {
   }
 }
 
-/** Common headers for all Veo API calls */
-function apiHeaders(apiKey: string): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    'x-goog-api-key': apiKey,
-  };
-}
-
-// ---------------------------------------------------------------------------
-// REST types (matches official Gemini API response format)
-// ---------------------------------------------------------------------------
-
-interface VeoOperation {
-  name: string;
-  done?: boolean;
-  response?: {
-    /** fetchPredictOperation returns inline base64 video data */
-    videos?: Array<{
-      bytesBase64Encoded?: string; // base64-encoded video bytes
-      mimeType?: string; // e.g. "video/mp4"
-    }>;
-  };
-  error?: { code: number; message: string; status: string };
-}
-
-// ---------------------------------------------------------------------------
-// Submit
-// ---------------------------------------------------------------------------
-
-async function submitVideoGeneration(
-  baseUrl: string,
-  apiKey: string,
-  model: string,
-  options: VideoGenerationOptions,
-): Promise<VeoOperation> {
-  const url = `${baseUrl}/v1beta/models/${model}:predictLongRunning`;
-
-  const body: Record<string, unknown> = {
-    instances: [{ prompt: options.prompt }],
-  };
-
-  // Parameters are optional — only include if we have values
-  const parameters: Record<string, unknown> = {};
-  if (options.aspectRatio) parameters.aspectRatio = options.aspectRatio;
-  if (options.duration) parameters.durationSeconds = options.duration;
-  if (Object.keys(parameters).length > 0) {
-    body.parameters = parameters;
-  }
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: apiHeaders(apiKey),
-    body: JSON.stringify(body),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Veo submit failed (${response.status}): ${text}`);
-  }
-
-  return response.json() as Promise<VeoOperation>;
-}
-
-// ---------------------------------------------------------------------------
-// Poll
-// ---------------------------------------------------------------------------
-
-async function pollOperation(
-  baseUrl: string,
-  apiKey: string,
-  model: string,
-  operationName: string,
-): Promise<VeoOperation> {
-  const url = `${baseUrl}/v1beta/models/${model}:fetchPredictOperation`;
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: apiHeaders(apiKey),
-    body: JSON.stringify({ operationName }),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Veo poll failed (${response.status}): ${text}`);
-  }
-
-  return response.json() as Promise<VeoOperation>;
-}
-
-// ---------------------------------------------------------------------------
-// Public entry point
-// ---------------------------------------------------------------------------
-
 /**
- * Lightweight connectivity test — validates API key by fetching model info.
- * Uses GET /v1beta/models/{model} which does not trigger generation.
+ * Lightweight connectivity test — validates API key by listing models.
+ * Uses GET /v1beta/models?key=... which does not trigger generation.
  */
 export async function testVeoConnectivity(
   config: VideoGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
   const model = config.model || DEFAULT_MODEL;
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  const url = `${baseUrl}/v1beta/models`;
+  const url = `${baseUrl}/v1beta/models?key=${config.apiKey}`;
 
-  // Try ?key= query param first (direct Google API), fall back to x-goog-api-key header (proxy)
-  let response: Response | null = null;
+  let response: Response;
   try {
-    response = await fetch(`${url}?key=${config.apiKey}`, { method: 'GET' });
+    response = await fetch(url, { method: 'GET' });
   } catch {
-    // Direct API unreachable, try header auth
-  }
-  if (!response || !response.ok) {
-    try {
-      response = await fetch(url, {
-        method: 'GET',
-        headers: { 'x-goog-api-key': config.apiKey },
-      });
-    } catch (_err) {
-      return {
-        success: false,
-        message: `Network error: unable to reach ${baseUrl}. Check your Base URL and network connection.`,
-      };
-    }
+    return {
+      success: false,
+      message: `Network error: unable to reach ${baseUrl}. Check your Base URL and network connection.`,
+    };
   }
 
   if (response.ok) {
     return { success: true, message: `Connected to Veo (${model})` };
   }
 
-  // Parse error body for user-friendly message
   const text = await response.text().catch(() => '');
   if (response.status === 400 || response.status === 401 || response.status === 403) {
     return {
       success: false,
-      message: `Invalid API key or unauthorized (${response.status}). Check your API Key and Base URL match the same provider.`,
+      message: `Invalid API key or unauthorized (${response.status}). Check your API Key and Base URL.`,
     };
   }
   return {
@@ -202,51 +86,51 @@ export async function generateWithVeo(
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
   const model = config.model || DEFAULT_MODEL;
-  const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  // 1. Submit
-  const operation = await submitVideoGeneration(baseUrl, config.apiKey, model, options);
+  const google = createGoogleGenerativeAI({
+    apiKey: config.apiKey,
+    baseURL: config.baseUrl,
+  });
 
-  if (!operation.name) {
-    throw new Error('Veo returned operation without name');
-  }
+  // Only Veo 3+ non-fast models expose the generateAudio parameter.
+  // Fast variants and Veo 2.0 reject it at the API level, so we gate it.
+  const supportsAudioParam = !model.includes('fast') && !model.startsWith('veo-2');
 
-  // 2. Poll until done
-  let current = operation;
-  let pollCount = 0;
-  while (!current.done) {
-    if (pollCount >= MAX_POLL_ATTEMPTS) {
-      throw new Error('Veo video generation timed out after 10 minutes');
-    }
-    await delay(POLL_INTERVAL_MS);
-    current = await pollOperation(baseUrl, config.apiKey, model, current.name);
-    pollCount++;
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await experimental_generateVideo({
+    model: google.video(model as Parameters<typeof google.video>[0]),
+    prompt: options.prompt,
+    ...(options.aspectRatio && { aspectRatio: options.aspectRatio as `${number}:${number}` }),
+    ...(options.duration && { duration: options.duration }),
+    // Disable audio generation on models that support it — audio is handled via TTS.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(supportsAudioParam && { providerOptions: { google: { generateAudio: false } } as any }),
+  });
 
-  // 3. Check for errors
-  if (current.error) {
-    throw new Error(`Veo generation failed: ${current.error.code} - ${current.error.message}`);
-  }
-
-  // 4. Extract inline base64 video from response.videos[]
-  const videos = current.response?.videos;
-  if (!videos || videos.length === 0) {
+  const video = result.videos[0];
+  if (!video) {
     throw new Error('Veo returned no generated videos');
   }
 
-  const first = videos[0];
-  if (!first.bytesBase64Encoded) {
-    throw new Error('Veo returned video entry without data');
+  // Convert to data URL — SDK may return base64, binary (Uint8Array) or URL
+  let url: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const v = video as any;
+  if (v.base64) {
+    url = `data:${v.mediaType ?? 'video/mp4'};base64,${v.base64}`;
+  } else if (v.uint8Array) {
+    const b64 = Buffer.from(v.uint8Array as Uint8Array).toString('base64');
+    url = `data:${v.mediaType ?? 'video/mp4'};base64,${b64}`;
+  } else if (v.url) {
+    url = v.url as string;
+  } else {
+    throw new Error('Veo returned video in unexpected format');
   }
 
-  const base64 = first.bytesBase64Encoded;
-  const mimeType = first.mimeType || 'video/mp4';
-
   const { width, height } = getDimensions(options.aspectRatio);
-
   return {
-    url: `data:${mimeType};base64,${base64}`,
-    duration: options.duration || 8,
+    url,
+    duration: options.duration ?? 8,
     width,
     height,
   };

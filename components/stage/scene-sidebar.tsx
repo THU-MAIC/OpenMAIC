@@ -24,6 +24,9 @@ interface SceneSidebarProps {
   readonly onCollapseChange: (collapsed: boolean) => void;
   readonly onSceneSelect?: (sceneId: string) => void;
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
+  // 'regenerating' and 'review' states handled by parent — sidebar only gates button visibility
+  readonly regenState?: 'idle' | 'regenerating' | 'review';
+  readonly onRegenerateClick?: () => void;
 }
 
 const DEFAULT_WIDTH = 220;
@@ -35,6 +38,8 @@ export function SceneSidebar({
   onCollapseChange,
   onSceneSelect,
   onRetryOutline,
+  regenState = 'idle',
+  onRegenerateClick,
 }: SceneSidebarProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -319,6 +324,20 @@ export function SceneSidebar({
                     )}
                   </div>
                 </div>
+
+                {isActive && isSlide && onRegenerateClick && (
+                  <button
+                    disabled={regenState !== 'idle'}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (regenState === 'idle') onRegenerateClick();
+                    }}
+                    title={t('stage.regen.buttonLabel')}
+                    className="w-full mt-1 py-0.5 px-2 text-[10px] font-semibold rounded border border-purple-200 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors flex items-center justify-center gap-1 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                  >
+                    <span aria-hidden="true">↺</span> {t('stage.regen.buttonLabel')}
+                  </button>
+                )}
               </div>
             );
           })}

@@ -32,6 +32,20 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
+import { Button } from '@/components/ui/button';
+import {
+  useSceneRegenerator,
+  outlineToIndication,
+  type RegenerateParams,
+} from '@/lib/hooks/use-scene-regenerator';
+import {
+  RegenerateSlideDialog,
+  type RegenerateFormValues,
+} from '@/components/classroom/regenerate-slide-dialog';
+import type { Scene } from '@/lib/types/stage';
+import type { SceneOutline } from '@/lib/types/generation';
+
+type RegenState = 'idle' | 'dialog_open' | 'regenerating' | 'review';
 
 /**
  * Stage Component
@@ -46,8 +60,15 @@ export function Stage({
   onRetryOutline?: (outlineId: string) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
-    useStageStore();
+  const {
+    mode,
+    getCurrentScene,
+    scenes,
+    outlines,
+    currentSceneId,
+    setCurrentSceneId,
+    generatingOutlines,
+  } = useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
 
   const currentScene = getCurrentScene();
@@ -98,6 +119,13 @@ export function Stage({
 
   // Scene switch confirmation dialog state
   const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
+  // Regenerate-slide state machine
+  const [regenState, setRegenState] = useState<RegenState>('idle');
+  const [backupScene, setBackupScene] = useState<Scene | null>(null);
+  const [backupOutline, setBackupOutline] = useState<SceneOutline | null>(null);
+  const [lastRegenValues, setLastRegenValues] = useState<RegenerateFormValues | null>(null);
+  const [pendingRegenSceneId, setPendingRegenSceneId] = useState<string | null>(null);
+  const [regenErrorMessage, setRegenErrorMessage] = useState<string | null>(null);
   const [isPresenting, setIsPresenting] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
@@ -169,6 +197,7 @@ export function Stage({
   const sceneEpochRef = useRef(0);
   // When true, the next engine init will auto-start playback (for auto-play scene advance)
   const autoStartRef = useRef(false);
+  const sceneRegenerator = useSceneRegenerator();
   // Discussion buffer-level pause state (distinct from soft-pause which aborts SSE)
   const [isDiscussionPaused, setIsDiscussionPaused] = useState(false);
 
@@ -659,6 +688,108 @@ export function Stage({
 
   const isTopicActive = playbackView.isTopicActive;
 
+  /** Open the regeneration dialog for the current scene */
+  const openRegenerateDialog = useCallback(() => {
+    if (!currentScene || currentScene.type !== 'slide') return;
+    setRegenState('dialog_open');
+  }, [currentScene]);
+
+  /** Called when the dialog submits — starts the regeneration pipeline */
+  const handleRegenerate = useCallback(
+    async (params: RegenerateParams) => {
+      const scene = getCurrentScene();
+      if (!scene || scene.type !== 'slide') return;
+      const outline = useStageStore.getState().outlines.find((o) => o.order === scene.order);
+      // When skipAudio, preserve the current narration text for display in case
+      // the user activates "Modify narration" on a subsequent retry.
+      const storedAudioText =
+        (params.skipAudio ?? false)
+          ? (scene.actions ?? [])
+              .filter((a): a is SpeechAction => a.type === 'speech')
+              .map((a) => a.text)
+              .join('\n\n')
+          : params.audioTextOverride;
+      setLastRegenValues({
+        title: params.outline.title,
+        regenerateSlide: !(params.skipSlide ?? false),
+        indication: outlineToIndication(
+          outline?.description ?? params.outline.description,
+          outline?.keyPoints ?? params.outline.keyPoints,
+        ),
+        audioText: storedAudioText,
+        modifyAudio: !(params.skipAudio ?? false),
+        mediaType: params.mediaType,
+        mediaPrompt: params.mediaPrompt ?? '',
+        themeId: params.themeId ?? '',
+      });
+      // Capture backup in local vars — setState calls are async (batched),
+      // so closure-captured state would be stale in the failure/undo branches.
+      const backup = { ...scene };
+      const outlineBackup = outline ? { ...outline } : null;
+      setBackupScene(backup);
+      setBackupOutline(outlineBackup);
+      setRegenState('regenerating');
+      const result = await sceneRegenerator.regenerate(scene.id, params);
+      if (!result.success) {
+        // Restore backup and re-open dialog so user can retry
+        useStageStore.getState().updateScene(scene.id, {
+          content: backup.content,
+          actions: backup.actions,
+        });
+        // Also restore the outline in case Step 4 already ran before the failure
+        if (outlineBackup) {
+          const freshOutlines = useStageStore.getState().outlines;
+          useStageStore
+            .getState()
+            .setOutlines(
+              freshOutlines.map((o) => (o.order === outlineBackup.order ? outlineBackup : o)),
+            );
+        }
+        setRegenErrorMessage(result.error ?? null);
+        setRegenState('dialog_open');
+        return;
+      }
+      setRegenErrorMessage(null);
+      setRegenState('review');
+    },
+    [getCurrentScene, sceneRegenerator],
+  );
+
+  /** Accept the new version: clear backup, return to idle */
+  const handleRegenAccept = useCallback(() => {
+    setBackupScene(null);
+    setBackupOutline(null);
+    setLastRegenValues(null);
+    setRegenState('idle');
+  }, []);
+
+  /** Undo: restore backup scene + outline to store, return to idle */
+  const handleRegenUndo = useCallback(() => {
+    if (backupScene && currentScene) {
+      useStageStore.getState().updateScene(currentScene.id, {
+        content: backupScene.content,
+        actions: backupScene.actions,
+      });
+    }
+    if (backupOutline) {
+      const freshOutlines = useStageStore.getState().outlines;
+      useStageStore
+        .getState()
+        .setOutlines(
+          freshOutlines.map((o) => (o.order === backupOutline.order ? backupOutline : o)),
+        );
+    }
+    setBackupScene(null);
+    setBackupOutline(null);
+    setLastRegenValues(null);
+    setRegenState('idle');
+  }, [backupScene, backupOutline, currentScene]);
+
+  /** Reopen dialog with previously entered values */
+  const handleRegenEditAgain = useCallback(() => {
+    setRegenState('dialog_open');
+  }, []);
+
   /**
    * Gated scene switch — if a topic is active, show AlertDialog before switching.
    * Returns true if the switch was immediate, false if gated (dialog shown).
@@ -670,10 +801,15 @@ export function Stage({
         setPendingSceneId(targetSceneId);
         return false;
       }
+      // If a regenerated version is pending review, show regen confirm dialog
+      if (regenState === 'review') {
+        setPendingRegenSceneId(targetSceneId);
+        return false;
+      }
       setCurrentSceneId(targetSceneId);
       return true;
     },
-    [currentSceneId, isTopicActive, setCurrentSceneId],
+    [currentSceneId, isTopicActive, regenState, setCurrentSceneId],
   );
 
   /** User confirmed scene switch via AlertDialog */
@@ -689,6 +825,42 @@ export function Stage({
   const cancelSceneSwitch = useCallback(() => {
     setPendingSceneId(null);
   }, []);
+
+  /** User chose "Sí, conservar" in regen confirm modal */
+  const confirmRegenKeep = useCallback(() => {
+    if (!pendingRegenSceneId) return;
+    setBackupScene(null);
+    setBackupOutline(null);
+    setLastRegenValues(null);
+    setRegenState('idle');
+    setCurrentSceneId(pendingRegenSceneId);
+    setPendingRegenSceneId(null);
+  }, [pendingRegenSceneId, setCurrentSceneId]);
+
+  /** User chose "Descartar" in regen confirm modal */
+  const confirmRegenDiscard = useCallback(() => {
+    if (!pendingRegenSceneId) return;
+    if (backupScene && currentScene) {
+      useStageStore.getState().updateScene(currentScene.id, {
+        content: backupScene.content,
+        actions: backupScene.actions,
+      });
+    }
+    if (backupOutline) {
+      const freshOutlines = useStageStore.getState().outlines;
+      useStageStore
+        .getState()
+        .setOutlines(
+          freshOutlines.map((o) => (o.order === backupOutline.order ? backupOutline : o)),
+        );
+    }
+    setBackupScene(null);
+    setBackupOutline(null);
+    setLastRegenValues(null);
+    setRegenState('idle');
+    setCurrentSceneId(pendingRegenSceneId);
+    setPendingRegenSceneId(null);
+  }, [backupScene, backupOutline, currentScene, pendingRegenSceneId, setCurrentSceneId]);
 
   // play/pause toggle
   const handlePlayPause = useCallback(async () => {
@@ -936,6 +1108,14 @@ export function Stage({
         onCollapseChange={setSidebarCollapsed}
         onSceneSelect={gatedSceneSwitch}
         onRetryOutline={onRetryOutline}
+        regenState={
+          regenState === 'regenerating'
+            ? 'regenerating'
+            : regenState === 'review'
+              ? 'review'
+              : 'idle'
+        }
+        onRegenerateClick={openRegenerateDialog}
       />
 
       {/* Main Content Area */}
@@ -988,6 +1168,69 @@ export function Stage({
             }
           />
         </div>
+
+        {/* Progress bar — shown while regeneration is in progress */}
+        {regenState === 'regenerating' && (
+          <div className="shrink-0 flex items-center gap-3 px-4 py-2 bg-purple-50 dark:bg-purple-950/30 border-t border-purple-200 dark:border-purple-800 text-sm">
+            <svg
+              className="animate-spin h-4 w-4 text-purple-500 shrink-0"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
+            </svg>
+            <span className="text-purple-700 dark:text-purple-300 font-medium">
+              {sceneRegenerator.progress === 'audio'
+                ? t('stage.regen.stepAudio')
+                : sceneRegenerator.progress === 'media'
+                  ? t('stage.regen.stepMedia')
+                  : t('stage.regen.stepContent')}
+            </span>
+          </div>
+        )}
+
+        {/* Review bar — shown when a regenerated version is pending acceptance */}
+        {regenState === 'review' && (
+          <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-green-50 dark:bg-green-950/30 border-t border-green-200 dark:border-green-800 text-sm">
+            <span className="text-green-700 dark:text-green-300 font-medium">
+              {t('stage.regen.reviewBar')}
+            </span>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleRegenEditAgain}>
+                ✏ {t('stage.regen.editAgain')}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-700 dark:hover:bg-red-950/30"
+                onClick={handleRegenUndo}
+              >
+                ↩ {t('stage.regen.undo')}
+              </Button>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={handleRegenAccept}
+              >
+                ✓ {t('stage.regen.accept')}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Roundtable Area */}
         {mode === 'playback' && (
@@ -1227,6 +1470,66 @@ export function Stage({
               className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-0 shadow-md shadow-amber-200/50 dark:shadow-amber-900/30"
             >
               {t('common.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Regenerate Slide Dialog */}
+      {(() => {
+        if (!currentScene || currentScene.type !== 'slide') return null;
+        if (regenState !== 'dialog_open') return null;
+        const outline = outlines.find((o) => o.order === currentScene.order);
+        if (!outline) return null;
+        return (
+          <RegenerateSlideDialog
+            open={true}
+            scene={currentScene}
+            outline={outline}
+            initialValues={lastRegenValues ?? undefined}
+            errorMessage={regenErrorMessage ?? undefined}
+            onRegenerate={handleRegenerate}
+            onClose={() => {
+              setRegenState('idle');
+              setRegenErrorMessage(null);
+            }}
+          />
+        );
+      })()}
+
+      {/* Regen confirm modal — shown when navigating away during review */}
+      <AlertDialog
+        open={!!pendingRegenSceneId}
+        onOpenChange={(open) => {
+          if (!open) setPendingRegenSceneId(null);
+        }}
+      >
+        <AlertDialogContent className="max-w-md rounded-2xl">
+          <VisuallyHidden.Root>
+            <AlertDialogTitle>{t('stage.regen.confirmTitle')}</AlertDialogTitle>
+          </VisuallyHidden.Root>
+          <div className="px-6 pt-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                  {t('stage.regen.confirmTitle')}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {t('stage.regen.confirmBody').replace('{title}', currentScene?.title ?? '')}
+                </p>
+              </div>
+            </div>
+          </div>
+          <AlertDialogFooter className="px-6 pb-5 pt-3 flex-row gap-3">
+            <AlertDialogCancel onClick={confirmRegenDiscard} className="flex-1 rounded-xl">
+              {t('stage.regen.confirmDiscard')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRegenKeep}
+              className="flex-1 rounded-xl bg-green-600 hover:bg-green-700"
+            >
+              {t('stage.regen.confirmKeep')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
