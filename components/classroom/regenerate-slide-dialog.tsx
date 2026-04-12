@@ -170,13 +170,16 @@ export function RegenerateSlideDialog({
       description,
       keyPoints,
     };
+    // Do NOT call onClose() here — Stage closes the dialog by transitioning
+    // regenState from 'dialog_open' to 'regenerating'. Calling onClose() would
+    // race with setRegenState('regenerating') and the batch winner is 'idle',
+    // leaving the dialog open throughout the entire regeneration.
     onRegenerate({
       outline: updatedOutline,
       audioTextOverride: audioText,
       mediaType,
       mediaPrompt: mediaType !== 'none' ? mediaPrompt : undefined,
     });
-    onClose();
   };
 
   const isSubmitDisabled = isGeneratingPrompt || (mediaType !== 'none' && !mediaPrompt.trim());
