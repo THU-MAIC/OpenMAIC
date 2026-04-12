@@ -24,6 +24,8 @@ interface SceneSidebarProps {
   readonly onCollapseChange: (collapsed: boolean) => void;
   readonly onSceneSelect?: (sceneId: string) => void;
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
+  readonly regenState?: 'idle' | 'regenerating' | 'review';
+  readonly onRegenerateClick?: () => void;
 }
 
 const DEFAULT_WIDTH = 220;
@@ -35,6 +37,8 @@ export function SceneSidebar({
   onCollapseChange,
   onSceneSelect,
   onRetryOutline,
+  regenState = 'idle',
+  onRegenerateClick,
 }: SceneSidebarProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -319,6 +323,18 @@ export function SceneSidebar({
                     )}
                   </div>
                 </div>
+
+                {isActive && isSlide && regenState === 'idle' && onRegenerateClick && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onRegenerateClick();
+                    }}
+                    className="w-full mt-1 py-0.5 px-2 text-[10px] font-semibold rounded border border-purple-200 dark:border-purple-700 text-purple-600 dark:text-purple-400 hover:bg-purple-50 dark:hover:bg-purple-900/30 transition-colors flex items-center justify-center gap-1"
+                  >
+                    ↺ {t('stage.regen.buttonLabel')}
+                  </button>
+                )}
               </div>
             );
           })}
