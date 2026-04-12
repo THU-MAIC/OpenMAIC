@@ -27,7 +27,8 @@
     "ttsHint": "Choose a voice for the AI teacher",
     "ttsPreview": "Preview",
     "ttsPreviewing": "Playing...",
-    "ultraModeHint": "Enable interactive-first mode for more hands-on content"
+    "ultraModeHint": "Enable interactive-first mode for more hands-on content",
+    "ultraModeLabel": "Interactive Mode"
   },
   "export": {
     "pptx": "Export PPTX",

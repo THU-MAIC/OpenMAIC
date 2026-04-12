@@ -20,6 +20,7 @@ import {
   ChevronUp,
   Upload,
   Sparkles,
+  Atom,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -513,8 +514,6 @@ function HomePage() {
                 <GenerationToolbar
                   webSearch={form.webSearch}
                   onWebSearchChange={(v) => updateForm('webSearch', v)}
-                  ultraMode={form.ultraMode}
-                  onUltraModeChange={(v) => updateForm('ultraMode', v)}
                   onSettingsOpen={(section) => {
                     setSettingsSection(section);
                     setSettingsOpen(true);
@@ -524,6 +523,37 @@ function HomePage() {
                   onPdfError={setError}
                 />
               </div>
+
+              {/* Ultra mode toggle */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ type: "spring", stiffness: 400, damping: 17 }}
+                    onClick={() => updateForm('ultraMode', !form.ultraMode)}
+                    className={cn(
+                      'relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border shrink-0 h-8',
+                      form.ultraMode
+                        ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-500 shadow-[0_0_12px_rgba(6,182,212,0.35)] dark:shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                        : 'border-cyan-300/60 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20'
+                    )}
+                  >
+                    {form.ultraMode && (
+                      <span
+                        className="absolute inset-[-4px] rounded-full border border-cyan-400/40 dark:border-cyan-400/25"
+                        style={{
+                          animation: 'ultra-mode-breathe 2s ease-in-out infinite',
+                        }}
+                      />
+                    )}
+                    <Atom className="size-3.5 relative z-10 animate-[spin_3s_linear_infinite]" />
+                    <span className="relative z-10">{t('toolbar.ultraModeLabel')}</span>
+                  </motion.button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {t('toolbar.ultraModeHint')}
+                </TooltipContent>
+              </Tooltip>
 
               {/* Voice input */}
               <SpeechButton

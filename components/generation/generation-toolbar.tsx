@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2, Sparkles } from 'lucide-react';
+import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -19,7 +19,6 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type { ProviderId } from '@/lib/ai/providers';
-import { MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
 
@@ -29,10 +28,10 @@ const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
+  language: 'zh-CN' | 'en-US';
+  onLanguageChange: (lang: 'zh-CN' | 'en-US') => void;
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
-  ultraMode: boolean;
-  onUltraModeChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
   // PDF
   pdfFile: File | null;
@@ -42,10 +41,10 @@ export interface GenerationToolbarProps {
 
 // ─── Component ───────────────────────────────────────────────
 export function GenerationToolbar({
+  language,
+  onLanguageChange,
   webSearch,
   onWebSearchChange,
-  ultraMode,
-  onUltraModeChange,
   onSettingsOpen,
   pdfFile,
   onPdfFileChange,
@@ -79,9 +78,7 @@ export function GenerationToolbar({
     ? Object.entries(providersConfig)
         .filter(
           ([, config]) =>
-            (config.requiresApiKey
-              ? config.apiKey || config.isServerConfigured
-              : config.isServerConfigured || config.baseUrl) &&
+            (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
             config.models.length >= 1 &&
             (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
         )
@@ -360,17 +357,18 @@ export function GenerationToolbar({
         </Tooltip>
       )}
 
-      {/* ── Ultra Mode ── */}
+      {/* ── Language pill ── */}
       <Tooltip>
         <TooltipTrigger asChild>
           <button
-            onClick={() => onUltraModeChange(!ultraMode)}
-            className={ultraMode ? pillActive : pillMuted}
+            onClick={() => onLanguageChange(language === 'zh-CN' ? 'en-US' : 'zh-CN')}
+            className={pillMuted}
           >
-            <Sparkles className={cn('size-3.5', ultraMode && 'animate-pulse')} />
+            <Globe className="size-3.5" />
+            <span>{language === 'zh-CN' ? '中文' : 'EN'}</span>
           </button>
         </TooltipTrigger>
-        <TooltipContent>{t('toolbar.ultraModeHint')}</TooltipContent>
+        <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
       </Tooltip>
 
       {/* ── Separator ── */}
@@ -438,10 +436,7 @@ function ModelSelectorPopover({
                 <img
                   src={currentProviderConfig.icon}
                   alt={currentProviderConfig.name}
-                  className={cn(
-                    'size-4 rounded-sm',
-                    MONO_LOGO_PROVIDERS.has(currentProviderId) && 'dark:invert',
-                  )}
+                  className="size-4 rounded-sm"
                 />
               ) : (
                 <Bot className="size-3.5 text-muted-foreground" />
@@ -480,10 +475,7 @@ function ModelSelectorPopover({
                     <img
                       src={provider.icon}
                       alt={provider.name}
-                      className={cn(
-                        'size-5 rounded-sm shrink-0',
-                        MONO_LOGO_PROVIDERS.has(provider.id) && 'dark:invert',
-                      )}
+                      className="size-5 rounded-sm shrink-0"
                     />
                   ) : (
                     <Bot className="size-5 text-muted-foreground shrink-0" />
@@ -520,10 +512,7 @@ function ModelSelectorPopover({
                 <img
                   src={activeProvider.icon}
                   alt={activeProvider.name}
-                  className={cn(
-                    'size-4 rounded-sm',
-                    MONO_LOGO_PROVIDERS.has(activeProvider.id) && 'dark:invert',
-                  )}
+                  className="size-4 rounded-sm"
                 />
               ) : (
                 <Bot className="size-4 text-muted-foreground" />
