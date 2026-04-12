@@ -76,7 +76,7 @@ export interface RegenerateParams {
 export type RegenerateProgress = 'idle' | 'content' | 'audio' | 'media' | 'done' | 'error';
 
 export interface UseSceneRegeneratorReturn {
-  regenerate: (sceneId: string, params: RegenerateParams) => Promise<void>;
+  regenerate: (sceneId: string, params: RegenerateParams) => Promise<boolean>;
   progress: RegenerateProgress;
   errorStep?: 'content' | 'audio' | 'media';
   cancel: () => void;
@@ -115,7 +115,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
   const [progress, setProgress] = useState<RegenerateProgress>('idle');
   const [errorStep, setErrorStep] = useState<'content' | 'audio' | 'media' | undefined>();
 
-  const regenerate = useCallback(async (sceneId: string, params: RegenerateParams) => {
+  const regenerate = useCallback(async (sceneId: string, params: RegenerateParams): Promise<boolean> => {
     abortRef.current?.abort();
     const ctrl = new AbortController();
     abortRef.current = ctrl;
@@ -132,7 +132,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
       log.error('Cannot regenerate: no active stage');
       setProgress('error');
       setErrorStep('content');
-      return;
+      return false;
     }
 
     // Pre-step: set outline.mediaGenerations based on user's media selection
@@ -156,14 +156,14 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
       }
       contentData = json.data;
     } catch (err) {
-      if (signal.aborted) return;
+      if (signal.aborted) return false;
       log.error('Step 1 (content) failed:', err);
       setProgress('error');
       setErrorStep('content');
-      return;
+      return false;
     }
 
-    if (signal.aborted) return;
+    if (signal.aborted) return false;
 
     // ── Step 1b: Generate scene actions ──
     let newActions: Action[];
@@ -190,14 +190,14 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
       newActions = json.scene.actions ?? [];
       newContent = json.scene.content;
     } catch (err) {
-      if (signal.aborted) return;
+      if (signal.aborted) return false;
       log.error('Step 1 (actions) failed:', err);
       setProgress('error');
       setErrorStep('content');
-      return;
+      return false;
     }
 
-    if (signal.aborted) return;
+    if (signal.aborted) return false;
 
     // Immediately show new slide content (without audio yet)
     store.getState().updateScene(sceneId, { content: newContent, actions: newActions });
@@ -220,7 +220,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     const { ttsEnabled } = useUserPrefsStore.getState();
     if (ttsEnabled && ttsProviderId !== 'browser-native-tts') {
       for (let i = 0; i < speechActions.length; i++) {
-        if (signal.aborted) return;
+        if (signal.aborted) return false;
         const action = speechActions[i];
         if (action.type !== 'speech') continue;
         // TypeScript doesn't narrow Action to SpeechAction via type guard in this context
@@ -231,7 +231,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
         try {
           audioUrl = (await generateAndStoreTTS(audioId, speechAction.text, signal)) ?? undefined;
         } catch (err) {
-          if (signal.aborted) return;
+          if (signal.aborted) return false;
           log.warn('TTS failed for action', speechAction.id, ':', err);
         }
         speechActions[i] = { ...speechAction, audioId, ...(audioUrl ? { audioUrl } : {}) } as SpeechAction;
@@ -242,7 +242,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
 
     // ── Step 3: Media ──
     if (params.mediaType !== 'none') {
-      if (signal.aborted) return;
+      if (signal.aborted) return false;
       setProgress('media');
       const elementId = params.mediaType === 'image' ? 'gen_img_1' : 'gen_vid_1';
       const req: MediaGenerationRequest = {
@@ -254,12 +254,12 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
       try {
         await generateAndStoreMedia(req, stageId, signal);
       } catch (err) {
-        if (signal.aborted) return;
+        if (signal.aborted) return false;
         log.warn('Media generation failed:', err);
       }
     }
 
-    if (signal.aborted) return;
+    if (signal.aborted) return false;
 
     // ── Step 4: Outline sync ──
     const freshOutlines = store.getState().outlines;
@@ -267,6 +267,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     store.getState().setOutlines(updatedOutlines);
 
     setProgress('done');
+    return true;
   }, []);
 
   const cancel = useCallback(() => {
