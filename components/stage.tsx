@@ -36,6 +36,7 @@ import { Button } from '@/components/ui/button';
 import { useSceneRegenerator, outlineToIndication, type RegenerateParams } from '@/lib/hooks/use-scene-regenerator';
 import { RegenerateSlideDialog, type RegenerateFormValues } from '@/components/classroom/regenerate-slide-dialog';
 import type { Scene } from '@/lib/types/stage';
+import type { SceneOutline } from '@/lib/types/generation';
 
 type RegenState = 'idle' | 'dialog_open' | 'regenerating' | 'review';
 
@@ -107,6 +108,7 @@ export function Stage({
   // Regenerate-slide state machine
   const [regenState, setRegenState] = useState<RegenState>('idle');
   const [backupScene, setBackupScene] = useState<Scene | null>(null);
+  const [backupOutline, setBackupOutline] = useState<SceneOutline | null>(null);
   const [lastRegenValues, setLastRegenValues] = useState<RegenerateFormValues | null>(null);
   const [pendingRegenSceneId, setPendingRegenSceneId] = useState<string | null>(null);
   const [regenErrorMessage, setRegenErrorMessage] = useState<string | null>(null);
@@ -693,10 +695,12 @@ export function Stage({
         mediaType: params.mediaType,
         mediaPrompt: params.mediaPrompt ?? '',
       });
-      // Capture backup in local var — setBackupScene is async (batched),
-      // so the closure-captured `backupScene` state would be stale in the failure branch.
+      // Capture backup in local vars — setState calls are async (batched),
+      // so closure-captured state would be stale in the failure/undo branches.
       const backup = { ...scene };
+      const outlineBackup = outline ? { ...outline } : null;
       setBackupScene(backup);
+      setBackupOutline(outlineBackup);
       setRegenState('regenerating');
       const result = await sceneRegenerator.regenerate(scene.id, params);
       if (!result.success) {
@@ -705,6 +709,13 @@ export function Stage({
           content: backup.content,
           actions: backup.actions,
         });
+        // Also restore the outline in case Step 4 already ran before the failure
+        if (outlineBackup) {
+          const freshOutlines = useStageStore.getState().outlines;
+          useStageStore.getState().setOutlines(
+            freshOutlines.map((o) => (o.order === outlineBackup.order ? outlineBackup : o)),
+          );
+        }
         setRegenErrorMessage(result.error ?? null);
         setRegenState('dialog_open');
         return;
@@ -718,11 +729,12 @@ export function Stage({
   /** Accept the new version: clear backup, return to idle */
   const handleRegenAccept = useCallback(() => {
     setBackupScene(null);
+    setBackupOutline(null);
     setLastRegenValues(null);
     setRegenState('idle');
   }, []);
 
-  /** Undo: restore backup scene to store, return to idle */
+  /** Undo: restore backup scene + outline to store, return to idle */
   const handleRegenUndo = useCallback(() => {
     if (backupScene && currentScene) {
       useStageStore.getState().updateScene(currentScene.id, {
@@ -730,10 +742,17 @@ export function Stage({
         actions: backupScene.actions,
       });
     }
+    if (backupOutline) {
+      const freshOutlines = useStageStore.getState().outlines;
+      useStageStore.getState().setOutlines(
+        freshOutlines.map((o) => (o.order === backupOutline.order ? backupOutline : o)),
+      );
+    }
     setBackupScene(null);
+    setBackupOutline(null);
     setLastRegenValues(null);
     setRegenState('idle');
-  }, [backupScene, currentScene]);
+  }, [backupScene, backupOutline, currentScene]);
 
   /** Reopen dialog with previously entered values */
   const handleRegenEditAgain = useCallback(() => {
@@ -780,6 +799,7 @@ export function Stage({
   const confirmRegenKeep = useCallback(() => {
     if (!pendingRegenSceneId) return;
     setBackupScene(null);
+    setBackupOutline(null);
     setLastRegenValues(null);
     setRegenState('idle');
     setCurrentSceneId(pendingRegenSceneId);
@@ -795,12 +815,19 @@ export function Stage({
         actions: backupScene.actions,
       });
     }
+    if (backupOutline) {
+      const freshOutlines = useStageStore.getState().outlines;
+      useStageStore.getState().setOutlines(
+        freshOutlines.map((o) => (o.order === backupOutline.order ? backupOutline : o)),
+      );
+    }
     setBackupScene(null);
+    setBackupOutline(null);
     setLastRegenValues(null);
     setRegenState('idle');
     setCurrentSceneId(pendingRegenSceneId);
     setPendingRegenSceneId(null);
-  }, [backupScene, currentScene, pendingRegenSceneId, setCurrentSceneId]);
+  }, [backupScene, backupOutline, currentScene, pendingRegenSceneId, setCurrentSceneId]);
 
   // play/pause toggle
   const handlePlayPause = useCallback(async () => {
