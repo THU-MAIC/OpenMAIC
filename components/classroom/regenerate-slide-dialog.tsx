@@ -1,9 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -70,6 +71,7 @@ export function RegenerateSlideDialog({
   const [mediaType, setMediaType] = useState<'none' | 'image' | 'video'>('none');
   const [mediaPrompt, setMediaPrompt] = useState('');
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  const promptAbortRef = useRef<AbortController | null>(null);
 
   // Initialise form values on open
   useEffect(() => {
@@ -88,8 +90,25 @@ export function RegenerateSlideDialog({
     }
   }, [open, outline, scene, initialValues]);
 
+  // Abort in-flight media-prompt fetch when dialog closes
+  useEffect(() => {
+    if (!open) promptAbortRef.current?.abort();
+  }, [open]);
+
+  // Abort on unmount
+  useEffect(() => {
+    return () => {
+      promptAbortRef.current?.abort();
+    };
+  }, []);
+
   const generatePromptForType = useCallback(
-    async (type: 'image' | 'video') => {
+    async (type: 'image' | 'video', currentIndication: string) => {
+      // Cancel any in-flight request
+      promptAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      promptAbortRef.current = ctrl;
+
       setIsGeneratingPrompt(true);
       setMediaPrompt('');
       try {
@@ -102,22 +121,25 @@ export function RegenerateSlideDialog({
             'x-provider-type': config.providerType || '',
           },
           body: JSON.stringify({
-            indicationText: indication,
+            indicationText: currentIndication,
             mediaType: type,
             language: outline.language,
           }),
+          signal: ctrl.signal,
         });
+        if (ctrl.signal.aborted) return;
         const json = await res.json();
         if (json.success && json.data?.prompt) {
           setMediaPrompt(json.data.prompt);
         }
-      } catch {
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         // Prompt stays empty; user can type it manually
       } finally {
-        setIsGeneratingPrompt(false);
+        if (!ctrl.signal.aborted) setIsGeneratingPrompt(false);
       }
     },
-    [indication, outline.language],
+    [outline.language],
   );
 
   const handleMediaTypeChange = useCallback(
@@ -132,10 +154,10 @@ export function RegenerateSlideDialog({
       if (existingPrompt) {
         setMediaPrompt(existingPrompt);
       } else {
-        generatePromptForType(value);
+        generatePromptForType(value, indication);
       }
     },
-    [outline, generatePromptForType],
+    [outline, generatePromptForType, indication],
   );
 
   const handleSubmit = () => {
@@ -161,17 +183,21 @@ export function RegenerateSlideDialog({
       <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-purple-700 dark:text-purple-300">
-            ↺ {t('stage.regen.dialogTitle')} — {scene.title}
+            <span aria-hidden="true">↺</span> {t('stage.regen.dialogTitle')} — {scene.title}
           </DialogTitle>
+          <DialogDescription className="sr-only">
+            {t('stage.regen.dialogTitle')} — {scene.title}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 px-1 py-2">
           {/* Indication */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Label htmlFor="regen-indication" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('stage.regen.indication')}
             </Label>
             <Textarea
+              id="regen-indication"
               value={indication}
               onChange={(e) => setIndication(e.target.value)}
               rows={4}
@@ -182,10 +208,11 @@ export function RegenerateSlideDialog({
 
           {/* Audio text */}
           <div className="space-y-1.5">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Label htmlFor="regen-audio-text" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('stage.regen.audioText')}
             </Label>
             <Textarea
+              id="regen-audio-text"
               value={audioText}
               onChange={(e) => setAudioText(e.target.value)}
               rows={6}
@@ -196,10 +223,10 @@ export function RegenerateSlideDialog({
 
           {/* Media selector */}
           <div className="space-y-2">
-            <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Label id="regen-media-label" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('stage.regen.media')}
             </Label>
-            <div className="flex gap-2">
+            <div role="group" aria-labelledby="regen-media-label" className="flex gap-2">
               {(['none', 'image', 'video'] as const).map((opt) => (
                 <Button
                   key={opt}
@@ -248,7 +275,7 @@ export function RegenerateSlideDialog({
             disabled={isSubmitDisabled}
             className="bg-purple-600 hover:bg-purple-700 text-white"
           >
-            ↺ {t('stage.regen.regenerate')}
+            <span aria-hidden="true">↺</span> {t('stage.regen.regenerate')}
           </Button>
         </DialogFooter>
       </DialogContent>
