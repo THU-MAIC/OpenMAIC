@@ -99,8 +99,13 @@ export async function retryMediaTask(elementId: string): Promise<void> {
   );
 }
 
-// ==================== Internal ====================
+// ==================== Exported core ====================
 
+/**
+ * Generate a single media item (image or video) and persist it to the server.
+ * Updates the media generation store on completion or failure.
+ * Exported for use by the per-slide regeneration flow.
+ */
 export async function generateAndStoreMedia(
   req: MediaGenerationRequest,
   stageId: string,
@@ -182,6 +187,8 @@ export async function generateAndStoreMedia(
     }
   }
 }
+
+// ==================== Internal helpers ====================
 
 async function callImageApi(
   req: MediaGenerationRequest,
