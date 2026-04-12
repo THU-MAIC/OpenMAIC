@@ -32,6 +32,10 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
+import { Button } from '@/components/ui/button';
+import { useSceneRegenerator } from '@/lib/hooks/use-scene-regenerator';
+import { RegenerateSlideDialog, type RegenerateFormValues } from '@/components/classroom/regenerate-slide-dialog';
+import type { Scene } from '@/lib/types/stage';
 
 /**
  * Stage Component
@@ -46,7 +50,7 @@ export function Stage({
   onRetryOutline?: (outlineId: string) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
+  const { mode, getCurrentScene, scenes, outlines, currentSceneId, setCurrentSceneId, generatingOutlines } =
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
 
@@ -98,6 +102,12 @@ export function Stage({
 
   // Scene switch confirmation dialog state
   const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
+  // Regenerate-slide state machine
+  type RegenState = 'idle' | 'dialog_open' | 'regenerating' | 'review';
+  const [regenState, setRegenState] = useState<RegenState>('idle');
+  const [backupScene, setBackupScene] = useState<Scene | null>(null);
+  const [lastRegenValues, setLastRegenValues] = useState<RegenerateFormValues | null>(null);
+  const [pendingRegenSceneId, setPendingRegenSceneId] = useState<string | null>(null);
   const [isPresenting, setIsPresenting] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
@@ -169,6 +179,7 @@ export function Stage({
   const sceneEpochRef = useRef(0);
   // When true, the next engine init will auto-start playback (for auto-play scene advance)
   const autoStartRef = useRef(false);
+  const sceneRegenerator = useSceneRegenerator();
   // Discussion buffer-level pause state (distinct from soft-pause which aborts SSE)
   const [isDiscussionPaused, setIsDiscussionPaused] = useState(false);
 
@@ -659,6 +670,60 @@ export function Stage({
 
   const isTopicActive = playbackView.isTopicActive;
 
+  /** Open the regeneration dialog for the current scene */
+  const openRegenerateDialog = useCallback(() => {
+    if (!currentScene || currentScene.type !== 'slide') return;
+    setRegenState('dialog_open');
+  }, [currentScene]);
+
+  /** Called when the dialog submits — starts the regeneration pipeline */
+  const handleRegenerate = useCallback(
+    async (params: import('@/lib/hooks/use-scene-regenerator').RegenerateParams) => {
+      if (!currentScene) return;
+      const { outlineToIndication } = await import('@/lib/hooks/use-scene-regenerator');
+      const outline = useStageStore.getState().outlines.find((o) => o.order === currentScene.order);
+      setLastRegenValues({
+        indication: outlineToIndication(
+          outline?.description ?? params.outline.description,
+          outline?.keyPoints ?? params.outline.keyPoints,
+        ),
+        audioText: params.audioTextOverride,
+        mediaType: params.mediaType,
+        mediaPrompt: params.mediaPrompt ?? '',
+      });
+      setBackupScene({ ...currentScene });
+      setRegenState('regenerating');
+      await sceneRegenerator.regenerate(currentScene.id, params);
+      setRegenState('review');
+    },
+    [currentScene, sceneRegenerator],
+  );
+
+  /** Accept the new version: clear backup, return to idle */
+  const handleRegenAccept = useCallback(() => {
+    setBackupScene(null);
+    setLastRegenValues(null);
+    setRegenState('idle');
+  }, []);
+
+  /** Undo: restore backup scene to store, return to idle */
+  const handleRegenUndo = useCallback(() => {
+    if (backupScene && currentScene) {
+      useStageStore.getState().updateScene(currentScene.id, {
+        content: backupScene.content,
+        actions: backupScene.actions,
+      });
+    }
+    setBackupScene(null);
+    setLastRegenValues(null);
+    setRegenState('idle');
+  }, [backupScene, currentScene]);
+
+  /** Reopen dialog with previously entered values */
+  const handleRegenEditAgain = useCallback(() => {
+    setRegenState('dialog_open');
+  }, []);
+
   /**
    * Gated scene switch — if a topic is active, show AlertDialog before switching.
    * Returns true if the switch was immediate, false if gated (dialog shown).
@@ -670,10 +735,15 @@ export function Stage({
         setPendingSceneId(targetSceneId);
         return false;
       }
+      // If a regenerated version is pending review, show regen confirm dialog
+      if (regenState === 'review') {
+        setPendingRegenSceneId(targetSceneId);
+        return false;
+      }
       setCurrentSceneId(targetSceneId);
       return true;
     },
-    [currentSceneId, isTopicActive, setCurrentSceneId],
+    [currentSceneId, isTopicActive, regenState, setCurrentSceneId],
   );
 
   /** User confirmed scene switch via AlertDialog */
@@ -689,6 +759,24 @@ export function Stage({
   const cancelSceneSwitch = useCallback(() => {
     setPendingSceneId(null);
   }, []);
+
+  /** User chose "Sí, conservar" in regen confirm modal */
+  const confirmRegenKeep = useCallback(() => {
+    if (!pendingRegenSceneId) return;
+    setBackupScene(null);
+    setLastRegenValues(null);
+    setRegenState('idle');
+    setCurrentSceneId(pendingRegenSceneId);
+    setPendingRegenSceneId(null);
+  }, [pendingRegenSceneId, setCurrentSceneId]);
+
+  /** User chose "Descartar" in regen confirm modal */
+  const confirmRegenDiscard = useCallback(() => {
+    if (!pendingRegenSceneId) return;
+    handleRegenUndo();
+    setCurrentSceneId(pendingRegenSceneId);
+    setPendingRegenSceneId(null);
+  }, [pendingRegenSceneId, handleRegenUndo, setCurrentSceneId]);
 
   // play/pause toggle
   const handlePlayPause = useCallback(async () => {
@@ -936,6 +1024,8 @@ export function Stage({
         onCollapseChange={setSidebarCollapsed}
         onSceneSelect={gatedSceneSwitch}
         onRetryOutline={onRetryOutline}
+        regenState={regenState === 'regenerating' ? 'regenerating' : regenState === 'review' ? 'review' : 'idle'}
+        onRegenerateClick={openRegenerateDialog}
       />
 
       {/* Main Content Area */}
@@ -988,6 +1078,26 @@ export function Stage({
             }
           />
         </div>
+
+        {/* Review bar — shown when a regenerated version is pending acceptance */}
+        {regenState === 'review' && (
+          <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-green-50 dark:bg-green-950/30 border-t border-green-200 dark:border-green-800 text-sm">
+            <span className="text-green-700 dark:text-green-300 font-medium">
+              {t('stage.regen.reviewBar')}
+            </span>
+            <div className="flex gap-2">
+              <Button size="sm" variant="outline" onClick={handleRegenEditAgain}>
+                ✏ {t('stage.regen.editAgain')}
+              </Button>
+              <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-700 dark:hover:bg-red-950/30" onClick={handleRegenUndo}>
+                ↩ {t('stage.regen.undo')}
+              </Button>
+              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={handleRegenAccept}>
+                ✓ {t('stage.regen.accept')}
+              </Button>
+            </div>
+          </div>
+        )}
 
         {/* Roundtable Area */}
         {mode === 'playback' && (
@@ -1227,6 +1337,57 @@ export function Stage({
               className="flex-1 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white border-0 shadow-md shadow-amber-200/50 dark:shadow-amber-900/30"
             >
               {t('common.confirm')}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Regenerate Slide Dialog */}
+      {(() => {
+        if (!currentScene || currentScene.type !== 'slide') return null;
+        if (regenState !== 'dialog_open') return null;
+        const outline = outlines.find((o) => o.order === currentScene.order);
+        if (!outline) return null;
+        return (
+          <RegenerateSlideDialog
+            open={true}
+            scene={currentScene}
+            outline={outline}
+            initialValues={lastRegenValues ?? undefined}
+            onRegenerate={handleRegenerate}
+            onClose={() => setRegenState('idle')}
+          />
+        );
+      })()}
+
+      {/* Regen confirm modal — shown when navigating away during review */}
+      <AlertDialog open={!!pendingRegenSceneId}>
+        <AlertDialogContent className="max-w-md rounded-2xl">
+          <VisuallyHidden.Root>
+            <AlertDialogTitle>{t('stage.regen.confirmTitle')}</AlertDialogTitle>
+          </VisuallyHidden.Root>
+          <div className="px-6 pt-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-gray-900 dark:text-gray-100 mb-1">
+                  {t('stage.regen.confirmTitle')}
+                </p>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  {t('stage.regen.confirmBody').replace('{title}', currentScene?.title ?? '')}
+                </p>
+              </div>
+            </div>
+          </div>
+          <AlertDialogFooter className="px-6 pb-5 pt-3 flex-row gap-3">
+            <AlertDialogCancel onClick={confirmRegenDiscard} className="flex-1 rounded-xl">
+              {t('stage.regen.confirmDiscard')}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmRegenKeep}
+              className="flex-1 rounded-xl bg-green-600 hover:bg-green-700"
+            >
+              {t('stage.regen.confirmKeep')}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
