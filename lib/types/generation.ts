@@ -57,6 +57,28 @@ export interface UserRequirements {
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
 
 /**
+ * Widget outline configuration for interactive scenes
+ * Unified for both normal and ultra modes
+ */
+export interface WidgetOutline {
+  // Common field
+  concept?: string;
+
+  // Type-specific fields
+  keyVariables?: string[];  // simulation
+  diagramType?: 'flowchart' | 'mindmap' | 'hierarchy' | 'system';  // diagram
+  language?: 'python' | 'javascript' | 'typescript' | 'java' | 'cpp';  // code
+  gameType?: 'quiz' | 'puzzle' | 'strategy' | 'card' | 'action';  // game
+  visualizationType?: 'molecular' | 'solar' | 'anatomy' | 'geometry' | 'physics' | 'custom';  // visualization3d
+  objects?: string[];  // visualization3d
+  interactions?: string[];  // visualization3d
+  challenge?: string;  // game - description of what player does
+  playerControls?: string[];  // game - what player controls
+  nodeCount?: number;  // diagram - approximate node count
+  challengeType?: string;  // code - type of coding challenge
+}
+
+/**
  * Simplified scene outline
  * Gives AI more freedom, only requiring intent description and key points
  */
@@ -80,7 +102,10 @@ export interface SceneOutline {
     difficulty: 'easy' | 'medium' | 'hard';
     questionTypes: ('single' | 'multiple' | 'text')[];
   };
-  // Interactive-specific config
+  /**
+   * @deprecated Use widgetType + widgetOutline instead
+   * Legacy interactive config - kept for backward compatibility only
+   */
   interactiveConfig?: {
     conceptName: string;
     conceptOverview: string;
@@ -94,22 +119,9 @@ export interface SceneOutline {
     targetSkills: string[];
     issueCount?: number;
   };
-  // Ultra Mode widget fields
+  // Widget fields (required for type === 'interactive' in unified mode)
   widgetType?: WidgetType;
-  widgetOutline?: {
-    concept?: string;
-    keyVariables?: string[];
-    diagramType?: string;
-    nodeCount?: number;
-    language?: string;
-    challengeType?: string;
-    gameType?: string;
-    questionCount?: number;
-    visualizationType?: string;
-    objectCount?: number;
-    objects?: string[];
-    interactions?: string[];
-  };
+  widgetOutline?: WidgetOutline;
 }
 
 // ==================== Stage 3 Output: Generated Content ====================

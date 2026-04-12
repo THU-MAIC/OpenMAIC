@@ -76,7 +76,9 @@ Then output a JSON object with `languageDirective` and `outlines`. Each scene in
    }
    ```
 2. **If images are available**, add `suggestedImageIds` to relevant slide scenes
-3. **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use `"type": "interactive"` with an `interactiveConfig` object containing `conceptName`, `conceptOverview`, `designIdea`, and `subject`. Limit to 1-2 per course.
+3. **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use `"type": "interactive"` with `widgetType` and `widgetOutline` fields. Limit to 1-2 per course.
+   - Select widgetType based on concept: simulation (physics/chem), diagram (processes), code (programming), game (practice), visualization3d (3D models)
+   - Provide appropriate widgetOutline for the widget type
 4. **Scene count**: Based on inferred duration, typically 1-2 scenes per minute
 5. **Quiz placement**: Recommend inserting a quiz every 3-5 slides for assessment
 6. **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
