@@ -124,9 +124,9 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     setProgress('content');
     setErrorStep(undefined);
 
-    const store = useStageStore.getState();
-    const stageId = store.stage?.id;
-    const allOutlines = store.outlines;
+    const store = useStageStore;
+    const stageId = store.getState().stage?.id;
+    const allOutlines = store.getState().outlines;
 
     if (!stageId) {
       log.error('Cannot regenerate: no active stage');
@@ -184,6 +184,9 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
       if (!actionsRes.ok || !json.success || !json.scene) {
         throw new Error(json.error || `HTTP ${actionsRes.status}`);
       }
+      if (!json.scene.content) {
+        throw new Error('Missing scene content in actions response');
+      }
       newActions = json.scene.actions ?? [];
       newContent = json.scene.content;
     } catch (err) {
@@ -197,7 +200,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     if (signal.aborted) return;
 
     // Immediately show new slide content (without audio yet)
-    store.updateScene(sceneId, { content: newContent, actions: newActions });
+    store.getState().updateScene(sceneId, { content: newContent, actions: newActions });
 
     // ── Step 2: Audio ──
     setProgress('audio');
@@ -212,24 +215,29 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     const speechActions = splitLongSpeechActions(overriddenActions, ttsProviderId);
 
     // Commit overridden text to store immediately (before TTS — so text is always saved even if TTS fails)
-    store.updateScene(sceneId, { actions: [...speechActions] });
+    store.getState().updateScene(sceneId, { actions: [...speechActions] });
 
-    for (const action of speechActions) {
-      if (signal.aborted) return;
-      if (action.type !== 'speech') continue;
-      const speechAction = action as SpeechAction;
-      if (!speechAction.text) continue;
-      const audioId = `tts_${speechAction.id}`;
-      speechAction.audioId = audioId;
-      try {
-        const audioUrl = await generateAndStoreTTS(audioId, speechAction.text, signal);
-        if (audioUrl) speechAction.audioUrl = audioUrl;
-      } catch (err) {
+    const { ttsEnabled } = useUserPrefsStore.getState();
+    if (ttsEnabled && ttsProviderId !== 'browser-native-tts') {
+      for (let i = 0; i < speechActions.length; i++) {
         if (signal.aborted) return;
-        log.warn('TTS failed for action', speechAction.id, ':', err);
+        const action = speechActions[i];
+        if (action.type !== 'speech') continue;
+        // TypeScript doesn't narrow Action to SpeechAction via type guard in this context
+        const speechAction = action as SpeechAction;
+        if (!speechAction.text) continue;
+        const audioId = `tts_${speechAction.id}`;
+        let audioUrl: string | undefined;
+        try {
+          audioUrl = (await generateAndStoreTTS(audioId, speechAction.text, signal)) ?? undefined;
+        } catch (err) {
+          if (signal.aborted) return;
+          log.warn('TTS failed for action', speechAction.id, ':', err);
+        }
+        speechActions[i] = { ...speechAction, audioId, ...(audioUrl ? { audioUrl } : {}) } as SpeechAction;
+        // Update scene progressively as each TTS clip is ready
+        store.getState().updateScene(sceneId, { actions: [...speechActions] });
       }
-      // Update scene progressively as each TTS clip is ready
-      store.updateScene(sceneId, { actions: [...speechActions] });
     }
 
     // ── Step 3: Media ──
@@ -254,8 +262,9 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     if (signal.aborted) return;
 
     // ── Step 4: Outline sync ──
-    const updatedOutlines = allOutlines.map((o) => (o.order === outline.order ? outline : o));
-    store.setOutlines(updatedOutlines);
+    const freshOutlines = store.getState().outlines;
+    const updatedOutlines = freshOutlines.map((o) => (o.order === outline.order ? outline : o));
+    store.getState().setOutlines(updatedOutlines);
 
     setProgress('done');
   }, []);
