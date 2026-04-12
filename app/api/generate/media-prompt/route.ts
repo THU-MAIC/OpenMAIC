@@ -47,7 +47,9 @@ export async function POST(req: NextRequest) {
     );
 
     const prompt = result.text.trim();
-    log.info(`Generated media prompt for ${mediaType}: "${prompt.length > 60 ? prompt.slice(0, 60) + '...' : prompt}"`);
+    log.info(
+      `Generated media prompt for ${mediaType}: "${prompt.length > 60 ? prompt.slice(0, 60) + '...' : prompt}"`,
+    );
 
     return apiSuccess({ data: { prompt } });
   } catch (error) {

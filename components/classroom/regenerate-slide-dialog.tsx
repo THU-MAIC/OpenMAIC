@@ -71,7 +71,10 @@ function outlineToMediaType(outline: SceneOutline): 'none' | 'image' | 'video' |
   return 'none';
 }
 
-function outlineToMediaPrompt(outline: SceneOutline, mediaType: 'none' | 'image' | 'video'): string {
+function outlineToMediaPrompt(
+  outline: SceneOutline,
+  mediaType: 'none' | 'image' | 'video',
+): string {
   if (mediaType === 'none') return '';
   const entry = (outline.mediaGenerations ?? []).find((g) => g.type === mediaType);
   return entry?.prompt ?? '';
@@ -132,7 +135,9 @@ export function RegenerateSlideDialog({
     fetch('/api/themes')
       .then((r) => r.json())
       .then((data: ThemeListItem[]) => setThemes(data))
-      .catch(() => {/* theme list stays empty, selector hidden */});
+      .catch(() => {
+        /* theme list stays empty, selector hidden */
+      });
   }, [open, outline, scene, initialValues, defaultThemeId]);
 
   // Abort in-flight fetches when dialog closes
@@ -260,9 +265,10 @@ export function RegenerateSlideDialog({
 
   const handleSubmit = () => {
     const forceSlideRegen = !regenerateSlide && needsNewMedia && !hasExistingMedia;
-    const updatedOutline: SceneOutline = regenerateSlide || forceSlideRegen
-      ? { ...outline, title, ...indicationToOutline(indication) }
-      : { ...outline };
+    const updatedOutline: SceneOutline =
+      regenerateSlide || forceSlideRegen
+        ? { ...outline, title, ...indicationToOutline(indication) }
+        : { ...outline };
     // Do NOT call onClose() here — Stage closes the dialog by transitioning
     // regenState from 'dialog_open' to 'regenerating'. Calling onClose() would
     // race with setRegenState('regenerating') and the batch winner is 'idle',
@@ -295,7 +301,8 @@ export function RegenerateSlideDialog({
 
         {errorMessage && (
           <div className="mx-1 px-3 py-2 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
-            <span className="font-semibold">Error: </span>{errorMessage}
+            <span className="font-semibold">Error: </span>
+            {errorMessage}
           </div>
         )}
 
@@ -307,7 +314,9 @@ export function RegenerateSlideDialog({
                 {t('stage.regen.indication')}
               </Label>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t('stage.regen.modifySlide')}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t('stage.regen.modifySlide')}
+                </span>
                 <Switch
                   id="regen-modify-slide"
                   checked={regenerateSlide}
@@ -355,7 +364,9 @@ export function RegenerateSlideDialog({
                                 {active.name}
                               </span>
                             ) : (
-                              <span className="text-muted-foreground">{t('stage.regen.theme')}</span>
+                              <span className="text-muted-foreground">
+                                {t('stage.regen.theme')}
+                              </span>
                             );
                           })()}
                         </SelectValue>
@@ -378,9 +389,7 @@ export function RegenerateSlideDialog({
                 )}
               </>
             ) : (
-              <p className="text-xs text-muted-foreground py-1">
-                {t('stage.regen.slideKeep')}
-              </p>
+              <p className="text-xs text-muted-foreground py-1">{t('stage.regen.slideKeep')}</p>
             )}
           </div>
 
@@ -394,11 +403,16 @@ export function RegenerateSlideDialog({
           {/* Audio text */}
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor="regen-audio-text" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              <Label
+                htmlFor="regen-audio-text"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
                 {t('stage.regen.audioText')}
               </Label>
               <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">{t('stage.regen.modifyAudio')}</span>
+                <span className="text-xs text-muted-foreground">
+                  {t('stage.regen.modifyAudio')}
+                </span>
                 <Switch
                   id="regen-modify-audio"
                   checked={modifyAudio}
@@ -441,15 +455,16 @@ export function RegenerateSlideDialog({
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground py-1">
-                {t('stage.regen.audioKeep')}
-              </p>
+              <p className="text-xs text-muted-foreground py-1">{t('stage.regen.audioKeep')}</p>
             )}
           </div>
 
           {/* Media selector */}
           <div className="space-y-2">
-            <Label id="regen-media-label" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Label
+              id="regen-media-label"
+              className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+            >
               {t('stage.regen.media')}
             </Label>
             <div role="group" aria-labelledby="regen-media-label" className="flex gap-2 flex-wrap">

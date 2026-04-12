@@ -382,4 +382,3 @@ export function GenerationToolbar({
     </div>
   );
 }
-

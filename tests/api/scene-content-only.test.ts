@@ -3,9 +3,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const defaultLoadStage = vi.fn().mockResolvedValue({
   stage: { id: 'stage1', name: 'Test Stage', language: 'en-US' },
 });
-const defaultLoadOutlines = vi.fn().mockResolvedValue([
-  { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
-]);
+const defaultLoadOutlines = vi
+  .fn()
+  .mockResolvedValue([
+    { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+  ]);
 
 // Mock storage backend
 vi.mock('@/lib/server/storage', () => ({
@@ -19,7 +21,14 @@ vi.mock('@/lib/server/storage', () => ({
 vi.mock('@/lib/server/scene-content-generation', () => ({
   generateSceneContentFromInput: vi.fn().mockResolvedValue({
     content: { elements: [{ id: 'el1', type: 'text' }], background: undefined },
-    effectiveOutline: { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+    effectiveOutline: {
+      id: 'o1',
+      type: 'slide',
+      title: 'Slide 1',
+      description: 'Desc',
+      keyPoints: [],
+      order: 1,
+    },
     slideTheme: undefined,
   }),
 }));
@@ -50,7 +59,14 @@ describe('POST /api/generate/scene-content-only', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-model': 'test-model' },
       body: JSON.stringify({
-        outline: { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+        outline: {
+          id: 'o1',
+          type: 'slide',
+          title: 'Slide 1',
+          description: 'Desc',
+          keyPoints: [],
+          order: 1,
+        },
         stageId: 'stage1',
       }),
     });
@@ -66,7 +82,14 @@ describe('POST /api/generate/scene-content-only', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        outline: { id: 'o1', type: 'quiz', title: 'Quiz 1', description: 'Desc', keyPoints: [], order: 1 },
+        outline: {
+          id: 'o1',
+          type: 'quiz',
+          title: 'Quiz 1',
+          description: 'Desc',
+          keyPoints: [],
+          order: 1,
+        },
         stageId: 'stage1',
       }),
     });
@@ -91,7 +114,14 @@ describe('POST /api/generate/scene-content-only', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        outline: { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+        outline: {
+          id: 'o1',
+          type: 'slide',
+          title: 'Slide 1',
+          description: 'Desc',
+          keyPoints: [],
+          order: 1,
+        },
       }),
     });
     const res = await POST(req as never);
@@ -110,7 +140,14 @@ describe('POST /api/generate/scene-content-only', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        outline: { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+        outline: {
+          id: 'o1',
+          type: 'slide',
+          title: 'Slide 1',
+          description: 'Desc',
+          keyPoints: [],
+          order: 1,
+        },
         stageId: 'nonexistent',
       }),
     });

@@ -33,8 +33,15 @@ import {
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
 import { Button } from '@/components/ui/button';
-import { useSceneRegenerator, outlineToIndication, type RegenerateParams } from '@/lib/hooks/use-scene-regenerator';
-import { RegenerateSlideDialog, type RegenerateFormValues } from '@/components/classroom/regenerate-slide-dialog';
+import {
+  useSceneRegenerator,
+  outlineToIndication,
+  type RegenerateParams,
+} from '@/lib/hooks/use-scene-regenerator';
+import {
+  RegenerateSlideDialog,
+  type RegenerateFormValues,
+} from '@/components/classroom/regenerate-slide-dialog';
 import type { Scene } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -53,8 +60,15 @@ export function Stage({
   onRetryOutline?: (outlineId: string) => Promise<void>;
 }) {
   const { t } = useI18n();
-  const { mode, getCurrentScene, scenes, outlines, currentSceneId, setCurrentSceneId, generatingOutlines } =
-    useStageStore();
+  const {
+    mode,
+    getCurrentScene,
+    scenes,
+    outlines,
+    currentSceneId,
+    setCurrentSceneId,
+    generatingOutlines,
+  } = useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
 
   const currentScene = getCurrentScene();
@@ -688,12 +702,13 @@ export function Stage({
       const outline = useStageStore.getState().outlines.find((o) => o.order === scene.order);
       // When skipAudio, preserve the current narration text for display in case
       // the user activates "Modify narration" on a subsequent retry.
-      const storedAudioText = (params.skipAudio ?? false)
-        ? (scene.actions ?? [])
-            .filter((a): a is SpeechAction => a.type === 'speech')
-            .map((a) => a.text)
-            .join('\n\n')
-        : params.audioTextOverride;
+      const storedAudioText =
+        (params.skipAudio ?? false)
+          ? (scene.actions ?? [])
+              .filter((a): a is SpeechAction => a.type === 'speech')
+              .map((a) => a.text)
+              .join('\n\n')
+          : params.audioTextOverride;
       setLastRegenValues({
         title: params.outline.title,
         regenerateSlide: !(params.skipSlide ?? false),
@@ -724,9 +739,11 @@ export function Stage({
         // Also restore the outline in case Step 4 already ran before the failure
         if (outlineBackup) {
           const freshOutlines = useStageStore.getState().outlines;
-          useStageStore.getState().setOutlines(
-            freshOutlines.map((o) => (o.order === outlineBackup.order ? outlineBackup : o)),
-          );
+          useStageStore
+            .getState()
+            .setOutlines(
+              freshOutlines.map((o) => (o.order === outlineBackup.order ? outlineBackup : o)),
+            );
         }
         setRegenErrorMessage(result.error ?? null);
         setRegenState('dialog_open');
@@ -756,9 +773,11 @@ export function Stage({
     }
     if (backupOutline) {
       const freshOutlines = useStageStore.getState().outlines;
-      useStageStore.getState().setOutlines(
-        freshOutlines.map((o) => (o.order === backupOutline.order ? backupOutline : o)),
-      );
+      useStageStore
+        .getState()
+        .setOutlines(
+          freshOutlines.map((o) => (o.order === backupOutline.order ? backupOutline : o)),
+        );
     }
     setBackupScene(null);
     setBackupOutline(null);
@@ -829,9 +848,11 @@ export function Stage({
     }
     if (backupOutline) {
       const freshOutlines = useStageStore.getState().outlines;
-      useStageStore.getState().setOutlines(
-        freshOutlines.map((o) => (o.order === backupOutline.order ? backupOutline : o)),
-      );
+      useStageStore
+        .getState()
+        .setOutlines(
+          freshOutlines.map((o) => (o.order === backupOutline.order ? backupOutline : o)),
+        );
     }
     setBackupScene(null);
     setBackupOutline(null);
@@ -1087,7 +1108,13 @@ export function Stage({
         onCollapseChange={setSidebarCollapsed}
         onSceneSelect={gatedSceneSwitch}
         onRetryOutline={onRetryOutline}
-        regenState={regenState === 'regenerating' ? 'regenerating' : regenState === 'review' ? 'review' : 'idle'}
+        regenState={
+          regenState === 'regenerating'
+            ? 'regenerating'
+            : regenState === 'review'
+              ? 'review'
+              : 'idle'
+        }
         onRegenerateClick={openRegenerateDialog}
       />
 
@@ -1145,9 +1172,26 @@ export function Stage({
         {/* Progress bar — shown while regeneration is in progress */}
         {regenState === 'regenerating' && (
           <div className="shrink-0 flex items-center gap-3 px-4 py-2 bg-purple-50 dark:bg-purple-950/30 border-t border-purple-200 dark:border-purple-800 text-sm">
-            <svg className="animate-spin h-4 w-4 text-purple-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            <svg
+              className="animate-spin h-4 w-4 text-purple-500 shrink-0"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <circle
+                className="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                strokeWidth="4"
+              />
+              <path
+                className="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+              />
             </svg>
             <span className="text-purple-700 dark:text-purple-300 font-medium">
               {sceneRegenerator.progress === 'audio'
@@ -1169,10 +1213,19 @@ export function Stage({
               <Button size="sm" variant="outline" onClick={handleRegenEditAgain}>
                 ✏ {t('stage.regen.editAgain')}
               </Button>
-              <Button size="sm" variant="outline" className="text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-700 dark:hover:bg-red-950/30" onClick={handleRegenUndo}>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-700 dark:hover:bg-red-950/30"
+                onClick={handleRegenUndo}
+              >
                 ↩ {t('stage.regen.undo')}
               </Button>
-              <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white" onClick={handleRegenAccept}>
+              <Button
+                size="sm"
+                className="bg-green-600 hover:bg-green-700 text-white"
+                onClick={handleRegenAccept}
+              >
                 ✓ {t('stage.regen.accept')}
               </Button>
             </div>
@@ -1436,7 +1489,10 @@ export function Stage({
             initialValues={lastRegenValues ?? undefined}
             errorMessage={regenErrorMessage ?? undefined}
             onRegenerate={handleRegenerate}
-            onClose={() => { setRegenState('idle'); setRegenErrorMessage(null); }}
+            onClose={() => {
+              setRegenState('idle');
+              setRegenErrorMessage(null);
+            }}
           />
         );
       })()}

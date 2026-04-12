@@ -29,7 +29,9 @@ export async function POST(req: NextRequest) {
 
     const { model: languageModel } = await resolveModelFromHeaders(req);
 
-    const langHint = language ? ` The narration MUST be written in ${language} (match the language of the key points).` : '';
+    const langHint = language
+      ? ` The narration MUST be written in ${language} (match the language of the key points).`
+      : '';
 
     const result = await callLLM(
       {
