@@ -183,7 +183,7 @@ export function RegenerateSlideDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-purple-700 dark:text-purple-300">
             <span aria-hidden="true">↺</span> {t('stage.regen.dialogTitle')} — {scene.title}
