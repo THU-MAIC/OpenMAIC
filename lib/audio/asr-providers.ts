@@ -349,7 +349,7 @@ export async function getCurrentASRConfig(): Promise<ASRModelConfig> {
       ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
       '',
     apiKey: providerConfig?.apiKey,
-    baseUrl: providerConfig?.baseUrl,
+    baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
     language: asrLanguage,
   };
 }
