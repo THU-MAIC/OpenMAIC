@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('@/lib/ai/llm', () => ({
   callLLM: vi.fn().mockResolvedValue({ text: 'A diagram showing React components' }),
@@ -13,6 +13,8 @@ vi.mock('@/lib/server/resolve-model', () => ({
 }));
 
 describe('POST /api/generate/media-prompt', () => {
+  beforeEach(() => vi.clearAllMocks());
+
   it('returns a generated prompt string', async () => {
     const { POST } = await import('@/app/api/generate/media-prompt/route');
     const req = new Request('http://localhost/api/generate/media-prompt', {
@@ -37,6 +39,17 @@ describe('POST /api/generate/media-prompt', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ mediaType: 'image' }),
+    });
+    const res = await POST(req as never);
+    expect(res.status).toBe(400);
+  });
+
+  it('returns 400 when mediaType is invalid', async () => {
+    const { POST } = await import('@/app/api/generate/media-prompt/route');
+    const req = new Request('http://localhost/api/generate/media-prompt', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ indicationText: 'Some text', mediaType: 'gif' }),
     });
     const res = await POST(req as never);
     expect(res.status).toBe(400);

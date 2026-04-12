@@ -21,11 +21,14 @@ export async function POST(req: NextRequest) {
       language?: string;
     };
 
-    if (!indicationText) {
+    if (!indicationText || !indicationText.trim()) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'indicationText is required');
     }
-    if (!mediaType || (mediaType !== 'image' && mediaType !== 'video')) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'mediaType must be "image" or "video"');
+    if (!mediaType) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'mediaType is required');
+    }
+    if (mediaType !== 'image' && mediaType !== 'video') {
+      return apiError('INVALID_REQUEST', 400, 'mediaType must be "image" or "video"');
     }
 
     const { model: languageModel } = await resolveModelFromHeaders(req);
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
     );
 
     const prompt = result.text.trim();
-    log.info(`Generated media prompt for ${mediaType}: "${prompt.slice(0, 60)}..."`);
+    log.info(`Generated media prompt for ${mediaType}: "${prompt.length > 60 ? prompt.slice(0, 60) + '...' : prompt}"`);
 
     return apiSuccess({ data: { prompt } });
   } catch (error) {
