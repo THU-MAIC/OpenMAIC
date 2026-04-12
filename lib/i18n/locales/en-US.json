@@ -313,7 +313,8 @@
     "outlineGenerateFailed": "Outline generation failed, please try again later",
     "webSearching": "Web Search",
     "webSearchingDesc": "Searching the web for up-to-date information",
-    "webSearchFailed": "Web search failed"
+    "webSearchFailed": "Web search failed",
+    "regenerateScene": "Regenerate Scene"
   },
   "settings": {
     "title": "Settings",
