@@ -152,7 +152,9 @@
       "modifyAudio": "修改旁白",
       "audioKeep": "将保留现有旁白 — 不会生成新音频。",
       "generateNarration": "用AI生成",
-      "generatingNarration": "正在生成旁白…"
+      "generatingNarration": "正在生成旁白…",
+      "aiGenerationError": "生成失败。",
+      "aiModelHint": "请在左下角控件中选择一个LLM模型。"
     }
   },
   "whiteboard": {

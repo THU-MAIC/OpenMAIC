@@ -95,6 +95,8 @@ export function RegenerateSlideDialog({
   const [themes, setThemes] = useState<ThemeListItem[]>([]);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
   const [isGeneratingNarration, setIsGeneratingNarration] = useState(false);
+  const [narrationError, setNarrationError] = useState<string | null>(null);
+  const [promptError, setPromptError] = useState<string | null>(null);
   const promptAbortRef = useRef<AbortController | null>(null);
   const narrationAbortRef = useRef<AbortController | null>(null);
 
@@ -147,6 +149,7 @@ export function RegenerateSlideDialog({
       narrationAbortRef.current = ctrl;
 
       setIsGeneratingNarration(true);
+      setNarrationError(null);
       try {
         const config = getCurrentModelConfig();
         const res = await fetch('/api/generate/narration-text', {
@@ -166,15 +169,17 @@ export function RegenerateSlideDialog({
         const json = await res.json();
         if (json.success && json.data?.text) {
           setAudioText(json.data.text);
+        } else {
+          setNarrationError(json.error || t('stage.regen.aiGenerationError'));
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
-        // Stays with current text; user can edit manually
+        setNarrationError(t('stage.regen.aiGenerationError'));
       } finally {
         if (!ctrl.signal.aborted) setIsGeneratingNarration(false);
       }
     },
-    [outline.language],
+    [outline.language, t],
   );
 
   const generatePromptForType = useCallback(
@@ -186,6 +191,7 @@ export function RegenerateSlideDialog({
 
       setIsGeneratingPrompt(true);
       setMediaPrompt('');
+      setPromptError(null);
       try {
         const config = getCurrentModelConfig();
         const res = await fetch('/api/generate/media-prompt', {
@@ -206,15 +212,17 @@ export function RegenerateSlideDialog({
         const json = await res.json();
         if (json.success && json.data?.prompt) {
           setMediaPrompt(json.data.prompt);
+        } else {
+          setPromptError(json.error || t('stage.regen.aiGenerationError'));
         }
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') return;
-        // Prompt stays empty; user can type it manually
+        setPromptError(t('stage.regen.aiGenerationError'));
       } finally {
         if (!ctrl.signal.aborted) setIsGeneratingPrompt(false);
       }
     },
-    [outline.language],
+    [outline.language, t],
   );
 
   const handleMediaTypeChange = useCallback(
@@ -362,14 +370,21 @@ export function RegenerateSlideDialog({
                   className="resize-none text-sm"
                   placeholder={t('stage.regen.audioTextPlaceholder')}
                 />
-                <div className="flex justify-end">
+                <div className="flex items-center justify-between gap-2">
+                  {narrationError ? (
+                    <p className="text-xs text-red-600 dark:text-red-400 flex-1">
+                      {narrationError} {t('stage.regen.aiModelHint')}
+                    </p>
+                  ) : (
+                    <span />
+                  )}
                   <Button
                     type="button"
                     size="sm"
                     variant="outline"
                     disabled={isGeneratingNarration || !indication.trim()}
                     onClick={() => generateNarration(indication)}
-                    className="h-7 text-xs gap-1.5 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-950/30"
+                    className="h-7 text-xs gap-1.5 shrink-0 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-950/30"
                   >
                     <Sparkles className="size-3.5" />
                     {isGeneratingNarration
@@ -409,6 +424,10 @@ export function RegenerateSlideDialog({
                 {isGeneratingPrompt ? (
                   <p className="text-xs text-blue-500 dark:text-blue-400 animate-pulse">
                     ✨ {t('stage.regen.generatingPrompt')}
+                  </p>
+                ) : promptError ? (
+                  <p className="text-xs text-red-600 dark:text-red-400">
+                    {promptError} {t('stage.regen.aiModelHint')}
                   </p>
                 ) : (
                   <p className="text-xs text-muted-foreground">

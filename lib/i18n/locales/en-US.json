@@ -152,7 +152,9 @@
       "modifyAudio": "Modify narration",
       "audioKeep": "Existing narration will be preserved — no new audio generated.",
       "generateNarration": "Generate with AI",
-      "generatingNarration": "Generating narration…"
+      "generatingNarration": "Generating narration…",
+      "aiGenerationError": "Generation failed.",
+      "aiModelHint": "Select an LLM model using the controls at the bottom left."
     }
   },
   "whiteboard": {

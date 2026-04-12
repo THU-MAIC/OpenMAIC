@@ -152,7 +152,9 @@
       "modifyAudio": "ナレーションを変更",
       "audioKeep": "既存のナレーションが保持されます — 新しい音声は生成されません。",
       "generateNarration": "AIで生成",
-      "generatingNarration": "ナレーション生成中…"
+      "generatingNarration": "ナレーション生成中…",
+      "aiGenerationError": "生成に失敗しました。",
+      "aiModelHint": "左下のコントロールでLLMモデルを選択してください。"
     }
   },
   "whiteboard": {

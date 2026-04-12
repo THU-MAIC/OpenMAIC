@@ -94,7 +94,9 @@
       "modifyAudio": "Modificar narració",
       "audioKeep": "La narració actual es conservarà — no es generarà nou àudio.",
       "generateNarration": "Generar amb IA",
-      "generatingNarration": "Generant narració…"
+      "generatingNarration": "Generant narració…",
+      "aiGenerationError": "Error en generar.",
+      "aiModelHint": "Selecciona un model LLM als controls de la part inferior esquerra."
     }
   },
   "whiteboard": {
