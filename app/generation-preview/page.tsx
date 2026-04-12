@@ -728,7 +728,10 @@ function GenerationPreviewContent() {
                 ttsVoice: settings.ttsVoice,
                 ttsSpeed: settings.ttsSpeed,
                 ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-                ttsBaseUrl: ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
+                ttsBaseUrl:
+                  ttsProviderConfig?.baseUrl ||
+                  ttsProviderConfig?.customDefaultBaseUrl ||
+                  undefined,
               }),
               signal,
             });
