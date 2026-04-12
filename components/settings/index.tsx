@@ -269,7 +269,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
 
   const handleAddASRProvider = (data: NewAudioProviderData) => {
     const id = `custom-asr-${Date.now()}` as ASRProviderId;
-    addCustomASRProvider(id, data.name, data.baseUrl, data.requiresApiKey, data.defaultModel);
+    addCustomASRProvider(id, data.name, data.baseUrl, data.requiresApiKey);
   };
 
   // Save status indicator

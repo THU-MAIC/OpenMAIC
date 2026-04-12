@@ -222,7 +222,6 @@ export interface SettingsState {
     name: string,
     baseUrl: string,
     requiresApiKey: boolean,
-    defaultModel?: string,
   ) => void;
   removeCustomASRProvider: (id: ASRProviderId) => void;
 
@@ -815,7 +814,7 @@ export const useSettingsStore = create<SettingsState>()(
             };
           }),
 
-        addCustomASRProvider: (id, name, baseUrl, requiresApiKey, defaultModel) =>
+        addCustomASRProvider: (id, name, baseUrl, requiresApiKey) =>
           set((state) => ({
             asrProvidersConfig: {
               ...state.asrProvidersConfig,
@@ -823,8 +822,8 @@ export const useSettingsStore = create<SettingsState>()(
                 apiKey: '',
                 baseUrl: '',
                 enabled: true,
-                modelId: defaultModel || '',
-                customModels: defaultModel ? [{ id: defaultModel, name: defaultModel }] : [],
+                modelId: '',
+                customModels: [],
                 customName: name,
                 customDefaultBaseUrl: baseUrl,
                 isBuiltIn: false,

@@ -93,15 +93,18 @@ export function AddAudioProviderDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label>{t('settings.defaultModel')}</Label>
-            <Input
-              placeholder={type === 'tts' ? 'tts-1' : 'whisper-1'}
-              value={defaultModel}
-              onChange={(e) => setDefaultModel(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">{t('settings.defaultModelHint')}</p>
-          </div>
+          {/* Default Model — TTS only (ASR models are managed in provider settings) */}
+          {type === 'tts' && (
+            <div className="space-y-2">
+              <Label>{t('settings.defaultModel')}</Label>
+              <Input
+                placeholder="tts-1"
+                value={defaultModel}
+                onChange={(e) => setDefaultModel(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">{t('settings.defaultModelHint')}</p>
+            </div>
+          )}
 
           <div className="flex items-center space-x-2">
             <Checkbox
