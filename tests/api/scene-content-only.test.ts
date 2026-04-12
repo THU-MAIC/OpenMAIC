@@ -50,6 +50,20 @@ describe('POST /api/generate/scene-content-only', () => {
     expect(data.data.elements).toBeDefined();
   });
 
+  it('returns 400 when outline is not a slide', async () => {
+    const { POST } = await import('@/app/api/generate/scene-content-only/route');
+    const req = new Request('http://localhost/api/generate/scene-content-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outline: { id: 'o1', type: 'quiz', title: 'Quiz 1', description: 'Desc', keyPoints: [], order: 1 },
+        stageId: 'stage1',
+      }),
+    });
+    const res = await POST(req as never);
+    expect(res.status).toBe(400);
+  });
+
   it('returns 400 when outline is missing', async () => {
     const { POST } = await import('@/app/api/generate/scene-content-only/route');
     const req = new Request('http://localhost/api/generate/scene-content-only', {

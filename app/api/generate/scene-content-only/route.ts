@@ -31,6 +31,10 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
+    if (outline.type !== 'slide') {
+      return apiError('INVALID_REQUEST', 400, 'scene-content-only only supports slide-type outlines');
+    }
+
     // Load stage metadata and outlines from server storage
     const backend = getStorageBackend();
     const [stageData, savedOutlines] = await Promise.all([
