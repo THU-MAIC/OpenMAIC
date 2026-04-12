@@ -319,7 +319,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
       {/* Model Selection — built-in providers */}
       {!isCustom && asrProvider?.models?.length > 0 && (
         <div className="space-y-2">
-          <Label className="text-sm">{t('settings.ttsModel')}</Label>
+          <Label className="text-sm">{t('settings.defaultModel')}</Label>
           <Select
             value={asrProvidersConfig[selectedProviderId]?.modelId || asrProvider?.defaultModelId}
             onValueChange={(value) => setASRProviderConfig(selectedProviderId, { modelId: value })}
@@ -341,7 +341,7 @@ export function ASRSettings({ selectedProviderId }: ASRSettingsProps) {
       {/* Model Selection + Management — custom providers */}
       {isCustom && (
         <div className="space-y-3">
-          <Label className="text-sm">{t('settings.ttsModel')}</Label>
+          <Label className="text-sm">{t('settings.defaultModel')}</Label>
           {(() => {
             const customModels =
               (providerConfig?.customModels as Array<{ id: string; name: string }>) || [];

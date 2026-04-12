@@ -824,6 +824,7 @@ export const useSettingsStore = create<SettingsState>()(
                 baseUrl: '',
                 enabled: true,
                 modelId: defaultModel || '',
+                customModels: defaultModel ? [{ id: defaultModel, name: defaultModel }] : [],
                 customName: name,
                 customDefaultBaseUrl: baseUrl,
                 isBuiltIn: false,
