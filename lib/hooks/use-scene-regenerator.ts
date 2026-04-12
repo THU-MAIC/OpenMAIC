@@ -13,6 +13,7 @@ import { createLogger } from '@/lib/logger';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Action, SpeechAction } from '@/lib/types/action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
+import type { SceneContent } from '@/lib/types/stage';
 
 const log = createLogger('SceneRegenerator');
 
@@ -166,7 +167,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
 
     // ── Step 1b: Generate scene actions ──
     let newActions: Action[];
-    let newContent: unknown;
+    let newContent: SceneContent;
     try {
       const actionsRes = await fetch('/api/generate/scene-actions', {
         method: 'POST',
@@ -196,7 +197,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     if (signal.aborted) return;
 
     // Immediately show new slide content (without audio yet)
-    store.updateScene(sceneId, { content: newContent as never, actions: newActions });
+    store.updateScene(sceneId, { content: newContent, actions: newActions });
 
     // ── Step 2: Audio ──
     setProgress('audio');
@@ -209,6 +210,9 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     // Split long speech actions per provider limits
     const ttsProviderId = useSettingsStore.getState().ttsProviderId;
     const speechActions = splitLongSpeechActions(overriddenActions, ttsProviderId);
+
+    // Commit overridden text to store immediately (before TTS — so text is always saved even if TTS fails)
+    store.updateScene(sceneId, { actions: [...speechActions] });
 
     for (const action of speechActions) {
       if (signal.aborted) return;
@@ -229,14 +233,14 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     }
 
     // ── Step 3: Media ──
-    if (params.mediaType !== 'none' && params.mediaPrompt) {
+    if (params.mediaType !== 'none') {
       if (signal.aborted) return;
       setProgress('media');
       const elementId = params.mediaType === 'image' ? 'gen_img_1' : 'gen_vid_1';
       const req: MediaGenerationRequest = {
         elementId,
         type: params.mediaType,
-        prompt: params.mediaPrompt,
+        prompt: params.mediaPrompt ?? '',
       };
       useMediaGenerationStore.getState().enqueueTasks(stageId, [req]);
       try {
