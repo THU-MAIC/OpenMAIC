@@ -150,7 +150,9 @@
       "stepAudio": "正在生成音频…",
       "stepMedia": "正在生成媒体…",
       "modifyAudio": "修改旁白",
-      "audioKeep": "将保留现有旁白 — 不会生成新音频。"
+      "audioKeep": "将保留现有旁白 — 不会生成新音频。",
+      "generateNarration": "用AI生成",
+      "generatingNarration": "正在生成旁白…"
     }
   },
   "whiteboard": {

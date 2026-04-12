@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { Sparkles } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,8 @@ import type { ThemeListItem } from '@/lib/types/theme';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { outlineToIndication, indicationToOutline } from '@/lib/hooks/use-scene-regenerator';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
+import { CompactModelSelector } from '@/components/generation/model-selector-popover';
+import { MediaPopover } from '@/components/generation/media-popover';
 import type { Scene } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { SpeechAction } from '@/lib/types/action';
@@ -91,7 +94,9 @@ export function RegenerateSlideDialog({
   const [themeId, setThemeId] = useState(defaultThemeId);
   const [themes, setThemes] = useState<ThemeListItem[]>([]);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  const [isGeneratingNarration, setIsGeneratingNarration] = useState(false);
   const promptAbortRef = useRef<AbortController | null>(null);
+  const narrationAbortRef = useRef<AbortController | null>(null);
 
   // Initialise form values on open + fetch theme list
   useEffect(() => {
@@ -119,17 +124,58 @@ export function RegenerateSlideDialog({
       .catch(() => {/* theme list stays empty, selector hidden */});
   }, [open, outline, scene, initialValues, defaultThemeId]);
 
-  // Abort in-flight media-prompt fetch when dialog closes
+  // Abort in-flight fetches when dialog closes
   useEffect(() => {
-    if (!open) promptAbortRef.current?.abort();
+    if (!open) {
+      promptAbortRef.current?.abort();
+      narrationAbortRef.current?.abort();
+    }
   }, [open]);
 
   // Abort on unmount
   useEffect(() => {
     return () => {
       promptAbortRef.current?.abort();
+      narrationAbortRef.current?.abort();
     };
   }, []);
+
+  const generateNarration = useCallback(
+    async (currentIndication: string) => {
+      narrationAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      narrationAbortRef.current = ctrl;
+
+      setIsGeneratingNarration(true);
+      try {
+        const config = getCurrentModelConfig();
+        const res = await fetch('/api/generate/narration-text', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-model': config.modelString || '',
+            'x-provider-type': config.providerType || '',
+          },
+          body: JSON.stringify({
+            indicationText: currentIndication,
+            language: outline.language,
+          }),
+          signal: ctrl.signal,
+        });
+        if (ctrl.signal.aborted) return;
+        const json = await res.json();
+        if (json.success && json.data?.text) {
+          setAudioText(json.data.text);
+        }
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        // Stays with current text; user can edit manually
+      } finally {
+        if (!ctrl.signal.aborted) setIsGeneratingNarration(false);
+      }
+    },
+    [outline.language],
+  );
 
   const generatePromptForType = useCallback(
     async (type: 'image' | 'video', currentIndication: string) => {
@@ -306,14 +352,32 @@ export function RegenerateSlideDialog({
               </div>
             </div>
             {modifyAudio ? (
-              <Textarea
-                id="regen-audio-text"
-                value={audioText}
-                onChange={(e) => setAudioText(e.target.value)}
-                rows={6}
-                className="resize-none text-sm"
-                placeholder={t('stage.regen.audioTextPlaceholder')}
-              />
+              <div className="space-y-1">
+                <Textarea
+                  id="regen-audio-text"
+                  value={audioText}
+                  onChange={(e) => setAudioText(e.target.value)}
+                  rows={5}
+                  disabled={isGeneratingNarration}
+                  className="resize-none text-sm"
+                  placeholder={t('stage.regen.audioTextPlaceholder')}
+                />
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={isGeneratingNarration || !indication.trim()}
+                    onClick={() => generateNarration(indication)}
+                    className="h-7 text-xs gap-1.5 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-700 hover:bg-violet-50 dark:hover:bg-violet-950/30"
+                  >
+                    <Sparkles className="size-3.5" />
+                    {isGeneratingNarration
+                      ? t('stage.regen.generatingNarration')
+                      : t('stage.regen.generateNarration')}
+                  </Button>
+                </div>
+              </div>
             ) : (
               <p className="text-xs text-muted-foreground py-1">
                 {t('stage.regen.audioKeep')}
@@ -366,7 +430,13 @@ export function RegenerateSlideDialog({
           </div>
         </div>
 
-        <DialogFooter className="pt-2">
+        <DialogFooter className="pt-2 flex-row items-center">
+          {/* Model controls — left side */}
+          <div className="flex items-center gap-1.5 mr-auto">
+            <CompactModelSelector />
+            <MediaPopover onSettingsOpen={() => {}} />
+          </div>
+          {/* Actions — right side */}
           <Button variant="ghost" onClick={onClose}>
             {t('stage.regen.cancel')}
           </Button>

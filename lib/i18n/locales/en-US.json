@@ -150,7 +150,9 @@
       "stepAudio": "Generating audio…",
       "stepMedia": "Generating media…",
       "modifyAudio": "Modify narration",
-      "audioKeep": "Existing narration will be preserved — no new audio generated."
+      "audioKeep": "Existing narration will be preserved — no new audio generated.",
+      "generateNarration": "Generate with AI",
+      "generatingNarration": "Generating narration…"
     }
   },
   "whiteboard": {

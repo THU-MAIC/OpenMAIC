@@ -92,7 +92,9 @@
       "stepAudio": "Generant àudio…",
       "stepMedia": "Generant media…",
       "modifyAudio": "Modificar narració",
-      "audioKeep": "La narració actual es conservarà — no es generarà nou àudio."
+      "audioKeep": "La narració actual es conservarà — no es generarà nou àudio.",
+      "generateNarration": "Generar amb IA",
+      "generatingNarration": "Generant narració…"
     }
   },
   "whiteboard": {

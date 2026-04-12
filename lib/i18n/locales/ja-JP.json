@@ -150,7 +150,9 @@
       "stepAudio": "音声を生成中…",
       "stepMedia": "メディアを生成中…",
       "modifyAudio": "ナレーションを変更",
-      "audioKeep": "既存のナレーションが保持されます — 新しい音声は生成されません。"
+      "audioKeep": "既存のナレーションが保持されます — 新しい音声は生成されません。",
+      "generateNarration": "AIで生成",
+      "generatingNarration": "ナレーション生成中…"
     }
   },
   "whiteboard": {
