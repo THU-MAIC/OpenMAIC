@@ -4,6 +4,7 @@ import {
   indicationToOutline,
   buildMediaGenerations,
   applyAudioOverride,
+  resolveSkipSlide,
 } from '@/lib/hooks/use-scene-regenerator';
 import type { SpeechAction } from '@/lib/types/action';
 
@@ -74,5 +75,36 @@ describe('applyAudioOverride', () => {
     const result = applyAudioOverride(actions, 'only one segment');
     expect((result[0] as SpeechAction).text).toBe('only one segment');
     expect((result[1] as SpeechAction).text).toBe('original 2');
+  });
+});
+
+describe('resolveSkipSlide', () => {
+  it('returns false when skipSlide is false regardless of other args', () => {
+    expect(resolveSkipSlide(false, 'image', true)).toBe(false);
+    expect(resolveSkipSlide(false, 'none', false)).toBe(false);
+  });
+
+  it('returns true when skipSlide and mediaType is none', () => {
+    expect(resolveSkipSlide(true, 'none', false)).toBe(true);
+  });
+
+  it('returns true when skipSlide and mediaType is keep', () => {
+    expect(resolveSkipSlide(true, 'keep', false)).toBe(true);
+  });
+
+  it('returns true when skipSlide, new image requested, and existing slot present', () => {
+    expect(resolveSkipSlide(true, 'image', true)).toBe(true);
+  });
+
+  it('returns true when skipSlide, new video requested, and existing slot present', () => {
+    expect(resolveSkipSlide(true, 'video', true)).toBe(true);
+  });
+
+  it('returns false when skipSlide, new image requested, but no existing slot', () => {
+    expect(resolveSkipSlide(true, 'image', false)).toBe(false);
+  });
+
+  it('returns false when skipSlide, new video requested, but no existing slot', () => {
+    expect(resolveSkipSlide(true, 'video', false)).toBe(false);
   });
 });
