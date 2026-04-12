@@ -59,7 +59,7 @@ export async function generateMediaForOutlines(
   // Process requests serially — image/video APIs have limited concurrency
   for (const req of allRequests) {
     if (abortSignal?.aborted) break;
-    await generateSingleMedia(req, stageId, abortSignal);
+    await generateAndStoreMedia(req, stageId, abortSignal);
   }
 }
 
@@ -87,7 +87,7 @@ export async function retryMediaTask(elementId: string): Promise<void> {
   await db.mediaFiles.delete(dbKey).catch(() => {});
 
   store.markPendingForRetry(elementId);
-  await generateSingleMedia(
+  await generateAndStoreMedia(
     {
       type: task.type,
       prompt: task.prompt,
@@ -101,7 +101,7 @@ export async function retryMediaTask(elementId: string): Promise<void> {
 
 // ==================== Internal ====================
 
-async function generateSingleMedia(
+export async function generateAndStoreMedia(
   req: MediaGenerationRequest,
   stageId: string,
   abortSignal?: AbortSignal,
