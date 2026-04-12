@@ -890,5 +890,10 @@
     "voice": "音色",
     "speed": "语速",
     "language": "语言"
+  },
+  "accessCode": {
+    "title": "请输入访问码",
+    "placeholder": "访问码",
+    "error": "访问码错误，请重试。"
   }
 }

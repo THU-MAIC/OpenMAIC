@@ -705,7 +705,6 @@
     "lang_fa": "فارسی",
     "lang_pl": "Polski",
     "lang_ro": "Română",
-    "lang_ru": "Русский",
     "lang_sr": "Српски",
     "lang_sk": "Slovenčina",
     "lang_sl": "Slovenščina",
@@ -891,5 +890,10 @@
     "voice": "Голос",
     "speed": "Скорость",
     "language": "Язык"
+  },
+  "accessCode": {
+    "title": "Введите код доступа",
+    "placeholder": "Код доступа",
+    "error": "Неверный код доступа. Попробуйте ещё раз."
   }
 }
