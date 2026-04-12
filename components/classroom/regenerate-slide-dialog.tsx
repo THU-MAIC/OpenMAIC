@@ -32,6 +32,8 @@ interface RegenerateSlideDialogProps {
   scene: Scene;
   outline: SceneOutline;
   initialValues?: RegenerateFormValues;
+  /** Error message from the last regeneration attempt, if any */
+  errorMessage?: string;
   onRegenerate: (params: RegenerateParams) => void;
   onClose: () => void;
 }
@@ -61,6 +63,7 @@ export function RegenerateSlideDialog({
   scene,
   outline,
   initialValues,
+  errorMessage,
   onRegenerate,
   onClose,
 }: RegenerateSlideDialogProps) {
@@ -180,7 +183,7 @@ export function RegenerateSlideDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col overflow-hidden">
+      <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-purple-700 dark:text-purple-300">
             <span aria-hidden="true">↺</span> {t('stage.regen.dialogTitle')} — {scene.title}
@@ -189,6 +192,12 @@ export function RegenerateSlideDialog({
             {t('stage.regen.dialogTitle')} — {scene.title}
           </DialogDescription>
         </DialogHeader>
+
+        {errorMessage && (
+          <div className="mx-1 px-3 py-2 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-300">
+            <span className="font-semibold">Error: </span>{errorMessage}
+          </div>
+        )}
 
         <div className="flex-1 overflow-y-auto space-y-4 px-1 py-2">
           {/* Indication */}

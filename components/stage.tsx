@@ -109,6 +109,7 @@ export function Stage({
   const [backupScene, setBackupScene] = useState<Scene | null>(null);
   const [lastRegenValues, setLastRegenValues] = useState<RegenerateFormValues | null>(null);
   const [pendingRegenSceneId, setPendingRegenSceneId] = useState<string | null>(null);
+  const [regenErrorMessage, setRegenErrorMessage] = useState<string | null>(null);
   const [isPresenting, setIsPresenting] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
@@ -697,16 +698,18 @@ export function Stage({
       const backup = { ...scene };
       setBackupScene(backup);
       setRegenState('regenerating');
-      const success = await sceneRegenerator.regenerate(scene.id, params);
-      if (!success) {
+      const result = await sceneRegenerator.regenerate(scene.id, params);
+      if (!result.success) {
         // Restore backup and re-open dialog so user can retry
         useStageStore.getState().updateScene(scene.id, {
           content: backup.content,
           actions: backup.actions,
         });
+        setRegenErrorMessage(result.error ?? null);
         setRegenState('dialog_open');
         return;
       }
+      setRegenErrorMessage(null);
       setRegenState('review');
     },
     [getCurrentScene, sceneRegenerator],
@@ -1375,8 +1378,9 @@ export function Stage({
             scene={currentScene}
             outline={outline}
             initialValues={lastRegenValues ?? undefined}
+            errorMessage={regenErrorMessage ?? undefined}
             onRegenerate={handleRegenerate}
-            onClose={() => setRegenState('idle')}
+            onClose={() => { setRegenState('idle'); setRegenErrorMessage(null); }}
           />
         );
       })()}
