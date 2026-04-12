@@ -14,6 +14,12 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.tavily.com',
   },
+  claude: {
+    id: 'claude',
+    name: 'Claude Web Search',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.anthropic.com',
+  },
 };
 
 /**

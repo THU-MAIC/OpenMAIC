@@ -2,12 +2,16 @@
  * Web Search API
  *
  * POST /api/web-search
- * Simple JSON request/response using Tavily search.
+ * Simple JSON request/response using Tavily or Claude search.
  */
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
-import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
+import {
+  searchWithTavily,
+  formatSearchResultsAsContext as formatTavilyContext,
+} from '@/lib/web-search/tavily';
+import { searchWithClaude, formatClaudeSearchResultsAsContext } from '@/lib/web-search/claude';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -17,6 +21,7 @@ import {
 } from '@/lib/server/search-query-builder';
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
+import type { WebSearchProviderId } from '@/lib/web-search/types';
 
 const log = createLogger('WebSearch');
 
@@ -28,10 +33,12 @@ export async function POST(req: NextRequest) {
       query: requestQuery,
       pdfText,
       apiKey: clientApiKey,
+      providerId = 'tavily',
     } = body as {
       query?: string;
       pdfText?: string;
       apiKey?: string;
+      providerId?: WebSearchProviderId;
     };
     query = requestQuery;
 
@@ -39,12 +46,12 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'query is required');
     }
 
-    const apiKey = resolveWebSearchApiKey(clientApiKey);
+    const apiKey = resolveWebSearchApiKey(providerId, clientApiKey);
     if (!apiKey) {
       return apiError(
         'MISSING_API_KEY',
         400,
-        'Tavily API key is not configured. Set it in Settings → Web Search or set TAVILY_API_KEY env var.',
+        `${providerId === 'claude' ? 'Anthropic' : 'Tavily'} API key is not configured. Set it in Settings → Web Search or set the appropriate env var.`,
       );
     }
 
@@ -75,14 +82,23 @@ export async function POST(req: NextRequest) {
     const searchQuery = await buildSearchQuery(query, boundedPdfText, aiCall);
 
     log.info('Running web search API request', {
+      provider: providerId,
       hasPdfContext: searchQuery.hasPdfContext,
       rawRequirementLength: searchQuery.rawRequirementLength,
       rewriteAttempted: searchQuery.rewriteAttempted,
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    const result = await searchWithTavily({ query: searchQuery.query, apiKey });
-    const context = formatSearchResultsAsContext(result);
+    let result;
+    let context;
+
+    if (providerId === 'claude') {
+      result = await searchWithClaude({ query: searchQuery.query, apiKey });
+      context = formatClaudeSearchResultsAsContext(result);
+    } else {
+      result = await searchWithTavily({ query: searchQuery.query, apiKey });
+      context = formatTavilyContext(result);
+    }
 
     return apiSuccess({
       answer: result.answer,
