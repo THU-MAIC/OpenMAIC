@@ -1103,6 +1103,23 @@ export function Stage({
           />
         </div>
 
+        {/* Progress bar — shown while regeneration is in progress */}
+        {regenState === 'regenerating' && (
+          <div className="shrink-0 flex items-center gap-3 px-4 py-2 bg-purple-50 dark:bg-purple-950/30 border-t border-purple-200 dark:border-purple-800 text-sm">
+            <svg className="animate-spin h-4 w-4 text-purple-500 shrink-0" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            <span className="text-purple-700 dark:text-purple-300 font-medium">
+              {sceneRegenerator.progress === 'audio'
+                ? t('stage.regen.stepAudio')
+                : sceneRegenerator.progress === 'media'
+                  ? t('stage.regen.stepMedia')
+                  : t('stage.regen.stepContent')}
+            </span>
+          </div>
+        )}
+
         {/* Review bar — shown when a regenerated version is pending acceptance */}
         {regenState === 'review' && (
           <div className="shrink-0 flex items-center justify-between gap-3 px-4 py-2 bg-green-50 dark:bg-green-950/30 border-t border-green-200 dark:border-green-800 text-sm">

@@ -142,7 +142,11 @@
       "confirmBody": "幻灯片\"{title}\"有一个待确认的重新生成版本。如果切换幻灯片而不接受，新版本将被丢弃。",
       "confirmKeep": "是，保留",
       "confirmDiscard": "放弃",
-      "buttonLabel": "↺ 重新生成"
+      "buttonLabel": "↺ 重新生成",
+      "inProgress": "正在重新生成幻灯片…",
+      "stepContent": "正在生成内容…",
+      "stepAudio": "正在生成音频…",
+      "stepMedia": "正在生成媒体…"
     }
   },
   "whiteboard": {

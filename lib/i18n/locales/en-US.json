@@ -142,7 +142,11 @@
       "confirmBody": "Slide \"{title}\" has a regenerated version pending acceptance. If you switch slides without accepting, the new version will be discarded.",
       "confirmKeep": "Yes, keep",
       "confirmDiscard": "Discard",
-      "buttonLabel": "↺ Regen."
+      "buttonLabel": "↺ Regen.",
+      "inProgress": "Regenerating slide…",
+      "stepContent": "Generating content…",
+      "stepAudio": "Generating audio…",
+      "stepMedia": "Generating media…"
     }
   },
   "whiteboard": {

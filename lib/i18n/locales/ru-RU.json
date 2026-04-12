@@ -142,7 +142,11 @@
       "confirmBody": "Слайд \"{title}\" имеет регенерированную версию, ожидающую подтверждения. Если переключить слайды без принятия, новая версия будет удалена.",
       "confirmKeep": "Да, сохранить",
       "confirmDiscard": "Отказаться",
-      "buttonLabel": "↺ Рег."
+      "buttonLabel": "↺ Рег.",
+      "inProgress": "Регенерация слайда…",
+      "stepContent": "Генерация контента…",
+      "stepAudio": "Генерация аудио…",
+      "stepMedia": "Генерация медиа…"
     }
   },
   "whiteboard": {
@@ -716,7 +720,6 @@
     "lang_fa": "فارسی",
     "lang_pl": "Polski",
     "lang_ro": "Română",
-    "lang_ru": "Русский",
     "lang_sr": "Српски",
     "lang_sk": "Slovenčina",
     "lang_sl": "Slovenščina",

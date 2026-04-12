@@ -84,7 +84,11 @@
       "confirmBody": "Slide \"{title}\" té una versió regenerada pendent d'acceptar. Si canvies de slide sense acceptar, la nova versió es descartarà.",
       "confirmKeep": "Sí, conservar",
       "confirmDiscard": "Descartar",
-      "buttonLabel": "↺ Regen."
+      "buttonLabel": "↺ Regen.",
+      "inProgress": "Regenerant slide…",
+      "stepContent": "Generant contingut…",
+      "stepAudio": "Generant àudio…",
+      "stepMedia": "Generant media…"
     }
   },
   "whiteboard": {

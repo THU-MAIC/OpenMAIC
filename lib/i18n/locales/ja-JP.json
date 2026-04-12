@@ -142,7 +142,11 @@
       "confirmBody": "スライド\"{title}\"には承認待ちの再生成バージョンがあります。承認せずにスライドを切り替えると、新しいバージョンは破棄されます。",
       "confirmKeep": "はい、保持する",
       "confirmDiscard": "破棄",
-      "buttonLabel": "↺ 再生成"
+      "buttonLabel": "↺ 再生成",
+      "inProgress": "スライドを再生成中…",
+      "stepContent": "コンテンツを生成中…",
+      "stepAudio": "音声を生成中…",
+      "stepMedia": "メディアを生成中…"
     }
   },
   "whiteboard": {
