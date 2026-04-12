@@ -64,6 +64,22 @@ export function applyAudioOverride(actions: Action[], audioOverride: string): Ac
   });
 }
 
+/**
+ * Resolves the effective `skipSlide` value.
+ * When new media is requested but the existing slide has no media slot,
+ * the slide must be regenerated even if skipSlide was requested.
+ */
+export function resolveSkipSlide(
+  skipSlide: boolean,
+  mediaType: 'none' | 'image' | 'video' | 'keep',
+  hasExistingMediaSlot: boolean,
+): boolean {
+  if (!skipSlide) return false;
+  if (mediaType === 'none' || mediaType === 'keep') return true;
+  // New media requested — only skip if there is already a media element to replace
+  return hasExistingMediaSlot;
+}
+
 // ── Types ──
 
 export interface RegenerateParams {
@@ -73,6 +89,8 @@ export interface RegenerateParams {
   mediaPrompt?: string;
   /** When true, skip TTS generation and preserve existing speech audio from the scene. */
   skipAudio?: boolean;
+  /** When true, skip slide content + actions generation and preserve the existing slide. */
+  skipSlide?: boolean;
   /** Theme to apply during content generation. Falls back to server-side stage default. */
   themeId?: string;
 }
