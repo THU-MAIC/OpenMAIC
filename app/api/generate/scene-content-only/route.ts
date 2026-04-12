@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
       description: stageData.stage.description,
       language: stageData.stage.language,
       style: stageData.stage.style,
-      themeId: themeId,
+      themeId,
     };
 
     // ── Model resolution from request headers ──

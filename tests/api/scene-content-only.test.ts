@@ -1,15 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+const defaultLoadStage = vi.fn().mockResolvedValue({
+  stage: { id: 'stage1', name: 'Test Stage', language: 'en-US' },
+});
+const defaultLoadOutlines = vi.fn().mockResolvedValue([
+  { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+]);
+
 // Mock storage backend
 vi.mock('@/lib/server/storage', () => ({
-  getStorageBackend: () => ({
-    loadStage: vi.fn().mockResolvedValue({
-      stage: { id: 'stage1', name: 'Test Stage', language: 'en-US' },
-    }),
-    loadOutlines: vi.fn().mockResolvedValue([
-      { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
-    ]),
-  }),
+  getStorageBackend: vi.fn(() => ({
+    loadStage: defaultLoadStage,
+    loadOutlines: defaultLoadOutlines,
+  })),
 }));
 
 // Mock generateSceneContentFromInput
@@ -32,6 +35,13 @@ vi.mock('@/lib/server/resolve-model', () => ({
 describe('POST /api/generate/scene-content-only', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Restore default storage mock implementation after each test
+    defaultLoadStage.mockResolvedValue({
+      stage: { id: 'stage1', name: 'Test Stage', language: 'en-US' },
+    });
+    defaultLoadOutlines.mockResolvedValue([
+      { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+    ]);
   });
 
   it('returns elements and background for a valid outline', async () => {
@@ -86,5 +96,25 @@ describe('POST /api/generate/scene-content-only', () => {
     });
     const res = await POST(req as never);
     expect(res.status).toBe(400);
+  });
+
+  it('returns 404 when stage is not found', async () => {
+    const { getStorageBackend } = await import('@/lib/server/storage');
+    vi.mocked(getStorageBackend).mockReturnValueOnce({
+      loadStage: vi.fn().mockResolvedValue(null),
+      loadOutlines: vi.fn().mockResolvedValue(null),
+    } as never);
+
+    const { POST } = await import('@/app/api/generate/scene-content-only/route');
+    const req = new Request('http://localhost/api/generate/scene-content-only', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        outline: { id: 'o1', type: 'slide', title: 'Slide 1', description: 'Desc', keyPoints: [], order: 1 },
+        stageId: 'nonexistent',
+      }),
+    });
+    const res = await POST(req as never);
+    expect(res.status).toBe(404);
   });
 });
