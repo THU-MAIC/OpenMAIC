@@ -126,6 +126,7 @@
       "audioTextPlaceholder": "このスライドのナレーションテキスト…",
       "media": "メディア",
       "mediaNone": "なし",
+      "mediaKeep": "維持",
       "mediaImage": "画像",
       "mediaVideo": "動画",
       "generatingPrompt": "プロンプトを生成中…",

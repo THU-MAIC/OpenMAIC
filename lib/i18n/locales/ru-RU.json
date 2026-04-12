@@ -126,6 +126,7 @@
       "audioTextPlaceholder": "Текст narration для этого слайда…",
       "media": "Медиа",
       "mediaNone": "Нет",
+      "mediaKeep": "Сохранить",
       "mediaImage": "Изображение",
       "mediaVideo": "Видео",
       "generatingPrompt": "Генерация промпта…",

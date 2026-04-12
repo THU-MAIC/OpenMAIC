@@ -126,6 +126,7 @@
       "audioTextPlaceholder": "Narration text for this slide…",
       "media": "Media",
       "mediaNone": "None",
+      "mediaKeep": "Keep",
       "mediaImage": "Image",
       "mediaVideo": "Video",
       "generatingPrompt": "Generating prompt…",

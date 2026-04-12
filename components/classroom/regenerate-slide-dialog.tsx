@@ -25,7 +25,7 @@ export interface RegenerateFormValues {
   indication: string;
   audioText: string;
   modifyAudio: boolean;
-  mediaType: 'none' | 'image' | 'video';
+  mediaType: 'none' | 'image' | 'video' | 'keep';
   mediaPrompt: string;
 }
 
@@ -47,10 +47,11 @@ function sceneToAudioText(scene: Scene): string {
     .join('\n\n');
 }
 
-function outlineToMediaType(outline: SceneOutline): 'none' | 'image' | 'video' {
+function outlineToMediaType(outline: SceneOutline): 'none' | 'image' | 'video' | 'keep' {
   const generations = outline.mediaGenerations ?? [];
-  if (generations.some((g) => g.type === 'video')) return 'video';
-  if (generations.some((g) => g.type === 'image')) return 'image';
+  // If the outline had media, default to 'keep' so it's preserved without re-generation
+  if (generations.some((g) => g.type === 'video')) return 'keep';
+  if (generations.some((g) => g.type === 'image')) return 'keep';
   return 'none';
 }
 
@@ -74,7 +75,7 @@ export function RegenerateSlideDialog({
   const [indication, setIndication] = useState('');
   const [audioText, setAudioText] = useState('');
   const [modifyAudio, setModifyAudio] = useState(false);
-  const [mediaType, setMediaType] = useState<'none' | 'image' | 'video'>('none');
+  const [mediaType, setMediaType] = useState<'none' | 'image' | 'video' | 'keep'>('none');
   const [mediaPrompt, setMediaPrompt] = useState('');
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
   const promptAbortRef = useRef<AbortController | null>(null);
@@ -94,7 +95,7 @@ export function RegenerateSlideDialog({
       setModifyAudio(false);
       const mt = outlineToMediaType(outline);
       setMediaType(mt);
-      setMediaPrompt(outlineToMediaPrompt(outline, mt));
+      setMediaPrompt(mt === 'keep' ? '' : outlineToMediaPrompt(outline, mt));
     }
   }, [open, outline, scene, initialValues]);
 
@@ -151,10 +152,11 @@ export function RegenerateSlideDialog({
   );
 
   const handleMediaTypeChange = useCallback(
-    (value: 'none' | 'image' | 'video') => {
+    (value: 'none' | 'image' | 'video' | 'keep') => {
       setMediaType(value);
-      if (value === 'none') {
+      if (value === 'none' || value === 'keep') {
         setMediaPrompt('');
+        promptAbortRef.current?.abort();
         return;
       }
       // Check if original outline already has a prompt for this type
@@ -183,7 +185,7 @@ export function RegenerateSlideDialog({
       outline: updatedOutline,
       audioTextOverride: modifyAudio ? audioText : '',
       mediaType,
-      mediaPrompt: mediaType !== 'none' ? mediaPrompt : undefined,
+      mediaPrompt: mediaType !== 'none' && mediaType !== 'keep' ? mediaPrompt : undefined,
       skipAudio: !modifyAudio,
     });
   };
@@ -260,8 +262,8 @@ export function RegenerateSlideDialog({
             <Label id="regen-media-label" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t('stage.regen.media')}
             </Label>
-            <div role="group" aria-labelledby="regen-media-label" className="flex gap-2">
-              {(['none', 'image', 'video'] as const).map((opt) => (
+            <div role="group" aria-labelledby="regen-media-label" className="flex gap-2 flex-wrap">
+              {(['keep', 'none', 'image', 'video'] as const).map((opt) => (
                 <Button
                   key={opt}
                   type="button"
@@ -274,7 +276,7 @@ export function RegenerateSlideDialog({
               ))}
             </div>
 
-            {mediaType !== 'none' && (
+            {mediaType !== 'none' && mediaType !== 'keep' && (
               <div className="space-y-1">
                 {isGeneratingPrompt ? (
                   <p className="text-xs text-blue-500 dark:text-blue-400 animate-pulse">

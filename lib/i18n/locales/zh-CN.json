@@ -126,6 +126,7 @@
       "audioTextPlaceholder": "此幻灯片的旁白文本…",
       "media": "媒体",
       "mediaNone": "无",
+      "mediaKeep": "保留",
       "mediaImage": "图片",
       "mediaVideo": "视频",
       "generatingPrompt": "正在生成提示词…",

@@ -68,6 +68,7 @@
       "audioTextPlaceholder": "Text de narració per a aquesta slide…",
       "media": "Media",
       "mediaNone": "Cap",
+      "mediaKeep": "No regenerar",
       "mediaImage": "Imatge",
       "mediaVideo": "Vídeo",
       "generatingPrompt": "Generant prompt…",

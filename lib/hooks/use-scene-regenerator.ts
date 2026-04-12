@@ -13,7 +13,7 @@ import { createLogger } from '@/lib/logger';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Action, SpeechAction } from '@/lib/types/action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
-import type { SceneContent } from '@/lib/types/stage';
+import type { SceneContent, SlideContent } from '@/lib/types/stage';
 
 const log = createLogger('SceneRegenerator');
 
@@ -69,7 +69,7 @@ export function applyAudioOverride(actions: Action[], audioOverride: string): Ac
 export interface RegenerateParams {
   outline: SceneOutline;
   audioTextOverride: string;
-  mediaType: 'none' | 'image' | 'video';
+  mediaType: 'none' | 'image' | 'video' | 'keep';
   mediaPrompt?: string;
   /** When true, skip TTS generation and preserve existing speech audio from the scene. */
   skipAudio?: boolean;
@@ -143,19 +143,40 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
       return { success: false, error: 'No active stage found' };
     }
 
-    // Pre-step: capture existing speech audio if we'll skip TTS (before any scene update)
+    // Pre-step: capture existing data from the current scene before any update
     const existingSpeechActions: SpeechAction[] = [];
-    if (params.skipAudio) {
+    type MediaElementInfo = { type: 'image' | 'video'; src: string };
+    const existingMediaElements: MediaElementInfo[] = [];
+
+    if (params.skipAudio || params.mediaType === 'keep') {
       const oldScene = store.getState().scenes.find((s) => s.id === sceneId);
-      for (const action of oldScene?.actions ?? []) {
-        if (action.type === 'speech') existingSpeechActions.push(action as SpeechAction);
+      if (oldScene) {
+        if (params.skipAudio) {
+          for (const action of oldScene.actions ?? []) {
+            if (action.type === 'speech') existingSpeechActions.push(action as SpeechAction);
+          }
+        }
+        if (params.mediaType === 'keep' && oldScene.type === 'slide') {
+          for (const el of (oldScene.content as SlideContent).canvas.elements) {
+            if ((el.type === 'image' || el.type === 'video') && el.src) {
+              existingMediaElements.push({ type: el.type, src: el.src });
+            }
+          }
+        }
       }
     }
+
+    // Resolve the effective media type for the outline:
+    // 'keep' → use the type of the first existing media element (or 'none' if none found)
+    const resolvedMediaType: 'none' | 'image' | 'video' =
+      params.mediaType === 'keep'
+        ? existingMediaElements[0]?.type ?? 'none'
+        : params.mediaType;
 
     // Pre-step: set outline.mediaGenerations based on user's media selection
     const outline: SceneOutline = {
       ...params.outline,
-      mediaGenerations: buildMediaGenerations(params.mediaType, params.mediaPrompt),
+      mediaGenerations: buildMediaGenerations(resolvedMediaType, params.mediaPrompt),
     };
 
     // ── Step 1a: Generate slide content ──
@@ -215,6 +236,22 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     }
 
     if (signal.aborted) return { success: false };
+
+    // When keeping existing media, inject old src values into new content elements
+    if (params.mediaType === 'keep' && existingMediaElements.length > 0 && newContent.type === 'slide') {
+      const slideContent = newContent as SlideContent;
+      const updatedElements = slideContent.canvas.elements.map((el) => {
+        if (el.type === 'image') {
+          const old = existingMediaElements.find((e) => e.type === 'image');
+          if (old) return { ...el, src: old.src };
+        } else if (el.type === 'video') {
+          const old = existingMediaElements.find((e) => e.type === 'video');
+          if (old) return { ...el, src: old.src };
+        }
+        return el;
+      });
+      newContent = { ...slideContent, canvas: { ...slideContent.canvas, elements: updatedElements } };
+    }
 
     // Immediately show new slide content (without audio yet)
     store.getState().updateScene(sceneId, { content: newContent, actions: newActions });
@@ -279,7 +316,7 @@ export function useSceneRegenerator(): UseSceneRegeneratorReturn {
     }
 
     // ── Step 3: Media ──
-    if (params.mediaType !== 'none') {
+    if (params.mediaType !== 'none' && params.mediaType !== 'keep') {
       if (signal.aborted) return { success: false };
       setProgress('media');
       const elementId = params.mediaType === 'image' ? 'gen_img_1' : 'gen_vid_1';

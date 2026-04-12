@@ -686,12 +686,20 @@ export function Stage({
       const scene = getCurrentScene();
       if (!scene || scene.type !== 'slide') return;
       const outline = useStageStore.getState().outlines.find((o) => o.order === scene.order);
+      // When skipAudio, preserve the current narration text for display in case
+      // the user activates "Modify narration" on a subsequent retry.
+      const storedAudioText = (params.skipAudio ?? false)
+        ? (scene.actions ?? [])
+            .filter((a): a is SpeechAction => a.type === 'speech')
+            .map((a) => a.text)
+            .join('\n\n')
+        : params.audioTextOverride;
       setLastRegenValues({
         indication: outlineToIndication(
           outline?.description ?? params.outline.description,
           outline?.keyPoints ?? params.outline.keyPoints,
         ),
-        audioText: params.audioTextOverride,
+        audioText: storedAudioText,
         modifyAudio: !(params.skipAudio ?? false),
         mediaType: params.mediaType,
         mediaPrompt: params.mediaPrompt ?? '',
