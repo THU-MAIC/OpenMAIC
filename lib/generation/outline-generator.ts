@@ -100,7 +100,6 @@ export async function generateSceneOutlinesFromRequirements(
     researchContext: options?.researchContext || 'None',
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
-    pdfLanguageSample: pdfText ? pdfText.substring(0, 200) : '',
   });
 
   if (!prompts) {

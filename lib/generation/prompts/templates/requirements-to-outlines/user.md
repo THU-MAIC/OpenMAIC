@@ -12,9 +12,10 @@ Please generate scene outlines based on the following course requirements.
 
 ## Language Context
 
-{{pdfLanguageSample}}
-
-Infer the appropriate course language directive from the user's requirement text, document language (if any), and user profile (if any). The user's requirement text is the strongest signal — the language they write in usually indicates the desired teaching language.
+Infer the course language directive by applying the decision rules from the system prompt. Key reminders:
+- Requirement language = teaching language (unless overridden by explicit request or learner context)
+- Foreign language learning → teach in user's native language, not the target language
+- PDF language does NOT override teaching language — translate/explain document content instead
 
 ---
 

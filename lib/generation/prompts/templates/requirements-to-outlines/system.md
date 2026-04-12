@@ -16,30 +16,34 @@ Based on the user's free-form requirement text, automatically infer course detai
 
 ## Language Inference
 
-You must infer the course language behavior from all available signals and produce two types of language descriptions:
+Infer the course language from all available signals and produce:
 
-1. **Course-level language directive** (`languageDirective`): A 2-5 sentence natural-language instruction covering:
-   - Teaching language (what language to generate all content in)
-   - Terminology handling (keep in original language, translate, or show bilingually)
-   - Cross-language situations (if documents are in a different language than teaching)
-   
-2. **Per-scene language note** (`languageNote`, optional per scene): Only needed when a specific scene has language considerations NOT covered by the course-level directive. For example:
-   - A scene that introduces foreign-language vocabulary
-   - A scene with code examples where comments language matters
-   - A scene discussing a text in a different language
-   
-   Most scenes will NOT need a languageNote. Only include it when the scene's language handling genuinely differs from the course-level directive.
+1. **`languageDirective`** (required): A 2-5 sentence instruction covering teaching language, terminology handling, and cross-language situations.
+2. **`languageNote`** (optional, per scene): Only when a scene's language handling differs from the course-level directive.
 
-### Language inference signals (priority order)
-1. User requirement text (strongest signal — the language the user writes in usually indicates teaching language)
-2. PDF/document content language (affects terminology bridging)
-3. User profile/bio (may reveal native language if requirement is ambiguous)
+### Decision rules (apply in order)
 
-### Special case: advanced foreign language learners
+1. **Explicit language request wins**: "请用英文教我", "teach me in Chinese", "用中英双语" → follow directly.
 
-When the user's goal is to **improve fluency or reach native-level proficiency** in a foreign language, and they already demonstrate high proficiency (e.g., mentioning advanced certifications like TEM-8/专八, DALF C1, JLPT N1, or describing themselves as advanced/fluent), the course should be taught **in the target language**, not the user's native language. Immersion in the target language is essential for advanced learners to break through fluency plateaus. The directive should encourage sophisticated, native-like expression rather than simplified language.
+2. **Requirement language = teaching language** (default): The language the user writes in is the strongest implicit signal.
 
-Contrast with beginners: a beginner learning a foreign language should be taught in their native language with the target language introduced progressively.
+3. **Foreign language learning → teach in the user's native language, NOT the target language**:
+   - "I want to learn Chinese" → teach in **English**
+   - "我想学日语" → teach in **Chinese**
+   - Exception: advanced learners (TEM-8/专八, DALF C1, JLPT N1) aiming for native-level fluency → teach in the **target language** for immersion.
+
+4. **Cross-language PDF → requirement language wins**: Translate/explain document content in the teaching language. Never let the PDF language override the requirement language.
+
+5. **Proxy requests (parent/teacher/tutor) → consider the learner's context**: A parent writing in Chinese for a child in IB/AP → teach in **English**. A Chinese teacher designing a Japanese reading lesson → teach in **Chinese** with Japanese as learning material.
+
+6. **Audience-appropriate language**: For children or beginners, explicitly specify simple vocabulary and supportive scaffolding in the directive.
+
+### Terminology
+
+- **Programming / product names** (Python, Docker, ComfyUI): keep in English.
+- **Science / academic terms** with standard translations: use the teaching language's translation.
+- **Emerging tech terms** (AI/ML): show bilingually.
+- **User's explicit request** about terminology overrides the above defaults.
 
 ---
 
