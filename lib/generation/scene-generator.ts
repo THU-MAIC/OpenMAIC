@@ -223,7 +223,7 @@ export async function generateSceneContent(
     case 'interactive':
       return generateInteractiveContent(outline, aiCall, languageDirective);
     case 'pbl':
-      return generatePBLSceneContent(outline, languageModel);
+      return generatePBLSceneContent(outline, languageModel, languageDirective);
     default:
       return null;
   }
@@ -854,6 +854,7 @@ async function generateInteractiveContent(
 async function generatePBLSceneContent(
   outline: SceneOutline,
   languageModel?: LanguageModel,
+  languageDirective?: string,
 ): Promise<GeneratedPBLContent | null> {
   if (!languageModel) {
     log.error('LanguageModel required for PBL generation');
@@ -875,7 +876,8 @@ async function generatePBLSceneContent(
         projectDescription: pblConfig.projectDescription,
         targetSkills: pblConfig.targetSkills,
         issueCount: pblConfig.issueCount,
-        language: pblConfig.language,
+        languageDirective:
+          languageDirective || 'Teach in the language that matches the user requirement.',
       },
       languageModel,
       {

@@ -204,7 +204,7 @@ Use `pbl` type when the course involves complex, multi-step project work that be
 **Constraints**:
 
 - Limit to **at most 1 PBL scene per course** (they are comprehensive and long)
-- PBL scenes **require** a `pblConfig` object with: projectTopic, projectDescription, targetSkills, issueCount, language
+- PBL scenes **require** a `pblConfig` object with: projectTopic, projectDescription, targetSkills, issueCount
 - PBL is for substantial project work - do NOT use for simple exercises or single-step tasks
 - The `pblConfig.targetSkills` should list 2-5 specific skills students will develop
 - The `pblConfig.issueCount` should typically be 2-5 issues
@@ -286,7 +286,7 @@ Output a JSON **object** (not a bare array) with this structure:
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
 | interactiveConfig | object                   | ❌       | Required for interactive type, contains conceptName/conceptOverview/designIdea/subject           |
 | languageNote      | string                   | ❌       | Optional. Only include when this scene has language considerations not covered by the course-level languageDirective. |
-| pblConfig         | object                   | ❌       | Required for pbl type, contains projectTopic/projectDescription/targetSkills/issueCount/language |
+| pblConfig         | object                   | ❌       | Required for pbl type, contains projectTopic/projectDescription/targetSkills/issueCount |
 
 ### quizConfig Structure
 
@@ -316,8 +316,7 @@ Output a JSON **object** (not a bare array) with this structure:
   "projectTopic": "Main topic of the project",
   "projectDescription": "Brief description of what students will build/accomplish",
   "targetSkills": ["Skill 1", "Skill 2", "Skill 3"],
-  "issueCount": 3,
-  "language": "zh-CN"
+  "issueCount": 3
 }
 ```
 
@@ -329,7 +328,7 @@ Output a JSON **object** (not a bare array) with this structure:
 2. **type can be `"slide"`, `"quiz"`, `"interactive"`, or `"pbl"`**
 3. **quiz type must include quizConfig**
 4. **interactive type must include interactiveConfig** - with conceptName, conceptOverview, designIdea, and subject
-   5b. **pbl type must include pblConfig** - with projectTopic, projectDescription, targetSkills, issueCount, and language
+   5b. **pbl type must include pblConfig** - with projectTopic, projectDescription, targetSkills, and issueCount
 5. Arrange appropriate number of scenes based on inferred duration (typically 1-2 scenes per minute)
 6. Insert quizzes at appropriate points for knowledge checks
 7. Use interactive scenes sparingly (max 1-2 per course) and only when the concept truly benefits from hands-on interaction
