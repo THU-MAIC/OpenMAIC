@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -34,7 +35,9 @@ import type { SpeechAction } from '@/lib/types/action';
 import type { RegenerateParams } from '@/lib/hooks/use-scene-regenerator';
 
 export interface RegenerateFormValues {
+  title: string;
   indication: string;
+  regenerateSlide: boolean;
   audioText: string;
   modifyAudio: boolean;
   mediaType: 'none' | 'image' | 'video' | 'keep';
@@ -86,6 +89,8 @@ export function RegenerateSlideDialog({
   const { t } = useI18n();
   const defaultThemeId = useSettingsStore((s) => s.themeId);
 
+  const [title, setTitle] = useState('');
+  const [regenerateSlide, setRegenerateSlide] = useState(true);
   const [indication, setIndication] = useState('');
   const [audioText, setAudioText] = useState('');
   const [modifyAudio, setModifyAudio] = useState(false);
@@ -104,6 +109,8 @@ export function RegenerateSlideDialog({
   useEffect(() => {
     if (!open) return;
     if (initialValues) {
+      setTitle(initialValues.title);
+      setRegenerateSlide(initialValues.regenerateSlide);
       setIndication(initialValues.indication);
       setAudioText(initialValues.audioText);
       setModifyAudio(initialValues.modifyAudio);
@@ -111,6 +118,8 @@ export function RegenerateSlideDialog({
       setMediaPrompt(initialValues.mediaPrompt);
       setThemeId(initialValues.themeId || defaultThemeId);
     } else {
+      setTitle(outline.title);
+      setRegenerateSlide(true);
       setIndication(outlineToIndication(outline.description, outline.keyPoints));
       setAudioText(sceneToAudioText(scene));
       setModifyAudio(false);
@@ -248,9 +257,11 @@ export function RegenerateSlideDialog({
     const { description, keyPoints } = indicationToOutline(indication);
     const updatedOutline: SceneOutline = {
       ...outline,
+      title: regenerateSlide ? title : outline.title,
       description,
       keyPoints,
     };
+    const forceSlideRegen = !regenerateSlide && needsNewMedia && !hasExistingMedia;
     // Do NOT call onClose() here — Stage closes the dialog by transitioning
     // regenState from 'dialog_open' to 'regenerating'. Calling onClose() would
     // race with setRegenState('regenerating') and the batch winner is 'idle',
@@ -261,9 +272,15 @@ export function RegenerateSlideDialog({
       mediaType,
       mediaPrompt: mediaType !== 'none' && mediaType !== 'keep' ? mediaPrompt : undefined,
       skipAudio: !modifyAudio,
+      skipSlide: !regenerateSlide && !forceSlideRegen,
       themeId: themeId || undefined,
     });
   };
+
+  // Conflict: new media requested without slide toggle, but slide has no existing media slot
+  const hasExistingMedia = outlineToMediaType(outline) !== 'none';
+  const needsNewMedia = mediaType === 'image' || mediaType === 'video';
+  const showSlideWarning = !regenerateSlide && needsNewMedia && !hasExistingMedia;
 
   const isSubmitDisabled =
     isGeneratingPrompt || (mediaType !== 'none' && mediaType !== 'keep' && !mediaPrompt.trim());
@@ -273,10 +290,10 @@ export function RegenerateSlideDialog({
       <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="text-purple-700 dark:text-purple-300">
-            <span aria-hidden="true">↺</span> {t('stage.regen.dialogTitle')} — {scene.title}
+            <span aria-hidden="true">↺</span> {t('stage.regen.dialogTitle')} — {title}
           </DialogTitle>
           <DialogDescription className="sr-only">
-            {t('stage.regen.dialogTitle')} — {scene.title}
+            {t('stage.regen.dialogTitle')} — {title}
           </DialogDescription>
         </DialogHeader>
 
@@ -287,60 +304,94 @@ export function RegenerateSlideDialog({
         )}
 
         <div className="flex-1 overflow-y-auto space-y-4 px-1 py-2">
-          {/* Indication */}
+          {/* Slide block */}
           <div className="space-y-1.5">
-            <Label htmlFor="regen-indication" className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              {t('stage.regen.indication')}
-            </Label>
-            <Textarea
-              id="regen-indication"
-              value={indication}
-              onChange={(e) => setIndication(e.target.value)}
-              rows={4}
-              className="resize-none text-sm"
-              placeholder={t('stage.regen.indicationPlaceholder')}
-            />
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {t('stage.regen.indication')}
+              </Label>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">{t('stage.regen.modifySlide')}</span>
+                <Switch
+                  id="regen-modify-slide"
+                  checked={regenerateSlide}
+                  onCheckedChange={setRegenerateSlide}
+                />
+              </div>
+            </div>
+            {regenerateSlide ? (
+              <>
+                <div className="space-y-1">
+                  <Label htmlFor="regen-title" className="text-xs text-muted-foreground">
+                    {t('stage.regen.slideTitle')}
+                  </Label>
+                  <Input
+                    id="regen-title"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="h-8 text-sm"
+                  />
+                </div>
+                <Textarea
+                  id="regen-indication"
+                  value={indication}
+                  onChange={(e) => setIndication(e.target.value)}
+                  rows={4}
+                  className="resize-none text-sm"
+                  placeholder={t('stage.regen.indicationPlaceholder')}
+                />
+                {themes.length > 0 && (
+                  <div className="space-y-1.5">
+                    <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                      {t('stage.regen.theme')}
+                    </Label>
+                    <Select value={themeId} onValueChange={setThemeId}>
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue>
+                          {(() => {
+                            const active = themes.find((th) => th.id === themeId);
+                            return active ? (
+                              <span className="flex items-center gap-2">
+                                <span
+                                  className="w-3 h-3 rounded-sm border border-border/50 shrink-0"
+                                  style={{ background: active.colors.primary }}
+                                />
+                                {active.name}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">{t('stage.regen.theme')}</span>
+                            );
+                          })()}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {themes.map((theme) => (
+                          <SelectItem key={theme.id} value={theme.id}>
+                            <span className="flex items-center gap-2">
+                              <span
+                                className="w-3 h-3 rounded-sm border border-border/50 shrink-0"
+                                style={{ background: theme.colors.primary }}
+                              />
+                              {theme.name}
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground py-1">
+                {t('stage.regen.slideKeep')}
+              </p>
+            )}
           </div>
 
-          {/* Theme selector — only shown when themes are available */}
-          {themes.length > 0 && (
-            <div className="space-y-1.5">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                {t('stage.regen.theme')}
-              </Label>
-              <Select value={themeId} onValueChange={setThemeId}>
-                <SelectTrigger className="h-8 text-sm">
-                  <SelectValue>
-                    {(() => {
-                      const active = themes.find((th) => th.id === themeId);
-                      return active ? (
-                        <span className="flex items-center gap-2">
-                          <span
-                            className="w-3 h-3 rounded-sm border border-border/50 shrink-0"
-                            style={{ background: active.colors.primary }}
-                          />
-                          {active.name}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">{t('stage.regen.theme')}</span>
-                      );
-                    })()}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {themes.map((theme) => (
-                    <SelectItem key={theme.id} value={theme.id}>
-                      <span className="flex items-center gap-2">
-                        <span
-                          className="w-3 h-3 rounded-sm border border-border/50 shrink-0"
-                          style={{ background: theme.colors.primary }}
-                        />
-                        {theme.name}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          {/* Conflict warning: new media requested but slide has no existing media slot */}
+          {showSlideWarning && (
+            <div className="mx-1 px-3 py-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 text-sm text-amber-700 dark:text-amber-300">
+              ⚠ {t('stage.regen.slideWarningMediaNeeded')}
             </div>
           )}
 
