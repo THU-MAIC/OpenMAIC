@@ -2,6 +2,7 @@ import { promises as fs, createReadStream } from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { CLASSROOMS_DIR, isValidClassroomId } from '@/lib/server/classroom-storage';
+import { corsHeaders, getOrigin, corsOptionsHandler } from '@/lib/server/cors';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomMedia');
@@ -20,10 +21,13 @@ const MIME_TYPES: Record<string, string> = {
   '.aac': 'audio/aac',
 };
 
+export { corsOptionsHandler as OPTIONS };
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ classroomId: string; path: string[] }> },
 ) {
+  const cors = corsHeaders(getOrigin(_req));
   const { classroomId, path: pathSegments } = await params;
 
   // Validate classroomId
@@ -80,6 +84,7 @@ export async function GET(
         'Content-Type': contentType,
         'Content-Length': String(stat.size),
         'Cache-Control': 'public, max-age=86400, immutable',
+        ...cors,
       },
     });
   } catch (error) {
