@@ -14,11 +14,7 @@ import {
   type ManifestScene,
   type MediaIndexEntry,
 } from './classroom-zip-types';
-import {
-  collectAudioFiles,
-  collectMediaFiles,
-  actionsToManifest,
-} from './classroom-zip-utils';
+import { collectAudioFiles, collectMediaFiles, actionsToManifest } from './classroom-zip-utils';
 import type { SpeechAction } from '@/lib/types/action';
 import { createLogger } from '@/lib/logger';
 
@@ -99,9 +95,7 @@ export function useExportClassroom() {
         title: scene.title,
         order: scene.order,
         content: scene.content,
-        actions: scene.actions
-          ? actionsToManifest(scene.actions, audioIdToPath)
-          : undefined,
+        actions: scene.actions ? actionsToManifest(scene.actions, audioIdToPath) : undefined,
         whiteboards: scene.whiteboards,
         ...(scene.multiAgent?.enabled
           ? {
@@ -150,10 +144,12 @@ export function useExportClassroom() {
       }
 
       // 7. Assemble manifest
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const appVersion: string = require('../../../package.json').version ?? '0.1.0';
       const manifest: ClassroomManifest = {
         formatVersion: CLASSROOM_ZIP_FORMAT_VERSION,
         exportedAt: new Date().toISOString(),
-        appVersion: '0.1.0',
+        appVersion,
         stage: manifestStage,
         agents: manifestAgents,
         scenes: manifestScenes,

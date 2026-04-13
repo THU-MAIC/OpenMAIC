@@ -583,38 +583,41 @@ function HomePage() {
           {/* Trigger — divider-line with centered text */}
           <div className="group w-full flex items-center gap-4 py-2">
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-            <button
-              onClick={() => {
-                const next = !recentOpen;
-                setRecentOpen(next);
-                try {
-                  localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
-                } catch {
-                  /* ignore */
-                }
-              }}
-              className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 hover:text-foreground/70 transition-colors select-none cursor-pointer"
-            >
-              <Clock className="size-3.5" />
-              {t('classroom.recentClassrooms')}
-              <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
-              <motion.div
-                animate={{ rotate: recentOpen ? 180 : 0 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
+            <div className="shrink-0 flex items-center gap-3 text-[13px] text-muted-foreground/60 select-none">
+              <button
+                onClick={() => {
+                  const next = !recentOpen;
+                  setRecentOpen(next);
+                  try {
+                    localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="flex items-center gap-2 hover:text-foreground/70 transition-colors cursor-pointer"
               >
-                <ChevronDown className="size-3.5" />
-              </motion.div>
-            </button>
+                <Clock className="size-3.5" />
+                {t('classroom.recentClassrooms')}
+                <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
+                <motion.div
+                  animate={{ rotate: recentOpen ? 180 : 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                >
+                  <ChevronDown className="size-3.5" />
+                </motion.div>
+              </button>
+              <button
+                onClick={triggerFileSelect}
+                disabled={importing}
+                className="group/import flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
+              >
+                <Upload className="size-3" />
+                <span className="max-w-0 overflow-hidden opacity-0 group-hover/import:max-w-[80px] group-hover/import:opacity-100 transition-all duration-200 whitespace-nowrap">
+                  {t('import.classroom')}
+                </span>
+              </button>
+            </div>
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-            <button
-              onClick={triggerFileSelect}
-              disabled={importing}
-              className="shrink-0 flex items-center gap-1.5 text-[12px] text-muted-foreground/50 hover:text-foreground/70 transition-colors"
-              title={t('import.classroom')}
-            >
-              <Upload className="size-3.5" />
-              <span>{t('import.classroom')}</span>
-            </button>
           </div>
 
           {/* Expandable content */}
