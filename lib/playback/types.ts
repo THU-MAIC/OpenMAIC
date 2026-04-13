@@ -58,5 +58,8 @@ export interface PlaybackEngineCallbacks {
   /** Get current playback speed multiplier (e.g. 1, 1.5, 2) */
   getPlaybackSpeed?: () => number;
 
+  /** Get course language (zh-CN | zh-TW | en-US) for browser-native TTS voice selection */
+  getCourseLanguage?: () => string;
+
   onComplete?: () => void;
 }

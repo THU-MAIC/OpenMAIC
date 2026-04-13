@@ -658,13 +658,16 @@ export class PlaybackEngine {
       }
     }
     if (!voiceFound) {
-      // No usable voice configured — detect text language so the browser
-      // auto-selects an appropriate voice.
-      const cjkRatio =
-        chunkText.length > 0
-          ? (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / chunkText.length
-          : 0;
-      utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
+      // No usable voice configured — use course language to select browser TTS voice
+      // For zh-TW (Traditional Chinese), use zh-HK (Cantonese) for better voice quality
+      const courseLanguage = this.callbacks.getCourseLanguage?.() ?? 'zh-CN';
+      if (courseLanguage === 'zh-TW') {
+        utterance.lang = 'zh-HK'; // Cantonese voice for Traditional Chinese
+      } else if (courseLanguage === 'zh-CN') {
+        utterance.lang = 'zh-CN';
+      } else {
+        utterance.lang = 'en-US';
+      }
     }
 
     utterance.onend = () => {

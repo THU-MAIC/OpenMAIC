@@ -4,11 +4,28 @@ const VOICES_LOAD_TIMEOUT_MS = 2000;
 const PREVIEW_TIMEOUT_MS = 30000;
 const CJK_LANG_THRESHOLD = 0.3;
 
+/**
+ * Map UI locale to browser TTS language code.
+ * zh-TW (Traditional Chinese) → zh-HK (Cantonese - better voice quality)
+ * zh-CN (Simplified Chinese) → zh-CN
+ * en-US → en-US
+ */
+function localeToBrowserTTSLang(locale: string): string {
+  if (locale === 'zh-TW') {
+    return 'zh-HK';
+  }
+  if (locale === 'zh-CN') {
+    return 'zh-CN';
+  }
+  return 'en-US';
+}
+
 type PlayBrowserTTSPreviewOptions = {
   text: string;
   voice?: string;
   rate?: number;
   voices?: SpeechSynthesisVoice[];
+  locale?: string; // UI locale (zh-CN, zh-TW, en-US) for language selection
 };
 
 function createAbortError(): Error {
@@ -68,11 +85,12 @@ export async function ensureVoicesLoaded(): Promise<SpeechSynthesisVoice[]> {
   });
 }
 
-/** Resolve a browser voice by voiceURI, name, or lang, with language fallback by text. */
+/** Resolve a browser voice by voiceURI, name, or lang, with language fallback by locale or text. */
 export function resolveBrowserVoice(
   voices: SpeechSynthesisVoice[],
   voiceNameOrLang: string,
   text: string,
+  locale?: string,
 ): { voice: SpeechSynthesisVoice | null; lang: string } {
   const target = voiceNameOrLang.trim();
   const matchedVoice =
@@ -82,9 +100,18 @@ export function resolveBrowserVoice(
         ) || null
       : null;
 
+  if (matchedVoice) {
+    return {
+      voice: matchedVoice,
+      lang: matchedVoice.lang,
+    };
+  }
+
+  // No voice matched — use locale if provided, otherwise infer from text
+  const lang = locale ? localeToBrowserTTSLang(locale) : inferPreviewLang(text);
   return {
-    voice: matchedVoice,
-    lang: matchedVoice?.lang || inferPreviewLang(text),
+    voice: null,
+    lang,
   };
 }
 
@@ -153,7 +180,12 @@ export function playBrowserTTSPreview(options: PlayBrowserTTSPreviewOptions): {
         const utterance = new SpeechSynthesisUtterance(options.text);
         utterance.rate = options.rate ?? 1;
 
-        const { voice, lang } = resolveBrowserVoice(voices, options.voice ?? '', options.text);
+        const { voice, lang } = resolveBrowserVoice(
+          voices,
+          options.voice ?? '',
+          options.text,
+          options.locale,
+        );
         if (voice) {
           utterance.voice = voice;
         }

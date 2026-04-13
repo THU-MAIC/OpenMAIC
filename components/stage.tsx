@@ -481,6 +481,11 @@ export function Stage({
         return ids.includes(agentId);
       },
       getPlaybackSpeed: () => useSettingsStore.getState().playbackSpeed || 1,
+      getCourseLanguage: () => {
+        // Get course language from stage (set during generation)
+        const stage = useStageStore.getState().stage;
+        return stage?.language || 'zh-CN';
+      },
       onComplete: () => {
         // lectureSpeech intentionally NOT cleared — last sentence stays visible
         // until scene transition (auto-play) or user restarts. Scene change

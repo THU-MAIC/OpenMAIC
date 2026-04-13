@@ -32,7 +32,7 @@ interface TTSSettingsProps {
 }
 
 export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
@@ -116,6 +116,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
           ttsProvidersConfig[selectedProviderId]?.baseUrl ||
           providerConfig?.customDefaultBaseUrl ||
           '',
+        locale, // Pass UI locale for browser TTS language selection
       });
       setTestStatus('success');
       setTestMessage(t('settings.ttsTestSuccess'));

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useBrowserTTS } from '@/lib/hooks/use-browser-tts';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   resolveAgentVoice,
   getAvailableProvidersWithVoices,
@@ -29,6 +30,7 @@ interface QueueItem {
 }
 
 export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: DiscussionTTSOptions) {
+  const { locale } = useI18n();
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -57,6 +59,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     cancel: browserCancel,
   } = useBrowserTTS({
     rate: ttsSpeed,
+    locale, // Pass UI locale for browser TTS language selection
     onEnd: () => {
       isPlayingRef.current = false;
       segmentDoneCounterRef.current++;
@@ -86,37 +89,72 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
 
   const resolveVoiceForAgent = useCallback(
     (agentId: string | null): ResolvedVoice => {
+      // If no available server providers, always use browser-native-tts
+      // This ensures discussion TTS works even when no server TTS is configured
       const providers = getAvailableProvidersWithVoices(ttsProvidersConfig);
+      const hasServerProviders = providers.length > 0;
+
+      // If no agentId provided
       if (!agentId) {
-        if (providers.length > 0) {
+        if (hasServerProviders && globalTtsProviderId !== 'browser-native-tts') {
           return {
-            providerId: providers[0].providerId,
-            voiceId: providers[0].voices[0]?.id ?? 'default',
+            providerId: globalTtsProviderId,
+            voiceId: globalTtsVoice,
+            modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
           };
         }
         return { providerId: 'browser-native-tts', voiceId: 'default' };
       }
+
       const agent = agents.find((a) => a.id === agentId);
       if (!agent) {
-        if (providers.length > 0) {
+        if (hasServerProviders && globalTtsProviderId !== 'browser-native-tts') {
           return {
-            providerId: providers[0].providerId,
-            voiceId: providers[0].voices[0]?.id ?? 'default',
+            providerId: globalTtsProviderId,
+            voiceId: globalTtsVoice,
             modelId: undefined,
           };
         }
         return { providerId: 'browser-native-tts', voiceId: 'default', modelId: undefined };
       }
-      // Teacher: always use global lecture voice (single source of truth with settings)
+
+      // Teacher: always use global lecture voice
       if (agent.role === 'teacher') {
-        return {
-          providerId: globalTtsProviderId,
-          voiceId: globalTtsVoice,
-          modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
-        };
+        if (hasServerProviders && globalTtsProviderId !== 'browser-native-tts') {
+          return {
+            providerId: globalTtsProviderId,
+            voiceId: globalTtsVoice,
+            modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+          };
+        }
+        return { providerId: 'browser-native-tts', voiceId: 'default' };
       }
+
+      // For non-teacher agents:
+      // 1. If global TTS is browser-native-tts, use browser-native
+      // 2. If no server providers available, use browser-native
+      // 3. Otherwise use agent's voice config or first available provider
+      if (!hasServerProviders || globalTtsProviderId === 'browser-native-tts') {
+        return { providerId: 'browser-native-tts', voiceId: 'default' };
+      }
+
       const index = agentIndexMap.current.get(agentId) ?? 0;
-      return resolveAgentVoice(agent, index, providers);
+      const resolved = resolveAgentVoice(agent, index, providers);
+
+      // Double-check: if resolved to browser-native, use it; otherwise ensure it's a valid server provider
+      if (resolved.providerId === 'browser-native-tts') {
+        return resolved;
+      }
+
+      // Additional safety: if the resolved provider doesn't have an API key configured, use browser-native
+      const providerConfig = ttsProvidersConfig[resolved.providerId];
+      const hasApiKey = providerConfig?.apiKey && providerConfig.apiKey.trim().length > 0;
+      const isServerConfigured = providerConfig?.isServerConfigured === true;
+      if (!hasApiKey && !isServerConfigured) {
+        return { providerId: 'browser-native-tts', voiceId: 'default' };
+      }
+
+      return resolved;
     },
     [agents, ttsProvidersConfig, globalTtsProviderId, globalTtsVoice],
   );

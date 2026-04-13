@@ -16,6 +16,12 @@ export interface UseBrowserTTSOptions {
   pitch?: number; // 0 to 2
   volume?: number; // 0 to 1
   lang?: string; // e.g., 'zh-CN', 'en-US'
+  /**
+   * Locale code (zh-CN, zh-TW, en-US) for language selection.
+   * zh-TW maps to zh-HK (Cantonese) for better voice quality.
+   * If provided, overrides the static lang option when no specific voice is set.
+   */
+  locale?: string;
 }
 
 export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
@@ -27,6 +33,7 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
     pitch = 1.0,
     volume = 1.0,
     lang = 'zh-CN',
+    locale,
   } = options;
 
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -73,13 +80,26 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
       utterance.rate = rate;
       utterance.pitch = pitch;
       utterance.volume = volume;
-      utterance.lang = lang;
+
+      // Determine language: use locale if provided, otherwise fall back to lang option
+      let finalLang = lang;
+      if (locale) {
+        if (locale === 'zh-TW') {
+          finalLang = 'zh-HK'; // Cantonese for Traditional Chinese
+        } else if (locale === 'zh-CN') {
+          finalLang = 'zh-CN';
+        } else {
+          finalLang = locale; // en-US or others
+        }
+      }
+      utterance.lang = finalLang;
 
       // Set voice if specified
       if (voiceURI) {
         const voice = availableVoices.find((v) => v.voiceURI === voiceURI);
         if (voice) {
           utterance.voice = voice;
+          utterance.lang = voice.lang; // Use voice's language if available
         }
       }
 

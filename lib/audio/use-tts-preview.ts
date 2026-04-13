@@ -15,6 +15,7 @@ export interface TTSPreviewOptions {
   speed: number;
   apiKey?: string;
   baseUrl?: string;
+  locale?: string; // UI locale (zh-CN, zh-TW, en-US) for browser TTS language selection
 }
 
 /**
@@ -81,6 +82,7 @@ export function useTTSPreview() {
             voice: options.voice,
             rate: options.speed,
             voices,
+            locale: options.locale,
           });
           cancelRef.current = controller.cancel;
           await controller.promise;
