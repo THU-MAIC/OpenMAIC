@@ -425,24 +425,18 @@ export function CanvasToolbar({
         <div className="hidden sm:block">
           <CtrlDivider />
         </div>
-        {onTogglePresentation && (
+        {onTogglePresentation && !isPresenting && (
           <button
             onClick={onTogglePresentation}
             className={cn(
               ctrlBtn,
               'w-6 h-6',
-              isPresenting
-                ? 'text-violet-600 dark:text-violet-400'
-                : 'text-gray-500 dark:text-gray-400',
+              'text-gray-500 dark:text-gray-400',
             )}
             aria-label={presentationLabel}
             title={presentationLabel}
           >
-            {isPresenting ? (
-              <Minimize2 className="w-3.5 h-3.5" />
-            ) : (
-              <Maximize2 className="w-3.5 h-3.5" />
-            )}
+            <Maximize2 className="w-3.5 h-3.5" />
           </button>
         )}
         {onToggleChat && (

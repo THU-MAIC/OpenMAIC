@@ -3,10 +3,11 @@
 import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot } from 'lucide-react';
+import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -42,7 +43,13 @@ function GenerationPreviewContent() {
   const [sessionLoaded, setSessionLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
-  const [isComplete] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
+  const [stageIdForEntry, setStageIdForEntry] = useState<string | null>(null);
+  const userInteractedRef = useRef(false);
+
+  const handleOutlineScroll = () => {
+    userInteractedRef.current = true;
+  };
   const [statusMessage, setStatusMessage] = useState('');
   const [streamingOutlines, setStreamingOutlines] = useState<SceneOutline[] | null>(null);
   const [truncationWarnings, setTruncationWarnings] = useState<string[]>([]);
@@ -783,7 +790,13 @@ function GenerationPreviewContent() {
 
       sessionStorage.removeItem('generationSession');
       await store.saveToStorage();
-      router.push(`/classroom/${stage.id}`);
+      
+      if (userInteractedRef.current) {
+        setIsComplete(true);
+        setStageIdForEntry(stage.id);
+      } else {
+        router.push(`/classroom/${stage.id}`);
+      }
     } catch (err) {
       // AbortError is expected when navigating away — don't show as error
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -870,12 +883,16 @@ function GenerationPreviewContent() {
         </Button>
       </motion.div>
 
-      <div className="z-10 w-full max-w-lg space-y-8 flex flex-col items-center">
+      <div className={cn(
+        "z-10 w-full flex flex-col items-center transition-all duration-700 ease-in-out gap-8",
+        streamingOutlines && streamingOutlines.length > 0 ? "max-w-6xl lg:flex-row lg:items-center" : "max-w-lg"
+      )}>
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="w-full"
+           layout
+           initial={{ opacity: 0, y: 20 }}
+           animate={{ opacity: 1, y: 0 }}
+           transition={{ duration: 0.5 }}
+           className={cn("w-full transition-all duration-700", streamingOutlines && streamingOutlines.length > 0 ? "lg:w-[400px] shrink-0" : "")}
         >
           <Card className="relative overflow-hidden border-muted/40 shadow-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl min-h-[400px] flex flex-col items-center justify-center p-8 md:p-12">
             {/* Progress Dots */}
@@ -1025,20 +1042,97 @@ function GenerationPreviewContent() {
           </Card>
         </motion.div>
 
+        {streamingOutlines && streamingOutlines.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.5, delay: 0.2 }}
+            className="w-full lg:flex-1 h-[500px]"
+          >
+            <Card className="relative overflow-hidden border-muted/40 shadow-2xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl h-full flex flex-col text-left">
+              <div className="p-6 border-b border-muted/20 bg-muted/5 flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-bold">{t('generation.courseOutlines', { defaultValue: 'Course Outlines' })}</h3>
+                  <p className="text-sm text-muted-foreground">{t('generation.courseOutlinesDesc', { defaultValue: 'Review the generated structure before the class begins' })}</p>
+                </div>
+              </div>
+              <ScrollArea 
+                className="flex-1 min-h-0" 
+                onScrollCapture={handleOutlineScroll}
+              >
+                <div className="space-y-4 p-6 overflow-hidden">
+                  {streamingOutlines.map((outline, idx) => (
+                    <motion.div 
+                      key={idx}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="p-4 rounded-xl bg-white/50 dark:bg-slate-800/50 border shadow-sm backdrop-blur-sm"
+                    >
+                      <div className="flex items-start gap-4">
+                        <div className="flex items-center justify-center size-8 rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-300 font-bold shrink-0 shadow-inner">
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1">
+                          <h4 className="font-semibold text-base">{outline.title}</h4>
+                          <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{outline.description}</p>
+                          {outline.keyPoints && outline.keyPoints.length > 0 && (
+                            <ul className="mt-3 space-y-2">
+                              {outline.keyPoints.map((kp, kIdx) => (
+                                <li key={kIdx} className="text-sm flex items-start gap-2.5">
+                                  <div className="size-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0" />
+                                  <span className="text-slate-600 dark:text-slate-300">{kp}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  ))}
+                  {currentStepIndex === activeSteps.findIndex(s => s.id === 'outline') && (
+                    <div className="py-6 text-center text-sm text-muted-foreground flex items-center justify-center gap-2">
+                      <div className="size-4 border-2 border-slate-300 border-t-blue-500 rounded-full animate-spin" />
+                      {t('generation.generatingMore', { defaultValue: 'Generating more...' })}
+                    </div>
+                  )}
+                </div>
+              </ScrollArea>
+            </Card>
+          </motion.div>
+        )}
+
         {/* Footer Action */}
-        <div className="h-16 flex items-center justify-center w-full">
-          <AnimatePresence>
+        <div className="flex items-center justify-center w-full mt-2 lg:mt-0 lg:absolute lg:bottom-8 lg:right-8 lg:w-auto h-16 z-20">
+          <AnimatePresence mode="popLayout">
             {error ? (
               <motion.div
+                key="error-btn"
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
                 className="w-full max-w-xs"
               >
-                <Button size="lg" variant="outline" className="w-full h-12" onClick={goBackToHome}>
+                <Button size="lg" variant="outline" className="w-full h-12 shadow-lg bg-white/80 dark:bg-slate-900/80 backdrop-blur" onClick={goBackToHome}>
                   {t('generation.goBackAndRetry')}
                 </Button>
               </motion.div>
-            ) : !isComplete ? (
+            ) : isComplete && stageIdForEntry ? (
+              <motion.div
+                key="ready-btn"
+                initial={{ opacity: 0, y: 10, scale: 0.9 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ type: "spring", stiffness: 400, damping: 25 }}
+              >
+                <Button 
+                  size="lg" 
+                  className="h-14 px-8 rounded-full shadow-xl shadow-blue-500/20 bg-blue-600 hover:bg-blue-700 text-lg group" 
+                  onClick={() => router.push(`/classroom/${stageIdForEntry}`)}
+                >
+                  {t('generation.teacherReady', { defaultValue: 'The teacher is ready' })}
+                  <ArrowRight className="size-5 ml-2 transition-transform group-hover:translate-x-1" />
+                </Button>
+              </motion.div>
+            ) : (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
@@ -1056,7 +1150,7 @@ function GenerationPreviewContent() {
                   </button>
                 )}
               </motion.div>
-            ) : null}
+            )}
           </AnimatePresence>
         </div>
       </div>
