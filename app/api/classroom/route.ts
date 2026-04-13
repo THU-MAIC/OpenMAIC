@@ -7,11 +7,15 @@ import {
   persistClassroom,
   readClassroom,
 } from '@/lib/server/classroom-storage';
+import { corsHeaders, getOrigin, corsOptionsHandler } from '@/lib/server/cors';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('Classroom API');
 
+export { corsOptionsHandler as OPTIONS };
+
 export async function POST(request: NextRequest) {
+  const cors = corsHeaders(getOrigin(request));
   let stageId: string | undefined;
   let sceneCount: number | undefined;
   try {
@@ -25,6 +29,8 @@ export async function POST(request: NextRequest) {
         API_ERROR_CODES.MISSING_REQUIRED_FIELD,
         400,
         'Missing required fields: stage, scenes',
+        undefined,
+        cors,
       );
     }
 
@@ -33,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     const persisted = await persistClassroom({ id, stage: { ...stage, id }, scenes }, baseUrl);
 
-    return apiSuccess({ id: persisted.id, url: persisted.url }, 201);
+    return apiSuccess({ id: persisted.id, url: persisted.url }, 201, cors);
   } catch (error) {
     log.error(
       `Classroom storage failed [stageId=${stageId ?? 'unknown'}, scenes=${sceneCount ?? 0}]:`,
@@ -44,11 +50,13 @@ export async function POST(request: NextRequest) {
       500,
       'Failed to store classroom',
       error instanceof Error ? error.message : String(error),
+      cors,
     );
   }
 }
 
 export async function GET(request: NextRequest) {
+  const cors = corsHeaders(getOrigin(request));
   try {
     const id = request.nextUrl.searchParams.get('id');
 
@@ -57,19 +65,21 @@ export async function GET(request: NextRequest) {
         API_ERROR_CODES.MISSING_REQUIRED_FIELD,
         400,
         'Missing required parameter: id',
+        undefined,
+        cors,
       );
     }
 
     if (!isValidClassroomId(id)) {
-      return apiError(API_ERROR_CODES.INVALID_REQUEST, 400, 'Invalid classroom id');
+      return apiError(API_ERROR_CODES.INVALID_REQUEST, 400, 'Invalid classroom id', undefined, cors);
     }
 
     const classroom = await readClassroom(id);
     if (!classroom) {
-      return apiError(API_ERROR_CODES.INVALID_REQUEST, 404, 'Classroom not found');
+      return apiError(API_ERROR_CODES.INVALID_REQUEST, 404, 'Classroom not found', undefined, cors);
     }
 
-    return apiSuccess({ classroom });
+    return apiSuccess({ classroom }, 200, cors);
   } catch (error) {
     log.error(
       `Classroom retrieval failed [id=${request.nextUrl.searchParams.get('id') ?? 'unknown'}]:`,
@@ -80,6 +90,7 @@ export async function GET(request: NextRequest) {
       500,
       'Failed to retrieve classroom',
       error instanceof Error ? error.message : String(error),
+      cors,
     );
   }
 }

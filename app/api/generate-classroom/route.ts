@@ -5,13 +5,17 @@ import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
 import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
+import { corsHeaders, getOrigin, corsOptionsHandler } from '@/lib/server/cors';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerateClassroom API');
 
 export const maxDuration = 30;
 
+export { corsOptionsHandler as OPTIONS };
+
 export async function POST(req: NextRequest) {
+  const cors = corsHeaders(getOrigin(req));
   let requirementSnippet: string | undefined;
   try {
     const rawBody = (await req.json()) as Partial<GenerateClassroomInput>;
@@ -33,7 +37,13 @@ export async function POST(req: NextRequest) {
     const { requirement } = body;
 
     if (!requirement) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: requirement');
+      return apiError(
+        'MISSING_REQUIRED_FIELD',
+        400,
+        'Missing required field: requirement',
+        undefined,
+        cors,
+      );
     }
 
     const baseUrl = buildRequestOrigin(req);
@@ -53,6 +63,7 @@ export async function POST(req: NextRequest) {
         pollIntervalMs: 5000,
       },
       202,
+      cors,
     );
   } catch (error) {
     log.error(
@@ -64,6 +75,7 @@ export async function POST(req: NextRequest) {
       500,
       'Failed to create classroom generation job',
       error instanceof Error ? error.message : 'Unknown error',
+      cors,
     );
   }
 }

@@ -5,43 +5,51 @@ import {
   readClassroomGenerationJob,
 } from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
+import { corsHeaders, getOrigin, corsOptionsHandler } from '@/lib/server/cors';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomJob API');
 
 export const dynamic = 'force-dynamic';
 
+export { corsOptionsHandler as OPTIONS };
+
 export async function GET(req: NextRequest, context: { params: Promise<{ jobId: string }> }) {
+  const cors = corsHeaders(getOrigin(req));
   let resolvedJobId: string | undefined;
   try {
     const { jobId } = await context.params;
     resolvedJobId = jobId;
 
     if (!isValidClassroomJobId(jobId)) {
-      return apiError('INVALID_REQUEST', 400, 'Invalid classroom generation job id');
+      return apiError('INVALID_REQUEST', 400, 'Invalid classroom generation job id', undefined, cors);
     }
 
     const job = await readClassroomGenerationJob(jobId);
     if (!job) {
-      return apiError('INVALID_REQUEST', 404, 'Classroom generation job not found');
+      return apiError('INVALID_REQUEST', 404, 'Classroom generation job not found', undefined, cors);
     }
 
     const pollUrl = `${buildRequestOrigin(req)}/api/generate-classroom/${jobId}`;
 
-    return apiSuccess({
-      jobId: job.id,
-      status: job.status,
-      step: job.step,
-      progress: job.progress,
-      message: job.message,
-      pollUrl,
-      pollIntervalMs: 5000,
-      scenesGenerated: job.scenesGenerated,
-      totalScenes: job.totalScenes,
-      result: job.result,
-      error: job.error,
-      done: job.status === 'succeeded' || job.status === 'failed',
-    });
+    return apiSuccess(
+      {
+        jobId: job.id,
+        status: job.status,
+        step: job.step,
+        progress: job.progress,
+        message: job.message,
+        pollUrl,
+        pollIntervalMs: 5000,
+        scenesGenerated: job.scenesGenerated,
+        totalScenes: job.totalScenes,
+        result: job.result,
+        error: job.error,
+        done: job.status === 'succeeded' || job.status === 'failed',
+      },
+      200,
+      cors,
+    );
   } catch (error) {
     log.error(`Classroom job retrieval failed [jobId=${resolvedJobId ?? 'unknown'}]:`, error);
     return apiError(
@@ -49,6 +57,7 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
       500,
       'Failed to retrieve classroom generation job',
       error instanceof Error ? error.message : String(error),
+      cors,
     );
   }
 }
