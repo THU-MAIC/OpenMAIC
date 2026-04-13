@@ -201,10 +201,32 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
 // TTS generation
 // ---------------------------------------------------------------------------
 
+/**
+ * Resolve the best TTS voice for a given provider and content language.
+ * Falls back to the provider default if no language-specific voice is known.
+ */
+function resolveTTSVoice(providerId: TTSProviderId, language?: string): string {
+  // Azure supports language-specific neural voices
+  if (providerId === 'azure-tts' && language) {
+    const azureVoiceMap: Record<string, string> = {
+      'lt-LT': 'lt-LT-OnaNeural',
+      'lt': 'lt-LT-OnaNeural',
+      'en-US': 'en-US-JennyNeural',
+      'en': 'en-US-JennyNeural',
+      'zh-CN': 'zh-CN-XiaoxiaoNeural',
+      'zh': 'zh-CN-XiaoxiaoNeural',
+    };
+    const voice = azureVoiceMap[language];
+    if (voice) return voice;
+  }
+  return DEFAULT_TTS_VOICES[providerId] || 'default';
+}
+
 export async function generateTTSForClassroom(
   scenes: Scene[],
   classroomId: string,
   baseUrl: string,
+  language?: string,
 ): Promise<void> {
   const audioDir = path.join(CLASSROOMS_DIR, classroomId, 'audio');
   await ensureDir(audioDir);
@@ -225,8 +247,12 @@ export async function generateTTSForClassroom(
     return;
   }
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || TTS_PROVIDERS[providerId]?.defaultBaseUrl;
-  const voice = DEFAULT_TTS_VOICES[providerId] || 'default';
+  const voice = resolveTTSVoice(providerId, language);
   const format = TTS_PROVIDERS[providerId]?.supportedFormats?.[0] || 'mp3';
+
+  if (language) {
+    log.info(`TTS voice resolved: ${voice} (language: ${language}, provider: ${providerId})`);
+  }
 
   for (const scene of scenes) {
     if (!scene.actions) continue;

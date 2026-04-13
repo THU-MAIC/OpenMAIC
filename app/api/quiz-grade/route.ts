@@ -11,6 +11,7 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
 import { corsHeaders, getOrigin, corsOptionsHandler } from '@/lib/server/cors';
+import { validateApiKey } from '@/lib/server/api-auth';
 const log = createLogger('Quiz Grade');
 
 interface GradeRequest {
@@ -31,6 +32,11 @@ export { corsOptionsHandler as OPTIONS };
 
 export async function POST(req: NextRequest) {
   const cors = corsHeaders(getOrigin(req));
+
+  if (!validateApiKey(req)) {
+    return apiError('MISSING_API_KEY', 401, 'Invalid or missing API key', undefined, cors);
+  }
+
   let questionSnippet: string | undefined;
   let resolvedPoints: number | undefined;
   try {

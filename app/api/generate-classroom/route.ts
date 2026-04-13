@@ -6,6 +6,7 @@ import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
 import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { corsHeaders, getOrigin, corsOptionsHandler } from '@/lib/server/cors';
+import { validateApiKey } from '@/lib/server/api-auth';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerateClassroom API');
@@ -16,6 +17,11 @@ export { corsOptionsHandler as OPTIONS };
 
 export async function POST(req: NextRequest) {
   const cors = corsHeaders(getOrigin(req));
+
+  if (!validateApiKey(req)) {
+    return apiError('MISSING_API_KEY', 401, 'Invalid or missing API key', undefined, cors);
+  }
+
   let requirementSnippet: string | undefined;
   try {
     const rawBody = (await req.json()) as Partial<GenerateClassroomInput>;
