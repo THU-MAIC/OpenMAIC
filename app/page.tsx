@@ -609,10 +609,10 @@ function HomePage() {
               <button
                 onClick={triggerFileSelect}
                 disabled={importing}
-                className="group/import flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
+                className="group/import grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
               >
                 <Upload className="size-3" />
-                <span className="max-w-0 overflow-hidden opacity-0 group-hover/import:max-w-[150px] group-hover/import:opacity-100 transition-all duration-200 whitespace-nowrap">
+                <span className="overflow-hidden opacity-0 group-hover/import:opacity-100 transition-opacity duration-200 whitespace-nowrap">
                   {t('import.classroom')}
                 </span>
               </button>
