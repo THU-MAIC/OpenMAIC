@@ -18,6 +18,7 @@ import {
   Monitor,
   BotOff,
   ChevronUp,
+  Upload,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -48,6 +49,7 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { useImportClassroom } from '@/lib/import/use-import-classroom';
 
 const log = createLogger('Home');
 
@@ -122,6 +124,12 @@ function HomePage() {
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const { importing, fileInputRef, triggerFileSelect, handleFileChange } = useImportClassroom(
+    () => {
+      loadClassrooms();
+    },
+  );
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -319,6 +327,13 @@ function HomePage() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".zip"
+        onChange={handleFileChange}
+        className="hidden"
+      />
       {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
@@ -543,6 +558,18 @@ function HomePage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* ── Import button (empty state) ── */}
+        {classrooms.length === 0 && (
+          <button
+            onClick={triggerFileSelect}
+            disabled={importing}
+            className="relative z-10 mt-4 flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+          >
+            <Upload className="size-3.5" />
+            <span>{t('import.classroom')}</span>
+          </button>
+        )}
       </motion.div>
 
       {/* ═══ Recent classrooms — collapsible ═══ */}
@@ -554,20 +581,20 @@ function HomePage() {
           className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
         >
           {/* Trigger — divider-line with centered text */}
-          <button
-            onClick={() => {
-              const next = !recentOpen;
-              setRecentOpen(next);
-              try {
-                localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
-              } catch {
-                /* ignore */
-              }
-            }}
-            className="group w-full flex items-center gap-4 py-2 cursor-pointer"
-          >
+          <div className="group w-full flex items-center gap-4 py-2">
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-            <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
+            <button
+              onClick={() => {
+                const next = !recentOpen;
+                setRecentOpen(next);
+                try {
+                  localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
+                } catch {
+                  /* ignore */
+                }
+              }}
+              className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 hover:text-foreground/70 transition-colors select-none cursor-pointer"
+            >
               <Clock className="size-3.5" />
               {t('classroom.recentClassrooms')}
               <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
@@ -577,9 +604,18 @@ function HomePage() {
               >
                 <ChevronDown className="size-3.5" />
               </motion.div>
-            </span>
+            </button>
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-          </button>
+            <button
+              onClick={triggerFileSelect}
+              disabled={importing}
+              className="shrink-0 flex items-center gap-1.5 text-[12px] text-muted-foreground/50 hover:text-foreground/70 transition-colors"
+              title={t('import.classroom')}
+            >
+              <Upload className="size-3.5" />
+              <span>{t('import.classroom')}</span>
+            </button>
+          </div>
 
           {/* Expandable content */}
           <AnimatePresence>
