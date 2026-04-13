@@ -100,7 +100,10 @@ vi.mock('@/lib/audio/constants', () => ({
   },
 }));
 
-vi.mock('@/lib/audio/types', () => ({}));
+vi.mock('@/lib/audio/types', () => ({
+  isCustomTTSProvider: (id: string) => id.startsWith('custom-tts-'),
+  isCustomASRProvider: (id: string) => id.startsWith('custom-asr-'),
+}));
 
 vi.mock('@/lib/pdf/constants', () => ({
   PDF_PROVIDERS: {
