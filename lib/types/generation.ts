@@ -30,22 +30,6 @@ export type ImageMapping = Record<string, string>;
 
 // ==================== Stage 1 Input ====================
 
-export interface AudienceProfile {
-  gradeLevel: string; // "K-12", "University", "Professional"
-  ageRange?: string; // "6-12", "18-25"
-  prerequisites?: string[]; // Required prior knowledge
-  learningStyles?: ('visual' | 'auditory' | 'kinesthetic' | 'reading')[];
-}
-
-export interface StylePreferences {
-  tone: 'formal' | 'casual' | 'engaging' | 'academic';
-  visualStyle: 'minimalist' | 'colorful' | 'professional' | 'playful';
-  interactivityLevel: 'low' | 'medium' | 'high';
-  includeExamples: boolean;
-  includePractice: boolean;
-  language: string; // 'zh-CN', 'en-US'
-}
-
 export interface UploadedDocument {
   id: string;
   name: string; // Original filename
@@ -70,21 +54,6 @@ export interface UserRequirements {
   webSearch?: boolean; // Enable web search for richer context
 }
 
-/**
- * @deprecated Use UserRequirements instead
- * Legacy structured requirements - kept for backward compatibility
- */
-export interface LegacyUserRequirements {
-  topic: string;
-  description?: string;
-  learningObjectives: string[];
-  audience: AudienceProfile;
-  durationMinutes: number;
-  style: StylePreferences;
-  documents?: UploadedDocument[];
-  additionalNotes?: string;
-}
-
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
 
 /**
@@ -101,6 +70,7 @@ export interface SceneOutline {
   estimatedDuration?: number; // seconds
   order: number;
   language?: 'zh-CN' | 'zh-TW' | 'en-US'; // Generation language (inherited from requirements)
+  languageNote?: string; // LLM-inferred language note for this scene
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)

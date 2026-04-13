@@ -483,8 +483,20 @@ export function Stage({
       getPlaybackSpeed: () => useSettingsStore.getState().playbackSpeed || 1,
       getCourseLanguage: () => {
         // Get course language from stage (set during generation)
+        // Use languageDirective field or fallback to zh-CN
         const stage = useStageStore.getState().stage;
-        return stage?.language || 'zh-CN';
+        const lang = stage?.languageDirective;
+        if (lang === 'zh-TW' || lang === 'zh-CN' || lang === 'en-US') {
+          return lang;
+        }
+        // Infer from languageDirective if it's a language note
+        if (lang?.includes('繁體') || lang?.includes('台灣') || lang?.includes('香港')) {
+          return 'zh-TW';
+        }
+        if (lang?.includes('中文') || lang?.includes('简体')) {
+          return 'zh-CN';
+        }
+        return 'zh-CN'; // Default
       },
       onComplete: () => {
         // lectureSpeech intentionally NOT cleared — last sentence stays visible

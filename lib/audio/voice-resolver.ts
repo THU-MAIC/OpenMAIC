@@ -80,13 +80,13 @@ export function getServerVoiceList(
 export interface ModelVoiceGroup {
   modelId: string;
   modelName: string;
-  voices: Array<{ id: string; name: string }>;
+  voices: Array<{ id: string; name: string; language?: string }>;
 }
 
 export interface ProviderWithVoices {
   providerId: TTSProviderId;
   providerName: string;
-  voices: Array<{ id: string; name: string }>; // keep for backward compat
+  voices: Array<{ id: string; name: string; language?: string }>;
   modelGroups: ModelVoiceGroup[]; // voices grouped by model
 }
 
@@ -122,7 +122,11 @@ export function getAvailableProvidersWithVoices(
     const isServerConfigured = providerConfig?.isServerConfigured === true;
 
     if (hasApiKey || isServerConfigured) {
-      const allVoices = config.voices.map((v) => ({ id: v.id, name: v.name }));
+      const allVoices = config.voices.map((v) => ({
+        id: v.id,
+        name: v.name,
+        language: v.language,
+      }));
 
       // Build model groups
       const modelGroups: ModelVoiceGroup[] = [];
@@ -130,7 +134,7 @@ export function getAvailableProvidersWithVoices(
         for (const model of config.models) {
           const compatibleVoices = config.voices
             .filter((v) => !v.compatibleModels || v.compatibleModels.includes(model.id))
-            .map((v) => ({ id: v.id, name: v.name }));
+            .map((v) => ({ id: v.id, name: v.name, language: v.language }));
           modelGroups.push({
             modelId: model.id,
             modelName: model.name,

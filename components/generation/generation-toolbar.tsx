@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2 } from 'lucide-react';
+import { Bot, Check, ChevronLeft, Paperclip, FileText, X, Globe, Globe2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -81,7 +81,9 @@ export function GenerationToolbar({
     ? Object.entries(providersConfig)
         .filter(
           ([, config]) =>
-            (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
+            (config.requiresApiKey
+              ? config.apiKey || config.isServerConfigured
+              : config.isServerConfigured || config.baseUrl) &&
             config.models.length >= 1 &&
             (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
         )

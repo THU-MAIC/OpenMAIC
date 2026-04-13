@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { isProviderUsable } from '@/lib/store/settings-validation';
 
 // ---------------------------------------------------------------------------
 // Mocks — must be defined before importing the store
@@ -312,7 +313,7 @@ describe('fetchServerProviders — provider availability sync', () => {
     expect(config.apiKey).toBe('');
     expect(config.isServerConfigured).toBe(false);
     // This is the condition model-selector uses to decide if a provider is usable:
-    const isUsable = !config.requiresApiKey || !!config.apiKey || !!config.isServerConfigured;
+    const isUsable = isProviderUsable(config);
     expect(isUsable).toBe(false);
   });
 

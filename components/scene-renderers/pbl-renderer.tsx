@@ -44,16 +44,12 @@ export function PBLRenderer({ content, mode: _mode, sceneId }: PBLRendererProps)
       // Add Question Agent welcome message if chat is empty and active issue has questions
       const activeIssue = newConfig.issueboard.issues.find((i) => i.is_active);
       if (activeIssue?.generated_questions && newConfig.chat.messages.length === 0) {
-        const welcomeMsg = t('pbl.chat.welcomeMessage', {
-          title: activeIssue.title,
-          questions: activeIssue.generated_questions,
-        });
         newConfig.chat = {
           messages: [
             {
               id: `msg_welcome_${Date.now()}`,
               agent_name: activeIssue.question_agent_name,
-              message: welcomeMsg,
+              message: activeIssue.generated_questions,
               timestamp: Date.now(),
               read_by: [],
             },

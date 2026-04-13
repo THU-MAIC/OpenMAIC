@@ -159,11 +159,11 @@ export default function ClassroomDetailPage() {
           stageInfo: {
             name: stage.name || '',
             description: stage.description,
-            language: stage.language,
             style: stage.style,
           },
           agents: params.agents,
           userProfile: params.userProfile,
+          languageDirective: params.languageDirective || stage.languageDirective,
         });
       });
     } else if (outlines.length > 0 && stage) {

@@ -134,7 +134,7 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
       utteranceRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     },
-    [rate, pitch, volume, lang, availableVoices, onStart, onEnd, onError],
+    [rate, pitch, volume, lang, locale, availableVoices, onStart, onEnd, onError],
   );
 
   const pause = useCallback(() => {

@@ -66,13 +66,16 @@ export function ModelSelector({
   };
 
   // Get all providers that are ready to use:
-  // - (Doesn't require API key OR has API key configured OR server has key)
+  // - Provider requires API key: must have client key OR server configured
+  // - Provider doesn't require API key (e.g. Ollama): must have explicit baseUrl OR server configured
   // - Has at least one model
-  // - Has baseUrl or defaultBaseUrl configured
+  // - Has a reachable baseUrl
   const configuredProviders = Object.entries(providersConfig)
     .filter(
       ([, config]) =>
-        (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
+        (config.requiresApiKey
+          ? config.apiKey || config.isServerConfigured
+          : config.isServerConfigured || config.baseUrl) &&
         config.models.length >= 1 &&
         (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
     )
