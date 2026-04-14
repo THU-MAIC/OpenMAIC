@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
     // 1. Full-text search / Filter by title/description
     if (query) {
-      supabaseQuery = supabaseQuery.or(`title.ilike.%${query}%,description.ilike.%${query}%`);
+      supabaseQuery = supabaseQuery.or(`name.ilike.%${query}%,description.ilike.%${query}%`);
     }
 
     // 2. Fetch all matching courses first (if we have many filters, this might need refinement)
@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
     // Map to a clean response (hide internals)
     const result = filteredCourses.map(c => ({
       id: c.id,
-      title: c.title,
+      title: c.name || c.title,
       description: c.description,
       slideCount: c.slide_count,
       language: c.language,

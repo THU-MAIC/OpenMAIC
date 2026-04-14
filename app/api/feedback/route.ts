@@ -1,5 +1,6 @@
 import { type NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { createAdminClient } from '@/utils/supabase/admin';
 import { cookies } from 'next/headers';
 import { apiSuccess, apiError, API_ERROR_CODES } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
@@ -11,6 +12,7 @@ export async function POST(request: NextRequest) {
   try {
     const cookieStore = await cookies();
     const supabase = createClient(cookieStore);
+    const adminClient = createAdminClient();
     const { data: { user } } = await supabase.auth.getUser();
 
     const body = await request.json();
@@ -28,7 +30,7 @@ export async function POST(request: NextRequest) {
       const buffer = Buffer.from(base64Data, 'base64');
       const fileName = `${user?.id || 'anon'}_${Date.now()}.png`;
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
+      const { error: uploadError } = await adminClient.storage
         .from('feedback-screenshots')
         .upload(fileName, buffer, {
           contentType: 'image/png',
@@ -37,17 +39,15 @@ export async function POST(request: NextRequest) {
 
       if (uploadError) {
         log.error('Failed to upload screenshot:', uploadError);
-        // Continue without screenshot if upload fails, or return error?
-        // Let's continue but log it.
       } else {
-        const { data: { publicUrl } } = supabase.storage
+        const { data: { publicUrl } } = adminClient.storage
           .from('feedback-screenshots')
           .getPublicUrl(fileName);
         screenshot_url = publicUrl;
       }
     }
 
-    const { error: insertError } = await supabase.from('feedbacks').insert({
+    const { error: insertError } = await adminClient.from('feedbacks').insert({
       user_id: user?.id || null,
       user_email: user?.email || null,
       type,

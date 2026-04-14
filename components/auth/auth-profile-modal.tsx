@@ -1,10 +1,9 @@
 'use client';
 
-import { useRef, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, LogOut, Mail, Calendar, Trophy } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
-import { useState, useEffect, useRef } from 'react';
 import { LeaderboardCard } from '../leaderboard/leaderboard-card';
 
 interface AuthProfileModalProps {
@@ -150,9 +149,6 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
                   </span>
                 </div>
               </div>
-
-              </div>
-              
               {/* Stats Section */}
               <div className="mb-5">
                 <h4 className="text-[11px] font-black text-[#073b4c]/30 uppercase tracking-widest mb-3 px-1">My Learning Journey</h4>

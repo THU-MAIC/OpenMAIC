@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/utils/supabase/admin';
+import { generateCatalogMetadataForCourse } from '@/lib/server/course-catalog';
 
 /**
  * GET /api/courses?userId=xxx
@@ -159,6 +160,17 @@ export async function POST(req: NextRequest) {
         .from('prompts')
         .update({ course_id: course.id })
         .eq('id', creation_prompt_id);
+    }
+
+    // 5. Background: generate AI catalog title + tags from scene titles
+    const sceneTitles = (scenes ?? []).map((s: any) => s.title).filter(Boolean);
+    if (name && sceneTitles.length > 0) {
+      void generateCatalogMetadataForCourse({
+        courseId: course.id,
+        courseName: name,
+        language: language || 'en-US',
+        sceneTitles,
+      });
     }
 
     return NextResponse.json({ success: true, course });

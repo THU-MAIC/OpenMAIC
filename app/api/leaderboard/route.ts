@@ -38,7 +38,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const { data, error } = await query;
+    const { data, error, count: totalCount } = await query;
     if (error) throw error;
 
     // Add rank index manually
@@ -52,7 +52,8 @@ export async function GET(req: NextRequest) {
       meta: {
         type,
         countryCode: countryCode || 'XX',
-        count: rankedData.length
+        count: rankedData.length,
+        totalCount: totalCount || rankedData.length
       }
     });
   } catch (error) {

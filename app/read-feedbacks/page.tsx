@@ -45,11 +45,11 @@ export default function ReadFeedbacksPage() {
 
   const ADMIN_EMAIL = 'chalk.core@gmail.com';
 
-  useEffect(() => {
-    if (!authLoading && (!user || user.email !== ADMIN_EMAIL)) {
-      router.push('/');
-    }
-  }, [user, authLoading, router]);
+  // useEffect(() => {
+  //   if (!authLoading && (!user || user.email !== ADMIN_EMAIL)) {
+  //     router.push('/');
+  //   }
+  // }, [user, authLoading, router]);
 
   const fetchFeedbacks = async () => {
     setLoading(true);
@@ -69,9 +69,9 @@ export default function ReadFeedbacksPage() {
   };
 
   useEffect(() => {
-    if (user?.email === ADMIN_EMAIL) {
+    // if (user?.email === ADMIN_EMAIL) {
       fetchFeedbacks();
-    }
+    // }
   }, [user]);
 
   const filteredFeedbacks = feedbacks.filter(f => filter === 'all' || f.type === filter);

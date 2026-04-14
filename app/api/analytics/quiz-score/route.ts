@@ -28,7 +28,22 @@ export async function POST(req: NextRequest) {
     const userId = user.id;
     const percentage = Math.round((score / totalPoints) * 100);
 
-    // 1. Record individual quiz attempt
+    // 1. Check for the user's previous best score on this exact quiz scene
+    const { data: previousBest } = await supabase
+      .from('quiz_scores')
+      .select('score')
+      .eq('user_id', userId)
+      .eq('scene_id', sceneId)
+      .order('score', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const previousBestScore = previousBest?.score ?? 0;
+    // Only the improvement over previous best counts toward the leaderboard
+    const scoreDelta = Math.max(0, score - previousBestScore);
+    const isFirstAttempt = !previousBest;
+
+    // 2. Record individual quiz attempt (always, for full history)
     const { error: quizError } = await supabase
       .from('quiz_scores')
       .insert({
@@ -42,25 +57,26 @@ export async function POST(req: NextRequest) {
 
     if (quizError) throw quizError;
 
-    // 2. Increment user engagement stats in user_analytics
-    await supabase.rpc('increment_quiz_count', { 
-      u_id: userId, 
-      c_id: courseId 
-    }).catch(err => console.warn('Failed to increment quiz count:', err));
+    // 3. Increment user engagement stats in user_analytics (only on first attempt)
+    if (isFirstAttempt) {
+      await supabase.rpc('increment_quiz_count', {
+        u_id: userId,
+        c_id: courseId,
+      }).catch(err => console.warn('Failed to increment quiz count:', err));
+    }
 
-    // 3. Update global and local ranking (user_scores table)
-    // We get geo info from request headers
+    // 4. Update global and local ranking (user_scores table)
+    // Only apply a delta if this attempt beats the previous best score
     const geo = getGeoInfo(req.headers);
 
-    // Get current score to increment
     const { data: currentScore } = await supabase
       .from('user_scores')
       .select('total_score, quizzes_completed')
       .eq('user_id', userId)
       .single();
 
-    const newTotalScore = (currentScore?.total_score || 0) + score;
-    const newQuizzesCompleted = (currentScore?.quizzes_completed || 0) + 1;
+    const newTotalScore = (currentScore?.total_score || 0) + scoreDelta;
+    const newQuizzesCompleted = (currentScore?.quizzes_completed || 0) + (isFirstAttempt ? 1 : 0);
 
     const { error: scoreError } = await supabase
       .from('user_scores')
@@ -74,17 +90,19 @@ export async function POST(req: NextRequest) {
         country_name: geo.countryName,
         updated_at: new Date().toISOString(),
       }, {
-        onConflict: 'user_id'
+        onConflict: 'user_id',
       });
 
     if (scoreError) throw scoreError;
 
-    return apiSuccess({ 
+    return apiSuccess({
       status: 'saved',
       score,
+      scoreDelta,
       totalPoints,
       percentage,
-      country: geo.countryName
+      isFirstAttempt,
+      country: geo.countryName,
     });
   } catch (error) {
     console.error('[api/analytics/quiz-score] Error:', error);

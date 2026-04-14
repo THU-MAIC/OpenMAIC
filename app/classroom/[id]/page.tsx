@@ -47,7 +47,23 @@ export default function ClassroomDetailPage() {
     }
   }, [user]);
 
+  const syncAfterScene = useCallback(async () => {
+    if (!user) return;
+    const { stage, scenes } = useStageStore.getState();
+    if (!stage || scenes.length === 0) return;
+    try {
+      const { uploadCourseToSupabase } = await import('@/lib/supabase/course-sync');
+      await uploadCourseToSupabase({ userId: user.id, stage, scenes });
+      log.info(`[Classroom] Incremental sync: ${scenes.length} scene(s) saved to Supabase.`);
+    } catch (err) {
+      log.warn('[Classroom] Incremental scene sync failed (non-fatal):', err);
+    }
+  }, [user]);
+
   const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
+    onSceneGenerated: () => {
+      syncAfterScene();
+    },
     onComplete: () => {
       log.info('[Classroom] All scenes generated');
       syncFullCourse();

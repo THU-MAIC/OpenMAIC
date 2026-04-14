@@ -11,7 +11,8 @@ import {
   ChevronRight, 
   Loader2,
   Search,
-  Users
+  Users,
+  RefreshCw,
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/hooks/use-auth';
@@ -34,9 +35,12 @@ export default function LeaderboardPage() {
   const { user, loading: authLoading } = useAuth();
   const [tab, setTab] = useState<'global' | 'local'>('global');
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [data, setData] = useState<LeaderboardEntry[]>([]);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
   const [detectedCountry, setDetectedCountry] = useState<string | null>(null);
+  const [totalStudents, setTotalStudents] = useState<number>(0);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   // Auth redirect
   useEffect(() => {
@@ -45,20 +49,27 @@ export default function LeaderboardPage() {
     }
   }, [user, authLoading, router]);
 
-  // Fetch data when tab or selected country changes
+  // Fetch data when tab, country, or refreshTick changes; auto-poll every 30s
   useEffect(() => {
-    async function fetchData() {
-      setLoading(true);
+    let active = true;
+
+    async function fetchData(isManual = false) {
+      if (isManual) setRefreshing(true);
+      else setLoading(true);
       try {
         let url = `/api/leaderboard?type=${tab}`;
         if (tab === 'local' && selectedCountry) {
           url += `&country=${selectedCountry}`;
         }
-        
+
         const res = await fetch(url);
         const json = await res.json();
+        if (!active) return;
         if (json.success) {
           setData(json.leaderboard);
+          if (json.meta.totalCount) {
+            setTotalStudents(json.meta.totalCount);
+          }
           if (json.meta.countryCode && !detectedCountry) {
             setDetectedCountry(json.meta.countryCode);
           }
@@ -66,11 +77,25 @@ export default function LeaderboardPage() {
       } catch (err) {
         console.error('Leaderboard fetch error:', err);
       } finally {
-        setLoading(false);
+        if (active) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     }
-    fetchData();
-  }, [tab, selectedCountry, detectedCountry]);
+
+    fetchData(refreshTick > 0);
+
+    const interval = setInterval(() => {
+      if (active) fetchData();
+    }, 30_000);
+
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab, selectedCountry, refreshTick]);
 
   const topThree = data.slice(0, 3);
   const restOfList = data.slice(3);
@@ -93,13 +118,22 @@ export default function LeaderboardPage() {
             </div>
           </div>
 
-          <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-[#f0f4f8] rounded-2xl border-2 border-[#073b4c]/10">
-            <Users className="size-4 text-[#118ab2]" />
-            <span className="text-xs font-bold text-[#073b4c]/60">12,402 Active Students</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setRefreshTick(t => t + 1)}
+              disabled={loading || refreshing}
+              title="Refresh leaderboard"
+              className="p-2 rounded-xl border-2 border-[#073b4c] hover:bg-[#f0f4f8] transition-all shadow-[2px_2px_0_#073b4c] active:translate-y-[1px] active:shadow-none disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <RefreshCw className={`size-4 ${refreshing ? 'animate-spin' : ''}`} />
+            </button>
+            <div className="hidden md:flex items-center gap-2 px-4 py-2 bg-[#f0f4f8] rounded-2xl border-2 border-[#073b4c]/10">
+              <Users className="size-4 text-[#118ab2]" />
+              <span className="text-xs font-bold text-[#073b4c]/60">{totalStudents.toLocaleString()} Active Students</span>
+            </div>
           </div>
         </div>
       </header>
-222: 
       <main className="max-w-5xl mx-auto px-4 py-8 md:py-12">
         {authLoading ? (
           <div className="flex flex-col items-center justify-center py-20">
@@ -191,8 +225,10 @@ export default function LeaderboardPage() {
                 )}
               </div>
             </div>
-          </>
+          </div>
         )}
+      </>
+    )}
       </main>
     </div>
   );

@@ -3,12 +3,12 @@
 import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Search, 
-  Filter, 
-  ChevronLeft, 
-  BookOpen, 
-  Users, 
+import {
+  Search,
+  Filter,
+  ChevronLeft,
+  BookOpen,
+  Users,
   ArrowRight,
   Loader2,
   X,
@@ -41,7 +41,7 @@ export default function CatalogPage() {
   const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
   const [courses, setCourses] = useState<Course[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState(searchParams.get('q') || '');
@@ -63,7 +63,7 @@ export default function CatalogPage() {
         const [min] = selectedAge.replace('+', '-99').split('-');
         params.set('age', min); // Simple mapping for the API
       }
-      
+
       const res = await fetch(`/api/catalog?${params.toString()}`);
       const json = await res.json();
       if (json.success) {
@@ -86,15 +86,15 @@ export default function CatalogPage() {
       {/* ── Navigation Header ── */}
       <header className="sticky top-0 z-40 w-full bg-white/80 dark:bg-slate-950/80 backdrop-blur-md border-b-[3px] border-[#073b4c]">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             onClick={() => router.push('/')}
             className="group flex items-center gap-2 font-bold text-[#073b4c] hover:bg-[#f0f4f8]"
           >
             <ChevronLeft className="size-5 transition-transform group-hover:-translate-x-1" />
             <span>{t('common.back')}</span>
           </Button>
-          
+
           <div className="flex items-center gap-2">
             <h1 className="text-xl md:text-2xl font-black text-[#073b4c] tracking-tight uppercase">
               Course Catalog
@@ -114,10 +114,10 @@ export default function CatalogPage() {
             animate={{ opacity: 1, y: 0 }}
             className="max-w-3xl mx-auto"
           >
-            <h2 className="text-4xl md:text-5xl font-black text-[#073b4c] mb-6 leading-tight">
+            {/* <h2 className="text-4xl md:text-5xl font-black text-[#073b4c] mb-6 leading-tight">
               What do you want to <span className="text-[#ef476f] underline decoration-[6px]">learn</span> today?
-            </h2>
-            
+            </h2> */}
+
             <form onSubmit={handleSearch} className="relative group max-w-2xl mx-auto">
               <div className="relative flex items-center">
                 <Search className="absolute left-4 size-5 text-[#073b4c]/40 group-focus-within:text-[#073b4c] transition-colors" />
@@ -128,7 +128,7 @@ export default function CatalogPage() {
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
-                <Button 
+                <Button
                   type="submit"
                   className="absolute right-2 h-10 px-6 bg-[#ef476f] hover:bg-[#ef476f]/90 text-white font-bold rounded-xl border-2 border-[#073b4c] shadow-[3px_3px_0_#073b4c] active:shadow-none active:translate-x-[3px] active:translate-y-[3px] transition-all"
                 >
@@ -154,7 +154,7 @@ export default function CatalogPage() {
                     onClick={() => setSelectedSubject(sub)}
                     className={cn(
                       "px-4 py-2 text-left font-bold rounded-xl border-2 transition-all",
-                      selectedSubject === sub 
+                      selectedSubject === sub
                         ? "bg-[#ffd166] text-[#073b4c] border-[#073b4c] shadow-[4px_4px_0_#073b4c]"
                         : "bg-white text-[#073b4c]/60 border-transparent hover:border-[#073b4c]/20"
                     )}
@@ -177,7 +177,7 @@ export default function CatalogPage() {
                     onClick={() => setSelectedAge(age)}
                     className={cn(
                       "px-3 py-2 text-center text-sm font-bold rounded-xl border-2 transition-all",
-                      selectedAge === age 
+                      selectedAge === age
                         ? "bg-[#118ab2] text-white border-[#073b4c] shadow-[4px_4px_0_#073b4c]"
                         : "bg-white text-[#073b4c]/60 border-transparent hover:border-[#073b4c]/20"
                     )}
@@ -191,8 +191,8 @@ export default function CatalogPage() {
 
           {/* ── Mobile Filters Toggle ── */}
           <div className="md:hidden flex gap-2 overflow-x-auto pb-4 no-scrollbar">
-            <Button 
-              variant="outline" 
+            <Button
+              variant="outline"
               onClick={() => setIsFilterOpen(!isFilterOpen)}
               className="shrink-0 border-2 border-[#073b4c] font-bold"
             >
@@ -222,8 +222,8 @@ export default function CatalogPage() {
                 </div>
                 <h3 className="text-2xl font-black text-[#073b4c] mb-2">No courses found</h3>
                 <p className="text-[#073b4c]/60 font-medium">Try adjusting your filters or search term</p>
-                <Button 
-                  variant="link" 
+                <Button
+                  variant="link"
                   onClick={() => {
                     setSelectedSubject('All');
                     setSelectedAge('All');
@@ -272,19 +272,19 @@ function CourseCard({ course, index, onClick }: { course: Course; index: number;
       <div className="h-40 bg-slate-100 border-b-[3px] border-[#073b4c] flex items-center justify-center relative overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-[#ef476f]/5 to-[#118ab2]/5 group-hover:opacity-100 transition-opacity" />
         <BookOpen className="size-12 text-[#073b4c]/10 group-hover:scale-110 group-hover:text-[#073b4c]/20 transition-all duration-500" />
-        
+
         {/* Course Meta Pills */}
         <div className="absolute bottom-3 left-3 flex flex-wrap gap-2">
-           {course.tags.subject && (
-             <span className="px-3 py-1 bg-[#ffd166] text-[#073b4c] text-[10px] font-black uppercase tracking-wider rounded-lg border-2 border-[#073b4c]">
-               {course.tags.subject}
-             </span>
-           )}
-           {course.tags.age_range && (
-             <span className="px-3 py-1 bg-[#118ab2] text-white text-[10px] font-black uppercase tracking-wider rounded-lg border-2 border-[#073b4c]">
-               Ages {course.tags.age_range}
-             </span>
-           )}
+          {course.tags.subject && (
+            <span className="px-3 py-1 bg-[#ffd166] text-[#073b4c] text-[10px] font-black uppercase tracking-wider rounded-lg border-2 border-[#073b4c]">
+              {course.tags.subject}
+            </span>
+          )}
+          {course.tags.age_range && (
+            <span className="px-3 py-1 bg-[#118ab2] text-white text-[10px] font-black uppercase tracking-wider rounded-lg border-2 border-[#073b4c]">
+              Ages {course.tags.age_range}
+            </span>
+          )}
         </div>
       </div>
 
@@ -295,13 +295,13 @@ function CourseCard({ course, index, onClick }: { course: Course; index: number;
         <p className="text-[#073b4c]/70 text-sm font-medium line-clamp-3 mb-6 flex-1">
           {course.description}
         </p>
-        
+
         <div className="pt-4 border-t-2 border-[#073b4c]/10 flex items-center justify-between mt-auto">
           <div className="flex items-center gap-2 text-xs font-black text-[#073b4c]/40 uppercase tracking-widest">
             <Users className="size-3" />
             <span>{course.slideCount} Slides</span>
           </div>
-          
+
           <div className="size-8 bg-[#073b4c] rounded-full flex items-center justify-center text-white group-hover:bg-[#ef476f] transition-colors">
             <ArrowRight className="size-4" />
           </div>
