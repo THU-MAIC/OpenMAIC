@@ -17,7 +17,8 @@
     "format": "prettier . --write",
     "test": "vitest run",
     "test:e2e": "playwright test",
-    "test:e2e:ui": "playwright test --ui"
+    "test:e2e:ui": "playwright test --ui",
+    "eval:whiteboard": "tsx eval/whiteboard-layout/runner.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",
@@ -121,6 +122,7 @@
     "rollup-plugin-typescript2": "^0.36.0",
     "tailwindcss": "^4",
     "tslib": "^2.8.0",
+    "tsx": "^4.21.0",
     "typescript": "^5",
     "vitest": "^4.1.0",
     "vue-to-react": "^1.0.0"
