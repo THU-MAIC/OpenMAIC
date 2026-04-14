@@ -1109,6 +1109,7 @@ export const useSettingsStore = create<SettingsState>()(
               let autoTtsProvider: TTSProviderId | undefined;
               let autoTtsVoice: string | undefined;
               let autoAsrProvider: ASRProviderId | undefined;
+              let autoPdfProvider: PDFProviderId | undefined;
               let autoImageProvider: ImageProviderId | undefined;
               let autoImageModel: string | undefined;
               let autoVideoProvider: VideoProviderId | undefined;
@@ -1117,7 +1118,11 @@ export const useSettingsStore = create<SettingsState>()(
               let autoVideoEnabled: boolean | undefined;
 
               if (!state.autoConfigApplied) {
-                // PDF default is unpdf (set in getDefaultPDFConfig)
+                // PDF: unpdf → mineru if server has it
+                if (newPDFConfig.mineru?.isServerConfigured && state.pdfProviderId === 'unpdf') {
+                  autoPdfProvider = 'mineru' as PDFProviderId;
+                }
+
                 // TTS: select first server provider if current is not server-configured
                 const serverTtsIds = Object.keys(data.tts) as TTSProviderId[];
                 if (
@@ -1227,6 +1232,7 @@ export const useSettingsStore = create<SettingsState>()(
                 // First-run auto-select overrides validation (autoConfigApplied guard).
                 // On first sync, auto-select picks the best provider. On subsequent syncs,
                 // auto* variables stay undefined so only validation spreads take effect.
+                ...(autoPdfProvider && { pdfProviderId: autoPdfProvider }),
                 ...(autoTtsProvider && {
                   ttsProviderId: autoTtsProvider,
                   ttsVoice: autoTtsVoice,

@@ -1,12 +1,4 @@
 import { NextRequest } from 'next/server';
-
-// Increase body size limit for PDF uploads (default is 4MB)
-export const maxDuration = 60; // seconds
-export const dynamic = 'force-dynamic';
-
-// Next.js App Router route segment config for body size
-// See: https://nextjs.org/docs/app/api-reference/file-conventions/route-segment-config
-export const fetchCache = 'force-no-store';
 import { parsePDF } from '@/lib/pdf/pdf-providers';
 import { resolvePDFApiKey, resolvePDFBaseUrl } from '@/lib/server/provider-config';
 import type { PDFProviderId } from '@/lib/pdf/types';
