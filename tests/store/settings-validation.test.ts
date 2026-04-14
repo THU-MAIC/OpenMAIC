@@ -34,6 +34,28 @@ describe('isProviderUsable', () => {
   it('returns false for empty object', () => {
     expect(isProviderUsable({})).toBe(false);
   });
+
+  it('returns true for keyless provider with explicit baseUrl', () => {
+    expect(isProviderUsable({ requiresApiKey: false, baseUrl: 'http://localhost:11434/v1' })).toBe(
+      true,
+    );
+  });
+
+  it('returns false for keyless provider without baseUrl', () => {
+    expect(isProviderUsable({ requiresApiKey: false })).toBe(false);
+  });
+
+  it('returns false for keyless provider with empty baseUrl', () => {
+    expect(isProviderUsable({ requiresApiKey: false, baseUrl: '' })).toBe(false);
+  });
+
+  it('returns true for keyless provider when server-configured', () => {
+    expect(isProviderUsable({ requiresApiKey: false, isServerConfigured: true })).toBe(true);
+  });
+
+  it('returns false for keyless provider with apiKey but no baseUrl', () => {
+    expect(isProviderUsable({ requiresApiKey: false, apiKey: 'some-key' })).toBe(false);
+  });
 });
 
 describe('validateProvider', () => {

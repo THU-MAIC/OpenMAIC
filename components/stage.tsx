@@ -788,6 +788,8 @@ export function Stage({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
+      // Let modifier-key combos (Ctrl+C, Ctrl+S, etc.) pass through to the browser
+      if (event.ctrlKey || event.metaKey || event.altKey) return;
       if (
         isPresentationShortcutTarget(event.target) ||
         isPresentationShortcutTarget(document.activeElement)

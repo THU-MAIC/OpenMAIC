@@ -25,11 +25,11 @@ The following constraints must be strictly obeyed in all JavaScript logic and vi
 
 ---
 
-## Language
+## Language Directive
 
-**Page language**: {{language}}
+{{languageDirective}}
 
-(All UI text, labels, instructions, and descriptions must be in this language)
+(All UI text, labels, instructions, and descriptions must follow the language directive above)
 
 ---
 

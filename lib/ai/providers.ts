@@ -45,6 +45,9 @@ const log = createLogger('AIProviders');
 // Re-export types for backward compatibility
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
+/** Provider IDs whose logos are monochrome-dark and need `dark:invert` in dark mode */
+export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'ollama']);
+
 /**
  * Provider registry
  */
@@ -158,6 +161,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         outputWindow: 4096,
         capabilities: { streaming: true, tools: true, vision: true },
       },
+
       {
         id: 'o4-mini',
         name: 'o4-mini',
@@ -311,22 +315,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       {
         id: 'gemini-3.1-pro-preview',
         name: 'Gemini 3.1 Pro Preview',
-        contextWindow: 1048576,
-        outputWindow: 65536,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'gemini-3-pro-preview',
-        name: 'Gemini 3 Pro Preview',
         contextWindow: 1048576,
         outputWindow: 65536,
         capabilities: {
@@ -966,6 +954,73 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
       },
     ],
   },
+
+  ollama: {
+    id: 'ollama',
+    name: 'Ollama',
+    type: 'openai',
+    defaultBaseUrl: 'http://localhost:11434/v1',
+    requiresApiKey: false,
+    icon: '/logos/ollama.svg',
+    models: [
+      {
+        id: 'llama3.3',
+        name: 'Llama 3.3 70B',
+        contextWindow: 131072,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'llama3.2',
+        name: 'Llama 3.2 3B',
+        contextWindow: 131072,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'qwen2.5',
+        name: 'Qwen 2.5 7B',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'qwen2.5:32b',
+        name: 'Qwen 2.5 32B',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'mistral',
+        name: 'Mistral 7B',
+        contextWindow: 32768,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+      {
+        id: 'gemma3',
+        name: 'Gemma 3 12B',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'deepseek-r1',
+        name: 'DeepSeek R1',
+        contextWindow: 131072,
+        outputWindow: 8192,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+      {
+        id: 'phi4',
+        name: 'Phi-4 14B',
+        contextWindow: 16384,
+        outputWindow: 4096,
+        capabilities: { streaming: true, tools: false, vision: false },
+      },
+    ],
+  },
 };
 
 /**
@@ -1069,20 +1124,24 @@ function normalizeMiniMaxAnthropicBaseUrl(
   return `${trimmed}/anthropic/v1`;
 }
 
+/** Returns true if the provider requires an API key (defaults to true for unknown providers). */
+export function isProviderKeyRequired(providerId: string): boolean {
+  return getProviderConfig(providerId as ProviderId)?.requiresApiKey ?? true;
+}
+
 /**
  * Get a configured language model instance with its info
  * Accepts individual parameters for flexibility and security
  */
 export function getModel(config: ModelConfig): ModelWithInfo {
-  // Get provider type and requiresApiKey, with fallback to registry
+  // providerType can come from client for custom providers; fall back to registry.
   let providerType = config.providerType;
-  let requiresApiKey = config.requiresApiKey ?? true;
+  const provider = getProviderConfig(config.providerId);
+  const requiresApiKey = provider?.requiresApiKey ?? true;
 
   if (!providerType) {
-    const provider = getProviderConfig(config.providerId);
     if (provider) {
       providerType = provider.type;
-      requiresApiKey = provider.requiresApiKey;
     } else {
       throw new Error(`Unknown provider: ${config.providerId}. Please provide providerType.`);
     }
@@ -1097,7 +1156,6 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   const effectiveApiKey = config.apiKey || '';
 
   // Resolve base URL: explicit > provider default > SDK default
-  const provider = getProviderConfig(config.providerId);
   const effectiveBaseUrl = normalizeMiniMaxAnthropicBaseUrl(
     config.providerId,
     config.baseUrl || provider?.defaultBaseUrl || undefined,

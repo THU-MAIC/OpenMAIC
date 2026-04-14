@@ -18,8 +18,10 @@ import {
   Monitor,
   BotOff,
   ChevronUp,
+  Upload,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { LanguageSwitcher } from '@/components/language-switcher';
 import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
 import { Textarea as UITextarea } from '@/components/ui/textarea';
@@ -37,6 +39,7 @@ import {
   StageListItem,
   listStages,
   deleteStageData,
+  renameStage,
   getFirstSlideByStages,
 } from '@/lib/utils/stage-storage';
 import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
@@ -46,29 +49,27 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { useImportClassroom } from '@/lib/import/use-import-classroom';
 
 const log = createLogger('Home');
 
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
-const LANGUAGE_STORAGE_KEY = 'generationLanguage';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
-  language: 'zh-CN' | 'en-US';
   webSearch: boolean;
 }
 
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
-  language: 'zh-CN',
   webSearch: false,
 };
 
 function HomePage() {
-  const { t, locale, setLocale } = useI18n();
+  const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
   const [form, setForm] = useState<FormState>(initialFormState);
@@ -96,15 +97,8 @@ function HomePage() {
     }
     try {
       const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
-      const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
-      if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US') {
-        updates.language = savedLanguage;
-      } else {
-        const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
-        updates.language = detected;
-      }
       if (Object.keys(updates).length > 0) {
         setForm((prev) => ({ ...prev, ...updates }));
       }
@@ -123,7 +117,6 @@ function HomePage() {
     }
   }
 
-  const [languageOpen, setLanguageOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
@@ -134,16 +127,15 @@ function HomePage() {
 
   // Close dropdowns when clicking outside
   useEffect(() => {
-    if (!languageOpen && !themeOpen) return;
+    if (!themeOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
-        setLanguageOpen(false);
         setThemeOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [languageOpen, themeOpen]);
+  }, [themeOpen]);
 
   const loadClassrooms = async () => {
     try {
@@ -158,6 +150,12 @@ function HomePage() {
       log.error('Failed to load classrooms:', err);
     }
   };
+
+  const { importing, fileInputRef, triggerFileSelect, handleFileChange } = useImportClassroom(
+    () => {
+      loadClassrooms();
+    },
+  );
 
   useEffect(() => {
     // Clear stale media store to prevent cross-course thumbnail contamination.
@@ -186,11 +184,20 @@ function HomePage() {
     }
   };
 
+  const handleRename = async (id: string, newName: string) => {
+    try {
+      await renameStage(id, newName);
+      setClassrooms((prev) => prev.map((c) => (c.id === id ? { ...c, name: newName } : c)));
+    } catch (err) {
+      log.error('Failed to rename classroom:', err);
+      toast.error(t('classroom.renameFailed'));
+    }
+  };
+
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
       if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
-      if (field === 'language') localStorage.setItem(LANGUAGE_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
     } catch {
       /* ignore */
@@ -250,7 +257,6 @@ function HomePage() {
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
-        language: form.language,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: form.webSearch || undefined,
@@ -321,53 +327,20 @@ function HomePage() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".zip"
+        onChange={handleFileChange}
+        className="hidden"
+      />
       {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
         className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
       >
         {/* Language Selector */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setLanguageOpen(!languageOpen);
-              setThemeOpen(false);
-            }}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
-          >
-            {locale === 'zh-CN' ? 'CN' : 'EN'}
-          </button>
-          {languageOpen && (
-            <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[120px]">
-              <button
-                onClick={() => {
-                  setLocale('zh-CN');
-                  setLanguageOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
-                  locale === 'zh-CN' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                简体中文
-              </button>
-              <button
-                onClick={() => {
-                  setLocale('en-US');
-                  setLanguageOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
-                  locale === 'en-US' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                English
-              </button>
-            </div>
-          )}
-        </div>
+        <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
 
         <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
 
@@ -376,7 +349,6 @@ function HomePage() {
           <button
             onClick={() => {
               setThemeOpen(!themeOpen);
-              setLanguageOpen(false);
             }}
             className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
           >
@@ -531,8 +503,6 @@ function HomePage() {
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
-                  language={form.language}
-                  onLanguageChange={(lang) => updateForm('language', lang)}
                   webSearch={form.webSearch}
                   onWebSearchChange={(v) => updateForm('webSearch', v)}
                   onSettingsOpen={(section) => {
@@ -588,6 +558,18 @@ function HomePage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* ── Import button (empty state) ── */}
+        {classrooms.length === 0 && (
+          <button
+            onClick={triggerFileSelect}
+            disabled={importing}
+            className="relative z-10 mt-4 flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+          >
+            <Upload className="size-3.5" />
+            <span>{t('import.classroom')}</span>
+          </button>
+        )}
       </motion.div>
 
       {/* ═══ Recent classrooms — collapsible ═══ */}
@@ -599,32 +581,44 @@ function HomePage() {
           className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
         >
           {/* Trigger — divider-line with centered text */}
-          <button
-            onClick={() => {
-              const next = !recentOpen;
-              setRecentOpen(next);
-              try {
-                localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
-              } catch {
-                /* ignore */
-              }
-            }}
-            className="group w-full flex items-center gap-4 py-2 cursor-pointer"
-          >
+          <div className="group w-full flex items-center gap-4 py-2">
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-            <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
-              <Clock className="size-3.5" />
-              {t('classroom.recentClassrooms')}
-              <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
-              <motion.div
-                animate={{ rotate: recentOpen ? 180 : 0 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
+            <div className="shrink-0 flex items-center gap-3 text-[13px] text-muted-foreground/60 select-none">
+              <button
+                onClick={() => {
+                  const next = !recentOpen;
+                  setRecentOpen(next);
+                  try {
+                    localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="flex items-center gap-2 hover:text-foreground/70 transition-colors cursor-pointer"
               >
-                <ChevronDown className="size-3.5" />
-              </motion.div>
-            </span>
+                <Clock className="size-3.5" />
+                {t('classroom.recentClassrooms')}
+                <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
+                <motion.div
+                  animate={{ rotate: recentOpen ? 180 : 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                >
+                  <ChevronDown className="size-3.5" />
+                </motion.div>
+              </button>
+              <button
+                onClick={triggerFileSelect}
+                disabled={importing}
+                className="group/import grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
+              >
+                <Upload className="size-3" />
+                <span className="overflow-hidden opacity-0 group-hover/import:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                  {t('import.classroom')}
+                </span>
+              </button>
+            </div>
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-          </button>
+          </div>
 
           {/* Expandable content */}
           <AnimatePresence>
@@ -653,6 +647,7 @@ function HomePage() {
                         slide={thumbnails[classroom.id]}
                         formatDate={formatDate}
                         onDelete={handleDelete}
+                        onRename={handleRename}
                         confirmingDelete={pendingDeleteId === classroom.id}
                         onConfirmDelete={() => confirmDelete(classroom.id)}
                         onCancelDelete={() => setPendingDeleteId(null)}
@@ -785,13 +780,8 @@ function GreetingBar() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <span className="leading-none select-none flex items-center gap-1">
-                  <span>
-                    <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground transition-colors">
-                      {t('home.greeting')}
-                    </span>
-                    <span className="text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors">
-                      {displayName}
-                    </span>
+                  <span className="text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors">
+                    {t('home.greetingWithName', { name: displayName })}
                   </span>
                   <ChevronDown className="size-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
                 </span>
@@ -971,6 +961,7 @@ function ClassroomCard({
   slide,
   formatDate,
   onDelete,
+  onRename,
   confirmingDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -980,6 +971,7 @@ function ClassroomCard({
   slide?: Slide;
   formatDate: (ts: number) => string;
   onDelete: (id: string, e: React.MouseEvent) => void;
+  onRename: (id: string, newName: string) => void;
   confirmingDelete: boolean;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
@@ -988,6 +980,9 @@ function ClassroomCard({
   const { t } = useI18n();
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumbWidth, setThumbWidth] = useState(0);
+  const [editing, setEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const el = thumbRef.current;
@@ -998,6 +993,25 @@ function ClassroomCard({
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (editing) nameInputRef.current?.focus();
+  }, [editing]);
+
+  const startRename = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNameDraft(classroom.name);
+    setEditing(true);
+  };
+
+  const commitRename = () => {
+    if (!editing) return;
+    const trimmed = nameDraft.trim();
+    if (trimmed && trimmed !== classroom.name) {
+      onRename(classroom.id, trimmed);
+    }
+    setEditing(false);
+  };
 
   return (
     <div className="group cursor-pointer" onClick={confirmingDelete ? undefined : onClick}>
@@ -1041,6 +1055,14 @@ function ClassroomCard({
               >
                 <Trash2 className="size-3.5" />
               </Button>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="absolute top-2 right-11 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-black/50 text-white hover:text-white backdrop-blur-sm rounded-full"
+                onClick={startRename}
+              >
+                <Pencil className="size-3.5" />
+              </Button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1083,32 +1105,53 @@ function ClassroomCard({
         <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
           {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
         </span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <p className="font-medium text-[15px] truncate text-foreground/90 min-w-0">
-              {classroom.name}
-            </p>
-          </TooltipTrigger>
-          <TooltipContent
-            side="bottom"
-            sideOffset={4}
-            className="!max-w-[min(90vw,32rem)] break-words whitespace-normal"
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="break-all">{classroom.name}</span>
-              <button
-                className="shrink-0 p-0.5 rounded hover:bg-foreground/10 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigator.clipboard.writeText(classroom.name);
-                  toast.success(t('classroom.nameCopied'));
-                }}
+        {editing ? (
+          <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
+            <input
+              ref={nameInputRef}
+              value={nameDraft}
+              onChange={(e) => setNameDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setEditing(false);
+              }}
+              onBlur={commitRename}
+              maxLength={100}
+              placeholder={t('classroom.renamePlaceholder')}
+              className="w-full bg-transparent border-b border-violet-400/60 text-[15px] font-medium text-foreground/90 outline-none placeholder:text-muted-foreground/40"
+            />
+          </div>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <p
+                className="font-medium text-[15px] truncate text-foreground/90 min-w-0 cursor-text"
+                onDoubleClick={startRename}
               >
-                <Copy className="size-3 opacity-60" />
-              </button>
-            </div>
-          </TooltipContent>
-        </Tooltip>
+                {classroom.name}
+              </p>
+            </TooltipTrigger>
+            <TooltipContent
+              side="bottom"
+              sideOffset={4}
+              className="!max-w-[min(90vw,32rem)] break-words whitespace-normal"
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="break-all">{classroom.name}</span>
+                <button
+                  className="shrink-0 p-0.5 rounded hover:bg-foreground/10 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigator.clipboard.writeText(classroom.name);
+                    toast.success(t('classroom.nameCopied'));
+                  }}
+                >
+                  <Copy className="size-3 opacity-60" />
+                </button>
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        )}
       </div>
     </div>
   );

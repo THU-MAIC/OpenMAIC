@@ -16,7 +16,8 @@ export type BuiltInProviderId =
   | 'glm'
   | 'siliconflow'
   | 'doubao'
-  | 'grok';
+  | 'grok'
+  | 'ollama';
 
 /**
  * Provider ID (built-in or custom)
@@ -100,5 +101,4 @@ export interface ModelConfig {
   baseUrl?: string;
   proxy?: string; // Optional: HTTP proxy URL for this provider
   providerType?: ProviderType; // Optional: for custom providers on server-side
-  requiresApiKey?: boolean; // Optional: for custom providers on server-side
 }

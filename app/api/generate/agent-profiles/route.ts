@@ -11,30 +11,16 @@ import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 
 const log = createLogger('Agent Profiles API');
 
 export const maxDuration = 120;
 
-const COLOR_PALETTE = [
-  '#3b82f6',
-  '#10b981',
-  '#f59e0b',
-  '#ec4899',
-  '#06b6d4',
-  '#8b5cf6',
-  '#f97316',
-  '#14b8a6',
-  '#e11d48',
-  '#6366f1',
-  '#84cc16',
-  '#a855f7',
-];
-
 interface RequestBody {
   stageInfo: { name: string; description?: string };
   sceneOutlines?: { title: string; description?: string }[];
-  language: string;
+  languageDirective: string;
   availableAvatars: string[];
   avatarDescriptions?: Array<{ path: string; desc: string }>;
   availableVoices?: Array<{ providerId: string; voiceId: string; voiceName: string }>;
@@ -50,23 +36,26 @@ function stripCodeFences(text: string): string {
 }
 
 export async function POST(req: NextRequest) {
+  let stageName: string | undefined;
+  let modelString: string | undefined;
   try {
     const body = (await req.json()) as RequestBody;
     const {
       stageInfo,
       sceneOutlines,
-      language,
+      languageDirective,
       availableAvatars,
       avatarDescriptions,
       availableVoices,
     } = body;
+    stageName = stageInfo?.name;
 
     // ── Validate required fields ──
     if (!stageInfo?.name) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageInfo.name is required');
     }
-    if (!language) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'language is required');
+    if (!languageDirective) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'languageDirective is required');
     }
     if (!availableAvatars || availableAvatars.length === 0) {
       return apiError(
@@ -77,7 +66,8 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Model resolution from request headers ──
-    const { model: languageModel, modelString } = resolveModelFromHeaders(req);
+    const { model: languageModel, modelString: _modelString } = await resolveModelFromHeaders(req);
+    modelString = _modelString;
 
     // ── Build prompt ──
     const sceneSummary = sceneOutlines?.length
@@ -119,12 +109,13 @@ Requirements:
 - Exactly 1 agent must have role "teacher", the rest can be "assistant" or "student"
 - Priority values: teacher=10 (highest), assistant=7, student=4-6
 - Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
-- Names and personas must be in language: ${language}
+- Language directive for this course: ${languageDirective}
+  Agent names and personas must follow this language directive.
 - Each agent must be assigned one avatar from this list: ${JSON.stringify(avatarDescriptions && avatarDescriptions.length > 0 ? avatarDescriptions.map((a) => ({ path: a.path, description: a.desc })) : availableAvatars)}
   - Pick an avatar that visually matches the agent's personality and role
   - Try to use different avatars for each agent
   - Use the "path" value as the avatar field in the output
-- Each agent must be assigned one color from this list: ${JSON.stringify(COLOR_PALETTE)}
+- Each agent must be assigned one color from this list: ${JSON.stringify(AGENT_COLOR_PALETTE)}
   - Each agent must have a different color
 ${voicePrompt}
 
@@ -211,7 +202,7 @@ Return a JSON object with this exact structure:
         role: agent.role,
         persona: agent.persona,
         avatar: agent.avatar || availableAvatars[index % availableAvatars.length],
-        color: agent.color || COLOR_PALETTE[index % COLOR_PALETTE.length],
+        color: agent.color || AGENT_COLOR_PALETTE[index % AGENT_COLOR_PALETTE.length],
         priority:
           agent.priority ?? (agent.role === 'teacher' ? 10 : agent.role === 'assistant' ? 7 : 5),
         ...(voiceConfig ? { voiceConfig } : {}),
@@ -222,7 +213,10 @@ Return a JSON object with this exact structure:
 
     return apiSuccess({ agents });
   } catch (error) {
-    log.error('Agent profiles generation error:', error);
+    log.error(
+      `Agent profiles generation failed [stage="${stageName ?? 'unknown'}", model=${modelString ?? 'unknown'}]:`,
+      error,
+    );
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
   }
 }

@@ -44,7 +44,7 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
       description: data.stage.description,
       createdAt: data.stage.createdAt || now,
       updatedAt: now,
-      language: data.stage.language,
+      languageDirective: data.stage.languageDirective,
       style: data.stage.style,
       currentSceneId: data.currentSceneId || undefined,
       agentIds: data.stage.agentIds,
@@ -212,6 +212,19 @@ export async function getFirstSlideByStages(
     log.error('Failed to load thumbnails:', error);
   }
   return result;
+}
+
+/**
+ * Rename a stage (updates only the name field in IndexedDB)
+ */
+export async function renameStage(stageId: string, newName: string): Promise<void> {
+  try {
+    await db.stages.update(stageId, { name: newName, updatedAt: Date.now() });
+    log.info(`Renamed stage ${stageId} to "${newName}"`);
+  } catch (error) {
+    log.error('Failed to rename stage:', error);
+    throw error;
+  }
 }
 
 /**

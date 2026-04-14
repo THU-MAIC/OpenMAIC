@@ -53,7 +53,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           formData.append(
             'modelId',
             asrProvidersConfig?.[asrProviderId]?.modelId ||
-              ASR_PROVIDERS[asrProviderId]?.defaultModelId ||
+              ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
               '',
           );
           formData.append('language', asrLanguage);
@@ -63,8 +63,10 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           if (providerConfig?.apiKey?.trim()) {
             formData.append('apiKey', providerConfig.apiKey);
           }
-          if (providerConfig?.baseUrl?.trim()) {
-            formData.append('baseUrl', providerConfig.baseUrl);
+          const effectiveBaseUrl =
+            providerConfig?.baseUrl?.trim() || providerConfig?.customDefaultBaseUrl || '';
+          if (effectiveBaseUrl) {
+            formData.append('baseUrl', effectiveBaseUrl);
           }
         }
 

@@ -142,10 +142,7 @@ export function WhiteboardHistory({ isOpen, onClose }: WhiteboardHistoryProps) {
                         </div>
                         <div className="text-xs text-gray-400 dark:text-gray-500 mt-0.5">
                           {formatTime(snap.timestamp)} ·{' '}
-                          {t('whiteboard.elementCount').replace(
-                            '{count}',
-                            String(snap.elements.length),
-                          )}
+                          {t('whiteboard.elementCount', { count: snap.elements.length })}
                         </div>
                       </div>
                       <button

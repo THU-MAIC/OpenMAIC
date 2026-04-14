@@ -34,7 +34,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderConfig } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
-import { formatContextWindow } from './utils';
+import { createVerifyModelRequest, formatContextWindow } from './utils';
 import { cn } from '@/lib/utils';
 
 interface ProviderConfigPanelProps {
@@ -125,13 +125,16 @@ export function ProviderConfigPanel({
       const response = await fetch('/api/verify-model', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey,
-          baseUrl,
-          model: `${provider.id}:${testModelId}`,
-          providerType: provider.type,
-          requiresApiKey: requiresApiKey,
-        }),
+        body: JSON.stringify(
+          createVerifyModelRequest({
+            providerId: provider.id,
+            modelId: testModelId,
+            apiKey,
+            baseUrl,
+            providerType: provider.type,
+            requiresApiKey,
+          }),
+        ),
       });
 
       const data = await response.json();

@@ -8,12 +8,17 @@
 export type ProviderCfgLike = {
   isServerConfigured?: boolean;
   apiKey?: string;
+  requiresApiKey?: boolean;
+  baseUrl?: string;
 };
 
-/** Check whether a provider has a usable path (server config or client key). */
+/** Check whether a provider has a usable path (server config or client key/baseUrl). */
 export function isProviderUsable(cfg: ProviderCfgLike | undefined): boolean {
   if (!cfg) return false;
-  return !!cfg.isServerConfigured || !!cfg.apiKey;
+  if (cfg.isServerConfigured) return true;
+  // Keyless providers (e.g. Ollama) need an explicit user-provided baseUrl
+  if (cfg.requiresApiKey === false) return !!cfg.baseUrl;
+  return !!cfg.apiKey;
 }
 
 /**

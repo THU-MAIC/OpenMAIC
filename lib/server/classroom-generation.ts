@@ -13,12 +13,12 @@ import {
 } from '@/lib/generation/scene-generator';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
-import { formatTeacherPersonaForPrompt } from '@/lib/generation/prompt-formatters';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
-import { parseModelString } from '@/lib/ai/providers';
-import { resolveApiKey, resolveWebSearchApiKey } from '@/lib/server/provider-config';
+import { isProviderKeyRequired } from '@/lib/ai/providers';
+import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
 import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
@@ -28,13 +28,13 @@ import {
 } from '@/lib/server/classroom-media-generation';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
+import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 
 const log = createLogger('Classroom');
 
 export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
-  language?: string;
   enableWebSearch?: boolean;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
@@ -96,10 +96,6 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
-}
-
 function stripCodeFences(text: string): string {
   let cleaned = text.trim();
   if (cleaned.startsWith('```')) {
@@ -110,7 +106,7 @@ function stripCodeFences(text: string): string {
 
 async function generateAgentProfiles(
   requirement: string,
-  language: string,
+  languageDirective: string,
   aiCall: AICallFn,
 ): Promise<AgentInfo[]> {
   const systemPrompt =
@@ -123,7 +119,8 @@ Requirements:
 - Decide the appropriate number of agents based on the course content (typically 3-5)
 - Exactly 1 agent must have role "teacher", the rest can be "assistant" or "student"
 - Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
-- Names and personas must be in language: ${language}
+- Language directive for this course: ${languageDirective}
+  Agent names and personas must follow this language directive.
 
 Return a JSON object with this exact structure:
 {
@@ -175,13 +172,17 @@ export async function generateClassroom(
     scenesGenerated: 0,
   });
 
-  const { model: languageModel, modelInfo, modelString } = resolveModel({});
+  const {
+    model: languageModel,
+    modelInfo,
+    modelString,
+    providerId,
+    apiKey,
+  } = await resolveModel({});
   log.info(`Using server-configured model: ${modelString}`);
 
   // Fail fast if the resolved provider has no API key configured
-  const { providerId } = parseModelString(modelString);
-  const apiKey = resolveApiKey(providerId);
-  if (!apiKey) {
+  if (isProviderKeyRequired(providerId) && !apiKey) {
     throw new Error(
       `No API key configured for provider "${providerId}". ` +
         `Set the appropriate key in .env.local or server-providers.yml (e.g. ${providerId.toUpperCase()}_API_KEY).`,
@@ -203,29 +204,25 @@ export async function generateClassroom(
     return result.text;
   };
 
-  const lang = normalizeLanguage(input.language);
+  const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
+    const result = await callLLM(
+      {
+        model: languageModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        maxOutputTokens: 256,
+      },
+      'web-search-query-rewrite',
+    );
+    return result.text;
+  };
+
   const requirements: UserRequirements = {
     requirement,
-    language: lang,
   };
   const pdfText = pdfContent?.text || undefined;
-
-  // Resolve agents based on agentMode
-  let agents: AgentInfo[];
-  const agentMode = input.agentMode || 'default';
-  if (agentMode === 'generate') {
-    log.info('Generating custom agent profiles via LLM...');
-    try {
-      agents = await generateAgentProfiles(requirement, lang, aiCall);
-      log.info(`Generated ${agents.length} agent profiles`);
-    } catch (e) {
-      log.warn('Agent profile generation failed, falling back to defaults:', e);
-      agents = getDefaultAgents();
-    }
-  } else {
-    agents = getDefaultAgents();
-  }
-  const teacherContext = formatTeacherPersonaForPrompt(agents);
 
   await options.onProgress?.({
     step: 'researching',
@@ -240,8 +237,19 @@ export async function generateClassroom(
     const tavilyKey = resolveWebSearchApiKey();
     if (tavilyKey) {
       try {
-        log.info('Running web search for requirement context...');
-        const searchResult = await searchWithTavily({ query: requirement, apiKey: tavilyKey });
+        const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
+
+        log.info('Running web search for classroom generation', {
+          hasPdfContext: searchQuery.hasPdfContext,
+          rawRequirementLength: searchQuery.rawRequirementLength,
+          rewriteAttempted: searchQuery.rewriteAttempted,
+          finalQueryLength: searchQuery.finalQueryLength,
+        });
+
+        const searchResult = await searchWithTavily({
+          query: searchQuery.query,
+          apiKey: tavilyKey,
+        });
         researchContext = formatSearchResultsAsContext(searchResult);
         if (researchContext) {
           log.info(`Web search returned ${searchResult.sources.length} sources`);
@@ -271,7 +279,7 @@ export async function generateClassroom(
       imageGenerationEnabled: input.enableImageGeneration,
       videoGenerationEnabled: input.enableVideoGeneration,
       researchContext,
-      teacherContext,
+      // NO teacherContext — agents haven't been generated yet
     },
   );
 
@@ -280,8 +288,8 @@ export async function generateClassroom(
     throw new Error(outlinesResult.error || 'Failed to generate scene outlines');
   }
 
-  const outlines = outlinesResult.data;
-  log.info(`Generated ${outlines.length} scene outlines`);
+  const { languageDirective, outlines } = outlinesResult.data;
+  log.info(`Generated ${outlines.length} scene outlines (languageDirective: ${languageDirective})`);
 
   await options.onProgress?.({
     step: 'generating_outlines',
@@ -291,15 +299,49 @@ export async function generateClassroom(
     totalScenes: outlines.length,
   });
 
+  // Resolve agents based on agentMode — now AFTER outlines so we can use languageDirective
+  let agents: AgentInfo[];
+  const agentMode = input.agentMode || 'default';
+  if (agentMode === 'generate') {
+    log.info('Generating custom agent profiles via LLM...');
+    try {
+      agents = await generateAgentProfiles(requirement, languageDirective, aiCall);
+      log.info(`Generated ${agents.length} agent profiles`);
+    } catch (e) {
+      log.warn('Agent profile generation failed, falling back to defaults:', e);
+      agents = getDefaultAgents();
+    }
+  } else {
+    agents = getDefaultAgents();
+  }
+
   const stageId = nanoid(10);
   const stage: Stage = {
     id: stageId,
     name: outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
-    language: lang,
+    languageDirective,
     style: 'interactive',
     createdAt: Date.now(),
     updatedAt: Date.now(),
+    // For LLM-generated agents, embed full configs so the client can
+    // hydrate the agent registry without prior IndexedDB data.
+    // For default agents, just record IDs — the client already has them.
+    ...(agentMode === 'generate'
+      ? {
+          generatedAgentConfigs: agents.map((a, i) => ({
+            id: a.id,
+            name: a.name,
+            role: a.role,
+            persona: a.persona || '',
+            avatar: AGENT_DEFAULT_AVATARS[i % AGENT_DEFAULT_AVATARS.length],
+            color: AGENT_COLOR_PALETTE[i % AGENT_COLOR_PALETTE.length],
+            priority: a.role === 'teacher' ? 10 : a.role === 'assistant' ? 7 : 5,
+          })),
+        }
+      : {
+          agentIds: agents.map((a) => a.id),
+        }),
   };
 
   const store = createInMemoryStore(stage);
@@ -320,22 +362,16 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    const content = await generateSceneContent(
-      safeOutline,
-      aiCall,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
-      agents,
-    );
+    const content = await generateSceneContent(safeOutline, aiCall, { agents, languageDirective });
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;
     }
 
-    const actions = await generateSceneActions(safeOutline, content, aiCall, undefined, agents);
+    const actions = await generateSceneActions(safeOutline, content, aiCall, {
+      agents,
+      languageDirective,
+    });
     log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
 
     const sceneId = createSceneWithActions(safeOutline, content, actions, api);

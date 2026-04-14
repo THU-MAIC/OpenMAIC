@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2 } from 'lucide-react';
+import { Bot, Check, ChevronLeft, Paperclip, FileText, X, Globe2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -19,6 +19,7 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type { ProviderId } from '@/lib/ai/providers';
+import { MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
 
@@ -28,8 +29,6 @@ const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
-  language: 'zh-CN' | 'en-US';
-  onLanguageChange: (lang: 'zh-CN' | 'en-US') => void;
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
@@ -41,8 +40,6 @@ export interface GenerationToolbarProps {
 
 // ─── Component ───────────────────────────────────────────────
 export function GenerationToolbar({
-  language,
-  onLanguageChange,
   webSearch,
   onWebSearchChange,
   onSettingsOpen,
@@ -78,7 +75,9 @@ export function GenerationToolbar({
     ? Object.entries(providersConfig)
         .filter(
           ([, config]) =>
-            (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
+            (config.requiresApiKey
+              ? config.apiKey || config.isServerConfigured
+              : config.isServerConfigured || config.baseUrl) &&
             config.models.length >= 1 &&
             (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
         )
@@ -357,20 +356,6 @@ export function GenerationToolbar({
         </Tooltip>
       )}
 
-      {/* ── Language pill ── */}
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            onClick={() => onLanguageChange(language === 'zh-CN' ? 'en-US' : 'zh-CN')}
-            className={pillMuted}
-          >
-            <Globe className="size-3.5" />
-            <span>{language === 'zh-CN' ? '中文' : 'EN'}</span>
-          </button>
-        </TooltipTrigger>
-        <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
-      </Tooltip>
-
       {/* ── Separator ── */}
       <div className="w-px h-4 bg-border/60 mx-1" />
 
@@ -436,7 +421,10 @@ function ModelSelectorPopover({
                 <img
                   src={currentProviderConfig.icon}
                   alt={currentProviderConfig.name}
-                  className="size-4 rounded-sm"
+                  className={cn(
+                    'size-4 rounded-sm',
+                    MONO_LOGO_PROVIDERS.has(currentProviderId) && 'dark:invert',
+                  )}
                 />
               ) : (
                 <Bot className="size-3.5 text-muted-foreground" />
@@ -475,7 +463,10 @@ function ModelSelectorPopover({
                     <img
                       src={provider.icon}
                       alt={provider.name}
-                      className="size-5 rounded-sm shrink-0"
+                      className={cn(
+                        'size-5 rounded-sm shrink-0',
+                        MONO_LOGO_PROVIDERS.has(provider.id) && 'dark:invert',
+                      )}
                     />
                   ) : (
                     <Bot className="size-5 text-muted-foreground shrink-0" />
@@ -512,7 +503,10 @@ function ModelSelectorPopover({
                 <img
                   src={activeProvider.icon}
                   alt={activeProvider.name}
-                  className="size-4 rounded-sm"
+                  className={cn(
+                    'size-4 rounded-sm',
+                    MONO_LOGO_PROVIDERS.has(activeProvider.id) && 'dark:invert',
+                  )}
                 />
               ) : (
                 <Bot className="size-4 text-muted-foreground" />

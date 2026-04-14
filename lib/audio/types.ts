@@ -78,7 +78,7 @@
  * Add new TTS providers here as union members.
  * Keep in sync with TTS_PROVIDERS registry in constants.ts
  */
-export type TTSProviderId =
+export type BuiltInTTSProviderId =
   | 'openai-tts'
   | 'azure-tts'
   | 'glm-tts'
@@ -87,10 +87,8 @@ export type TTSProviderId =
   | 'elevenlabs-tts'
   | 'minimax-tts'
   | 'browser-native-tts';
-// Add new TTS providers below (uncomment and modify):
-// | 'fish-audio-tts'
-// | 'cartesia-tts'
-// | 'playht-tts'
+
+export type TTSProviderId = BuiltInTTSProviderId | `custom-tts-${string}`;
 
 /**
  * Voice information for TTS
@@ -152,12 +150,9 @@ export interface TTSModelConfig {
  * Add new ASR providers here as union members.
  * Keep in sync with ASR_PROVIDERS registry in constants.ts
  */
-export type ASRProviderId = 'openai-whisper' | 'browser-native' | 'qwen-asr';
-// Add new ASR providers below (uncomment and modify):
-// | 'elevenlabs-asr'
-// | 'assemblyai-asr'
-// | 'deepgram-asr'
-// | 'azure-asr'
+export type BuiltInASRProviderId = 'openai-whisper' | 'browser-native' | 'qwen-asr';
+
+export type ASRProviderId = BuiltInASRProviderId | `custom-asr-${string}`;
 
 /**
  * ASR Provider Configuration
@@ -183,4 +178,14 @@ export interface ASRModelConfig {
   apiKey?: string;
   baseUrl?: string;
   language?: string;
+}
+
+/** Returns true if the provider ID is a user-defined custom TTS provider. */
+export function isCustomTTSProvider(id: string): boolean {
+  return id.startsWith('custom-tts-');
+}
+
+/** Returns true if the provider ID is a user-defined custom ASR provider. */
+export function isCustomASRProvider(id: string): boolean {
+  return id.startsWith('custom-asr-');
 }

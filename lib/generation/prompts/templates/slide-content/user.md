@@ -18,7 +18,8 @@
 
 Based on the scene information above, generate a complete Canvas/PPT component for one page.
 
-**Language Requirement**: All generated text content must be in the same language as the title and description above.
+## Language Directive
+{{languageDirective}}
 
 **Must Follow**:
 
