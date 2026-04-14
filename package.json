@@ -43,6 +43,7 @@
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@sentry/nextjs": "^10.48.0",
+    "@sentry/profiling-node": "^10.48.0",
     "@types/js-yaml": "^4.0.9",
     "@vercel/analytics": "^2.0.1",
     "@vercel/otel": "^2.1.2",
@@ -135,6 +136,10 @@
     "vue-to-react": "^1.0.0"
   },
   "pnpm": {
+    "onlyBuiltDependencies": [
+      "@sentry-internal/node-cpu-profiler",
+      "@sentry/cli"
+    ],
     "ignoredBuiltDependencies": [
       "sharp",
       "unrs-resolver"
