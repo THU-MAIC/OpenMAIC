@@ -2,9 +2,8 @@ import { readFileSync, readdirSync } from 'fs';
 import { join } from 'path';
 import { parseArgs } from 'util';
 import type { EvalScenario, ScenarioRunResult, CheckpointResult, EvalReport } from './types';
-import type { StatelessEvent, DirectorState } from '@/lib/types/chat';
 import type { Action } from '@/lib/types/action';
-import { chatStream } from './chat-client';
+import { runAgentLoop, type AgentLoopIterationResult } from '@/lib/chat/agent-loop';
 import { EvalStateManager } from './state-manager';
 import { initCapture, captureWhiteboard, closeCapture } from './capture';
 import { scoreScreenshot } from './scorer';
@@ -68,7 +67,6 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
     parts?: unknown[];
     metadata?: unknown;
   }> = [];
-  let directorState: DirectorState | undefined = undefined;
 
   try {
     for (let turnIdx = 0; turnIdx < scenario.turns.length; turnIdx++) {
@@ -83,106 +81,119 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
         metadata: { createdAt: Date.now() },
       });
 
-      // Agent loop (mirrors frontend runAgentLoop)
-      let agentTurnCount = 0;
-      let consecutiveEmptyTurns = 0;
-      while (agentTurnCount < MAX_AGENT_TURNS) {
-        const storeState = stateManager.getStoreState();
+      // Per-iteration state for the eval callbacks
+      let iterResult: AgentLoopIterationResult | null = null;
+      let currentAgentId: string | null = null;
+      let currentMessageId: string | null = null;
+      const textParts: string[] = [];
+      const actionParts: Array<{ type: string; actionName: string; params: unknown }> = [];
+      let cueUserReceived = false;
 
-        let doneEvent: (StatelessEvent & { type: 'done' }) | null = null;
-        let cueUserReceived = false;
-        let currentAgentId: string | null = null;
-        let currentMessageId: string | null = null;
-        const textParts: string[] = [];
-        const actionParts: Array<{ type: string; actionName: string; params: unknown }> = [];
-
-        for await (const event of chatStream({
-          baseUrl: BASE_URL,
-          messages,
-          storeState,
+      // Use the shared agent loop — same logic as frontend
+      const controller = new AbortController();
+      await runAgentLoop(
+        {
           config: scenario.config,
-          directorState,
           apiKey: API_KEY,
           model,
-        })) {
-          switch (event.type) {
-            case 'agent_start':
-              currentAgentId = event.data.agentId;
-              currentMessageId = event.data.messageId;
-              break;
+        },
+        {
+          getStoreState: () => stateManager.getStoreState(),
+          getMessages: () => messages,
 
-            case 'text_delta':
-              textParts.push(event.data.content);
-              break;
+          fetchChat: async (body, signal) => {
+            // Reset per-iteration accumulators
+            currentAgentId = null;
+            currentMessageId = null;
+            textParts.length = 0;
+            actionParts.length = 0;
+            cueUserReceived = false;
+            iterResult = null;
 
-            case 'action': {
-              const action: Action = {
-                id: event.data.actionId,
-                type: event.data.actionName,
-                ...event.data.params,
-              } as Action;
-              await stateManager.executeAction(action);
-              actionParts.push({
-                type: `action-${event.data.actionName}`,
-                actionName: event.data.actionName,
-                params: event.data.params,
+            return fetch(`${BASE_URL}/api/chat`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+              signal,
+            });
+          },
+
+          onEvent: (event) => {
+            switch (event.type) {
+              case 'agent_start':
+                currentAgentId = event.data.agentId;
+                currentMessageId = event.data.messageId;
+                break;
+
+              case 'text_delta':
+                textParts.push(event.data.content);
+                break;
+
+              case 'action': {
+                const action: Action = {
+                  id: event.data.actionId,
+                  type: event.data.actionName,
+                  ...event.data.params,
+                } as Action;
+                // Note: executeAction is async but we fire-and-forget here
+                // to match the shared loop's sync onEvent signature.
+                // Actions are awaited via ActionEngine's internal delay().
+                void stateManager.executeAction(action);
+                actionParts.push({
+                  type: `action-${event.data.actionName}`,
+                  actionName: event.data.actionName,
+                  params: event.data.params,
+                });
+                break;
+              }
+
+              case 'cue_user':
+                cueUserReceived = true;
+                break;
+
+              case 'done':
+                iterResult = {
+                  directorState: event.data.directorState,
+                  totalAgents: event.data.totalAgents,
+                  agentHadContent: event.data.agentHadContent ?? true,
+                  cueUserReceived,
+                };
+                break;
+
+              case 'error':
+                throw new Error(`API error: ${event.data.message}`);
+            }
+          },
+
+          onIterationEnd: async () => {
+            // Build assistant message for conversation history
+            if (currentMessageId && (textParts.length > 0 || actionParts.length > 0)) {
+              const parts: unknown[] = [];
+              if (textParts.length > 0) {
+                parts.push({ type: 'text', text: textParts.join('') });
+              }
+              for (const ap of actionParts) {
+                parts.push({ ...ap, state: 'result', output: { success: true } });
+              }
+              messages.push({
+                role: 'assistant',
+                content: textParts.join(''),
+                parts,
+                metadata: {
+                  senderName: currentAgentId || 'agent',
+                  originalRole: 'agent',
+                  agentId: currentAgentId,
+                  createdAt: Date.now(),
+                },
               });
-              break;
             }
 
-            case 'cue_user':
-              cueUserReceived = true;
-              break;
-
-            case 'done':
-              doneEvent = event as StatelessEvent & { type: 'done' };
-              break;
-
-            case 'error':
-              throw new Error(`API error: ${event.data.message}`);
-          }
-        }
-
-        // Build assistant message for conversation history
-        if (currentMessageId && (textParts.length > 0 || actionParts.length > 0)) {
-          const parts: unknown[] = [];
-          if (textParts.length > 0) {
-            parts.push({ type: 'text', text: textParts.join('') });
-          }
-          for (const ap of actionParts) {
-            parts.push({ ...ap, state: 'result', output: { success: true } });
-          }
-          messages.push({
-            role: 'assistant',
-            content: textParts.join(''),
-            parts,
-            metadata: {
-              senderName: currentAgentId || 'agent',
-              originalRole: 'agent',
-              agentId: currentAgentId,
-              createdAt: Date.now(),
-            },
-          });
-        }
-
-        // Check loop exit conditions (mirrors frontend runAgentLoop)
-        if (doneEvent) {
-          directorState = doneEvent.data.directorState;
-          // Director said END
-          if (doneEvent.data.totalAgents === 0) break;
-          // Director said USER — stop loop, advance to next user turn
-          if (cueUserReceived) break;
-          // Track consecutive empty responses
-          if (doneEvent.data.agentHadContent === false) {
-            consecutiveEmptyTurns++;
-            if (consecutiveEmptyTurns >= 2) break;
-          } else {
-            consecutiveEmptyTurns = 0;
-          }
-        }
-
-        agentTurnCount++;
-      }
+            return iterResult;
+          },
+        },
+        controller.signal,
+        MAX_AGENT_TURNS,
+      );
 
       // Checkpoint: capture + score
       const isLastTurn = turnIdx === scenario.turns.length - 1;
