@@ -18,6 +18,7 @@ import {
   Monitor,
   BotOff,
   ChevronUp,
+  BookOpen,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useAuth } from '@/lib/hooks/use-auth';
@@ -30,6 +31,7 @@ import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { AuthButton } from '@/components/auth/auth-button';
+import { FeedbackButton } from '@/components/feedback/feedback-button';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
@@ -37,12 +39,17 @@ import type { UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
 import {
-  StageListItem,
+  StageListItem as LocalStageListItem,
   listStages,
   deleteStageData,
   renameStage,
   getFirstSlideByStages,
 } from '@/lib/utils/stage-storage';
+
+export interface StageListItem extends LocalStageListItem {
+  is_cloud?: boolean;
+  supabase_id?: string;
+}
 import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
 import type { Slide } from '@/lib/types/slides';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
@@ -50,6 +57,11 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { Cloud, CloudDownload } from 'lucide-react';
+import {
+  fetchUserCoursesFromSupabase,
+  downloadCourseFromSupabase,
+} from '@/lib/supabase/course-sync';
 
 const log = createLogger('Home');
 
@@ -163,17 +175,51 @@ function HomePage() {
 
   const loadClassrooms = async () => {
     try {
-      const list = await listStages();
-      setClassrooms(list);
-      // Load first slide thumbnails
-      if (list.length > 0) {
-        const slides = await getFirstSlideByStages(list.map((c) => c.id));
+      // 1. Load local courses from IndexedDB
+      const localList = await listStages();
+      const localMap = new Map(localList.map((c) => [c.id, c]));
+
+      // 2. If logged in, load from Supabase and merge
+      let mergedList: StageListItem[] = [...localList];
+      if (user) {
+        const supabaseList = await fetchUserCoursesFromSupabase(user.id);
+        for (const sCourse of supabaseList) {
+          if (!localMap.has(sCourse.stage_id)) {
+            // Course exists in cloud but not locally
+            mergedList.push({
+              id: sCourse.stage_id,
+              name: sCourse.name,
+              description: '', // Metdata is minimal
+              sceneCount: sCourse.slide_count,
+              createdAt: new Date(sCourse.created_at).getTime(),
+              updatedAt: new Date(sCourse.updated_at).getTime(),
+              is_cloud: true,
+              supabase_id: sCourse.id,
+            });
+          }
+        }
+      }
+
+      // Sort by updatedAt reverse
+      mergedList.sort((a, b) => b.updatedAt - a.updatedAt);
+      setClassrooms(mergedList);
+
+      // Load thumbnails for local courses
+      const localIds = mergedList.filter((c) => !c.is_cloud).map((c) => c.id);
+      if (localIds.length > 0) {
+        const slides = await getFirstSlideByStages(localIds);
         setThumbnails(slides);
       }
     } catch (err) {
       log.error('Failed to load classrooms:', err);
     }
   };
+
+  useEffect(() => {
+    if (!authLoading) {
+      loadClassrooms();
+    }
+  }, [user, authLoading]);
 
   useEffect(() => {
     // Clear stale media store to prevent cross-course thumbnail contamination.
@@ -375,6 +421,7 @@ function HomePage() {
         {/* ═══ Top-right bar: Auth button (always visible) + Admin pill ═══ */}
         <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
           {/* Auth button — always visible */}
+          <FeedbackButton variant="pill" showLabel />
           <AuthButton />
 
           {/* Admin controls */}
@@ -512,10 +559,50 @@ function HomePage() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.25 }}
-            className="text-base md:text-lg text-[#073b4c]/80 font-semibold mb-8 text-center px-4"
+            className="text-base md:text-lg text-[#073b4c]/80 font-semibold mb-4 text-center px-4"
           >
             AI-powered interactive classroom. Learn anything, with anyone, anytime.
           </motion.p>
+
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
+            className="flex flex-wrap justify-center gap-3 mb-8"
+          >
+            <Button
+              variant="outline"
+              onClick={() => router.push('/catalog')}
+              className="h-10 px-6 rounded-full border-2 border-[#073b4c] text-[#073b4c] font-bold shadow-[3px_3px_0_#073b4c] hover:translate-y-[-2px] hover:shadow-[5px_5px_0_#073b4c] transition-all bg-white"
+            >
+              <BookOpen className="size-4 mr-2" />
+              Browse Course Catalog
+            </Button>
+
+            <Button
+              variant="outline"
+              onClick={() => router.push('/leaderboard')}
+              className="h-10 px-6 rounded-full border-2 border-[#073b4c] text-[#073b4c] font-bold shadow-[3px_3px_0_#073b4c] hover:translate-y-[-2px] hover:shadow-[5px_5px_0_#073b4c] transition-all bg-white"
+            >
+              <Trophy className="size-4 mr-2" />
+              Hall of Fame
+            </Button>
+            
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/catalog?subject=Mathematics')}
+              className="h-10 px-4 rounded-full text-[#073b4c]/60 font-bold hover:bg-[#ffd166]/20 transition-all border-2 border-transparent hover:border-[#ffd166]/40"
+            >
+              Math
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => router.push('/catalog?subject=Science')}
+              className="h-10 px-4 rounded-full text-[#073b4c]/60 font-bold hover:bg-[#ef476f]/20 transition-all border-2 border-transparent hover:border-[#ef476f]/40"
+            >
+              Science
+            </Button>
+          </motion.div>
 
           {/* ── Unified input area ── */}
           <motion.div
@@ -1002,11 +1089,27 @@ function ClassroomCard({
   onClick: () => void;
 }) {
   const { t } = useI18n();
+  const [syncing, setSyncing] = useState(false);
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumbWidth, setThumbWidth] = useState(0);
   const [editing, setEditing] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const nameInputRef = useRef<HTMLInputElement>(null);
+
+  const handleCardClick = async () => {
+    if (confirmingDelete || syncing) return;
+
+    if (classroom.is_cloud && classroom.supabase_id) {
+      setSyncing(true);
+      const success = await downloadCourseFromSupabase(classroom.supabase_id);
+      setSyncing(false);
+      if (!success) {
+        toast.error('Failed to sync course from cloud');
+        return;
+      }
+    }
+    onClick();
+  };
 
   useEffect(() => {
     const el = thumbRef.current;
@@ -1038,12 +1141,27 @@ function ClassroomCard({
   };
 
   return (
-    <div className="group cursor-pointer" onClick={confirmingDelete ? undefined : onClick}>
+    <div className="group cursor-pointer" onClick={handleCardClick}>
       {/* Thumbnail — large radius, no border, subtle bg */}
       <div
         ref={thumbRef}
         className="relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
       >
+        {/* Syncing Overlay */}
+        <AnimatePresence>
+          {syncing && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-black/40 backdrop-blur-md"
+            >
+              <div className="size-6 border-2 border-white/80 border-t-transparent rounded-full animate-spin" />
+              <span className="text-[11px] font-bold text-white tracking-wider uppercase">Syncing</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {slide && thumbWidth > 0 ? (
           <ThumbnailSlide
             slide={slide}
@@ -1058,6 +1176,14 @@ function ClassroomCard({
             </div>
           </div>
         ) : null}
+
+        {/* Cloud Indicator - top-left */}
+        {classroom.is_cloud && (
+          <div className="absolute top-2 left-2 z-10 px-1.5 py-0.5 rounded-full bg-black/30 backdrop-blur-sm border border-white/10 flex items-center gap-1">
+            <Cloud className="size-3 text-white/90" />
+            <span className="text-[9px] font-bold text-white/90 uppercase tracking-tighter">Cloud</span>
+          </div>
+        )}
 
         {/* Delete — top-right, only on hover */}
         <AnimatePresence>

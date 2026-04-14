@@ -21,6 +21,8 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
+import { FeedbackButton } from '@/components/feedback/feedback-button';
+import { AuthButton } from '@/components/auth/auth-button';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -152,6 +154,12 @@ export function Header({ currentSceneTitle }: HeaderProps) {
               </button>
             </div>
           )}
+        </div>
+
+        {/* Feedback & Auth Area */}
+        <div className="flex items-center gap-2">
+          <FeedbackButton variant="ghost" />
+          <AuthButton />
         </div>
       </header>
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />

@@ -2,8 +2,10 @@
 
 import { useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, LogOut, Mail, Calendar } from 'lucide-react';
+import { X, LogOut, Mail, Calendar, Trophy } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
+import { useState, useEffect, useRef } from 'react';
+import { LeaderboardCard } from '../leaderboard/leaderboard-card';
 
 interface AuthProfileModalProps {
   open: boolean;
@@ -18,6 +20,18 @@ interface AuthProfileModalProps {
 export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
   const { user, signOut } = useAuth();
   const panelRef = useRef<HTMLDivElement>(null);
+  const [stats, setStats] = useState<any>(null);
+
+  useEffect(() => {
+    if (open && user) {
+      fetch('/api/analytics/user-stats')
+        .then(res => res.json())
+        .then(json => {
+          if (json.success) setStats(json.stats);
+        })
+        .catch(err => console.error('Failed to fetch stats:', err));
+    }
+  }, [open, user]);
 
   // Close on click outside
   useEffect(() => {
@@ -137,20 +151,44 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
                 </div>
               </div>
 
-              {/* Details */}
-              <div className="space-y-2.5 mb-5">
-                <div className="flex items-center gap-2.5 px-3 py-2.5 bg-[#f0f4f8]/80 rounded-xl">
-                  <Mail className="size-3.5 text-[#118AB2] shrink-0" />
-                  <span className="text-xs font-medium text-[#073b4c]/70 truncate">{email}</span>
-                </div>
-                {createdAt && (
-                  <div className="flex items-center gap-2.5 px-3 py-2.5 bg-[#f0f4f8]/80 rounded-xl">
-                    <Calendar className="size-3.5 text-[#06D6A0] shrink-0" />
-                    <span className="text-xs font-medium text-[#073b4c]/70">
-                      Joined {createdAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                    </span>
+              </div>
+              
+              {/* Stats Section */}
+              <div className="mb-5">
+                <h4 className="text-[11px] font-black text-[#073b4c]/30 uppercase tracking-widest mb-3 px-1">My Learning Journey</h4>
+                <div className="grid grid-cols-2 gap-2.5 mb-4">
+                  <div className="bg-[#ef476f]/5 border-2 border-[#ef476f]/10 rounded-2xl p-3">
+                    <p className="text-[10px] font-black text-[#ef476f] uppercase tracking-tighter mb-0.5">Total Points</p>
+                    <p className="text-xl font-black text-[#073b4c]">{(stats?.totalScore || 0).toLocaleString()}</p>
                   </div>
-                )}
+                  <div className="bg-[#118ab2]/5 border-2 border-[#118ab2]/10 rounded-2xl p-3">
+                    <p className="text-[10px] font-black text-[#118ab2] uppercase tracking-tighter mb-0.5">Global Rank</p>
+                    <p className="text-xl font-black text-[#073b4c]">#{stats?.globalRank || '—'}</p>
+                  </div>
+                  <div className="bg-[#06d6a0]/5 border-2 border-[#06d6a0]/10 rounded-2xl p-3">
+                    <p className="text-[10px] font-black text-[#06d6a0] uppercase tracking-tighter mb-0.5">Watch Time</p>
+                    <p className="text-xl font-black text-[#073b4c]">
+                      {Math.floor((stats?.totalWatchTime || 0) / 60)}<span className="text-[10px]">m</span>
+                    </p>
+                  </div>
+                  <div className="bg-[#ffd166]/10 border-2 border-[#ffd166]/20 rounded-2xl p-3">
+                    <p className="text-[10px] font-black text-[#ffd166] uppercase tracking-tighter mb-0.5">Quizzes</p>
+                    <p className="text-xl font-black text-[#073b4c]">{stats?.quizzesCompleted || 0}</p>
+                  </div>
+                </div>
+
+                {/* Mini Leaderboard preview */}
+                <LeaderboardCard type="global" limit={3} className="bg-[#f0f4f8]/30 border-[#073b4c]/10 shadow-none rounded-2xl" />
+                
+                <button 
+                  onClick={() => {
+                    onClose();
+                    window.location.href = '/leaderboard';
+                  }}
+                  className="w-full mt-3 text-[10px] font-black text-[#118ab2] hover:text-[#073b4c] uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5"
+                >
+                  View Full Leaderboard →
+                </button>
               </div>
 
               {/* Sign out button */}

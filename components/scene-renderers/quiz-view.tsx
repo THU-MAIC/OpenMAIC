@@ -22,6 +22,9 @@ const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { analyticsService } from '@/lib/analytics/analytics';
+import { useUserProfileStore } from '@/lib/store/user-profile';
+import { useParams } from 'next/navigation';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -687,6 +690,10 @@ function ScoreBanner({
 
 export function QuizView({ questions, sceneId }: QuizViewProps) {
   const { t, locale } = useI18n();
+  const params = useParams();
+  const classroomId = params?.id as string;
+  const { nickname, avatar } = useUserProfileStore();
+
   const [phase, setPhase] = useState<Phase>('not_started');
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [results, setResults] = useState<QuestionResult[]>([]);
@@ -767,6 +774,17 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
       const ordered = questions.map((q) => allResultsMap.get(q.id)!).filter(Boolean);
 
       setResults(ordered);
+
+      // 4. Submit total score to leaderboard/analytics
+      const totalEarned = ordered.reduce((sum, r) => sum + r.earned, 0);
+      analyticsService.submitQuizScore({
+        courseId: classroomId,
+        sceneId,
+        score: totalEarned,
+        totalPoints,
+        displayName: nickname,
+        avatarUrl: avatar,
+      }).catch(err => console.error('[quiz-view] Score submit failed:', err));
 
       setPhase('reviewing');
     })();

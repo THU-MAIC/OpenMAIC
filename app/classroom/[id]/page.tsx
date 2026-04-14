@@ -12,12 +12,15 @@ import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { useAnalytics } from '@/lib/hooks/use-analytics';
 
 const log = createLogger('Classroom');
 
 export default function ClassroomDetailPage() {
   const params = useParams();
   const classroomId = params?.id as string;
+
+  useAnalytics(classroomId);
 
   const { loadFromStorage } = useStageStore();
 
@@ -36,9 +39,24 @@ export default function ClassroomDetailPage() {
     try {
       await loadFromStorage(classroomId);
 
-      // If IndexedDB had no data, try server-side storage (API-generated classrooms)
+      // If IndexedDB had no data, try Supabase (cloud sync) or server-side storage
       if (!useStageStore.getState().stage) {
-        log.info('No IndexedDB data, trying server-side storage for:', classroomId);
+        log.info('No IndexedDB data, trying Supabase cloud storage for:', classroomId);
+        try {
+          const { downloadCourseByStageId } = await import('@/lib/supabase/course-sync');
+          const success = await downloadCourseByStageId(classroomId);
+          if (success) {
+            log.info('Loaded from Supabase cloud storage:', classroomId);
+            await loadFromStorage(classroomId);
+          }
+        } catch (sErr) {
+          log.warn('Supabase cloud storage fetch failed:', sErr);
+        }
+      }
+
+      // If still no data, try the legacy server-side storage
+      if (!useStageStore.getState().stage) {
+        log.info('Still no data, trying legacy server-side storage for:', classroomId);
         try {
           const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroomId)}`);
           if (res.ok) {
