@@ -143,6 +143,7 @@ import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
+import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
 
 const log = createLogger('PDFProviders');
 
@@ -211,26 +212,53 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
     height: number;
   }> = [];
   let imageCounter = 0;
+  const MAX_IMAGES = MAX_VISION_IMAGES;
 
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+    if (imageCounter >= MAX_IMAGES) break;
+
     try {
       const pageImages = await extractImages(pdf, pageNum);
       for (let i = 0; i < pageImages.length; i++) {
+        if (imageCounter >= MAX_IMAGES) break;
+
         const imgData = pageImages[i];
         try {
-          // Use sharp to convert raw image data to PNG base64
-          const pngBuffer = await sharp(Buffer.from(imgData.data), {
+          // Use sharp to convert raw image data to JPEG base64 with optimization
+          let sharpInstance = sharp(Buffer.from(imgData.data), {
             raw: {
               width: imgData.width,
               height: imgData.height,
               channels: imgData.channels,
             },
-          })
-            .png()
+          });
+
+          // Resize if too large (fits within 1024x1024 while maintaining aspect ratio)
+          if (imgData.width > 1024 || imgData.height > 1024) {
+            sharpInstance = sharpInstance.resize(1024, 1024, {
+              fit: 'inside',
+              withoutEnlargement: true,
+            });
+          }
+
+          const jpegBuffer = await sharpInstance
+            .jpeg({
+              quality: 80,
+              progressive: true,
+              chromaSubsampling: '4:2:0',
+            })
             .toBuffer();
 
           // Convert to base64
-          const base64 = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+          const base64 = `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
+
+          // Skip if even the compressed image is unusually large (over 1.5MB)
+          // This prevents a single massive image from breaking the payload
+          if (base64.length > 2000000) {
+            log.warn(`Skipping image ${imageCounter + 1} from page ${pageNum} - too large even after compression`);
+            continue;
+          }
+
           imageCounter++;
           const imgId = `img_${imageCounter}`;
           images.push(base64);
@@ -280,8 +308,8 @@ async function parseWithMinerU(
   if (!config.baseUrl) {
     throw new Error(
       'MinerU base URL is required. ' +
-        'Please deploy MinerU locally or specify the server URL. ' +
-        'See: https://github.com/opendatalab/MinerU',
+      'Please deploy MinerU locally or specify the server URL. ' +
+      'See: https://github.com/opendatalab/MinerU',
     );
   }
 
@@ -341,14 +369,14 @@ async function parseWithMinerU(
       throw new Error(`MinerU returned no results. Response keys: ${JSON.stringify(keys)}`);
     }
     log.warn(`[MinerU] Filename mismatch, using key "${keys[0]}" instead of "${fileName}"`);
-    return extractMinerUResult(fallback);
+    return await extractMinerUResult(fallback);
   }
 
-  return extractMinerUResult(fileResult);
+  return await extractMinerUResult(fileResult);
 }
 
 /** Extract ParsedPdfContent from a single MinerU file result */
-function extractMinerUResult(fileResult: Record<string, unknown>): ParsedPdfContent {
+async function extractMinerUResult(fileResult: Record<string, unknown>): Promise<ParsedPdfContent> {
   const markdown: string = (fileResult.md_content as string) || '';
   const imageData: Record<string, string> = {};
   let pageCount = 0;
@@ -392,6 +420,9 @@ function extractMinerUResult(fileResult: Record<string, unknown>): ParsedPdfCont
     }
   }
 
+  const MAX_IMAGES = MAX_VISION_IMAGES;
+  let imageCounter = 0;
+
   // Build image mapping and pdfImages array
   const imageMapping: Record<string, string> = {};
   const pdfImages: Array<{
@@ -403,26 +434,71 @@ function extractMinerUResult(fileResult: Record<string, unknown>): ParsedPdfCont
     height?: number;
   }> = [];
 
-  Object.entries(imageData).forEach(([key, base64Url], index) => {
+  const entries = Object.entries(imageData);
+  for (let index = 0; index < entries.length; index++) {
+    if (imageCounter >= MAX_IMAGES) break;
+
+    const [key, base64Url] = entries[index];
     const imageId = key.startsWith('img_') ? key : `img_${index + 1}`;
-    imageMapping[imageId] = base64Url;
-    // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths)
-    const meta = imageMetaLookup.get(key) || imageMetaLookup.get(`images/${key}`);
-    pdfImages.push({
-      id: imageId,
-      src: base64Url,
-      pageNumber: meta ? meta.pageIdx + 1 : 0,
-      description: meta?.caption,
-      width: meta ? meta.bbox[2] - meta.bbox[0] : undefined,
-      height: meta ? meta.bbox[3] - meta.bbox[1] : undefined,
-    });
-  });
+
+    try {
+      // Optimize MinerU images too since they might be large PNGs
+      const base64Data = base64Url.split(',')[1];
+      if (!base64Data) continue;
+
+      let sharpInstance = sharp(Buffer.from(base64Data, 'base64'));
+      const metadata = await sharpInstance.metadata();
+
+      // Resize if too large
+      if ((metadata.width || 0) > 1024 || (metadata.height || 0) > 1024) {
+        sharpInstance = sharpInstance.resize(1024, 1024, {
+          fit: 'inside',
+          withoutEnlargement: true,
+        });
+      }
+
+      const jpegBuffer = await sharpInstance
+        .jpeg({ quality: 80, progressive: true })
+        .toBuffer();
+
+      const optimizedBase64 = `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
+
+      // Skip if still too large
+      if (optimizedBase64.length > 2000000) continue;
+
+      imageCounter++;
+      imageMapping[imageId] = optimizedBase64;
+
+      // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths)
+      const meta = imageMetaLookup.get(key) || imageMetaLookup.get(`images/${key}`);
+      pdfImages.push({
+        id: imageId,
+        src: optimizedBase64,
+        pageNumber: meta ? meta.pageIdx + 1 : 0,
+        description: meta?.caption,
+        width: meta ? meta.bbox[2] - meta.bbox[0] : metadata.width,
+        height: meta ? meta.bbox[3] - meta.bbox[1] : metadata.height,
+      });
+    } catch (err) {
+      log.error(`Failed to optimize MinerU image ${imageId}:`, err);
+      // Fallback to original if optimization fails, but increment counter
+      imageCounter++;
+      imageMapping[imageId] = base64Url;
+      const meta = imageMetaLookup.get(key) || imageMetaLookup.get(`images/${key}`);
+      pdfImages.push({
+        id: imageId,
+        src: base64Url,
+        pageNumber: meta ? meta.pageIdx + 1 : 0,
+        description: meta?.caption,
+      });
+    }
+  }
 
   const images = Object.values(imageMapping);
 
   log.info(
     `[MinerU] Parsed successfully: ${images.length} images, ` +
-      `${markdown.length} chars of markdown`,
+    `${markdown.length} chars of markdown`,
   );
 
   return {
