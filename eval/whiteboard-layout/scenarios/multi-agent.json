@@ -1,0 +1,18 @@
+{
+  "id": "multi-agent",
+  "name": "Multi-Agent Collaboration",
+  "description": "Teacher + assistant drawing on same whiteboard — tests collision avoidance",
+  "tags": ["multi-agent", "discussion"],
+  "initialStoreState": {
+    "stage": null,
+    "scenes": [],
+    "currentSceneId": null
+  },
+  "config": {
+    "agentIds": ["default-1", "default-2"],
+    "sessionType": "discussion"
+  },
+  "turns": [
+    { "userMessage": "Explain the Pythagorean theorem with a diagram and formula on the whiteboard" }
+  ]
+}

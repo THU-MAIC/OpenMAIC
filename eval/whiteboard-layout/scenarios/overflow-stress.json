@@ -1,0 +1,18 @@
+{
+  "id": "overflow-stress",
+  "name": "Whiteboard Overflow Stress Test",
+  "description": "Many elements on a single canvas — tests space exhaustion",
+  "tags": ["stress", "overflow"],
+  "initialStoreState": {
+    "stage": null,
+    "scenes": [],
+    "currentSceneId": null
+  },
+  "config": {
+    "agentIds": ["default-1"],
+    "sessionType": "qa"
+  },
+  "turns": [
+    { "userMessage": "List and explain all 8 parts of speech with examples for each on the whiteboard" }
+  ]
+}

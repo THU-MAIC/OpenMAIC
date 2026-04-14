@@ -1,0 +1,19 @@
+{
+  "id": "dense-diagram",
+  "name": "Dense Diagram with Annotations",
+  "description": "Shapes + lines + text labels — tests element density",
+  "tags": ["diagram", "shapes", "lines"],
+  "initialStoreState": {
+    "stage": null,
+    "scenes": [],
+    "currentSceneId": null
+  },
+  "config": {
+    "agentIds": ["default-1"],
+    "sessionType": "qa"
+  },
+  "turns": [
+    { "userMessage": "Draw a diagram of the water cycle on the whiteboard with labels for each stage" },
+    { "userMessage": "Add arrows showing the flow direction between stages" }
+  ]
+}

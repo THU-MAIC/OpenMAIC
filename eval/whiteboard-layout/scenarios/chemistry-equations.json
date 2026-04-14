@@ -1,0 +1,20 @@
+{
+  "id": "chemistry-equations",
+  "name": "Chemistry Equation Layout",
+  "description": "Multi-step LaTeX + connecting lines — tests vertical layout with arrows",
+  "tags": ["chemistry", "latex", "lines", "multi-turn"],
+  "initialStoreState": {
+    "stage": null,
+    "scenes": [],
+    "currentSceneId": null
+  },
+  "config": {
+    "agentIds": ["default-1"],
+    "sessionType": "qa"
+  },
+  "turns": [
+    { "userMessage": "Write the balanced equation for photosynthesis on the whiteboard" },
+    { "userMessage": "Now add the equation for cellular respiration below it", "checkpoint": true },
+    { "userMessage": "Draw arrows showing how the two processes are related" }
+  ]
+}
