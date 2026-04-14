@@ -34,12 +34,14 @@ export async function insertCourseAndGenerateTags(
     // 1. Insert/Update course basic info
     const { error: courseError } = await supabase.from('courses').upsert({
       id: stage.id,
+      stage_id: stage.id,
+      name: stage.name,
       title: stage.name,
       description: outlines[0]?.description || requirement.slice(0, 200),
       slide_count: outlines.length,
       language: stage.language || 'en-US',
       updated_at: new Date().toISOString(),
-    });
+    }, { onConflict: 'id' });
 
     if (courseError) {
       log.error('Failed to insert course into Supabase:', courseError);

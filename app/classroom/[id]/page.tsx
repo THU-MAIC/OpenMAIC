@@ -13,6 +13,7 @@ import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useAnalytics } from '@/lib/hooks/use-analytics';
+import { useAuth } from '@/lib/hooks/use-auth';
 
 const log = createLogger('Classroom');
 
@@ -23,15 +24,33 @@ export default function ClassroomDetailPage() {
   useAnalytics(classroomId);
 
   const { loadFromStorage } = useStageStore();
+  const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const generationStartedRef = useRef(false);
+  // Tracks whether the full re-sync (all scenes) has already been fired this session
+  const fullSyncDoneRef = useRef(false);
+
+  const syncFullCourse = useCallback(async () => {
+    if (!user || fullSyncDoneRef.current) return;
+    const { stage, scenes } = useStageStore.getState();
+    if (!stage || scenes.length === 0) return;
+    fullSyncDoneRef.current = true;
+    try {
+      const { uploadCourseToSupabase } = await import('@/lib/supabase/course-sync');
+      await uploadCourseToSupabase({ userId: user.id, stage, scenes });
+      log.info('[Classroom] Full course re-synced to Supabase with all scenes.');
+    } catch (err) {
+      log.warn('[Classroom] Full re-sync failed (non-fatal):', err);
+    }
+  }, [user]);
 
   const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
     onComplete: () => {
       log.info('[Classroom] All scenes generated');
+      syncFullCourse();
     },
   });
 
@@ -128,6 +147,7 @@ export default function ClassroomDetailPage() {
     setLoading(true);
     setError(null);
     generationStartedRef.current = false;
+    fullSyncDoneRef.current = false;
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
     // Placeholder IDs (gen_img_1, gen_vid_1) are NOT globally unique across stages,
@@ -192,8 +212,12 @@ export default function ClassroomDetailPage() {
       generateMediaForOutlines(outlines, stage.id).catch((err) => {
         log.warn('[Classroom] Media generation resume error:', err);
       });
+
+      // All scenes are already complete — fire a full re-sync to capture any scenes that
+      // were generated after the initial preview-page sync (which only had the first scene).
+      syncFullCourse();
     }
-  }, [loading, error, generateRemaining]);
+  }, [loading, error, generateRemaining, syncFullCourse]);
 
   return (
     <ThemeProvider>
