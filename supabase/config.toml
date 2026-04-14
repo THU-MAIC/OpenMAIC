@@ -40,8 +40,8 @@ allowed_mime_types = ["image/png", "image/jpeg", "video/mp4"]
 
 [auth]
 enabled = true
-site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000"]
+site_url = "https://thechalklabs.com"
+additional_redirect_urls = ["https://thechalklabs.com"]
 jwt_expiry = 3600
 enable_signup = true
 enable_anonymous_sign_ins = false
