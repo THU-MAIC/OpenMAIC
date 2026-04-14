@@ -46,6 +46,7 @@
     "@types/js-yaml": "^4.0.9",
     "@vercel/analytics": "^2.0.1",
     "@vercel/otel": "^2.1.2",
+    "@vercel/speed-insights": "^2.0.0",
     "@xyflow/react": "^12.10.0",
     "ai": "^6.0.42",
     "animate.css": "^4.1.1",
