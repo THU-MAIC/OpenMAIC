@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from 'playwright';
+import { chromium, type Browser, type Page } from '@playwright/test';
 import type { PPTElement } from '@/lib/types/slides';
 import { mkdirSync } from 'fs';
 import { join } from 'path';
@@ -35,10 +35,13 @@ export async function captureWhiteboard(
   if (!page) throw new Error('Capture not initialized. Call initCapture() first.');
 
   // Inject elements into the page
-  await page.evaluate((els) => {
-    const setter = (window as unknown as Record<string, (els: unknown[]) => void>).__setElements;
-    setter(els);
-  }, elements);
+  await page.evaluate(
+    (els: unknown[]) => {
+      const setter = (window as unknown as Record<string, (els: unknown[]) => void>).__setElements;
+      setter(els);
+    },
+    elements as unknown as unknown[],
+  );
 
   // Wait for rendering to stabilize (fonts, KaTeX, images)
   await page.waitForTimeout(1500);

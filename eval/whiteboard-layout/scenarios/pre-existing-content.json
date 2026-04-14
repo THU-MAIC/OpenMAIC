@@ -52,7 +52,10 @@
     "sessionType": "qa"
   },
   "turns": [
-    { "userMessage": "Add a table below the existing content explaining each variable in the kinetic energy formula", "checkpoint": true },
+    {
+      "userMessage": "Add a table below the existing content explaining each variable in the kinetic energy formula",
+      "checkpoint": true
+    },
     { "userMessage": "Add another formula showing the work-energy theorem" }
   ]
 }

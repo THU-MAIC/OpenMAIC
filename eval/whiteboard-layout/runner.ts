@@ -55,17 +55,19 @@ function loadScenarios(): EvalScenario[] {
 
 // ==================== Single Scenario Run ====================
 
-async function runScenario(
-  scenario: EvalScenario,
-  runIndex: number,
-): Promise<ScenarioRunResult> {
+async function runScenario(scenario: EvalScenario, runIndex: number): Promise<ScenarioRunResult> {
   const model = scenario.model || MODEL;
   const checkpoints: CheckpointResult[] = [];
 
   console.log(`  [run ${runIndex + 1}] Starting...`);
 
   const stateManager = new EvalStateManager(scenario.initialStoreState);
-  let messages: Array<{ role: string; content: string; parts?: unknown[]; metadata?: unknown }> = [];
+  const messages: Array<{
+    role: string;
+    content: string;
+    parts?: unknown[];
+    metadata?: unknown;
+  }> = [];
   let directorState: DirectorState | undefined = undefined;
 
   try {

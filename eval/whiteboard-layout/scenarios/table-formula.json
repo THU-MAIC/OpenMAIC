@@ -13,7 +13,9 @@
     "sessionType": "qa"
   },
   "turns": [
-    { "userMessage": "Draw a table comparing Newton's three laws on the whiteboard, with the formula for each law" },
+    {
+      "userMessage": "Draw a table comparing Newton's three laws on the whiteboard, with the formula for each law"
+    },
     { "userMessage": "Add LaTeX formulas next to each law in the table" }
   ]
 }

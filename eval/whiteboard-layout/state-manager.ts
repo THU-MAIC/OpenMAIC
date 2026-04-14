@@ -32,12 +32,14 @@ export class EvalStateManager {
     useWhiteboardHistoryStore.setState({ snapshots: [] });
 
     // Build stage with optional pre-existing whiteboard elements
-    const stage: Stage = initial.stage ?? ({
+    const now = Date.now();
+    const stage: Stage = initial.stage ?? {
       id: 'eval-stage',
       name: 'Eval Stage',
-      language: 'en-US',
-      whiteboard: [],
-    } as Stage);
+      languageDirective: 'en-US',
+      createdAt: now,
+      updatedAt: now,
+    };
 
     // If pre-existing whiteboard elements provided, seed the whiteboard
     if (initial.whiteboardElements && initial.whiteboardElements.length > 0) {

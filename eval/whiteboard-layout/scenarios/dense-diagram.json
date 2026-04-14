@@ -13,7 +13,9 @@
     "sessionType": "qa"
   },
   "turns": [
-    { "userMessage": "Draw a diagram of the water cycle on the whiteboard with labels for each stage" },
+    {
+      "userMessage": "Draw a diagram of the water cycle on the whiteboard with labels for each stage"
+    },
     { "userMessage": "Add arrows showing the flow direction between stages" }
   ]
 }

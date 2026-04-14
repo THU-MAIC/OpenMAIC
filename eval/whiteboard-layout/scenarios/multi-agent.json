@@ -13,6 +13,8 @@
     "sessionType": "discussion"
   },
   "turns": [
-    { "userMessage": "Explain the Pythagorean theorem with a diagram and formula on the whiteboard" }
+    {
+      "userMessage": "Explain the Pythagorean theorem with a diagram and formula on the whiteboard"
+    }
   ]
 }
