@@ -176,6 +176,10 @@ export async function parsePDF(
       result = await parseWithMinerU(config, pdfBuffer);
       break;
 
+    case 'local_vision':
+      result = await parseWithLocalVision(config, pdfBuffer);
+      break;
+
     default:
       throw new Error(`Unsupported PDF provider: ${config.providerId}`);
   }
@@ -461,3 +465,69 @@ export async function getCurrentPDFConfig(): Promise<PDFParserConfig> {
 
 // Re-export from constants for convenience
 export { getAllPDFProviders, getPDFProvider } from './constants';
+
+/**
+ * Local Vision API implementation
+ *
+ * Uses a local OpenAI-compatible endpoint (like vLLM or Ollama running Qwen2-VL)
+ * to perform OCR and layout analysis on PDF pages.
+ */
+async function parseWithLocalVision(
+  config: PDFParserConfig,
+  pdfBuffer: Buffer
+): Promise<ParsedPdfContent> {
+  const { getDocumentProxy, renderPageAsImage } = await import('unpdf');
+  const pdf = await getDocumentProxy(new Uint8Array(pdfBuffer));
+  const numPages = pdf.numPages;
+
+  let fullText = '';
+  const allImages: string[] = [];
+  const baseUrl = config.baseUrl || 'http://127.0.0.1:11434/v1';
+
+  for (let i = 1; i <= numPages; i++) {
+    // page is intentionally unused if only OCR is used
+    await pdf.getPage(i);
+    const imageArrayBuffer = await renderPageAsImage(new Uint8Array(pdfBuffer), i, { scale: 2 });
+    const base64Image = Buffer.from(imageArrayBuffer).toString('base64');
+    const imageUrl = `data:image/png;base64,${base64Image}`;
+
+    const payload = {
+      model: "qwen2-vl",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Transcribe the text in this document image accurately. Preserve the layout, headings, paragraphs, and list structures using Markdown. If there are tables or formulas, transcribe them into Markdown tables or LaTeX blocks respectively." },
+            { type: "image_url", image_url: { url: imageUrl } }
+          ]
+        }
+      ]
+    };
+
+    const response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+      throw new Error(`Local Vision OCR error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    const pageText = data.choices?.[0]?.message?.content || '';
+    fullText += `\n\n--- Page ${i} ---\n\n${pageText}`;
+
+    // Optionally extract native images from the page using unpdf alongside the OCR
+    // ...
+  }
+
+  return {
+    text: fullText.trim(),
+    images: allImages,
+    metadata: {
+      pageCount: numPages,
+      parser: 'local_vision'
+    }
+  };
+}

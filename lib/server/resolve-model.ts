@@ -17,6 +17,9 @@ export interface ResolvedModel extends ModelWithInfo {
   apiKey: string;
 }
 
+// Global state to track round-robin indexes per provider across warm serverless requests
+const roundRobinIndexMap = new Map<string, number>();
+
 /**
  * Resolve a language model from explicit parameters.
  *
@@ -40,9 +43,21 @@ export function resolveModel(params: {
     }
   }
 
-  const apiKey = clientBaseUrl
+  let apiKey = clientBaseUrl
     ? params.apiKey || ''
     : resolveApiKey(providerId, params.apiKey || '');
+
+  // --- MULTI-KEY ROUND ROBIN INJECTION ---
+  if (apiKey.includes(',')) {
+    const keys = apiKey.split(',').map(k => k.trim()).filter(Boolean);
+    if (keys.length > 0) {
+      const currentIndex = roundRobinIndexMap.get(providerId) || 0;
+      apiKey = keys[currentIndex % keys.length];
+      roundRobinIndexMap.set(providerId, currentIndex + 1);
+    }
+  }
+  // ---------------------------------------
+
   const baseUrl = clientBaseUrl ? clientBaseUrl : resolveBaseUrl(providerId, params.baseUrl);
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({

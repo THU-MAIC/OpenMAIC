@@ -8,6 +8,29 @@ import { generateText, streamText } from 'ai';
 import type { GenerateTextResult, StreamTextResult } from 'ai';
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
+import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+
+// --- Add these helpers at the top ---
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+function getPromptHash(params: Record<string, unknown>): string {
+  const data = JSON.stringify({ system: params.system, prompt: params.prompt, messages: params.messages });
+  return crypto.createHash('md5').update(data).digest('hex');
+}
+
+// Temporary cache dir for manual overrides, use /tmp for serverless
+const CACHE_DIR = path.join('/tmp', '.openmaic', 'manual_cache');
+if (!fs.existsSync(CACHE_DIR)) fs.mkdirSync(CACHE_DIR, { recursive: true });
+
+function getManualCache(hash: string): string | null {
+  if (!/^[a-fA-F0-9]{32}$/.test(hash)) return null;
+  const filePath = path.join(CACHE_DIR, `${hash}.json`);
+  if (fs.existsSync(filePath)) return fs.readFileSync(filePath, 'utf-8');
+  return null;
+}
+// -------------------------------------
 import { thinkingContext } from './thinking-context';
 import type { ProviderType, ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
 const log = createLogger('LLM');
@@ -292,6 +315,15 @@ export async function callLLM<T extends GenerateTextParams>(
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
   const validate = retryOptions?.validate ?? (maxAttempts > 1 ? DEFAULT_VALIDATE : undefined);
 
+  // 0. CACHE INTERCEPTION: Check if the user manually provided an answer for this prompt
+  const promptHash = getPromptHash(params as Record<string, unknown>);
+  const cachedResponse = getManualCache(promptHash);
+  if (cachedResponse) {
+    log.info(`[${source}] 🚀 Using manual cached response for hash: ${promptHash}`);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return { text: cachedResponse } as unknown as GenerateTextResult<any, any>; // Mock the AI SDK response object
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let lastResult: GenerateTextResult<any, any> | undefined;
   let lastError: unknown;
@@ -319,8 +351,45 @@ export async function callLLM<T extends GenerateTextParams>(
       }
 
       return result;
-    } catch (error) {
+    } catch (error: unknown) {
       lastError = error;
+      const err = error as Record<string, unknown>;
+
+      // 1. RATE LIMIT PAUSING
+      if (err?.statusCode === 429 || (typeof err?.message === 'string' && (err.message.includes('429') || err.message.includes('Too Many Requests')))) {
+        log.warn(`[${source}] Rate limit hit. Pausing 20s...`);
+        await sleep(20000);
+        continue;
+      }
+
+      // 2. MANUAL FALLBACK TRIGGER
+      const isUnsupported = typeof err?.message === 'string' && (err.message.includes('unsupported') || err.message.includes('schema'));
+      const isSafety = typeof err?.message === 'string' && (err.message.includes('safety') || err.message.includes('SAFETY'));
+
+      if (isUnsupported || isSafety) {
+        let promptText = "";
+        const p = params as Record<string, unknown>;
+        if (p.system) promptText += `[SYSTEM]\n${p.system}\n\n`;
+        if (p.prompt) promptText += `[USER]\n${p.prompt}\n\n`;
+        if (p.messages && Array.isArray(p.messages)) {
+          promptText += p.messages.map((m: Record<string, unknown>) => {
+            let contentStr = "";
+            if (typeof m.content === 'string') {
+              contentStr = m.content;
+            } else if (Array.isArray(m.content)) {
+              contentStr = m.content.map((part: Record<string, unknown>) => {
+                if (part.type === 'text') return part.text;
+                if (part.type === 'image') return `\n[⚠️ ACTION REQUIRED: Drag and drop the original image/PDF into the Gemini chat here] \n`;
+                return JSON.stringify(part);
+              }).join('\n');
+            }
+            return `[${(m.role || 'USER').toString().toUpperCase()}]:\n${contentStr}`;
+          }).join('\n\n');
+        }
+
+        // Pass the Hash along with the error
+        throw new Error(`MANUAL_INTERVENTION_REQUIRED|||${promptHash}|||${promptText}`);
+      }
 
       if (attempt < maxAttempts) {
         log.warn(`[${source}] Call failed (attempt ${attempt}/${maxAttempts}), retrying...`, error);

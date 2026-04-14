@@ -24,6 +24,12 @@ export const PDF_PROVIDERS: Record<PDFProviderId, PDFProviderConfig> = {
     icon: '/logos/mineru.png',
     features: ['text', 'images', 'tables', 'formulas', 'layout-analysis'],
   },
+  local_vision: {
+    id: 'local_vision',
+    name: 'Local Vision (Qwen2-VL/Llama-3.2-Vision)',
+    requiresApiKey: false,
+    features: ['text', 'images', 'ocr', 'layout-analysis'],
+  },
 };
 
 /**
