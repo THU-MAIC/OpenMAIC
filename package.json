@@ -44,6 +44,8 @@
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@sentry/nextjs": "^10.48.0",
     "@sentry/profiling-node": "^10.48.0",
+    "@supabase/ssr": "^0.10.2",
+    "@supabase/supabase-js": "^2.103.0",
     "@types/js-yaml": "^4.0.9",
     "@vercel/analytics": "^2.0.1",
     "@vercel/otel": "^2.1.2",

@@ -1,0 +1,170 @@
+'use client';
+
+import { useRef, useEffect } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { X, LogOut, Mail, Calendar } from 'lucide-react';
+import { useAuth } from '@/lib/hooks/use-auth';
+
+interface AuthProfileModalProps {
+  open: boolean;
+  onClose: () => void;
+}
+
+/**
+ * Profile modal that slides in from the top-right when the user clicks
+ * their profile button. Shows basic account info and a sign-out button.
+ * Matches Slate's neubrutalist design language.
+ */
+export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
+  const { user, signOut } = useAuth();
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  // Close on click outside
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+    // Delay listener so the opening click doesn't immediately close
+    const id = setTimeout(() => document.addEventListener('mousedown', handler), 50);
+    return () => {
+      clearTimeout(id);
+      document.removeEventListener('mousedown', handler);
+    };
+  }, [open, onClose]);
+
+  // Close on Escape
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [open, onClose]);
+
+  const handleSignOut = async () => {
+    await signOut();
+    onClose();
+    window.location.href = '/';
+  };
+
+  if (!user) return null;
+
+  // Extract user info
+  const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
+  const fullName = user.user_metadata?.full_name || user.user_metadata?.name || '';
+  const email = user.email || '';
+  const createdAt = user.created_at ? new Date(user.created_at) : null;
+  const provider = user.app_metadata?.provider || 'email';
+  const initials = fullName
+    ? fullName
+        .split(' ')
+        .map((n: string) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    : email.slice(0, 2).toUpperCase();
+
+  return (
+    <AnimatePresence>
+      {open && (
+        <>
+          {/* Backdrop */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="fixed inset-0 z-[99] bg-black/10 backdrop-blur-[2px]"
+            aria-hidden
+          />
+
+          {/* Panel */}
+          <motion.div
+            ref={panelRef}
+            initial={{ opacity: 0, y: -12, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -12, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
+            className="fixed top-16 right-4 z-[100] w-[320px] rounded-3xl border-[3px] border-[#073b4c] bg-white shadow-[6px_6px_0_#073b4c]"
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pt-4 pb-3">
+              <h3 className="text-sm font-black text-[#073b4c] tracking-tight">Your Profile</h3>
+              <button
+                onClick={onClose}
+                className="size-7 rounded-full border-2 border-[#073b4c]/20 flex items-center justify-center hover:bg-[#f0f4f8] hover:border-[#073b4c]/40 transition-all cursor-pointer"
+              >
+                <X className="size-3.5 text-[#073b4c]/60" />
+              </button>
+            </div>
+
+            {/* User info */}
+            <div className="px-5 pb-4">
+              <div className="flex items-center gap-3.5 mb-4">
+                {/* Avatar */}
+                {avatarUrl ? (
+                  <div className="size-14 rounded-2xl border-[3px] border-[#073b4c] overflow-hidden shadow-[3px_3px_0_#073b4c] shrink-0">
+                    <img src={avatarUrl} alt="" className="size-full object-cover" />
+                  </div>
+                ) : (
+                  <div className="size-14 rounded-2xl border-[3px] border-[#073b4c] bg-gradient-to-br from-[#118AB2] to-[#06D6A0] shadow-[3px_3px_0_#073b4c] flex items-center justify-center shrink-0">
+                    <span className="text-lg font-black text-white">{initials}</span>
+                  </div>
+                )}
+
+                {/* Name & provider badge */}
+                <div className="flex-1 min-w-0">
+                  {fullName && (
+                    <p className="text-base font-bold text-[#073b4c] truncate leading-tight">{fullName}</p>
+                  )}
+                  <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 bg-[#f0f4f8] rounded-full border border-[#073b4c]/10">
+                    {provider === 'google' ? (
+                      <svg className="size-3" viewBox="0 0 24 24">
+                        <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
+                        <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
+                        <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" />
+                        <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
+                      </svg>
+                    ) : (
+                      <Mail className="size-3 text-[#118AB2]" />
+                    )}
+                    <span className="text-[10px] font-semibold text-[#073b4c]/50 capitalize">{provider}</span>
+                  </span>
+                </div>
+              </div>
+
+              {/* Details */}
+              <div className="space-y-2.5 mb-5">
+                <div className="flex items-center gap-2.5 px-3 py-2.5 bg-[#f0f4f8]/80 rounded-xl">
+                  <Mail className="size-3.5 text-[#118AB2] shrink-0" />
+                  <span className="text-xs font-medium text-[#073b4c]/70 truncate">{email}</span>
+                </div>
+                {createdAt && (
+                  <div className="flex items-center gap-2.5 px-3 py-2.5 bg-[#f0f4f8]/80 rounded-xl">
+                    <Calendar className="size-3.5 text-[#06D6A0] shrink-0" />
+                    <span className="text-xs font-medium text-[#073b4c]/70">
+                      Joined {createdAt.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* Sign out button */}
+              <button
+                onClick={handleSignOut}
+                className="w-full h-11 rounded-2xl border-[3px] border-[#073b4c] bg-white text-[#073b4c] font-bold text-sm flex items-center justify-center gap-2 hover:bg-[#ef476f] hover:text-white hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] transition-all cursor-pointer active:translate-y-0 active:shadow-[2px_2px_0_#073b4c]"
+              >
+                <LogOut className="size-4" />
+                Sign Out
+              </button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  );
+}

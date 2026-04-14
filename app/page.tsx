@@ -20,6 +20,7 @@ import {
   ChevronUp,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useAuth } from '@/lib/hooks/use-auth';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
@@ -28,6 +29,7 @@ import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
+import { AuthButton } from '@/components/auth/auth-button';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
@@ -72,9 +74,14 @@ const initialFormState: FormState = {
 function HomePage() {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
+  const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const isAdmin = searchParams.get('admin') === 'true';
+
+  // Auto-trigger generation after login redirect
+  const pendingGeneration = searchParams.get('pending_generation');
+  const pendingHandled = useRef(false);
 
   const [form, setForm] = useState<FormState>(initialFormState);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -109,6 +116,12 @@ function HomePage() {
       } else {
         const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
         updates.language = detected;
+      }
+      // Restore pending prompt saved before login redirect
+      const pendingPrompt = localStorage.getItem('pendingPrompt');
+      if (pendingPrompt) {
+        updates.requirement = pendingPrompt;
+        localStorage.removeItem('pendingPrompt');
       }
       if (Object.keys(updates).length > 0) {
         setForm((prev) => ({ ...prev, ...updates }));
@@ -240,7 +253,28 @@ function HomePage() {
     );
   };
 
+  // Handle pending generation after login redirect
+  useEffect(() => {
+    if (pendingGeneration === 'true' && !pendingHandled.current && !authLoading && user && form.requirement.trim()) {
+      pendingHandled.current = true;
+      // Small delay to ensure hydration completes
+      const timer = setTimeout(() => handleGenerate(), 500);
+      return () => clearTimeout(timer);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingGeneration, authLoading, user, form.requirement]);
+
   const handleGenerate = async () => {
+    // Check authentication first
+    if (!authLoading && !user) {
+      // Save the current prompt so we can resume after login
+      try {
+        localStorage.setItem('pendingPrompt', form.requirement);
+      } catch { /* ignore */ }
+      router.push(`/auth/login?redirect=${encodeURIComponent('/?pending_generation=true')}`);
+      return;
+    }
+
     // Validate setup before proceeding
     if (!currentModelId) {
       showSetupToast(
@@ -338,11 +372,16 @@ function HomePage() {
   return (
     <div className="h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center overflow-hidden">
       <div className="flex-1 w-full overflow-y-auto px-4 pt-16 md:p-8 md:pt-16 flex flex-col items-center">
-        {/* ═══ Top-right pill (Admin only) ═══ */}
-        {isAdmin && (
-          <div
-            ref={toolbarRef}
-            className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
+        {/* ═══ Top-right bar: Auth button (always visible) + Admin pill ═══ */}
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+          {/* Auth button — always visible */}
+          <AuthButton />
+
+          {/* Admin controls */}
+          {isAdmin && (
+            <div
+              ref={toolbarRef}
+              className="flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
           >
             {/* Language Selector */}
             <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
@@ -421,7 +460,8 @@ function HomePage() {
               </button>
             </div>
           </div>
-        )}
+          )}
+        </div>
         <SettingsDialog
           open={settingsOpen}
           onOpenChange={(open) => {
