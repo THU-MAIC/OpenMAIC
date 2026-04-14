@@ -7,9 +7,9 @@ import { createAdminClient } from '@/utils/supabase/admin';
  */
 export async function GET(
   req: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
-  const courseId = params.id;
+  const { id: courseId } = await params;
 
   if (!courseId) {
     return NextResponse.json({ error: 'Course ID is required' }, { status: 400 });
