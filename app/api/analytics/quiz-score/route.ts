@@ -59,10 +59,17 @@ export async function POST(req: NextRequest) {
 
     // 3. Increment user engagement stats in user_analytics (only on first attempt)
     if (isFirstAttempt) {
-      await supabase.rpc('increment_quiz_count', {
-        u_id: userId,
-        c_id: courseId,
-      }).catch(err => console.warn('Failed to increment quiz count:', err));
+      try {
+        const { error: incrementError } = await supabase.rpc('increment_quiz_count', {
+          u_id: userId,
+          c_id: courseId,
+        });
+        if (incrementError) {
+          console.warn('Failed to increment quiz count:', incrementError);
+        }
+      } catch (err) {
+        console.warn('Failed to increment quiz count:', err);
+      }
     }
 
     // 4. Update global and local ranking (user_scores table)

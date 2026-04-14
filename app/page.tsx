@@ -409,6 +409,9 @@ function HomePage() {
 
   const canGenerate = !!form.requirement.trim();
 
+  const navPillClassName =
+    'flex items-center gap-2 h-9 px-4 rounded-full border-2 border-[#073b4c] bg-white text-[#073b4c] font-bold text-xs hover:translate-y-[-1px] shadow-[3px_3px_0_#073b4c] hover:shadow-[4px_4px_0_#073b4c] transition-all cursor-pointer active:translate-y-0 active:shadow-[1px_1px_0_#073b4c]';
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
@@ -421,19 +424,13 @@ function HomePage() {
       <div className="flex-1 w-full overflow-y-auto px-4 pt-16 md:p-8 md:pt-16 flex flex-col items-center">
         {/* ═══ Top-right bar: Auth button (always visible) + Admin pill ═══ */}
         <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
-          {/* Hall of Fame & Catalog Buttons (Pill style) */}
-          <button
-            onClick={() => router.push('/leaderboard')}
-            className="flex items-center gap-1.5 h-9 px-3.5 rounded-full bg-white/60 dark:bg-gray-800/60 backdrop-blur-md border border-gray-100/50 dark:border-gray-700/50 text-[#073b4c] dark:text-white font-bold text-xs shadow-sm hover:bg-white dark:hover:bg-gray-700 transition-all hover:translate-y-[-1px] active:translate-y-0"
-          >
-            <Trophy className="size-3.5 text-[#ffd166]" />
+          {/* Hall of Fame & Catalog — same pill UI as Feedback */}
+          <button type="button" onClick={() => router.push('/leaderboard')} className={navPillClassName}>
+            <Trophy className="size-3.5" />
             <span>Hall of Fame</span>
           </button>
-          <button
-            onClick={() => router.push('/catalog')}
-            className="flex items-center gap-1.5 h-9 px-3.5 rounded-full bg-white/60 dark:bg-gray-800/60 backdrop-blur-md border border-gray-100/50 dark:border-gray-700/50 text-[#073b4c] dark:text-white font-bold text-xs shadow-sm hover:bg-white dark:hover:bg-gray-700 transition-all hover:translate-y-[-1px] active:translate-y-0"
-          >
-            <BookOpen className="size-3.5 text-[#118ab2]" />
+          <button type="button" onClick={() => router.push('/catalog')} className={navPillClassName}>
+            <BookOpen className="size-3.5" />
             <span>Catalog</span>
           </button>
 

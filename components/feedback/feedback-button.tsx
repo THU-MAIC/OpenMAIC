@@ -33,7 +33,7 @@ export function FeedbackButton({ className, variant = 'outline', showLabel = fal
             </button>
           ) : (
             <Button
-              variant={variant === 'pill' ? 'outline' : variant}
+              variant={variant}
               onClick={() => setOpen(true)}
               className={cn(
                 "rounded-full transition-all",

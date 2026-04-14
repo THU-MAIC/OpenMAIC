@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -37,7 +37,7 @@ interface Course {
 const SUBJECTS = ['All', 'Mathematics', 'Science', 'History', 'Language Arts', 'Technology', 'Art', 'Music', 'Business'];
 const AGE_RANGES = ['All', '5-10', '11-14', '15-18', '18+'];
 
-export default function CatalogPage() {
+function CatalogPageContent() {
   const { t } = useI18n();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -255,6 +255,20 @@ export default function CatalogPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+export default function CatalogPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen flex-col items-center justify-center">
+          <Loader2 className="size-10 animate-spin text-[#118ab2]" />
+        </div>
+      }
+    >
+      <CatalogPageContent />
+    </Suspense>
   );
 }
 
