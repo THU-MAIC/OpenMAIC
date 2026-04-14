@@ -1,0 +1,92 @@
+{
+  "id": "econ-tech-innovation",
+  "name": "Development Economics — Technology & Innovation",
+  "description": "qa模式，英文课程，chart+table并排布局测试",
+  "tags": ["economics", "qa", "single-agent", "en-US", "chart", "table"],
+  "initialStoreState": {
+    "stage": {
+      "id": "eval-econ-innovation",
+      "name": "Development Economics",
+      "createdAt": 1700000000,
+      "updatedAt": 1700000000,
+      "languageDirective": "en-US"
+    },
+    "scenes": [
+      {
+        "id": "sc-econ-1",
+        "stageId": "eval-econ-innovation",
+        "type": "slide",
+        "title": "Technology and Innovation",
+        "order": 0,
+        "content": {
+          "type": "slide",
+          "canvas": {
+            "id": "slide-0",
+            "viewportSize": 1000,
+            "viewportRatio": 0.5625,
+            "theme": {
+              "backgroundColor": "#ffffff",
+              "themeColors": ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"],
+              "fontColor": "#333333",
+              "fontName": "Microsoft YaHei"
+            },
+            "elements": [
+              {
+                "type": "text",
+                "id": "title-5",
+                "content": "<p style=\"font-size: 32px;\">Technology Progress & Innovation</p>",
+                "left": 60,
+                "top": 40,
+                "width": 880,
+                "height": 70,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "text",
+                "id": "sub-5",
+                "content": "<p style=\"font-size: 18px;\">Schumpeter's Creative Destruction Theory</p>",
+                "left": 80,
+                "top": 130,
+                "width": 500,
+                "height": 50,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "image",
+                "id": "img-econ",
+                "src": "https://placehold.co/400x300",
+                "left": 540,
+                "top": 120,
+                "width": 400,
+                "height": 280,
+                "rotate": 0,
+                "fixedRatio": true
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "currentSceneId": "sc-econ-1"
+  },
+  "config": {
+    "agentIds": ["default-1"],
+    "sessionType": "qa"
+  },
+  "turns": [
+    {
+      "userMessage": "Can you compare R&D intensity vs capital returns on the whiteboard?"
+    },
+    {
+      "userMessage": "Add a table with specific examples",
+      "checkpoint": true
+    },
+    {
+      "userMessage": "Now show the Silicon Valley innovation formula"
+    }
+  ]
+}

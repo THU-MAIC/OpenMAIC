@@ -1,0 +1,150 @@
+{
+  "id": "med-gcp-compliance",
+  "name": "临床医学 — GCP合规与风险监查",
+  "description": "discussion模式，紧凑递进式白板布局",
+  "tags": ["medical", "discussion", "multi-agent", "zh-CN"],
+  "initialStoreState": {
+    "stage": {
+      "id": "eval-med-gcp",
+      "name": "临床试验GCP",
+      "createdAt": 1700000000,
+      "updatedAt": 1700000000,
+      "languageDirective": "zh-CN"
+    },
+    "scenes": [
+      {
+        "id": "sc-med-1",
+        "stageId": "eval-med-gcp",
+        "type": "slide",
+        "title": "GCP合规要点",
+        "order": 0,
+        "content": {
+          "type": "slide",
+          "canvas": {
+            "id": "slide-0",
+            "viewportSize": 1000,
+            "viewportRatio": 0.5625,
+            "theme": {
+              "backgroundColor": "#ffffff",
+              "themeColors": ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"],
+              "fontColor": "#333333",
+              "fontName": "Microsoft YaHei"
+            },
+            "elements": [
+              {
+                "type": "text",
+                "id": "title-6",
+                "content": "<p style=\"font-size: 28px;\">ICH-GCP 药物临床试验质量管理</p>",
+                "left": 60,
+                "top": 40,
+                "width": 880,
+                "height": 70,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "text",
+                "id": "p-1",
+                "content": "<p style=\"font-size: 18px;\">传统核查 (SDV) vs 基于风险的监查 (RBM)</p>",
+                "left": 80,
+                "top": 140,
+                "width": 600,
+                "height": 50,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "text",
+                "id": "p-2",
+                "content": "<p style=\"font-size: 18px;\">知情同意的电子化转型</p>",
+                "left": 80,
+                "top": 200,
+                "width": 600,
+                "height": 50,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "currentSceneId": "sc-med-1"
+  },
+  "config": {
+    "agentIds": ["gen-teacher-01", "gen-assistant-01", "gen-student-张强"],
+    "sessionType": "discussion",
+    "triggerAgentId": "gen-student-张强",
+    "agentConfigs": [
+      {
+        "id": "gen-teacher-01",
+        "name": "林教授",
+        "role": "teacher",
+        "persona": "严谨认真的林教授，善于用白板辅助讲解。",
+        "avatar": "👨‍🏫",
+        "color": "#4A90D9",
+        "allowedActions": [
+          "wb_open",
+          "wb_close",
+          "wb_clear",
+          "wb_delete",
+          "wb_draw_text",
+          "wb_draw_shape",
+          "wb_draw_chart",
+          "wb_draw_latex",
+          "wb_draw_table",
+          "wb_draw_line",
+          "spotlight",
+          "laser"
+        ],
+        "priority": 10
+      },
+      {
+        "id": "gen-assistant-01",
+        "name": "苏助手",
+        "role": "assistant",
+        "persona": "热情活泼的苏助手，负责补充老师遗漏的要点。",
+        "avatar": "🧑‍💼",
+        "color": "#E8913A",
+        "allowedActions": [
+          "wb_open",
+          "wb_close",
+          "wb_clear",
+          "wb_delete",
+          "wb_draw_text",
+          "wb_draw_shape",
+          "wb_draw_chart",
+          "wb_draw_latex",
+          "wb_draw_table",
+          "wb_draw_line"
+        ],
+        "priority": 7
+      },
+      {
+        "id": "gen-student-张强",
+        "name": "张强",
+        "role": "student",
+        "persona": "好奇心强的学生张强。临床医学专业",
+        "avatar": "🧑‍🎓",
+        "color": "#66BB6A",
+        "allowedActions": ["wb_open", "wb_draw_text", "wb_draw_latex"],
+        "priority": 3
+      }
+    ]
+  },
+  "turns": [
+    {
+      "userMessage": "SDV和RBM到底有什么区别？"
+    },
+    {
+      "userMessage": "嗯，那博弈点在哪",
+      "checkpoint": true
+    },
+    {
+      "userMessage": "动态合规怎么理解"
+    }
+  ]
+}
