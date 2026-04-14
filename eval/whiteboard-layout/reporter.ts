@@ -30,22 +30,24 @@ export function generateReport(
 
   const dimensions = ['readability', 'overlap', 'space_utilization', 'layout_logic'] as const;
 
-  // Build summary stats
+  // Build summary stats (guard against empty arrays)
   const summary: Record<string, { mean: number; min: number; max: number }> = {};
-  for (const dim of dimensions) {
-    const vals = allScores.map((s) => s[dim].score);
-    summary[dim] = {
-      mean: mean(vals),
-      min: Math.min(...vals),
-      max: Math.max(...vals),
+  if (allScores.length > 0) {
+    for (const dim of dimensions) {
+      const vals = allScores.map((s) => s[dim].score);
+      summary[dim] = {
+        mean: mean(vals),
+        min: Math.min(...vals),
+        max: Math.max(...vals),
+      };
+    }
+    const overallVals = allScores.map((s) => s.overall);
+    summary['overall'] = {
+      mean: mean(overallVals),
+      min: Math.min(...overallVals),
+      max: Math.max(...overallVals),
     };
   }
-  const overallVals = allScores.map((s) => s.overall);
-  summary['overall'] = {
-    mean: mean(overallVals),
-    min: Math.min(...overallVals),
-    max: Math.max(...overallVals),
-  };
 
   // Write JSON
   const jsonPath = join(outputDir, 'report.json');

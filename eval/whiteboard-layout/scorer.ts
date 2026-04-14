@@ -73,6 +73,26 @@ export async function scoreScreenshot(
     throw new Error(`VLM returned non-JSON response: ${content.slice(0, 200)}`);
   }
 
-  const score: VlmScore = JSON.parse(jsonMatch[0]);
+  const raw = JSON.parse(jsonMatch[0]);
+
+  // Validate required fields
+  const dimensions = ['readability', 'overlap', 'space_utilization', 'layout_logic'] as const;
+  for (const dim of dimensions) {
+    if (!raw[dim] || typeof raw[dim].score !== 'number') {
+      throw new Error(`VLM response missing or invalid dimension: ${dim}`);
+    }
+  }
+  if (typeof raw.overall !== 'number') {
+    throw new Error('VLM response missing overall score');
+  }
+
+  const score: VlmScore = {
+    readability: raw.readability,
+    overlap: raw.overlap,
+    space_utilization: raw.space_utilization,
+    layout_logic: raw.layout_logic,
+    overall: raw.overall,
+    issues: Array.isArray(raw.issues) ? raw.issues : [],
+  };
   return score;
 }

@@ -85,10 +85,12 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
 
       // Agent loop (mirrors frontend runAgentLoop)
       let agentTurnCount = 0;
+      let consecutiveEmptyTurns = 0;
       while (agentTurnCount < MAX_AGENT_TURNS) {
         const storeState = stateManager.getStoreState();
 
         let doneEvent: (StatelessEvent & { type: 'done' }) | null = null;
+        let cueUserReceived = false;
         let currentAgentId: string | null = null;
         let currentMessageId: string | null = null;
         const textParts: string[] = [];
@@ -128,6 +130,10 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
               break;
             }
 
+            case 'cue_user':
+              cueUserReceived = true;
+              break;
+
             case 'done':
               doneEvent = event as StatelessEvent & { type: 'done' };
               break;
@@ -159,10 +165,20 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
           });
         }
 
-        // Check loop exit conditions
+        // Check loop exit conditions (mirrors frontend runAgentLoop)
         if (doneEvent) {
           directorState = doneEvent.data.directorState;
+          // Director said END
           if (doneEvent.data.totalAgents === 0) break;
+          // Director said USER — stop loop, advance to next user turn
+          if (cueUserReceived) break;
+          // Track consecutive empty responses
+          if (doneEvent.data.agentHadContent === false) {
+            consecutiveEmptyTurns++;
+            if (consecutiveEmptyTurns >= 2) break;
+          } else {
+            consecutiveEmptyTurns = 0;
+          }
         }
 
         agentTurnCount++;
