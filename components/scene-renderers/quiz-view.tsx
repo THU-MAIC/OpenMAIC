@@ -12,6 +12,8 @@ import {
   BookOpenText,
   Loader2,
   Sparkles,
+  Trophy,
+  AlertCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -22,10 +24,14 @@ const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { analyticsService } from '@/lib/analytics/analytics';
+import { useUserProfileStore } from '@/lib/store/user-profile';
+import { useParams } from 'next/navigation';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type Phase = 'not_started' | 'answering' | 'grading' | 'reviewing';
+type ScoreStatus = 'idle' | 'saving' | 'saved' | 'failed';
 
 interface QuestionResult {
   questionId: string;
@@ -687,9 +693,14 @@ function ScoreBanner({
 
 export function QuizView({ questions, sceneId }: QuizViewProps) {
   const { t, locale } = useI18n();
+  const params = useParams();
+  const classroomId = params?.id as string;
+  const { nickname, avatar } = useUserProfileStore();
+
   const [phase, setPhase] = useState<Phase>('not_started');
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [results, setResults] = useState<QuestionResult[]>([]);
+  const [scoreStatus, setScoreStatus] = useState<ScoreStatus>('idle');
 
   // Draft cache for quiz answers, keyed by sceneId to isolate across classrooms
   const {
@@ -768,7 +779,24 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
 
       setResults(ordered);
 
+      // 4. Show results immediately, then submit score in background
+      const totalEarned = ordered.reduce((sum, r) => sum + r.earned, 0);
+      setScoreStatus('saving');
       setPhase('reviewing');
+
+      analyticsService.submitQuizScore({
+        courseId: classroomId,
+        sceneId,
+        score: totalEarned,
+        totalPoints,
+        displayName: nickname,
+        avatarUrl: avatar,
+      }).then(() => {
+        setScoreStatus('saved');
+      }).catch(err => {
+        setScoreStatus('failed');
+        console.error('[quiz-view] Score submit failed:', err);
+      });
     })();
 
     return () => {
@@ -780,6 +808,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     setPhase('not_started');
     setAnswers({});
     setResults([]);
+    setScoreStatus('idle');
     clearAnswersCache();
   }, [clearAnswersCache]);
 
@@ -942,14 +971,32 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
                 <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">
                   {t('quiz.quizReport')}
                 </span>
+                {scoreStatus === 'saving' && (
+                  <span className="flex items-center gap-1 text-[10px] font-medium text-violet-500 bg-violet-50 dark:bg-violet-900/30 px-2 py-0.5 rounded-full">
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    Saving score…
+                  </span>
+                )}
+                {scoreStatus === 'saved' && (
+                  <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-600 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-0.5 rounded-full">
+                    <Trophy className="w-2.5 h-2.5" />
+                    Score saved
+                  </span>
+                )}
+                {scoreStatus === 'failed' && (
+                  <span className="flex items-center gap-1 text-[10px] font-medium text-red-500 bg-red-50 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
+                    <AlertCircle className="w-2.5 h-2.5" />
+                    Save failed
+                  </span>
+                )}
               </div>
-              <button
+              {/* <button
                 onClick={handleRetry}
                 className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-violet-600 dark:hover:text-violet-400 transition-colors"
               >
                 <RotateCcw className="w-3.5 h-3.5" />
                 {t('quiz.retry')}
-              </button>
+              </button> */}
             </div>
 
             {/* Results */}

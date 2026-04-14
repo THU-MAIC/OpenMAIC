@@ -2,18 +2,19 @@
  * Veo (Google) Video Generation Adapter
  *
  * Direct REST API calls for video generation with Google's Veo models.
- * Async task pattern: submit → poll → return inline base64 video.
+ * Async task pattern: submit → poll → download → return base64 video.
  *
  * REST endpoints (Gemini API):
  * - Submit:   POST /v1beta/models/{model}:predictLongRunning
- * - Poll:     POST /v1beta/models/{model}:fetchPredictOperation  { operationName }
- *   Returns inline base64 video data in response.videos[]
+ * - Poll:     GET  /v1beta/{operationName}
+ *   Returns a video URI in response.generateVideoResponse.generatedSamples[0].video.uri
+ * - Download: GET  {video.uri}  (authenticated with x-goog-api-key)
  *
  * Supported models (Gemini API / AI Studio names):
  * - veo-3.1-fast-generate-preview  (fast, $0.15/sec)
  * - veo-3.1-generate-preview       (quality, $0.40/sec)
- * - veo-3.0-fast-generate-preview  (fast, $0.15/sec)
- * - veo-3.0-generate-preview       (quality, $0.40/sec)
+ * - veo-3.1-lite-generate-preview  (lite, lower cost)
+ * - veo-3.0-generate-001           (stable)
  * - veo-2.0-generate-preview       (legacy, $0.50/sec)
  *
  * Authentication: x-goog-api-key header
@@ -70,11 +71,14 @@ interface VeoOperation {
   name: string;
   done?: boolean;
   response?: {
-    /** fetchPredictOperation returns inline base64 video data */
-    videos?: Array<{
-      bytesBase64Encoded?: string; // base64-encoded video bytes
-      mimeType?: string; // e.g. "video/mp4"
-    }>;
+    generateVideoResponse?: {
+      generatedSamples?: Array<{
+        video?: {
+          uri?: string; // authenticated download URI
+          mimeType?: string; // e.g. "video/mp4"
+        };
+      }>;
+    };
   };
   error?: { code: number; message: string; status: string };
 }
@@ -124,11 +128,9 @@ async function submitVideoGeneration(
 async function pollOperation(
   baseUrl: string,
   apiKey: string,
-  model: string,
   operationName: string,
 ): Promise<VeoOperation> {
-  // Google AI Studio / generativelanguage.googleapis.com polling for LROs:
-  // GET /v1beta/{name=operations/*}
+  // Gemini API LRO polling: GET /v1beta/{operationName}
   const url = `${baseUrl}/v1beta/${operationName}`;
 
   const response = await fetch(url, {
@@ -212,7 +214,7 @@ export async function generateWithVeo(
     throw new Error('Veo returned operation without name');
   }
 
-  // 2. Poll until done
+  // 2. Poll until done: GET /v1beta/{operationName}
   let current = operation;
   let pollCount = 0;
   while (!current.done) {
@@ -220,7 +222,7 @@ export async function generateWithVeo(
       throw new Error('Veo video generation timed out after 10 minutes');
     }
     await delay(POLL_INTERVAL_MS);
-    current = await pollOperation(baseUrl, config.apiKey, model, current.name);
+    current = await pollOperation(baseUrl, config.apiKey, current.name);
     pollCount++;
   }
 
@@ -229,19 +231,33 @@ export async function generateWithVeo(
     throw new Error(`Veo generation failed: ${current.error.code} - ${current.error.message}`);
   }
 
-  // 4. Extract inline base64 video from response.videos[]
-  const videos = current.response?.videos;
-  if (!videos || videos.length === 0) {
+  // 4. Extract video URI from response.generateVideoResponse.generatedSamples[]
+  const samples = current.response?.generateVideoResponse?.generatedSamples;
+  if (!samples || samples.length === 0) {
     throw new Error('Veo returned no generated videos');
   }
 
-  const first = videos[0];
-  if (!first.bytesBase64Encoded) {
-    throw new Error('Veo returned video entry without data');
+  const first = samples[0];
+  const videoUri = first.video?.uri;
+  if (!videoUri) {
+    throw new Error('Veo returned video sample without URI');
   }
 
-  const base64 = first.bytesBase64Encoded;
-  const mimeType = first.mimeType || 'video/mp4';
+  const mimeType = first.video?.mimeType || 'video/mp4';
+
+  // 5. Download the video and convert to base64 data URL
+  const downloadResponse = await fetch(videoUri, {
+    method: 'GET',
+    headers: apiHeaders(config.apiKey),
+  });
+
+  if (!downloadResponse.ok) {
+    const text = await downloadResponse.text();
+    throw new Error(`Veo video download failed (${downloadResponse.status}): ${text}`);
+  }
+
+  const arrayBuffer = await downloadResponse.arrayBuffer();
+  const base64 = Buffer.from(arrayBuffer).toString('base64');
 
   const { width, height } = getDimensions(options.aspectRatio);
 

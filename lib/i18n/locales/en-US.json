@@ -4,7 +4,8 @@
     "confirm": "Confirm",
     "cancel": "Cancel",
     "loading": "Loading...",
-    "home": "Home"
+    "home": "Home",
+    "back": "Back"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",

@@ -14,6 +14,11 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useAuth } from '@/lib/hooks/use-auth';
+import {
+  savePromptToSupabase,
+  uploadCourseToSupabase
+} from '@/lib/supabase/course-sync';
 import {
   loadImageMapping,
   loadPdfBlob,
@@ -46,6 +51,7 @@ function GenerationPreviewContent() {
   const [isComplete, setIsComplete] = useState(false);
   const [stageIdForEntry, setStageIdForEntry] = useState<string | null>(null);
   const userInteractedRef = useRef(false);
+  const { user } = useAuth();
 
   const handleOutlineScroll = () => {
     userInteractedRef.current = true;
@@ -790,6 +796,36 @@ function GenerationPreviewContent() {
 
       sessionStorage.removeItem('generationSession');
       await store.saveToStorage();
+
+      // --- Supabase Sync ---
+      if (user) {
+        log.info('[GenerationSync] Syncing to Supabase...');
+        const currentStage = store.stage;
+        const currentScenes = store.scenes;
+        if (currentStage) {
+          try {
+            // Save Prompt record
+            const promptId = await savePromptToSupabase({
+              userId: user.id,
+              requirements: currentSession.requirements,
+              pdfFileName: currentSession.pdfFileName
+            });
+
+            // Upload Course (metadata + all scenes)
+            await uploadCourseToSupabase({
+              userId: user.id,
+              creationPromptId: promptId || undefined,
+              stage: currentStage,
+              scenes: currentScenes,
+              thumbnail: '' // Real thumbnail generation can be added later
+            });
+            log.info('[GenerationSync] Supabase sync completed');
+          } catch (syncErr) {
+            log.error('[GenerationSync] Failed to sync to Supabase:', syncErr);
+            // Non-fatal: local storage is already done
+          }
+        }
+      }
       
       if (userInteractedRef.current) {
         setIsComplete(true);

@@ -3,7 +3,9 @@
     "you": "你",
     "confirm": "确定",
     "cancel": "取消",
-    "loading": "加载中..."
+    "loading": "加载中...",
+    "home": "首页",
+    "back": "返回"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",

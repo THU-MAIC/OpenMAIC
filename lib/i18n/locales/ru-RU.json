@@ -3,7 +3,9 @@
     "you": "Вы",
     "confirm": "Подтвердить",
     "cancel": "Отмена",
-    "loading": "Загрузка..."
+    "loading": "Загрузка...",
+    "home": "Главная",
+    "back": "Назад"
   },
   "home": {
     "slogan": "Generative Learning in Multi-Agent Interactive Classroom",
