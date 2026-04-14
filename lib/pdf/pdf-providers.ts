@@ -212,25 +212,35 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
   }> = [];
   let imageCounter = 0;
 
+  const MAX_IMAGES = 10;
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     try {
+      if (imageCounter >= MAX_IMAGES) break;
+
       const pageImages = await extractImages(pdf, pageNum);
       for (let i = 0; i < pageImages.length; i++) {
+        if (imageCounter >= MAX_IMAGES) break;
+
         const imgData = pageImages[i];
         try {
-          // Use sharp to convert raw image data to PNG base64
-          const pngBuffer = await sharp(Buffer.from(imgData.data), {
+          // Use sharp to convert raw image data to JPEG base64 (much smaller than PNG)
+          // Also resize to keep base64 payload under control
+          const jpegBuffer = await sharp(Buffer.from(imgData.data), {
             raw: {
               width: imgData.width,
               height: imgData.height,
               channels: imgData.channels,
             },
           })
-            .png()
+            .resize(1200, 1200, {
+              fit: 'inside',
+              withoutEnlargement: true,
+            })
+            .jpeg({ quality: 75 })
             .toBuffer();
 
           // Convert to base64
-          const base64 = `data:image/png;base64,${pngBuffer.toString('base64')}`;
+          const base64 = `data:image/jpeg;base64,${jpegBuffer.toString('base64')}`;
           imageCounter++;
           const imgId = `img_${imageCounter}`;
           images.push(base64);
@@ -282,6 +292,16 @@ async function parseWithMinerU(
       'MinerU base URL is required. ' +
         'Please deploy MinerU locally or specify the server URL. ' +
         'See: https://github.com/opendatalab/MinerU',
+    );
+  }
+
+  // Prevent confusion with the public SaaS which does not support the synchronous /file_parse endpoint.
+  if (config.baseUrl.includes('mineru.net')) {
+    throw new Error(
+      'It looks like you are using the public mineru.net website as the base URL. ' +
+        'OpenMAIC currently supports self-hosted MinerU (mineru-api) instances ' +
+        'which expose the /file_parse endpoint. Please deploy MinerU locally (e.g. http://localhost:8080) ' +
+        'or on a private server, and use that URL instead.',
     );
   }
 
@@ -403,20 +423,24 @@ function extractMinerUResult(fileResult: Record<string, unknown>): ParsedPdfCont
     height?: number;
   }> = [];
 
-  Object.entries(imageData).forEach(([key, base64Url], index) => {
-    const imageId = key.startsWith('img_') ? key : `img_${index + 1}`;
-    imageMapping[imageId] = base64Url;
-    // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths)
-    const meta = imageMetaLookup.get(key) || imageMetaLookup.get(`images/${key}`);
-    pdfImages.push({
-      id: imageId,
-      src: base64Url,
-      pageNumber: meta ? meta.pageIdx + 1 : 0,
-      description: meta?.caption,
-      width: meta ? meta.bbox[2] - meta.bbox[0] : undefined,
-      height: meta ? meta.bbox[3] - meta.bbox[1] : undefined,
+  // Limit images to avoid payload size issues
+  const MAX_MINERU_IMAGES = 20;
+  Object.entries(imageData)
+    .slice(0, MAX_MINERU_IMAGES)
+    .forEach(([key, base64Url], index) => {
+      const imageId = key.startsWith('img_') ? key : `img_${index + 1}`;
+      imageMapping[imageId] = base64Url;
+      // Try exact key first, then with 'images/' prefix (MinerU content_list uses prefixed paths)
+      const meta = imageMetaLookup.get(key) || imageMetaLookup.get(`images/${key}`);
+      pdfImages.push({
+        id: imageId,
+        src: base64Url,
+        pageNumber: meta ? meta.pageIdx + 1 : 0,
+        description: meta?.caption,
+        width: meta ? meta.bbox[2] - meta.bbox[0] : undefined,
+        height: meta ? meta.bbox[3] - meta.bbox[1] : undefined,
+      });
     });
-  });
 
   const images = Object.values(imageMapping);
 
