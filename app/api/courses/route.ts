@@ -68,6 +68,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 });
     }
 
+    // 0. Check whether this is a brand-new course (not a re-sync of an existing one).
+    //    If it is new, check & consume a course-generation credit.
+    const { data: existingCourse } = await supabase
+      .from('courses')
+      .select('id')
+      .eq('id', stage_id)
+      .maybeSingle();
+
+    if (!existingCourse) {
+      // New course — consume a credit
+      const { data: creditResult, error: creditError } = await supabase.rpc(
+        'increment_course_credit',
+        { p_user_id: user_id },
+      );
+
+      if (creditError) {
+        console.error('Credit check RPC error:', creditError);
+        // Non-fatal if RPC unavailable (e.g. migration not yet applied)
+      } else if (creditResult && creditResult.allowed === false) {
+        const reason = creditResult.reason as string;
+        return NextResponse.json(
+          {
+            error:
+              reason === 'free_limit_reached'
+                ? 'You have used all your free course credits. Upgrade to Plus for 30 courses/month.'
+                : 'You have reached your monthly course limit. Wait for your cycle to reset or upgrade.',
+            reason,
+            upgrade_url: '/pricing',
+          },
+          { status: 402 },
+        );
+      }
+    }
+
     // 1. Create Course Metadata (upsert so re-syncs and catalog pre-inserts don't conflict)
     const { data: course, error: courseError } = await supabase
       .from('courses')

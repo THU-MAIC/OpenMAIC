@@ -2,13 +2,136 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, LogOut, Mail, Calendar, Trophy } from 'lucide-react';
+import { X, LogOut, Mail, Zap, Crown, Shield, BookOpen, ExternalLink } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { LeaderboardCard } from '../leaderboard/leaderboard-card';
+import type { UserPlan } from '@/lib/stripe/plans';
 
 interface AuthProfileModalProps {
   open: boolean;
   onClose: () => void;
+}
+
+// ── Plan & Credits sub-component ─────────────────────────────────────────────
+
+const ACCOUNT_META: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+  FREE:  { label: 'Free',  color: '#073b4c', bg: '#f0f4f8', icon: <BookOpen className="size-3" /> },
+  PLUS:  { label: 'Plus',  color: '#118AB2', bg: '#e8f6fd', icon: <Zap className="size-3" /> },
+  ADMIN: { label: 'Admin', color: '#06D6A0', bg: '#e6fdf7', icon: <Shield className="size-3" /> },
+};
+
+function PlanCreditsSection({
+  plan,
+  credits,
+  onClose,
+}: {
+  plan: UserPlan | null;
+  credits: any;
+  onClose: () => void;
+}) {
+  if (!plan) {
+    return (
+      <div className="mb-4 h-20 rounded-2xl bg-[#f0f4f8] animate-pulse" />
+    );
+  }
+
+  const meta   = ACCOUNT_META[plan.account_type] ?? ACCOUNT_META.FREE;
+  const isPaid = plan.account_type === 'PLUS' || plan.account_type === 'ADMIN';
+
+  const used      = credits?.used   ?? 0;
+  const total     = credits?.total  ?? (plan.account_type === 'FREE' ? 2 : 30);
+  const remaining = credits?.remaining ?? (total === 'unlimited' ? 'unlimited' : Math.max(0, (total as number) - used));
+  const pct       = total === 'unlimited' ? 0 : Math.min(100, Math.round((used / (total as number)) * 100));
+
+  const handleUpgrade = () => {
+    onClose();
+    window.location.href = '/pricing';
+  };
+
+  const handleManageBilling = async () => {
+    const res  = await fetch('/api/stripe/portal', { method: 'POST' });
+    const json = await res.json();
+    if (json.url) window.open(json.url, '_blank');
+  };
+
+  return (
+    <div className="mb-4">
+      <h4 className="text-[11px] font-black text-[#073b4c]/30 uppercase tracking-widest mb-2 px-1">Plan & Credits</h4>
+
+      {/* Account type badge */}
+      <div
+        className="flex items-center justify-between rounded-2xl border-2 px-3 py-2.5 mb-2"
+        style={{ borderColor: `${meta.color}20`, backgroundColor: meta.bg }}
+      >
+        <div className="flex items-center gap-2">
+          <span style={{ color: meta.color }}>{meta.icon}</span>
+          <span className="text-xs font-black" style={{ color: meta.color }}>{meta.label}</span>
+          {plan.subscription_period && (
+            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full capitalize"
+              style={{ background: `${meta.color}18`, color: meta.color }}>
+              {plan.subscription_period}
+            </span>
+          )}
+        </div>
+        {!isPaid && (
+          <button
+            onClick={handleUpgrade}
+            className="flex items-center gap-1 text-[10px] font-black text-[#118AB2] hover:text-[#073b4c] transition-colors"
+          >
+            <Crown className="size-3" /> Upgrade
+          </button>
+        )}
+        {isPaid && plan.subscription_period !== 'lifetime' && (
+          <button
+            onClick={handleManageBilling}
+            className="flex items-center gap-1 text-[10px] font-semibold text-[#073b4c]/40 hover:text-[#073b4c] transition-colors"
+          >
+            Manage <ExternalLink className="size-2.5" />
+          </button>
+        )}
+      </div>
+
+      {/* Credit usage bar */}
+      <div className="bg-[#f0f4f8] rounded-2xl border-2 border-[#073b4c]/5 px-3 py-2.5">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-[10px] font-black text-[#073b4c]/50 uppercase tracking-tighter">
+            {plan.account_type === 'FREE' ? 'Course Credits (Lifetime)' : 'Courses This Month'}
+          </span>
+          <span className="text-[10px] font-black text-[#073b4c]">
+            {remaining === 'unlimited' ? '∞ unlimited' : `${remaining} left`}
+          </span>
+        </div>
+
+        {total !== 'unlimited' ? (
+          <>
+            <div className="w-full h-1.5 rounded-full bg-[#073b4c]/10 overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${pct}%`,
+                  backgroundColor: pct >= 90 ? '#ef476f' : pct >= 60 ? '#ffd166' : '#06D6A0',
+                }}
+              />
+            </div>
+            <p className="text-[9px] text-[#073b4c]/30 mt-1">
+              {used} of {total as number} used
+            </p>
+          </>
+        ) : (
+          <p className="text-[10px] text-[#06D6A0] font-black">Unlimited access</p>
+        )}
+
+        {!isPaid && (remaining as number) <= 0 && (
+          <button
+            onClick={handleUpgrade}
+            className="mt-2 w-full h-7 rounded-xl bg-[#073b4c] text-white text-[10px] font-black hover:bg-[#118AB2] transition-colors"
+          >
+            Upgrade to Plus — 30 courses/month
+          </button>
+        )}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -20,15 +143,25 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
   const { user, signOut } = useAuth();
   const panelRef = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<any>(null);
+  const [plan, setPlan] = useState<UserPlan | null>(null);
+  const [credits, setCredits] = useState<any>(null);
 
   useEffect(() => {
     if (open && user) {
       fetch('/api/analytics/user-stats')
         .then(res => res.json())
-        .then(json => {
-          if (json.success) setStats(json.stats);
-        })
+        .then(json => { if (json.success) setStats(json.stats); })
         .catch(err => console.error('Failed to fetch stats:', err));
+
+      fetch('/api/user/plan')
+        .then(res => res.json())
+        .then(json => {
+          if (json.success) {
+            setPlan(json.plan);
+            setCredits(json.credits);
+          }
+        })
+        .catch(err => console.error('Failed to fetch plan:', err));
     }
   }, [open, user]);
 
@@ -149,6 +282,9 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
                   </span>
                 </div>
               </div>
+              {/* ── Plan & Credits ── */}
+              <PlanCreditsSection plan={plan} credits={credits} onClose={onClose} />
+
               {/* Stats Section */}
               <div className="mb-5">
                 <h4 className="text-[11px] font-black text-[#073b4c]/30 uppercase tracking-widest mb-3 px-1">My Learning Journey</h4>
