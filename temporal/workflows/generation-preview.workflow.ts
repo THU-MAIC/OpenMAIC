@@ -125,6 +125,12 @@ export async function generateRemainingWorkflow(
     requirement,
   } = args;
 
+  // Default to generating all content unless explicitly disabled.
+  // Many callers omit these flags, which would otherwise skip audio/media phases.
+  const shouldGenerateTTS = enableTTS ?? true;
+  const shouldGenerateImages = enableImageGeneration ?? true;
+  const shouldGenerateVideo = enableVideoGeneration ?? true;
+
   // Mutable status exposed via query
   let status: PreviewJobStatus = 'running';
   let step: PreviewJobStep = 'initializing';
@@ -200,7 +206,7 @@ export async function generateRemainingWorkflow(
 
       // Generate TTS and upload to Supabase Storage
       let finalScene = scene;
-      if (enableTTS) {
+      if (shouldGenerateTTS) {
         step = 'generating_tts';
         finalScene = await generateSceneTTSToSupabaseActivity({
           scene,
@@ -237,7 +243,7 @@ export async function generateRemainingWorkflow(
 
     if (
       newScenes.length > 0 &&
-      (enableImageGeneration || enableVideoGeneration)
+      (shouldGenerateImages || shouldGenerateVideo)
     ) {
       step = 'generating_media';
       progress = 77;

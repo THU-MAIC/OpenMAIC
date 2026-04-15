@@ -315,9 +315,9 @@ export default function ClassroomDetailPage() {
         startRemainingJob({
           stageId: stage.id,
           requirement,
-          enableTTS: false, // TTS controlled by server env config
-          enableImageGeneration: false, // media controlled by server env config
-          enableVideoGeneration: false,
+          enableTTS: true, // TTS controlled by server env config
+          enableImageGeneration: true, // media controlled by server env config
+          enableVideoGeneration: true,
         }).then((jobId) => {
           if (!jobId) {
             // Temporal unavailable — fall back to client-side generation
