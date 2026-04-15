@@ -18,6 +18,7 @@
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "worker": "tsx --env-file=.env.local temporal/worker.ts",
+    "worker:prod": "tsx temporal/worker.ts",
     "dev:full": "concurrently \"pnpm dev\" \"pnpm worker\""
   },
   "dependencies": {

@@ -1,0 +1,46 @@
+# Temporal Worker — Debian-based (glibc required by Temporal's Rust core)
+# Alpine/musl is NOT supported by @temporalio/worker
+
+# ---- Stage 1: Install dependencies ----
+FROM node:20-bullseye-slim AS deps
+
+# ca-certificates: required by Temporal SDK TLS even for Temporal Cloud
+# build-essential + native libs: needed for sharp, @napi-rs/canvas
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates python3 build-essential \
+       libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY packages/ ./packages/
+
+RUN pnpm install --frozen-lockfile
+
+# ---- Stage 2: Runtime ----
+FROM node:20-bullseye-slim AS runner
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       ca-certificates \
+       libcairo2 libpango1.0-0 libjpeg62-turbo libgif7 librsvg2-2 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN corepack enable && corepack prepare pnpm@10.28.0 --activate
+
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+# Dependencies (including workspace packages built by postinstall)
+COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/packages ./packages
+
+# Full source — activities import from @/lib/*, @/utils/*, etc.
+COPY . .
+
+CMD ["pnpm", "worker:prod"]
