@@ -146,6 +146,16 @@ export async function generateRemainingWorkflow(
     .sort((a, b) => a.order - b.order);
   const totalPending = pendingOutlines.length;
 
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  };
+
+  // Keep concurrency bounded to avoid overwhelming downstream APIs and workers.
+  // Deterministic batching is replay-safe and still yields parallel Temporal activities.
+  const SCENE_PARALLELISM = 3;
+
   setHandler(getPreviewStatusQuery, (): PreviewWorkflowStatus => ({
     status,
     step,
@@ -181,102 +191,76 @@ export async function generateRemainingWorkflow(
     progress = 2;
     message = 'Fetching existing course data';
 
-    let existingScenes = await fetchExistingScenesActivity(stage.id);
-    let newScenes: Scene[] = [];
-    let didIncrementalMedia = false;
+    const existingScenes = await fetchExistingScenesActivity(stage.id);
 
     // ---- Step 2: Generate each pending scene ----
     step = 'generating_scenes';
+    progress = 5;
+    message = `Generating ${totalPending} scenes in parallel`;
 
-    for (const [index, outline] of pendingOutlines.entries()) {
-      const progressBase = 5 + Math.floor((index / totalPending) * 70);
-      progress = progressBase;
-      message = `Generating scene ${index + 1}/${totalPending}: ${outline.title}`;
+    const generated: Scene[] = [];
+    const outlineChunks = chunk(pendingOutlines, SCENE_PARALLELISM);
+    for (const [chunkIndex, outlinesChunk] of outlineChunks.entries()) {
+      message = `Generating scenes (batch ${chunkIndex + 1}/${outlineChunks.length})`;
+      progress = 5 + Math.floor((chunkIndex / outlineChunks.length) * 55);
 
-      const scene = await generateSingleSceneActivity({
-        outline,
-        stage,
-        agents,
-        input: minimalInput,
-      });
-
-      if (!scene) {
-        message = `Scene skipped (generation failed): ${outline.title}`;
-        continue;
-      }
-
-      // Generate TTS and upload to Supabase Storage
-      let finalScene = scene;
-      if (shouldGenerateTTS) {
-        step = 'generating_tts';
-        finalScene = await generateSceneTTSToSupabaseActivity({
-          scene,
-          stageId: stage.id,
-        });
-        step = 'generating_scenes';
-      }
-
-      newScenes.push(finalScene);
-      scenesGenerated = newScenes.length;
-      completedScenes = [...newScenes];
-
-      // Media generation: run incrementally per-scene so image/video generation
-      // overlaps with the scene generation loop rather than waiting until all
-      // slides are created.
-      if (shouldGenerateImages || shouldGenerateVideo) {
-        const allKnownScenesPreMedia = [...existingScenes, ...newScenes].sort(
-          (a, b) => a.order - b.order,
-        );
-
-        step = 'generating_media';
-        progress = Math.max(progress, 10 + Math.floor((index / totalPending) * 70));
-        message = `Generating media for: ${outline.title}`;
-
-        const allKnownScenesPostMedia = await generateMediaToSupabaseActivity({
-          scenes: allKnownScenesPreMedia,
-          outlines: [outline],
-          stageId: stage.id,
-        });
-
-        // Re-hydrate our local arrays with the media-enriched scene versions.
-        const byId = new Map(allKnownScenesPostMedia.map((s) => [s.id, s]));
-        existingScenes = existingScenes.map((s) => byId.get(s.id) ?? s);
-        newScenes = newScenes.map((s) => byId.get(s.id) ?? s);
-        completedScenes = [...newScenes];
-        didIncrementalMedia = true;
-
-        step = 'generating_scenes';
-      }
-
-      // Incremental Supabase sync — include all known scenes so content.json is complete
-      const allKnownScenes = [...existingScenes, ...newScenes].sort(
-        (a, b) => a.order - b.order,
+      const batchResults = await Promise.all(
+        outlinesChunk.map(async (outline) => {
+          const scene = await generateSingleSceneActivity({
+            outline,
+            stage,
+            agents,
+            input: minimalInput,
+          });
+          return scene;
+        }),
       );
-      await pushSceneToSupabaseActivity({
-        stage,
-        scenes: allKnownScenes,
-        courseDescription: courseDescription ?? '',
-      });
 
-      progress = 5 + Math.floor(((index + 1) / totalPending) * 70);
-      message = `Generated ${scenesGenerated}/${totalPending} scenes`;
+      for (const scene of batchResults) {
+        if (scene) generated.push(scene);
+      }
+
+      scenesGenerated = generated.length;
+      completedScenes = [...generated].sort((a, b) => a.order - b.order);
+    }
+
+    // ---- Step 2b: Generate TTS for all generated scenes (optional) ----
+    let newScenes: Scene[] = [...generated].sort((a, b) => a.order - b.order);
+
+    if (shouldGenerateTTS && newScenes.length > 0) {
+      step = 'generating_tts';
+      progress = 62;
+      message = `Generating TTS for ${newScenes.length} scenes in parallel`;
+
+      const ttsChunks = chunk(newScenes, SCENE_PARALLELISM);
+      const withTts: Scene[] = [];
+      for (const [chunkIndex, scenesChunk] of ttsChunks.entries()) {
+        progress = 62 + Math.floor((chunkIndex / ttsChunks.length) * 10);
+        message = `Generating TTS (batch ${chunkIndex + 1}/${ttsChunks.length})`;
+
+        const results = await Promise.all(
+          scenesChunk.map((scene) =>
+            generateSceneTTSToSupabaseActivity({
+              scene,
+              stageId: stage.id,
+            }),
+          ),
+        );
+        withTts.push(...results);
+        completedScenes = [...withTts].sort((a, b) => a.order - b.order);
+      }
+
+      newScenes = withTts.sort((a, b) => a.order - b.order);
     }
 
     // ---- Step 3: Media generation (optional) ----
-    const allScenes = [
-      ...existingScenes,
-      ...newScenes,
-    ].sort((a, b) => a.order - b.order);
+    const allScenes = [...existingScenes, ...newScenes].sort((a, b) => a.order - b.order);
 
     let finalScenes = allScenes;
 
-    if (
-      newScenes.length > 0 &&
-      (shouldGenerateImages || shouldGenerateVideo) &&
-      !didIncrementalMedia
-    ) {
+    if (newScenes.length > 0 && (shouldGenerateImages || shouldGenerateVideo)) {
       step = 'generating_media';
-      progress = 77;
+      progress = 75;
       message = 'Generating and uploading media assets';
 
       finalScenes = await generateMediaToSupabaseActivity({
@@ -292,6 +276,13 @@ export async function generateRemainingWorkflow(
     step = 'persisting';
     progress = 95;
     message = 'Finalizing course';
+
+    // Ensure content.json is complete even if finalization becomes a no-op.
+    await pushSceneToSupabaseActivity({
+      stage,
+      scenes: finalScenes,
+      courseDescription: courseDescription ?? '',
+    });
 
     await finalizeCourseScenesActivity({
       stage,
