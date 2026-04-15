@@ -40,8 +40,8 @@ allowed_mime_types = ["image/png", "image/jpeg", "video/mp4"]
 
 [auth]
 enabled = true
-site_url = "https://thechalklabs.com"
-additional_redirect_urls = ["https://thechalklabs.com"]
+site_url = "http://localhost:3000"
+additional_redirect_urls = ["http://localhost:3000", "http://localhost:3000/auth/callback", "https://thechalklabs.com", "https://thechalklabs.com/auth/callback"]
 jwt_expiry = 3600
 enable_signup = true
 enable_anonymous_sign_ins = false
@@ -49,3 +49,16 @@ enable_anonymous_sign_ins = false
 [auth.email]
 enable_signup = true
 enable_confirmations = false
+
+[auth.external.google]
+enabled = true
+client_id = "937121058649-pcfq17gva8300flstebdgjevteu1u4k8.apps.googleusercontent.com"
+secret = "env(SUPABASE_AUTH_EXTERNAL_GOOGLE_CLIENT_SECRET)"
+skip_nonce_check = false
+
+
+[remotes.production.auth]
+site_url = "https://thechalklabs.com/"
+
+[remotes.production]
+project_id = "qnvzukpyvpcgoxwiiwia"

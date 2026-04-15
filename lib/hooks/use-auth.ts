@@ -82,12 +82,16 @@ export function useAuth() {
     [],
   );
 
-  const signInWithGoogle = useCallback(async () => {
+  const signInWithGoogle = useCallback(async (nextPath = '/') => {
+    const safe =
+      nextPath.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/';
+    const callback = new URL('/auth/callback', window.location.origin);
+    callback.searchParams.set('next', safe);
     const supabase = createClient();
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
+        redirectTo: callback.toString(),
       },
     });
     if (error) throw error;

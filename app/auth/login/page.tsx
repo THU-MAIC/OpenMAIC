@@ -57,7 +57,7 @@ function LoginContent() {
   const handleGoogleAuth = async () => {
     setError(null);
     try {
-      await signInWithGoogle();
+      await signInWithGoogle(redirectTo);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Google sign-in failed';
       setError(message);
