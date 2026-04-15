@@ -27,7 +27,6 @@ import {
   replaceMediaPlaceholders,
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
-import { insertCourseAndGenerateTags } from '@/lib/server/course-catalog';
 import {
   pushLatestGeneratedSceneToSupabase,
   replaceAllCourseScenesInSupabase,
@@ -474,10 +473,6 @@ export async function generateClassroom(
     },
     options.baseUrl,
   );
-
-  // Background catalog update — generated tags for the public directory
-  // We call this without awaiting to keep it fire-and-forget in the background
-  void insertCourseAndGenerateTags(stage, outlines, requirement, aiCall);
 
   log.info(`Classroom persisted: ${persisted.id}, URL: ${persisted.url}`);
 

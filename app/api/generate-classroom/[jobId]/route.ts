@@ -1,10 +1,13 @@
 import { type NextRequest } from 'next/server';
+import { WorkflowNotFoundError } from '@temporalio/client';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import {
-  isValidClassroomJobId,
-  readClassroomGenerationJob,
-} from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
+
+function isValidClassroomJobId(jobId: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(jobId);
+}
+import { getTemporalClient } from '@/temporal/client';
+import { getStatusQuery } from '@/temporal/workflows/classroom-generation.workflow';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomJob API');
@@ -21,26 +24,34 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
       return apiError('INVALID_REQUEST', 400, 'Invalid classroom generation job id');
     }
 
-    const job = await readClassroomGenerationJob(jobId);
-    if (!job) {
-      return apiError('INVALID_REQUEST', 404, 'Classroom generation job not found');
+    const client = await getTemporalClient();
+    const handle = client.workflow.getHandle(jobId);
+
+    let workflowStatus;
+    try {
+      workflowStatus = await handle.query(getStatusQuery);
+    } catch (err) {
+      if (err instanceof WorkflowNotFoundError) {
+        return apiError('INVALID_REQUEST', 404, 'Classroom generation job not found');
+      }
+      throw err;
     }
 
     const pollUrl = `${buildRequestOrigin(req)}/api/generate-classroom/${jobId}`;
 
     return apiSuccess({
-      jobId: job.id,
-      status: job.status,
-      step: job.step,
-      progress: job.progress,
-      message: job.message,
+      jobId,
+      status: workflowStatus.status,
+      step: workflowStatus.step,
+      progress: workflowStatus.progress,
+      message: workflowStatus.message,
       pollUrl,
       pollIntervalMs: 5000,
-      scenesGenerated: job.scenesGenerated,
-      totalScenes: job.totalScenes,
-      result: job.result,
-      error: job.error,
-      done: job.status === 'succeeded' || job.status === 'failed',
+      scenesGenerated: workflowStatus.scenesGenerated,
+      totalScenes: workflowStatus.totalScenes,
+      result: workflowStatus.result,
+      error: workflowStatus.error,
+      done: workflowStatus.done,
     });
   } catch (error) {
     log.error(`Classroom job retrieval failed [jobId=${resolvedJobId ?? 'unknown'}]:`, error);
