@@ -474,6 +474,21 @@ function ensureBuiltInProviders(state: Partial<SettingsState>): void {
 }
 
 /**
+ * Custom providers created before #414 stored their actual endpoint in
+ * defaultBaseUrl while leaving baseUrl empty. Promote that persisted value
+ * during rehydrate so downstream request builders keep using baseUrl only.
+ */
+export function promoteLegacyCustomProviderBaseUrls(state: Partial<SettingsState>): void {
+  if (!state.providersConfig) return;
+
+  Object.values(state.providersConfig).forEach((config) => {
+    if (!config.isBuiltIn && !config.baseUrl && config.defaultBaseUrl) {
+      config.baseUrl = config.defaultBaseUrl;
+    }
+  });
+}
+
+/**
  * Ensure imageProvidersConfig includes all built-in image providers.
  * Called on every rehydrate so newly added image providers appear automatically.
  */
@@ -1332,6 +1347,7 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Ensure providersConfig has all built-in providers (also in merge below)
         ensureBuiltInProviders(state);
+        promoteLegacyCustomProviderBaseUrls(state);
 
         // Ensure image/video configs have all built-in providers
         ensureBuiltInImageProviders(state);
@@ -1464,6 +1480,7 @@ export const useSettingsStore = create<SettingsState>()(
       merge: (persistedState, currentState) => {
         const merged = { ...currentState, ...(persistedState as object) };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
+        promoteLegacyCustomProviderBaseUrls(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);

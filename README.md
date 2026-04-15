@@ -18,7 +18,7 @@
   <a href="#-openclaw-integration"><img src="https://img.shields.io/badge/OpenClaw-Integration-F4511E?style=flat-square" alt="OpenClaw Integration"/></a>
   <a href="https://github.com/THU-MAIC/OpenMAIC/stargazers"><img src="https://img.shields.io/github/stars/THU-MAIC/OpenMAIC?style=flat-square" alt="Stars"/></a>
   <br/>
-  <a href="https://discord.gg/PtZaaTbH"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"/></a>
+  <a href="https://discord.gg/p8Pf2r3SaG"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"/></a>
   &nbsp;
   <a href="community/feishu.md"><img src="https://img.shields.io/badge/Feishu-飞书交流群-00D6B9?style=for-the-badge&logo=bytedance&logoColor=white" alt="Feishu"/></a>
   <br/>
@@ -38,6 +38,7 @@
 
 ## 🗞️ News
 
+- **2026-04-14** — [v0.1.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1) Automatic language inference, ACCESS_CODE authentication, classroom ZIP export/import, custom TTS/ASR providers, Ollama support, and more. See [changelog](CHANGELOG.md).
 - **2026-03-26** — [v0.1.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0) Discussion TTS, immersive mode, keyboard shortcuts, whiteboard enhancements, new providers, and more. See [changelog](CHANGELOG.md).
 
 ## 📖 Overview
@@ -114,7 +115,7 @@ providers:
     apiKey: sk-ant-...
 ```
 
-Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **MiniMax**, **Grok (xAI)**, and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **MiniMax**, **Grok (xAI)**, **Doubao**, **Ollama** (local), and any OpenAI-compatible API.
 
 MiniMax quick examples:
 
@@ -152,6 +153,16 @@ Open **http://localhost:3000** and start learning!
 ```bash
 pnpm build && pnpm start
 ```
+
+### Optional: ACCESS_CODE (Shared Deployments)
+
+To protect your deployment with a site-level password, set `ACCESS_CODE` in `.env.local`:
+
+```env
+ACCESS_CODE=your-secret-code
+```
+
+When set, visitors see a password prompt before accessing the app. All API routes are also protected. If not set, the app works as before.
 
 ### Vercel Deployment
 
@@ -339,13 +350,14 @@ Optional config in `~/.openclaw/openclaw.json`:
 |--------|-------------|
 | **PowerPoint (.pptx)** | Fully editable slides with images, charts, and LaTeX formulas |
 | **Interactive HTML** | Self-contained web pages with interactive simulations |
+| **Classroom ZIP** | Full classroom export (course structure + media) for backup or sharing |
 
 ### And More
 
 - **Text-to-Speech** — Multiple voice providers with customizable voices
 - **Speech Recognition** — Talk to your AI teacher using your microphone
 - **Web Search** — Agents search the web for up-to-date information during class
-- **i18n** — Interface supports Chinese and English
+- **i18n** — Interface supports Chinese, English, Japanese, and Russian
 - **Dark Mode** — Easy on the eyes for late-night study sessions
 
 ---

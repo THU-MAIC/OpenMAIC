@@ -34,7 +34,7 @@ import { toast } from 'sonner';
 import { type ProviderId } from '@/lib/ai/providers';
 import { PROVIDERS, MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import { cn } from '@/lib/utils';
-import { getProviderTypeLabel } from './utils';
+import { createCustomProviderSettings, getProviderTypeLabel } from './utils';
 import { ProviderList } from './provider-list';
 import { ProviderConfigPanel } from './provider-config-panel';
 import { PDFSettings } from './pdf-settings';
@@ -456,17 +456,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     const newProviderId = `custom-${Date.now()}` as ProviderId;
     const updatedConfig = {
       ...providersConfig,
-      [newProviderId]: {
-        apiKey: '',
-        baseUrl: '',
-        models: [],
-        name: providerData.name,
-        type: providerData.type,
-        defaultBaseUrl: providerData.baseUrl || undefined,
-        icon: providerData.icon || undefined,
-        requiresApiKey: providerData.requiresApiKey,
-        isBuiltIn: false,
-      },
+      [newProviderId]: createCustomProviderSettings(providerData),
     };
     setProvidersConfig(updatedConfig);
     setShowAddProviderDialog(false);
