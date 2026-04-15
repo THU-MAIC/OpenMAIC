@@ -28,6 +28,10 @@ import {
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
 import { insertCourseAndGenerateTags } from '@/lib/server/course-catalog';
+import {
+  pushLatestGeneratedSceneToSupabase,
+  replaceAllCourseScenesInSupabase,
+} from '@/lib/server/incremental-course-db-sync';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
@@ -312,6 +316,8 @@ export async function generateClassroom(
   const outlines = outlinesResult.data;
   log.info(`Generated ${outlines.length} scene outlines`);
 
+  const courseDescription = outlines[0]?.description || requirement.slice(0, 200);
+
   await options.onProgress?.({
     step: 'generating_outlines',
     progress: 30,
@@ -386,6 +392,13 @@ export async function generateClassroom(
 
     generatedScenes += 1;
     const progressEnd = 30 + Math.floor(((index + 1) / Math.max(outlines.length, 1)) * 60);
+
+    await pushLatestGeneratedSceneToSupabase({
+      stage,
+      scenes: store.getState().scenes,
+      courseDescription,
+    });
+
     await options.onProgress?.({
       step: 'generating_scenes',
       progress: Math.min(progressEnd, 90),
@@ -438,6 +451,12 @@ export async function generateClassroom(
       log.warn('TTS generation phase failed, continuing:', err);
     }
   }
+
+  await replaceAllCourseScenesInSupabase({
+    stage,
+    scenes,
+    courseDescription,
+  });
 
   await options.onProgress?.({
     step: 'persisting',
