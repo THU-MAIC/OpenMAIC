@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from 'fs';
-import { join } from 'path';
+import { join, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { parseArgs } from 'util';
 import type { EvalScenario, ScenarioRunResult, CheckpointResult, EvalReport } from './types';
 import type { Action } from '@/lib/types/action';
@@ -10,25 +11,28 @@ import { scoreScreenshot } from './scorer';
 import { generateReport } from './reporter';
 
 // ==================== CLI Args ====================
+//
+// Model configuration follows the same pattern as the outline-language eval:
+//   EVAL_CHAT_MODEL    Model for chat generation (default: DEFAULT_MODEL or gpt-4o-mini)
+//   EVAL_SCORER_MODEL  Model for VLM scoring (default: openai:gpt-4o)
+//
+// Usage:
+//   EVAL_CHAT_MODEL=google:gemini-3.1-pro-preview \
+//   EVAL_SCORER_MODEL=google:gemini-2.0-flash \
+//   pnpm eval:whiteboard --scenario physics-force-decomposition
 
 const { values: args } = parseArgs({
   options: {
     scenario: { type: 'string' },
-    model: { type: 'string' },
     repeat: { type: 'string', default: '1' },
     'base-url': { type: 'string', default: 'http://localhost:3000' },
-    'api-key': { type: 'string' },
-    'scorer-model': { type: 'string', default: 'gpt-4o' },
-    'scorer-api-key': { type: 'string' },
     'output-dir': { type: 'string', default: 'eval/whiteboard-layout/results' },
   },
 });
 
 const BASE_URL = args['base-url']!;
-const API_KEY = args['api-key'] || process.env.OPENAI_API_KEY || '';
-const MODEL = args.model || process.env.DEFAULT_MODEL || 'openai/gpt-4o-mini';
-const SCORER_MODEL = args['scorer-model']!;
-const SCORER_API_KEY = args['scorer-api-key'] || API_KEY;
+const CHAT_MODEL = process.env.EVAL_CHAT_MODEL || process.env.DEFAULT_MODEL || 'openai/gpt-4o-mini';
+const SCORER_MODEL = process.env.EVAL_SCORER_MODEL || 'openai:gpt-4o';
 const REPEAT = parseInt(args.repeat || '1', 10);
 const OUTPUT_DIR = args['output-dir']!;
 const SCENARIO_FILTER = args.scenario;
@@ -37,7 +41,9 @@ const MAX_AGENT_TURNS = 10;
 // ==================== Scenario Loading ====================
 
 function loadScenarios(): EvalScenario[] {
-  const scenarioDir = join(import.meta.dirname, 'scenarios');
+  const currentDir =
+    typeof __dirname !== 'undefined' ? __dirname : dirname(fileURLToPath(import.meta.url));
+  const scenarioDir = join(currentDir, 'scenarios');
   const files = readdirSync(scenarioDir).filter((f) => f.endsWith('.json'));
   const scenarios: EvalScenario[] = [];
 
@@ -55,7 +61,7 @@ function loadScenarios(): EvalScenario[] {
 // ==================== Single Scenario Run ====================
 
 async function runScenario(scenario: EvalScenario, runIndex: number): Promise<ScenarioRunResult> {
-  const model = scenario.model || MODEL;
+  const model = scenario.model || CHAT_MODEL;
   const checkpoints: CheckpointResult[] = [];
 
   console.log(`  [run ${runIndex + 1}] Starting...`);
@@ -94,7 +100,7 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
       await runAgentLoop(
         {
           config: scenario.config,
-          apiKey: API_KEY,
+          apiKey: '', // Server resolves API key from env/YAML
           model,
         },
         {
@@ -204,10 +210,7 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
 
         console.log(`    Captured: ${screenshotFilename} (${elements.length} elements)`);
 
-        const score = await scoreScreenshot(screenshotPath, {
-          apiKey: SCORER_API_KEY,
-          model: SCORER_MODEL,
-        });
+        const score = await scoreScreenshot(screenshotPath, SCORER_MODEL);
 
         console.log(`    Score: overall=${score.overall}, overlap=${score.overlap.score}`);
 
@@ -234,7 +237,7 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
 
 async function main() {
   console.log('=== Whiteboard Layout Eval ===');
-  console.log(`Model: ${MODEL} | Scorer: ${SCORER_MODEL} | Repeats: ${REPEAT}`);
+  console.log(`Chat: ${CHAT_MODEL} | Scorer: ${SCORER_MODEL} | Repeats: ${REPEAT}`);
   console.log('');
 
   const scenarios = loadScenarios();
@@ -262,7 +265,7 @@ async function main() {
 
   const report: EvalReport = {
     timestamp: new Date().toISOString(),
-    model: MODEL,
+    model: CHAT_MODEL,
     scenarios: allResults,
   };
 

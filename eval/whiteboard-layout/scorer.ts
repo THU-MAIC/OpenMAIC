@@ -1,5 +1,19 @@
+/**
+ * VLM Scorer for whiteboard layout quality.
+ *
+ * Uses the project's LLM infrastructure (resolveModel + generateText from AI SDK)
+ * so model configuration follows the same `provider:model` convention as the rest
+ * of the codebase. Supports all providers (OpenAI, Google, Anthropic, etc.).
+ *
+ * Environment variable: EVAL_SCORER_MODEL (default: openai:gpt-4o)
+ */
+
 import { readFileSync } from 'fs';
+import { generateText } from 'ai';
+import { resolveModel } from '@/lib/server/resolve-model';
 import type { VlmScore } from './types';
+
+const SCORER_MODEL_DEFAULT = 'openai:gpt-4o';
 
 const RUBRIC_PROMPT = `You are a whiteboard layout quality reviewer. Evaluate the whiteboard screenshot below.
 
@@ -13,59 +27,38 @@ Score each dimension from 1 to 10:
 Output ONLY a JSON object with this structure:
 {"readability":{"score":N,"reason":"..."},"overlap":{"score":N,"reason":"..."},"space_utilization":{"score":N,"reason":"..."},"layout_logic":{"score":N,"reason":"..."},"overall":N,"issues":["..."]}`;
 
-interface ScorerConfig {
-  apiKey: string;
-  baseUrl?: string;
-  model: string;
-  providerType?: string;
-}
-
 /**
  * Score a whiteboard screenshot using a VLM.
+ *
+ * Model is resolved via EVAL_SCORER_MODEL env var or the provided modelString,
+ * using the same resolveModel() infrastructure as the rest of the project.
  */
 export async function scoreScreenshot(
   screenshotPath: string,
-  config: ScorerConfig,
+  modelString?: string,
 ): Promise<VlmScore> {
   const imageBuffer = readFileSync(screenshotPath);
-  const base64Image = imageBuffer.toString('base64');
-  const mimeType = 'image/png';
 
-  // Use OpenAI-compatible API for vision
-  const apiBase = config.baseUrl || 'https://api.openai.com/v1';
-  const response = await fetch(`${apiBase}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: RUBRIC_PROMPT },
-            {
-              type: 'image_url',
-              image_url: { url: `data:${mimeType};base64,${base64Image}` },
-            },
-          ],
-        },
-      ],
-      max_tokens: 1000,
-    }),
+  const { model } = await resolveModel({
+    modelString: modelString || process.env.EVAL_SCORER_MODEL || SCORER_MODEL_DEFAULT,
   });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`VLM API error ${response.status}: ${text}`);
-  }
+  const result = await generateText({
+    model,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'text', text: RUBRIC_PROMPT },
+          { type: 'image', image: imageBuffer },
+        ],
+      },
+    ],
+    temperature: 0,
+    maxOutputTokens: 1000,
+  });
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  };
-  const content = data.choices?.[0]?.message?.content || '';
+  const content = result.text;
 
   // Extract JSON from response (may be wrapped in markdown code fences)
   const jsonMatch = content.match(/\{[\s\S]*\}/);
