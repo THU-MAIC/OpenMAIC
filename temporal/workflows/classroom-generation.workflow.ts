@@ -173,33 +173,33 @@ export async function classroomGenerationWorkflow(
     // ---- Step 3: Media generation (optional) ----
     let finalScenes: Scene[] = scenes;
 
-    if (input.enableImageGeneration || input.enableVideoGeneration) {
-      step = 'generating_media';
-      progress = 87;
-      message = 'Generating media files';
+    // if (input.enableImageGeneration || input.enableVideoGeneration) {
+    step = 'generating_media';
+    progress = 87;
+    message = 'Generating media files';
 
-      finalScenes = await generateMediaActivity({
-        scenes: finalScenes,
-        outlines,
-        stageId: stage.id,
-        baseUrl,
-        enableImageGeneration: input.enableImageGeneration,
-        enableVideoGeneration: input.enableVideoGeneration,
-      });
-    }
+    finalScenes = await generateMediaActivity({
+      scenes: finalScenes,
+      outlines,
+      stageId: stage.id,
+      baseUrl,
+      enableImageGeneration: input.enableImageGeneration,
+      enableVideoGeneration: input.enableVideoGeneration,
+    });
+    // }
 
     // ---- Step 4: TTS generation (optional) ----
-    if (input.enableTTS) {
-      step = 'generating_tts';
-      progress = 92;
-      message = 'Generating TTS audio';
+    // if (input.enableTTS) {
+    step = 'generating_tts';
+    progress = 92;
+    message = 'Generating TTS audio';
 
-      finalScenes = await generateTTSActivity({
-        scenes: finalScenes,
-        stageId: stage.id,
-        baseUrl,
-      });
-    }
+    finalScenes = await generateTTSActivity({
+      scenes: finalScenes,
+      stageId: stage.id,
+      baseUrl,
+    });
+    // }
 
     // ---- Step 5: Final Supabase sync + persist ----
     step = 'persisting';
