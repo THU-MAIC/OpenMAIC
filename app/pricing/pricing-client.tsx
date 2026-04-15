@@ -6,7 +6,8 @@ import { motion } from 'motion/react';
 import { Check, Zap, Crown, Shield, BookOpen, Sparkles, Clock, Users, MessageCircle, Headphones } from 'lucide-react';
 import { toast } from 'sonner';
 import { LIFETIME_MAX_SLOTS } from '@/lib/stripe/plans';
-import type { UserPlan } from '@/lib/stripe/plans';
+import type { UserPlan, SubscriptionPeriod } from '@/lib/stripe/plans';
+import { UpgradeSuccessModal } from '@/components/billing/upgrade-success-modal';
 
 // ── Feature rows ──────────────────────────────────────────────────────────────
 
@@ -34,11 +35,25 @@ export function PricingClient() {
   const [plan, setPlan] = useState<UserPlan | null>(null);
   const [lifetimeSlots, setSlots] = useState<{ taken: number; max: number } | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
+  const [successModal, setSuccessModal] = useState<{ open: boolean; period: SubscriptionPeriod }>({
+    open: false,
+    period: null,
+  });
 
-  // Toast on redirect back from Stripe
+  // Show success modal (or toast) on redirect back from Stripe
   useEffect(() => {
-    if (searchParams.get('success')) {
-      toast.success('Subscription activated! Welcome to Plus 🎉');
+    const successParam = searchParams.get('success');
+    const periodParam = searchParams.get('period') as SubscriptionPeriod | null;
+    const topupParam = searchParams.get('topup');
+
+    if (successParam) {
+      // Delay slightly so plan fetch can complete first
+      const timer = setTimeout(() => {
+        setSuccessModal({ open: true, period: periodParam ?? 'monthly' });
+      }, 600);
+      return () => clearTimeout(timer);
+    } else if (topupParam === 'success') {
+      toast.success('10 courses added to your account! Happy learning 🎉');
     } else if (searchParams.get('canceled')) {
       toast.info('Checkout canceled — no charge was made.');
     }
@@ -100,6 +115,12 @@ export function PricingClient() {
   const slotsLeft = lifetimeSlots ? lifetimeSlots.max - lifetimeSlots.taken : LIFETIME_MAX_SLOTS;
 
   return (
+    <>
+    <UpgradeSuccessModal
+      open={successModal.open}
+      period={successModal.period}
+      onClose={() => setSuccessModal((s) => ({ ...s, open: false }))}
+    />
     <main className="min-h-screen bg-[#f0f4f8] py-16 px-4">
       {/* ── Hero ── */}
       <div className="text-center mb-14">
@@ -428,6 +449,7 @@ export function PricingClient() {
         </div>
       )}
     </main>
+    </>
   );
 }
 

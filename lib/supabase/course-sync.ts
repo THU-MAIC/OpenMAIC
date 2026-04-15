@@ -39,8 +39,23 @@ export async function savePromptToSupabase(params: {
   }
 }
 
+/** Thrown when the user has exhausted their course credits (HTTP 402). */
+export class CourseCreditsExhaustedError extends Error {
+  reason: string;
+  constructor(message: string, reason: string) {
+    super(message);
+    this.name = 'CourseCreditsExhaustedError';
+    this.reason = reason;
+  }
+}
+
 /**
- * Upload a course and its scenes to Supabase
+ * Upload a course and its scenes to Supabase.
+ * Throws `CourseCreditsExhaustedError` if the user has no remaining credits.
+ *
+ * Pass `creditsPreConsumed: true` when the calling code already consumed a
+ * credit via POST /api/user/credits/check at the start of generation, so
+ * the courses API skips the double-check.
  */
 export async function uploadCourseToSupabase(params: {
   userId: string;
@@ -48,6 +63,7 @@ export async function uploadCourseToSupabase(params: {
   stage: Stage;
   scenes: Scene[];
   thumbnail?: string;
+  creditsPreConsumed?: boolean;
 }) {
   try {
     const res = await fetch('/api/courses', {
@@ -67,13 +83,23 @@ export async function uploadCourseToSupabase(params: {
         // Send the full Stage object so the API can preserve agentIds, whiteboard,
         // generatedAgentConfigs etc. in the Storage content.json blob.
         stage: params.stage,
+        credits_pre_consumed: params.creditsPreConsumed ?? false,
       }),
     });
+
+    if (res.status === 402) {
+      const data = await res.json();
+      throw new CourseCreditsExhaustedError(
+        data.error || 'Course credits exhausted',
+        data.reason || 'free_limit_reached',
+      );
+    }
 
     if (!res.ok) throw new Error('Failed to upload course');
     const data = await res.json();
     return data.course.id as string;
   } catch (err) {
+    if (err instanceof CourseCreditsExhaustedError) throw err;
     log.error('Error uploading course to Supabase:', err);
     return null;
   }

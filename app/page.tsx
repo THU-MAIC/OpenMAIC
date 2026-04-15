@@ -63,6 +63,7 @@ import {
   fetchUserCoursesFromSupabase,
   downloadCourseFromSupabase,
 } from '@/lib/supabase/course-sync';
+import { CoursesExhaustedModal } from '@/components/billing/courses-exhausted-modal';
 
 const log = createLogger('Home');
 
@@ -157,6 +158,8 @@ function HomePage() {
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
+  const [showExhaustedModal, setShowExhaustedModal] = useState(false);
+  const [exhaustedReason, setExhaustedReason] = useState<string | undefined>(undefined);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
@@ -336,6 +339,29 @@ function HomePage() {
     if (!form.requirement.trim()) {
       setError(t('upload.requirementRequired'));
       return;
+    }
+
+    // Pre-flight credit check (only for authenticated users)
+    if (user) {
+      try {
+        const planRes = await fetch('/api/user/plan');
+        if (planRes.ok) {
+          const planJson = await planRes.json();
+          if (planJson.success && planJson.credits) {
+            const remaining = planJson.credits.remaining;
+            if (remaining !== 'unlimited' && remaining <= 0) {
+              const reason = planJson.plan?.account_type === 'FREE'
+                ? 'free_limit_reached'
+                : 'monthly_limit_reached';
+              setExhaustedReason(reason);
+              setShowExhaustedModal(true);
+              return;
+            }
+          }
+        }
+      } catch {
+        // Non-fatal: proceed with generation even if credit check fails
+      }
     }
 
     setError(null);
@@ -752,6 +778,13 @@ function HomePage() {
       <div className="w-full shrink-0 pt-6 pb-4 text-center text-xs text-muted-foreground/100 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm border-t border-border/10">
         Slate by Chalk Labs
       </div>
+
+      {/* Courses exhausted modal — shown when user has 0 credits */}
+      <CoursesExhaustedModal
+        open={showExhaustedModal}
+        reason={exhaustedReason}
+        onClose={() => setShowExhaustedModal(false)}
+      />
     </div>
   );
 }

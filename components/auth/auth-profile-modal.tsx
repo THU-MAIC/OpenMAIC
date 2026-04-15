@@ -2,9 +2,10 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, LogOut, Mail, Zap, Crown, Shield, BookOpen, ExternalLink } from 'lucide-react';
+import { X, LogOut, Mail, Zap, Crown, Shield, BookOpen, ExternalLink, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { LeaderboardCard } from '../leaderboard/leaderboard-card';
+import { usePlanStore } from '@/lib/store/user-plan';
 import type { UserPlan } from '@/lib/stripe/plans';
 
 interface AuthProfileModalProps {
@@ -23,23 +24,27 @@ const ACCOUNT_META: Record<string, { label: string; color: string; bg: string; i
 function PlanCreditsSection({
   plan,
   credits,
+  isLoading,
+  onRefresh,
   onClose,
 }: {
   plan: UserPlan | null;
-  credits: any;
+  credits: { used: number; total: number | 'unlimited'; remaining: number | 'unlimited'; resetsAt: string | null } | null;
+  isLoading: boolean;
+  onRefresh: () => void;
   onClose: () => void;
 }) {
-  if (!plan) {
-    return (
-      <div className="mb-4 h-20 rounded-2xl bg-[#f0f4f8] animate-pulse" />
-    );
+  if (!plan && isLoading) {
+    return <div className="mb-4 h-20 rounded-2xl bg-[#f0f4f8] animate-pulse" />;
   }
+
+  if (!plan) return null;
 
   const meta   = ACCOUNT_META[plan.account_type] ?? ACCOUNT_META.FREE;
   const isPaid = plan.account_type === 'PLUS' || plan.account_type === 'ADMIN';
 
-  const used      = credits?.used   ?? 0;
-  const total     = credits?.total  ?? (plan.account_type === 'FREE' ? 2 : 30);
+  const used      = credits?.used      ?? 0;
+  const total     = credits?.total     ?? (plan.account_type === 'FREE' ? 2 : 30);
   const remaining = credits?.remaining ?? (total === 'unlimited' ? 'unlimited' : Math.max(0, (total as number) - used));
   const pct       = total === 'unlimited' ? 0 : Math.min(100, Math.round((used / (total as number)) * 100));
 
@@ -56,7 +61,18 @@ function PlanCreditsSection({
 
   return (
     <div className="mb-4">
-      <h4 className="text-[11px] font-black text-[#073b4c]/30 uppercase tracking-widest mb-2 px-1">Plan & Credits</h4>
+      <div className="flex items-center justify-between mb-2 px-1">
+        <h4 className="text-[11px] font-black text-[#073b4c]/30 uppercase tracking-widest">Plan & Credits</h4>
+        <button
+          onClick={onRefresh}
+          disabled={isLoading}
+          title="Refresh plan data"
+          className="size-5 flex items-center justify-center rounded-full hover:bg-[#f0f4f8]
+            text-[#073b4c]/30 hover:text-[#073b4c]/60 transition-all disabled:opacity-40 cursor-pointer"
+        >
+          <RefreshCw className={`size-3 ${isLoading ? 'animate-spin' : ''}`} />
+        </button>
+      </div>
 
       {/* Account type badge */}
       <div
@@ -76,7 +92,7 @@ function PlanCreditsSection({
         {!isPaid && (
           <button
             onClick={handleUpgrade}
-            className="flex items-center gap-1 text-[10px] font-black text-[#118AB2] hover:text-[#073b4c] transition-colors"
+            className="flex items-center gap-1 text-[10px] font-black text-[#118AB2] hover:text-[#073b4c] transition-colors cursor-pointer"
           >
             <Crown className="size-3" /> Upgrade
           </button>
@@ -84,7 +100,7 @@ function PlanCreditsSection({
         {isPaid && plan.subscription_period !== 'lifetime' && (
           <button
             onClick={handleManageBilling}
-            className="flex items-center gap-1 text-[10px] font-semibold text-[#073b4c]/40 hover:text-[#073b4c] transition-colors"
+            className="flex items-center gap-1 text-[10px] font-semibold text-[#073b4c]/40 hover:text-[#073b4c] transition-colors cursor-pointer"
           >
             Manage <ExternalLink className="size-2.5" />
           </button>
@@ -106,7 +122,7 @@ function PlanCreditsSection({
           <>
             <div className="w-full h-1.5 rounded-full bg-[#073b4c]/10 overflow-hidden">
               <div
-                className="h-full rounded-full transition-all duration-500"
+                className="h-full rounded-full transition-all duration-700"
                 style={{
                   width: `${pct}%`,
                   backgroundColor: pct >= 90 ? '#ef476f' : pct >= 60 ? '#ffd166' : '#06D6A0',
@@ -124,7 +140,7 @@ function PlanCreditsSection({
         {!isPaid && (remaining as number) <= 0 && (
           <button
             onClick={handleUpgrade}
-            className="mt-2 w-full h-7 rounded-xl bg-[#073b4c] text-white text-[10px] font-black hover:bg-[#118AB2] transition-colors"
+            className="mt-2 w-full h-7 rounded-xl bg-[#073b4c] text-white text-[10px] font-black hover:bg-[#118AB2] transition-colors cursor-pointer"
           >
             Upgrade to Plus — 30 courses/month
           </button>
@@ -143,27 +159,21 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
   const { user, signOut } = useAuth();
   const panelRef = useRef<HTMLDivElement>(null);
   const [stats, setStats] = useState<any>(null);
-  const [plan, setPlan] = useState<UserPlan | null>(null);
-  const [credits, setCredits] = useState<any>(null);
+
+  // Plan data comes from the global store — always up-to-date across the app
+  const { plan, credits, isLoading: planLoading, refetch: refetchPlan } = usePlanStore();
 
   useEffect(() => {
     if (open && user) {
+      // Always refresh plan data when the modal opens
+      refetchPlan();
+
       fetch('/api/analytics/user-stats')
         .then(res => res.json())
         .then(json => { if (json.success) setStats(json.stats); })
         .catch(err => console.error('Failed to fetch stats:', err));
-
-      fetch('/api/user/plan')
-        .then(res => res.json())
-        .then(json => {
-          if (json.success) {
-            setPlan(json.plan);
-            setCredits(json.credits);
-          }
-        })
-        .catch(err => console.error('Failed to fetch plan:', err));
     }
-  }, [open, user]);
+  }, [open, user, refetchPlan]);
 
   // Close on click outside
   useEffect(() => {
@@ -283,7 +293,13 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
                 </div>
               </div>
               {/* ── Plan & Credits ── */}
-              <PlanCreditsSection plan={plan} credits={credits} onClose={onClose} />
+              <PlanCreditsSection
+                plan={plan}
+                credits={credits}
+                isLoading={planLoading}
+                onRefresh={refetchPlan}
+                onClose={onClose}
+              />
 
               {/* Stats Section */}
               <div className="mb-5">

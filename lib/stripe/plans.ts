@@ -14,8 +14,11 @@ export const PLAN_LIMITS: Record<AccountType, PlanLimits> = {
 
 export const LIFETIME_MAX_SLOTS = 100;
 
+/** Number of courses added per top-up purchase */
+export const TOPUP_COURSES_AMOUNT = 10;
+
 export interface PricingPlan {
-  id: 'monthly' | 'yearly' | 'lifetime';
+  id: 'monthly' | 'yearly' | 'lifetime' | 'topup';
   label: string;
   price: number;          // in cents
   displayPrice: string;
@@ -53,9 +56,18 @@ export const PRICING_PLANS: PricingPlan[] = [
     stripePriceEnvKey: 'STRIPE_PRICE_LIFETIME',
     badge: 'Limited — 100 spots',
   },
+  {
+    id: 'topup',
+    label: 'Course Top-Up',
+    price: 500,
+    displayPrice: '$5',
+    period: 'one-time',
+    stripePriceEnvKey: 'STRIPE_PRICE_TOPUP',
+    badge: '+10 courses',
+  },
 ];
 
-export function getStripePriceId(period: 'monthly' | 'yearly' | 'lifetime'): string {
+export function getStripePriceId(period: 'monthly' | 'yearly' | 'lifetime' | 'topup'): string {
   const plan = PRICING_PLANS.find((p) => p.id === period);
   if (!plan) throw new Error(`Unknown plan period: ${period}`);
   const priceId = process.env[plan.stripePriceEnvKey];

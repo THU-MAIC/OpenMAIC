@@ -17,8 +17,11 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useAuth } from '@/lib/hooks/use-auth';
 import {
   savePromptToSupabase,
-  uploadCourseToSupabase
+  uploadCourseToSupabase,
+  CourseCreditsExhaustedError,
 } from '@/lib/supabase/course-sync';
+import { CoursesExhaustedModal } from '@/components/billing/courses-exhausted-modal';
+import { usePlanStore } from '@/lib/store/user-plan';
 import {
   loadImageMapping,
   loadPdfBlob,
@@ -50,6 +53,10 @@ function GenerationPreviewContent() {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
   const [stageIdForEntry, setStageIdForEntry] = useState<string | null>(null);
+  const [exhaustedReason, setExhaustedReason] = useState<string | undefined>(undefined);
+  const [showExhaustedModal, setShowExhaustedModal] = useState(false);
+  /** True once the credit has been consumed at generation start */
+  const creditConsumedRef = useRef(false);
   const userInteractedRef = useRef(false);
   const { user } = useAuth();
 
@@ -143,6 +150,30 @@ function GenerationPreviewContent() {
   // Main generation flow
   const startGeneration = async () => {
     if (!session) return;
+
+    // ── Credit pre-check (authenticated users only) ──────────────────────────
+    // Consume one course credit at generation START so the profile shows the
+    // updated remaining count immediately — before the generation finishes.
+    if (user) {
+      try {
+        const creditRes = await fetch('/api/user/credits/check', { method: 'POST' });
+        const creditJson = await creditRes.json();
+
+        if (creditJson.allowed === false) {
+          setExhaustedReason(creditJson.reason ?? 'free_limit_reached');
+          setShowExhaustedModal(true);
+          return;
+        }
+
+        // Credit consumed — mark so the courses API skips double-check
+        creditConsumedRef.current = true;
+        // Immediately refresh the plan store so the profile badge is up-to-date
+        usePlanStore.getState().refetch();
+      } catch {
+        // Non-fatal: proceed even if the pre-check request fails
+        // (the courses API will do a final check on save)
+      }
+    }
 
     // Create AbortController for this generation run
     abortControllerRef.current?.abort();
@@ -817,12 +848,23 @@ function GenerationPreviewContent() {
               creationPromptId: promptId || undefined,
               stage: currentStage,
               scenes: currentScenes,
-              thumbnail: '' // Real thumbnail generation can be added later
+              thumbnail: '', // Real thumbnail generation can be added later
+              creditsPreConsumed: creditConsumedRef.current,
             });
             log.info('[GenerationSync] Supabase sync completed');
+
+            // Refresh plan store so the profile reflects the final state
+            usePlanStore.getState().refetch();
           } catch (syncErr) {
-            log.error('[GenerationSync] Failed to sync to Supabase:', syncErr);
-            // Non-fatal: local storage is already done
+            if (syncErr instanceof CourseCreditsExhaustedError) {
+              // Credit wasn't pre-consumed (direct API path) and user is over limit
+              setExhaustedReason(syncErr.reason);
+              setShowExhaustedModal(true);
+              log.warn('[GenerationSync] Credits exhausted, showing top-up modal');
+            } else {
+              log.error('[GenerationSync] Failed to sync to Supabase:', syncErr);
+              // Non-fatal: local storage is already done
+            }
           }
         }
       }
@@ -1200,6 +1242,13 @@ function GenerationPreviewContent() {
           agentRevealResolveRef.current?.();
           agentRevealResolveRef.current = null;
         }}
+      />
+
+      {/* Courses Exhausted Modal */}
+      <CoursesExhaustedModal
+        open={showExhaustedModal}
+        reason={exhaustedReason}
+        onClose={() => setShowExhaustedModal(false)}
       />
     </div>
   );

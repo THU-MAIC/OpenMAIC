@@ -61,7 +61,8 @@ export async function POST(req: NextRequest) {
       language,
       style,
       scenes,
-      stage: fullStage,  // full Stage object for complete storage serialisation
+      stage: fullStage,         // full Stage object for complete storage serialisation
+      credits_pre_consumed,     // true when generation-preview already consumed the credit
     } = body;
 
     if (!user_id || !stage_id || !name) {
@@ -77,28 +78,34 @@ export async function POST(req: NextRequest) {
       .maybeSingle();
 
     if (!existingCourse) {
-      // New course — consume a credit
-      const { data: creditResult, error: creditError } = await supabase.rpc(
-        'increment_course_credit',
-        { p_user_id: user_id },
-      );
-
-      if (creditError) {
-        console.error('Credit check RPC error:', creditError);
-        // Non-fatal if RPC unavailable (e.g. migration not yet applied)
-      } else if (creditResult && creditResult.allowed === false) {
-        const reason = creditResult.reason as string;
-        return NextResponse.json(
-          {
-            error:
-              reason === 'free_limit_reached'
-                ? 'You have used all your free course credits. Upgrade to Plus for 30 courses/month.'
-                : 'You have reached your monthly course limit. Wait for your cycle to reset or upgrade.',
-            reason,
-            upgrade_url: '/pricing',
-          },
-          { status: 402 },
+      if (credits_pre_consumed) {
+        // Credit was already consumed at generation start — skip the RPC check
+        // to avoid double-counting. The generation-preview page called
+        // POST /api/user/credits/check before starting the generation.
+      } else {
+        // Fallback: consume credit here (e.g. direct API calls bypassing the UI)
+        const { data: creditResult, error: creditError } = await supabase.rpc(
+          'increment_course_credit',
+          { p_user_id: user_id },
         );
+
+        if (creditError) {
+          console.error('Credit check RPC error:', creditError);
+          // Non-fatal if RPC unavailable (e.g. migration not yet applied)
+        } else if (creditResult && creditResult.allowed === false) {
+          const reason = creditResult.reason as string;
+          return NextResponse.json(
+            {
+              error:
+                reason === 'free_limit_reached'
+                  ? 'You have used all your free course credits. Upgrade to Plus for 30 courses/month.'
+                  : 'You have reached your monthly course limit. Wait for your cycle to reset or upgrade.',
+              reason,
+              upgrade_url: '/pricing',
+            },
+            { status: 402 },
+          );
+        }
       }
     }
 
