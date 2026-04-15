@@ -10,7 +10,6 @@ import { type NextRequest } from 'next/server';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { getTemporalClient } from '@/temporal/client';
 import { TASK_QUEUE } from '@/temporal/constants';
-import { generateRemainingWorkflow } from '@/temporal/workflows/generation-preview.workflow';
 import type { GenerateRemainingWorkflowInput } from '@/temporal/workflows/generation-preview.workflow';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
@@ -53,7 +52,8 @@ export async function POST(req: NextRequest) {
 
     // Start (or re-use if already running for this stageId)
     try {
-      await client.workflow.start(generateRemainingWorkflow, {
+      // Pass workflow type as a string to avoid name mangling during Next.js production builds.
+      await client.workflow.start('generateRemainingWorkflow', {
         taskQueue: TASK_QUEUE,
         workflowId: jobId,
         args: [input],

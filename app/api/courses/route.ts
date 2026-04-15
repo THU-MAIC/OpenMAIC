@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { getTemporalClient, TASK_QUEUE } from '@/temporal/client';
-import { generateCatalogMetadataWorkflow } from '@/temporal/workflows/course-catalog.workflow';
 
 /**
  * GET /api/courses?userId=xxx
@@ -168,7 +167,8 @@ export async function POST(req: NextRequest) {
     if (name && sceneTitles.length > 0) {
       try {
         const temporalClient = await getTemporalClient();
-        await temporalClient.workflow.start(generateCatalogMetadataWorkflow, {
+        // Pass workflow type as a string to avoid name mangling during Next.js production builds.
+        await temporalClient.workflow.start('generateCatalogMetadataWorkflow', {
           taskQueue: TASK_QUEUE,
           workflowId: `catalog-${course.id}`,
           args: [{ courseId: course.id, courseName: name, language: language || 'en-US', sceneTitles }],

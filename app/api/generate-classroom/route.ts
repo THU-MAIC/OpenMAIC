@@ -3,7 +3,6 @@ import { nanoid } from 'nanoid';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { getTemporalClient, TASK_QUEUE } from '@/temporal/client';
-import { classroomGenerationWorkflow } from '@/temporal/workflows/classroom-generation.workflow';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
 import { createLogger } from '@/lib/logger';
 
@@ -41,7 +40,8 @@ export async function POST(req: NextRequest) {
     const jobId = nanoid(10);
 
     const client = await getTemporalClient();
-    await client.workflow.start(classroomGenerationWorkflow, {
+    // Pass workflow type as a string to avoid name mangling during Next.js production builds.
+    await client.workflow.start('classroomGenerationWorkflow', {
       taskQueue: TASK_QUEUE,
       workflowId: jobId,
       args: [{ input: body, baseUrl }],
