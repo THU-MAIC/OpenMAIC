@@ -164,9 +164,9 @@ export async function generateRemainingWorkflow(
   const minimalInput: GenerateClassroomInput = {
     requirement,
     language: stage.language,
-    enableImageGeneration: false, // media handled separately
-    enableVideoGeneration: false,
-    enableTTS: false, // TTS handled separately
+    enableImageGeneration: true, // media handled separately
+    enableVideoGeneration: true,
+    enableTTS: true, // TTS handled separately
   };
 
   try {
