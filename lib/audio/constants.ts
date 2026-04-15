@@ -226,6 +226,8 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
         gender: 'female',
       },
       { id: 'en-US-GuyNeural', name: 'Guy', language: 'en-US', gender: 'male' },
+      { id: 'ca-ES-AlbaNeural', name: 'Alba (Català)', language: 'ca-ES', gender: 'female' },
+      { id: 'ca-ES-EnricNeural', name: 'Enric (Català)', language: 'ca-ES', gender: 'male' },
     ],
     supportedFormats: ['mp3', 'wav', 'ogg'],
     speedRange: { min: 0.5, max: 2.0, default: 1.0 },
