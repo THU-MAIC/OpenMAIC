@@ -38,9 +38,10 @@ export async function POST(req: NextRequest) {
       agents: body.agents ?? [],
       completedOrders: body.completedOrders ?? [],
       courseDescription: body.courseDescription,
-      enableTTS: body.enableTTS ?? false,
-      enableImageGeneration: body.enableImageGeneration ?? false,
-      enableVideoGeneration: body.enableVideoGeneration ?? false,
+      // Default to generating all content unless explicitly disabled.
+      enableTTS: body.enableTTS ?? true,
+      enableImageGeneration: body.enableImageGeneration ?? true,
+      enableVideoGeneration: body.enableVideoGeneration ?? true,
       requirement: body.requirement,
     };
 

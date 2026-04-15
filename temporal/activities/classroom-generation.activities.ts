@@ -23,6 +23,10 @@ import {
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
 import {
+  generateMediaToSupabaseActivity,
+  generateSceneTTSToSupabaseActivity,
+} from './preview-generation.activities';
+import {
   pushLatestGeneratedSceneToSupabase,
   replaceAllCourseScenesInSupabase,
 } from '@/lib/server/incremental-course-db-sync';
@@ -37,6 +41,10 @@ const log = createLogger('ClassroomGenerationActivity');
 // ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
+
+function isSupabaseConfigured(): boolean {
+  return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+}
 
 function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
   return language === 'en-US' ? 'en-US' : 'zh-CN';
@@ -306,7 +314,7 @@ export interface GenerateSingleSceneParams {
 export async function generateSingleSceneActivity(
   params: GenerateSingleSceneParams,
 ): Promise<Scene | null> {
-  const { outline, stage, agents, input } = params;
+  const { outline, stage, agents, input: _input } = params;
 
   const { model: languageModel, modelInfo } = resolveModel({});
 
@@ -391,11 +399,41 @@ export interface GenerateMediaParams {
 }
 
 export async function generateMediaActivity(params: GenerateMediaParams): Promise<Scene[]> {
-  const { scenes, outlines, stageId, baseUrl } = params;
+  const {
+    scenes,
+    outlines,
+    stageId,
+    baseUrl,
+    enableImageGeneration = true,
+    enableVideoGeneration = true,
+  } = params;
+
+  if (!enableImageGeneration && !enableVideoGeneration) return scenes;
 
   const scenesCopy: Scene[] = JSON.parse(JSON.stringify(scenes));
   try {
-    const mediaMap = await generateMediaForClassroom(outlines, stageId, baseUrl);
+    const filteredOutlines: SceneOutline[] = outlines.map((o) => ({
+      ...o,
+      mediaGenerations: (o.mediaGenerations ?? []).filter((m) => {
+        if (m.type === 'image') return enableImageGeneration;
+        if (m.type === 'video') return enableVideoGeneration;
+        return false;
+      }),
+    }));
+
+    // In production, the Temporal Worker runs separately from the web app.
+    // Generating media to local disk and serving via /api/classroom-media won't work there.
+    // Prefer uploading to Supabase Storage when configured.
+    if (isSupabaseConfigured()) {
+      const updated = await generateMediaToSupabaseActivity({
+        scenes: scenesCopy,
+        outlines: filteredOutlines,
+        stageId,
+      });
+      return updated;
+    }
+
+    const mediaMap = await generateMediaForClassroom(filteredOutlines, stageId, baseUrl);
     replaceMediaPlaceholders(scenesCopy, mediaMap);
     log.info(`Media generation complete: ${Object.keys(mediaMap).length} files`);
   } catch (err) {
@@ -421,6 +459,20 @@ export async function generateTTSActivity(params: GenerateTTSParams): Promise<Sc
 
   const scenesCopy: Scene[] = JSON.parse(JSON.stringify(scenes));
   try {
+    // Prefer uploading TTS audio to Supabase when configured; filesystem + /api route won't work
+    // when the Worker is deployed separately from the web app.
+    if (isSupabaseConfigured()) {
+      for (let i = 0; i < scenesCopy.length; i++) {
+        const updatedScene = await generateSceneTTSToSupabaseActivity({
+          scene: scenesCopy[i],
+          stageId,
+        });
+        scenesCopy[i] = updatedScene;
+      }
+      log.info('TTS generation/upload complete');
+      return scenesCopy;
+    }
+
     await generateTTSForClassroom(scenesCopy, stageId, baseUrl);
     log.info('TTS generation complete');
   } catch (err) {
