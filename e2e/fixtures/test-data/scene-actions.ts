@@ -8,7 +8,7 @@ export function createMockSceneActionsResponse(stageId: string) {
       id: 'scene-0',
       stageId,
       type: 'slide',
-      title: '光合作用的基本概念',
+      title: '',
       order: 0,
       content: {
         type: 'slide',
@@ -21,7 +21,7 @@ export function createMockSceneActionsResponse(stageId: string) {
             {
               type: 'text',
               id: 'title-el',
-              content: '光合作用的基本概念',
+              content: '',
               left: 50,
               top: 50,
               width: 900,
@@ -35,7 +35,7 @@ export function createMockSceneActionsResponse(stageId: string) {
           id: 'action-0',
           type: 'speech',
           agent: 'teacher',
-          text: '今天我们来学习光合作用的基本概念。',
+          text: '。',
         },
       ],
     },

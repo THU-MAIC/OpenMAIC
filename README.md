@@ -20,7 +20,7 @@
   <br/>
   <a href="https://discord.gg/PtZaaTbH"><img src="https://img.shields.io/badge/Discord-Join_Community-5865F2?style=for-the-badge&logo=discord&logoColor=white" alt="Discord"/></a>
   &nbsp;
-  <a href="community/feishu.md"><img src="https://img.shields.io/badge/Feishu-飞书交流群-00D6B9?style=for-the-badge&logo=bytedance&logoColor=white" alt="Feishu"/></a>
+  <a href="community/feishu.md"><img src="https://img.shields.io/badge/Feishu-Community_Group-00D6B9?style=for-the-badge&logo=bytedance&logoColor=white" alt="Feishu"/></a>
   <br/>
   <img src="https://img.shields.io/badge/Next.js-16-black?style=flat-square&logo=next.js" alt="Next.js"/>
   <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React"/>
@@ -30,7 +30,7 @@
 </p>
 
 <p align="center">
-  <a href="./README.md">English</a> | <a href="./README-zh.md">简体中文</a>
+  <a href="./README.md">English</a>
   <br/>
   <a href="https://open.maic.chat/">Live Demo</a> · <a href="#-quick-start">Quick Start</a> · <a href="#-features">Features</a> · <a href="#-use-cases">Use Cases</a> · <a href="#-openclaw-integration">OpenClaw</a>
 </p>

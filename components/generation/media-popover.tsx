@@ -60,18 +60,7 @@ const VIDEO_PROVIDER_ICONS: Record<string, string> = {
 type TabId = 'image' | 'video' | 'tts' | 'asr';
 
 const LANG_LABELS: Record<string, string> = {
-  zh: '中文',
   en: 'English',
-  ja: '日本語',
-  ko: '한국어',
-  fr: 'Français',
-  de: 'Deutsch',
-  es: 'Español',
-  pt: 'Português',
-  ru: 'Русский',
-  it: 'Italiano',
-  ar: 'العربية',
-  hi: 'हिन्दी',
 };
 
 const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [

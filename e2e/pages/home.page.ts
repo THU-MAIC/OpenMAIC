@@ -12,7 +12,7 @@ export class HomePage {
     this.textarea = page.locator('textarea');
     this.enterButton = page
       .getByRole('button', { name: /enter/i })
-      .or(page.locator('button:has-text("进入课堂")'));
+      .or(page.locator('button:has-text("")'));
   }
 
   async goto() {

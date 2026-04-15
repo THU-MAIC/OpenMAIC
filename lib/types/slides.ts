@@ -34,15 +34,6 @@ export const enum ElementTypes {
   AUDIO = 'audio',
 }
 
-/**
- * 渐变
- *
- * type: 渐变类型（径向、线性）
- *
- * colors: 渐变颜色列表（pos: 百分比位置；color: 颜色）
- *
- * rotate: 渐变角度（线性渐变）
- */
 export type GradientType = 'linear' | 'radial';
 export type GradientColor = {
   pos: number;
@@ -56,17 +47,6 @@ export interface Gradient {
 
 export type LineStyleType = 'solid' | 'dashed' | 'dotted';
 
-/**
- * 元素阴影
- *
- * h: 水平偏移量
- *
- * v: 垂直偏移量
- *
- * blur: 模糊程度
- *
- * color: 阴影颜色
- */
 export interface PPTElementShadow {
   h: number;
   v: number;
@@ -74,15 +54,6 @@ export interface PPTElementShadow {
   color: string;
 }
 
-/**
- * 元素边框
- *
- * style?: 边框样式（实线或虚线）
- *
- * width?: 边框宽度
- *
- * color?: 边框颜色
- */
 export interface PPTElementOutline {
   style?: LineStyleType;
   width?: number;
@@ -91,41 +62,11 @@ export interface PPTElementOutline {
 
 export type ElementLinkType = 'web' | 'slide';
 
-/**
- * 元素超链接
- *
- * type: 链接类型（网页、幻灯片页面）
- *
- * target: 目标地址（网页链接、幻灯片页面ID）
- */
 export interface PPTElementLink {
   type: ElementLinkType;
   target: string;
 }
 
-/**
- * 元素通用属性
- *
- * id: 元素ID
- *
- * left: 元素水平方向位置（距离画布左侧）
- *
- * top: 元素垂直方向位置（距离画布顶部）
- *
- * lock?: 锁定元素
- *
- * groupId?: 组合ID（拥有相同组合ID的元素即为同一组合元素成员）
- *
- * width: 元素宽度
- *
- * height: 元素高度
- *
- * rotate: 旋转角度
- *
- * link?: 超链接
- *
- * name?: 元素名
- */
 interface PPTBaseElement {
   id: string;
   left: number;
@@ -152,33 +93,33 @@ export type TextType =
   | 'itemNumber';
 
 /**
- * 文本元素
+ * 
  *
- * type: 元素类型（text）
+ * type: （text）
  *
- * content: 文本内容（HTML字符串）
+ * content: （HTML）
  *
- * defaultFontName: 默认字体（会被文本内容中的HTML内联样式覆盖）
+ * defaultFontName: （HTML）
  *
- * defaultColor: 默认颜色（会被文本内容中的HTML内联样式覆盖）
+ * defaultColor: （HTML）
  *
- * outline?: 边框
+ * outline?: 
  *
- * fill?: 填充色
+ * fill?: 
  *
- * lineHeight?: 行高（倍），默认1.5
+ * lineHeight?: （），1.5
  *
- * wordSpace?: 字间距，默认0
+ * wordSpace?: ，0
  *
- * opacity?: 不透明度，默认1
+ * opacity?: ，1
  *
- * shadow?: 阴影
+ * shadow?: 
  *
- * paragraphSpace?: 段间距，默认 5px
+ * paragraphSpace?: ， 5px
  *
- * vertical?: 竖向文本
+ * vertical?: 
  *
- * textType?: 文本类型
+ * textType?: 
  */
 export interface PPTTextElement extends PPTBaseElement {
   type: 'text';
@@ -197,11 +138,11 @@ export interface PPTTextElement extends PPTBaseElement {
 }
 
 /**
- * 图片翻转、形状翻转
+ * 、
  *
- * flipH?: 水平翻转
+ * flipH?: 
  *
- * flipV?: 垂直翻转
+ * flipV?: 
  */
 export interface ImageOrShapeFlip {
   flipH?: boolean;
@@ -209,23 +150,23 @@ export interface ImageOrShapeFlip {
 }
 
 /**
- * 图片滤镜
+ * 
  *
  * https://developer.mozilla.org/zh-CN/docs/Web/CSS/filter
  *
- * 'blur'?: 模糊，默认0（px）
+ * 'blur'?: ，0（px）
  *
- * 'brightness'?: 亮度，默认100（%）
+ * 'brightness'?: ，100（%）
  *
- * 'contrast'?: 对比度，默认100（%）
+ * 'contrast'?: ，100（%）
  *
- * 'grayscale'?: 灰度，默认0（%）
+ * 'grayscale'?: ，0（%）
  *
- * 'saturate'?: 饱和度，默认100（%）
+ * 'saturate'?: ，100（%）
  *
- * 'hue-rotate'?: 色相旋转，默认0（deg）
+ * 'hue-rotate'?: ，0（deg）
  *
- * 'opacity'?: 不透明度，默认100（%）
+ * 'opacity'?: ，100（%）
  */
 export type ImageElementFilterKeys =
   | 'blur'
@@ -252,11 +193,11 @@ export interface ImageElementFilters {
 export type ImageClipDataRange = [[number, number], [number, number]];
 
 /**
- * 图片裁剪
+ * 
  *
- * range: 裁剪范围，例如：[[10, 10], [90, 90]] 表示裁取原图从左上角 10%, 10% 到 90%, 90% 的范围
+ * range: ，：[[10, 10], [90, 90]]  10%, 10%  90%, 90% 
  *
- * shape: 裁剪形状，见 configs/image-clip.ts CLIPPATHS
+ * shape: ， configs/image-clip.ts CLIPPATHS
  */
 export interface ImageElementClip {
   range: ImageClipDataRange;
@@ -266,31 +207,31 @@ export interface ImageElementClip {
 export type ImageType = 'pageFigure' | 'itemFigure' | 'background';
 
 /**
- * 图片元素
+ * 
  *
- * type: 元素类型（image）
+ * type: （image）
  *
- * fixedRatio: 固定图片宽高比例
+ * fixedRatio: 
  *
- * src: 图片地址
+ * src: 
  *
- * outline?: 边框
+ * outline?: 
  *
- * filters?: 图片滤镜
+ * filters?: 
  *
- * clip?: 裁剪信息
+ * clip?: 
  *
- * flipH?: 水平翻转
+ * flipH?: 
  *
- * flipV?: 垂直翻转
+ * flipV?: 
  *
- * shadow?: 阴影
+ * shadow?: 
  *
- * radius?: 圆角半径
+ * radius?: 
  *
- * colorMask?: 颜色蒙版
+ * colorMask?: 
  *
- * imageType?: 图片类型
+ * imageType?: 
  */
 export interface PPTImageElement extends PPTBaseElement {
   type: 'image';
@@ -310,23 +251,23 @@ export interface PPTImageElement extends PPTBaseElement {
 export type ShapeTextAlign = 'top' | 'middle' | 'bottom';
 
 /**
- * 形状内文本
+ * 
  *
- * content: 文本内容（HTML字符串）
+ * content: （HTML）
  *
- * defaultFontName: 默认字体（会被文本内容中的HTML内联样式覆盖）
+ * defaultFontName: （HTML）
  *
- * defaultColor: 默认颜色（会被文本内容中的HTML内联样式覆盖）
+ * defaultColor: （HTML）
  *
- * align: 文本对齐方向（垂直方向）
+ * align: （）
  *
- * lineHeight?: 行高（倍），默认1.5
+ * lineHeight?: （），1.5
  *
- * wordSpace?: 字间距，默认0
+ * wordSpace?: ，0
  *
- * paragraphSpace?: 段间距，默认 5px
+ * paragraphSpace?: ， 5px
  *
- * type: 文本类型
+ * type: 
  */
 export interface ShapeText {
   content: string;
@@ -340,41 +281,41 @@ export interface ShapeText {
 }
 
 /**
- * 形状元素
+ * 
  *
- * type: 元素类型（shape）
+ * type: （shape）
  *
- * viewBox: SVG的viewBox属性，例如 [1000, 1000] 表示 '0 0 1000 1000'
+ * viewBox: SVGviewBox， [1000, 1000]  '0 0 1000 1000'
  *
- * path: 形状路径，SVG path 的 d 属性
+ * path: ，SVG path  d 
  *
- * fixedRatio: 固定形状宽高比例
+ * fixedRatio: 
  *
- * fill: 填充，不存在渐变时生效
+ * fill: ，
  *
- * gradient?: 渐变，该属性存在时将优先作为填充
+ * gradient?: ，
  *
- * pattern?: 图案，该属性存在时将优先作为填充
+ * pattern?: ，
  *
- * outline?: 边框
+ * outline?: 
  *
- * opacity?: 不透明度
+ * opacity?: 
  *
- * flipH?: 水平翻转
+ * flipH?: 
  *
- * flipV?: 垂直翻转
+ * flipV?: 
  *
- * shadow?: 阴影
+ * shadow?: 
  *
- * special?: 特殊形状（标记一些难以解析的形状，例如路径使用了 L Q C A 以外的类型，该类形状在导出后将变为图片的形式）
+ * special?: （， L Q C A ，）
  *
- * text?: 形状内文本
+ * text?: 
  *
- * pathFormula?: 形状路径计算公式
- * 一般情况下，形状的大小变化时仅由宽高基于 viewBox 的缩放比例来调整形状，而 viewBox 本身和 path 不会变化，
- * 但也有一些形状希望能更精确的控制一些关键点的位置，此时就需要提供路径计算公式，通过在缩放时更新 viewBox 并重新计算 path 来重新绘制形状
+ * pathFormula?: 
+ * ， viewBox ， viewBox  path ，
+ * ，， viewBox  path 
  *
- * keypoints?: 关键点位置百分比
+ * keypoints?: 
  */
 export interface PPTShapeElement extends PPTBaseElement {
   type: 'shape';
@@ -398,29 +339,29 @@ export interface PPTShapeElement extends PPTBaseElement {
 export type LinePoint = '' | 'arrow' | 'dot';
 
 /**
- * 线条元素
+ * 
  *
- * type: 元素类型（line）
+ * type: （line）
  *
- * start: 起点位置（[x, y]）
+ * start: （[x, y]）
  *
- * end: 终点位置（[x, y]）
+ * end: （[x, y]）
  *
- * style: 线条样式（实线、虚线、点线）
+ * style: （、、）
  *
- * color: 线条颜色
+ * color: 
  *
- * points: 端点样式（[起点样式, 终点样式]，可选：无、箭头、圆点）
+ * points: （[, ]，：、、）
  *
- * shadow?: 阴影
+ * shadow?: 
  *
- * broken?: 折线控制点位置（[x, y]）
+ * broken?: （[x, y]）
  *
- * broken2?: 双折线控制点位置（[x, y]）
+ * broken2?: （[x, y]）
  *
- * curve?: 二次曲线控制点位置（[x, y]）
+ * curve?: （[x, y]）
  *
- * cubic?: 三次曲线控制点位置（[[x1, y1], [x2, y2]]）
+ * cubic?: （[[x1, y1], [x2, y2]]）
  */
 export interface PPTLineElement extends Omit<PPTBaseElement, 'height' | 'rotate'> {
   type: 'line';
@@ -450,25 +391,25 @@ export interface ChartData {
 }
 
 /**
- * 图表元素
+ * 
  *
- * type: 元素类型（chart）
+ * type: （chart）
  *
- * fill?: 填充色
+ * fill?: 
  *
- * chartType: 图表基础类型（bar/line/pie），所有图表类型都是由这三种基本类型衍生而来
+ * chartType: （bar/line/pie），
  *
- * data: 图表数据
+ * data: 
  *
- * options: 扩展选项
+ * options: 
  *
- * outline?: 边框
+ * outline?: 
  *
- * themeColors: 主题色
+ * themeColors: 
  *
- * textColor?: 坐标和文字颜色
+ * textColor?: 
  *
- * lineColor?: 网格颜色
+ * lineColor?: 
  */
 export interface PPTChartElement extends PPTBaseElement {
   type: 'chart';
@@ -484,25 +425,25 @@ export interface PPTChartElement extends PPTBaseElement {
 
 export type TextAlign = 'left' | 'center' | 'right' | 'justify';
 /**
- * 表格单元格样式
+ * 
  *
- * bold?: 加粗
+ * bold?: 
  *
- * em?: 斜体
+ * em?: 
  *
- * underline?: 下划线
+ * underline?: 
  *
- * strikethrough?: 删除线
+ * strikethrough?: 
  *
- * color?: 字体颜色
+ * color?: 
  *
- * backcolor?: 填充色
+ * backcolor?: 
  *
- * fontsize?: 字体大小
+ * fontsize?: 
  *
- * fontname?: 字体
+ * fontname?: 
  *
- * align?: 对齐方式
+ * align?: 
  */
 export interface TableCellStyle {
   bold?: boolean;
@@ -517,17 +458,17 @@ export interface TableCellStyle {
 }
 
 /**
- * 表格单元格
+ * 
  *
- * id: 单元格ID
+ * id: ID
  *
- * colspan: 合并列数
+ * colspan: 
  *
- * rowspan: 合并行数
+ * rowspan: 
  *
- * text: 文字内容
+ * text: 
  *
- * style?: 单元格样式
+ * style?: 
  */
 export interface TableCell {
   id: string;
@@ -538,17 +479,17 @@ export interface TableCell {
 }
 
 /**
- * 表格主题
+ * 
  *
- * color: 主题色
+ * color: 
  *
- * rowHeader: 标题行
+ * rowHeader: 
  *
- * rowFooter: 汇总行
+ * rowFooter: 
  *
- * colHeader: 第一列
+ * colHeader: 
  *
- * colFooter: 最后一列
+ * colFooter: 
  */
 export interface TableTheme {
   color: string;
@@ -559,19 +500,19 @@ export interface TableTheme {
 }
 
 /**
- * 表格元素
+ * 
  *
- * type: 元素类型（table）
+ * type: （table）
  *
- * outline: 边框
+ * outline: 
  *
- * theme?: 主题
+ * theme?: 
  *
- * colWidths: 列宽数组，如[0.3, 0.5, 0.2]表示三列宽度分别占总宽度的30%, 50%, 20%
+ * colWidths: ，[0.3, 0.5, 0.2]30%, 50%, 20%
  *
- * cellMinHeight: 单元格最小高度
+ * cellMinHeight: 
  *
- * data: 表格数据
+ * data: 
  */
 export interface PPTTableElement extends PPTBaseElement {
   type: 'table';
@@ -583,25 +524,25 @@ export interface PPTTableElement extends PPTBaseElement {
 }
 
 /**
- * LaTeX元素（公式）
+ * LaTeX（）
  *
- * type: 元素类型（latex）
+ * type: （latex）
  *
- * latex: latex代码
+ * latex: latex
  *
- * html: KaTeX渲染的HTML字符串（新版公式使用）
+ * html: KaTeXHTML（）
  *
- * path: svg path（旧版SVG渲染，向后兼容，可选）
+ * path: svg path（SVG，，）
  *
- * color: 颜色（旧版SVG渲染，向后兼容，可选）
+ * color: （SVG，，）
  *
- * strokeWidth: 路径宽度（旧版SVG渲染，向后兼容，可选）
+ * strokeWidth: （SVG，，）
  *
- * viewBox: SVG的viewBox属性（旧版SVG渲染，向后兼容，可选）
+ * viewBox: SVGviewBox（SVG，，）
  *
- * fixedRatio: 固定形状宽高比例（可选）
+ * fixedRatio: （）
  *
- * align: 公式水平对齐方式（left/center/right，默认center）
+ * align: （left/center/right，center）
  */
 export interface PPTLatexElement extends PPTBaseElement {
   type: 'latex';
@@ -616,17 +557,17 @@ export interface PPTLatexElement extends PPTBaseElement {
 }
 
 /**
- * 视频元素
+ * 
  *
- * type: 元素类型（video）
+ * type: （video）
  *
- * src: 视频地址
+ * src: 
  *
- * autoplay: 自动播放
+ * autoplay: 
  *
- * poster: 预览封面
+ * poster: 
  *
- * ext: 视频后缀，当资源链接缺少后缀时用该字段确认资源类型
+ * ext: ，
  */
 export interface PPTVideoElement extends PPTBaseElement {
   type: 'video';
@@ -637,21 +578,21 @@ export interface PPTVideoElement extends PPTBaseElement {
 }
 
 /**
- * 音频元素
+ * 
  *
- * type: 元素类型（audio）
+ * type: （audio）
  *
- * fixedRatio: 固定图标宽高比例
+ * fixedRatio: 
  *
- * color: 图标颜色
+ * color: 
  *
- * loop: 循环播放
+ * loop: 
  *
- * autoplay: 自动播放
+ * autoplay: 
  *
- * src: 音频地址
+ * src: 
  *
- * ext: 音频后缀，当资源链接缺少后缀时用该字段确认资源类型
+ * ext: ，
  */
 export interface PPTAudioElement extends PPTBaseElement {
   type: 'audio';
@@ -678,19 +619,19 @@ export type AnimationType = 'in' | 'out' | 'attention';
 export type AnimationTrigger = 'click' | 'meantime' | 'auto';
 
 /**
- * 元素动画
+ * 
  *
- * id: 动画id
+ * id: id
  *
- * elId: 元素ID
+ * elId: ID
  *
- * effect: 动画效果
+ * effect: 
  *
- * type: 动画类型（入场、退场、强调）
+ * type: （、、）
  *
- * duration: 动画持续时间
+ * duration: 
  *
- * trigger: 动画触发方式(click - 单击时、meantime - 与上一动画同时、auto - 上一动画之后)
+ * trigger: (click - 、meantime - 、auto - )
  */
 export interface PPTAnimation {
   id: string;
@@ -709,15 +650,15 @@ export interface SlideBackgroundImage {
 }
 
 /**
- * 幻灯片背景
+ * 
  *
- * type: 背景类型（纯色、图片、渐变）
+ * type: （、、）
  *
- * color?: 背景颜色（纯色）
+ * color?: （）
  *
- * image?: 图片背景
+ * image?: 
  *
- * gradientType?: 渐变背景
+ * gradientType?: 
  */
 export interface SlideBackground {
   type: SlideBackgroundType;
@@ -748,27 +689,27 @@ export interface SectionTag {
 export type SlideType = 'cover' | 'contents' | 'transition' | 'content' | 'end';
 
 /**
- * 幻灯片页面
+ * 
  *
- * id: 页面ID
+ * id: ID
  *
- * viewportSize: 视口大小
+ * viewportSize: 
  *
- * viewportRatio: 视口宽高比
+ * viewportRatio: 
  *
- * theme: 幻灯片主题
+ * theme: 
  *
- * elements: 元素集合
+ * elements: 
  *
- * background?: 页面背景
+ * background?: 
  *
- * animations?: 元素动画集合
+ * animations?: 
  *
- * turningMode?: 翻页方式
+ * turningMode?: 
  *
- * sectionTag?: 章节标签
+ * sectionTag?: 
  *
- * type?: 页面类型
+ * type?: 
  */
 export interface Slide {
   id: string;
@@ -784,15 +725,15 @@ export interface Slide {
 }
 
 /**
- * 幻灯片主题
+ * 
  *
- * backgroundColor: 页面背景颜色
+ * backgroundColor: 
  *
- * themeColor: 主题色，用于默认创建的形状颜色等
+ * themeColor: ，
  *
- * fontColor: 字体颜色
+ * fontColor: 
  *
- * fontName: 字体
+ * fontName: 
  */
 export interface SlideTheme {
   backgroundColor: string;

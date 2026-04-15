@@ -6,7 +6,6 @@ import {
   PieChart,
   CheckCircle2,
   XCircle,
-  RotateCcw,
   ChevronRight,
   Check,
   BookOpenText,
@@ -134,9 +133,7 @@ async function gradeShortAnswerQuestion(
       status: 'incorrect',
       earned: Math.round(pts * 0.5),
       aiComment:
-        language === 'zh-CN'
-          ? '评分服务暂时不可用，已给予基础分。'
-          : 'Grading service unavailable. Base score given.',
+        'Grading service unavailable. Base score given.',
     };
   }
 }
@@ -802,15 +799,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [phase, questions, answers, locale]);
-
-  const handleRetry = useCallback(() => {
-    setPhase('not_started');
-    setAnswers({});
-    setResults([]);
-    setScoreStatus('idle');
-    clearAnswersCache();
-  }, [clearAnswersCache]);
+  }, [phase, questions, answers, locale, avatar, classroomId, nickname, sceneId, totalPoints]);
 
   const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
 

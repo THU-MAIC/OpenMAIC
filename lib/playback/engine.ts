@@ -44,7 +44,7 @@ const log = createLogger('PlaybackEngine');
 /**
  * If more than 30% of characters are CJK, treat the text as Chinese.
  * Intentionally low: mixed Chinese text often contains punctuation,
- * numbers, and short Latin fragments (e.g. "AI课堂").
+ * numbers, and short Latin fragments (e.g. "AI class").
  */
 const CJK_LANG_THRESHOLD = 0.3;
 

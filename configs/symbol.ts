@@ -1,7 +1,7 @@
 export const SYMBOL_LIST = [
   {
     key: 'letter',
-    label: '字母',
+    label: '',
     children: [
       [
         'α',
@@ -151,7 +151,7 @@ export const SYMBOL_LIST = [
   },
   {
     key: 'number',
-    label: '序号',
+    label: '',
     children: [
       [
         '①',
@@ -268,7 +268,7 @@ export const SYMBOL_LIST = [
   },
   {
     key: 'math',
-    label: '数学',
+    label: '',
     children: [
       ['+', '-', '×', '÷', '=', '~', '¬', '±', '%', '°', 'ǃ', '‰', '‱', '½', '⅓', '⅔', '¼', '¾'],
       [
@@ -385,7 +385,7 @@ export const SYMBOL_LIST = [
   },
   {
     key: 'arrow',
-    label: '箭头',
+    label: '',
     children: [
       [
         '←',
@@ -500,7 +500,7 @@ export const SYMBOL_LIST = [
   },
   {
     key: 'graph',
-    label: '图形',
+    label: '',
     children: [
       [
         '▢',

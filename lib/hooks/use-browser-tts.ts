@@ -62,7 +62,7 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
   const speak = useCallback(
     (text: string, voiceURI?: string) => {
       if (typeof window === 'undefined' || !window.speechSynthesis) {
-        onError?.('浏览器不支持 Web Speech API');
+        onError?.('Browser does not support the Web Speech API');
         return;
       }
 

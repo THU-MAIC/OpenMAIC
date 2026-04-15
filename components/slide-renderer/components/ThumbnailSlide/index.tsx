@@ -49,7 +49,7 @@ export function ThumbnailSlide({
         }}
       >
         <div className="placeholder w-full h-full flex justify-center items-center text-gray-400 text-sm">
-          加载中 ...
+           ...
         </div>
       </div>
     );

@@ -22,7 +22,7 @@ test.describe('Home → Generation', () => {
     await expect(home.enterButton).toBeDisabled();
 
     // Type requirement → button activates
-    await home.fillRequirement('讲解光合作用');
+    await home.fillRequirement('Explain photosynthesis');
     await expect(home.enterButton).toBeEnabled();
 
     // Submit → navigate to generation-preview

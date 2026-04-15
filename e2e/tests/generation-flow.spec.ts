@@ -7,7 +7,7 @@ const SETTINGS_STORAGE = createSettingsStorage();
 const GENERATION_SESSION = JSON.stringify({
   sessionId: 'e2e-test-session',
   requirements: {
-    requirement: '讲解光合作用',
+    requirement: '',
     language: 'zh-CN',
   },
   pdfText: '',

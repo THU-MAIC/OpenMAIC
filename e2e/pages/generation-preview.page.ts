@@ -8,7 +8,7 @@ export class GenerationPreviewPage {
   constructor(page: Page) {
     this.page = page;
     this.stepTitle = page.locator('h2');
-    this.backButton = page.getByRole('button', { name: /back|返回/i });
+    this.backButton = page.getByRole('button', { name: /back|/i });
   }
 
   async goto() {

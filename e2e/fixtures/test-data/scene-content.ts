@@ -23,7 +23,7 @@ export const mockSceneContentResponse = {
         {
           type: 'text',
           id: 'title-el',
-          content: '光合作用的基本概念',
+          content: '',
           left: 50,
           top: 50,
           width: 900,

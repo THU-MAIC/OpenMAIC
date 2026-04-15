@@ -82,7 +82,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         onTranscription?.(result.text);
       } catch (error) {
         log.error('Transcription error:', error);
-        onError?.(error instanceof Error ? error.message : '语音识别失败，请重试');
+        onError?.(error instanceof Error ? error.message : '，');
       } finally {
         setIsProcessing(false);
         setRecordingTime(0);
@@ -106,7 +106,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
         if (asrProviderId === 'browser-native') {
           // Check if Speech Recognition is supported
           if (!window.SpeechRecognition && !window.webkitSpeechRecognition) {
-            onError?.('您的浏览器不支持语音识别功能');
+            onError?.('');
             return;
           }
 
@@ -138,7 +138,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
           recognition.onerror = (event: { error: string }) => {
             log.error('Speech recognition error:', event.error);
-            let errorMessage = '语音识别失败';
+            let errorMessage = '';
 
             switch (event.error) {
               case 'aborted':
@@ -152,19 +152,19 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
                 }
                 return;
               case 'no-speech':
-                errorMessage = '未检测到语音输入';
+                errorMessage = '';
                 break;
               case 'audio-capture':
-                errorMessage = '无法访问麦克风';
+                errorMessage = '';
                 break;
               case 'not-allowed':
-                errorMessage = '麦克风权限被拒绝';
+                errorMessage = '';
                 break;
               case 'network':
-                errorMessage = '网络错误';
+                errorMessage = '';
                 break;
               default:
-                errorMessage = `语音识别错误: ${event.error}`;
+                errorMessage = `: ${event.error}`;
             }
 
             onError?.(errorMessage);
@@ -237,7 +237,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
     } catch (error) {
       busyRef.current = false;
       log.error('Failed to start recording:', error);
-      onError?.('无法访问麦克风，请检查权限设置');
+      onError?.('，');
     }
   }, [onTranscription, onError, transcribeAudio]);
 

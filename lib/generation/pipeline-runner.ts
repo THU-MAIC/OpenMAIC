@@ -18,7 +18,7 @@ export function createGenerationSession(requirements: UserRequirements): Generat
       currentStage: 1,
       overallProgress: 0,
       stageProgress: 0,
-      statusMessage: '初始化中...',
+      statusMessage: '...',
       scenesGenerated: 0,
       totalScenes: 0,
     },
@@ -39,7 +39,7 @@ export async function runGenerationPipeline(
       ...session.progress,
       currentStage: 1,
       overallProgress: 5,
-      statusMessage: '正在分析需求，生成场景大纲...',
+      statusMessage: '，...',
     });
 
     const outlinesResult = await generateSceneOutlinesFromRequirements(
@@ -60,7 +60,7 @@ export async function runGenerationPipeline(
       ...session.progress,
       currentStage: 2,
       overallProgress: 50,
-      statusMessage: '正在生成场景内容...',
+      statusMessage: '...',
       totalScenes: session.sceneOutlines.length,
     });
 
@@ -76,7 +76,7 @@ export async function runGenerationPipeline(
       currentStage: 2,
       overallProgress: 100,
       stageProgress: 100,
-      statusMessage: '生成完成！',
+      statusMessage: '！',
       scenesGenerated: scenesResult.data?.length || 0,
       totalScenes: session.sceneOutlines.length,
     };
