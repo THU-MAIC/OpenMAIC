@@ -11,6 +11,6 @@ export async function GET() {
       rawEnvDefaultModel: process.env.DEFAULT_MODEL || '(not set)',
     });
   } catch (error) {
-    return apiError('RESOLVE_ERROR', 500, error instanceof Error ? error.message : String(error));
+    return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
   }
 }
