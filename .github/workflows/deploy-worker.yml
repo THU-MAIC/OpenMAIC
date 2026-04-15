@@ -1,0 +1,27 @@
+name: Deploy Temporal Worker
+
+# Run after CI passes on main so the worker is never deployed from a broken build.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  deploy:
+    name: Deploy to Railway
+    runs-on: ubuntu-latest
+    # Skip if CI did not succeed (e.g. cancelled or failed).
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    container: ghcr.io/railwayapp/cli:latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Deploy worker to Railway
+        # --detach: trigger the Railway build and return immediately so the
+        # CI job doesn't time out waiting for Docker to finish building.
+        # Monitor build progress in the Railway dashboard.
+        run: railway up --service ${{ vars.RAILWAY_WORKER_SERVICE }} --detach
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
