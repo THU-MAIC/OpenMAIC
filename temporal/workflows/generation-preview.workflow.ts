@@ -154,7 +154,7 @@ export async function generateRemainingWorkflow(
 
   // Keep concurrency bounded to avoid overwhelming downstream APIs and workers.
   // Deterministic batching is replay-safe and still yields parallel Temporal activities.
-  const SCENE_PARALLELISM = 3;
+  const SCENE_PARALLELISM = 10;
 
   setHandler(getPreviewStatusQuery, (): PreviewWorkflowStatus => ({
     status,
