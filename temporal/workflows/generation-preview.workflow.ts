@@ -181,8 +181,9 @@ export async function generateRemainingWorkflow(
     progress = 2;
     message = 'Fetching existing course data';
 
-    const existingScenes = await fetchExistingScenesActivity(stage.id);
-    const newScenes: Scene[] = [];
+    let existingScenes = await fetchExistingScenesActivity(stage.id);
+    let newScenes: Scene[] = [];
+    let didIncrementalMedia = false;
 
     // ---- Step 2: Generate each pending scene ----
     step = 'generating_scenes';
@@ -219,6 +220,34 @@ export async function generateRemainingWorkflow(
       scenesGenerated = newScenes.length;
       completedScenes = [...newScenes];
 
+      // Media generation: run incrementally per-scene so image/video generation
+      // overlaps with the scene generation loop rather than waiting until all
+      // slides are created.
+      if (shouldGenerateImages || shouldGenerateVideo) {
+        const allKnownScenesPreMedia = [...existingScenes, ...newScenes].sort(
+          (a, b) => a.order - b.order,
+        );
+
+        step = 'generating_media';
+        progress = Math.max(progress, 10 + Math.floor((index / totalPending) * 70));
+        message = `Generating media for: ${outline.title}`;
+
+        const allKnownScenesPostMedia = await generateMediaToSupabaseActivity({
+          scenes: allKnownScenesPreMedia,
+          outlines: [outline],
+          stageId: stage.id,
+        });
+
+        // Re-hydrate our local arrays with the media-enriched scene versions.
+        const byId = new Map(allKnownScenesPostMedia.map((s) => [s.id, s]));
+        existingScenes = existingScenes.map((s) => byId.get(s.id) ?? s);
+        newScenes = newScenes.map((s) => byId.get(s.id) ?? s);
+        completedScenes = [...newScenes];
+        didIncrementalMedia = true;
+
+        step = 'generating_scenes';
+      }
+
       // Incremental Supabase sync — include all known scenes so content.json is complete
       const allKnownScenes = [...existingScenes, ...newScenes].sort(
         (a, b) => a.order - b.order,
@@ -243,7 +272,8 @@ export async function generateRemainingWorkflow(
 
     if (
       newScenes.length > 0 &&
-      (shouldGenerateImages || shouldGenerateVideo)
+      (shouldGenerateImages || shouldGenerateVideo) &&
+      !didIncrementalMedia
     ) {
       step = 'generating_media';
       progress = 77;
