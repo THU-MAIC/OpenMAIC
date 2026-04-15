@@ -15,6 +15,7 @@ import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { useAnalytics } from '@/lib/hooks/use-analytics';
 import { useAuth } from '@/lib/hooks/use-auth';
 import type { Scene } from '@/lib/types/stage';
+import { isMediaPlaceholder } from '@/lib/store/media-generation';
 
 const log = createLogger('Classroom');
 
@@ -106,6 +107,93 @@ async function fetchNewScenesFromStorage(
   }
 }
 
+async function fetchAllScenesFromStorage(stageId: string): Promise<Scene[] | null> {
+  try {
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!supabaseUrl) return null;
+    const url = `${supabaseUrl}/storage/v1/object/public/courses/${stageId}/content.json`;
+    const res = await fetch(url, { cache: 'no-store' });
+    if (!res.ok) return null;
+    const { scenes } = (await res.json()) as { scenes: Scene[] };
+    return (scenes ?? []).slice().sort((a, b) => a.order - b.order);
+  } catch {
+    return null;
+  }
+}
+
+function hasUnresolvedMedia(scene: Scene): boolean {
+  // Slide media placeholders
+  if (scene.type === 'slide') {
+    const elements =
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ((scene.content as any)?.canvas?.elements as Array<{ type?: string; src?: string }> | undefined) ??
+      [];
+    for (const el of elements) {
+      if ((el.type === 'image' || el.type === 'video') && typeof el.src === 'string') {
+        if (isMediaPlaceholder(el.src)) return true;
+      }
+    }
+  }
+
+  // TTS placeholders (no audioUrl yet)
+  const actions = (scene.actions ?? []) as Array<{ type?: string; audioUrl?: string; text?: string }>;
+  for (const a of actions) {
+    if (a.type === 'speech' && a.text && !a.audioUrl) return true;
+  }
+
+  return false;
+}
+
+function shouldUpdateFromRemote(localScene: Scene, remoteScene: Scene): boolean {
+  // If remote still has placeholders, nothing to do.
+  if (hasUnresolvedMedia(remoteScene)) {
+    // But remote might still have audioUrl updates even if some other element unresolved.
+    // We'll compare below anyway.
+  }
+
+  // Compare speech audioUrl presence
+  const localSpeechUrls = new Set(
+    (localScene.actions ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((a: any) => a?.type === 'speech' && a?.text)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((a: any) => a.audioUrl)
+      .filter(Boolean),
+  );
+  const remoteSpeechUrls = new Set(
+    (remoteScene.actions ?? [])
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((a: any) => a?.type === 'speech' && a?.text)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((a: any) => a.audioUrl)
+      .filter(Boolean),
+  );
+  if (remoteSpeechUrls.size > localSpeechUrls.size) return true;
+
+  // Compare slide element src upgrades (placeholder -> URL)
+  if (localScene.type === 'slide' && remoteScene.type === 'slide') {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const localEls = ((localScene.content as any)?.canvas?.elements as any[]) ?? [];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const remoteEls = ((remoteScene.content as any)?.canvas?.elements as any[]) ?? [];
+
+    const localById = new Map<string, string>();
+    for (const el of localEls) {
+      if (el?.id && typeof el.src === 'string') localById.set(String(el.id), el.src);
+    }
+    for (const el of remoteEls) {
+      const id = el?.id ? String(el.id) : null;
+      if (!id || typeof el.src !== 'string') continue;
+      const localSrc = localById.get(id);
+      if (typeof localSrc === 'string' && isMediaPlaceholder(localSrc) && !isMediaPlaceholder(el.src)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 // ---------------------------------------------------------------------------
 
 export default function ClassroomDetailPage() {
@@ -128,6 +216,7 @@ export default function ClassroomDetailPage() {
   const temporalJobIdRef = useRef<string | null>(null);
   const temporalPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const temporalLastScenesGeneratedRef = useRef(0);
+  const reconcileTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const syncFullCourse = useCallback(async () => {
     if (!user || fullSyncDoneRef.current) return;
@@ -142,6 +231,40 @@ export default function ClassroomDetailPage() {
       log.warn('[Classroom] Full re-sync failed (non-fatal):', err);
     }
   }, [user]);
+
+  const reconcileMediaFromStorage = useCallback(async () => {
+    const { stage, scenes, currentSceneId } = useStageStore.getState();
+    if (!stage?.id || scenes.length === 0) return false;
+
+    // Quick exit: if nothing in-memory has unresolved media, don't spam storage.
+    const needsReconcile = scenes.some((s) => hasUnresolvedMedia(s));
+    if (!needsReconcile) return false;
+
+    const remoteScenes = await fetchAllScenesFromStorage(stage.id);
+    if (!remoteScenes || remoteScenes.length === 0) return false;
+
+    const localByOrder = new Map(scenes.map((s) => [s.order, s] as const));
+    let changed = false;
+    const merged: Scene[] = scenes.map((local) => {
+      const remote = localByOrder.get(local.order) ? remoteScenes.find((r) => r.order === local.order) : undefined;
+      if (!remote) return local;
+      if (!shouldUpdateFromRemote(local, remote)) return local;
+      changed = true;
+      return remote;
+    });
+
+    if (!changed) return false;
+
+    // Preserve currentSceneId if possible.
+    useStageStore.getState().setScenes(merged);
+    if (currentSceneId) {
+      const stillExists = merged.some((s) => s.id === currentSceneId);
+      if (stillExists) useStageStore.getState().setCurrentSceneId(currentSceneId);
+    }
+    await useStageStore.getState().saveToStorage();
+    log.info('[Classroom] Reconciled media/TTS updates from Storage into IndexedDB.');
+    return true;
+  }, []);
 
   const syncAfterScene = useCallback(async () => {
     if (!user) return;
@@ -266,6 +389,10 @@ export default function ClassroomDetailPage() {
       clearTimeout(temporalPollTimerRef.current);
       temporalPollTimerRef.current = null;
     }
+    if (reconcileTimerRef.current) {
+      clearTimeout(reconcileTimerRef.current);
+      reconcileTimerRef.current = null;
+    }
 
     // Clear previous classroom's media tasks to prevent cross-classroom contamination.
     // Placeholder IDs (gen_img_1, gen_vid_1) are NOT globally unique across stages,
@@ -283,6 +410,7 @@ export default function ClassroomDetailPage() {
     return () => {
       stop();
       if (temporalPollTimerRef.current) clearTimeout(temporalPollTimerRef.current);
+      if (reconcileTimerRef.current) clearTimeout(reconcileTimerRef.current);
     };
   }, [classroomId, loadClassroom, stop]);
 
@@ -386,10 +514,23 @@ export default function ClassroomDetailPage() {
               }
             }
 
+            // While the Temporal job is running, media & TTS may appear later for existing scenes.
+            // Reconcile periodically so the currently open classroom updates without refresh.
+            // We keep this lightweight by only fetching when local scenes still contain placeholders.
+            if (!done) {
+              reconcileMediaFromStorage().catch(() => {
+                /* non-fatal */
+              });
+            }
+
             if (done) {
               temporalJobIdRef.current = null;
               if (status.status === 'succeeded') {
                 log.info('[Classroom] Temporal remaining-job completed');
+                // One final reconcile to ensure media URLs are persisted locally.
+                await reconcileMediaFromStorage().catch(() => {
+                  /* non-fatal */
+                });
                 syncFullCourse();
               } else {
                 log.warn('[Classroom] Temporal remaining-job failed:', status.error);
@@ -433,11 +574,26 @@ export default function ClassroomDetailPage() {
         log.warn('[Classroom] Media generation resume error:', err);
       });
 
+      // Also reconcile server-generated media/TTS (if a worker is producing URLs)
+      // so an actively-open course gets the update without a reload.
+      if (reconcileTimerRef.current) clearTimeout(reconcileTimerRef.current);
+      const tick = async () => {
+        const updated = await reconcileMediaFromStorage().catch(() => false);
+        // If nothing left to reconcile, stop scheduling.
+        if (!updated) {
+          const { scenes } = useStageStore.getState();
+          const stillPending = scenes.some((s) => hasUnresolvedMedia(s));
+          if (!stillPending) return;
+        }
+        reconcileTimerRef.current = setTimeout(tick, 6000);
+      };
+      reconcileTimerRef.current = setTimeout(tick, 2000);
+
       // All scenes are already complete — fire a full re-sync to capture any scenes that
       // were generated after the initial preview-page sync (which only had the first scene).
       syncFullCourse();
     }
-  }, [loading, error, generateRemaining, syncFullCourse, syncAfterScene]);
+  }, [loading, error, generateRemaining, syncFullCourse, syncAfterScene, reconcileMediaFromStorage]);
 
   return (
     <ThemeProvider>
