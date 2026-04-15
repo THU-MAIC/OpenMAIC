@@ -1,6 +1,5 @@
 import { Connection, Client } from '@temporalio/client';
-
-export const TASK_QUEUE = 'slate-background-jobs';
+export { TASK_QUEUE } from './constants';
 
 let _client: Client | null = null;
 

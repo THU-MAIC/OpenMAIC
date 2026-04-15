@@ -31,12 +31,12 @@ file_size_limit = "50MiB"
 [storage.buckets.courses]
 public = true
 file_size_limit = "10MiB"
-allowed_mime_types = ["image/png", "image/jpeg", "application/pdf", "application/json"]
+allowed_mime_types = ["image/png", "image/jpeg", "application/pdf", "application/json", "audio/mpeg", "audio/wav", "audio/ogg", "audio/aac", "audio/mp4"]
 
 [storage.buckets.media]
 public = true
 file_size_limit = "50MiB"
-allowed_mime_types = ["image/png", "image/jpeg", "video/mp4"]
+allowed_mime_types = ["image/png", "image/jpeg", "image/webp", "video/mp4"]
 
 [auth]
 enabled = true

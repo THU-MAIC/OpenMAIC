@@ -57,19 +57,16 @@ export async function pushLatestGeneratedSceneToSupabase(params: {
     );
 
     if (courseError) {
-      log.error('Incremental course upsert failed:', courseError);
-      return;
+      log.warn('Incremental course upsert failed (continuing to storage upload):', courseError.message);
+    } else {
+      await supabase.from('scenes').delete().eq('course_id', courseId).eq('scene_id', latest.id);
+      const { error: sceneError } = await supabase.from('scenes').insert(formatSceneRow(courseId, latest));
+      if (sceneError) {
+        log.warn('Incremental scene insert failed:', sceneError.message);
+      }
     }
 
-    await supabase.from('scenes').delete().eq('course_id', courseId).eq('scene_id', latest.id);
-
-    const { error: sceneError } = await supabase.from('scenes').insert(formatSceneRow(courseId, latest));
-
-    if (sceneError) {
-      log.error('Incremental scene insert failed:', sceneError);
-      return;
-    }
-
+    // Always attempt storage upload — content.json is the browser's primary data source
     const storageContent = JSON.stringify({ stage, scenes });
     const { error: storageError } = await supabase.storage
       .from('courses')
@@ -121,20 +118,17 @@ export async function replaceAllCourseScenesInSupabase(params: {
     );
 
     if (courseError) {
-      log.error('Final course upsert failed:', courseError);
-      return;
+      log.warn('Final course upsert failed (continuing to storage upload):', courseError.message);
+    } else {
+      await supabase.from('scenes').delete().eq('course_id', courseId);
+      const formatted = scenes.map((s) => formatSceneRow(courseId, s));
+      const { error: scenesError } = await supabase.from('scenes').insert(formatted);
+      if (scenesError) {
+        log.warn('Final scenes bulk insert failed:', scenesError.message);
+      }
     }
 
-    await supabase.from('scenes').delete().eq('course_id', courseId);
-
-    const formatted = scenes.map((s) => formatSceneRow(courseId, s));
-    const { error: scenesError } = await supabase.from('scenes').insert(formatted);
-
-    if (scenesError) {
-      log.error('Final scenes bulk insert failed:', scenesError);
-      return;
-    }
-
+    // Always attempt storage upload — this is the canonical data source for cross-device sync
     const storageContent = JSON.stringify({ stage, scenes });
     const { error: storageError } = await supabase.storage
       .from('courses')

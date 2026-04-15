@@ -20,7 +20,7 @@ import type {
 import type { GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import type { Scene } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
-import { TASK_QUEUE } from '../client';
+import { TASK_QUEUE } from '../constants';
 import {
   insertCourseAndGenerateTagsWorkflow,
 } from './course-catalog.workflow';

@@ -15,9 +15,10 @@ import 'tsconfig-paths/register';
 
 import path from 'path';
 import { Worker, NativeConnection } from '@temporalio/worker';
-import { TASK_QUEUE } from './client';
+import { TASK_QUEUE } from './constants';
 import * as classroomActivities from './activities/classroom-generation.activities';
 import * as catalogActivities from './activities/course-catalog.activities';
+import * as previewActivities from './activities/preview-generation.activities';
 
 async function main() {
   const address = process.env.TEMPORAL_ADDRESS ?? 'localhost:7233';
@@ -42,6 +43,7 @@ async function main() {
     activities: {
       ...classroomActivities,
       ...catalogActivities,
+      ...previewActivities,
     },
     // Allow the bundler to resolve @/ aliases from tsconfig
     bundlerOptions: {
