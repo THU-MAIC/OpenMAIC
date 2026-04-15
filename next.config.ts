@@ -19,6 +19,9 @@ const nextConfig: NextConfig = {
   },
 
   async headers() {
+    const extraAncestors = process.env.ALLOWED_FRAME_ANCESTORS?.trim();
+    const frameAncestors = extraAncestors ? `'self' ${extraAncestors}` : "'self'";
+
     return [
       {
         // HTML documents must always revalidate. Excludes content-hashed
@@ -28,6 +31,18 @@ const nextConfig: NextConfig = {
           {
             key: 'Cache-Control',
             value: 'no-cache, must-revalidate',
+          },
+        ],
+      },
+      {
+        source: '/(.*)',
+        headers: [
+          // X-Frame-Options only supports SAMEORIGIN (no allow-list),
+          // so we omit it when custom ancestors are configured.
+          ...(!extraAncestors ? [{ key: 'X-Frame-Options', value: 'SAMEORIGIN' }] : []),
+          {
+            key: 'Content-Security-Policy',
+            value: `frame-ancestors ${frameAncestors}`,
           },
         ],
       },
