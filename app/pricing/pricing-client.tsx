@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { LIFETIME_MAX_SLOTS } from '@/lib/stripe/plans';
 import type { UserPlan, SubscriptionPeriod } from '@/lib/stripe/plans';
 import { UpgradeSuccessModal } from '@/components/billing/upgrade-success-modal';
+import { usePlanStore } from '@/lib/store/user-plan';
 
 // ── Feature rows ──────────────────────────────────────────────────────────────
 
@@ -46,14 +47,35 @@ export function PricingClient() {
     const periodParam = searchParams.get('period') as SubscriptionPeriod | null;
     const topupParam = searchParams.get('topup');
 
-    if (successParam) {
-      // Delay slightly so plan fetch can complete first
-      const timer = setTimeout(() => {
+    if (successParam || topupParam === 'success') {
+      if (successParam) {
         setSuccessModal({ open: true, period: periodParam ?? 'monthly' });
-      }, 600);
-      return () => clearTimeout(timer);
-    } else if (topupParam === 'success') {
-      toast.success('10 courses added to your account! Happy learning 🎉');
+      } else {
+        toast.success('10 courses added to your account! Happy learning 🎉');
+      }
+
+      // ── Sync logic ──────────────────────────────────────────────────────────
+      // Poll /api/user/plan every 2s for 10s to ensure the UI catches the webhook.
+      let count = 0;
+      const interval = setInterval(async () => {
+        count++;
+        const res = await fetch('/api/user/plan');
+        const json = await res.json();
+        if (json.success) {
+          setPlan(json.plan);
+          // Also update global store so profile modal is in sync
+          usePlanStore.getState().refetch();
+
+          // Stop polling once we see the update (or after 5 tries)
+          const isUpdated = successParam
+            ? json.plan.account_type === 'PLUS' || json.plan.subscription_status === 'active'
+            : true; // for topup, we just refresh a few times to be sure
+          
+          if (isUpdated || count >= 5) clearInterval(interval);
+        }
+      }, 2000);
+
+      return () => clearInterval(interval);
     } else if (searchParams.get('canceled')) {
       toast.info('Checkout canceled — no charge was made.');
     }

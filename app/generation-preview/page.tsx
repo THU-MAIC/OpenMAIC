@@ -167,8 +167,10 @@ function GenerationPreviewContent() {
 
         // Credit consumed — mark so the courses API skips double-check
         creditConsumedRef.current = true;
-        // Immediately refresh the plan store so the profile badge is up-to-date
-        usePlanStore.getState().refetch();
+        // Small delay to ensure DB consistency before refetching
+        setTimeout(() => {
+          usePlanStore.getState().refetch();
+        }, 200);
       } catch {
         // Non-fatal: proceed even if the pre-check request fails
         // (the courses API will do a final check on save)

@@ -57,24 +57,17 @@ export async function POST(req: NextRequest) {
 
           const { data: currentPlan } = await admin
             .from('user_plans')
-            .select('account_type, courses_generated_month, courses_generated_total')
+            .select('extra_credits')
             .eq('user_id', userId)
             .single();
 
           if (currentPlan) {
-            if (currentPlan.account_type === 'FREE') {
-              const newTotal = Math.max(0, currentPlan.courses_generated_total - TOPUP_COURSES_AMOUNT);
-              await admin.from('user_plans')
-                .update({ courses_generated_total: newTotal })
-                .eq('user_id', userId);
-            } else {
-              const newMonth = Math.max(0, currentPlan.courses_generated_month - TOPUP_COURSES_AMOUNT);
-              await admin.from('user_plans')
-                .update({ courses_generated_month: newMonth })
-                .eq('user_id', userId);
-            }
+            const newExtra = (currentPlan.extra_credits || 0) + TOPUP_COURSES_AMOUNT;
+            await admin.from('user_plans')
+              .update({ extra_credits: newExtra })
+              .eq('user_id', userId);
           }
-          console.log(`[stripe/webhook] topup applied for user ${userId}`);
+          console.log(`[stripe/webhook] topup applied for user ${userId} (+${TOPUP_COURSES_AMOUNT} extra_credits)`);
           break;
         }
 

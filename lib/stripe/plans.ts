@@ -88,6 +88,7 @@ export interface UserPlan {
   courses_generated_total: number;
   courses_generated_month: number;
   courses_month_reset_at: string;
+  extra_credits: number;
   lifetime_claimed: boolean;
   created_at: string;
   updated_at: string;
@@ -105,16 +106,26 @@ export function getCreditSummary(plan: UserPlan): {
   }
   if (plan.account_type === 'FREE') {
     const used = plan.courses_generated_total;
-    const total = 2;
-    return { used, total, remaining: Math.max(0, total - used), resetsAt: null };
+    const baseTotal = 2;
+    const total = baseTotal + (plan.extra_credits || 0);
+    return {
+      used,
+      total: total,
+      remaining: Math.max(0, total - used),
+      resetsAt: null,
+    };
   }
+
   // PLUS
   const used = plan.courses_generated_month;
-  const total = 30;
+  const baseMonthly = 30;
+  // For PLUS, remaining is (monthly cap - monthly used) + any extra credits
+  const remaining = Math.max(0, baseMonthly - used) + (plan.extra_credits || 0);
+
   return {
     used,
-    total,
-    remaining: Math.max(0, total - used),
+    total: baseMonthly + (plan.extra_credits || 0),
+    remaining: remaining,
     resetsAt: plan.courses_month_reset_at,
   };
 }

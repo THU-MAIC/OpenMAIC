@@ -118,6 +118,15 @@ function PlanCreditsSection({
           </span>
         </div>
 
+        {plan.extra_credits > 0 && (
+          <div className="flex items-center gap-1.5 mb-2 px-1">
+            <div className="size-1.5 rounded-full bg-[#118AB2] animate-pulse" />
+            <span className="text-[9px] font-bold text-[#118AB2]">
+              Includes {plan.extra_credits} top-up credits
+            </span>
+          </div>
+        )}
+
         {total !== 'unlimited' ? (
           <>
             <div className="w-full h-1.5 rounded-full bg-[#073b4c]/10 overflow-hidden">
@@ -305,13 +314,9 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
               <div className="mb-5">
                 <h4 className="text-[11px] font-black text-[#073b4c]/30 uppercase tracking-widest mb-3 px-1">My Learning Journey</h4>
                 <div className="grid grid-cols-2 gap-2.5 mb-4">
-                  <div className="bg-[#ef476f]/5 border-2 border-[#ef476f]/10 rounded-2xl p-3">
+                  <div className="col-span-2 bg-[#ef476f]/5 border-2 border-[#ef476f]/10 rounded-2xl p-3">
                     <p className="text-[10px] font-black text-[#ef476f] uppercase tracking-tighter mb-0.5">Total Points</p>
                     <p className="text-xl font-black text-[#073b4c]">{(stats?.totalScore || 0).toLocaleString()}</p>
-                  </div>
-                  <div className="bg-[#118ab2]/5 border-2 border-[#118ab2]/10 rounded-2xl p-3">
-                    <p className="text-[10px] font-black text-[#118ab2] uppercase tracking-tighter mb-0.5">Global Rank</p>
-                    <p className="text-xl font-black text-[#073b4c]">#{stats?.globalRank || '—'}</p>
                   </div>
                   <div className="bg-[#06d6a0]/5 border-2 border-[#06d6a0]/10 rounded-2xl p-3">
                     <p className="text-[10px] font-black text-[#06d6a0] uppercase tracking-tighter mb-0.5">Watch Time</p>
@@ -324,19 +329,6 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
                     <p className="text-xl font-black text-[#073b4c]">{stats?.quizzesCompleted || 0}</p>
                   </div>
                 </div>
-
-                {/* Mini Leaderboard preview */}
-                <LeaderboardCard type="global" limit={3} className="bg-[#f0f4f8]/30 border-[#073b4c]/10 shadow-none rounded-2xl" />
-                
-                <button 
-                  onClick={() => {
-                    onClose();
-                    window.location.href = '/leaderboard';
-                  }}
-                  className="w-full mt-3 text-[10px] font-black text-[#118ab2] hover:text-[#073b4c] uppercase tracking-widest transition-colors flex items-center justify-center gap-1.5"
-                >
-                  View Full Leaderboard →
-                </button>
               </div>
 
               {/* Sign out button */}
