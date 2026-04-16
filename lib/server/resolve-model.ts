@@ -6,7 +6,13 @@
  */
 
 import type { NextRequest } from 'next/server';
-import { getModel, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
+import {
+  getModel,
+  isProviderKeyRequired,
+  parseModelString,
+  ProviderConfigError,
+  type ModelWithInfo,
+} from '@/lib/ai/providers';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
@@ -49,6 +55,16 @@ export async function resolveModel(params: {
     : resolveApiKey(providerId, params.apiKey || '');
   const baseUrl = clientBaseUrl ? clientBaseUrl : resolveBaseUrl(providerId, params.baseUrl);
   const proxy = resolveProxy(providerId);
+
+  // Fail fast with a descriptive error before getModel() throws a raw one
+  if (isProviderKeyRequired(providerId) && !apiKey) {
+    throw new ProviderConfigError(
+      providerId,
+      `No API key configured for provider "${providerId}". ` +
+        `Set ${providerId.toUpperCase()}_API_KEY in .env.local or server-providers.yml.`,
+    );
+  }
+
   const { model, modelInfo } = getModel({
     providerId,
     modelId,

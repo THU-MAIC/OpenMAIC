@@ -147,6 +147,7 @@
 
 import { createOpenAI } from '@ai-sdk/openai';
 import { experimental_transcribe as transcribe } from 'ai';
+import { ProviderConfigError } from '@/lib/ai/providers';
 import type { ASRModelConfig } from './types';
 import { ASR_PROVIDERS } from './constants';
 
@@ -171,7 +172,10 @@ export async function transcribeAudio(
 
   // Validate API key if required
   if (provider.requiresApiKey && !config.apiKey) {
-    throw new Error(`API key required for ASR provider: ${config.providerId}`);
+    throw new ProviderConfigError(
+      config.providerId,
+      `API key required for ASR provider: ${config.providerId}`,
+    );
   }
 
   switch (config.providerId) {

@@ -16,7 +16,6 @@ import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { formatTeacherPersonaForPrompt } from '@/lib/generation/prompt-formatters';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
-import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
@@ -181,18 +180,8 @@ export async function generateClassroom(
     model: languageModel,
     modelInfo,
     modelString,
-    providerId,
-    apiKey,
   } = await resolveModel({});
   log.info(`Using server-configured model: ${modelString}`);
-
-  // Fail fast if the resolved provider has no API key configured
-  if (isProviderKeyRequired(providerId) && !apiKey) {
-    throw new Error(
-      `No API key configured for provider "${providerId}". ` +
-        `Set the appropriate key in .env.local or server-providers.yml (e.g. ${providerId.toUpperCase()}_API_KEY).`,
-    );
-  }
 
   const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(

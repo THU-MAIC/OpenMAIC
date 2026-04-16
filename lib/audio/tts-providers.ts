@@ -92,6 +92,7 @@
  * - URL-based: For providers returning audio URL (download in second step)
  */
 
+import { ProviderConfigError } from '@/lib/ai/providers';
 import type { TTSModelConfig } from './types';
 import { TTS_PROVIDERS } from './constants';
 
@@ -134,7 +135,10 @@ export async function generateTTS(
 
   // Validate API key if required
   if (provider.requiresApiKey && !config.apiKey) {
-    throw new Error(`API key required for TTS provider: ${config.providerId}`);
+    throw new ProviderConfigError(
+      config.providerId,
+      `API key required for TTS provider: ${config.providerId}`,
+    );
   }
 
   switch (config.providerId) {

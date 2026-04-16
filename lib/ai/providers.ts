@@ -42,6 +42,20 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AIProviders');
 
+/**
+ * Thrown when a provider is missing required configuration (e.g. API key).
+ * Callers can catch this specifically to provide user-friendly error messages
+ * without leaking internal provider details.
+ */
+export class ProviderConfigError extends Error {
+  public readonly providerId: string;
+  constructor(providerId: string, message: string) {
+    super(message);
+    this.name = 'ProviderConfigError';
+    this.providerId = providerId;
+  }
+}
+
 // Re-export types for backward compatibility
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
@@ -1149,7 +1163,10 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
   // Validate API key if required
   if (requiresApiKey && !config.apiKey) {
-    throw new Error(`API key required for provider: ${config.providerId}`);
+    throw new ProviderConfigError(
+      config.providerId,
+      `API key required for provider: ${config.providerId}`,
+    );
   }
 
   // Use provided API key, or empty string for providers that don't require one
