@@ -40,6 +40,10 @@ export interface ClassroomGenerationJob {
     scenesCount: number;
   };
   error?: string;
+  /** The pipeline step that was active when the job failed. */
+  failedAtStep?: ClassroomGenerationStep;
+  /** Wall-clock milliseconds from startedAt to completedAt. */
+  durationMs?: number;
 }
 
 function jobBlobKey(jobId: string) {
@@ -87,14 +91,24 @@ function markStaleIfNeeded(job: ClassroomGenerationJob): ClassroomGenerationJob 
   if (job.status !== 'running') return job;
   const updatedAt = new Date(job.updatedAt).getTime();
   if (Date.now() - updatedAt > STALE_JOB_TIMEOUT_MS) {
+    const completedAt = new Date().toISOString();
+    const activeStep =
+      job.step !== 'queued' && job.step !== 'failed'
+        ? (job.step as ClassroomGenerationStep)
+        : undefined;
+    const durationMs = job.startedAt
+      ? new Date(completedAt).getTime() - new Date(job.startedAt).getTime()
+      : undefined;
     return {
       ...job,
       status: 'failed',
       step: 'failed',
-      message: 'Job appears stale (no progress update for 30 minutes)',
+      message: `Job appears stale during "${activeStep ?? job.step}" (no progress update for 30 minutes)`,
       error: 'Stale job: process may have restarted during generation',
-      completedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      completedAt,
+      updatedAt: completedAt,
+      failedAtStep: activeStep,
+      durationMs,
     };
   }
   return job;
@@ -235,11 +249,42 @@ export async function markClassroomGenerationJobFailed(
   jobId: string,
   error: string,
 ): Promise<ClassroomGenerationJob> {
-  return updateClassroomGenerationJob(jobId, {
-    status: 'failed',
-    step: 'failed',
-    message: 'Classroom generation failed',
-    completedAt: new Date().toISOString(),
-    error,
+  return withJobLock(jobId, async () => {
+    const existing = await readClassroomGenerationJob(jobId);
+    if (!existing) {
+      throw new Error(`Classroom generation job not found: ${jobId}`);
+    }
+
+    const completedAt = new Date().toISOString();
+    const durationMs = existing.startedAt
+      ? new Date(completedAt).getTime() - new Date(existing.startedAt).getTime()
+      : undefined;
+
+    // Preserve the pipeline step that was active when the failure occurred.
+    const activeStep =
+      existing.step !== 'queued' && existing.step !== 'failed'
+        ? (existing.step as ClassroomGenerationStep)
+        : undefined;
+
+    const stepLabel = activeStep ?? existing.step;
+    const sceneContext =
+      existing.totalScenes != null
+        ? ` (scene ${existing.scenesGenerated}/${existing.totalScenes})`
+        : '';
+
+    const updated: ClassroomGenerationJob = {
+      ...existing,
+      status: 'failed',
+      step: 'failed',
+      message: `Classroom generation failed during "${stepLabel}"${sceneContext}`,
+      completedAt,
+      updatedAt: completedAt,
+      error,
+      failedAtStep: activeStep,
+      durationMs,
+    };
+
+    await writeJob(jobId, updated);
+    return updated;
   });
 }
