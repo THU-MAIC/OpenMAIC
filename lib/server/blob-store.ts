@@ -20,7 +20,7 @@ export const USE_BLOB = !!process.env.BLOB_READ_WRITE_TOKEN;
  */
 export async function writeJsonBlob(key: string, data: unknown): Promise<void> {
   await put(key, JSON.stringify(data), {
-    access: 'public',
+    access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
   });
