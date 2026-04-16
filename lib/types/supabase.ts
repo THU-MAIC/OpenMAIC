@@ -27,6 +27,12 @@ export interface SupabaseCourse {
   slide_count: number;
   language?: string;
   style?: string;
+  headline?: string;
+  subject?: string;
+  age_range?: string;
+  topic?: string;
+  sub_topic?: string;
+  catalog_title?: string;
   created_at: string;
   updated_at: string;
 }

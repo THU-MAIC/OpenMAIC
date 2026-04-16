@@ -852,6 +852,7 @@ function GenerationPreviewContent() {
               scenes: currentScenes,
               thumbnail: '', // Real thumbnail generation can be added later
               creditsPreConsumed: creditConsumedRef.current,
+              isFinal: true,
             });
             log.info('[GenerationSync] Supabase sync completed');
 

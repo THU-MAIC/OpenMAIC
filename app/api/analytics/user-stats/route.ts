@@ -41,6 +41,10 @@ export async function GET(req: NextRequest) {
       .from('user_scores')
       .select('*', { count: 'exact', head: true })
       .gt('total_score', scoreData?.total_score || 0);
+      
+    // 4. Extract streak info (if present on the schema, else base zeroes)
+    const currentStreak = scoreData?.current_streak || 0;
+    const highestStreak = scoreData?.highest_streak || 0;
 
     return apiSuccess({
       stats: {
@@ -51,7 +55,9 @@ export async function GET(req: NextRequest) {
         totalSlidesViewed,
         globalRank: (globalRank || 0) + 1,
         country: scoreData?.country_name || 'Unknown',
-        countryCode: scoreData?.country_code || 'XX'
+        countryCode: scoreData?.country_code || 'XX',
+        currentStreak,
+        highestStreak
       }
     });
   } catch (error) {

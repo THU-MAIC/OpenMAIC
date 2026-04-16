@@ -41,11 +41,17 @@ export async function GET(_req: NextRequest) {
       }
 
       const credits = getCreditSummary(existing as UserPlan);
-      return NextResponse.json({ success: true, plan: existing, credits });
+      return NextResponse.json(
+        { success: true, plan: existing, credits },
+        { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+      );
     }
 
     const credits = getCreditSummary(plan as UserPlan);
-    return NextResponse.json({ success: true, plan, credits });
+    return NextResponse.json(
+      { success: true, plan, credits },
+      { headers: { 'Cache-Control': 'no-store, max-age=0' } }
+    );
   } catch (err: any) {
     console.error('[user/plan] error:', err);
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });

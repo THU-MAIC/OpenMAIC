@@ -344,7 +344,7 @@ function HomePage() {
     // Pre-flight credit check (only for authenticated users)
     if (user) {
       try {
-        const planRes = await fetch('/api/user/plan');
+        const planRes = await fetch('/api/user/plan', { cache: 'no-store' });
         if (planRes.ok) {
           const planJson = await planRes.json();
           if (planJson.success && planJson.credits) {

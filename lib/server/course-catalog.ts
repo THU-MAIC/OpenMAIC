@@ -17,6 +17,8 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 export interface CourseCatalogMetadata {
   /** Crisp, catalog-ready title (3–7 words) */
   catalog_title: string;
+  /** A cohesive, engaging short description (1-3 sentences) */
+  headline: string;
   subject: string;
   age_range: string;
   topic: string;
@@ -67,10 +69,14 @@ export async function insertCourseAndGenerateTags(
     });
 
     if (metadata) {
-      // 3. Update the course title with the AI-generated catalog title
+      // 3. Update the course title and headline with the AI-generated catalog metadata
       const { error: titleError } = await supabase
         .from('courses')
-        .update({ name: metadata.catalog_title, title: metadata.catalog_title })
+        .update({ 
+          name: metadata.catalog_title, 
+          title: metadata.catalog_title,
+          headline: metadata.headline 
+        })
         .eq('id', stage.id);
 
       if (titleError) {
@@ -153,7 +159,11 @@ export async function generateCatalogMetadataForCourse(params: {
 
     const { error: titleError } = await supabase
       .from('courses')
-      .update({ name: metadata.catalog_title, title: metadata.catalog_title })
+      .update({ 
+        name: metadata.catalog_title, 
+        title: metadata.catalog_title,
+        headline: metadata.headline
+      })
       .eq('id', courseId);
 
     if (titleError) {
@@ -207,33 +217,34 @@ Return ONLY valid JSON. No markdown fences, no explanation.
 Expected JSON format:
 {
   "catalog_title": "Crisp 3-7 word title for a course catalog listing",
-  "subject": "Broad subject area, e.g. Mathematics, Science, History, Language Arts",
-  "age_range": "Target age range in x-y format, e.g. 10-15. Use 0-100 for all ages.",
+  "headline": "A cohesive, engaging short description (1-3 sentences)",
+  "subject": "Predefined category",
+  "age_range": "Predefined range",
   "topic": "Specific topic, e.g. Algebra, Biology, Ancient Rome",
   "sub_topic": "Narrow sub-topic, e.g. Quadratic Equations, Photosynthesis, Julius Caesar"
 }
 
-Rules:
-1. catalog_title must be concise (3-7 words), engaging, and clearly convey the course subject.
-   It should be suitable as a card title in a public course catalog — not a raw prompt.
-2. age_range must use "x-y" format. Use 0-100 for general audiences.
-3. Subject should be a broad category.
-4. Topic and sub_topic should be increasingly specific.
-5. All output fields must be in ${lang}.`;
+Categorization Rules:
+1. SUBJECT: Must be EXACTLY one of: Mathematics, Science, History, Language Arts, Technology, Art, Music, Business.
+2. AGE_RANGE: Must be EXACTLY one of: 5-10, 11-14, 15-18, 18+, 0-100. Use 0-100 for general audiences.
+3. catalog_title: Must be concise (3-7 words), engaging, and clearly convey the course subject.
+4. headline: Must be an engaging, cohesive summary of the course (1-3 sentences). This is the PRIMARY description shown to users.
+5. topic and sub_topic: Should be increasingly specific.
+6. All output fields must be in ${lang}.`;
 
   const userPrompt = `Course Name (raw): ${name}
 User Requirement: ${requirement}
 Scene Outlines:
 ${outlineContext}
 
-Generate catalog metadata for this course.`;
+Generate catalog metadata for this course based on the rules above.`;
 
   try {
     const response = await aiCall(systemPrompt, userPrompt);
     const cleaned = response.trim().replace(/^```json\s*|\s*```$/g, '');
     const metadata = JSON.parse(cleaned) as CourseCatalogMetadata;
 
-    if (metadata.catalog_title && metadata.subject && metadata.age_range && metadata.topic) {
+    if (metadata.catalog_title && metadata.headline && metadata.subject && metadata.age_range && metadata.topic) {
       return metadata;
     }
     log.warn('AI returned incomplete catalog metadata:', metadata);

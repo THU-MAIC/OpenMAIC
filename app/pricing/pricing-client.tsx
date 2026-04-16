@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { motion } from 'motion/react';
-import { Check, Zap, Crown, Shield, BookOpen, Sparkles, Clock, Users, MessageCircle, Headphones } from 'lucide-react';
+import { Check, Zap, Crown, Shield, BookOpen, Sparkles, Clock, Users, MessageCircle, Headphones, ChevronLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { LIFETIME_MAX_SLOTS } from '@/lib/stripe/plans';
 import type { UserPlan, SubscriptionPeriod } from '@/lib/stripe/plans';
 import { UpgradeSuccessModal } from '@/components/billing/upgrade-success-modal';
 import { usePlanStore } from '@/lib/store/user-plan';
+import { Button } from '@/components/ui/button';
 
 // ── Feature rows ──────────────────────────────────────────────────────────────
 
@@ -33,6 +34,7 @@ function FeatureCheck({ value, lifetime }: { value: boolean | string; lifetime?:
 
 export function PricingClient() {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [plan, setPlan] = useState<UserPlan | null>(null);
   const [lifetimeSlots, setSlots] = useState<{ taken: number; max: number } | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function PricingClient() {
       let count = 0;
       const interval = setInterval(async () => {
         count++;
-        const res = await fetch('/api/user/plan');
+        const res = await fetch('/api/user/plan', { cache: 'no-store' });
         const json = await res.json();
         if (json.success) {
           setPlan(json.plan);
@@ -83,7 +85,7 @@ export function PricingClient() {
 
   // Fetch current user plan & lifetime slot count
   useEffect(() => {
-    fetch('/api/user/plan')
+    fetch('/api/user/plan', { cache: 'no-store' })
       .then((r) => r.json())
       .then((j) => {
         if (j.success) setPlan(j.plan);
@@ -143,6 +145,27 @@ export function PricingClient() {
       period={successModal.period}
       onClose={() => setSuccessModal((s) => ({ ...s, open: false }))}
     />
+    <header className="sticky top-0 z-40 w-full bg-[#f0f4f8]/80 backdrop-blur-md border-b-[3px] border-[#073b4c]">
+      <div className="container mx-auto px-4 h-16 flex items-center justify-between">
+        <Button
+          variant="ghost"
+          onClick={() => router.push('/')}
+          className="group flex items-center gap-2 font-bold text-[#073b4c] hover:bg-white"
+        >
+          <ChevronLeft className="size-5 transition-transform group-hover:-translate-x-1" />
+          <span>Back</span>
+        </Button>
+
+        <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
+          <h1 className="text-xl md:text-2xl font-black text-[#073b4c] tracking-tight uppercase">
+            SLATE
+          </h1>
+          <span className="px-2 py-0.5 bg-[#ef476f] text-white text-[10px] font-bold rounded-full border border-[#073b4c] shadow-[1px_1px_0_#073b4c] uppercase tracking-widest mt-1">BETA</span>
+        </div>
+
+        <div className="w-20" /> {/* Spacer */}
+      </div>
+    </header>
     <main className="min-h-screen bg-[#f0f4f8] py-16 px-4">
       {/* ── Hero ── */}
       <div className="text-center mb-14">

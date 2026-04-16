@@ -64,6 +64,7 @@ export async function uploadCourseToSupabase(params: {
   scenes: Scene[];
   thumbnail?: string;
   creditsPreConsumed?: boolean;
+  isFinal?: boolean;
 }) {
   try {
     const res = await fetch('/api/courses', {
@@ -80,6 +81,7 @@ export async function uploadCourseToSupabase(params: {
         language: params.stage.language,
         style: params.stage.style,
         scenes: params.scenes,
+        is_final: params.isFinal ?? false,
         // Send the full Stage object so the API can preserve agentIds, whiteboard,
         // generatedAgentConfigs etc. in the Storage content.json blob.
         stage: params.stage,

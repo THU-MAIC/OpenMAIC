@@ -41,7 +41,7 @@ export const usePlanStore = create<PlanState>((set, get) => ({
     if (get().isLoading) return;
     set({ isLoading: true });
     try {
-      const res = await fetch('/api/user/plan');
+      const res = await fetch('/api/user/plan', { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch plan');
       const json = await res.json();
       if (json.success) {

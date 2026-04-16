@@ -225,7 +225,7 @@ export default function ClassroomDetailPage() {
     fullSyncDoneRef.current = true;
     try {
       const { uploadCourseToSupabase } = await import('@/lib/supabase/course-sync');
-      await uploadCourseToSupabase({ userId: user.id, stage, scenes });
+      await uploadCourseToSupabase({ userId: user.id, stage, scenes, isFinal: true });
       log.info('[Classroom] Full course re-synced to Supabase with all scenes.');
     } catch (err) {
       log.warn('[Classroom] Full re-sync failed (non-fatal):', err);

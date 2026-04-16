@@ -204,8 +204,11 @@ export async function POST(req: NextRequest) {
     }
 
     // 5. Background: generate AI catalog title + tags via Temporal workflow
+    // ONLY trigger if is_final is true to avoid multiple redundant calls during incremental sync.
+    const isFinal = body.is_final === true || body.trigger_catalog === true;
     const sceneTitles = (scenes ?? []).map((s: any) => s.title).filter(Boolean);
-    if (name && sceneTitles.length > 0) {
+    
+    if (isFinal && name && sceneTitles.length > 0) {
       try {
         const temporalClient = await getTemporalClient();
         // Pass workflow type as a string to avoid name mangling during Next.js production builds.

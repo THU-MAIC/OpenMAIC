@@ -22,6 +22,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 interface Course {
   id: string;
   title: string;
+  headline?: string;
   description: string;
   slideCount: number;
   language: string;
@@ -307,7 +308,7 @@ function CourseCard({ course, index, onClick }: { course: Course; index: number;
           {course.title}
         </h3>
         <p className="text-[#073b4c]/70 text-sm font-medium line-clamp-3 mb-6 flex-1">
-          {course.description}
+          {course.headline || course.description}
         </p>
 
         <div className="pt-4 border-t-2 border-[#073b4c]/10 flex items-center justify-between mt-auto">

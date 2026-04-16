@@ -47,21 +47,26 @@ export async function GET(req: NextRequest) {
 
     if (subject || topic || age) {
       filteredCourses = filteredCourses.filter(course => {
-        const tags = course.course_tags || [];
-        
-        let matchesSubject = !subject || tags.some((t: any) => t.tag_type === 'subject' && t.tag_value === subject);
-        let matchesTopic = !topic || tags.some((t: any) => t.tag_type === 'topic' && t.tag_value === topic);
+        const matchesSubject = !subject || course.subject === subject;
+        const matchesTopic = !topic || course.topic === topic;
         
         let matchesAge = true;
         if (age) {
           const ageNum = parseInt(age);
-          matchesAge = tags.some((t: any) => {
-            if (t.tag_type === 'age_range') {
-              const [min, max] = t.tag_value.split('-').map(Number);
-              return !isNaN(min) && !isNaN(max) && ageNum >= min && ageNum <= max;
-            }
-            return false;
-          });
+          if (course.age_range) {
+            const [min, max] = course.age_range.split('-').map(Number);
+            matchesAge = !isNaN(min) && !isNaN(max) && ageNum >= min && ageNum <= max;
+          } else {
+            // Fallback to tags table if new columns missing
+            const tags = course.course_tags || [];
+            matchesAge = tags.some((t: any) => {
+              if (t.tag_type === 'age_range') {
+                 const [min, max] = t.tag_value.split('-').map(Number);
+                 return !isNaN(min) && !isNaN(max) && ageNum >= min && ageNum <= max;
+              }
+              return false;
+            });
+          }
         }
         
         return matchesSubject && matchesTopic && matchesAge;
@@ -72,14 +77,21 @@ export async function GET(req: NextRequest) {
     const result = filteredCourses.map(c => ({
       id: c.id,
       title: c.name || c.title,
+      headline: c.headline,
       description: c.description,
       slideCount: c.slide_count,
       language: c.language,
       createdAt: c.created_at,
-      tags: (c.course_tags || []).reduce((acc: any, t: any) => {
-        acc[t.tag_type] = t.tag_value;
-        return acc;
-      }, {})
+      tags: {
+        subject: c.subject,
+        age_range: c.age_range,
+        topic: c.topic,
+        sub_topic: c.sub_topic,
+        ...(c.course_tags || []).reduce((acc: any, t: any) => {
+          acc[t.tag_type] = t.tag_value;
+          return acc;
+        }, {})
+      }
     }));
 
     return apiSuccess({

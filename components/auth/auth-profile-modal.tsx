@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, LogOut, Mail, Zap, Crown, Shield, BookOpen, ExternalLink, RefreshCw } from 'lucide-react';
+import { X, LogOut, Mail, Zap, Crown, Shield, BookOpen, ExternalLink, RefreshCw, Flame } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
 import { LeaderboardCard } from '../leaderboard/leaderboard-card';
 import { usePlanStore } from '@/lib/store/user-plan';
@@ -314,19 +314,35 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
               <div className="mb-5">
                 <h4 className="text-[11px] font-black text-[#073b4c]/30 uppercase tracking-widest mb-3 px-1">My Learning Journey</h4>
                 <div className="grid grid-cols-2 gap-2.5 mb-4">
-                  <div className="col-span-2 bg-[#ef476f]/5 border-2 border-[#ef476f]/10 rounded-2xl p-3">
+                  <div className="col-span-1 bg-[#ef476f]/5 border-2 border-[#ef476f]/10 rounded-2xl p-3 flex flex-col justify-center">
                     <p className="text-[10px] font-black text-[#ef476f] uppercase tracking-tighter mb-0.5">Total Points</p>
-                    <p className="text-xl font-black text-[#073b4c]">{(stats?.totalScore || 0).toLocaleString()}</p>
+                    <p className="text-xl/none font-black text-[#073b4c]">{(stats?.totalScore || 0).toLocaleString()}</p>
+                  </div>
+                  <div className="col-span-1 bg-[#118ab2]/5 border-2 border-[#118ab2]/10 rounded-2xl p-3 flex flex-col justify-center">
+                    <p className="text-[10px] font-black text-[#118ab2] uppercase tracking-tighter mb-0.5">Global Rank</p>
+                    <p className="text-xl/none font-black text-[#073b4c]">
+                      #{stats?.globalRank?.toLocaleString() || '-'}
+                    </p>
+                  </div>
+                  <div className="col-span-2 bg-[#ff9f1c]/10 border-2 border-[#ff9f1c]/20 rounded-2xl p-3 flex items-center justify-between">
+                    <div>
+                      <p className="text-[10px] font-black text-[#ff9f1c] uppercase tracking-tighter mb-0.5 flex items-center gap-1"><Flame className="size-3" /> Current Streak</p>
+                      <p className="text-xl/none font-black text-[#073b4c]">{stats?.currentStreak || 0} <span className="text-[12px] opacity-60">Days</span></p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-black text-[#ff9f1c]/60 uppercase tracking-tighter mb-0.5">Best</p>
+                      <p className="text-sm/none font-black text-[#073b4c]/60">{stats?.highestStreak || 0} Days</p>
+                    </div>
                   </div>
                   <div className="bg-[#06d6a0]/5 border-2 border-[#06d6a0]/10 rounded-2xl p-3">
                     <p className="text-[10px] font-black text-[#06d6a0] uppercase tracking-tighter mb-0.5">Watch Time</p>
-                    <p className="text-xl font-black text-[#073b4c]">
+                    <p className="text-xl/none font-black text-[#073b4c]">
                       {Math.floor((stats?.totalWatchTime || 0) / 60)}<span className="text-[10px]">m</span>
                     </p>
                   </div>
                   <div className="bg-[#ffd166]/10 border-2 border-[#ffd166]/20 rounded-2xl p-3">
                     <p className="text-[10px] font-black text-[#ffd166] uppercase tracking-tighter mb-0.5">Quizzes</p>
-                    <p className="text-xl font-black text-[#073b4c]">{stats?.quizzesCompleted || 0}</p>
+                    <p className="text-xl/none font-black text-[#073b4c]">{stats?.quizzesCompleted || 0}</p>
                   </div>
                 </div>
               </div>

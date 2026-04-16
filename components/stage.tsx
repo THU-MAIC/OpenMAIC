@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SceneSidebar } from './stage/scene-sidebar';
 import { Header } from './header';
+import { ClassroomTimer } from './classroom-timer';
 import { CanvasArea } from '@/components/canvas/canvas-area';
 import { Roundtable } from '@/components/roundtable';
 import { PlaybackEngine, computePlaybackView } from '@/lib/playback';
@@ -48,7 +49,7 @@ export function Stage({
 }) {
   const { t } = useI18n();
   const router = useRouter();
-  const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines } =
+  const { mode, getCurrentScene, scenes, currentSceneId, setCurrentSceneId, generatingOutlines, outlines } =
     useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
 
@@ -900,6 +901,17 @@ export function Stage({
         {!isPresenting && (
           <div className="h-20 border-b border-gray-100 dark:border-gray-800">
             <Header currentSceneTitle={currentScene?.title || ''} />
+          </div>
+        )}
+
+        {/* Floating Countdown Timer */}
+        {mode === 'playback' && outlines.length > 0 && (
+          <div className="absolute top-6 left-6 z-50 pointer-events-none">
+            <ClassroomTimer 
+              currentSceneIndex={currentSceneIndex}
+              totalScenes={totalScenesCount}
+              className="pointer-events-auto"
+            />
           </div>
         )}
 

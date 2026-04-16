@@ -6,7 +6,7 @@
  * media assets to Supabase Storage so the course is playable on any device.
  */
 
-import { proxyActivities, defineQuery, setHandler } from '@temporalio/workflow';
+import { proxyActivities, defineQuery, setHandler, executeChild } from '@temporalio/workflow';
 import type {
   GenerateSingleSceneParams,
   PushSceneToSupabaseParams,
@@ -20,6 +20,9 @@ import type { Scene, Stage } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import type { GenerateClassroomInput } from '@/lib/server/classroom-generation';
+import type { InsertCourseAndGenerateTagsParams } from '../activities/course-catalog.activities';
+import { insertCourseAndGenerateTagsWorkflow } from './course-catalog.workflow';
+import { TASK_QUEUE } from '../constants';
 
 // ---------------------------------------------------------------------------
 // Activity proxies
@@ -154,7 +157,7 @@ export async function generateRemainingWorkflow(
 
   // Keep concurrency bounded to avoid overwhelming downstream APIs and workers.
   // Deterministic batching is replay-safe and still yields parallel Temporal activities.
-  const SCENE_PARALLELISM = 100;
+  const SCENE_PARALLELISM = 3;
 
   setHandler(getPreviewStatusQuery, (): PreviewWorkflowStatus => ({
     status,
@@ -193,84 +196,67 @@ export async function generateRemainingWorkflow(
 
     const existingScenes = await fetchExistingScenesActivity(stage.id);
 
-    // ---- Step 2: Generate each pending scene ----
+    // ---- Step 2: Generate each pending scene sequentially via pipeline ----
     step = 'generating_scenes';
     progress = 5;
     message = `Generating ${totalPending} scenes in parallel`;
 
     const generated: Scene[] = [];
+
+    const processSingleScene = async (outline: SceneOutline): Promise<Scene | null> => {
+      // 1. Generate scene structure and text
+      const scene = await generateSingleSceneActivity({
+        outline,
+        stage,
+        agents,
+        input: minimalInput,
+      });
+      if (!scene) return null;
+
+      let processedScene = scene;
+
+      // 2. Generate TTS for this scene
+      if (shouldGenerateTTS) {
+        processedScene = await generateSceneTTSToSupabaseActivity({
+          scene: processedScene,
+          stageId: stage.id,
+        });
+      }
+
+      // 3. Generate media (images/videos) for this scene
+      if (shouldGenerateImages || shouldGenerateVideo) {
+        const mediaScenes = await generateMediaToSupabaseActivity({
+          scenes: [processedScene],
+          outlines: [outline],
+          stageId: stage.id,
+        });
+        if (mediaScenes && mediaScenes.length > 0) {
+          processedScene = mediaScenes[0];
+        }
+      }
+
+      return processedScene;
+    };
+
     const outlineChunks = chunk(pendingOutlines, SCENE_PARALLELISM);
     for (const [chunkIndex, outlinesChunk] of outlineChunks.entries()) {
       message = `Generating scenes (batch ${chunkIndex + 1}/${outlineChunks.length})`;
-      progress = 5 + Math.floor((chunkIndex / outlineChunks.length) * 55);
+      progress = 5 + Math.floor((chunkIndex / outlineChunks.length) * 90);
 
-      const batchResults = await Promise.all(
+      await Promise.all(
         outlinesChunk.map(async (outline) => {
-          const scene = await generateSingleSceneActivity({
-            outline,
-            stage,
-            agents,
-            input: minimalInput,
-          });
-          return scene;
-        }),
+          const finalScene = await processSingleScene(outline);
+          if (finalScene) {
+            generated.push(finalScene);
+            scenesGenerated = generated.length;
+            completedScenes = [...generated].sort((a, b) => a.order - b.order);
+          }
+        })
       );
-
-      for (const scene of batchResults) {
-        if (scene) generated.push(scene);
-      }
-
-      scenesGenerated = generated.length;
-      completedScenes = [...generated].sort((a, b) => a.order - b.order);
     }
 
-    // ---- Step 2b: Generate TTS for all generated scenes (optional) ----
-    let newScenes: Scene[] = [...generated].sort((a, b) => a.order - b.order);
+    const finalScenes = [...existingScenes, ...generated].sort((a, b) => a.order - b.order);
 
-    if (shouldGenerateTTS && newScenes.length > 0) {
-      step = 'generating_tts';
-      progress = 62;
-      message = `Generating TTS for ${newScenes.length} scenes in parallel`;
-
-      const ttsChunks = chunk(newScenes, SCENE_PARALLELISM);
-      const withTts: Scene[] = [];
-      for (const [chunkIndex, scenesChunk] of ttsChunks.entries()) {
-        progress = 62 + Math.floor((chunkIndex / ttsChunks.length) * 10);
-        message = `Generating TTS (batch ${chunkIndex + 1}/${ttsChunks.length})`;
-
-        const results = await Promise.all(
-          scenesChunk.map((scene) =>
-            generateSceneTTSToSupabaseActivity({
-              scene,
-              stageId: stage.id,
-            }),
-          ),
-        );
-        withTts.push(...results);
-        completedScenes = [...withTts].sort((a, b) => a.order - b.order);
-      }
-
-      newScenes = withTts.sort((a, b) => a.order - b.order);
-    }
-
-    // ---- Step 3: Media generation (optional) ----
-    const allScenes = [...existingScenes, ...newScenes].sort((a, b) => a.order - b.order);
-
-    let finalScenes = allScenes;
-
-    if (newScenes.length > 0 && (shouldGenerateImages || shouldGenerateVideo)) {
-      step = 'generating_media';
-      progress = 75;
-      message = 'Generating and uploading media assets';
-
-      finalScenes = await generateMediaToSupabaseActivity({
-        scenes: allScenes,
-        outlines,
-        stageId: stage.id,
-      });
-      // Update completedScenes with the media-enriched versions
-      completedScenes = finalScenes.filter((s) => !completedSet.has(s.order));
-    }
 
     // ---- Step 4: Final Supabase sync with all scenes + asset URLs ----
     step = 'persisting';
@@ -288,6 +274,19 @@ export async function generateRemainingWorkflow(
       stage,
       scenes: finalScenes,
       courseDescription,
+    });
+
+    // ---- Step 5: Catalog tags & metadata (child workflow, non-blocking) ----
+    const catalogParams: InsertCourseAndGenerateTagsParams = {
+      stage,
+      outlines,
+      requirement,
+    };
+
+    void executeChild(insertCourseAndGenerateTagsWorkflow, {
+      workflowId: `catalog-${stage.id}`,
+      taskQueue: TASK_QUEUE,
+      args: [catalogParams],
     });
 
     // Done
