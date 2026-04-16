@@ -55,6 +55,39 @@ export async function readJsonBlob<T>(key: string): Promise<T | null> {
 }
 
 /**
+ * Write binary data (audio, images, video) to blob storage.
+ * Uses public access so the URL can be used directly by clients.
+ * Returns the public blob URL.
+ */
+export async function writeBinaryBlob(
+  key: string,
+  data: Buffer,
+  contentType: string,
+): Promise<string> {
+  const result = await put(key, data, {
+    access: 'public',
+    contentType,
+    addRandomSuffix: false,
+    allowOverwrite: true,
+  });
+  return result.url;
+}
+
+/**
+ * Get the public URL for a binary blob, or null if it doesn't exist.
+ */
+export async function getBinaryBlobUrl(key: string): Promise<string | null> {
+  try {
+    const { blobs } = await list({ prefix: key, limit: 1 });
+    const match = blobs.find((b) => b.pathname === key);
+    return match?.url ?? null;
+  } catch (error) {
+    log.warn(`Failed to look up blob "${key}":`, error);
+    return null;
+  }
+}
+
+/**
  * Delete a blob by key. Silently ignores if the blob doesn't exist.
  */
 export async function deleteBlob(key: string): Promise<void> {

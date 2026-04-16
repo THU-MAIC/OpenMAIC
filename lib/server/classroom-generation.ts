@@ -27,8 +27,9 @@ import {
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
 import type { UserRequirements } from '@/lib/types/generation';
-import type { Scene, Stage } from '@/lib/types/stage';
+import type { Scene, Stage, LessonPlanContent, ExerciseCard } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
+import { buildPrompt, PROMPT_IDS } from '@/lib/generation/prompts';
 
 const log = createLogger('Classroom');
 
@@ -97,8 +98,11 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
+function normalizeLanguage(language?: string): string {
+  if (!language) return 'en-US';
+  // Accept well-formed BCP-47 codes as-is (e.g. lt-LT, en-US, zh-CN)
+  if (/^[a-z]{2,3}(-[A-Z]{2})?$/i.test(language)) return language;
+  return 'en-US';
 }
 
 function stripCodeFences(text: string): string {
@@ -158,6 +162,111 @@ Return a JSON object with this exact structure:
     role: a.role,
     persona: a.persona,
   }));
+}
+
+const LESSON_PLAN_MARKER = '[LESSON_PLAN_MODE]';
+
+const VALID_CARD_KINDS = new Set([
+  'phrase_chunk', 'dialog_snippet', 'shadow', 'roleplay', 'dialogue_completion',
+  'grammar_pattern', 'fill_blank', 'case_transform', 'tense_transform',
+  'vocab_in_context', 'matching', 'multiple_choice', 'translate_sentence',
+  'mistake_spotlight',
+]);
+
+const FIRST_CARD_KINDS = new Set(['phrase_chunk', 'dialog_snippet']);
+const LAST_CARD_KINDS = new Set(['grammar_pattern', 'mistake_spotlight']);
+
+interface LessonPlanValidationResult {
+  valid: boolean;
+  errors: string[];
+}
+
+function validateLessonPlanDeck(
+  data: { microGoal?: unknown; groundingIds?: unknown; cards?: unknown },
+  groundingBlock: string,
+): LessonPlanValidationResult {
+  const errors: string[] = [];
+  const cards = data.cards;
+
+  if (!Array.isArray(cards)) {
+    return { valid: false, errors: ['cards must be an array'] };
+  }
+  if (cards.length < 10 || cards.length > 16) {
+    errors.push(`Expected 10–16 cards, got ${cards.length}`);
+  }
+  if (cards.length > 0 && !FIRST_CARD_KINDS.has(cards[0].kind)) {
+    errors.push(`First card must be phrase_chunk or dialog_snippet, got "${cards[0].kind}"`);
+  }
+  if (cards.length > 0 && !LAST_CARD_KINDS.has(cards[cards.length - 1].kind)) {
+    errors.push(`Last card must be grammar_pattern or mistake_spotlight, got "${cards[cards.length - 1].kind}"`);
+  }
+  for (const [i, card] of cards.entries()) {
+    if (!card.kind || !VALID_CARD_KINDS.has(card.kind)) {
+      errors.push(`Card ${i}: unknown kind "${card.kind}"`);
+    }
+  }
+
+  // Validate grounding IDs reference the grounding block
+  const allReferencedIds = new Set<string>();
+  for (const card of cards) {
+    if (card.groundingId) allReferencedIds.add(card.groundingId);
+    if (Array.isArray(card.groundingIds)) {
+      for (const id of card.groundingIds) allReferencedIds.add(id);
+    }
+  }
+  for (const id of allReferencedIds) {
+    if (!groundingBlock.includes(`id="${id}"`)) {
+      errors.push(`Grounding ID "${id}" not found in the grounding block`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
+
+async function generateLessonPlan(
+  requirement: string,
+  aiCall: AICallFn,
+): Promise<LessonPlanContent> {
+  const prompt = buildPrompt(PROMPT_IDS.LESSON_PLAN, { requirement });
+  if (!prompt) throw new Error('Failed to load lesson-plan prompt template');
+
+  const groundingBlock = requirement.includes('## Grounding')
+    ? requirement.slice(requirement.indexOf('## Grounding'))
+    : '';
+
+  let lastErrors: string[] = [];
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const retryHint = attempt > 0 && lastErrors.length > 0
+      ? `\n\nYour previous response had validation errors:\n${lastErrors.map((e) => `- ${e}`).join('\n')}\nPlease fix these issues.`
+      : '';
+
+    const response = await aiCall(prompt.system, prompt.user + retryHint);
+    const cleaned = stripCodeFences(response);
+
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(cleaned);
+    } catch {
+      lastErrors = [`Invalid JSON: ${cleaned.slice(0, 100)}...`];
+      log.warn(`Lesson plan attempt ${attempt + 1}: JSON parse failed, ${attempt < 1 ? 'retrying' : 'giving up'}`);
+      continue;
+    }
+
+    const validation = validateLessonPlanDeck(parsed, groundingBlock);
+    if (validation.valid) {
+      return {
+        type: 'lesson_plan',
+        microGoal: parsed.microGoal as LessonPlanContent['microGoal'],
+        groundingIds: parsed.groundingIds as string[],
+        cards: parsed.cards as ExerciseCard[],
+      };
+    }
+
+    lastErrors = validation.errors;
+    log.warn(`Lesson plan attempt ${attempt + 1}: validation failed (${validation.errors.length} errors), ${attempt < 1 ? 'retrying' : 'giving up'}`);
+  }
+
+  throw new Error(`Lesson plan validation failed after 2 attempts: ${lastErrors.join('; ')}`);
 }
 
 /** Detect rate-limit / overload errors where a fallback model may succeed. */
@@ -271,6 +380,87 @@ export async function generateClassroom(
   const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     return callWithFallback(systemPrompt, userPrompt, 256, 'web-search-query-rewrite');
   };
+
+  // ── Lesson Plan Mode ─────────────────────────────────────────────────
+  // When the requirement starts with [LESSON_PLAN_MODE], skip the entire
+  // outline → scene → media pipeline and generate a single lesson-plan
+  // Scene directly from the structured grounding data.
+  if (requirement.startsWith(LESSON_PLAN_MARKER)) {
+    log.info('Lesson plan mode detected — skipping outline generator');
+
+    await options.onProgress?.({
+      step: 'generating_outlines',
+      progress: 15,
+      message: 'Generating lesson plan',
+      scenesGenerated: 0,
+      totalScenes: 1,
+    });
+
+    const lessonContent = await generateLessonPlan(requirement, aiCall);
+    log.info(`Lesson plan generated: ${lessonContent.cards.length} cards`);
+
+    await options.onProgress?.({
+      step: 'generating_scenes',
+      progress: 80,
+      message: 'Building lesson scene',
+      scenesGenerated: 1,
+      totalScenes: 1,
+    });
+
+    const stageId = nanoid(10);
+    const title = lessonContent.microGoal.topic || requirement.slice(0, 50);
+    const stage: Stage = {
+      id: stageId,
+      name: title,
+      language: input.language,
+      style: 'lesson_plan',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const scene: Scene = {
+      id: `sc_${nanoid(10)}`,
+      stageId,
+      type: 'lesson_plan',
+      title,
+      order: 0,
+      content: lessonContent,
+    };
+
+    await options.onProgress?.({
+      step: 'persisting',
+      progress: 95,
+      message: 'Persisting lesson',
+      scenesGenerated: 1,
+      totalScenes: 1,
+    });
+
+    const persisted = await persistClassroom(
+      { id: stageId, stage, scenes: [scene] },
+      options.baseUrl,
+    );
+
+    log.info(`Lesson plan persisted: ${persisted.id}, URL: ${persisted.url}`);
+
+    await options.onProgress?.({
+      step: 'completed',
+      progress: 100,
+      message: 'Lesson plan generation completed',
+      scenesGenerated: 1,
+      totalScenes: 1,
+    });
+
+    return {
+      id: persisted.id,
+      url: persisted.url,
+      stage,
+      scenes: [scene],
+      scenesCount: 1,
+      createdAt: persisted.createdAt,
+    };
+  }
+
+  // ── Standard classroom generation ──────────────────────────────────
 
   const lang = normalizeLanguage(input.language);
   const requirements: UserRequirements = {

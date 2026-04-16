@@ -89,11 +89,12 @@ export function SceneSidebar({
   );
 
   const getSceneTypeIcon = (type: SceneType) => {
-    const icons = {
+    const icons: Record<SceneType, typeof BookOpen> = {
       slide: BookOpen,
       quiz: PieChart,
       interactive: MousePointer2,
       pbl: Cpu,
+      lesson_plan: BookOpen,
     };
     return icons[type] || BookOpen;
   };

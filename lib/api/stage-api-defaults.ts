@@ -14,6 +14,7 @@ import type {
   QuizContent,
   InteractiveContent,
   PBLContent,
+  LessonPlanContent,
 } from '@/lib/types/stage';
 
 // ==================== Utility Functions ====================
@@ -107,6 +108,18 @@ export function createDefaultPBLContent(): PBLContent {
 }
 
 /**
+ * Create default LessonPlanContent
+ */
+export function createDefaultLessonPlanContent(): LessonPlanContent {
+  return {
+    type: 'lesson_plan',
+    microGoal: { grammarPoint: '', topic: '', cefrLevel: 'A1' },
+    groundingIds: [],
+    cards: [],
+  };
+}
+
+/**
  * Create default Content based on type
  */
 export function createDefaultContent(type: SceneType): SceneContent {
@@ -119,6 +132,8 @@ export function createDefaultContent(type: SceneType): SceneContent {
       return createDefaultInteractiveContent();
     case 'pbl':
       return createDefaultPBLContent();
+    case 'lesson_plan':
+      return createDefaultLessonPlanContent();
     default:
       throw new Error(`Unknown scene type: ${type}`);
   }
