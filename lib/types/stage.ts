@@ -3,7 +3,7 @@ import type { Slide } from '@/lib/types/slides';
 import type { Action } from '@/lib/types/action';
 import type { PBLProjectConfig } from '@/lib/pbl/types';
 
-export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
+export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl' | 'lesson_plan';
 
 export type StageMode = 'autonomous' | 'playback';
 
@@ -76,7 +76,7 @@ export interface Scene {
 /**
  * Scene content based on type
  */
-export type SceneContent = SlideContent | QuizContent | InteractiveContent | PBLContent;
+export type SceneContent = SlideContent | QuizContent | InteractiveContent | PBLContent | LessonPlanContent;
 
 /**
  * Slide content - PPTist Canvas data
@@ -128,6 +128,177 @@ export interface InteractiveContent {
 export interface PBLContent {
   type: 'pbl';
   projectConfig: PBLProjectConfig;
+}
+
+// ---------------------------------------------------------------------------
+// Lesson Plan content — structured exercise-card deck for language learning
+// ---------------------------------------------------------------------------
+
+export type CEFRLevel = 'A1' | 'A2' | 'B1' | 'B2' | 'C1';
+
+export interface LithuanianWord {
+  lithuanian: string;
+  pronunciation: string;
+  english: string;
+  emoji?: string;
+}
+
+export interface DialogTurn {
+  speaker: string;
+  lithuanian: string;
+  english: string;
+  pronunciation?: string;
+  isGap?: boolean;
+}
+
+export interface Carrier {
+  lithuanian: string;
+  english: string;
+  pronunciation?: string;
+  groundingId: string;
+}
+
+export interface LessonPlanContent {
+  type: 'lesson_plan';
+  microGoal: {
+    grammarPoint: string;
+    topic: string;
+    cefrLevel: CEFRLevel;
+  };
+  groundingIds: string[];
+  cards: ExerciseCard[];
+}
+
+export type ExerciseCard =
+  | PhraseChunkCard
+  | DialogSnippetCard
+  | ShadowCard
+  | RoleplayCard
+  | DialogueCompletionCard
+  | GrammarPatternCard
+  | FillBlankCard
+  | CaseTransformCard
+  | TenseTransformCard
+  | VocabInContextCard
+  | MatchingCard
+  | MultipleChoiceCard
+  | TranslateSentenceCard
+  | MistakeSpotlightCard;
+
+export interface PhraseChunkCard {
+  kind: 'phrase_chunk';
+  situation: string;
+  phrase: LithuanianWord;
+  groundingId: string;
+}
+
+export interface DialogSnippetCard {
+  kind: 'dialog_snippet';
+  primer: string;
+  turns: DialogTurn[];
+  groundingId: string;
+}
+
+export interface ShadowCard {
+  kind: 'shadow';
+  instruction: string;
+  target: LithuanianWord;
+  groundingId: string;
+}
+
+export interface RoleplayCard {
+  kind: 'roleplay';
+  scenario: string;
+  cue: string;
+  mode: 'closed' | 'free';
+  options?: string[];
+  answer: string;
+  groundingIds: string[];
+}
+
+export interface DialogueCompletionCard {
+  kind: 'dialogue_completion';
+  primer: string;
+  turns: DialogTurn[];
+  options: string[];
+  answer: string;
+  groundingId: string;
+}
+
+export interface GrammarPatternCard {
+  kind: 'grammar_pattern';
+  observation: string;
+  examples: Carrier[];
+  groundingIds: string[];
+}
+
+export interface FillBlankCard {
+  kind: 'fill_blank';
+  sentence: {
+    before: string;
+    blank: string;
+    after: string;
+    english: string;
+  };
+  options: string[];
+  answer: string;
+  groundingId: string;
+}
+
+export interface CaseTransformCard {
+  kind: 'case_transform';
+  source: Carrier;
+  instruction: string;
+  expected: string;
+  hint?: string;
+  groundingId: string;
+}
+
+export interface TenseTransformCard {
+  kind: 'tense_transform';
+  source: Carrier;
+  instruction: string;
+  expected: string;
+  hint?: string;
+  groundingId: string;
+}
+
+export interface VocabInContextCard {
+  kind: 'vocab_in_context';
+  word: LithuanianWord;
+  carrier: Carrier;
+}
+
+export interface MatchingCard {
+  kind: 'matching';
+  pairs: Array<{ left: string; right: string; groundingId: string }>;
+}
+
+export interface MultipleChoiceCard {
+  kind: 'multiple_choice';
+  prompt: string;
+  english?: string;
+  options: string[];
+  answer: string;
+  groundingIds: string[];
+}
+
+export interface TranslateSentenceCard {
+  kind: 'translate_sentence';
+  source: { text: string; language: string };
+  mode: 'closed' | 'free';
+  options?: string[];
+  answer: string;
+  groundingId: string;
+}
+
+export interface MistakeSpotlightCard {
+  kind: 'mistake_spotlight';
+  wrong: string;
+  correct: string;
+  explanation: string;
+  carrier?: Carrier;
+  groundingId: string;
 }
 
 // Re-export generation types for convenience

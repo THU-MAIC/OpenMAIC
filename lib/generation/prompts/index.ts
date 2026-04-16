@@ -31,4 +31,5 @@ export const PROMPT_IDS = {
   INTERACTIVE_HTML: 'interactive-html',
   INTERACTIVE_ACTIONS: 'interactive-actions',
   PBL_ACTIONS: 'pbl-actions',
+  LESSON_PLAN: 'lesson-plan',
 } as const;
