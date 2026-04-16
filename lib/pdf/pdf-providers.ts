@@ -139,6 +139,7 @@
 
 import { extractText, getDocumentProxy, extractImages } from 'unpdf';
 import sharp from 'sharp';
+import { ProviderConfigError } from '@/lib/ai/providers';
 import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
@@ -160,7 +161,10 @@ export async function parsePDF(
 
   // Validate API key if required
   if (provider.requiresApiKey && !config.apiKey) {
-    throw new Error(`API key required for PDF provider: ${config.providerId}`);
+    throw new ProviderConfigError(
+      config.providerId,
+      `API key required for PDF provider: ${config.providerId}`,
+    );
   }
 
   const startTime = Date.now();
