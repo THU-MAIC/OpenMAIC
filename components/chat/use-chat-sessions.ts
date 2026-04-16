@@ -25,6 +25,7 @@ import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
 import { ActionEngine } from '@/lib/action/engine';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
+import { analyticsService } from '@/lib/analytics/analytics';
 
 const log = createLogger('ChatSessions');
 

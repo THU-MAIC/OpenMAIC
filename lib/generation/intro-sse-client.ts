@@ -106,14 +106,20 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
 
   const pcmCarryRef = { current: null as Uint8Array | null };
   const nextStartTimeRef = { current: 0 };
-  let audioContext: AudioContext | null = null;
+  /** Ref avoids `let` control-flow narrowing issues inside nested loops (TS inferred `never`). */
+  const playbackRef = { current: null as AudioContext | null };
 
-  const ensureCtx = () => {
-    if (!audioContext) {
-      audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
-      nextStartTimeRef.current = audioContext.currentTime;
+  const ensureCtx = (): AudioContext => {
+    if (!playbackRef.current) {
+      const WebkitWindow = window as unknown as { webkitAudioContext?: typeof AudioContext };
+      const AudioContextCtor = window.AudioContext ?? WebkitWindow.webkitAudioContext;
+      if (!AudioContextCtor) {
+        throw new Error('Web Audio API (AudioContext) is not available in this browser');
+      }
+      playbackRef.current = new AudioContextCtor();
+      nextStartTimeRef.current = playbackRef.current.currentTime;
     }
-    return audioContext;
+    return playbackRef.current;
   };
 
   onStatus?.('generating');
@@ -179,7 +185,7 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
           schedulePcmChunk(ctx, chunk, nextStartTimeRef, pcmCarryRef, muted ? 0 : 1);
         } else if (currentEvent === 'done') {
           onStatus?.('completed');
-          const ctx = audioContext;
+          const ctx = playbackRef.current;
           const waitSec = ctx ? Math.max(0, nextStartTimeRef.current - ctx.currentTime) : 0;
           // Wait for all scheduled buffers — do not cap aggressively or playback is cut off mid-intro.
           const waitMs = Math.min(180_000, Math.ceil(waitSec * 1000) + 500);
@@ -203,6 +209,6 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
   } finally {
     reader?.cancel().catch(() => {});
     pcmCarryRef.current = null;
-    await audioContext?.close().catch(() => {});
+    await playbackRef.current?.close().catch(() => {});
   }
 }

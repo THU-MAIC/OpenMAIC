@@ -21,6 +21,8 @@ export interface Stage {
   // Stage metadata
   language?: string;
   style?: string;
+  /** Short marketing-style summary when present (e.g. from catalog metadata). */
+  headline?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];
   // Agent IDs selected when this classroom was created

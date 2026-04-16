@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
 import { generateIntroScript } from '@/lib/generation/intro-streaming';
 import { createLogger } from '@/lib/logger';
-import { getSettings } from '@/lib/server/settings';
 import { resolveGenerationLanguage } from '@/lib/constants/generation';
 
 const log = createLogger('IntroSSE');

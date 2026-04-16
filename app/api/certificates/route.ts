@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
     const id = searchParams.get('id');
 
     if (!id) {
-      return apiError('MISSING_ID', 400, 'Certificate ID is required');
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'Certificate ID is required');
     }
 
     const cookieStore = await cookies();
@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
       .single();
 
     if (error) {
-      if (error.code === 'PGRST116') return apiError('NOT_FOUND', 404, 'Certificate not found');
+      if (error.code === 'PGRST116') return apiError('INVALID_REQUEST', 404, 'Certificate not found');
       throw error;
     }
 
