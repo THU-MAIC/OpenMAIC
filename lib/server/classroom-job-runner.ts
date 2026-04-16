@@ -5,6 +5,7 @@ import {
   markClassroomGenerationJobRunning,
   markClassroomGenerationJobSucceeded,
   updateClassroomGenerationJobProgress,
+  type ClassroomGenerationJob,
 } from '@/lib/server/classroom-job-store';
 
 const log = createLogger('ClassroomJob');
@@ -14,6 +15,9 @@ export function runClassroomGenerationJob(
   jobId: string,
   input: GenerateClassroomInput,
   baseUrl: string,
+  /** Pass the just-created job object so the runner can skip the blob read
+   *  and avoid Vercel Blob list() eventual-consistency misses. */
+  initialJob?: ClassroomGenerationJob,
 ): Promise<void> {
   const existing = runningJobs.get(jobId);
   if (existing) {
@@ -22,7 +26,7 @@ export function runClassroomGenerationJob(
 
   const jobPromise = (async () => {
     try {
-      await markClassroomGenerationJobRunning(jobId);
+      await markClassroomGenerationJobRunning(jobId, initialJob);
 
       const result = await generateClassroom(input, {
         baseUrl,
