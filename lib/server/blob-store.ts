@@ -37,7 +37,11 @@ export async function readJsonBlob<T>(key: string): Promise<T | null> {
     const match = blobs.find((b) => b.pathname === key);
     if (!match) return null;
 
-    const resp = await fetch(match.downloadUrl);
+    const resp = await fetch(match.downloadUrl, {
+      headers: {
+        authorization: `Bearer ${process.env.BLOB_READ_WRITE_TOKEN}`,
+      },
+    });
     if (!resp.ok) {
       log.warn(`Blob fetch failed for "${key}": ${resp.status}`);
       return null;
