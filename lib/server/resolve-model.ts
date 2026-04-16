@@ -14,6 +14,7 @@ import {
   ProviderConfigError,
   type ModelWithInfo,
 } from '@/lib/ai/providers';
+import type { ProviderId } from '@/lib/types/provider';
 import {
   getServerProviders,
   resolveApiKey,
@@ -124,9 +125,9 @@ export async function resolveModel(params: {
  */
 function findConfiguredFallback(
   skipProviderId: string,
-): { providerId: string; modelId: string } | null {
+): { providerId: ProviderId; modelId: string } | null {
   const configured = getServerProviders();
-  for (const pid of Object.keys(PROVIDERS)) {
+  for (const pid of Object.keys(PROVIDERS) as ProviderId[]) {
     if (pid === skipProviderId) continue;
     if (!configured[pid]) continue;
     // Use server-restricted model list if available, else first model in registry
