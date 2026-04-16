@@ -70,6 +70,10 @@ async function runScenario(
 
   console.log(`  [run ${runIndex + 1}] Starting...`);
 
+  // Per-scenario sub-directory: runDir/<scenario-id>/
+  const scenarioDir = join(runDir, scenario.id);
+  mkdirSync(scenarioDir, { recursive: true });
+
   const stateManager = new EvalStateManager(scenario.initialStoreState);
   const messages: Array<{
     role: string;
@@ -209,8 +213,8 @@ async function runScenario(
       const isLastTurn = turnIdx === scenario.turns.length - 1;
       if (turn.checkpoint || isLastTurn) {
         const elements = stateManager.getWhiteboardElements();
-        const screenshotFilename = `${scenario.id}_run${runIndex}_turn${turnIdx}.png`;
-        const screenshotPath = await captureWhiteboard(elements, runDir, screenshotFilename);
+        const screenshotFilename = `run${runIndex}_turn${turnIdx}.png`;
+        const screenshotPath = await captureWhiteboard(elements, scenarioDir, screenshotFilename);
 
         console.log(`    Captured: ${screenshotFilename} (${elements.length} elements)`);
 
