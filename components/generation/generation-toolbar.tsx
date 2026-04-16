@@ -363,14 +363,14 @@ export function GenerationToolbar({
         <TooltipTrigger asChild>
           <button
             onClick={() => {
-              const langs = ['en-US', 'zh-CN', 'lt-LT'];
+              const langs = ['en-US', 'lt-LT'];
               const idx = langs.indexOf(language);
               onLanguageChange(langs[(idx + 1) % langs.length]);
             }}
             className={pillMuted}
           >
             <Globe className="size-3.5" />
-            <span>{{ 'zh-CN': '中文', 'lt-LT': 'LT', 'en-US': 'EN' }[language] ?? language}</span>
+            <span>{{ 'lt-LT': 'LT', 'en-US': 'EN' }[language] ?? language}</span>
           </button>
         </TooltipTrigger>
         <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
