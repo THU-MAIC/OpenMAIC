@@ -160,6 +160,16 @@ Return a JSON object with this exact structure:
   }));
 }
 
+/** Detect rate-limit / overload errors where a fallback model may succeed. */
+function isOverloadError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const statusCode = (error as Record<string, unknown>).statusCode ??
+    (error as Record<string, unknown>).status;
+  if (statusCode === 429 || statusCode === 503) return true;
+  const msg = error.message.toLowerCase();
+  return msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('quota');
+}
+
 export async function generateClassroom(
   input: GenerateClassroomInput,
   options: {
@@ -183,34 +193,87 @@ export async function generateClassroom(
   } = await resolveModel({});
   log.info(`Using server-configured model: ${modelString}`);
 
+  // Resolve fallback model for overload resilience (e.g. flash-lite).
+  const fallbackModelString = process.env.FALLBACK_MODEL;
+  let fallbackModel: typeof languageModel | undefined;
+  let fallbackModelInfo: typeof modelInfo | undefined;
+  if (fallbackModelString) {
+    try {
+      const fb = await resolveModel({ modelString: fallbackModelString });
+      fallbackModel = fb.model;
+      fallbackModelInfo = fb.modelInfo;
+      log.info(`Fallback model: ${fallbackModelString}`);
+    } catch (e) {
+      log.warn(`Failed to resolve fallback model "${fallbackModelString}":`, e);
+    }
+  }
+
   const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-    const result = await callLLM(
-      {
-        model: languageModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        maxOutputTokens: modelInfo?.outputWindow,
-      },
-      'generate-classroom',
-    );
-    return result.text;
+    try {
+      const result = await callLLM(
+        {
+          model: languageModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          maxOutputTokens: modelInfo?.outputWindow,
+        },
+        'generate-classroom',
+      );
+      return result.text;
+    } catch (error) {
+      if (fallbackModel && isOverloadError(error)) {
+        log.warn(`Primary model overloaded, falling back to ${fallbackModelString}`);
+        const result = await callLLM(
+          {
+            model: fallbackModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            maxOutputTokens: fallbackModelInfo?.outputWindow,
+          },
+          'generate-classroom-fallback',
+        );
+        return result.text;
+      }
+      throw error;
+    }
   };
 
   const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-    const result = await callLLM(
-      {
-        model: languageModel,
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt },
-        ],
-        maxOutputTokens: 256,
-      },
-      'web-search-query-rewrite',
-    );
-    return result.text;
+    try {
+      const result = await callLLM(
+        {
+          model: languageModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          maxOutputTokens: 256,
+        },
+        'web-search-query-rewrite',
+      );
+      return result.text;
+    } catch (error) {
+      if (fallbackModel && isOverloadError(error)) {
+        log.warn(`Primary model overloaded for search query, falling back to ${fallbackModelString}`);
+        const result = await callLLM(
+          {
+            model: fallbackModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            maxOutputTokens: 256,
+          },
+          'web-search-query-rewrite-fallback',
+        );
+        return result.text;
+      }
+      throw error;
+    }
   };
 
   const lang = normalizeLanguage(input.language);
