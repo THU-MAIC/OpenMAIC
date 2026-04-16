@@ -23,6 +23,7 @@ export async function writeJsonBlob(key: string, data: unknown): Promise<void> {
     access: 'private',
     contentType: 'application/json',
     addRandomSuffix: false,
+    allowOverwrite: true,
   });
 }
 
