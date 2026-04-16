@@ -10,7 +10,6 @@
     "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
-    "languageHint": "课程将以此语言生成",
     "pdfParser": "解析器",
     "pdfUpload": "上传 PDF",
     "removePdf": "移除文件",
@@ -35,7 +34,23 @@
     "resourcePackDesc": "PPTX + 交互式页面",
     "exporting": "正在导出...",
     "exportSuccess": "导出成功",
-    "exportFailed": "导出失败"
+    "exportFailed": "导出失败",
+    "classroomZip": "导出课堂 ZIP",
+    "classroomZipDesc": "课程结构 + 媒体文件"
+  },
+  "import": {
+    "classroom": "导入课堂",
+    "parsing": "正在解析 ZIP...",
+    "validating": "正在验证数据...",
+    "writingMedia": "正在写入媒体文件...",
+    "writingCourse": "正在写入课程数据...",
+    "success": "课堂导入成功",
+    "error": {
+      "invalidZip": "无效文件，请选择有效的 .maic.zip 文件。",
+      "invalidManifest": "无效课堂文件：manifest.json 缺失或已损坏。",
+      "missingData": "无效课堂文件：缺少必需的课程数据。",
+      "storageFull": "导入失败：浏览器存储空间已满，请清理旧课堂后重试。"
+    }
   },
   "chat": {
     "lecture": "授课",
@@ -212,7 +227,6 @@
       "mentionHint": "使用 @question 提问，@judge 提交评审",
       "placeholder": "输入消息...",
       "send": "发送",
-      "welcomeMessage": "你好！我是本任务的提问助手，当前任务：「{{title}}」\n\n为了帮助你开展工作，我准备了一些引导问题：\n\n{{questions}}\n\n随时可以 @question 向我提问！",
       "issueCompleteMessage": "任务「{{completed}}」已完成！进入下一个任务：「{{next}}」",
       "allCompleteMessage": "🎉 所有任务都已完成！项目做得很棒！"
     },

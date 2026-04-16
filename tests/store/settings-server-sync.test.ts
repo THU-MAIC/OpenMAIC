@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { isProviderUsable } from '@/lib/store/settings-validation';
 
 // ---------------------------------------------------------------------------
 // Mocks — must be defined before importing the store
@@ -312,7 +313,7 @@ describe('fetchServerProviders — provider availability sync', () => {
     expect(config.apiKey).toBe('');
     expect(config.isServerConfigured).toBe(false);
     // This is the condition model-selector uses to decide if a provider is usable:
-    const isUsable = !config.requiresApiKey || !!config.apiKey || !!config.isServerConfigured;
+    const isUsable = isProviderUsable(config);
     expect(isUsable).toBe(false);
   });
 
@@ -842,5 +843,61 @@ describe('fetchServerProviders — LLM cross-provider fallback', () => {
 
     expect(store.getState().providerId).toBe('anthropic');
     expect(store.getState().modelId).toBe('claude-sonnet-4-6');
+  });
+});
+
+describe('settings merge migration — custom provider baseUrl', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  it('promotes defaultBaseUrl into baseUrl for legacy custom providers', async () => {
+    const { promoteLegacyCustomProviderBaseUrls } = await import('@/lib/store/settings');
+    const state = {
+      providersConfig: {
+        'custom-123': {
+          apiKey: '',
+          baseUrl: '',
+          models: [{ id: 'test-model', name: 'Test Model' }],
+          name: 'Legacy Custom',
+          type: 'openai',
+          defaultBaseUrl: 'https://example.com/v1',
+          requiresApiKey: true,
+          isBuiltIn: false,
+        },
+      },
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally partial for unit test
+    promoteLegacyCustomProviderBaseUrls(state as any);
+
+    expect(state.providersConfig['custom-123'].baseUrl).toBe('https://example.com/v1');
+    expect(state.providersConfig['custom-123'].defaultBaseUrl).toBe('https://example.com/v1');
+  });
+
+  it('does not promote defaultBaseUrl for built-in providers', async () => {
+    const { promoteLegacyCustomProviderBaseUrls } = await import('@/lib/store/settings');
+    const state = {
+      providersConfig: {
+        openai: {
+          apiKey: '',
+          baseUrl: '',
+          models: [{ id: 'gpt-4o', name: 'GPT-4o' }],
+          name: 'OpenAI',
+          type: 'openai',
+          defaultBaseUrl: 'https://persisted-openai.example/v1',
+          requiresApiKey: true,
+          isBuiltIn: true,
+        },
+      },
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally partial for unit test
+    promoteLegacyCustomProviderBaseUrls(state as any);
+
+    expect(state.providersConfig.openai.baseUrl).toBe('');
+    expect(state.providersConfig.openai.defaultBaseUrl).toBe('https://persisted-openai.example/v1');
   });
 });

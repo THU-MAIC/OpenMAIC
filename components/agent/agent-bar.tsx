@@ -71,7 +71,12 @@ function AgentVoicePill({
   }, []);
 
   const handlePreview = useCallback(
-    async (providerId: TTSProviderId, voiceId: string, modelId?: string) => {
+    async (
+      providerId: TTSProviderId,
+      voiceId: string,
+      modelId?: string,
+      voiceLanguage?: string,
+    ) => {
       const key = `${providerId}::${voiceId}`;
       if (previewingId === key) {
         stopPreview();
@@ -80,10 +85,8 @@ function AgentVoicePill({
       stopPreview();
       setPreviewingId(key);
 
-      const courseLanguage =
-        (typeof localStorage !== 'undefined' && localStorage.getItem('generationLanguage')) ||
-        'zh-CN';
-      const previewText = courseLanguage === 'en-US' ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
+      const isEnglish = voiceLanguage?.startsWith('en') ?? false;
+      const previewText = isEnglish ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
 
       if (providerId === 'browser-native-tts') {
         const { promise, cancel } = playBrowserTTSPreview({ text: previewText, voice: voiceId });
@@ -226,7 +229,7 @@ function AgentVoicePill({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handlePreview(provider.providerId, voice.id, group.modelId);
+                        handlePreview(provider.providerId, voice.id, group.modelId, voice.language);
                       }}
                       className={cn(
                         'shrink-0 size-6 flex items-center justify-center rounded-sm transition-colors',
@@ -299,7 +302,12 @@ function TeacherVoicePill({
   }, []);
 
   const handlePreview = useCallback(
-    async (providerId: TTSProviderId, voiceId: string, modelId?: string) => {
+    async (
+      providerId: TTSProviderId,
+      voiceId: string,
+      modelId?: string,
+      voiceLanguage?: string,
+    ) => {
       const key = `${providerId}::${voiceId}`;
       if (previewingId === key) {
         stopPreview();
@@ -308,10 +316,8 @@ function TeacherVoicePill({
       stopPreview();
       setPreviewingId(key);
 
-      const courseLanguage =
-        (typeof localStorage !== 'undefined' && localStorage.getItem('generationLanguage')) ||
-        'zh-CN';
-      const previewText = courseLanguage === 'en-US' ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
+      const isEnglish = voiceLanguage?.startsWith('en') ?? false;
+      const previewText = isEnglish ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
 
       if (providerId === 'browser-native-tts') {
         const { promise, cancel } = playBrowserTTSPreview({ text: previewText, voice: voiceId });
@@ -450,7 +456,7 @@ function TeacherVoicePill({
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
-                        handlePreview(provider.providerId, voice.id, group.modelId);
+                        handlePreview(provider.providerId, voice.id, group.modelId, voice.language);
                       }}
                       className={cn(
                         'shrink-0 size-6 flex items-center justify-center rounded-sm transition-colors',

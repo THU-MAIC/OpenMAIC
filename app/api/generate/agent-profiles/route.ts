@@ -20,7 +20,7 @@ export const maxDuration = 120;
 interface RequestBody {
   stageInfo: { name: string; description?: string };
   sceneOutlines?: { title: string; description?: string }[];
-  language: string;
+  languageDirective: string;
   availableAvatars: string[];
   avatarDescriptions?: Array<{ path: string; desc: string }>;
   availableVoices?: Array<{ providerId: string; voiceId: string; voiceName: string }>;
@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
     const {
       stageInfo,
       sceneOutlines,
-      language,
+      languageDirective,
       availableAvatars,
       avatarDescriptions,
       availableVoices,
@@ -54,8 +54,8 @@ export async function POST(req: NextRequest) {
     if (!stageInfo?.name) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageInfo.name is required');
     }
-    if (!language) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'language is required');
+    if (!languageDirective) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'languageDirective is required');
     }
     if (!availableAvatars || availableAvatars.length === 0) {
       return apiError(
@@ -109,7 +109,8 @@ Requirements:
 - Exactly 1 agent must have role "teacher", the rest can be "assistant" or "student"
 - Priority values: teacher=10 (highest), assistant=7, student=4-6
 - Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
-- Names and personas must be in language: ${language}
+- Language directive for this course: ${languageDirective}
+  Agent names and personas must follow this language directive.
 - Each agent must be assigned one avatar from this list: ${JSON.stringify(avatarDescriptions && avatarDescriptions.length > 0 ? avatarDescriptions.map((a) => ({ path: a.path, description: a.desc })) : availableAvatars)}
   - Pick an avatar that visually matches the agent's personality and role
   - Try to use different avatars for each agent

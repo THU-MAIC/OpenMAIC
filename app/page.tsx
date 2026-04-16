@@ -18,6 +18,7 @@ import {
   Monitor,
   BotOff,
   ChevronUp,
+  Upload,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -48,24 +49,22 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { useImportClassroom } from '@/lib/import/use-import-classroom';
 
 const log = createLogger('Home');
 
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
-const LANGUAGE_STORAGE_KEY = 'generationLanguage';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
-  language: 'zh-CN' | 'en-US';
   webSearch: boolean;
 }
 
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
-  language: 'zh-CN',
   webSearch: false,
 };
 
@@ -98,15 +97,8 @@ function HomePage() {
     }
     try {
       const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
-      const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
-      if (savedLanguage === 'zh-CN' || savedLanguage === 'en-US') {
-        updates.language = savedLanguage;
-      } else {
-        const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
-        updates.language = detected;
-      }
       if (Object.keys(updates).length > 0) {
         setForm((prev) => ({ ...prev, ...updates }));
       }
@@ -159,6 +151,12 @@ function HomePage() {
     }
   };
 
+  const { importing, fileInputRef, triggerFileSelect, handleFileChange } = useImportClassroom(
+    () => {
+      loadClassrooms();
+    },
+  );
+
   useEffect(() => {
     // Clear stale media store to prevent cross-course thumbnail contamination.
     // The store may hold tasks from a previously visited classroom whose elementIds
@@ -200,7 +198,6 @@ function HomePage() {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
       if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
-      if (field === 'language') localStorage.setItem(LANGUAGE_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
     } catch {
       /* ignore */
@@ -260,7 +257,6 @@ function HomePage() {
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
-        language: form.language,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: form.webSearch || undefined,
@@ -331,6 +327,13 @@ function HomePage() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".zip"
+        onChange={handleFileChange}
+        className="hidden"
+      />
       {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
@@ -500,8 +503,6 @@ function HomePage() {
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
-                  language={form.language}
-                  onLanguageChange={(lang) => updateForm('language', lang)}
                   webSearch={form.webSearch}
                   onWebSearchChange={(v) => updateForm('webSearch', v)}
                   onSettingsOpen={(section) => {
@@ -557,6 +558,18 @@ function HomePage() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* ── Import button (empty state) ── */}
+        {classrooms.length === 0 && (
+          <button
+            onClick={triggerFileSelect}
+            disabled={importing}
+            className="relative z-10 mt-4 flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+          >
+            <Upload className="size-3.5" />
+            <span>{t('import.classroom')}</span>
+          </button>
+        )}
       </motion.div>
 
       {/* ═══ Recent classrooms — collapsible ═══ */}
@@ -568,32 +581,44 @@ function HomePage() {
           className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
         >
           {/* Trigger — divider-line with centered text */}
-          <button
-            onClick={() => {
-              const next = !recentOpen;
-              setRecentOpen(next);
-              try {
-                localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
-              } catch {
-                /* ignore */
-              }
-            }}
-            className="group w-full flex items-center gap-4 py-2 cursor-pointer"
-          >
+          <div className="group w-full flex items-center gap-4 py-2">
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-            <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
-              <Clock className="size-3.5" />
-              {t('classroom.recentClassrooms')}
-              <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
-              <motion.div
-                animate={{ rotate: recentOpen ? 180 : 0 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
+            <div className="shrink-0 flex items-center gap-3 text-[13px] text-muted-foreground/60 select-none">
+              <button
+                onClick={() => {
+                  const next = !recentOpen;
+                  setRecentOpen(next);
+                  try {
+                    localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="flex items-center gap-2 hover:text-foreground/70 transition-colors cursor-pointer"
               >
-                <ChevronDown className="size-3.5" />
-              </motion.div>
-            </span>
+                <Clock className="size-3.5" />
+                {t('classroom.recentClassrooms')}
+                <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
+                <motion.div
+                  animate={{ rotate: recentOpen ? 180 : 0 }}
+                  transition={{ duration: 0.3, ease: 'easeInOut' }}
+                >
+                  <ChevronDown className="size-3.5" />
+                </motion.div>
+              </button>
+              <button
+                onClick={triggerFileSelect}
+                disabled={importing}
+                className="group/import grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
+              >
+                <Upload className="size-3" />
+                <span className="overflow-hidden opacity-0 group-hover/import:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                  {t('import.classroom')}
+                </span>
+              </button>
+            </div>
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-          </button>
+          </div>
 
           {/* Expandable content */}
           <AnimatePresence>

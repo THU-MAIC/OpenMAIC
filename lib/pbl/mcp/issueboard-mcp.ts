@@ -14,13 +14,13 @@ import { getQuestionAgentPrompt, getJudgeAgentPrompt } from './agent-templates';
 export class IssueboardMCP {
   private config: PBLProjectConfig;
   private agentMCP: AgentMCP;
-  private language: string;
+  private languageDirective: string;
   private nextIssueId: number;
 
-  constructor(config: PBLProjectConfig, agentMCP: AgentMCP, language: string = 'en-US') {
+  constructor(config: PBLProjectConfig, agentMCP: AgentMCP, languageDirective: string = '') {
     this.config = config;
     this.agentMCP = agentMCP;
-    this.language = language;
+    this.languageDirective = languageDirective;
     this.nextIssueId = 1;
   }
 
@@ -107,7 +107,7 @@ export class IssueboardMCP {
     // Auto-create question and judge agents
     this.agentMCP.createAgent({
       name: questionAgentName,
-      system_prompt: getQuestionAgentPrompt(this.language),
+      system_prompt: getQuestionAgentPrompt(this.languageDirective),
       default_mode: 'chat',
       actor_role: 'Question Assistant for Issue',
       role_division: 'development',
@@ -116,7 +116,7 @@ export class IssueboardMCP {
 
     this.agentMCP.createAgent({
       name: judgeAgentName,
-      system_prompt: getJudgeAgentPrompt(this.language),
+      system_prompt: getJudgeAgentPrompt(this.languageDirective),
       default_mode: 'chat',
       actor_role: 'Judge for Issue Completion',
       role_division: 'management',

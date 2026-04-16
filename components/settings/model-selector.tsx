@@ -21,7 +21,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderId } from '@/lib/ai/providers';
 import { MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
-import { formatContextWindow } from './utils';
+import { createVerifyModelRequest, formatContextWindow } from './utils';
 
 interface ModelSelectorProps {
   providerId: ProviderId;
@@ -66,13 +66,16 @@ export function ModelSelector({
   };
 
   // Get all providers that are ready to use:
-  // - (Doesn't require API key OR has API key configured OR server has key)
+  // - Provider requires API key: must have client key OR server configured
+  // - Provider doesn't require API key (e.g. Ollama): must have explicit baseUrl OR server configured
   // - Has at least one model
-  // - Has baseUrl or defaultBaseUrl configured
+  // - Has a reachable baseUrl
   const configuredProviders = Object.entries(providersConfig)
     .filter(
       ([, config]) =>
-        (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
+        (config.requiresApiKey
+          ? config.apiKey || config.isServerConfigured
+          : config.isServerConfigured || config.baseUrl) &&
         config.models.length >= 1 &&
         (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
     )
@@ -158,13 +161,16 @@ export function ModelSelector({
         const response = await fetch('/api/verify-model', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            apiKey,
-            baseUrl,
-            model: `${pid}:${mid}`,
-            providerType: providerConfig.type,
-            requiresApiKey: providerConfig.requiresApiKey,
-          }),
+          body: JSON.stringify(
+            createVerifyModelRequest({
+              providerId: pid,
+              modelId: mid,
+              apiKey,
+              baseUrl,
+              providerType: providerConfig.type,
+              requiresApiKey: providerConfig.requiresApiKey,
+            }),
+          ),
         });
 
         const data = await response.json();

@@ -10,7 +10,6 @@
     "greetingWithName": "Hi, {{name}}"
   },
   "toolbar": {
-    "languageHint": "Course will be generated in this language",
     "pdfParser": "Parser",
     "pdfUpload": "Upload PDF",
     "removePdf": "Remove file",
@@ -35,7 +34,23 @@
     "resourcePackDesc": "PPTX + interactive pages",
     "exporting": "Exporting...",
     "exportSuccess": "Export successful",
-    "exportFailed": "Export failed"
+    "exportFailed": "Export failed",
+    "classroomZip": "Export Classroom ZIP",
+    "classroomZipDesc": "Course structure + media files"
+  },
+  "import": {
+    "classroom": "Import Classroom",
+    "parsing": "Parsing ZIP...",
+    "validating": "Validating data...",
+    "writingMedia": "Writing media files...",
+    "writingCourse": "Writing course data...",
+    "success": "Classroom imported successfully",
+    "error": {
+      "invalidZip": "Invalid file. Please select a valid .maic.zip file.",
+      "invalidManifest": "Invalid classroom file: manifest.json is missing or corrupted.",
+      "missingData": "Invalid classroom file: missing required course data.",
+      "storageFull": "Import failed: browser storage is full. Try clearing old classrooms."
+    }
   },
   "chat": {
     "lecture": "Lecture",
@@ -212,7 +227,6 @@
       "mentionHint": "Use @question to ask, @judge to submit for review",
       "placeholder": "Type a message...",
       "send": "Send",
-      "welcomeMessage": "Hello! I'm your Question Agent for this issue: \"{{title}}\"\n\nTo help guide your work, I've prepared some questions for you:\n\n{{questions}}\n\nFeel free to @question me anytime if you need help or clarification!",
       "issueCompleteMessage": "Issue \"{{completed}}\" completed! Moving to next issue: \"{{next}}\"",
       "allCompleteMessage": "🎉 All issues completed! Great work on the project!"
     },

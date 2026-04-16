@@ -73,6 +73,7 @@ async function fetchSceneContent(
       style?: string;
     };
     agents?: AgentInfo[];
+    languageDirective?: string;
   },
   signal?: AbortSignal,
 ): Promise<SceneContentResult> {
@@ -101,6 +102,7 @@ async function fetchSceneActions(
     agents?: AgentInfo[];
     previousSpeeches?: string[];
     userProfile?: string;
+    languageDirective?: string;
   },
   signal?: AbortSignal,
 ): Promise<SceneActionsResult> {
@@ -228,6 +230,7 @@ export interface GenerationParams {
   };
   agents?: AgentInfo[];
   userProfile?: string;
+  languageDirective?: string;
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
@@ -321,6 +324,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               imageMapping: params.imageMapping,
               stageInfo: params.stageInfo,
               agents: params.agents,
+              languageDirective: params.languageDirective,
             },
             signal,
           );
@@ -354,6 +358,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               agents: params.agents,
               previousSpeeches,
               userProfile: params.userProfile,
+              languageDirective: params.languageDirective,
             },
             signal,
           );
@@ -470,6 +475,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             imageMapping: params.imageMapping,
             stageInfo: params.stageInfo,
             agents: params.agents,
+            languageDirective: params.languageDirective,
           },
           signal,
         );
@@ -497,6 +503,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             agents: params.agents,
             previousSpeeches,
             userProfile: params.userProfile,
+            languageDirective: params.languageDirective,
           },
           signal,
         );

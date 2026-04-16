@@ -20,6 +20,7 @@ import type { Action } from '@/lib/types/action';
 import { applyOutlineFallbacks } from './outline-generator';
 import { generateSceneContent, generateSceneActions } from './scene-generator';
 import type { AgentInfo, SceneGenerationContext, AICallFn } from './pipeline-types';
+import { buildLanguageText } from './prompt-formatters';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
@@ -76,9 +77,12 @@ export async function buildSceneFromOutline(
   agents?: AgentInfo[],
   onPhaseChange?: (phase: 'content' | 'actions') => void,
   userProfile?: string,
+  languageDirective?: string,
 ): Promise<Scene | null> {
   // Apply type fallbacks
   outline = applyOutlineFallbacks(outline, !!languageModel);
+
+  const langText = buildLanguageText(languageDirective, outline.languageNote);
 
   // Step 1: Generate content (with images if available)
   onPhaseChange?.('content');
@@ -91,16 +95,14 @@ export async function buildSceneFromOutline(
   log.debug(
     `imageMapping available: ${imageMapping ? Object.keys(imageMapping).length + ' keys' : 'undefined'}`,
   );
-  const content = await generateSceneContent(
-    outline,
-    aiCall,
+  const content = await generateSceneContent(outline, aiCall, {
     assignedImages,
     imageMapping,
     languageModel,
     visionEnabled,
-    undefined,
     agents,
-  );
+    languageDirective: langText,
+  });
   if (!content) {
     log.error(`Failed to generate content for: ${outline.title}`);
     return null;
@@ -109,7 +111,12 @@ export async function buildSceneFromOutline(
   // Step 2: Generate Actions
   onPhaseChange?.('actions');
   log.debug(`Step 2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(outline, content, aiCall, ctx, agents, userProfile);
+  const actions = await generateSceneActions(outline, content, aiCall, {
+    ctx,
+    agents,
+    userProfile,
+    languageDirective: langText,
+  });
   log.debug(`Generated ${actions.length} actions for: ${outline.title}`);
 
   // Build complete Scene object

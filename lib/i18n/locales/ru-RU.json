@@ -10,7 +10,6 @@
     "greetingWithName": "Привет, {{name}}"
   },
   "toolbar": {
-    "languageHint": "Курс будет сгенерирован на этом языке",
     "pdfParser": "Парсер",
     "pdfUpload": "Загрузить PDF",
     "removePdf": "Удалить файл",
@@ -35,7 +34,23 @@
     "resourcePackDesc": "PPTX + интерактивные страницы",
     "exporting": "Экспорт...",
     "exportSuccess": "Экспорт успешен",
-    "exportFailed": "Ошибка экспорта"
+    "exportFailed": "Ошибка экспорта",
+    "classroomZip": "Экспорт ZIP класса",
+    "classroomZipDesc": "Структура курса + медиафайлы"
+  },
+  "import": {
+    "classroom": "Импорт класса",
+    "parsing": "Анализ ZIP...",
+    "validating": "Проверка данных...",
+    "writingMedia": "Запись медиафайлов...",
+    "writingCourse": "Запись данных курса...",
+    "success": "Класс успешно импортирован",
+    "error": {
+      "invalidZip": "Недопустимый файл. Выберите корректный файл .maic.zip.",
+      "invalidManifest": "Недопустимый файл класса: manifest.json отсутствует или повреждён.",
+      "missingData": "Недопустимый файл класса: отсутствуют необходимые данные курса.",
+      "storageFull": "Импорт не удался: хранилище браузера заполнено. Удалите старые классы."
+    }
   },
   "chat": {
     "lecture": "Лекция",
@@ -212,7 +227,6 @@
       "mentionHint": "Используйте @question для вопроса, @judge для проверки",
       "placeholder": "Введите сообщение...",
       "send": "Отправить",
-      "welcomeMessage": "Привет! Я ваш помощник по задаче: \"{{title}}\"\n\nЧтобы помочь вам, я подготовил несколько вопросов:\n\n{{questions}}\n\nОбращайтесь через @question, если нужна помощь!",
       "issueCompleteMessage": "Задача \"{{completed}}\" выполнена! Переход к следующей: \"{{next}}\"",
       "allCompleteMessage": "🎉 Все задачи выполнены! Отличная работа над проектом!"
     },

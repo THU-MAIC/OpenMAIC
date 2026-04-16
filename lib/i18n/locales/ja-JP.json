@@ -10,7 +10,6 @@
     "greetingWithName": "こんにちは、{{name}}さん"
   },
   "toolbar": {
-    "languageHint": "コースはこの言語で生成されます",
     "pdfParser": "パーサー",
     "pdfUpload": "PDFをアップロード",
     "removePdf": "ファイルを削除",
@@ -35,7 +34,23 @@
     "resourcePackDesc": "PPTX＋インタラクティブページ",
     "exporting": "エクスポート中...",
     "exportSuccess": "エクスポートが完了しました",
-    "exportFailed": "エクスポートに失敗しました"
+    "exportFailed": "エクスポートに失敗しました",
+    "classroomZip": "教室ZIPをエクスポート",
+    "classroomZipDesc": "コース構造 + メディアファイル"
+  },
+  "import": {
+    "classroom": "教室をインポート",
+    "parsing": "ZIP を解析中...",
+    "validating": "データを検証中...",
+    "writingMedia": "メディアファイルを書き込み中...",
+    "writingCourse": "コースデータを書き込み中...",
+    "success": "教室のインポートが完了しました",
+    "error": {
+      "invalidZip": "無効なファイルです。有効な .maic.zip ファイルを選択してください。",
+      "invalidManifest": "無効な教室ファイル：manifest.json が見つからないか破損しています。",
+      "missingData": "無効な教室ファイル：必要なコースデータが不足しています。",
+      "storageFull": "インポート失敗：ブラウザのストレージが一杯です。古い教室を削除してください。"
+    }
   },
   "chat": {
     "lecture": "講義",
@@ -212,7 +227,6 @@
       "mentionHint": "@question で質問、@judge で提出・レビュー依頼",
       "placeholder": "メッセージを入力...",
       "send": "送信",
-      "welcomeMessage": "こんにちは！この課題の質問エージェントです：「{{title}}」\n\n学習の手助けとして、いくつかの質問を用意しました：\n\n{{questions}}\n\nいつでも @question で気軽に質問してくださいね！",
       "issueCompleteMessage": "課題「{{completed}}」が完了しました！次の課題に進みます：「{{next}}」",
       "allCompleteMessage": "🎉 すべての課題が完了しました！プロジェクトお疲れさまでした！"
     },
