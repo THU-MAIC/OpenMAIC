@@ -32,6 +32,8 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
 
     const pollUrl = `${buildRequestOrigin(req)}/api/generate-classroom/${jobId}`;
 
+    const isFailed = job.status === 'failed';
+
     return apiSuccess(
       {
         jobId: job.id,
@@ -45,7 +47,14 @@ export async function GET(req: NextRequest, context: { params: Promise<{ jobId: 
         totalScenes: job.totalScenes,
         result: job.result,
         error: job.error,
-        done: job.status === 'succeeded' || job.status === 'failed',
+        done: job.status === 'succeeded' || isFailed,
+        // Diagnostic context — helps callers understand what was sent and
+        // where the pipeline was when it failed (or succeeded).
+        ...(isFailed ? { failedAtStep: job.failedAtStep } : {}),
+        ...(job.durationMs != null ? { durationMs: job.durationMs } : {}),
+        ...(job.startedAt ? { startedAt: job.startedAt } : {}),
+        ...(job.completedAt ? { completedAt: job.completedAt } : {}),
+        inputSummary: job.inputSummary,
       },
       200,
       cors,
