@@ -9,12 +9,21 @@ import type { NextRequest } from 'next/server';
 import {
   getModel,
   isProviderKeyRequired,
+  PROVIDERS,
   parseModelString,
   ProviderConfigError,
   type ModelWithInfo,
 } from '@/lib/ai/providers';
-import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
+import {
+  getServerProviders,
+  resolveApiKey,
+  resolveBaseUrl,
+  resolveProxy,
+} from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('ResolveModel');
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
@@ -50,31 +59,84 @@ export async function resolveModel(params: {
     }
   }
 
+  let effectiveProviderId = providerId;
+  let effectiveModelId = modelId;
+  let effectiveModelString = modelString;
+
   const apiKey = clientBaseUrl
     ? params.apiKey || ''
-    : resolveApiKey(providerId, params.apiKey || '');
-  const baseUrl = clientBaseUrl ? clientBaseUrl : resolveBaseUrl(providerId, params.baseUrl);
-  const proxy = resolveProxy(providerId);
+    : resolveApiKey(effectiveProviderId, params.apiKey || '');
 
-  // Fail fast with a descriptive error before getModel() throws a raw one
-  if (isProviderKeyRequired(providerId) && !apiKey) {
+  // When no explicit model was requested (server-side default path) and the
+  // default provider has no key, fall back to any server-configured provider.
+  // This mirrors the frontend's isServerConfigured logic: use whatever is available.
+  if (!params.modelString && isProviderKeyRequired(effectiveProviderId) && !apiKey) {
+    const fallback = findConfiguredFallback(effectiveProviderId);
+    if (fallback) {
+      log.info(
+        `Provider "${effectiveProviderId}" has no API key; falling back to "${fallback.providerId}:${fallback.modelId}"`,
+      );
+      effectiveProviderId = fallback.providerId;
+      effectiveModelId = fallback.modelId;
+      effectiveModelString = `${fallback.providerId}:${fallback.modelId}`;
+    }
+  }
+
+  const effectiveApiKey = clientBaseUrl
+    ? params.apiKey || ''
+    : resolveApiKey(effectiveProviderId, params.apiKey || '');
+  const baseUrl = clientBaseUrl
+    ? clientBaseUrl
+    : resolveBaseUrl(effectiveProviderId, params.baseUrl);
+  const proxy = resolveProxy(effectiveProviderId);
+
+  if (isProviderKeyRequired(effectiveProviderId) && !effectiveApiKey) {
     throw new ProviderConfigError(
-      providerId,
-      `No API key configured for provider "${providerId}". ` +
-        `Set ${providerId.toUpperCase()}_API_KEY in .env.local or server-providers.yml.`,
+      effectiveProviderId,
+      `No API key configured for provider "${effectiveProviderId}". ` +
+        `Set ${effectiveProviderId.toUpperCase()}_API_KEY in .env.local or server-providers.yml.`,
     );
   }
 
   const { model, modelInfo } = getModel({
-    providerId,
-    modelId,
-    apiKey,
+    providerId: effectiveProviderId,
+    modelId: effectiveModelId,
+    apiKey: effectiveApiKey,
     baseUrl,
     proxy,
     providerType: params.providerType as 'openai' | 'anthropic' | 'google' | undefined,
   });
 
-  return { model, modelInfo, modelString, providerId, apiKey };
+  return {
+    model,
+    modelInfo,
+    modelString: effectiveModelString,
+    providerId: effectiveProviderId,
+    apiKey: effectiveApiKey,
+  };
+}
+
+/**
+ * Find a server-configured provider to fall back to when the requested
+ * provider has no API key. Picks the first provider from the PROVIDERS
+ * registry order that has a server-configured key, and returns its first
+ * model. This mirrors the frontend's `isServerConfigured` semantics.
+ */
+function findConfiguredFallback(
+  skipProviderId: string,
+): { providerId: string; modelId: string } | null {
+  const configured = getServerProviders();
+  for (const pid of Object.keys(PROVIDERS)) {
+    if (pid === skipProviderId) continue;
+    if (!configured[pid]) continue;
+    // Use server-restricted model list if available, else first model in registry
+    const serverModels = configured[pid].models;
+    const firstModelId = serverModels?.[0] ?? PROVIDERS[pid]?.models[0]?.id;
+    if (firstModelId) {
+      return { providerId: pid, modelId: firstModelId };
+    }
+  }
+  return null;
 }
 
 /**
