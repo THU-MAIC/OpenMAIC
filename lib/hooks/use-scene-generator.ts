@@ -13,6 +13,7 @@ import type { TTSProviderId } from '@/lib/audio/types';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
+import { fetchWithRetry } from '@/lib/utils/fetch-retry';
 
 const log = createLogger('SceneGenerator');
 
@@ -76,7 +77,7 @@ async function fetchSceneContent(
   },
   signal?: AbortSignal,
 ): Promise<SceneContentResult> {
-  const response = await fetch('/api/generate/scene-content', {
+  const response = await fetchWithRetry('/api/generate/scene-content', {
     method: 'POST',
     headers: getApiHeaders(),
     body: JSON.stringify(params),
@@ -104,7 +105,7 @@ async function fetchSceneActions(
   },
   signal?: AbortSignal,
 ): Promise<SceneActionsResult> {
-  const response = await fetch('/api/generate/scene-actions', {
+  const response = await fetchWithRetry('/api/generate/scene-actions', {
     method: 'POST',
     headers: getApiHeaders(),
     body: JSON.stringify(params),
@@ -129,7 +130,7 @@ export async function generateAndStoreTTS(
   if (settings.ttsProviderId === 'browser-native-tts') return;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
-  const response = await fetch('/api/generate/tts', {
+  const response = await fetchWithRetry('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
