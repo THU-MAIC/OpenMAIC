@@ -193,87 +193,83 @@ export async function generateClassroom(
   } = await resolveModel({});
   log.info(`Using server-configured model: ${modelString}`);
 
-  // Resolve fallback model for overload resilience (e.g. flash-lite).
-  const fallbackModelString = process.env.FALLBACK_MODEL;
-  let fallbackModel: typeof languageModel | undefined;
-  let fallbackModelInfo: typeof modelInfo | undefined;
-  if (fallbackModelString) {
+  // Resolve fallback model chain for overload resilience.
+  // FALLBACK_MODEL accepts a comma-separated list, e.g.
+  // "google:gemini-2.5-flash-lite,google:gemini-3-flash-preview"
+  const fallbackChain: Array<{
+    modelString: string;
+    model: typeof languageModel;
+    modelInfo: typeof modelInfo;
+  }> = [];
+  const fallbackEnv = process.env.FALLBACK_MODEL;
+  if (fallbackEnv) {
+    for (const entry of fallbackEnv.split(',').map((s) => s.trim()).filter(Boolean)) {
+      try {
+        const fb = await resolveModel({ modelString: entry });
+        fallbackChain.push({ modelString: entry, model: fb.model, modelInfo: fb.modelInfo });
+      } catch (e) {
+        log.warn(`Failed to resolve fallback model "${entry}":`, e);
+      }
+    }
+    if (fallbackChain.length > 0) {
+      log.info(`Fallback chain: ${fallbackChain.map((f) => f.modelString).join(' → ')}`);
+    }
+  }
+
+  /** Try primary model first, then walk the fallback chain on overload errors. */
+  async function callWithFallback(
+    systemPrompt: string,
+    userPrompt: string,
+    maxTokens: number | undefined,
+    source: string,
+  ): Promise<string> {
     try {
-      const fb = await resolveModel({ modelString: fallbackModelString });
-      fallbackModel = fb.model;
-      fallbackModelInfo = fb.modelInfo;
-      log.info(`Fallback model: ${fallbackModelString}`);
-    } catch (e) {
-      log.warn(`Failed to resolve fallback model "${fallbackModelString}":`, e);
+      const result = await callLLM(
+        {
+          model: languageModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          maxOutputTokens: maxTokens,
+        },
+        source,
+      );
+      return result.text;
+    } catch (error) {
+      if (!isOverloadError(error) || fallbackChain.length === 0) throw error;
+      log.warn(`Primary model overloaded (${source}), trying fallback chain...`);
+
+      for (const fb of fallbackChain) {
+        try {
+          log.info(`Trying fallback: ${fb.modelString}`);
+          const result = await callLLM(
+            {
+              model: fb.model,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userPrompt },
+              ],
+              maxOutputTokens: fb.modelInfo?.outputWindow,
+            },
+            `${source}-fallback`,
+          );
+          return result.text;
+        } catch (fbError) {
+          if (!isOverloadError(fbError)) throw fbError;
+          log.warn(`Fallback ${fb.modelString} also overloaded, trying next...`);
+        }
+      }
+      throw error;
     }
   }
 
   const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-    try {
-      const result = await callLLM(
-        {
-          model: languageModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          maxOutputTokens: modelInfo?.outputWindow,
-        },
-        'generate-classroom',
-      );
-      return result.text;
-    } catch (error) {
-      if (fallbackModel && isOverloadError(error)) {
-        log.warn(`Primary model overloaded, falling back to ${fallbackModelString}`);
-        const result = await callLLM(
-          {
-            model: fallbackModel,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            maxOutputTokens: fallbackModelInfo?.outputWindow,
-          },
-          'generate-classroom-fallback',
-        );
-        return result.text;
-      }
-      throw error;
-    }
+    return callWithFallback(systemPrompt, userPrompt, modelInfo?.outputWindow, 'generate-classroom');
   };
 
   const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
-    try {
-      const result = await callLLM(
-        {
-          model: languageModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          maxOutputTokens: 256,
-        },
-        'web-search-query-rewrite',
-      );
-      return result.text;
-    } catch (error) {
-      if (fallbackModel && isOverloadError(error)) {
-        log.warn(`Primary model overloaded for search query, falling back to ${fallbackModelString}`);
-        const result = await callLLM(
-          {
-            model: fallbackModel,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            maxOutputTokens: 256,
-          },
-          'web-search-query-rewrite-fallback',
-        );
-        return result.text;
-      }
-      throw error;
-    }
+    return callWithFallback(systemPrompt, userPrompt, 256, 'web-search-query-rewrite');
   };
 
   const lang = normalizeLanguage(input.language);
