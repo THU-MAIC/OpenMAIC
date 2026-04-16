@@ -1,6 +1,8 @@
 'use client';
 
 import type { PPTShapeElement, ShapeText } from '@/lib/types/slides';
+import { usePlaybackTextReveal } from '@/components/slide-renderer/Editor/PlaybackTextRevealContext';
+import { slideTextRevealMaskStyle } from '@/lib/utils/slide-text-reveal-mask';
 import { useElementOutline } from '../hooks/useElementOutline';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { useElementFlip } from '../hooks/useElementFlip';
@@ -16,6 +18,10 @@ export interface BaseShapeElementProps {
  * Base shape element for read-only/playback mode
  */
 export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
+  const playbackReveal = usePlaybackTextReveal();
+  const localReveal = playbackReveal?.getLocalProgress(elementInfo.id) ?? null;
+  const revealMask = slideTextRevealMaskStyle(localReveal, false);
+
   const { fill } = useElementFill(elementInfo, 'base');
   const { outlineWidth, outlineColor, strokeDashArray } = useElementOutline(elementInfo.outline);
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
@@ -107,6 +113,7 @@ export function BaseShapeElement({ elementInfo }: BaseShapeElementProps) {
               style={{
                 // @ts-expect-error CSS custom properties
                 '--paragraphSpace': `${text.paragraphSpace === undefined ? 5 : text.paragraphSpace}px`,
+                ...revealMask,
               }}
               dangerouslySetInnerHTML={{ __html: text.content }}
             />

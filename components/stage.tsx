@@ -3,8 +3,8 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useStageStore } from '@/lib/store';
-import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { PENDING_SCENE_ID } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SceneSidebar } from './stage/scene-sidebar';
@@ -20,6 +20,7 @@ import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { cn } from '@/lib/utils';
+import { estimateLectureSpeechMs } from '@/lib/utils/estimate-lecture-speech-ms';
 // Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
 import { CongratulationsPopup } from './certificates/congratulations-popup';
@@ -186,6 +187,15 @@ export function Stage({
 
   const engineRef = useRef<PlaybackEngine | null>(null);
   const audioPlayerRef = useRef(createAudioPlayer());
+  /** Wall-clock segment for slide text reveal when HTML audio has no usable duration */
+  const lectureSpeechTimingRef = useRef<{
+    wallStart: number;
+    pausedAccum: number;
+    pauseBegan: number | null;
+  }>({ wallStart: 0, pausedAccum: 0, pauseBegan: null });
+  /** True while a lecture speech action is driving progressive slide text */
+  const [lectureRevealDriving, setLectureRevealDriving] = useState(false);
+  const lectureRevealLastRatioRef = useRef(-1);
   const chatAreaRef = useRef<ChatAreaRef>(null);
   const lectureSessionIdRef = useRef<string | null>(null);
   const lectureActionCounterRef = useRef(0);
@@ -241,7 +251,73 @@ export function Stage({
     setShowEndFlash(false);
     setActiveBubbleId(null);
     setDiscussionTrigger(null);
+    setLectureRevealDriving(false);
+    lectureRevealLastRatioRef.current = -1;
+    useCanvasStore.getState().setSlideTextRevealProgress(null);
+    useCanvasStore.getState().clearSlideTextRevealUnlocks();
   }, [resetLiveState]);
+
+  /** Pause/resume wall clock for estimated slide reveal (no HTML audio timeline). */
+  useEffect(() => {
+    if (!lectureRevealDriving) return;
+    if (engineMode === 'paused') {
+      if (!lectureSpeechTimingRef.current.pauseBegan) {
+        lectureSpeechTimingRef.current.pauseBegan = Date.now();
+      }
+    } else if (engineMode === 'playing' && lectureSpeechTimingRef.current.pauseBegan) {
+      lectureSpeechTimingRef.current.pausedAccum += Date.now() - lectureSpeechTimingRef.current.pauseBegan;
+      lectureSpeechTimingRef.current.pauseBegan = null;
+    }
+  }, [engineMode, lectureRevealDriving]);
+
+  /** Drive slide text reveal from TTS audio position or estimated speech duration. */
+  useEffect(() => {
+    if (mode !== 'playback' || !lectureRevealDriving || !lectureSpeech) {
+      return;
+    }
+
+    let raf = 0;
+    const tick = () => {
+      const audio = audioPlayerRef.current;
+      const durMs = audio.getDuration();
+      const hasAudioTimeline =
+        audio.hasActiveAudio() && durMs > 250 && Number.isFinite(durMs);
+
+      let ratio: number;
+      if (hasAudioTimeline) {
+        ratio = Math.min(1, audio.getCurrentTime() / durMs);
+      } else {
+        const speed = useSettingsStore.getState().playbackSpeed || 1;
+        const totalMs = estimateLectureSpeechMs(lectureSpeech, speed);
+        const t = lectureSpeechTimingRef.current;
+        const endWall = t.pauseBegan ?? Date.now();
+        const elapsed = Math.max(0, endWall - t.wallStart - t.pausedAccum);
+        ratio = totalMs > 0 ? Math.min(1, elapsed / totalMs) : 1;
+      }
+
+      const stepped = Math.round(ratio * 200) / 200;
+      if (stepped !== lectureRevealLastRatioRef.current) {
+        lectureRevealLastRatioRef.current = stepped;
+        useCanvasStore.getState().setSlideTextRevealProgress(stepped);
+      }
+
+      raf = requestAnimationFrame(tick);
+    };
+
+    lectureRevealLastRatioRef.current = -1;
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+    };
+  }, [mode, lectureRevealDriving, lectureSpeech]);
+
+  useEffect(() => {
+    if (mode !== 'playback') {
+      setLectureRevealDriving(false);
+      useCanvasStore.getState().setSlideTextRevealProgress(null);
+      useCanvasStore.getState().clearSlideTextRevealUnlocks();
+    }
+  }, [mode]);
 
   /** Request failure should exit live discussion UI without hard-closing the session. */
   const handleLiveSessionError = useCallback(() => {
@@ -435,6 +511,11 @@ export function Stage({
       },
       onSpeechStart: (text) => {
         setLectureSpeech(text);
+        lectureSpeechTimingRef.current = { wallStart: Date.now(), pausedAccum: 0, pauseBegan: null };
+        setLectureRevealDriving(true);
+        lectureRevealLastRatioRef.current = -1;
+        useCanvasStore.getState().clearSlideTextRevealUnlocks();
+        useCanvasStore.getState().setSlideTextRevealProgress(0);
         // Add to lecture session with incrementing index for dedup
         // Chat area pacing is handled by the StreamBuffer (onTextReveal)
         if (lectureSessionIdRef.current) {
@@ -455,8 +536,15 @@ export function Stage({
         // onSpeechStart replaces it or the scene transitions.
         // Clearing here causes fallback to idleText (first sentence).
         setActiveBubbleId(null);
+        setLectureRevealDriving(false);
+        lectureRevealLastRatioRef.current = -1;
+        useCanvasStore.getState().setSlideTextRevealProgress(null);
+        useCanvasStore.getState().clearSlideTextRevealUnlocks();
       },
       onEffectFire: (effect: Effect) => {
+        if (effect.kind === 'spotlight' || effect.kind === 'laser') {
+          useCanvasStore.getState().addSlideTextRevealUnlock(effect.targetId);
+        }
         // Add to lecture session with incrementing index
         if (
           lectureSessionIdRef.current &&
