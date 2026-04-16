@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, LogOut, Mail, Zap, Crown, Shield, BookOpen, ExternalLink, RefreshCw, Flame } from 'lucide-react';
+import { X, LogOut, Mail, Zap, Crown, Shield, BookOpen, ExternalLink, RefreshCw, Flame, GraduationCap } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
-import { LeaderboardCard } from '../leaderboard/leaderboard-card';
 import { usePlanStore } from '@/lib/store/user-plan';
 import type { UserPlan } from '@/lib/stripe/plans';
+
+type ProfileCertificate = { id: string; courseId: string; courseName: string; createdAt: string };
 
 interface AuthProfileModalProps {
   open: boolean;
@@ -167,7 +169,26 @@ function PlanCreditsSection({
 export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
   const { user, signOut } = useAuth();
   const panelRef = useRef<HTMLDivElement>(null);
-  const [stats, setStats] = useState<any>(null);
+  const portalReady = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  const [stats, setStats] = useState<{
+    totalScore?: number;
+    globalRank?: number;
+    currentStreak?: number;
+    highestStreak?: number;
+    totalWatchTime?: number;
+    coursesCompleted?: number;
+    certificates?: ProfileCertificate[];
+  } | null>(null);
+  const [certificatesOpen, setCertificatesOpen] = useState(false);
+
+  const closeProfile = useCallback(() => {
+    setCertificatesOpen(false);
+    onClose();
+  }, [onClose]);
 
   // Plan data comes from the global store — always up-to-date across the app
   const { plan, credits, isLoading: planLoading, refetch: refetchPlan } = usePlanStore();
@@ -189,7 +210,7 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
     if (!open) return;
     const handler = (e: MouseEvent) => {
       if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
-        onClose();
+        closeProfile();
       }
     };
     // Delay listener so the opening click doesn't immediately close
@@ -198,21 +219,26 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
       clearTimeout(id);
       document.removeEventListener('mousedown', handler);
     };
-  }, [open, onClose]);
+  }, [open, closeProfile]);
 
-  // Close on Escape
+  // Close on Escape (certificates sheet first, then profile)
   useEffect(() => {
     if (!open) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (certificatesOpen) {
+        setCertificatesOpen(false);
+        return;
+      }
+      closeProfile();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [open, onClose]);
+  }, [open, closeProfile, certificatesOpen]);
 
   const handleSignOut = async () => {
     await signOut();
-    onClose();
+    closeProfile();
     window.location.href = '/';
   };
 
@@ -222,7 +248,6 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
   const avatarUrl = user.user_metadata?.avatar_url || user.user_metadata?.picture;
   const fullName = user.user_metadata?.full_name || user.user_metadata?.name || '';
   const email = user.email || '';
-  const createdAt = user.created_at ? new Date(user.created_at) : null;
   const provider = user.app_metadata?.provider || 'email';
   const initials = fullName
     ? fullName
@@ -233,7 +258,7 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
         .slice(0, 2)
     : email.slice(0, 2).toUpperCase();
 
-  return (
+  const overlay = (
     <AnimatePresence>
       {open && (
         <>
@@ -254,13 +279,62 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.95 }}
             transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            className="fixed top-16 right-4 z-[100] w-[320px] rounded-3xl border-[3px] border-[#073b4c] bg-white shadow-[6px_6px_0_#073b4c]"
+            className="fixed top-16 right-4 z-[100] w-[320px] rounded-3xl border-[3px] border-[#073b4c] bg-white shadow-[6px_6px_0_#073b4c] relative overflow-hidden"
           >
+            {/* Certificates overlay */}
+            {certificatesOpen && (
+              <div className="absolute inset-0 z-20 flex flex-col bg-white rounded-[20px]">
+                <div className="flex items-center justify-between px-4 pt-3 pb-2 border-b-2 border-[#073b4c]/10 shrink-0">
+                  <h3 className="text-xs font-black text-[#073b4c] tracking-tight flex items-center gap-1.5">
+                    <GraduationCap className="size-3.5 text-[#06d6a0]" />
+                    Your certificates
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => setCertificatesOpen(false)}
+                    className="size-7 rounded-full border-2 border-[#073b4c]/20 flex items-center justify-center hover:bg-[#f0f4f8] hover:border-[#073b4c]/40 transition-all cursor-pointer"
+                    aria-label="Back to profile"
+                  >
+                    <X className="size-3.5 text-[#073b4c]/60" />
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto px-4 py-3 min-h-0">
+                  {!(stats?.certificates?.length) ? (
+                    <p className="text-[11px] font-semibold text-[#073b4c]/45 leading-relaxed">
+                      Complete a course to earn your first certificate. It will show up here.
+                    </p>
+                  ) : (
+                    <ul className="flex flex-col gap-2">
+                      {stats.certificates.map((c) => (
+                        <li key={c.id}>
+                          <a
+                            href={`/c/${c.id}`}
+                            className="flex items-start gap-2.5 rounded-xl border-2 border-[#073b4c]/10 bg-[#f0f4f8]/60 px-3 py-2.5 hover:border-[#06d6a0]/40 hover:bg-[#06d6a0]/5 transition-all group cursor-pointer"
+                          >
+                            <GraduationCap className="size-4 text-[#06d6a0] shrink-0 mt-0.5" />
+                            <span className="flex-1 min-w-0">
+                              <span className="block text-xs font-black text-[#073b4c] group-hover:text-[#118AB2] leading-snug">
+                                {c.courseName}
+                              </span>
+                              <span className="text-[9px] font-bold text-[#073b4c]/35 uppercase tracking-tight">
+                                {c.createdAt ? new Date(c.createdAt).toLocaleDateString() : ''}
+                              </span>
+                            </span>
+                            <ExternalLink className="size-3.5 text-[#073b4c]/25 group-hover:text-[#118AB2] shrink-0 mt-0.5" />
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Header */}
             <div className="flex items-center justify-between px-5 pt-4 pb-3">
               <h3 className="text-sm font-black text-[#073b4c] tracking-tight">Your Profile</h3>
               <button
-                onClick={onClose}
+                onClick={closeProfile}
                 className="size-7 rounded-full border-2 border-[#073b4c]/20 flex items-center justify-center hover:bg-[#f0f4f8] hover:border-[#073b4c]/40 transition-all cursor-pointer"
               >
                 <X className="size-3.5 text-[#073b4c]/60" />
@@ -307,7 +381,7 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
                 credits={credits}
                 isLoading={planLoading}
                 onRefresh={refetchPlan}
-                onClose={onClose}
+                onClose={closeProfile}
               />
 
               {/* Stats Section */}
@@ -340,10 +414,18 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
                       {Math.floor((stats?.totalWatchTime || 0) / 60)}<span className="text-[10px]">m</span>
                     </p>
                   </div>
-                  <div className="bg-[#ffd166]/10 border-2 border-[#ffd166]/20 rounded-2xl p-3">
-                    <p className="text-[10px] font-black text-[#ffd166] uppercase tracking-tighter mb-0.5">Quizzes</p>
-                    <p className="text-xl/none font-black text-[#073b4c]">{stats?.quizzesCompleted || 0}</p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCertificatesOpen(true)}
+                    className="text-left bg-violet-500/8 border-2 border-violet-500/20 rounded-2xl p-3 hover:border-violet-500/40 hover:bg-violet-500/12 transition-all cursor-pointer w-full"
+                  >
+                    <p className="text-[10px] font-black text-violet-700 uppercase tracking-tighter mb-0.5 flex items-center gap-1">
+                      <GraduationCap className="size-3" />
+                      Courses completed
+                    </p>
+                    <p className="text-xl/none font-black text-[#073b4c]">{stats?.coursesCompleted ?? 0}</p>
+                    <p className="text-[9px] font-bold text-[#073b4c]/35 mt-0.5">Tap to view certificates</p>
+                  </button>
                 </div>
               </div>
 
@@ -361,4 +443,8 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
       )}
     </AnimatePresence>
   );
+
+  if (!portalReady) return null;
+
+  return createPortal(overlay, document.body);
 }

@@ -2,6 +2,12 @@ import { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { cookies } from 'next/headers';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+async function recordLearningStreak(supabase: SupabaseClient, userId: string) {
+  const { error } = await supabase.rpc('record_learning_day', { u_id: userId });
+  if (error) console.warn('[api/analytics] record_learning_day:', error.message);
+}
 
 /**
  * Analytics API
@@ -43,6 +49,7 @@ export async function POST(req: NextRequest) {
         });
 
       if (error) throw error;
+      await recordLearningStreak(supabase, userId);
     } else if (type === 'slide_view') {
       // Update last slide viewed and viewed slide count
       const { error } = await supabase.rpc('increment_slide_view', {
@@ -52,6 +59,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (error) throw error;
+      await recordLearningStreak(supabase, userId);
     } else if (type === 'heartbeat') {
       // Increment watch duration
       const { error } = await supabase.rpc('increment_watch_duration', {
@@ -69,6 +77,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (error) throw error;
+      await recordLearningStreak(supabase, userId);
     }
 
     return apiSuccess({ status: 'tracked' });

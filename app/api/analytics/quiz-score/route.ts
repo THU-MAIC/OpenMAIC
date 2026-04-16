@@ -102,6 +102,9 @@ export async function POST(req: NextRequest) {
 
     if (scoreError) throw scoreError;
 
+    const { error: streakError } = await supabase.rpc('record_learning_day', { u_id: userId });
+    if (streakError) console.warn('[api/analytics/quiz-score] record_learning_day:', streakError.message);
+
     return apiSuccess({
       status: 'saved',
       score,

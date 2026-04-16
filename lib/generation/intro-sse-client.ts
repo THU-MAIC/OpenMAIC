@@ -24,7 +24,7 @@ function schedulePcmChunk(
   base64: string,
   nextStartTimeRef: { current: number },
   pcmCarryRef: { current: Uint8Array | null },
-  gain: number,
+  destination: AudioNode,
 ) {
   if (ctx.state === 'suspended') {
     void ctx.resume();
@@ -67,8 +67,8 @@ function schedulePcmChunk(
   source.buffer = audioBuffer;
 
   const gainNode = ctx.createGain();
-  gainNode.gain.value = gain;
-  gainNode.connect(ctx.destination);
+  gainNode.gain.value = 1;
+  gainNode.connect(destination);
   source.connect(gainNode);
 
   const startAt = Math.max(ctx.currentTime, nextStartTimeRef.current);
@@ -108,6 +108,15 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
   const nextStartTimeRef = { current: 0 };
   /** Ref avoids `let` control-flow narrowing issues inside nested loops (TS inferred `never`). */
   const playbackRef = { current: null as AudioContext | null };
+  const masterGainRef = { current: null as GainNode | null };
+  let muteRafId = 0;
+
+  const stopMuteSync = () => {
+    if (muteRafId !== 0) {
+      cancelAnimationFrame(muteRafId);
+      muteRafId = 0;
+    }
+  };
 
   const ensureCtx = (): AudioContext => {
     if (!playbackRef.current) {
@@ -118,6 +127,24 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
       }
       playbackRef.current = new AudioContextCtor();
       nextStartTimeRef.current = playbackRef.current.currentTime;
+
+      const mg = playbackRef.current.createGain();
+      mg.gain.value = isMuted?.() ? 0 : 1;
+      mg.connect(playbackRef.current.destination);
+      masterGainRef.current = mg;
+
+      const tick = () => {
+        const mgNode = masterGainRef.current;
+        const ctxLive = playbackRef.current;
+        if (mgNode && ctxLive && isMuted) {
+          const target = isMuted() ? 0 : 1;
+          if (mgNode.gain.value !== target) {
+            mgNode.gain.setValueAtTime(target, ctxLive.currentTime);
+          }
+        }
+        muteRafId = requestAnimationFrame(tick);
+      };
+      muteRafId = requestAnimationFrame(tick);
     }
     return playbackRef.current;
   };
@@ -181,8 +208,9 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
         } else if (currentEvent === 'audio') {
           const chunk = data.chunk as string;
           const ctx = ensureCtx();
-          const muted = isMuted?.() ?? false;
-          schedulePcmChunk(ctx, chunk, nextStartTimeRef, pcmCarryRef, muted ? 0 : 1);
+          const dest = masterGainRef.current;
+          if (!dest) continue;
+          schedulePcmChunk(ctx, chunk, nextStartTimeRef, pcmCarryRef, dest);
         } else if (currentEvent === 'done') {
           onStatus?.('completed');
           const ctx = playbackRef.current;
@@ -209,6 +237,8 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
   } finally {
     reader?.cancel().catch(() => {});
     pcmCarryRef.current = null;
+    stopMuteSync();
+    masterGainRef.current = null;
     await playbackRef.current?.close().catch(() => {});
   }
 }

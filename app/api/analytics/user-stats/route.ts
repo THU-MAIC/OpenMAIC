@@ -3,6 +3,31 @@ import { createClient } from '@/utils/supabase/server';
 import { cookies } from 'next/headers';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 
+/** UTC calendar day as YYYY-MM-DD (matches streak RPC). */
+function utcTodayYmd(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+/** Previous UTC calendar day. */
+function utcYesterdayYmd(): string {
+  const [y, m, d] = utcTodayYmd().split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+}
+
+/**
+ * If the user missed a UTC day, the stored current_streak is stale until the next activity;
+ * show 0 for "current" until they study again.
+ */
+function effectiveCurrentStreak(
+  lastActivityDate: string | null | undefined,
+  storedStreak: number,
+): number {
+  if (!lastActivityDate) return 0;
+  const last = lastActivityDate.slice(0, 10);
+  if (last < utcYesterdayYmd()) return 0;
+  return storedStreak;
+}
+
 /**
  * User Stats API
  * Returns a summary of the authenticated user's engagement and rankings.
@@ -42,14 +67,31 @@ export async function GET(req: NextRequest) {
       .select('*', { count: 'exact', head: true })
       .gt('total_score', scoreData?.total_score || 0);
       
-    // 4. Extract streak info (if present on the schema, else base zeroes)
-    const currentStreak = scoreData?.current_streak || 0;
+    // 4. Streaks (UTC day); current reflects whether the streak is still alive
+    const storedCurrent = scoreData?.current_streak || 0;
+    const currentStreak = effectiveCurrentStreak(scoreData?.last_activity_date, storedCurrent);
     const highestStreak = scoreData?.highest_streak || 0;
+
+    // 5. Completed courses = claimed certificates (one per course)
+    const { data: certificatesRows } = await supabase
+      .from('certificates')
+      .select('id, course_id, course_name, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    const certificates = (certificatesRows || []).map((row) => ({
+      id: row.id,
+      courseId: row.course_id,
+      courseName: row.course_name,
+      createdAt: row.created_at,
+    }));
 
     return apiSuccess({
       stats: {
         totalScore: scoreData?.total_score || 0,
         quizzesCompleted: scoreData?.quizzes_completed || 0,
+        coursesCompleted: certificates.length,
+        certificates,
         coursesStarted,
         totalWatchTime, // in seconds
         totalSlidesViewed,

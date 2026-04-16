@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Loader2, Volume2, VolumeX } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Volume2, VolumeX } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useSettingsStore } from '@/lib/store/settings';
 import { playIntroSseStream, type IntroSseStatus } from '@/lib/generation/intro-sse-client';
@@ -25,6 +25,7 @@ export const IntroStreamingPlayer: React.FC<IntroStreamingPlayerProps> = ({
   const [script, setScript] = useState<string>('');
   const [status, setStatus] = useState<'idle' | IntroSseStatus>('idle');
   const [isMuted, setIsMuted] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const isMutedRef = useRef(isMuted);
   isMutedRef.current = isMuted;
 
@@ -74,7 +75,7 @@ export const IntroStreamingPlayer: React.FC<IntroStreamingPlayerProps> = ({
           exit={{ opacity: 0, scale: 1.05 }}
           className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[60] w-[90%] max-w-2xl"
         >
-          <div className="bg-white/80 dark:bg-black/80 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl p-6 shadow-2xl overflow-hidden relative group">
+          <div className="bg-white/80 dark:bg-black/80 backdrop-blur-xl border border-white/20 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden relative group">
             <div className="absolute top-0 left-0 h-1 bg-primary/30 w-full overflow-hidden">
               <motion.div
                 animate={{ x: ['-100%', '100%'] }}
@@ -83,53 +84,104 @@ export const IntroStreamingPlayer: React.FC<IntroStreamingPlayerProps> = ({
               />
             </div>
 
-            <div className="flex items-start gap-4">
-              <div className="flex-shrink-0 mt-1">
-                {status === 'generating' ? (
-                  <Loader2 className="w-6 h-6 text-primary animate-spin" />
-                ) : (
-                  <div className="relative">
-                    <Volume2 className={`w-6 h-6 text-primary ${isPlaying ? 'animate-pulse' : ''}`} />
-                    {isMuted && <VolumeX className="absolute -top-1 -right-1 w-3 h-3 text-destructive" />}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex-1 min-w-0">
-                <h4 className="text-sm font-semibold text-primary mb-1 uppercase tracking-wider flex items-center gap-2">
-                  {status === 'generating' ? 'Preparing Intro...' : 'Now Speaking'}
-                  {status === 'streaming' && (
-                    <span className="flex gap-0.5 items-center">
-                      {[1, 2, 3].map((i) => (
-                        <motion.span
-                          key={i}
-                          animate={{ height: isPlaying ? [2, 10, 2] : 2 }}
-                          transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
-                          className="w-0.5 bg-primary inline-block rounded-full"
-                        />
-                      ))}
-                    </span>
+            {!expanded ? (
+              <div className="flex items-center gap-3 p-3 pt-4">
+                <div className="flex-shrink-0">
+                  {status === 'generating' ? (
+                    <Loader2 className="w-5 h-5 text-primary animate-spin" />
+                  ) : (
+                    <div className="relative">
+                      <Volume2 className={`w-5 h-5 text-primary ${isPlaying ? 'animate-pulse' : ''}`} />
+                      {isMuted && <VolumeX className="absolute -top-1 -right-1 w-3 h-3 text-destructive" />}
+                    </div>
                   )}
-                </h4>
-                <div className="text-foreground text-base leading-relaxed line-clamp-3">
-                  {script || 'Tuning in to your personal instructor...'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold text-primary uppercase tracking-wider">
+                    {status === 'generating' ? 'Preparing intro' : 'Intro playing'}
+                  </p>
+                  <p className="text-sm text-foreground/90 truncate">{name}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMuted((prev) => !prev)}
+                  className="flex-shrink-0 p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"
+                  title={isMuted ? 'Unmute' : 'Mute'}
+                >
+                  {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpanded(true)}
+                  className="flex-shrink-0 p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"
+                  title="Show intro details"
+                  aria-expanded={false}
+                >
+                  <ChevronUp className="w-5 h-5 text-muted-foreground" />
+                </button>
+              </div>
+            ) : (
+              <div className="p-6 pt-7">
+                <div className="flex items-start gap-4">
+                  <div className="flex-shrink-0 mt-1">
+                    {status === 'generating' ? (
+                      <Loader2 className="w-6 h-6 text-primary animate-spin" />
+                    ) : (
+                      <div className="relative">
+                        <Volume2 className={`w-6 h-6 text-primary ${isPlaying ? 'animate-pulse' : ''}`} />
+                        {isMuted && <VolumeX className="absolute -top-1 -right-1 w-3 h-3 text-destructive" />}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-sm font-semibold text-primary mb-1 uppercase tracking-wider flex items-center gap-2">
+                      {status === 'generating' ? 'Preparing Intro...' : 'Now Speaking'}
+                      {status === 'streaming' && (
+                        <span className="flex gap-0.5 items-center">
+                          {[1, 2, 3].map((i) => (
+                            <motion.span
+                              key={i}
+                              animate={{ height: isPlaying ? [2, 10, 2] : 2 }}
+                              transition={{ duration: 0.5, repeat: Infinity, delay: i * 0.1 }}
+                              className="w-0.5 bg-primary inline-block rounded-full"
+                            />
+                          ))}
+                        </span>
+                      )}
+                    </h4>
+                    <div className="text-foreground text-base leading-relaxed line-clamp-3">
+                      {script || 'Tuning in to your personal instructor...'}
+                    </div>
+                  </div>
+
+                  <div className="flex flex-shrink-0 items-center gap-0.5">
+                    <button
+                      type="button"
+                      onClick={() => setIsMuted((prev) => !prev)}
+                      className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"
+                      title={isMuted ? 'Unmute' : 'Mute'}
+                    >
+                      {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(false)}
+                      className="p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"
+                      title="Hide intro details"
+                      aria-expanded
+                    >
+                      <ChevronDown className="w-5 h-5 text-muted-foreground" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-4 flex justify-between items-center text-[10px] text-muted-foreground uppercase tracking-widest font-medium opacity-50">
+                  <span>Streaming Intro • {name}</span>
+                  <span>Priority Access</span>
                 </div>
               </div>
-
-              <button
-                type="button"
-                onClick={() => setIsMuted((prev) => !prev)}
-                className="flex-shrink-0 p-2 hover:bg-black/5 dark:hover:bg-white/5 rounded-full transition-colors"
-                title={isMuted ? 'Unmute' : 'Mute'}
-              >
-                {isMuted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
-              </button>
-            </div>
-
-            <div className="mt-4 flex justify-between items-center text-[10px] text-muted-foreground uppercase tracking-widest font-medium opacity-50">
-              <span>Streaming Intro • {name}</span>
-              <span>Priority Access</span>
-            </div>
+            )}
           </div>
         </motion.div>
       )}
