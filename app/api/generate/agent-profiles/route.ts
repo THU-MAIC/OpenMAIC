@@ -216,6 +216,14 @@ Return a JSON object with this exact structure:
       `Agent profiles generation failed [stage="${stageName ?? 'unknown'}", model=${modelString ?? 'unknown'}]:`,
       error,
     );
-    return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
+    // Sanitize: don't leak internal provider details to the frontend.
+    const isConfigError =
+      error instanceof Error && error.name === 'ProviderConfigError';
+    const userMessage = isConfigError
+      ? 'The AI service is not configured correctly. Please contact the administrator.'
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    return apiError('INTERNAL_ERROR', 500, userMessage);
   }
 }

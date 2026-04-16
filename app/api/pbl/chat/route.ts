@@ -76,6 +76,13 @@ export async function POST(req: NextRequest) {
       `PBL chat failed [agent="${agentName ?? 'unknown'}", type=${resolvedAgentType ?? 'question'}]:`,
       error,
     );
-    return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
+    const isConfigError =
+      error instanceof Error && error.name === 'ProviderConfigError';
+    const userMessage = isConfigError
+      ? 'The AI service is not configured correctly. Please contact the administrator.'
+      : error instanceof Error
+        ? error.message
+        : String(error);
+    return apiError('INTERNAL_ERROR', 500, userMessage);
   }
 }
