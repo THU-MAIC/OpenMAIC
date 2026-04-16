@@ -163,8 +163,8 @@ Return a JSON object with this exact structure:
 /** Detect rate-limit / overload errors where a fallback model may succeed. */
 function isOverloadError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  const statusCode = (error as Record<string, unknown>).statusCode ??
-    (error as Record<string, unknown>).status;
+  const statusCode = (error as unknown as Record<string, unknown>).statusCode ??
+    (error as unknown as Record<string, unknown>).status;
   if (statusCode === 429 || statusCode === 503) return true;
   const msg = error.message.toLowerCase();
   return msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('quota');
