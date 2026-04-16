@@ -72,10 +72,15 @@ export async function resolveModel(params: {
     ? params.apiKey || ''
     : resolveApiKey(effectiveProviderId, params.apiKey || '');
 
-  // When no explicit model was requested (server-side default path) and the
-  // default provider has no key, fall back to any server-configured provider.
-  // This mirrors the frontend's isServerConfigured logic: use whatever is available.
-  if (!params.modelString && isProviderKeyRequired(effectiveProviderId) && !apiKey) {
+  // When the resolved provider has no API key (neither client-supplied nor
+  // server-configured), fall back to any server-configured provider.
+  // This handles two cases:
+  //   1. No explicit model requested — server default provider has no key.
+  //   2. Client requested a provider (e.g. frontend defaults to "openai") but
+  //      neither the client nor the server has a key for it.
+  // Skip fallback when the client explicitly provided their own API key or a
+  // custom base URL (they're targeting a specific endpoint).
+  if (!clientBaseUrl && !params.apiKey && isProviderKeyRequired(effectiveProviderId) && !apiKey) {
     const fallback = findConfiguredFallback(effectiveProviderId);
     if (fallback) {
       log.info(
