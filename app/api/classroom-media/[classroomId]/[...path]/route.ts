@@ -2,6 +2,7 @@ import { promises as fs, createReadStream } from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { CLASSROOMS_DIR, isValidClassroomId } from '@/lib/server/classroom-storage';
+import { USE_BLOB, getBinaryBlobUrl } from '@/lib/server/blob-store';
 import { corsHeaders, getOrigin, corsOptionsHandler } from '@/lib/server/cors';
 import { createLogger } from '@/lib/logger';
 
@@ -47,11 +48,27 @@ export async function GET(
     return NextResponse.json({ error: 'Invalid path' }, { status: 404 });
   }
 
+  // When blob storage is enabled, redirect to the blob URL
+  if (USE_BLOB) {
+    const blobKey = `classroom-media/${classroomId}/${joined}`;
+    const blobUrl = await getBinaryBlobUrl(blobKey);
+    if (blobUrl) {
+      return NextResponse.redirect(blobUrl, {
+        status: 302,
+        headers: {
+          'Cache-Control': 'public, max-age=86400, immutable',
+          ...cors,
+        },
+      });
+    }
+    return NextResponse.json({ error: 'Not found' }, { status: 404, headers: cors });
+  }
+
+  // Filesystem fallback (local development)
   const filePath = path.join(CLASSROOMS_DIR, classroomId, ...pathSegments);
   const resolvedBase = path.resolve(CLASSROOMS_DIR, classroomId);
 
   try {
-    // Resolve symlinks and verify the real path stays within the classroom dir
     const realPath = await fs.realpath(filePath);
     if (!realPath.startsWith(resolvedBase + path.sep) && realPath !== resolvedBase) {
       return NextResponse.json({ error: 'Not found' }, { status: 404 });
@@ -65,7 +82,6 @@ export async function GET(
     const ext = path.extname(realPath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
 
-    // Stream the file to avoid loading large videos into memory
     const stream = createReadStream(realPath);
     const webStream = new ReadableStream({
       start(controller) {
