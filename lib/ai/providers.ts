@@ -444,7 +444,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/glm.svg',
     models: [
-      // GLM-5 Series - Latest flagship model
+      // GLM-5.1 Series - Latest flagship model
+      {
+        id: 'glm-5.1',
+        name: 'GLM-5.1',
+        contextWindow: 200000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'glm-5v-turbo',
+        name: 'GLM-5V-Turbo',
+        contextWindow: 200000,
+        outputWindow: 128000,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      // GLM-5 Series
       {
         id: 'glm-5',
         name: 'GLM-5',
