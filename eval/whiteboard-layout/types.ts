@@ -38,7 +38,8 @@ export interface DimensionScore {
 export interface VlmScore {
   readability: DimensionScore;
   overlap: DimensionScore;
-  space_utilization: DimensionScore;
+  rendering_correctness: DimensionScore;
+  content_completeness: DimensionScore;
   layout_logic: DimensionScore;
   overall: number;
   issues: string[];

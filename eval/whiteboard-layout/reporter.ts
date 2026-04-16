@@ -24,17 +24,24 @@ export function generateReport(
   const allScores: VlmScore[] = [];
   for (const scenario of report.scenarios) {
     for (const cp of scenario.checkpoints) {
-      allScores.push(cp.score);
+      if (cp.score) allScores.push(cp.score);
     }
   }
 
-  const dimensions = ['readability', 'overlap', 'space_utilization', 'layout_logic'] as const;
+  const dimensions = [
+    'readability',
+    'overlap',
+    'rendering_correctness',
+    'content_completeness',
+    'layout_logic',
+  ] as const;
 
   // Build summary stats (guard against empty arrays)
   const summary: Record<string, { mean: number; min: number; max: number }> = {};
   if (allScores.length > 0) {
     for (const dim of dimensions) {
-      const vals = allScores.map((s) => s[dim].score);
+      const vals = allScores.map((s) => s[dim]?.score).filter((v): v is number => v != null);
+      if (vals.length === 0) continue;
       summary[dim] = {
         mean: mean(vals),
         min: Math.min(...vals),

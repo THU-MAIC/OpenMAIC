@@ -27,6 +27,7 @@ const { values: args } = parseArgs({
     repeat: { type: 'string', default: '1' },
     'base-url': { type: 'string', default: 'http://localhost:3000' },
     'output-dir': { type: 'string', default: 'eval/whiteboard-layout/results' },
+    rescore: { type: 'string' }, // Path to existing run dir — rescore only, no chat
   },
 });
 
@@ -218,16 +219,21 @@ async function runScenario(
 
         console.log(`    Captured: ${screenshotFilename} (${elements.length} elements)`);
 
-        const score = await scoreScreenshot(screenshotPath, SCORER_MODEL);
-
-        console.log(`    Score: overall=${score.overall}, overlap=${score.overlap.score}`);
-
-        checkpoints.push({
-          turnIndex: turnIdx,
-          screenshotPath,
-          score,
-          elements,
-        });
+        try {
+          const score = await scoreScreenshot(screenshotPath, SCORER_MODEL);
+          console.log(`    Score: overall=${score.overall}, overlap=${score.overlap.score}`);
+          checkpoints.push({ turnIndex: turnIdx, screenshotPath, score, elements });
+        } catch (scoreErr) {
+          const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
+          console.error(`    Score error (continuing): ${msg.slice(0, 120)}`);
+          // Push checkpoint without score so screenshot is preserved
+          checkpoints.push({
+            turnIndex: turnIdx,
+            screenshotPath,
+            score: null as unknown as CheckpointResult['score'],
+            elements,
+          });
+        }
       }
     }
   } catch (error) {
@@ -241,9 +247,62 @@ async function runScenario(
   return { scenarioId: scenario.id, runIndex, model, checkpoints };
 }
 
+// ==================== Rescore Mode ====================
+
+async function rescoreRun(runDir: string) {
+  console.log('=== Rescore Mode ===');
+  console.log(`Scorer: ${SCORER_MODEL}`);
+  console.log(`Run dir: ${runDir}`);
+
+  // Read the existing report to get scenario metadata
+  const reportPath = join(runDir, 'report.json');
+  const oldReport: EvalReport = JSON.parse(readFileSync(reportPath, 'utf-8'));
+
+  const allResults: ScenarioRunResult[] = [];
+
+  for (const oldResult of oldReport.scenarios) {
+    console.log(`\nScenario: ${oldResult.scenarioId} (run ${oldResult.runIndex + 1})`);
+    const checkpoints: CheckpointResult[] = [];
+
+    for (const oldCp of oldResult.checkpoints) {
+      const pngPath = oldCp.screenshotPath;
+      console.log(`  Rescoring: ${pngPath}`);
+
+      try {
+        const score = await scoreScreenshot(pngPath, SCORER_MODEL);
+        console.log(`    Score: overall=${score.overall}, overlap=${score.overlap.score}`);
+        checkpoints.push({ ...oldCp, score });
+      } catch (scoreErr) {
+        const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
+        console.error(`    Score error: ${msg.slice(0, 120)}`);
+        checkpoints.push(oldCp); // Keep old score
+      }
+    }
+
+    allResults.push({ ...oldResult, checkpoints });
+  }
+
+  const report: EvalReport = {
+    timestamp: new Date().toISOString(),
+    model: oldReport.model,
+    scenarios: allResults,
+  };
+
+  const { json, md } = generateReport(report, runDir);
+  console.log(`\nReport saved:`);
+  console.log(`  JSON: ${json}`);
+  console.log(`  Markdown: ${md}`);
+}
+
 // ==================== Main ====================
 
 async function main() {
+  // Rescore mode: only re-score existing screenshots
+  if (args.rescore) {
+    await rescoreRun(args.rescore);
+    return;
+  }
+
   console.log('=== Whiteboard Layout Eval ===');
   console.log(`Chat: ${CHAT_MODEL} | Scorer: ${SCORER_MODEL} | Repeats: ${REPEAT}`);
   console.log('');
