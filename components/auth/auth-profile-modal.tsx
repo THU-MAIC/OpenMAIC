@@ -193,15 +193,25 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
   // Plan data comes from the global store — always up-to-date across the app
   const { plan, credits, isLoading: planLoading, refetch: refetchPlan } = usePlanStore();
 
+  // Load stats as soon as the user is known (modal mounts with logged-in layout),
+  // so opening the profile does not wait on this request.
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    fetch('/api/analytics/user-stats')
+      .then(res => res.json())
+      .then(json => {
+        if (!cancelled && json.success) setStats(json.stats);
+      })
+      .catch(err => console.error('Failed to fetch stats:', err));
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   useEffect(() => {
     if (open && user) {
-      // Always refresh plan data when the modal opens
       refetchPlan();
-
-      fetch('/api/analytics/user-stats')
-        .then(res => res.json())
-        .then(json => { if (json.success) setStats(json.stats); })
-        .catch(err => console.error('Failed to fetch stats:', err));
     }
   }, [open, user, refetchPlan]);
 
@@ -380,7 +390,7 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
                 plan={plan}
                 credits={credits}
                 isLoading={planLoading}
-                onRefresh={refetchPlan}
+                onRefresh={() => refetchPlan({ withLoading: true })}
                 onClose={closeProfile}
               />
 

@@ -1,10 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogIn, User } from 'lucide-react';
 import { useAuth } from '@/lib/hooks/use-auth';
+import { usePlanStore } from '@/lib/store/user-plan';
 import { AuthProfileModal } from './auth-profile-modal';
 
 /**
@@ -16,6 +17,14 @@ export function AuthButton() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const [profileOpen, setProfileOpen] = useState(false);
+
+  useEffect(() => {
+    if (user) {
+      usePlanStore.getState().refetch();
+    } else {
+      usePlanStore.getState().clear();
+    }
+  }, [user]);
 
   if (loading) {
     return (

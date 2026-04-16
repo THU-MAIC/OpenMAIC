@@ -19,6 +19,8 @@ interface CreditSummary {
   resetsAt: string | null;
 }
 
+export type PlanRefetchOptions = { withLoading?: boolean };
+
 interface PlanState {
   plan: UserPlan | null;
   credits: CreditSummary | null;
@@ -26,7 +28,7 @@ interface PlanState {
   /** Incremented every time the store successfully refreshes */
   version: number;
   /** Fetch /api/user/plan and update state */
-  refetch: () => Promise<void>;
+  refetch: (options?: PlanRefetchOptions) => Promise<void>;
   /** Clear state (on sign-out) */
   clear: () => void;
 }
@@ -37,9 +39,10 @@ export const usePlanStore = create<PlanState>((set, get) => ({
   isLoading: false,
   version: 0,
 
-  refetch: async () => {
+  refetch: async (options) => {
     if (get().isLoading) return;
-    set({ isLoading: true });
+    const showLoading = options?.withLoading ?? !get().plan;
+    if (showLoading) set({ isLoading: true });
     try {
       const res = await fetch('/api/user/plan', { cache: 'no-store' });
       if (!res.ok) throw new Error('Failed to fetch plan');
