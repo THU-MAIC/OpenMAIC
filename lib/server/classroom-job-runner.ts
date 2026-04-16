@@ -1,4 +1,3 @@
-import { ProviderConfigError } from '@/lib/ai/providers';
 import { createLogger } from '@/lib/logger';
 import { generateClassroom, type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import {
@@ -37,13 +36,16 @@ export function runClassroomGenerationJob(
       // Log the full error server-side for debugging
       log.error(`Classroom generation job ${jobId} failed:`, error);
 
-      // Sanitize: don't leak internal provider details to the frontend
-      const userMessage =
-        error instanceof ProviderConfigError
-          ? 'The AI service is not configured correctly. Please contact the administrator.'
-          : error instanceof Error
-            ? error.message
-            : String(error);
+      // Sanitize: don't leak internal provider details to the frontend.
+      // Use error.name check instead of instanceof — Vercel's bundler can
+      // split classes across chunks, breaking instanceof identity.
+      const isConfigError =
+        error instanceof Error && error.name === 'ProviderConfigError';
+      const userMessage = isConfigError
+        ? 'The AI service is not configured correctly. Please contact the administrator.'
+        : error instanceof Error
+          ? error.message
+          : String(error);
       try {
         await markClassroomGenerationJobFailed(jobId, userMessage);
       } catch (markFailedError) {

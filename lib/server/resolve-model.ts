@@ -46,8 +46,12 @@ export async function resolveModel(params: {
   baseUrl?: string;
   providerType?: string;
 }): Promise<ResolvedModel> {
-  const modelString = params.modelString || process.env.DEFAULT_MODEL || 'google:gemini-2.0-flash';
+  const envDefault = process.env.DEFAULT_MODEL;
+  const modelString = params.modelString || envDefault || 'google:gemini-2.0-flash';
   const { providerId, modelId } = parseModelString(modelString);
+  log.info(
+    `resolveModel: envDefault="${envDefault || '(unset)'}", modelString="${modelString}", providerId="${providerId}"`,
+  );
 
   // SSRF validation applies only to client-supplied base URLs.
   // Server-configured URLs (e.g. OLLAMA_BASE_URL from env/YAML) flow through
