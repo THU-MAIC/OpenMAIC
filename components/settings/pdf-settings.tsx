@@ -50,8 +50,8 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
   const isSelfHosted = selectedProviderId === 'mineru';
   const needsRemoteConfig = isSelfHosted || isCloud;
 
-  // For cloud: test requires API key; for self-hosted: test requires base URL
-  const canTest = isCloud ? hasApiKey : hasBaseUrl;
+  // For cloud: test requires API key (user-entered or server-configured); for self-hosted: test requires base URL
+  const canTest = isCloud ? hasApiKey || isServerConfigured : hasBaseUrl || isServerConfigured;
 
   // Reset state when provider changes
   const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
