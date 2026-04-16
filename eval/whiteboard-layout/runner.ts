@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from 'fs';
+import { readFileSync, readdirSync, mkdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { parseArgs } from 'util';
@@ -60,7 +60,11 @@ function loadScenarios(): EvalScenario[] {
 
 // ==================== Single Scenario Run ====================
 
-async function runScenario(scenario: EvalScenario, runIndex: number): Promise<ScenarioRunResult> {
+async function runScenario(
+  scenario: EvalScenario,
+  runIndex: number,
+  runDir: string,
+): Promise<ScenarioRunResult> {
   const model = scenario.model || CHAT_MODEL;
   const checkpoints: CheckpointResult[] = [];
 
@@ -206,7 +210,7 @@ async function runScenario(scenario: EvalScenario, runIndex: number): Promise<Sc
       if (turn.checkpoint || isLastTurn) {
         const elements = stateManager.getWhiteboardElements();
         const screenshotFilename = `${scenario.id}_run${runIndex}_turn${turnIdx}.png`;
-        const screenshotPath = await captureWhiteboard(elements, OUTPUT_DIR, screenshotFilename);
+        const screenshotPath = await captureWhiteboard(elements, runDir, screenshotFilename);
 
         console.log(`    Captured: ${screenshotFilename} (${elements.length} elements)`);
 
@@ -247,6 +251,13 @@ async function main() {
   }
   console.log(`Loaded ${scenarios.length} scenario(s)`);
 
+  // Create run directory: results/<model>/<timestamp>/
+  const sanitizedModel = CHAT_MODEL.replace(/[:/]/g, '-');
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const runDir = join(OUTPUT_DIR, sanitizedModel, timestamp);
+  mkdirSync(runDir, { recursive: true });
+  console.log(`Output: ${runDir}`);
+
   await initCapture(BASE_URL);
 
   const allResults: ScenarioRunResult[] = [];
@@ -256,7 +267,7 @@ async function main() {
     const repeats = scenario.repeat ?? REPEAT;
 
     for (let r = 0; r < repeats; r++) {
-      const result = await runScenario(scenario, r);
+      const result = await runScenario(scenario, r, runDir);
       allResults.push(result);
     }
   }
@@ -269,7 +280,7 @@ async function main() {
     scenarios: allResults,
   };
 
-  const { json, md } = generateReport(report, OUTPUT_DIR);
+  const { json, md } = generateReport(report, runDir);
   console.log(`\nReport saved:`);
   console.log(`  JSON: ${json}`);
   console.log(`  Markdown: ${md}`);
