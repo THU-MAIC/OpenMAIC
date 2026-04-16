@@ -3,6 +3,7 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolvePDFApiKey, resolvePDFBaseUrl } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { MINERU_CLOUD_DEFAULT_BASE } from '@/lib/pdf/constants';
 
 const log = createLogger('Verify PDF Provider');
 
@@ -17,6 +18,54 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Provider ID is required');
     }
 
+    // MinerU Cloud: verify by calling the cloud API with the token
+    if (providerId === 'mineru-cloud') {
+      const resolvedApiKey = resolvePDFApiKey(providerId, apiKey);
+      if (!resolvedApiKey) {
+        return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
+      }
+
+      const clientCloudBase = (baseUrl as string | undefined) || undefined;
+      if (clientCloudBase && process.env.NODE_ENV === 'production') {
+        const ssrfError = await validateUrlForSSRF(clientCloudBase);
+        if (ssrfError) {
+          return apiError('INVALID_URL', 403, ssrfError);
+        }
+      }
+
+      const cloudBase = (
+        clientCloudBase ||
+        resolvePDFBaseUrl(providerId) ||
+        MINERU_CLOUD_DEFAULT_BASE
+      ).replace(/\/+$/, '');
+
+      // Probe the batch endpoint with an empty body to verify auth
+      const response = await fetch(`${cloudBase}/extract-results/batch/test-connection`, {
+        headers: {
+          Authorization: `Bearer ${resolvedApiKey}`,
+          Accept: 'application/json',
+        },
+        signal: AbortSignal.timeout(10000),
+      });
+
+      // Any response (including 4xx for "batch not found") means auth + connectivity works
+      // Only network errors or 401/403 indicate a problem
+      if (response.status === 401 || response.status === 403) {
+        const text = await response.text().catch(() => '');
+        return apiError(
+          'INTERNAL_ERROR',
+          500,
+          `Authentication failed: ${text || response.statusText}`,
+        );
+      }
+
+      return apiSuccess({
+        message: 'Connection successful',
+        status: response.status,
+      });
+    }
+
+    // Self-hosted providers: verify by connecting to the base URL
     const clientBaseUrl = (baseUrl as string | undefined) || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);

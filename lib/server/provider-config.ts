@@ -70,6 +70,7 @@ const ASR_ENV_MAP: Record<string, string> = {
 const PDF_ENV_MAP: Record<string, string> = {
   PDF_UNPDF: 'unpdf',
   PDF_MINERU: 'mineru',
+  PDF_MINERU_CLOUD: 'mineru-cloud',
 };
 
 const IMAGE_ENV_MAP: Record<string, string> = {
@@ -206,7 +207,9 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     }),
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr),
-    pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
+    pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
+      keylessProviders: new Set(['unpdf', 'mineru']),
+    }),
     image: loadEnvSection(IMAGE_ENV_MAP, yamlData.image),
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
     webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
