@@ -338,6 +338,7 @@ const getDefaultPDFConfig = () => ({
   pdfProvidersConfig: {
     unpdf: { apiKey: '', baseUrl: '', enabled: true },
     mineru: { apiKey: '', baseUrl: '', enabled: false },
+    'mineru-cloud': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<PDFProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
 
@@ -1185,9 +1186,13 @@ export const useSettingsStore = create<SettingsState>()(
               let autoVideoEnabled: boolean | undefined;
 
               if (!state.autoConfigApplied) {
-                // PDF: unpdf → mineru if server has it
-                if (newPDFConfig.mineru?.isServerConfigured && state.pdfProviderId === 'unpdf') {
-                  autoPdfProvider = 'mineru' as PDFProviderId;
+                // PDF: unpdf → mineru-cloud or mineru if server has it
+                if (state.pdfProviderId === 'unpdf') {
+                  if (newPDFConfig['mineru-cloud']?.isServerConfigured) {
+                    autoPdfProvider = 'mineru-cloud' as PDFProviderId;
+                  } else if (newPDFConfig.mineru?.isServerConfigured) {
+                    autoPdfProvider = 'mineru' as PDFProviderId;
+                  }
                 }
 
                 // TTS: select first server provider if current is not server-configured
