@@ -11,7 +11,9 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerateClassroom API');
 
-export const maxDuration = 30;
+// The after() callback runs generateClassroom (multiple LLM calls, media, TTS)
+// within this function's lifetime — 30 s is far too short.
+export const maxDuration = 300;
 
 export { corsOptionsHandler as OPTIONS };
 
@@ -57,7 +59,7 @@ export async function POST(req: NextRequest) {
     const job = await createClassroomGenerationJob(jobId, body);
     const pollUrl = `${baseUrl}/api/generate-classroom/${jobId}`;
 
-    after(() => runClassroomGenerationJob(jobId, body, baseUrl));
+    after(() => runClassroomGenerationJob(jobId, body, baseUrl, job));
 
     return apiSuccess(
       {

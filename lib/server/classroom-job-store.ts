@@ -192,9 +192,12 @@ export async function updateClassroomGenerationJob(
 
 export async function markClassroomGenerationJobRunning(
   jobId: string,
+  /** When provided, skip the blob read — avoids eventual-consistency misses
+   *  that occur when the runner starts immediately after job creation. */
+  knownJob?: ClassroomGenerationJob,
 ): Promise<ClassroomGenerationJob> {
   return withJobLock(jobId, async () => {
-    const existing = await readClassroomGenerationJob(jobId);
+    const existing = knownJob ?? await readClassroomGenerationJob(jobId);
     if (!existing) {
       throw new Error(`Classroom generation job not found: ${jobId}`);
     }
