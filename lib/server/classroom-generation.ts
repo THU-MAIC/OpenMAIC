@@ -98,8 +98,11 @@ function createInMemoryStore(stage: Stage): StageStore {
   };
 }
 
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
+function normalizeLanguage(language?: string): string {
+  if (!language) return 'en-US';
+  // Accept well-formed BCP-47 codes as-is (e.g. lt-LT, en-US, zh-CN)
+  if (/^[a-z]{2,3}(-[A-Z]{2})?$/i.test(language)) return language;
+  return 'en-US';
 }
 
 function stripCodeFences(text: string): string {
