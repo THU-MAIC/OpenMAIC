@@ -27,6 +27,7 @@ import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
+import { fetchWithRetry } from '@/lib/utils/fetch-retry';
 import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
 import { StepVisualizer } from './components/visualizers';
 
@@ -302,7 +303,7 @@ function GenerationPreviewContent() {
         const wsSettings = useSettingsStore.getState();
         const wsApiKey =
           wsSettings.webSearchProvidersConfig?.[wsSettings.webSearchProviderId]?.apiKey;
-        const res = await fetch('/api/web-search', {
+        const res = await fetchWithRetry('/api/web-search', {
           method: 'POST',
           headers: getApiHeaders(),
           body: JSON.stringify({
@@ -438,7 +439,7 @@ function GenerationPreviewContent() {
           };
 
           // No outlines yet — agent generation uses only stage name + description
-          const agentResp = await fetch('/api/generate/agent-profiles', {
+          const agentResp = await fetchWithRetry('/api/generate/agent-profiles', {
             method: 'POST',
             headers: getApiHeaders(),
             body: JSON.stringify({
@@ -651,7 +652,7 @@ function GenerationPreviewContent() {
       const firstOutline = outlines[0];
 
       // Step 2: Generate content (currentStepIndex is already 2)
-      const contentResp = await fetch('/api/generate/scene-content', {
+      const contentResp = await fetchWithRetry('/api/generate/scene-content', {
         method: 'POST',
         headers: getApiHeaders(),
         body: JSON.stringify({
@@ -680,7 +681,7 @@ function GenerationPreviewContent() {
       const actionsStepIdx = activeSteps.findIndex((s) => s.id === 'actions');
       setCurrentStepIndex(actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
 
-      const actionsResp = await fetch('/api/generate/scene-actions', {
+      const actionsResp = await fetchWithRetry('/api/generate/scene-actions', {
         method: 'POST',
         headers: getApiHeaders(),
         body: JSON.stringify({
@@ -717,7 +718,7 @@ function GenerationPreviewContent() {
           const audioId = `tts_${action.id}`;
           action.audioId = audioId;
           try {
-            const resp = await fetch('/api/generate/tts', {
+            const resp = await fetchWithRetry('/api/generate/tts', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
