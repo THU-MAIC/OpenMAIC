@@ -279,7 +279,7 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -12, scale: 0.95 }}
             transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            className="fixed top-16 right-4 z-[100] w-[320px] rounded-3xl border-[3px] border-[#073b4c] bg-white shadow-[6px_6px_0_#073b4c] relative overflow-hidden"
+            className="fixed top-16 right-4 z-[100] flex min-h-0 w-[320px] max-h-[calc(100dvh-5rem)] flex-col overflow-hidden rounded-3xl border-[3px] border-[#073b4c] bg-white shadow-[6px_6px_0_#073b4c]"
           >
             {/* Certificates overlay */}
             {certificatesOpen && (
@@ -331,7 +331,7 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
             )}
 
             {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-4 pb-3">
+            <div className="flex shrink-0 items-center justify-between px-5 pt-4 pb-3">
               <h3 className="text-sm font-black text-[#073b4c] tracking-tight">Your Profile</h3>
               <button
                 onClick={closeProfile}
@@ -341,8 +341,8 @@ export function AuthProfileModal({ open, onClose }: AuthProfileModalProps) {
               </button>
             </div>
 
-            {/* User info */}
-            <div className="px-5 pb-4">
+            {/* User info — scrolls when content exceeds viewport */}
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pb-4">
               <div className="flex items-center gap-3.5 mb-4">
                 {/* Avatar */}
                 {avatarUrl ? (
