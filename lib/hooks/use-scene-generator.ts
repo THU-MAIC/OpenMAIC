@@ -183,17 +183,23 @@ async function generateTTSForScene(
   );
   if (speechActions.length === 0) return { success: true, failedCount: 0 };
 
+  const results = await Promise.allSettled(
+    speechActions.map((action) => {
+      const audioId = `tts_${action.id}`;
+      action.audioId = audioId;
+      return generateAndStoreTTS(audioId, action.text, signal);
+    }),
+  );
+
   let failedCount = 0;
   let lastError: string | undefined;
-
-  for (const action of speechActions) {
-    const audioId = `tts_${action.id}`;
-    action.audioId = audioId;
-    try {
-      await generateAndStoreTTS(audioId, action.text, signal);
-    } catch (error) {
+  for (let i = 0; i < results.length; i++) {
+    const r = results[i];
+    const action = speechActions[i];
+    if (r.status === 'rejected') {
       failedCount++;
-      lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
+      lastError =
+        r.reason instanceof Error ? r.reason.message : `TTS failed for action ${action.id}`;
       log.warn('TTS generation failed:', {
         providerId,
         actionId: action.id,

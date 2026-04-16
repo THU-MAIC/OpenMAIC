@@ -114,7 +114,8 @@ export function CanvasToolbar({
 }: CanvasToolbarProps) {
   const { t } = useI18n();
   const canGoPrev = currentSceneIndex > 0;
-  const canGoNext = currentSceneIndex < scenesCount - 1;
+  // Allow "Next" on the last slide to trigger the congratulations flow
+  const canGoNext = true; 
   const showPlayPause = !isLiveSession;
 
   const whiteboardElementCount = useStageStore(

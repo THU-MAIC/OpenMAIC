@@ -1064,6 +1064,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         const userProfileState = useUserProfileStore.getState();
         const mc = getCurrentModelConfig();
 
+        // Track engagement (AI interaction) for grading
+        if (stageIdRef.current) {
+          analyticsService.trackEngagement(stageIdRef.current);
+        }
+
         await runAgentLoop(
           sessionId!,
           {

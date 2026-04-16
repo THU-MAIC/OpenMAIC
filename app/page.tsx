@@ -10,6 +10,7 @@ import {
   Clock,
   Copy,
   ImagePlus,
+  Loader2,
   Pencil,
   Trash2,
   Settings,
@@ -64,6 +65,7 @@ import {
   downloadCourseFromSupabase,
 } from '@/lib/supabase/course-sync';
 import { CoursesExhaustedModal } from '@/components/billing/courses-exhausted-modal';
+import { setPendingIntroPayload } from '@/lib/classroom/pending-intro';
 
 const log = createLogger('Home');
 
@@ -98,6 +100,7 @@ function HomePage() {
   const pendingHandled = useRef(false);
 
   const [form, setForm] = useState<FormState>(initialFormState);
+  const [enterClassroomLoading, setEnterClassroomLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
     import('@/lib/types/settings').SettingsSection | undefined
@@ -315,8 +318,11 @@ function HomePage() {
   }, [pendingGeneration, authLoading, user, form.requirement]);
 
   const handleGenerate = async () => {
+    if (enterClassroomLoading) return;
+
     // Check authentication first
     if (!authLoading && !user) {
+      setEnterClassroomLoading(true);
       // Save the current prompt so we can resume after login
       try {
         localStorage.setItem('pendingPrompt', form.requirement);
@@ -341,6 +347,8 @@ function HomePage() {
       return;
     }
 
+    setEnterClassroomLoading(true);
+
     // Pre-flight credit check (only for authenticated users)
     if (user) {
       try {
@@ -355,6 +363,7 @@ function HomePage() {
                 : 'monthly_limit_reached';
               setExhaustedReason(reason);
               setShowExhaustedModal(true);
+              setEnterClassroomLoading(false);
               return;
             }
           }
@@ -418,6 +427,7 @@ function HomePage() {
     } catch (err) {
       log.error('Error preparing generation:', err);
       setError(err instanceof Error ? err.message : t('upload.generateFailed'));
+      setEnterClassroomLoading(false);
     }
   };
 
@@ -441,7 +451,7 @@ function HomePage() {
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       e.preventDefault();
-      if (canGenerate) handleGenerate();
+      if (canGenerate && !enterClassroomLoading) handleGenerate();
     }
   };
 
@@ -664,17 +674,25 @@ function HomePage() {
 
                 {/* Send button */}
                 <button
+                  type="button"
                   onClick={handleGenerate}
-                  disabled={!canGenerate}
+                  disabled={!canGenerate || enterClassroomLoading}
+                  aria-busy={enterClassroomLoading}
                   className={cn(
                     'shrink-0 h-10 px-5 md:px-6 rounded-full flex items-center justify-center gap-2 transition-all font-bold border-2 border-[#073b4c]',
-                    canGenerate
+                    canGenerate && !enterClassroomLoading
                       ? 'bg-[#ef476f] text-white hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] cursor-pointer'
-                      : 'bg-[#f0f4f8] text-[#073b4c]/40 cursor-not-allowed',
+                      : canGenerate && enterClassroomLoading
+                        ? 'bg-[#ef476f] text-white shadow-[3px_3px_0_#073b4c] cursor-wait opacity-95'
+                        : 'bg-[#f0f4f8] text-[#073b4c]/40 cursor-not-allowed',
                   )}
                 >
                   <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
-                  <ArrowUp className="size-3.5" />
+                  {enterClassroomLoading ? (
+                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                  ) : (
+                    <ArrowUp className="size-3.5" aria-hidden />
+                  )}
                 </button>
               </div>
             </div>
@@ -762,7 +780,15 @@ function HomePage() {
                           confirmingDelete={pendingDeleteId === classroom.id}
                           onConfirmDelete={() => confirmDelete(classroom.id)}
                           onCancelDelete={() => setPendingDeleteId(null)}
-                          onClick={() => router.push(`/classroom/${classroom.id}`)}
+                          onClick={() => {
+                            setPendingIntroPayload({
+                              stageId: classroom.id,
+                              name: classroom.name,
+                              description: classroom.description,
+                              language: form.language,
+                            });
+                            router.push(`/classroom/${classroom.id}`);
+                          }}
                         />
                       </motion.div>
                     ))}

@@ -1,4 +1,12 @@
-import { ScanLine, Search, Bot, FileText, LayoutPanelLeft, Clapperboard } from 'lucide-react';
+import {
+  ScanLine,
+  Search,
+  Bot,
+  FileText,
+  LayoutPanelLeft,
+  Clapperboard,
+  Volume2,
+} from 'lucide-react';
 import { useSettingsStore } from '@/lib/store/settings';
 import type {
   SceneOutline,
@@ -36,6 +44,13 @@ export type GenerationStep = {
 };
 
 export const ALL_STEPS: GenerationStep[] = [
+  {
+    id: 'course-intro',
+    title: 'generation.courseIntro',
+    description: 'generation.courseIntroDesc',
+    icon: Volume2,
+    type: 'visual',
+  },
   {
     id: 'pdf-analysis',
     title: 'generation.analyzingPdf',
@@ -82,6 +97,7 @@ export const ALL_STEPS: GenerationStep[] = [
 
 export const getActiveSteps = (session: GenerationSessionState | null) => {
   return ALL_STEPS.filter((step) => {
+    if (step.id === 'course-intro') return true;
     if (step.id === 'pdf-analysis') return !!session?.pdfStorageKey;
     if (step.id === 'web-search') return !!session?.requirements?.webSearch;
     if (step.id === 'agent-generation') return useSettingsStore.getState().agentMode === 'auto';

@@ -34,6 +34,7 @@ import {
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
+import { resolveGenerationLanguage } from '@/lib/constants/generation';
 
 const log = createLogger('Classroom');
 
@@ -100,10 +101,6 @@ function createInMemoryStore(stage: Stage): StageStore {
       };
     },
   };
-}
-
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
 }
 
 function stripCodeFences(text: string): string {
@@ -224,7 +221,7 @@ export async function generateClassroom(
     return result.text;
   };
 
-  const lang = normalizeLanguage(input.language);
+  const lang = resolveGenerationLanguage(input.language);
   const requirements: UserRequirements = {
     requirement,
     language: lang,

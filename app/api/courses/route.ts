@@ -1,4 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
+import {
+  WorkflowExecutionAlreadyStartedError,
+  WorkflowIdReusePolicy,
+} from '@temporalio/client';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { getTemporalClient, TASK_QUEUE } from '@/temporal/client';
 
@@ -212,14 +216,22 @@ export async function POST(req: NextRequest) {
       try {
         const temporalClient = await getTemporalClient();
         // Pass workflow type as a string to avoid name mangling during Next.js production builds.
+        // Default reuse policy ALLOW_DUPLICATE allows a new run after the prior run closed — duplicate POSTs
+        // with is_final each started another execution. REJECT_DUPLICATE keeps one run per workflow id.
         await temporalClient.workflow.start('generateCatalogMetadataWorkflow', {
           taskQueue: TASK_QUEUE,
-          workflowId: `catalog-${course.id}`,
+          workflowId: `catalog-metadata-${course.id}`,
+          workflowIdReusePolicy: WorkflowIdReusePolicy.REJECT_DUPLICATE,
           args: [{ courseId: course.id, courseName: name, language: language || 'en-US', sceneTitles }],
         });
       } catch (temporalErr) {
-        // Non-fatal: catalog metadata generation is best-effort
-        console.error('Failed to start catalog metadata workflow (non-fatal):', temporalErr);
+        // Expected when metadata was already generated for this course id.
+        if (temporalErr instanceof WorkflowExecutionAlreadyStartedError) {
+          // no-op
+        } else {
+          // Non-fatal: catalog metadata generation is best-effort
+          console.error('Failed to start catalog metadata workflow (non-fatal):', temporalErr);
+        }
       }
     }
 

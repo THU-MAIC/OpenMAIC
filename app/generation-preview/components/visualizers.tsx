@@ -13,21 +13,64 @@ import {
   MessageSquare,
   Focus,
   Play,
+  Volume2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
+
+/** Course welcome intro — script streams from intro-sse while audio plays */
+function CourseIntroVisualizer({ script }: { script: string }) {
+  return (
+    <div className="size-56 relative flex flex-col items-center justify-center gap-3 px-2">
+      <motion.div
+        className="absolute inset-0 blur-3xl rounded-full bg-violet-500/15"
+        animate={{ scale: [1, 1.08, 1], opacity: [0.35, 0.55, 0.35] }}
+        transition={{ duration: 2.8, repeat: Infinity }}
+      />
+      <motion.div
+        className="relative z-10 size-24 rounded-full bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 border border-violet-400/30 flex items-center justify-center shadow-lg shadow-violet-500/10"
+        animate={{ scale: [1, 1.04, 1] }}
+        transition={{ duration: 2, repeat: Infinity }}
+      >
+        <Volume2 className="size-11 text-violet-500 dark:text-violet-300" />
+      </motion.div>
+      <div className="relative z-10 w-full max-w-[13rem] min-h-[3.5rem] rounded-xl bg-white/60 dark:bg-slate-800/60 border border-violet-200/40 dark:border-violet-500/20 px-3 py-2 text-left">
+        <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-600/80 dark:text-violet-300/80 mb-1">
+          Instructor
+        </p>
+        <p className="text-xs leading-snug text-slate-700 dark:text-slate-200 line-clamp-4">
+          {script || 'Preparing your welcome message...'}
+        </p>
+      </div>
+      <div className="flex gap-1 h-4 items-end justify-center">
+        {[0, 1, 2, 3, 4].map((i) => (
+          <motion.span
+            key={i}
+            className="w-1 rounded-full bg-violet-500/70"
+            animate={{ height: script ? [4, 14, 6, 14, 4] : [3, 3, 3, 3, 3] }}
+            transition={{ duration: 0.55, repeat: Infinity, delay: i * 0.08 }}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // Step-specific visualizers
 export function StepVisualizer({
   stepId,
   outlines,
   webSearchSources,
+  introLiveScript,
 }: {
   stepId: string;
   outlines?: SceneOutline[] | null;
   webSearchSources?: Array<{ title: string; url: string }>;
+  introLiveScript?: string;
 }) {
   switch (stepId) {
+    case 'course-intro':
+      return <CourseIntroVisualizer script={introLiveScript ?? ''} />;
     case 'pdf-analysis':
       return <PdfScanVisualizer />;
     case 'web-search':

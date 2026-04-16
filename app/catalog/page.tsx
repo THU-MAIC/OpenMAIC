@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { setPendingIntroPayload } from '@/lib/classroom/pending-intro';
 
 interface Course {
   id: string;
@@ -213,7 +214,20 @@ function CatalogPageContent() {
             ) : courses.length > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                 {courses.map((course, i) => (
-                  <CourseCard key={course.id} course={course} index={i} onClick={() => router.push(`/classroom/${course.id}`)} />
+                  <CourseCard
+                    key={course.id}
+                    course={course}
+                    index={i}
+                    onClick={() => {
+                      setPendingIntroPayload({
+                        stageId: course.id,
+                        name: course.title,
+                        description: course.description,
+                        language: course.language,
+                      });
+                      router.push(`/classroom/${course.id}`);
+                    }}
+                  />
                 ))}
               </div>
             ) : (

@@ -16,6 +16,11 @@ import { useAnalytics } from '@/lib/hooks/use-analytics';
 import { useAuth } from '@/lib/hooks/use-auth';
 import type { Scene } from '@/lib/types/stage';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
+import { IntroStreamingPlayer } from '@/components/audio/intro-streaming-player';
+import {
+  takeIntroBootstrapForClassroom,
+  evictIntroBootstrapCache,
+} from '@/lib/classroom/pending-intro';
 
 const log = createLogger('Classroom');
 
@@ -203,12 +208,14 @@ export default function ClassroomDetailPage() {
   useAnalytics(classroomId);
 
   const { loadFromStorage } = useStageStore();
+  const stage = useStageStore((s) => s.stage);
   const { user } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const generationStartedRef = useRef(false);
+  const prevClassroomIdForIntroRef = useRef<string | null>(null);
   // Tracks whether the full re-sync (all scenes) has already been fired this session
   const fullSyncDoneRef = useRef(false);
 
@@ -375,6 +382,16 @@ export default function ClassroomDetailPage() {
       setLoading(false);
     }
   }, [classroomId, loadFromStorage]);
+
+  useEffect(() => {
+    if (
+      prevClassroomIdForIntroRef.current &&
+      prevClassroomIdForIntroRef.current !== classroomId
+    ) {
+      evictIntroBootstrapCache(prevClassroomIdForIntroRef.current);
+    }
+    prevClassroomIdForIntroRef.current = classroomId;
+  }, [classroomId]);
 
   useEffect(() => {
     // Reset loading state on course switch to unmount Stage during transition,
@@ -595,10 +612,31 @@ export default function ClassroomDetailPage() {
     }
   }, [loading, error, generateRemaining, syncFullCourse, syncAfterScene, reconcileMediaFromStorage]);
 
+  const introBootstrap = takeIntroBootstrapForClassroom(classroomId);
+  const introSource =
+    introBootstrap ??
+    (stage
+      ? {
+          stageId: stage.id,
+          name: stage.name,
+          description: stage.description,
+          language: stage.language,
+        }
+      : null);
+
   return (
     <ThemeProvider>
       <MediaStageProvider value={classroomId}>
         <div className="h-[100dvh] flex flex-col overflow-hidden">
+          {introSource && (
+            <IntroStreamingPlayer
+              key={introSource.stageId}
+              stageId={introSource.stageId}
+              name={introSource.name}
+              description={introSource.description}
+              language={introSource.language}
+            />
+          )}
           {loading ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="text-center text-muted-foreground">
@@ -622,7 +660,9 @@ export default function ClassroomDetailPage() {
               </div>
             </div>
           ) : (
+            <>
             <Stage onRetryOutline={retrySingleOutline} />
+            </>
           )}
         </div>
       </MediaStageProvider>

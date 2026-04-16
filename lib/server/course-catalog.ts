@@ -4,6 +4,7 @@ import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { Stage } from '@/lib/types/stage';
 import { callLLM } from '@/lib/ai/llm';
+import { parseJsonResponse } from '@/lib/generation/json-repair';
 import { resolveModel } from '@/lib/server/resolve-model';
 
 const log = createLogger('CourseCatalog');
@@ -241,8 +242,10 @@ Generate catalog metadata for this course based on the rules above.`;
 
   try {
     const response = await aiCall(systemPrompt, userPrompt);
-    const cleaned = response.trim().replace(/^```json\s*|\s*```$/g, '');
-    const metadata = JSON.parse(cleaned) as CourseCatalogMetadata;
+    const metadata = parseJsonResponse<CourseCatalogMetadata>(response);
+    if (!metadata) {
+      return null;
+    }
 
     if (metadata.catalog_title && metadata.headline && metadata.subject && metadata.age_range && metadata.topic) {
       return metadata;

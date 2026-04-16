@@ -235,33 +235,37 @@ export async function generateTTSForClassroom(
     // mirroring the client-side approach. Each sub-action gets its own audio file.
     scene.actions = splitLongSpeechActions(scene.actions, providerId);
 
-    for (const action of scene.actions) {
-      if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
-      const speechAction = action as SpeechAction;
-      const audioId = `tts_${action.id}`;
+    const speechActions = scene.actions.filter(
+      (a): a is SpeechAction => a.type === 'speech' && !!a.text,
+    );
 
-      try {
-        const result = await generateTTS(
-          {
-            providerId,
-            modelId: DEFAULT_TTS_MODELS[providerId] || '',
-            apiKey,
-            baseUrl: ttsBaseUrl,
-            voice,
-            speed: speechAction.speed,
-          },
-          speechAction.text,
-        );
+    await Promise.all(
+      speechActions.map(async (speechAction) => {
+        const audioId = `tts_${speechAction.id}`;
 
-        const filename = `${audioId}.${format}`;
-        await fs.writeFile(path.join(audioDir, filename), result.audio);
+        try {
+          const result = await generateTTS(
+            {
+              providerId,
+              modelId: DEFAULT_TTS_MODELS[providerId] || '',
+              apiKey,
+              baseUrl: ttsBaseUrl,
+              voice,
+              speed: speechAction.speed,
+            },
+            speechAction.text,
+          );
 
-        speechAction.audioId = audioId;
-        speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
-        log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
-      } catch (err) {
-        log.warn(`TTS generation failed for action ${action.id}:`, err);
-      }
-    }
+          const filename = `${audioId}.${format}`;
+          await fs.writeFile(path.join(audioDir, filename), result.audio);
+
+          speechAction.audioId = audioId;
+          speechAction.audioUrl = mediaServingUrl(baseUrl, classroomId, `audio/${filename}`);
+          log.info(`Generated TTS: ${filename} (${result.audio.length} bytes)`);
+        } catch (err) {
+          log.warn(`TTS generation failed for action ${speechAction.id}:`, err);
+        }
+      }),
+    );
   }
 }

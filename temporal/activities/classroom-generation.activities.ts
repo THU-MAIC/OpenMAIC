@@ -33,6 +33,7 @@ import {
 import type { UserRequirements, SceneOutline } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
+import { resolveGenerationLanguage } from '@/lib/constants/generation';
 import type { GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { createLogger } from '@/lib/logger';
 
@@ -44,10 +45,6 @@ const log = createLogger('ClassroomGenerationActivity');
 
 function isSupabaseConfigured(): boolean {
   return !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-}
-
-function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' {
-  return language === 'en-US' ? 'en-US' : 'zh-CN';
 }
 
 function stripCodeFences(text: string): string {
@@ -210,7 +207,7 @@ export async function setupAndGenerateOutlinesActivity(
     return result.text;
   };
 
-  const lang = normalizeLanguage(input.language);
+  const lang = resolveGenerationLanguage(input.language);
   const pdfText = pdfContent?.text || undefined;
 
   // Resolve agents
@@ -316,6 +313,11 @@ export async function generateSingleSceneActivity(
 ): Promise<Scene | null> {
   const { outline, stage, agents, input: _input } = params;
 
+  const outlineWithLanguage: SceneOutline = {
+    ...outline,
+    language: resolveGenerationLanguage(outline.language ?? stage.language),
+  };
+
   const { model: languageModel, modelInfo } = resolveModel({});
 
   const aiCall: AICallFn = async (systemPrompt, userPrompt) => {
@@ -333,7 +335,7 @@ export async function generateSingleSceneActivity(
     return result.text;
   };
 
-  const safeOutline = applyOutlineFallbacks(outline, true);
+  const safeOutline = applyOutlineFallbacks(outlineWithLanguage, true);
   const content = await generateSceneContent(
     safeOutline,
     aiCall,

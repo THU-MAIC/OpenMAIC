@@ -29,13 +29,22 @@ import {
   storeImages,
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import { db } from '@/lib/utils/database';
-import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { generateAndStoreTTS } from '@/lib/hooks/use-scene-generator';
+import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import {
+  MAX_PDF_CONTENT_CHARS,
+  MAX_VISION_IMAGES,
+  resolveGenerationLanguage,
+} from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
 import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
+import type { Action, SpeechAction } from '@/lib/types/action';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
+import { setPendingIntroPayload } from '@/lib/classroom/pending-intro';
+import { playIntroSseStream, type IntroSseStatus } from '@/lib/generation/intro-sse-client';
+import { GenerationIntroDock } from '@/components/audio/generation-intro-dock';
 import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
 import { StepVisualizer } from './components/visualizers';
 
@@ -69,6 +78,12 @@ function GenerationPreviewContent() {
   const [webSearchSources, setWebSearchSources] = useState<Array<{ title: string; url: string }>>(
     [],
   );
+  const [introPreviewScript, setIntroPreviewScript] = useState('');
+  const [introDockOpen, setIntroDockOpen] = useState(false);
+  const [introDockCourseName, setIntroDockCourseName] = useState('');
+  const [introDockStatus, setIntroDockStatus] = useState<'idle' | IntroSseStatus>('idle');
+  const [introDockMuted, setIntroDockMuted] = useState(false);
+  const introDockMuteRef = useRef(false);
   const [showAgentReveal, setShowAgentReveal] = useState(false);
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
@@ -147,6 +162,14 @@ function GenerationPreviewContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
+  const extractTopicFromRequirement = (requirement: string): string => {
+    const trimmed = requirement.trim();
+    if (trimmed.length <= 500) {
+      return trimmed;
+    }
+    return trimmed.substring(0, 500).trim() + '...';
+  };
+
   // Main generation flow
   const startGeneration = async () => {
     if (!session) return;
@@ -193,15 +216,62 @@ function GenerationPreviewContent() {
       // Compute active steps for this session (recomputed after session mutations)
       let activeSteps = getActiveSteps(currentSession);
 
-      // Determine if we need the PDF analysis step
       const hasPdfToAnalyze = !!currentSession.pdfStorageKey && !currentSession.pdfText;
-      // If no PDF to analyze, skip to the next available step
-      if (!hasPdfToAnalyze) {
-        const firstNonPdfIdx = activeSteps.findIndex((s) => s.id !== 'pdf-analysis');
-        setCurrentStepIndex(Math.max(0, firstNonPdfIdx));
+
+      // Stage id early — shared by intro TTS, agent APIs, outlines, and classroom handoff
+      const stage: Stage = {
+        id: nanoid(10),
+        name: extractTopicFromRequirement(currentSession.requirements.requirement),
+        description: '',
+        language: resolveGenerationLanguage(currentSession.requirements.language),
+        style: 'professional',
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      };
+
+      const introStepIdx = activeSteps.findIndex((s) => s.id === 'course-intro');
+      if (introStepIdx >= 0) {
+        setIntroPreviewScript('');
+        introDockMuteRef.current = false;
+        setIntroDockMuted(false);
+        setIntroDockOpen(true);
+        setIntroDockCourseName(stage.name);
+        setIntroDockStatus('generating');
+        const voiceId = useSettingsStore.getState().ttsVoice;
+        void playIntroSseStream({
+          stageId: stage.id,
+          name: stage.name,
+          description: currentSession.requirements.requirement.slice(0, 1200),
+          language: stage.language,
+          voiceId,
+          signal,
+          isMuted: () => introDockMuteRef.current,
+          onScript: (text) => setIntroPreviewScript(text),
+          onStatus: (s) => setIntroDockStatus(s),
+        })
+          .catch((introErr) => {
+            log.warn('[GenerationPreview] Intro stream failed, continuing:', introErr);
+          })
+          .finally(() => {
+            setIntroPreviewScript('');
+            setIntroDockOpen(false);
+            setIntroDockCourseName('');
+            setIntroDockStatus('idle');
+          });
       }
 
-      // Step 0: Parse PDF if needed
+      activeSteps = getActiveSteps(currentSession);
+      if (hasPdfToAnalyze) {
+        const pdfIdx = activeSteps.findIndex((s) => s.id === 'pdf-analysis');
+        if (pdfIdx >= 0) setCurrentStepIndex(pdfIdx);
+      } else {
+        const nextIdx = activeSteps.findIndex(
+          (s) => s.id !== 'pdf-analysis' && s.id !== 'course-intro',
+        );
+        setCurrentStepIndex(nextIdx >= 0 ? nextIdx : 0);
+      }
+
+      // Parse PDF if needed
       if (hasPdfToAnalyze) {
         log.debug('=== Generation Preview: Parsing PDF ===');
         const pdfBlob = await loadPdfBlob(currentSession.pdfStorageKey!);
@@ -405,18 +475,6 @@ function GenerationPreviewContent() {
         persona?: string;
       }> = [];
 
-      // Create stage client-side (needed for agent generation stageId)
-      const stageId = nanoid(10);
-      const stage: Stage = {
-        id: stageId,
-        name: extractTopicFromRequirement(currentSession.requirements.requirement),
-        description: '',
-        language: currentSession.requirements.language || 'zh-CN',
-        style: 'professional',
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
-      };
-
       if (settings.agentMode === 'auto') {
         const agentStepIdx = activeSteps.findIndex((s) => s.id === 'agent-generation');
         if (agentStepIdx >= 0) setCurrentStepIndex(agentStepIdx);
@@ -490,7 +548,7 @@ function GenerationPreviewContent() {
             headers: getApiHeaders(),
             body: JSON.stringify({
               stageInfo: { name: stage.name, description: stage.description },
-              language: currentSession.requirements.language || 'zh-CN',
+              language: resolveGenerationLanguage(currentSession.requirements.language),
               availableAvatars: allAvatars.map((a) => a.path),
               avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
               availableVoices: getAvailableVoicesForGeneration(),
@@ -752,57 +810,22 @@ function GenerationPreviewContent() {
         throw new Error(data.error || t('generation.sceneGenerateFailed'));
       }
 
-      // Generate TTS for first scene (part of actions step — blocking)
+      // Generate TTS for first scene — all speech clips in parallel (same as useSceneGenerator)
       if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
-        const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
-        const speechActions = (data.scene.actions || []).filter(
-          (a: { type: string; text?: string }) => a.type === 'speech' && a.text,
+        const actionsForTts = (data.scene.actions ?? []) as Action[];
+        data.scene.actions = splitLongSpeechActions(actionsForTts, settings.ttsProviderId);
+        const speechActions = (data.scene.actions as Action[]).filter(
+          (a): a is SpeechAction => a.type === 'speech' && !!a.text,
         );
 
-        let ttsFailCount = 0;
-        for (const action of speechActions) {
-          const audioId = `tts_${action.id}`;
-          action.audioId = audioId;
-          try {
-            const resp = await fetch('/api/generate/tts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                text: action.text,
-                audioId,
-                ttsProviderId: settings.ttsProviderId,
-                ttsModelId: ttsProviderConfig?.modelId,
-                ttsVoice: settings.ttsVoice,
-                ttsSpeed: settings.ttsSpeed,
-                ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-                ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
-              }),
-              signal,
-            });
-            if (!resp.ok) {
-              ttsFailCount++;
-              continue;
-            }
-            const ttsData = await resp.json();
-            if (!ttsData.success) {
-              ttsFailCount++;
-              continue;
-            }
-            const binary = atob(ttsData.base64);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            const blob = new Blob([bytes], { type: `audio/${ttsData.format}` });
-            await db.audioFiles.put({
-              id: audioId,
-              blob,
-              format: ttsData.format,
-              createdAt: Date.now(),
-            });
-          } catch (err) {
-            log.warn(`[TTS] Failed for ${audioId}:`, err);
-            ttsFailCount++;
-          }
-        }
+        const results = await Promise.allSettled(
+          speechActions.map((action) => {
+            const audioId = `tts_${action.id}`;
+            action.audioId = audioId;
+            return generateAndStoreTTS(audioId, action.text, signal);
+          }),
+        );
+        const ttsFailCount = results.filter((r) => r.status === 'rejected').length;
 
         if (ttsFailCount > 0 && speechActions.length > 0) {
           throw new Error(t('generation.speechFailed'));
@@ -876,6 +899,12 @@ function GenerationPreviewContent() {
         setIsComplete(true);
         setStageIdForEntry(stage.id);
       } else {
+        setPendingIntroPayload({
+          stageId: stage.id,
+          name: stage.name,
+          description: stage.description,
+          language: stage.language,
+        });
         router.push(`/classroom/${stage.id}`);
       }
     } catch (err) {
@@ -889,16 +918,11 @@ function GenerationPreviewContent() {
     }
   };
 
-  const extractTopicFromRequirement = (requirement: string): string => {
-    const trimmed = requirement.trim();
-    if (trimmed.length <= 500) {
-      return trimmed;
-    }
-    return trimmed.substring(0, 500).trim() + '...';
-  };
-
   const goBackToHome = () => {
     abortControllerRef.current?.abort();
+    setIntroDockOpen(false);
+    setIntroDockCourseName('');
+    setIntroDockStatus('idle');
     sessionStorage.removeItem('generationSession');
     router.push('/');
   };
@@ -963,6 +987,18 @@ function GenerationPreviewContent() {
           {t('generation.backToHome')}
         </Button>
       </motion.div>
+
+      <GenerationIntroDock
+        open={introDockOpen}
+        courseName={introDockCourseName}
+        script={introPreviewScript}
+        status={introDockStatus}
+        muted={introDockMuted}
+        onToggleMute={() => {
+          introDockMuteRef.current = !introDockMuteRef.current;
+          setIntroDockMuted(introDockMuteRef.current);
+        }}
+      />
 
       <div className={cn(
         "z-10 w-full flex flex-col items-center transition-all duration-700 ease-in-out gap-8",
@@ -1029,6 +1065,7 @@ function GenerationPreviewContent() {
                         stepId={activeStep.id}
                         outlines={streamingOutlines}
                         webSearchSources={webSearchSources}
+                        introLiveScript={introPreviewScript}
                       />
                     </motion.div>
                   )}
@@ -1207,7 +1244,18 @@ function GenerationPreviewContent() {
                 <Button 
                   size="lg" 
                   className="h-14 px-8 rounded-full shadow-xl shadow-blue-500/20 bg-blue-600 hover:bg-blue-700 text-lg group" 
-                  onClick={() => router.push(`/classroom/${stageIdForEntry}`)}
+                  onClick={() => {
+                    const st = useStageStore.getState().stage;
+                    if (st && st.id === stageIdForEntry) {
+                      setPendingIntroPayload({
+                        stageId: st.id,
+                        name: st.name,
+                        description: st.description,
+                        language: st.language,
+                      });
+                    }
+                    router.push(`/classroom/${stageIdForEntry}`);
+                  }}
                 >
                   {t('generation.teacherReady', { defaultValue: 'The teacher is ready' })}
                   <ArrowRight className="size-5 ml-2 transition-transform group-hover:translate-x-1" />

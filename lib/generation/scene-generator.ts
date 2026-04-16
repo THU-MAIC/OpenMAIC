@@ -7,7 +7,7 @@
 
 import { nanoid } from 'nanoid';
 import katex from 'katex';
-import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { MAX_VISION_IMAGES, resolveGenerationLanguage } from '@/lib/constants/generation';
 import type {
   SceneOutline,
   GeneratedSlideContent,
@@ -255,7 +255,7 @@ export async function generateSceneContent(
     case 'quiz':
       return generateQuizContent(outline, aiCall);
     case 'interactive':
-      return generateInteractiveContent(outline, aiCall, outline.language);
+      return generateInteractiveContent(outline, aiCall);
     case 'pbl':
       return generatePBLSceneContent(outline, languageModel);
     default:
@@ -531,7 +531,7 @@ async function generateSlideContent(
   customWidth?: number,
   customHeight?: number,
 ): Promise<GeneratedSlideContent | null> {
-  const lang = outline.language || 'zh-CN';
+  const lang = resolveGenerationLanguage(outline.language);
 
   // Build assigned images description for the prompt
   let assignedImagesText = '， image ';
@@ -799,8 +799,8 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 async function generateInteractiveContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  language: 'zh-CN' | 'en-US' = 'zh-CN',
 ): Promise<GeneratedInteractiveContent | null> {
+  const language = resolveGenerationLanguage(outline.language);
   const config = outline.interactiveConfig!;
 
   // Step 1: Scientific modeling (with fallback on failure)

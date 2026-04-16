@@ -61,6 +61,14 @@ export async function POST(req: NextRequest) {
       });
 
       if (error) throw error;
+    } else if (type === 'engagement') {
+      // Increment engagement count (AI interactions)
+      const { error } = await supabase.rpc('increment_engagement_count', {
+        u_id: userId,
+        c_id: courseId
+      });
+
+      if (error) throw error;
     }
 
     return apiSuccess({ status: 'tracked' });

@@ -276,6 +276,8 @@
     "fileTooLarge": "File too large. Please select a PDF file smaller than 50MB"
   },
   "generation": {
+    "courseIntro": "Your Instructor Is Introducing the Course",
+    "courseIntroDesc": "Streaming a personalized welcome while your lesson is prepared",
     "analyzingPdf": "Analyzing PDF Document",
     "analyzingPdfDesc": "Extracting document structure and content...",
     "pdfLoadFailed": "Failed to load PDF file, please try again",

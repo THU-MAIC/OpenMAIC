@@ -4,7 +4,7 @@
  */
 
 export interface AnalyticsEvent {
-  type: 'course_view' | 'slide_view' | 'heartbeat';
+  type: 'course_view' | 'slide_view' | 'heartbeat' | 'engagement';
   courseId: string;
   courseName?: string;
   slideIndex?: number;
@@ -53,6 +53,16 @@ export const analyticsService = {
       type: 'heartbeat',
       courseId,
       durationSeconds,
+    });
+  },
+
+  /**
+   * Tracks student engagement (chat interactions)
+   */
+  async trackEngagement(courseId: string) {
+    this._send('/api/analytics', {
+      type: 'engagement',
+      courseId,
     });
   },
 

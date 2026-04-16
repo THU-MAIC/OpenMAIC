@@ -22,7 +22,10 @@ import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action'
 import { cn } from '@/lib/utils';
 // Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
+import { CongratulationsPopup } from './certificates/congratulations-popup';
 import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { useUserProfileStore } from '@/lib/store/user-profile';
+import { createClient } from '@/utils/supabase/client';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
   AlertDialog,
@@ -112,6 +115,15 @@ export function Stage({
 
   // Active bubble ID for playback highlight in chat area (Issue 8)
   const [activeBubbleId, setActiveBubbleId] = useState<string | null>(null);
+
+  // Certificate/Congratulations state
+  const [showCongratulations, setShowCongratulations] = useState(false);
+  const [congratsStats, setCongratsStats] = useState({
+    slidesViewed: 0,
+    totalSlides: 0,
+    quizScoreAverage: 0,
+    engagementCount: 0,
+  });
 
   // Scene switch confirmation dialog state
   const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
@@ -262,6 +274,62 @@ export function Stage({
 
     resetLiveState();
   }, [chatSessionType, resetLiveState, discussionTTS]);
+
+  const triggerCongratulations = useCallback(async () => {
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const stage = useStageStore.getState().stage;
+      if (!stage) return;
+
+      // Fetch latest analytics to calculate grade
+      const { data: analytics } = await supabase
+        .from('user_analytics')
+        .select('*')
+        .eq('user_id', user.id)
+        .eq('course_id', stage.id)
+        .single();
+
+      // Fetch quiz scores for this course
+      const { data: quizScores } = await supabase
+        .from('quiz_scores')
+        .select('percentage')
+        .eq('user_id', user.id)
+        .eq('course_id', stage.id);
+
+      const avgQuizScore = quizScores && quizScores.length > 0
+        ? quizScores.reduce((acc, q) => acc + q.percentage, 0) / quizScores.length
+        : 100;
+
+      const topics = useStageStore.getState().scenes
+        .slice(0, 5)
+        .map(s => s.title)
+        .filter(Boolean);
+
+      console.log("[Stage] Triggering congratulations with stats:", { analytics, quizScores, topics });
+
+      // Fallback if analytics record hasn't been created yet
+      const finalAnalytics = analytics || {
+        slides_viewed: useStageStore.getState().scenes.length,
+        total_slides: useStageStore.getState().scenes.length,
+        engagement_count: 0
+      };
+
+      setCongratsStats({
+        slidesViewed: finalAnalytics.slides_viewed || 0,
+        totalSlides: finalAnalytics.total_slides || 0,
+        quizScoreAverage: Math.round(avgQuizScore),
+        engagementCount: finalAnalytics.engagement_count || 0,
+        // @ts-ignore
+        topics,
+      });
+      setShowCongratulations(true);
+    } catch (err) {
+      console.error('[Stage] Failed to load congratulation stats:', err);
+    }
+  }, []);
 
   // Shared stop-discussion handler (used by both Roundtable and Canvas toolbar)
   const handleStopDiscussion = useCallback(async () => {
@@ -464,6 +532,21 @@ export function Stage({
           chatAreaRef.current?.endSession(lectureSessionIdRef.current);
           lectureSessionIdRef.current = null;
         }
+
+        // PlaybackEngine is built with [currentScene] only, so onComplete means
+        // "this slide's actions finished" — not the whole course. Only show the
+        // certificate flow on the final real slide when no outlines are still generating
+        // (same conditions as handleNextScene's congratulations branch).
+        const stageState = useStageStore.getState();
+        const allScenes = stageState.scenes;
+        const curId = stageState.currentSceneId;
+        const idx = allScenes.findIndex((s) => s.id === curId);
+        const isLastRealScene = idx >= 0 && idx === allScenes.length - 1;
+        const stillGenerating = stageState.generatingOutlines.length > 0;
+        if (isLastRealScene && !stillGenerating) {
+          triggerCongratulations();
+        }
+
         // Auto-play: advance to next scene after a short pause
         const { autoPlayLecture } = useSettingsStore.getState();
         if (autoPlayLecture) {
@@ -727,6 +810,9 @@ export function Stage({
     } else if (hasNextPending) {
       // On last real scene → advance to pending page
       setCurrentSceneId(PENDING_SCENE_ID);
+    } else {
+      // Last slide of a finished course — trigger congratulations instead of doing nothing
+      triggerCongratulations();
     }
   }, [currentSceneId, gatedSceneSwitch, hasNextPending, isPendingScene, scenes, setCurrentSceneId]);
 
@@ -907,7 +993,7 @@ export function Stage({
         {/* Floating Countdown Timer */}
         {mode === 'playback' && outlines.length > 0 && (
           <div className="absolute top-6 left-6 z-50 pointer-events-none">
-            <ClassroomTimer 
+            <ClassroomTimer
               currentSceneIndex={currentSceneIndex}
               totalScenes={totalScenesCount}
               className="pointer-events-auto"
@@ -1212,6 +1298,19 @@ export function Stage({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Congratulations Reward Popup */}
+      <CongratulationsPopup
+        isOpen={showCongratulations}
+        onClose={() => setShowCongratulations(false)}
+        studentName={useUserProfileStore.getState().nickname || 'Student'}
+        courseName={(() => {
+          const stage = useStageStore.getState().stage;
+          return stage?.headline || stage?.description || stage?.name || 'this course';
+        })()}
+        courseId={useStageStore.getState().stage?.id || ''}
+        stats={congratsStats}
+      />
     </div>
   );
 }

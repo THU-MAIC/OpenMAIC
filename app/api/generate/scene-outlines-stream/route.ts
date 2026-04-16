@@ -22,7 +22,11 @@ import {
   formatTeacherPersonaForPrompt,
 } from '@/lib/generation/generation-pipeline';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
-import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import {
+  MAX_PDF_CONTENT_CHARS,
+  MAX_VISION_IMAGES,
+  resolveGenerationLanguage,
+} from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
 import type {
   UserRequirements,
@@ -120,12 +124,13 @@ export async function POST(req: NextRequest) {
     };
     requirementSnippet = requirements?.requirement?.substring(0, 60);
 
+    const lang = resolveGenerationLanguage(requirements.language);
+
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
 
     // Build prompt (same logic as generateSceneOutlinesFromRequirements)
-    let availableImagesText =
-      requirements.language === 'zh-CN' ? '' : 'No images available';
+    let availableImagesText = lang === 'zh-CN' ? '' : 'No images available';
     let visionImages: Array<{ id: string; src: string }> | undefined;
 
     if (pdfImages && pdfImages.length > 0) {
@@ -137,10 +142,10 @@ export async function POST(req: NextRequest) {
         const noSrcImages = pdfImages.filter((img) => !imageMapping[img.id]);
 
         const visionDescriptions = visionSlice.map((img) =>
-          formatImagePlaceholder(img, requirements.language),
+          formatImagePlaceholder(img, lang),
         );
         const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
-          formatImageDescription(img, requirements.language),
+          formatImageDescription(img, lang),
         );
         availableImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
@@ -153,7 +158,7 @@ export async function POST(req: NextRequest) {
       } else {
         // Text-only mode: full descriptions
         availableImagesText = pdfImages
-          .map((img) => formatImageDescription(img, requirements.language))
+          .map((img) => formatImageDescription(img, lang))
           .join('\n');
       }
     }
@@ -178,14 +183,14 @@ export async function POST(req: NextRequest) {
 
     const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
       requirement: requirements.requirement,
-      language: requirements.language,
+      language: lang,
       pdfContent: pdfText
         ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-        : requirements.language === 'zh-CN'
+        : lang === 'zh-CN'
           ? ''
           : 'None',
       availableImages: availableImagesText,
-      researchContext: researchContext || (requirements.language === 'zh-CN' ? '' : 'None'),
+      researchContext: researchContext || (lang === 'zh-CN' ? '' : 'None'),
       mediaGenerationPolicy,
       teacherContext,
       aspectRatio: requirements.aspectRatio || 'landscape',
@@ -269,6 +274,7 @@ export async function POST(req: NextRequest) {
                       id: outline.id || nanoid(),
                       order: parsedOutlines.length + 1,
                       aspectRatio: requirements.aspectRatio,
+                      language: lang,
                     };
                   parsedOutlines.push(enriched);
 

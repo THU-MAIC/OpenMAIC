@@ -1,5 +1,4 @@
--- ── Add extra_credits column ──────────────────────────────────────────────────
-ALTER TABLE public.user_plans ADD COLUMN extra_credits integer NOT NULL DEFAULT 0;
+ALTER TABLE public.user_plans ADD COLUMN IF NOT EXISTS extra_credits integer NOT NULL DEFAULT 0;
 
 -- ── Update increment_course_credit RPC ─────────────────────────────────────────
 -- Now accounts for extra_credits first.

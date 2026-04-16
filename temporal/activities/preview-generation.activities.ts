@@ -148,46 +148,50 @@ export async function generateSceneTTSToSupabaseActivity(
 
   const supabase = createAdminClient();
 
-  for (const action of updatedScene.actions) {
-    if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
-    const speechAction = action as SpeechAction;
-    const audioId = `tts_${action.id}`;
+  const speechActions = updatedScene.actions.filter(
+    (a): a is SpeechAction => a.type === 'speech' && !!a.text,
+  );
 
-    try {
-      Context.current().heartbeat(`tts:${audioId}`);
+  await Promise.all(
+    speechActions.map(async (speechAction) => {
+      const audioId = `tts_${speechAction.id}`;
 
-      const result = await generateTTS(
-        {
-          providerId,
-          modelId: DEFAULT_TTS_MODELS[providerId] || '',
-          apiKey,
-          baseUrl: ttsBaseUrl,
-          voice,
-          speed: speechAction.speed,
-        },
-        speechAction.text,
-      );
+      try {
+        Context.current().heartbeat(`tts:${audioId}`);
 
-      const storagePath = `${stageId}/audio/${audioId}.${format}`;
-      const { error } = await supabase.storage
-        .from('courses')
-        .upload(storagePath, result.audio, {
-          contentType: mimeType,
-          upsert: true,
-        });
+        const result = await generateTTS(
+          {
+            providerId,
+            modelId: DEFAULT_TTS_MODELS[providerId] || '',
+            apiKey,
+            baseUrl: ttsBaseUrl,
+            voice,
+            speed: speechAction.speed,
+          },
+          speechAction.text,
+        );
 
-      if (error) {
-        log.warn(`TTS upload failed for ${audioId}:`, error.message);
-        continue;
+        const storagePath = `${stageId}/audio/${audioId}.${format}`;
+        const { error } = await supabase.storage
+          .from('courses')
+          .upload(storagePath, result.audio, {
+            contentType: mimeType,
+            upsert: true,
+          });
+
+        if (error) {
+          log.warn(`TTS upload failed for ${audioId}:`, error.message);
+          return;
+        }
+
+        speechAction.audioId = audioId;
+        speechAction.audioUrl = getSupabasePublicUrl('courses', storagePath);
+        log.info(`TTS uploaded: ${storagePath} (${result.audio.length} bytes)`);
+      } catch (err) {
+        log.warn(`TTS generation/upload failed for action ${speechAction.id}:`, err);
       }
-
-      speechAction.audioId = audioId;
-      speechAction.audioUrl = getSupabasePublicUrl('courses', storagePath);
-      log.info(`TTS uploaded: ${storagePath} (${result.audio.length} bytes)`);
-    } catch (err) {
-      log.warn(`TTS generation/upload failed for action ${action.id}:`, err);
-    }
-  }
+    }),
+  );
 
   return updatedScene;
 }

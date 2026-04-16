@@ -16,6 +16,7 @@ import {
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
+import { resolveGenerationLanguage } from '@/lib/constants/generation';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
 
@@ -69,7 +70,9 @@ export async function POST(req: NextRequest) {
     // Ensure outline has language from stageInfo (fallback for older outlines)
     const outline: SceneOutline = {
       ...rawOutline,
-      language: rawOutline.language || (stageInfo?.language as 'zh-CN' | 'en-US') || 'zh-CN',
+      language: resolveGenerationLanguage(
+        rawOutline.language || (stageInfo?.language as string | undefined),
+      ),
     };
 
     // ── Model resolution from request headers ──
