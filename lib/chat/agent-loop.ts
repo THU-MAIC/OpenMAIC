@@ -211,8 +211,6 @@ export async function runAgentLoop(
     } else {
       consecutiveEmptyTurns = 0;
     }
-
-    turnCount++;
   }
 
   // maxTurns reached
