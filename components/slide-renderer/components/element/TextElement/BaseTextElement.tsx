@@ -3,8 +3,6 @@
 import type { PPTTextElement } from '@/lib/types/slides';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { ElementOutline } from '../ElementOutline';
-import { usePlaybackTextReveal } from '@/components/slide-renderer/Editor/PlaybackTextRevealContext';
-import { slideTextRevealMaskStyle } from '@/lib/utils/slide-text-reveal-mask';
 
 export interface BaseTextElementProps {
   elementInfo: PPTTextElement;
@@ -17,10 +15,6 @@ export interface BaseTextElementProps {
  */
 export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
   const { shadowStyle } = useElementShadow(elementInfo.shadow);
-  const playbackReveal = usePlaybackTextReveal();
-  const localReveal =
-    target === 'thumbnail' ? null : playbackReveal?.getLocalProgress(elementInfo.id) ?? null;
-  const revealMask = slideTextRevealMaskStyle(localReveal, elementInfo.vertical);
 
   return (
     <div
@@ -60,7 +54,6 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
           />
           <div
             className={`text ProseMirror-static relative ${target === 'thumbnail' ? 'pointer-events-none' : ''}`}
-            style={revealMask}
             dangerouslySetInnerHTML={{ __html: elementInfo.content }}
           />
         </div>

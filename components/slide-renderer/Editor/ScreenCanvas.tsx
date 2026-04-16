@@ -14,7 +14,6 @@ import type { PercentageGeometry } from '@/lib/types/action';
 import { useViewportSize } from './Canvas/hooks/useViewportSize';
 import { useRef, useMemo } from 'react';
 import { AnimatePresence } from 'motion/react';
-import { PlaybackTextRevealProvider } from '@/components/slide-renderer/Editor/PlaybackTextRevealContext';
 
 export function ScreenCanvas() {
   const canvasScale = useCanvasStore.use.canvasScale();
@@ -91,14 +90,12 @@ export function ScreenCanvas() {
             transform: `scale(${canvasScale})`,
           }}
         >
-          <PlaybackTextRevealProvider elements={elements}>
-            {elements.map((element, index) => (
-              <ScreenElement key={element.id} elementInfo={element} elementIndex={index + 1} />
-            ))}
+          {elements.map((element, index) => (
+            <ScreenElement key={element.id} elementInfo={element} elementIndex={index + 1} />
+          ))}
 
-            {/* Highlight overlay - stacked above elements */}
-            <HighlightOverlay />
-          </PlaybackTextRevealProvider>
+          {/* Highlight overlay - stacked above elements */}
+          <HighlightOverlay />
         </div>
 
         {/* Spotlight overlay - covers the entire slide, positioned via DOM measurement */}

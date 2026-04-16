@@ -66,10 +66,6 @@ interface CanvasState {
   laserElementId: string; // Element focused by laser pointer
   laserOptions: LaserOptions | null; // Laser pointer configuration
   zoomTarget: { elementId: string; scale: number } | null; // Zoom target
-  /** Lecture playback: 0–1 = progressively reveal slide text; null = show all */
-  slideTextRevealProgress: number | null;
-  /** Element IDs whose text is fully shown (spotlight/laser during reveal) */
-  slideTextRevealUnlockedIds: Record<string, true>;
 
   // ===== Canvas viewport state =====
   canvasScale: number; // Canvas actual zoom scale
@@ -181,9 +177,6 @@ interface CanvasState {
   setZoom: (elementId: string, scale: number) => void;
   clearZoom: () => void;
   clearAllEffects: () => void;
-  setSlideTextRevealProgress: (progress: number | null) => void;
-  addSlideTextRevealUnlock: (elementId: string) => void;
-  clearSlideTextRevealUnlocks: () => void;
 
   // ----- Batch operations -----
   resetCanvasState: () => void; // Reset Canvas state (used when switching scenes)
@@ -251,8 +244,6 @@ const initialState = {
   laserElementId: '',
   laserOptions: null,
   zoomTarget: null,
-  slideTextRevealProgress: null,
-  slideTextRevealUnlockedIds: {},
 };
 
 // ==================== Store Implementation ====================
@@ -447,17 +438,6 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
       zoomTarget: null,
     });
   },
-
-  setSlideTextRevealProgress: (progress) => set({ slideTextRevealProgress: progress }),
-
-  addSlideTextRevealUnlock: (elementId) => {
-    if (!elementId) return;
-    set((s) => ({
-      slideTextRevealUnlockedIds: { ...s.slideTextRevealUnlockedIds, [elementId]: true },
-    }));
-  },
-
-  clearSlideTextRevealUnlocks: () => set({ slideTextRevealUnlockedIds: {} }),
 
   clearAllEffects: () => {
     set({
