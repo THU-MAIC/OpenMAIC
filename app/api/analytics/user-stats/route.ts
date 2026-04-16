@@ -3,6 +3,8 @@ import { createClient } from '@/utils/supabase/server';
 import { cookies } from 'next/headers';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 
+export const dynamic = 'force-dynamic';
+
 /** UTC calendar day as YYYY-MM-DD (matches streak RPC). */
 function utcTodayYmd(): string {
   return new Date().toISOString().slice(0, 10);
@@ -10,8 +12,9 @@ function utcTodayYmd(): string {
 
 /** Previous UTC calendar day. */
 function utcYesterdayYmd(): string {
-  const [y, m, d] = utcTodayYmd().split('-').map(Number);
-  return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10);
+  const d = new Date();
+  d.setUTCDate(d.getUTCDate() - 1);
+  return d.toISOString().slice(0, 10);
 }
 
 /**
@@ -19,13 +22,36 @@ function utcYesterdayYmd(): string {
  * show 0 for "current" until they study again.
  */
 function effectiveCurrentStreak(
-  lastActivityDate: string | null | undefined,
+  lastActivityDate: string | Date | null | undefined,
   storedStreak: number,
 ): number {
-  if (!lastActivityDate) return 0;
-  const last = lastActivityDate.slice(0, 10);
-  if (last < utcYesterdayYmd()) return 0;
-  return storedStreak;
+  if (!lastActivityDate || storedStreak <= 0) return 0;
+  
+  let last: string;
+  try {
+    if (lastActivityDate instanceof Date) {
+      last = lastActivityDate.toISOString().slice(0, 10);
+    } else if (typeof lastActivityDate === 'string') {
+      last = lastActivityDate.slice(0, 10);
+    } else {
+      // Handle cases where it might be some other object from the driver
+      last = new Date(lastActivityDate as any).toISOString().slice(0, 10);
+    }
+  } catch (e) {
+    console.warn('[effectiveCurrentStreak] Failed to parse date:', lastActivityDate);
+    return 0;
+  }
+
+  const today = utcTodayYmd();
+  const yesterday = utcYesterdayYmd();
+  
+  // If last activity was today or yesterday, streak is alive
+  if (last === today || last === yesterday) {
+    return storedStreak;
+  }
+  
+  // Otherwise, streak is broken
+  return 0;
 }
 
 /**
@@ -45,11 +71,15 @@ export async function GET(req: NextRequest) {
     const userId = user.id;
 
     // 1. Get aggregated score and base rank info
-    const { data: scoreData } = await supabase
+    const { data: scoreData, error: scoreError } = await supabase
       .from('user_scores')
       .select('*')
       .eq('user_id', userId)
-      .single();
+      .maybeSingle();
+
+    if (scoreError) {
+      console.error('[api/analytics/user-stats] scoreError:', scoreError);
+    }
 
     // 2. Get course engagement summary
     const { data: analyticsData } = await supabase

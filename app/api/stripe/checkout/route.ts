@@ -65,14 +65,14 @@ export async function POST(req: NextRequest) {
     }
 
     const priceId = getStripePriceId(period);
-    const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const origin = req.headers.get('origin') || process.env.NEXT_PUBLIC_APP_URL || 'https://thechalklabs.com';
 
     const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] = {
       customer: customerId,
       line_items: [{ price: priceId, quantity: 1 }],
       mode: period === 'lifetime' ? 'payment' : 'subscription',
       success_url: `${origin}/pricing?success=true&period=${period}`,
-      cancel_url:  `${origin}/pricing?canceled=true`,
+      cancel_url: `${origin}/pricing?canceled=true`,
       metadata: {
         supabase_user_id: user.id,
         period,

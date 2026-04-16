@@ -4,6 +4,8 @@ import { cookies } from 'next/headers';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { getGeoInfo } from '@/lib/analytics/geo';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * Leaderboard API
  * Fetches rankings based on total score.

@@ -45,7 +45,7 @@ export async function POST(_req: NextRequest) {
     }
 
     const priceId = getStripePriceId('topup');
-    const origin = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+    const origin = process.env.NEXT_PUBLIC_APP_URL || 'https://thechalklabs.com';
 
     const session = await stripe.checkout.sessions.create({
       customer: customerId,

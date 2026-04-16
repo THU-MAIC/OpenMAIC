@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
       });
 
       if (error) throw error;
+      await recordLearningStreak(supabase, userId);
     } else if (type === 'engagement') {
       // Increment engagement count (AI interactions)
       const { error } = await supabase.rpc('increment_engagement_count', {
