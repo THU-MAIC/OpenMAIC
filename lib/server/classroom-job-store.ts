@@ -11,6 +11,7 @@ import {
   ensureClassroomJobsDir,
   writeJsonFileAtomic,
 } from '@/lib/server/classroom-storage';
+import { readJsonBlob, writeJsonBlob, USE_BLOB } from '@/lib/server/blob-store';
 
 export type ClassroomGenerationJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
@@ -39,6 +40,10 @@ export interface ClassroomGenerationJob {
     scenesCount: number;
   };
   error?: string;
+}
+
+function jobBlobKey(jobId: string) {
+  return `classroom-jobs/${jobId}.json`;
 }
 
 function jobFilePath(jobId: string) {
@@ -99,6 +104,15 @@ export function isValidClassroomJobId(jobId: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(jobId);
 }
 
+/** Write a job record to the configured store (blob or filesystem). */
+async function writeJob(jobId: string, job: ClassroomGenerationJob): Promise<void> {
+  if (USE_BLOB) {
+    await writeJsonBlob(jobBlobKey(jobId), job);
+  } else {
+    await writeJsonFileAtomic(jobFilePath(jobId), job);
+  }
+}
+
 export async function createClassroomGenerationJob(
   jobId: string,
   input: GenerateClassroomInput,
@@ -116,14 +130,19 @@ export async function createClassroomGenerationJob(
     scenesGenerated: 0,
   };
 
-  await ensureClassroomJobsDir();
-  await writeJsonFileAtomic(jobFilePath(jobId), job);
+  if (!USE_BLOB) await ensureClassroomJobsDir();
+  await writeJob(jobId, job);
   return job;
 }
 
 export async function readClassroomGenerationJob(
   jobId: string,
 ): Promise<ClassroomGenerationJob | null> {
+  if (USE_BLOB) {
+    const job = await readJsonBlob<ClassroomGenerationJob>(jobBlobKey(jobId));
+    return job ? markStaleIfNeeded(job) : null;
+  }
+
   try {
     const content = await fs.readFile(jobFilePath(jobId), 'utf-8');
     const job = JSON.parse(content) as ClassroomGenerationJob;
@@ -152,7 +171,7 @@ export async function updateClassroomGenerationJob(
       updatedAt: new Date().toISOString(),
     };
 
-    await writeJsonFileAtomic(jobFilePath(jobId), updated);
+    await writeJob(jobId, updated);
     return updated;
   });
 }
@@ -174,7 +193,7 @@ export async function markClassroomGenerationJobRunning(
       updatedAt: new Date().toISOString(),
     };
 
-    await writeJsonFileAtomic(jobFilePath(jobId), updated);
+    await writeJob(jobId, updated);
     return updated;
   });
 }

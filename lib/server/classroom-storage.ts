@@ -2,6 +2,10 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import type { NextRequest } from 'next/server';
 import type { Scene, Stage } from '@/lib/types/stage';
+import { createLogger } from '@/lib/logger';
+import { readJsonBlob, writeJsonBlob, USE_BLOB } from '@/lib/server/blob-store';
+
+const log = createLogger('ClassroomStorage');
 
 export const CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
 export const CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
@@ -11,11 +15,11 @@ async function ensureDir(dir: string) {
 }
 
 export async function ensureClassroomsDir() {
-  await ensureDir(CLASSROOMS_DIR);
+  if (!USE_BLOB) await ensureDir(CLASSROOMS_DIR);
 }
 
 export async function ensureClassroomJobsDir() {
-  await ensureDir(CLASSROOM_JOBS_DIR);
+  if (!USE_BLOB) await ensureDir(CLASSROOM_JOBS_DIR);
 }
 
 export async function writeJsonFileAtomic(filePath: string, data: unknown) {
@@ -46,6 +50,10 @@ export function isValidClassroomId(id: string): boolean {
 }
 
 export async function readClassroom(id: string): Promise<PersistedClassroomData | null> {
+  if (USE_BLOB) {
+    return readJsonBlob<PersistedClassroomData>(`classrooms/${id}.json`);
+  }
+
   const filePath = path.join(CLASSROOMS_DIR, `${id}.json`);
   try {
     const content = await fs.readFile(filePath, 'utf-8');
@@ -73,9 +81,14 @@ export async function persistClassroom(
     createdAt: new Date().toISOString(),
   };
 
-  await ensureClassroomsDir();
-  const filePath = path.join(CLASSROOMS_DIR, `${data.id}.json`);
-  await writeJsonFileAtomic(filePath, classroomData);
+  if (USE_BLOB) {
+    await writeJsonBlob(`classrooms/${data.id}.json`, classroomData);
+    log.info(`Classroom ${data.id} persisted to blob storage`);
+  } else {
+    await ensureClassroomsDir();
+    const filePath = path.join(CLASSROOMS_DIR, `${data.id}.json`);
+    await writeJsonFileAtomic(filePath, classroomData);
+  }
 
   return {
     ...classroomData,
