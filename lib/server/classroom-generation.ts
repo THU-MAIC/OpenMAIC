@@ -167,7 +167,7 @@ function isOverloadError(error: unknown): boolean {
     (error as unknown as Record<string, unknown>).status;
   if (statusCode === 429 || statusCode === 503) return true;
   const msg = error.message.toLowerCase();
-  return msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('quota');
+  return msg.includes('overloaded') || msg.includes('rate limit') || msg.includes('quota') || msg.includes('high demand');
 }
 
 export async function generateClassroom(
