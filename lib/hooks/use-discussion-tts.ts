@@ -171,6 +171,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
 
       const audioUrl = `data:audio/${data.format || 'mp3'};base64,${data.base64}`;
       const audio = new Audio(audioUrl);
+      audio.setAttribute('playsinline', '');
       audio.playbackRate = playbackSpeed;
       audio.volume = ttsMuted ? 0 : ttsVolume;
       audioRef.current = audio;

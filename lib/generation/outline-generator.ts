@@ -95,20 +95,17 @@ export async function generateSceneOutlinesFromRequirements(
   }
 
   // Use simplified prompt variables
+  const explanationLanguage = requirements.explanationLanguage ?? requirements.language;
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     // New simplified variables
     requirement: requirements.requirement,
     language: requirements.language,
-    pdfContent: pdfText
-      ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-      : requirements.language === 'zh-CN'
-        ? '无'
-        : 'None',
+    explanationLanguage,
+    pdfContent: pdfText ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS) : 'None',
     availableImages: availableImagesText,
     userProfile: userProfileText,
     mediaGenerationPolicy,
-    researchContext:
-      options?.researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+    researchContext: options?.researchContext || 'None',
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
   });
@@ -142,6 +139,7 @@ export async function generateSceneOutlinesFromRequirements(
       id: outline.id || nanoid(),
       order: index + 1,
       language: requirements.language,
+      explanationLanguage: requirements.explanationLanguage ?? requirements.language,
     }));
 
     // Replace sequential gen_img_N/gen_vid_N with globally unique IDs

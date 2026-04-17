@@ -37,6 +37,7 @@ export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
   language?: string;
+  explanationLanguage?: string;
   enableWebSearch?: boolean;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
@@ -463,9 +464,11 @@ export async function generateClassroom(
   // ── Standard classroom generation ──────────────────────────────────
 
   const lang = normalizeLanguage(input.language);
+  const explainLang = normalizeLanguage(input.explanationLanguage ?? input.language);
   const requirements: UserRequirements = {
     requirement,
     language: lang,
+    explanationLanguage: explainLang,
   };
   const pdfText = pdfContent?.text || undefined;
 
@@ -475,7 +478,7 @@ export async function generateClassroom(
   if (agentMode === 'generate') {
     log.info('Generating custom agent profiles via LLM...');
     try {
-      agents = await generateAgentProfiles(requirement, lang, aiCall);
+      agents = await generateAgentProfiles(requirement, explainLang, aiCall);
       log.info(`Generated ${agents.length} agent profiles`);
     } catch (e) {
       log.warn('Agent profile generation failed, falling back to defaults:', e);

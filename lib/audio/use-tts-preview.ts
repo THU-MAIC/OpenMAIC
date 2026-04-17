@@ -128,6 +128,7 @@ export function useTTSPreview() {
         audioUrlRef.current = url;
 
         const audio = new Audio(url);
+        audio.setAttribute('playsinline', '');
         audioRef.current = audio;
         audio.onended = () => {
           if (!isStale()) {
