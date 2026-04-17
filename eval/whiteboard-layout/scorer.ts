@@ -15,19 +15,48 @@ import type { VlmScore } from './types';
 
 const SCORER_MODEL_DEFAULT = 'openai:gpt-4o';
 
-const RUBRIC_PROMPT = `You are evaluating a classroom whiteboard screenshot from an AI teaching assistant. Score like a teacher reviewing their own board work.
+const RUBRIC_PROMPT = `You are evaluating a classroom whiteboard screenshot from an AI teaching assistant. Score like a teacher reviewing their own board work for a student's benefit.
 
-Context: This is a real-time teaching whiteboard. Teachers naturally write in one area before moving to the next — empty space is normal and NOT a problem. Focus on what would confuse or distract a student.
+Context: This is a real-time teaching whiteboard, NOT a poster or infographic.
+- Empty space is NORMAL and NOT a problem — teachers write in one area at a time.
+- What matters: would a student be confused, misled, or unable to read the content?
+- Ignore the small dark circle "N" in the corner — it is a page UI element, not whiteboard content.
 
-Score each dimension from 1 to 10:
+Score each dimension from 1 to 10 (10 = perfect, 1 = broken):
 
-1. readability: Is text clearly legible? Are font sizes CONSISTENT across elements (a major issue if some text is 3x larger than other text on the same board)? Is the handwriting/rendering clean?
-2. overlap: Do any elements occlude or overlap each other? 10 = no overlap, 1 = severe occlusion where content is unreadable.
-3. rendering_correctness: Are all LaTeX formulas correctly rendered (no raw LaTeX source like "\\frac" visible, no garbled text like "0ext" or "heta")? Are shapes/arrows drawn properly? 10 = everything renders correctly, 1 = multiple broken formulas or garbled text.
-4. content_completeness: Is all content fully visible within the canvas (not cut off at edges)? Has previous content been preserved (not unexpectedly cleared)? Are diagrams labeled and annotated? 10 = all content intact and visible, 1 = significant content lost or truncated.
-5. layout_logic: Are related elements grouped together? Is there a natural reading/teaching flow? Do diagrams and their labels/formulas form coherent visual units?
+1. readability — Can a student read every element easily?
+   - Font size CONSISTENCY is critical: penalize heavily if some text is 2x+ larger than other text on the same board (e.g., one giant title + tiny formulas).
+   - Are characters crisp? Any Chinese rendered as boxes or missing glyphs?
+   - Penalize text styled like UI components (gray boxes, card backgrounds) that don't match handwritten whiteboard feel.
 
-Output ONLY a JSON object with this structure:
+2. overlap — Are elements clear of each other, AND does new content respect existing content?
+   - Penalize any occlusion (shapes over text, text stacked on text, arrows piercing labels).
+   - CRITICAL: penalize "writing over existing content" — if a new formula is placed directly on top of an existing table row when empty space was available nearby, that is a layout failure, not just overlap.
+   - 10 = everything distinct; 1 = multiple elements unreadable due to occlusion.
+
+3. rendering_correctness — Are formulas, shapes, and symbols drawn correctly?
+   - LaTeX must render: raw source like "\\\\frac", "\\\\theta", or garbled chunks like "0ext", "Gsinheta", "heta" = major penalty.
+   - Subscripts/superscripts must render: "G_x" shown as raw underscore (not Gₓ) = penalty.
+   - Chinese inside LaTeX math mode (e.g., "口诀(当 a > 0 ext 时)") = penalty.
+   - Diagram ACCURACY matters: a parabola drawn as V-shape straight lines, a circle drawn as ellipse-when-should-be-circle, an angle labeled wrong = penalty.
+   - 10 = all math/shapes render correctly and match the concept; 1 = multiple broken renders OR fundamentally wrong diagrams.
+
+4. content_completeness — Is the content whole, bounded, and annotated?
+   - Edge clipping: any element cut off at canvas edge (formula missing its left character, table column cut, arrow head beyond edge) = major penalty.
+   - Unexpected clearing: if previous turns' content has vanished in a later turn with no reason, penalize.
+   - Bare diagrams with no labels (a circle with no annotation of what it represents) = penalty.
+   - 10 = all content fully visible and annotated; 1 = significant content lost, truncated, or unlabeled.
+
+5. layout_logic — Does the arrangement support teaching flow?
+   - Related elements grouped (a diagram with its labels/formulas together)?
+   - Natural reading order for the concept (cause → effect, equation → graph → solution)?
+   - Spatial planning: does new content go to sensibly-chosen empty areas rather than crammed near or over existing elements?
+
+overall: 1–10 holistic teaching-quality score. Weight overlap and rendering_correctness more heavily since they directly block comprehension.
+
+issues: 1-5 short concrete problem descriptions a teacher would call out.
+
+Output ONLY a JSON object with this exact structure (no markdown, no code fences):
 {"readability":{"score":N,"reason":"..."},"overlap":{"score":N,"reason":"..."},"rendering_correctness":{"score":N,"reason":"..."},"content_completeness":{"score":N,"reason":"..."},"layout_logic":{"score":N,"reason":"..."},"overall":N,"issues":["..."]}`;
 
 /**
@@ -58,7 +87,7 @@ export async function scoreScreenshot(
       },
     ],
     temperature: 0,
-    maxOutputTokens: 2000,
+    maxOutputTokens: 3000,
   });
 
   const content = result.text;

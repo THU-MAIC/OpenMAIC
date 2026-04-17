@@ -82,10 +82,14 @@ export function generateReport(
     if (scenario.error) {
       lines.push(`- Error: ${scenario.error}`);
     } else if (lastCp) {
-      lines.push(`- Overall: ${lastCp.score.overall}`);
-      lines.push(`- Overlap: ${lastCp.score.overlap.score} — ${lastCp.score.overlap.reason}`);
-      if (lastCp.score.issues.length > 0) {
-        lines.push(`- Issues: ${lastCp.score.issues.join('; ')}`);
+      if (lastCp.score) {
+        lines.push(`- Overall: ${lastCp.score.overall}`);
+        lines.push(`- Overlap: ${lastCp.score.overlap.score} — ${lastCp.score.overlap.reason}`);
+        if (lastCp.score.issues.length > 0) {
+          lines.push(`- Issues: ${lastCp.score.issues.join('; ')}`);
+        }
+      } else {
+        lines.push(`- Score: (scoring failed)`);
       }
       lines.push(`- Screenshot: ${lastCp.screenshotPath}`);
     }
