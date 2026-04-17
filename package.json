@@ -12,6 +12,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "check:i18n-keys": "node --no-warnings --experimental-strip-types scripts/check-i18n-keys.ts",
     "check": "prettier . --check",
     "format": "prettier . --write",
     "test": "vitest run",
