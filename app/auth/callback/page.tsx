@@ -37,7 +37,40 @@ function AuthCallbackInner() {
     const code = searchParams.get('code');
     const next = sanitizeNext(searchParams.get('next'));
 
+    // #region agent log
+    fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
+      body: JSON.stringify({
+        sessionId: '9d754c',
+        location: 'app/auth/callback/page.tsx:effect',
+        message: 'Auth callback page mounted',
+        data: {
+          hypothesisId: 'H7',
+          hasCode: Boolean(code),
+          hasNext: Boolean(searchParams.get('next')),
+          next,
+          runId: 'post-fix-2',
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+
     if (!code) {
+      // #region agent log
+      fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
+        body: JSON.stringify({
+          sessionId: '9d754c',
+          location: 'app/auth/callback/page.tsx:noCode',
+          message: 'No code param on /auth/callback; redirecting to login',
+          data: { hypothesisId: 'H7', runId: 'post-fix-2' },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
       router.replace('/auth/login?error=auth_failed');
       return;
     }
