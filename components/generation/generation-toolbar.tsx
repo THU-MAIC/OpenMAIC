@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Check, ChevronLeft, Paperclip, FileText, X, Globe2 } from 'lucide-react';
+import { Bot, Check, ChevronLeft, Globe, Paperclip, FileText, X, Globe2 } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -29,6 +29,8 @@ const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
+  language: 'zh-CN' | 'en-US' | 'ru-RU';
+  onLanguageChange: (lang: 'zh-CN' | 'en-US' | 'ru-RU') => void;
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
@@ -40,6 +42,8 @@ export interface GenerationToolbarProps {
 
 // ─── Component ───────────────────────────────────────────────
 export function GenerationToolbar({
+  language,
+  onLanguageChange,
   webSearch,
   onWebSearchChange,
   onSettingsOpen,
@@ -355,6 +359,24 @@ export function GenerationToolbar({
           <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
         </Tooltip>
       )}
+
+      {/* ── Language pill ── */}
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            onClick={() =>
+              onLanguageChange(
+                language === 'zh-CN' ? 'ru-RU' : language === 'ru-RU' ? 'en-US' : 'zh-CN',
+              )
+            }
+            className={pillMuted}
+          >
+            <Globe className="size-3.5" />
+            <span>{language === 'zh-CN' ? '中文' : language === 'ru-RU' ? 'RU' : 'EN'}</span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>Generation language</TooltipContent>
+      </Tooltip>
 
       {/* ── Separator ── */}
       <div className="w-px h-4 bg-border/60 mx-1" />

@@ -876,8 +876,7 @@ async function generatePBLSceneContent(
         projectDescription: pblConfig.projectDescription,
         targetSkills: pblConfig.targetSkills,
         issueCount: pblConfig.issueCount,
-        languageDirective:
-          languageDirective || 'Teach in the language that matches the user requirement.',
+        language: pblConfig.language || outline.language || 'en-US',
       },
       languageModel,
       {

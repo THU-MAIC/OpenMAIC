@@ -35,6 +35,7 @@ const log = createLogger('Classroom');
 export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
+  language?: string;
   enableWebSearch?: boolean;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
@@ -94,6 +95,12 @@ function createInMemoryStore(stage: Stage): StageStore {
       };
     },
   };
+}
+
+function normalizeLanguage(language?: string): 'zh-CN' | 'en-US' | 'ru-RU' {
+  if (language === 'en-US') return 'en-US';
+  if (language === 'ru-RU') return 'ru-RU';
+  return 'zh-CN';
 }
 
 function stripCodeFences(text: string): string {
@@ -221,6 +228,7 @@ export async function generateClassroom(
 
   const requirements: UserRequirements = {
     requirement,
+    language: normalizeLanguage(input.language),
   };
   const pdfText = pdfContent?.text || undefined;
 
@@ -320,6 +328,7 @@ export async function generateClassroom(
     id: stageId,
     name: outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
+    language: requirements.language,
     languageDirective,
     style: 'interactive',
     createdAt: Date.now(),

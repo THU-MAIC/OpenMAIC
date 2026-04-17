@@ -25,7 +25,7 @@ export interface GeneratePBLConfig {
   projectDescription: string;
   targetSkills: string[];
   issueCount?: number;
-  languageDirective: string;
+  language: string;
 }
 
 export interface GeneratePBLCallbacks {
@@ -44,7 +44,7 @@ export async function generatePBLContent(
   model: LanguageModel,
   callbacks?: GeneratePBLCallbacks,
 ): Promise<PBLProjectConfig> {
-  const { languageDirective } = config;
+  const { language } = config;
 
   // Initialize shared state
   const projectConfig: PBLProjectConfig = {
@@ -61,9 +61,15 @@ export async function generatePBLContent(
   );
   const projectMCP = new ProjectMCP(projectConfig);
   const agentMCP = new AgentMCP(projectConfig);
-  const issueboardMCP = new IssueboardMCP(projectConfig, agentMCP, languageDirective);
+  const issueboardMCP = new IssueboardMCP(projectConfig, agentMCP, language);
 
-  callbacks?.onProgress?.('Starting PBL project generation...');
+  callbacks?.onProgress?.(
+    language === 'zh-CN'
+      ? '开始生成 PBL 项目...'
+      : language === 'ru-RU'
+        ? 'Запускаю генерацию PBL-проекта...'
+        : 'Starting PBL project generation...',
+  );
 
   // Define tools with Zod schemas, delegating to MCP instances
   const pblTools = {
@@ -287,16 +293,33 @@ export async function generatePBLContent(
     {
       model,
       system: systemPrompt,
-      prompt: `Design a PBL project. Start in project_info mode by setting the project title and description.`,
+      prompt:
+        language === 'zh-CN'
+          ? `请设计一个PBL项目。现在从 project_info 模式开始，先设置项目标题和描述。`
+          : language === 'ru-RU'
+            ? `Спроектируй PBL-проект. Начни с режима project_info и сначала задай название и описание проекта.`
+            : `Design a PBL project. Start in project_info mode by setting the project title and description.`,
       tools: pblTools,
       stopWhen: stepCountIs(30),
       onStepFinish: ({ toolCalls, text }) => {
         if (text) {
-          callbacks?.onProgress?.(`Thinking: ${text.slice(0, 100)}...`);
+          callbacks?.onProgress?.(
+            language === 'zh-CN'
+              ? `思考中: ${text.slice(0, 100)}...`
+              : language === 'ru-RU'
+                ? `Думаю: ${text.slice(0, 100)}...`
+                : `Thinking: ${text.slice(0, 100)}...`,
+          );
         }
         if (toolCalls) {
           for (const tc of toolCalls) {
-            callbacks?.onProgress?.(`Tool: ${tc.toolName}`);
+            callbacks?.onProgress?.(
+              language === 'zh-CN'
+                ? `工具: ${tc.toolName}`
+                : language === 'ru-RU'
+                  ? `Инструмент: ${tc.toolName}`
+                  : `Tool: ${tc.toolName}`,
+            );
           }
         }
       },
@@ -307,16 +330,32 @@ export async function generatePBLContent(
   // Check if mode reached idle; if not, the LLM may have stopped early
   if (modeMCP.getCurrentMode() !== 'idle') {
     callbacks?.onProgress?.(
-      'Warning: Generation did not reach idle mode. Project may be incomplete.',
+      language === 'zh-CN'
+        ? '警告：生成流程未进入 idle 模式，项目可能不完整。'
+        : language === 'ru-RU'
+          ? 'Предупреждение: генерация не дошла до режима idle, проект может быть неполным.'
+          : 'Warning: Generation did not reach idle mode. Project may be incomplete.',
     );
   }
 
-  callbacks?.onProgress?.('PBL structure generated. Running post-processing...');
+  callbacks?.onProgress?.(
+    language === 'zh-CN'
+      ? 'PBL 结构已生成，开始后处理...'
+      : language === 'ru-RU'
+        ? 'PBL-структура создана, запускаю постобработку...'
+        : 'PBL structure generated. Running post-processing...',
+  );
 
   // Post-processing: activate first issue and generate initial questions
-  await postProcessPBL(projectConfig, model, languageDirective, callbacks);
+  await postProcessPBL(projectConfig, model, language, callbacks);
 
-  callbacks?.onProgress?.('PBL project generation complete!');
+  callbacks?.onProgress?.(
+    language === 'zh-CN'
+      ? 'PBL 项目生成完成！'
+      : language === 'ru-RU'
+        ? 'Генерация PBL-проекта завершена!'
+        : 'PBL project generation complete!',
+  );
 
   return projectConfig;
 }
@@ -330,7 +369,7 @@ export async function generatePBLContent(
 async function postProcessPBL(
   config: PBLProjectConfig,
   model: LanguageModel,
-  languageDirective: string,
+  language: string,
   callbacks?: GeneratePBLCallbacks,
 ): Promise<void> {
   const { issueboard, agents } = config;
@@ -345,19 +384,74 @@ async function postProcessPBL(
   firstIssue.is_active = true;
   issueboard.current_issue_id = firstIssue.id;
 
-  callbacks?.onProgress?.(`Activating first issue: ${firstIssue.title}`);
+  callbacks?.onProgress?.(
+    language === 'zh-CN'
+      ? `激活第一个任务: ${firstIssue.title}`
+      : language === 'ru-RU'
+        ? `Активирую первую задачу: ${firstIssue.title}`
+        : `Activating first issue: ${firstIssue.title}`,
+  );
 
   // Generate initial questions for the first issue
   const questionAgent = agents.find((a) => a.name === firstIssue.question_agent_name);
   if (!questionAgent) {
-    callbacks?.onProgress?.('Warning: Question agent not found for first issue.');
+    callbacks?.onProgress?.(
+      language === 'zh-CN'
+        ? '警告：未找到首个任务的 Question Agent。'
+        : language === 'ru-RU'
+          ? 'Предупреждение: для первой задачи не найден Question Agent.'
+          : 'Warning: Question agent not found for first issue.',
+    );
     return;
   }
 
   try {
-    callbacks?.onProgress?.('Generating initial questions for first issue...');
+    callbacks?.onProgress?.(
+      language === 'zh-CN'
+        ? '为首个任务生成初始问题...'
+        : language === 'ru-RU'
+          ? 'Генерирую стартовые вопросы для первой задачи...'
+          : 'Generating initial questions for first issue...',
+    );
 
-    const context = `## Issue Information
+    const context =
+      language === 'zh-CN'
+        ? `## 任务信息
+
+**标题**: ${firstIssue.title}
+**描述**: ${firstIssue.description}
+**负责人**: ${firstIssue.person_in_charge}
+${firstIssue.participants.length > 0 ? `**参与者**: ${firstIssue.participants.join('、')}` : ''}
+${firstIssue.notes ? `**备注**: ${firstIssue.notes}` : ''}
+
+## 你的任务
+
+根据以上任务信息，生成1-3个具体、可操作的引导问题，帮助学生理解和完成这个任务。每个问题应：
+- 引导学生达成关键学习目标
+- 具体且可操作
+- 帮助分解问题
+- 鼓励批判性思考
+
+请以编号列表格式回答。`
+        : language === 'ru-RU'
+          ? `## Информация по задаче
+
+**Заголовок**: ${firstIssue.title}
+**Описание**: ${firstIssue.description}
+**Ответственный**: ${firstIssue.person_in_charge}
+${firstIssue.participants.length > 0 ? `**Участники**: ${firstIssue.participants.join(', ')}` : ''}
+${firstIssue.notes ? `**Примечания**: ${firstIssue.notes}` : ''}
+
+## Твоя задача
+
+На основе информации выше сгенерируй 1-3 конкретных и практичных вопроса, которые помогут студенту понять и выполнить эту задачу. Каждый вопрос должен:
+- вести к ключевым учебным целям
+- быть конкретным и применимым
+- помогать разбить проблему на части
+- стимулировать критическое мышление
+
+Ответь нумерованным списком.`
+          : `## Issue Information
 
 **Title**: ${firstIssue.title}
 **Description**: ${firstIssue.description}
@@ -367,16 +461,13 @@ ${firstIssue.notes ? `**Notes**: ${firstIssue.notes}` : ''}
 
 ## Your Task
 
-Generate a welcome message for the student working on this issue. The message should:
-1. Start with a friendly greeting introducing yourself as the guiding assistant for this issue (use a natural, localized title — do NOT use the English term "Question Agent" directly in non-English contexts)
-2. Present 1-3 specific, actionable guiding questions based on the issue information above, each question should:
-   - Guide students toward key learning objectives
-   - Be specific and actionable
-   - Help break down the problem
-   - Encourage critical thinking
-3. End by encouraging the student to type \`@question\` anytime for help (keep the literal \`@question\` as-is since it triggers the agent system)
+Based on the issue information above, generate 1-3 specific, actionable questions that will help students understand and complete this issue. Each question should:
+- Guide students toward key learning objectives
+- Be specific and actionable
+- Help break down the problem
+- Encourage critical thinking
 
-Format the questions as a numbered list.`;
+Format your response as a numbered list.`;
 
     const questionResult = await callLLM(
       {
@@ -390,18 +481,34 @@ Format the questions as a numbered list.`;
     const generatedQuestions = questionResult.text;
     firstIssue.generated_questions = generatedQuestions;
 
+    // Add welcome message to chat
+    const welcomeMessage =
+      language === 'zh-CN'
+        ? `你好！我是这个任务的提问助手："${firstIssue.title}"\n\n为了引导你的学习，我准备了一些问题：\n\n${generatedQuestions}\n\n随时 @question 我来获取帮助或澄清！`
+        : `Hello! I'm your Question Agent for this issue: "${firstIssue.title}"\n\nTo help guide your work, I've prepared some questions for you:\n\n${generatedQuestions}\n\nFeel free to @question me anytime if you need help or clarification!`;
+
     config.chat.messages.push({
       id: `msg_welcome_${Date.now()}`,
       agent_name: firstIssue.question_agent_name,
-      message: generatedQuestions,
+      message: welcomeMessage,
       timestamp: Date.now(),
       read_by: [],
     });
 
-    callbacks?.onProgress?.('Initial questions generated and welcome message added.');
+    callbacks?.onProgress?.(
+      language === 'zh-CN'
+        ? '已生成初始问题并写入欢迎消息。'
+        : language === 'ru-RU'
+          ? 'Стартовые вопросы сгенерированы, приветственное сообщение добавлено.'
+          : 'Initial questions generated and welcome message added.',
+    );
   } catch (error) {
     callbacks?.onProgress?.(
-      `Warning: Failed to generate initial questions: ${error instanceof Error ? error.message : String(error)}`,
+      language === 'zh-CN'
+        ? `警告：生成初始问题失败: ${error instanceof Error ? error.message : String(error)}`
+        : language === 'ru-RU'
+          ? `Предупреждение: не удалось сгенерировать стартовые вопросы: ${error instanceof Error ? error.message : String(error)}`
+          : `Warning: Failed to generate initial questions: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
 }

@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
       allOutlines,
       pdfImages,
       imageMapping,
-      stageInfo: _stageInfo,
+      stageInfo,
       stageId,
       agents,
       languageDirective,
@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
       stageInfo: {
         name: string;
         description?: string;
+        language?: string;
         style?: string;
       };
       stageId: string;
@@ -67,7 +68,16 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
-    const outline: SceneOutline = { ...rawOutline };
+    const outline: SceneOutline = {
+      ...rawOutline,
+      language:
+        rawOutline.language ||
+        (stageInfo?.language === 'en-US'
+          ? 'en-US'
+          : stageInfo?.language === 'ru-RU'
+            ? 'ru-RU'
+            : 'zh-CN'),
+    };
 
     // ── Model resolution from request headers ──
     const { model: languageModel, modelInfo, modelString } = await resolveModelFromHeaders(req);

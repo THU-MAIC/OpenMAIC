@@ -19,6 +19,7 @@ export interface Stage {
   createdAt: number;
   updatedAt: number;
   // Stage metadata
+  language?: 'zh-CN' | 'en-US' | 'ru-RU';
   languageDirective?: string;
   style?: string;
   // Whiteboard data
