@@ -65,6 +65,21 @@ function buildInputSummary(input: GenerateClassroomInput): ClassroomGenerationJo
   };
 }
 
+/**
+ * In-process job cache.
+ * Within the runner's serverless invocation, reads are served from this cache
+ * instead of calling list() on Vercel Blob for every progress read-modify-write.
+ * The poller (a separate invocation) always falls through to blob on cache miss.
+ */
+const jobCache = new Map<string, ClassroomGenerationJob>();
+
+/**
+ * Minimum interval between intermediate progress blob writes.
+ * Lifecycle transitions (create/running/succeeded/failed) always bypass this.
+ */
+const PROGRESS_WRITE_THROTTLE_MS = 8_000;
+const lastProgressWriteAt = new Map<string, number>();
+
 /** Simple per-job mutex to serialize read-modify-write on the same job file. */
 const jobLocks = new Map<string, Promise<void>>();
 
@@ -118,8 +133,9 @@ export function isValidClassroomJobId(jobId: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(jobId);
 }
 
-/** Write a job record to the configured store (blob or filesystem). */
+/** Write a job record to blob/filesystem and update the in-process cache. */
 async function writeJob(jobId: string, job: ClassroomGenerationJob): Promise<void> {
+  jobCache.set(jobId, job);
   if (USE_BLOB) {
     await writeJsonBlob(jobBlobKey(jobId), job);
   } else {
@@ -152,14 +168,19 @@ export async function createClassroomGenerationJob(
 export async function readClassroomGenerationJob(
   jobId: string,
 ): Promise<ClassroomGenerationJob | null> {
+  const cached = jobCache.get(jobId);
+  if (cached) return markStaleIfNeeded(cached);
+
   if (USE_BLOB) {
     const job = await readJsonBlob<ClassroomGenerationJob>(jobBlobKey(jobId));
+    if (job) jobCache.set(jobId, job);
     return job ? markStaleIfNeeded(job) : null;
   }
 
   try {
     const content = await fs.readFile(jobFilePath(jobId), 'utf-8');
     const job = JSON.parse(content) as ClassroomGenerationJob;
+    jobCache.set(jobId, job);
     return markStaleIfNeeded(job);
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
@@ -219,13 +240,37 @@ export async function updateClassroomGenerationJobProgress(
   jobId: string,
   progress: ClassroomGenerationProgress,
 ): Promise<ClassroomGenerationJob> {
-  return updateClassroomGenerationJob(jobId, {
-    status: 'running',
-    step: progress.step,
-    progress: progress.progress,
-    message: progress.message,
-    scenesGenerated: progress.scenesGenerated,
-    totalScenes: progress.totalScenes,
+  return withJobLock(jobId, async () => {
+    const existing = jobCache.get(jobId) ?? await readClassroomGenerationJob(jobId);
+    if (!existing) throw new Error(`Classroom generation job not found: ${jobId}`);
+
+    const updated: ClassroomGenerationJob = {
+      ...existing,
+      status: 'running',
+      step: progress.step,
+      progress: progress.progress,
+      message: progress.message,
+      scenesGenerated: progress.scenesGenerated,
+      totalScenes: progress.totalScenes,
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Always update in-process cache so the runner sees the latest state.
+    jobCache.set(jobId, updated);
+
+    // Throttle blob writes: intermediate progress is visible to the poller on
+    // the next write interval. Lifecycle transitions bypass this throttle.
+    const now = Date.now();
+    if (now - (lastProgressWriteAt.get(jobId) ?? 0) >= PROGRESS_WRITE_THROTTLE_MS) {
+      lastProgressWriteAt.set(jobId, now);
+      if (USE_BLOB) {
+        await writeJsonBlob(jobBlobKey(jobId), updated);
+      } else {
+        await writeJsonFileAtomic(jobFilePath(jobId), updated);
+      }
+    }
+
+    return updated;
   });
 }
 
@@ -233,6 +278,7 @@ export async function markClassroomGenerationJobSucceeded(
   jobId: string,
   result: GenerateClassroomResult,
 ): Promise<ClassroomGenerationJob> {
+  lastProgressWriteAt.delete(jobId);
   return updateClassroomGenerationJob(jobId, {
     status: 'succeeded',
     step: 'completed',
@@ -252,6 +298,7 @@ export async function markClassroomGenerationJobFailed(
   jobId: string,
   error: string,
 ): Promise<ClassroomGenerationJob> {
+  lastProgressWriteAt.delete(jobId);
   return withJobLock(jobId, async () => {
     const existing = await readClassroomGenerationJob(jobId);
     if (!existing) {
