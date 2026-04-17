@@ -21,50 +21,11 @@ export function useAuth() {
     loading: true,
   });
 
-  const getSupabaseCookieNames = () => {
-    if (typeof document === 'undefined') return [];
-    return document.cookie
-      .split(';')
-      .map((c) => c.trim().split('=')[0])
-      .filter(Boolean)
-      .filter((name) => name.startsWith('sb-'))
-      .slice(0, 20);
-  };
-
   useEffect(() => {
     const supabase = createClient();
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      // #region agent log
-      if (typeof window !== 'undefined') {
-        const path = window.location.pathname;
-        const cookieNames = getSupabaseCookieNames();
-        const hasSbAuthCookie = cookieNames.some((n) => /sb-[^-]+-auth-token/.test(n));
-        const hasSessionCookie = cookieNames.some(
-          (n) => /sb-[^-]+-auth-token(\.|$)/.test(n) && !n.includes('code-verifier'),
-        );
-        fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
-          body: JSON.stringify({
-            sessionId: '9d754c',
-            location: 'lib/hooks/use-auth.ts:getSession',
-            message: 'Initial getSession resolved',
-            data: {
-              hypothesisId: 'H4',
-              path,
-              hasSessionUser: Boolean(session?.user),
-              hasSbAuthCookie,
-              hasSessionCookie,
-              cookieNames,
-              runId: 'post-fix-2',
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-      }
-      // #endregion
       setState({
         user: session?.user ?? null,
         session,
@@ -128,25 +89,6 @@ export function useAuth() {
       process.env.NEXT_PUBLIC_SITE_URL?.trim() || window.location.origin;
     const callback = new URL('/auth/callback', baseUrl);
     callback.searchParams.set('next', safe);
-    // #region agent log
-    fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
-      body: JSON.stringify({
-        sessionId: '9d754c',
-        location: 'lib/hooks/use-auth.ts:signInWithGoogle',
-        message: 'Starting Google OAuth',
-        data: {
-          hypothesisId: 'H7',
-          redirectTo: callback.toString(),
-          nextPath: safe,
-          baseUrl,
-          runId: 'post-fix-2',
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
     const supabase = createClient();
     const { data, error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
