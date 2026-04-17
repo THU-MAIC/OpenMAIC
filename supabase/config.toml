@@ -41,7 +41,14 @@ allowed_mime_types = ["image/png", "image/jpeg", "image/webp", "video/mp4", "aud
 [auth]
 enabled = true
 site_url = "http://localhost:3000"
-additional_redirect_urls = ["http://localhost:3000", "http://localhost:3000/auth/callback", "https://thechalklabs.com", "https://thechalklabs.com/auth/callback"]
+additional_redirect_urls = [
+  "http://localhost:3000",
+  "http://localhost:3000/auth/callback",
+  "https://thechalklabs.com",
+  "https://thechalklabs.com/auth/callback",
+  "https://www.thechalklabs.com",
+  "https://www.thechalklabs.com/auth/callback",
+]
 jwt_expiry = 3600
 enable_signup = true
 enable_anonymous_sign_ins = false
@@ -58,7 +65,7 @@ skip_nonce_check = false
 
 
 [remotes.production.auth]
-site_url = "https://thechalklabs.com/"
+site_url = "https://www.thechalklabs.com/"
 
 [remotes.production]
 project_id = "qnvzukpyvpcgoxwiiwia"

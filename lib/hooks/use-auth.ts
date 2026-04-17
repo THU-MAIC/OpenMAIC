@@ -124,7 +124,9 @@ export function useAuth() {
   const signInWithGoogle = useCallback(async (nextPath = '/') => {
     const safe =
       nextPath.startsWith('/') && !nextPath.startsWith('//') ? nextPath : '/';
-    const callback = new URL('/auth/callback', window.location.origin);
+    const baseUrl =
+      process.env.NEXT_PUBLIC_SITE_URL?.trim() || window.location.origin;
+    const callback = new URL('/auth/callback', baseUrl);
     callback.searchParams.set('next', safe);
     // #region agent log
     fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
@@ -138,6 +140,7 @@ export function useAuth() {
           hypothesisId: 'H7',
           redirectTo: callback.toString(),
           nextPath: safe,
+          baseUrl,
           runId: 'post-fix-2',
         },
         timestamp: Date.now(),
