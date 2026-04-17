@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/home/user/OpenMAIC/.claude/branch-summary.sh",
+            "timeout": 30,
+            "statusMessage": "Updating branch summary…",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}

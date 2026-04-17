@@ -71,21 +71,6 @@ export interface UserRequirements {
   webSearch?: boolean; // Enable web search for richer context
 }
 
-/**
- * @deprecated Use UserRequirements instead
- * Legacy structured requirements - kept for backward compatibility
- */
-export interface LegacyUserRequirements {
-  topic: string;
-  description?: string;
-  learningObjectives: string[];
-  audience: AudienceProfile;
-  durationMinutes: number;
-  style: StylePreferences;
-  documents?: UploadedDocument[];
-  additionalNotes?: string;
-}
-
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
 
 /**

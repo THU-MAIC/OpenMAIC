@@ -809,21 +809,3 @@ export interface SlideTemplate {
   cover: string;
   origin?: string;
 }
-
-/**
- * @deprecated SlideData is deprecated, use Slide instead
- */
-export interface SlideData {
-  id: string;
-  viewportSize: number;
-  viewportRatio: number;
-  theme: {
-    themeColors: string[];
-    fontColor: string;
-    fontName: string;
-    backgroundColor: string;
-  };
-  elements: PPTElement[];
-  background?: SlideBackground;
-  animations?: unknown[];
-}
