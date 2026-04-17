@@ -4,54 +4,62 @@ import path from 'node:path';
 const LOCALES_DIR = path.join(process.cwd(), 'lib', 'i18n', 'locales');
 const SOURCE_LOCALE = 'en-US.json';
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+function isPlainObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-function collectLeafKeys(
-  value: unknown,
-  prefix = '',
-  keys: Set<string> = new Set<string>(),
-): Set<string> {
+function formatPath(keyPath) {
+  return keyPath || '<root>';
+}
+
+function collectLeafKeys(value, fileName, keyPath = '', keys = new Set()) {
+  if (Array.isArray(value)) {
+    throw new Error(
+      `${fileName} has an array at "${formatPath(keyPath)}". Locale values must not be arrays.`,
+    );
+  }
+
   if (isPlainObject(value)) {
     const entries = Object.entries(value);
 
     if (entries.length === 0) {
-      if (prefix) keys.add(prefix);
-      return keys;
+      throw new Error(
+        `${fileName} has an empty object at "${formatPath(keyPath)}". Locale objects must not be empty.`,
+      );
     }
 
     for (const [key, child] of entries) {
-      const nextPrefix = prefix ? `${prefix}.${key}` : key;
-      collectLeafKeys(child, nextPrefix, keys);
+      const nextPath = keyPath ? `${keyPath}.${key}` : key;
+      collectLeafKeys(child, fileName, nextPath, keys);
     }
 
     return keys;
   }
 
-  if (!prefix) {
-    throw new Error('Locale JSON root must be an object.');
+  if (!keyPath) {
+    throw new Error(`${fileName} must contain a JSON object at the root.`);
   }
 
-  keys.add(prefix);
+  keys.add(keyPath);
   return keys;
 }
 
-function readLocaleKeys(filePath: string): string[] {
+function readLocaleKeys(filePath) {
   const raw = fs.readFileSync(filePath, 'utf8');
   const parsed = JSON.parse(raw);
+  const fileName = path.basename(filePath);
 
   if (!isPlainObject(parsed)) {
-    throw new Error(`${path.basename(filePath)} must contain a JSON object at the root.`);
+    throw new Error(`${fileName} must contain a JSON object at the root.`);
   }
 
-  return [...collectLeafKeys(parsed)].sort();
+  return [...collectLeafKeys(parsed, fileName)].sort();
 }
 
-function main(): void {
+function main() {
   const localeFiles = fs
     .readdirSync(LOCALES_DIR)
-    .filter((name: string) => name.endsWith('.json'))
+    .filter((name) => name.endsWith('.json'))
     .sort();
 
   if (!localeFiles.includes(SOURCE_LOCALE)) {
@@ -59,7 +67,7 @@ function main(): void {
   }
 
   const sourceKeys = new Set(readLocaleKeys(path.join(LOCALES_DIR, SOURCE_LOCALE)));
-  const reports: Array<{ file: string; missing: string[]; extra: string[] }> = [];
+  const reports = [];
 
   for (const localeFile of localeFiles) {
     if (localeFile === SOURCE_LOCALE) continue;
