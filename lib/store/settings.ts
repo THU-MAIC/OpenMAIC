@@ -426,7 +426,7 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
 
   // Specifically ensure Gemini 3 Flash if it's a fresh or broken state
   if (!state.modelId || (state.providerId === 'google' && !state.modelId)) {
-    state.modelId = 'gemini-3-flash-preview';
+    state.modelId = 'gemini-3.1-flash-lite-preview';
   }
 }
 
@@ -593,7 +593,7 @@ export const useSettingsStore = create<SettingsState>()(
       return {
         // Initial state (use migrated data if available)
         providerId: migratedData?.providerId || 'google',
-        modelId: migratedData?.modelId || 'gemini-3-flash-preview',
+        modelId: migratedData?.modelId || 'gemini-3.1-flash-lite-preview',
         providersConfig: migratedData?.providersConfig || getDefaultProvidersConfig(),
         ttsModel: migratedData?.ttsModel || 'openai-tts',
         selectedAgentIds: migratedData?.selectedAgentIds || [
