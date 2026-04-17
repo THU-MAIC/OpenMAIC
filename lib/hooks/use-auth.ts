@@ -42,7 +42,7 @@ export function useAuth() {
               path,
               hasSessionUser: Boolean(session?.user),
               hasSbAuthCookie,
-              runId: 'post-fix',
+              runId: 'post-fix-2',
             },
             timestamp: Date.now(),
           }),
