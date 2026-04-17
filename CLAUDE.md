@@ -1,5 +1,8 @@
 # OpenMAIC — Project Context
 
+> **Every session — human or AI — should read `HISTORY.md` before starting work.**
+> It contains the current architecture, key decisions, what has already been built, and the latest branch snapshot. Do not duplicate work that is already done.
+
 ## System Overview
 
 - **learning.thomhoffer** = the school enrollment system — knows Lithuanian, manages daily schedule, login, streak. It tells OpenMAIC what to teach.
