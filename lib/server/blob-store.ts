@@ -14,6 +14,11 @@
 
 import { put, list, del } from '@vercel/blob';
 import { createLogger } from '@/lib/logger';
+import {
+  USE_SUPABASE_STORAGE,
+  supabaseWriteBinary,
+  supabaseGetBinaryUrl,
+} from '@/lib/server/supabase-storage';
 
 const log = createLogger('BlobStore');
 
@@ -96,6 +101,7 @@ export async function writeBinaryBlob(
   data: Buffer,
   contentType: string,
 ): Promise<string> {
+  if (USE_SUPABASE_STORAGE) return supabaseWriteBinary(key, data, contentType);
   const result = await put(key, data, {
     access: 'public',
     contentType,
@@ -110,6 +116,7 @@ export async function writeBinaryBlob(
  * Uses a direct HEAD fetch when the store base URL is known.
  */
 export async function getBinaryBlobUrl(key: string): Promise<string | null> {
+  if (USE_SUPABASE_STORAGE) return supabaseGetBinaryUrl(key);
   try {
     if (_blobPublicBase) {
       const url = `${_blobPublicBase}/${key}`;
