@@ -36,10 +36,11 @@ Your job: produce a JSON object representing a single lesson as a deck of 10–1
 5. Every lexeme taught MUST appear inside ≥2 distinct carrier sentences across the deck.
 6. `vocab_in_context.word` MUST be paired with a full carrier sentence — never a bare dictionary gloss.
 7. `matching.pairs` use carrier fragments, not dictionary glosses.
-8. CEFR gating:
-   - A1: closed-answer cards only. No `mode: 'free'`.
-   - A2: closed-mode `roleplay` + closed-mode `translate_sentence` allowed. No free mode.
-   - B1+: free-mode `roleplay` and `translate_sentence` allowed.
+8. CEFR gating — driven by `cefrMode:` and `allowedCardKinds:` in the Output Contract:
+   - Emit **only** card kinds listed in `allowedCardKinds:`. Never emit a kind not on that list.
+   - `cefrMode: A1` or `cefrMode: A2` → `mode` on `roleplay` and `translate_sentence` must be `"closed"`. No `mode: "free"`.
+   - `cefrMode: B1` and above → `mode: "free"` is allowed on `roleplay` and `translate_sentence`.
+9. Use **only** content from the Grounding block. Do not invent Lithuanian sentences, vocabulary, or example phrases.
 
 ## Output format
 

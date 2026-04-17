@@ -176,6 +176,20 @@ const VALID_CARD_KINDS = new Set([
 
 const FIRST_CARD_KINDS = new Set(['phrase_chunk', 'dialog_snippet']);
 const LAST_CARD_KINDS = new Set(['grammar_pattern', 'mistake_spotlight']);
+const MODE_GATED_KINDS = new Set(['roleplay', 'translate_sentence']);
+const FREE_RESPONSE_LEVELS = new Set(['B1', 'B2', 'C1']);
+
+function parseAllowedCardKinds(requirement: string): Set<string> | null {
+  const match = requirement.match(/^allowedCardKinds:\s*(.+)$/m);
+  if (!match) return null;
+  const kinds = match[1].split(',').map((s) => s.trim()).filter(Boolean);
+  return kinds.length > 0 ? new Set(kinds) : null;
+}
+
+function parseCefrMode(requirement: string): string | null {
+  const match = requirement.match(/^cefrMode:\s*(\S+)/m);
+  return match ? match[1].trim() : null;
+}
 
 interface LessonPlanValidationResult {
   valid: boolean;
@@ -185,6 +199,7 @@ interface LessonPlanValidationResult {
 function validateLessonPlanDeck(
   data: { microGoal?: unknown; groundingIds?: unknown; cards?: unknown },
   groundingBlock: string,
+  requirement: string,
 ): LessonPlanValidationResult {
   const errors: string[] = [];
   const cards = data.cards;
@@ -201,9 +216,17 @@ function validateLessonPlanDeck(
   if (cards.length > 0 && !LAST_CARD_KINDS.has(cards[cards.length - 1].kind)) {
     errors.push(`Last card must be grammar_pattern or mistake_spotlight, got "${cards[cards.length - 1].kind}"`);
   }
+
+  const allowedKinds = parseAllowedCardKinds(requirement) ?? VALID_CARD_KINDS;
+  const cefrMode = parseCefrMode(requirement);
+  const freeResponseAllowed = cefrMode ? FREE_RESPONSE_LEVELS.has(cefrMode) : true;
+
   for (const [i, card] of cards.entries()) {
-    if (!card.kind || !VALID_CARD_KINDS.has(card.kind)) {
-      errors.push(`Card ${i}: unknown kind "${card.kind}"`);
+    if (!card.kind || !allowedKinds.has(card.kind)) {
+      errors.push(`Card ${i}: kind "${card.kind}" not in allowedCardKinds`);
+    }
+    if (MODE_GATED_KINDS.has(card.kind) && card.mode === 'free' && !freeResponseAllowed) {
+      errors.push(`Card ${i} (${card.kind}): mode "free" not allowed at cefrMode ${cefrMode}`);
     }
   }
 
@@ -253,7 +276,7 @@ async function generateLessonPlan(
       continue;
     }
 
-    const validation = validateLessonPlanDeck(parsed, groundingBlock);
+    const validation = validateLessonPlanDeck(parsed, groundingBlock, requirement);
     if (validation.valid) {
       return {
         type: 'lesson_plan',
