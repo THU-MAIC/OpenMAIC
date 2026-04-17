@@ -239,8 +239,7 @@ function resolveTTSVoice(providerId: TTSProviderId, language?: string): string {
       'lt': 'lt-LT-OnaNeural',
       'en-US': 'en-US-JennyNeural',
       'en': 'en-US-JennyNeural',
-      'zh-CN': 'zh-CN-XiaoxiaoNeural',
-      'zh': 'zh-CN-XiaoxiaoNeural',
+
     };
     const voice = azureVoiceMap[language];
     if (voice) return voice;

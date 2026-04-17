@@ -58,7 +58,7 @@ function buildInputSummary(input: GenerateClassroomInput): ClassroomGenerationJo
   return {
     requirementPreview:
       input.requirement.length > 200 ? `${input.requirement.slice(0, 197)}...` : input.requirement,
-    language: input.language || 'zh-CN',
+    language: input.language || 'en-US',
     hasPdf: !!input.pdfContent,
     pdfTextLength: input.pdfContent?.text.length || 0,
     pdfImageCount: input.pdfContent?.images.length || 0,
