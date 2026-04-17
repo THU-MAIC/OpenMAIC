@@ -628,7 +628,7 @@ export default function ClassroomDetailPage() {
     <ThemeProvider>
       <MediaStageProvider value={classroomId}>
         <div className="h-[100dvh] flex flex-col overflow-hidden">
-          {introSource && (
+          {/* {introSource && (
             <IntroStreamingPlayer
               key={introSource.stageId}
               stageId={introSource.stageId}
@@ -636,7 +636,7 @@ export default function ClassroomDetailPage() {
               description={introSource.description}
               language={introSource.language}
             />
-          )}
+          )} */}
           {loading ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
               <div className="text-center text-muted-foreground">
