@@ -27,7 +27,7 @@ function getSql() {
 
 export async function neonSelect<T>(query: string, params: unknown[]): Promise<T[]> {
   try {
-    const rows = await getSql()(query, params);
+    const rows = await getSql().query(query, params);
     return rows as T[];
   } catch (error) {
     log.error('Neon query failed:', error);
@@ -37,7 +37,7 @@ export async function neonSelect<T>(query: string, params: unknown[]): Promise<T
 
 export async function neonExec(query: string, params: unknown[]): Promise<void> {
   try {
-    await getSql()(query, params);
+    await getSql().query(query, params);
   } catch (error) {
     log.error('Neon exec failed:', error);
     throw error;
