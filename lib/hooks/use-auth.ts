@@ -26,6 +26,28 @@ export function useAuth() {
 
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      // #region agent log
+      if (typeof window !== 'undefined') {
+        const path = window.location.pathname;
+        const hasSbAuthCookie = /(^|;)\s*sb-[^-]+-auth-token/.test(document.cookie);
+        fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
+          body: JSON.stringify({
+            sessionId: '9d754c',
+            location: 'lib/hooks/use-auth.ts:getSession',
+            message: 'Initial getSession resolved',
+            data: {
+              hypothesisId: 'H4',
+              path,
+              hasSessionUser: Boolean(session?.user),
+              hasSbAuthCookie,
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+      }
+      // #endregion
       setState({
         user: session?.user ?? null,
         session,

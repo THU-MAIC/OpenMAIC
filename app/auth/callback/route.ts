@@ -46,15 +46,93 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
   const next = sanitizeNext(searchParams.get('next'));
+  const { origin } = new URL(request.url);
+  const forwardedHost = request.headers.get('x-forwarded-host');
+  const forwardedProto = request.headers.get('x-forwarded-proto');
+
+  // #region agent log
+  fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
+    body: JSON.stringify({
+      sessionId: '9d754c',
+      location: 'app/auth/callback/route.ts:GET:entry',
+      message: 'OAuth callback request',
+      data: {
+        hypothesisId: 'H3',
+        hasCode: Boolean(code),
+        next,
+        origin,
+        forwardedHost,
+        forwardedProto,
+        nodeEnv: process.env.NODE_ENV,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   if (code) {
     const cookieStore = await cookies();
     const supabase = createClient(cookieStore);
     const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+    // #region agent log
+    fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
+      body: JSON.stringify({
+        sessionId: '9d754c',
+        location: 'app/auth/callback/route.ts:GET:exchange',
+        message: 'exchangeCodeForSession finished',
+        data: {
+          hypothesisId: 'H1',
+          ok: !error,
+          errName: error?.name ?? null,
+          errMessage: error?.message ?? null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+
     if (!error) {
-      return noStoreRedirect(buildPostAuthRedirectUrl(request, next));
+      const target = buildPostAuthRedirectUrl(request, next);
+      // #region agent log
+      fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
+        body: JSON.stringify({
+          sessionId: '9d754c',
+          location: 'app/auth/callback/route.ts:GET:successRedirect',
+          message: 'Redirecting after successful exchange',
+          data: {
+            hypothesisId: 'H2',
+            redirectTarget: target,
+            forwardedHost,
+            origin,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+      // #endregion
+      return noStoreRedirect(target);
     }
   }
+
+  // #region agent log
+  fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '9d754c' },
+    body: JSON.stringify({
+      sessionId: '9d754c',
+      location: 'app/auth/callback/route.ts:GET:failureRedirect',
+      message: 'OAuth callback falling back to login',
+      data: { hypothesisId: 'H1', reason: code ? 'exchange_failed' : 'no_code' },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {});
+  // #endregion
 
   return noStoreRedirect(
     buildPostAuthRedirectUrl(request, '/auth/login?error=auth_failed'),
