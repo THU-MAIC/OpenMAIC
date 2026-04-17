@@ -1,6 +1,8 @@
+import { createServerClient } from '@supabase/ssr';
 import { type NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
 function sanitizeNext(next: string | null): string {
   if (!next || !next.startsWith('/') || next.startsWith('//')) {
@@ -72,9 +74,30 @@ export async function GET(request: NextRequest) {
   }).catch(() => {});
   // #endregion
 
-  if (code) {
-    const cookieStore = await cookies();
-    const supabase = createClient(cookieStore);
+  if (code && supabaseUrl && supabaseKey) {
+    const target = buildPostAuthRedirectUrl(request, next);
+    const response = noStoreRedirect(target);
+
+    const supabase = createServerClient(supabaseUrl, supabaseKey, {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet, headers) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+          if (headers) {
+            for (const [key, value] of Object.entries(headers)) {
+              if (typeof value === 'string') {
+                response.headers.set(key, value);
+              }
+            }
+          }
+        },
+      },
+    });
+
     const { error } = await supabase.auth.exchangeCodeForSession(code);
 
     // #region agent log
@@ -90,6 +113,7 @@ export async function GET(request: NextRequest) {
           ok: !error,
           errName: error?.name ?? null,
           errMessage: error?.message ?? null,
+          runId: 'post-fix',
         },
         timestamp: Date.now(),
       }),
@@ -97,7 +121,6 @@ export async function GET(request: NextRequest) {
     // #endregion
 
     if (!error) {
-      const target = buildPostAuthRedirectUrl(request, next);
       // #region agent log
       fetch('http://127.0.0.1:7806/ingest/f81b7429-4b05-466d-99c3-1456ca063132', {
         method: 'POST',
@@ -111,12 +134,13 @@ export async function GET(request: NextRequest) {
             redirectTarget: target,
             forwardedHost,
             origin,
+            runId: 'post-fix',
           },
           timestamp: Date.now(),
         }),
       }).catch(() => {});
       // #endregion
-      return noStoreRedirect(target);
+      return response;
     }
   }
 
