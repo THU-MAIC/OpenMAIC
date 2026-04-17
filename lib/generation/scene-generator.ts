@@ -931,6 +931,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       userProfile: userProfile || '',
+      language: outline.language || 'en-US',
     });
 
     if (!prompts) {
@@ -959,6 +960,7 @@ export async function generateSceneActions(
       questions: questionsText,
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
+      language: outline.language || 'en-US',
     });
 
     if (!prompts) {

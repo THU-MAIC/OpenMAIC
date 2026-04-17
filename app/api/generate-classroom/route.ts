@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
       requirement: rawBody.requirement || '',
       ...(rawBody.pdfContent ? { pdfContent: rawBody.pdfContent } : {}),
       ...(rawBody.language ? { language: rawBody.language } : {}),
+      ...(rawBody.explanationLanguage ? { explanationLanguage: rawBody.explanationLanguage } : {}),
       ...(rawBody.enableWebSearch != null ? { enableWebSearch: rawBody.enableWebSearch } : {}),
       ...(rawBody.enableImageGeneration != null
         ? { enableImageGeneration: rawBody.enableImageGeneration }

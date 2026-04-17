@@ -33,6 +33,7 @@ export class AudioPlayer {
       if (audioUrl) {
         this.stop();
         this.audio = new Audio();
+        this.audio.setAttribute('playsinline', '');
         this.audio.src = audioUrl;
         if (this.muted) this.audio.volume = 0;
         else this.audio.volume = this.volume;
@@ -59,6 +60,7 @@ export class AudioPlayer {
 
       // Create audio element
       this.audio = new Audio();
+      this.audio.setAttribute('playsinline', '');
 
       // Set audio source
       const blobUrl = URL.createObjectURL(audioRecord.blob);

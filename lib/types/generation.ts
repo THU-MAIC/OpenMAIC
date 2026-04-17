@@ -64,7 +64,8 @@ export interface UploadedDocument {
  */
 export interface UserRequirements {
   requirement: string; // Single free-form text for all user input
-  language: string; // BCP-47 language code (e.g. 'en-US', 'zh-CN', 'lt-LT')
+  language: string; // BCP-47 code for the language being learned (e.g. 'lt-LT')
+  explanationLanguage?: string; // BCP-47 code for the explanation/UI language (e.g. 'en-US'); defaults to language
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
@@ -100,7 +101,8 @@ export interface SceneOutline {
   teachingObjective?: string;
   estimatedDuration?: number; // seconds
   order: number;
-  language?: string; // BCP-47 language code (inherited from requirements)
+  language?: string; // BCP-47 target language code (inherited from requirements)
+  explanationLanguage?: string; // BCP-47 explanation language code (inherited from requirements)
   // Suggested image IDs (from PDF-extracted images)
   suggestedImageIds?: string[]; // e.g., ["img_1", "img_3"]
   // AI-generated media requests (when PDF images are insufficient)
