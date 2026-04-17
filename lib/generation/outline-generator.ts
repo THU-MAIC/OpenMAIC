@@ -40,7 +40,7 @@ export async function generateSceneOutlinesFromRequirements(
 ): Promise<GenerationResult<SceneOutline[]>> {
   // Build available images description for the prompt
   let availableImagesText =
-    requirements.language === 'zh-CN' ? '无可用图片' : 'No images available';
+    'No images available';
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (pdfImages && pdfImages.length > 0) {
@@ -51,11 +51,9 @@ export async function generateSceneOutlinesFromRequirements(
       const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
       const noSrcImages = pdfImages.filter((img) => !options.imageMapping![img.id]);
 
-      const visionDescriptions = visionSlice.map((img) =>
-        formatImagePlaceholder(img, requirements.language),
-      );
+      const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
-        formatImageDescription(img, requirements.language),
+        formatImageDescription(img),
       );
       availableImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
@@ -68,7 +66,7 @@ export async function generateSceneOutlinesFromRequirements(
     } else {
       // Text-only mode: full descriptions
       availableImagesText = pdfImages
-        .map((img) => formatImageDescription(img, requirements.language))
+        .map((img) => formatImageDescription(img))
         .join('\n');
     }
   }
