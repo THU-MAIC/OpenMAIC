@@ -29,6 +29,12 @@ function getLocalizedEmpty(language: string, kind: 'images' | 'content' | 'resea
   return kind === 'images' ? 'No images available' : 'None';
 }
 
+function resolveRequirementLanguage(language?: string): 'zh-CN' | 'en-US' | 'ru-RU' {
+  if (language === 'en-US') return 'en-US';
+  if (language === 'ru-RU') return 'ru-RU';
+  return 'zh-CN';
+}
+
 /**
  * Generate scene outlines from user requirements
  * Now uses simplified UserRequirements with just requirement text and language
@@ -48,8 +54,10 @@ export async function generateSceneOutlinesFromRequirements(
     teacherContext?: string;
   },
 ): Promise<GenerationResult<{ languageDirective: string; outlines: SceneOutline[] }>> {
+  const requirementLanguage = resolveRequirementLanguage(requirements.language);
+
   // Build available images description for the prompt
-  let availableImagesText = getLocalizedEmpty(requirements.language, 'images');
+  let availableImagesText = getLocalizedEmpty(requirementLanguage, 'images');
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (pdfImages && pdfImages.length > 0) {
@@ -61,10 +69,10 @@ export async function generateSceneOutlinesFromRequirements(
       const noSrcImages = pdfImages.filter((img) => !options.imageMapping![img.id]);
 
       const visionDescriptions = visionSlice.map((img) =>
-        formatImagePlaceholder(img, requirements.language),
+        formatImagePlaceholder(img, requirementLanguage),
       );
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
-        formatImageDescription(img, requirements.language),
+        formatImageDescription(img, requirementLanguage),
       );
       availableImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
@@ -77,7 +85,7 @@ export async function generateSceneOutlinesFromRequirements(
     } else {
       // Text-only mode: full descriptions
       availableImagesText = pdfImages
-        .map((img) => formatImageDescription(img, requirements.language))
+        .map((img) => formatImageDescription(img, requirementLanguage))
         .join('\n');
     }
   }
@@ -107,15 +115,14 @@ export async function generateSceneOutlinesFromRequirements(
   const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
     // New simplified variables
     requirement: requirements.requirement,
-    language: requirements.language,
+    language: requirementLanguage,
     pdfContent: pdfText
       ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-      : getLocalizedEmpty(requirements.language, 'content'),
+      : getLocalizedEmpty(requirementLanguage, 'content'),
     availableImages: availableImagesText,
     userProfile: userProfileText,
     mediaGenerationPolicy,
-    researchContext:
-      options?.researchContext || getLocalizedEmpty(requirements.language, 'research'),
+    researchContext: options?.researchContext || getLocalizedEmpty(requirementLanguage, 'research'),
     // Server-side generation populates this via options; client-side populates via formatTeacherPersonaForPrompt
     teacherContext: options?.teacherContext || '',
   });
@@ -160,7 +167,7 @@ export async function generateSceneOutlinesFromRequirements(
       ...outline,
       id: outline.id || nanoid(),
       order: index + 1,
-      language: outline.language || requirements.language,
+      language: outline.language || requirementLanguage,
     }));
 
     // Replace sequential gen_img_N/gen_vid_N with globally unique IDs

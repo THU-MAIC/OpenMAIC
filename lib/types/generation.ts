@@ -48,7 +48,7 @@ export interface UploadedDocument {
  */
 export interface UserRequirements {
   requirement: string; // Single free-form text for all user input
-  language: 'zh-CN' | 'en-US' | 'ru-RU'; // Course language for generation/runtime flows
+  language?: 'zh-CN' | 'en-US' | 'ru-RU'; // Course language for generation/runtime flows
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context

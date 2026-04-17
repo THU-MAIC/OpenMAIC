@@ -47,6 +47,12 @@ function getLocalizedEmpty(language: string, kind: 'images' | 'content' | 'resea
   return kind === 'images' ? 'No images available' : 'None';
 }
 
+function resolveRequirementLanguage(language?: string): 'zh-CN' | 'en-US' | 'ru-RU' {
+  if (language === 'en-US') return 'en-US';
+  if (language === 'ru-RU') return 'ru-RU';
+  return 'zh-CN';
+}
+
 /**
  * Incremental JSON array parser.
  * Extracts complete top-level objects from a partially-streamed JSON array.
@@ -132,9 +138,10 @@ export async function POST(req: NextRequest) {
 
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
+    const requirementLanguage = resolveRequirementLanguage(requirements.language);
 
     // Build prompt (same logic as generateSceneOutlinesFromRequirements)
-    let availableImagesText = getLocalizedEmpty(requirements.language, 'images');
+    let availableImagesText = getLocalizedEmpty(requirementLanguage, 'images');
     let visionImages: Array<{ id: string; src: string }> | undefined;
 
     if (pdfImages && pdfImages.length > 0) {
@@ -146,10 +153,10 @@ export async function POST(req: NextRequest) {
         const noSrcImages = pdfImages.filter((img) => !imageMapping[img.id]);
 
         const visionDescriptions = visionSlice.map((img) =>
-          formatImagePlaceholder(img, requirements.language),
+          formatImagePlaceholder(img, requirementLanguage),
         );
         const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
-          formatImageDescription(img, requirements.language),
+          formatImageDescription(img, requirementLanguage),
         );
         availableImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
@@ -162,7 +169,7 @@ export async function POST(req: NextRequest) {
       } else {
         // Text-only mode: full descriptions
         availableImagesText = pdfImages
-          .map((img) => formatImageDescription(img, requirements.language))
+          .map((img) => formatImageDescription(img, requirementLanguage))
           .join('\n');
       }
     }
@@ -187,12 +194,12 @@ export async function POST(req: NextRequest) {
 
     const prompts = buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
       requirement: requirements.requirement,
-      language: requirements.language,
+      language: requirementLanguage,
       pdfContent: pdfText
         ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
-        : getLocalizedEmpty(requirements.language, 'content'),
+        : getLocalizedEmpty(requirementLanguage, 'content'),
       availableImages: availableImagesText,
-      researchContext: researchContext || getLocalizedEmpty(requirements.language, 'research'),
+      researchContext: researchContext || getLocalizedEmpty(requirementLanguage, 'research'),
       mediaGenerationPolicy,
       teacherContext,
     });
