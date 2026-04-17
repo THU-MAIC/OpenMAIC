@@ -1,15 +1,50 @@
 services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: openmaic
+      POSTGRES_USER: openmaic
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - openmaic-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U openmaic']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build: .
+    command: >
+      sh -c "npx --yes prisma@5 migrate deploy"
+    environment:
+      DATABASE_URL: postgresql://openmaic:${POSTGRES_PASSWORD:-changeme}@db:5432/openmaic
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
   openmaic:
     build: .
+    command: node server.js
     ports:
       - "3000:3000"
     env_file:
       - .env.local
+    environment:
+      DATABASE_URL: postgresql://openmaic:${POSTGRES_PASSWORD:-changeme}@db:5432/openmaic
     volumes:
       # Optional: mount server-providers.yml for provider config
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
 volumes:
   openmaic-data:
+  openmaic-db:

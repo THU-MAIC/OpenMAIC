@@ -11,6 +11,8 @@ import type {
 export interface GenerationSessionState {
   sessionId: string;
   requirements: UserRequirements;
+  targetClassroomId?: string;
+  targetClassroomTitle?: string;
   pdfText: string;
   pdfImages?: PdfImage[];
   imageStorageIds?: string[];

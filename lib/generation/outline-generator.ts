@@ -16,6 +16,9 @@ import { formatImageDescription, formatImagePlaceholder } from './prompt-formatt
 import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
 import type { AICallFn, GenerationResult, GenerationCallbacks } from './pipeline-types';
+import { renderPrompt } from '@/lib/admin/prompt-renderer';
+import { PROMPT_KEYS } from '@/lib/admin/prompt-keys';
+import type { PromptContext } from '@/lib/admin/prompt-context';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
@@ -127,7 +130,33 @@ export async function generateSceneOutlinesFromRequirements(
       totalScenes: 0,
     });
 
-    const response = await aiCall(prompts.system, prompts.user, visionImages);
+    const context: PromptContext = {
+      user: {
+        id: 'system',
+        name: 'System',
+        role: 'INSTRUCTOR',
+        email: '',
+      },
+      language: requirements.language === 'zh-CN' ? 'zh' : 'en',
+      mediaType: 'text',
+      timestamp: new Date(),
+      customFields: {
+        requirement: requirements.requirement,
+        availableImages: availableImagesText,
+        pdfContent: pdfText
+          ? pdfText.substring(0, MAX_PDF_CONTENT_CHARS)
+          : requirements.language === 'zh-CN'
+            ? '无'
+            : 'None',
+        mediaGenerationPolicy,
+        researchContext:
+          options?.researchContext || (requirements.language === 'zh-CN' ? '无' : 'None'),
+        teacherContext: options?.teacherContext || '',
+      },
+    };
+
+    const dynamicSystemPrompt = await renderPrompt(PROMPT_KEYS.GENERATION.SCENE_OUTLINE, context);
+    const response = await aiCall(dynamicSystemPrompt || prompts.system, prompts.user, visionImages);
     const outlines = parseJsonResponse<SceneOutline[]>(response);
 
     if (!outlines || !Array.isArray(outlines)) {

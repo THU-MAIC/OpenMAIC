@@ -94,7 +94,9 @@ When a slide scene needs an image or video but no suitable PDF image exists, mar
 - **Image IDs**: use `"gen_img_1"`, `"gen_img_2"`, etc. — IDs are **globally unique across the entire course**, NOT reset per scene
 - **Video IDs**: use `"gen_vid_1"`, `"gen_vid_2"`, etc. — same global numbering rule
 - The prompt should describe the desired media clearly and specifically
-- **Language in images/diagrams**: If the image contains text, labels, axis names, legends, callouts, or annotations, the prompt MUST explicitly specify that all visible text should be in the course language (e.g., "all labels in Chinese" for zh-CN courses, "all labels in English" for en-US courses, "all labels in Thai" for th-TH courses). For purely visual images without text, language does not matter.
+- **Language in image/video prompts**: All `mediaGenerations` prompts MUST be written in English regardless of course language — image and video generation models work best with English. Never write prompts in Thai, Chinese, or any other non-English language.
+- **Text within generated images**: By default, any labels, axis names, legends, callouts, or annotations visible inside a generated image must be in English. Do NOT request Thai or Chinese text inside generated images or diagrams unless the classroom prompt explicitly asks for a specific language in visuals.
+- **Thai mode reliability rule**: If course language is `th-TH`, always keep generated images text-minimal and label-free. All visible text inside a generated image must be in English. Render Thai labels, legends, callouts, and axis annotations in TextElement and ChartElement slide content instead.
 - Only request media generation when it genuinely enhances the content — not every slide needs an image or video
 - Video generation is slow (1-2 minutes each), so only request videos when motion genuinely enhances understanding
 - If a suitable PDF image exists, prefer using `suggestedImageIds` instead

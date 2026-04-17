@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { Loader2, ArrowUp, ArrowDown, GripVertical, Plus, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { useI18n } from '@/lib/hooks/use-i18n';
 
 interface SceneItem {
   id: string;
@@ -31,6 +32,7 @@ export default function InstructorContentPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const classroomId = params.id;
+  const { t } = useI18n();
 
   const [scenes, setScenes] = useState<SceneItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -49,7 +51,7 @@ export default function InstructorContentPage() {
       const sorted = [...(data.classroom.scenes ?? [])].sort((a, b) => a.order - b.order);
       setScenes(sorted);
     } catch {
-      toast.error('Failed to load classroom content');
+      toast.error(t('instructorClassroomContent.loadFailed'));
     } finally {
       setLoading(false);
     }
@@ -72,11 +74,11 @@ export default function InstructorContentPage() {
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(payload.error ?? 'Failed to save scene order');
+        toast.error(payload.error ?? t('instructorClassroomContent.orderFailed'));
         await fetchClassroom();
         return;
       }
-      toast.success('Scene order updated');
+      toast.success(t('instructorClassroomContent.orderUpdated'));
     } finally {
       setSavingOrder(false);
     }
@@ -106,10 +108,10 @@ export default function InstructorContentPage() {
       });
       if (!res.ok) {
         const payload = (await res.json().catch(() => ({}))) as { error?: string };
-        toast.error(payload.error ?? 'Failed to delete scene');
+        toast.error(payload.error ?? t('instructorClassroomContent.deleteFailed'));
         return;
       }
-      toast.success('Scene deleted');
+      toast.success(t('instructorClassroomContent.deleted'));
       await fetchClassroom();
     } finally {
       setDeletingId(null);
@@ -128,11 +130,13 @@ export default function InstructorContentPage() {
 
       const payload = (await res.json().catch(() => ({}))) as CreateScenePayload;
       if (!res.ok || !payload.scene?.id) {
-        toast.error(payload.error ?? 'Failed to create scene');
+        toast.error(payload.error ?? t('instructorClassroomContent.createFailed'));
         return;
       }
 
-      router.push(`/classroom/${classroomId}?scene=${encodeURIComponent(payload.scene.id)}`);
+      router.push(
+        `/classroom/${classroomId}?scene=${encodeURIComponent(payload.scene.id)}&newScenePrompt=1&from=content`,
+      );
     } finally {
       setCreatingInCanvas(false);
     }
@@ -150,7 +154,7 @@ export default function InstructorContentPage() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">
-          Content <span className="text-slate-400 text-sm">({scenes.length} scenes)</span>
+          {t('instructorClassroomContent.title')} <span className="text-slate-400 text-sm">({scenes.length} {t('instructorClassroomContent.scenesCount')})</span>
         </h2>
         <div className="flex items-center gap-2">
           <button
@@ -166,20 +170,20 @@ export default function InstructorContentPage() {
             ) : (
               <Plus className="w-4 h-4" />
             )}
-            Add Scene in AI Canvas
+            {t('instructorClassroomContent.addScene')}
           </button>
         </div>
       </div>
 
       {savingOrder && (
         <div className="flex items-center gap-2 text-xs text-indigo-400">
-          <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving order…
+          <Loader2 className="w-3.5 h-3.5 animate-spin" /> {t('instructorClassroomContent.savingOrder')}
         </div>
       )}
 
       {scenes.length === 0 ? (
         <p className="text-sm text-slate-500 py-10 text-center rounded-xl border border-white/10 bg-white/5">
-          No scenes yet. Use Add Scene in AI Canvas to create your first one.
+          {t('instructorClassroomContent.noScenes')}
         </p>
       ) : (
         <ul className="space-y-2">
@@ -194,7 +198,7 @@ export default function InstructorContentPage() {
               </span>
 
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">{scene.title || '(untitled)'}</p>
+                <p className="text-sm font-medium text-white truncate">{scene.title || t('instructorClassroomContent.untitled')}</p>
                 <p className="text-xs text-slate-500">{scene.type}</p>
               </div>
 
@@ -204,7 +208,7 @@ export default function InstructorContentPage() {
                   onClick={() => moveScene(idx, -1)}
                   disabled={idx === 0 || savingOrder}
                   className="rounded border border-white/10 p-1 text-slate-400 hover:text-white disabled:opacity-40 transition-colors"
-                  aria-label="Move up"
+                  aria-label={t('instructorClassroomContent.moveUp')}
                 >
                   <ArrowUp className="w-3.5 h-3.5" />
                 </button>
@@ -213,16 +217,16 @@ export default function InstructorContentPage() {
                   onClick={() => moveScene(idx, 1)}
                   disabled={idx === scenes.length - 1 || savingOrder}
                   className="rounded border border-white/10 p-1 text-slate-400 hover:text-white disabled:opacity-40 transition-colors"
-                  aria-label="Move down"
+                  aria-label={t('instructorClassroomContent.moveDown')}
                 >
                   <ArrowDown className="w-3.5 h-3.5" />
                 </button>
 
                 <Link
-                  href={`/classroom/${classroomId}?scene=${encodeURIComponent(scene.id)}`}
+                  href={`/classroom/${classroomId}?scene=${encodeURIComponent(scene.id)}&from=content`}
                   className="rounded border border-white/10 px-2 py-1 text-xs text-slate-300 hover:bg-white/10 hover:text-white transition-colors"
                 >
-                  Edit
+                  {t('instructorClassroomContent.edit')}
                 </Link>
 
                 <button
@@ -230,8 +234,7 @@ export default function InstructorContentPage() {
                   onClick={() => void deleteScene(scene.id)}
                   disabled={deletingId === scene.id || savingOrder}
                   className="rounded border border-white/10 p-1 text-slate-500 hover:text-red-400 hover:border-red-400/30 disabled:opacity-40 transition-colors"
-                  aria-label="Delete scene"
-                >
+                  aria-label={t('instructorClassroomContent.deleteScene')}>
                   {deletingId === scene.id ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   ) : (

@@ -8,6 +8,9 @@ import type { StatelessChatRequest } from '@/lib/types/chat';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { WhiteboardActionRecord, AgentTurnSummary } from './director-prompt';
 import { getActionDescriptions, getEffectiveActions } from './tool-schemas';
+import { renderPrompt } from '@/lib/admin/prompt-renderer';
+import { PROMPT_KEYS } from '@/lib/admin/prompt-keys';
+import type { PromptContext } from '@/lib/admin/prompt-context';
 
 // ==================== Role Guidelines ====================
 
@@ -90,14 +93,20 @@ You are ${currentAgentName}, responding AFTER the agents above. You MUST:
  * @param discussionContext - Optional discussion context for agent-initiated discussions
  * @returns System prompt string
  */
-export function buildStructuredPrompt(
+function getRolePromptKey(role: string): string {
+  if (role === 'teacher') return PROMPT_KEYS.CHAT.CLASSROOM_INSTRUCTOR;
+  if (role === 'assistant') return PROMPT_KEYS.CHAT.CLASSROOM_ASSISTANT;
+  return PROMPT_KEYS.CHAT.CLASSROOM_CLASSMATE;
+}
+
+export async function buildStructuredPrompt(
   agentConfig: AgentConfig,
   storeState: StatelessChatRequest['storeState'],
   discussionContext?: DiscussionContext,
   whiteboardLedger?: WhiteboardActionRecord[],
   userProfile?: { nickname?: string; bio?: string },
   agentResponses?: AgentTurnSummary[],
-): string {
+): Promise<string> {
   // Determine current scene type for action filtering
   const currentScene = storeState.currentSceneId
     ? storeState.scenes.find((s) => s.id === storeState.currentSceneId)
@@ -161,7 +170,27 @@ Personalize your teaching based on their background when relevant. Address them 
 - Prefer variety: mix spotlights, laser, and whiteboard for engaging teaching. Don't use the same action type repeatedly.`
     : '';
 
-  const roleGuideline = ROLE_GUIDELINES[agentConfig.role] || ROLE_GUIDELINES.student;
+  const rolePromptContext: PromptContext = {
+    user: {
+      id: 'system',
+      name: 'System',
+      role: 'INSTRUCTOR',
+      email: '',
+    },
+    language: storeState.stage?.language === 'zh-CN' ? 'zh' : 'en',
+    mediaType: 'text',
+    timestamp: new Date(),
+    customFields: {
+      topic: storeState.stage?.name || '',
+      classroom_name: storeState.stage?.name || '',
+      student_name: userProfile?.nickname || '',
+      user_bio: userProfile?.bio || '',
+    },
+  };
+
+  const rolePromptKey = getRolePromptKey(agentConfig.role);
+  const renderedRoleGuideline = await renderPrompt(rolePromptKey, rolePromptContext);
+  const roleGuideline = renderedRoleGuideline || ROLE_GUIDELINES[agentConfig.role] || ROLE_GUIDELINES.student;
 
   // Build language constraint from stage language
   const courseLanguage = storeState.stage?.language;

@@ -345,6 +345,22 @@ describe('fetchServerProviders — provider availability sync', () => {
     expect(store.getState().providersConfig.openai.serverModels).toEqual(['gpt-4o', 'gpt-4o-mini']);
   });
 
+  it('keeps server-declared models even when IDs are not in built-in catalog', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-4o-custom'] },
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providersConfig.openai.isServerConfigured).toBe(true);
+    expect(store.getState().providersConfig.openai.models.map((m) => m.id)).toEqual([
+      'gpt-4o-custom',
+    ]);
+  });
+
   it('clears serverModels when provider removed from server', async () => {
     const store = await getStore();
 
@@ -355,6 +371,42 @@ describe('fetchServerProviders — provider availability sync', () => {
     mockServerResponse({});
     await store.getState().fetchServerProviders();
     expect(store.getState().providersConfig.openai.serverModels).toBeUndefined();
+  });
+
+  it('restores full built-in model list when provider is no longer server-restricted', async () => {
+    const store = await getStore();
+
+    mockServerResponse({ providers: { openai: { models: ['gpt-4o'] } } });
+    await store.getState().fetchServerProviders();
+    expect(store.getState().providersConfig.openai.models.map((m) => m.id)).toEqual(['gpt-4o']);
+
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    const modelIds = store.getState().providersConfig.openai.models.map((m) => m.id);
+    expect(modelIds).toContain('gpt-4o');
+    expect(modelIds).toContain('gpt-4o-mini');
+    expect(modelIds).toContain('gpt-4-turbo');
+  });
+
+  it('re-expands allowed model list when server broadens restrictions later', async () => {
+    const store = await getStore();
+
+    mockServerResponse({ providers: { openai: { models: ['gpt-4o'] } } });
+    await store.getState().fetchServerProviders();
+    expect(store.getState().providersConfig.openai.models.map((m) => m.id)).toEqual(['gpt-4o']);
+
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-4o', 'gpt-4o-mini'] },
+      },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providersConfig.openai.models.map((m) => m.id)).toEqual([
+      'gpt-4o',
+      'gpt-4o-mini',
+    ]);
   });
 
   // ---- Stale selection consistency ----

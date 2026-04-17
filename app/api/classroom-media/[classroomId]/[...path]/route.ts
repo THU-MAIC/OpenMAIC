@@ -2,6 +2,8 @@ import { promises as fs, createReadStream } from 'fs';
 import path from 'path';
 import { NextRequest, NextResponse } from 'next/server';
 import { CLASSROOMS_DIR, isValidClassroomId } from '@/lib/server/classroom-storage';
+import { auth } from '@/lib/auth/auth';
+import { userHasClassroomAccess } from '@/lib/auth/helpers';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomMedia');
@@ -24,11 +26,21 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ classroomId: string; path: string[] }> },
 ) {
+  const session = await auth();
+  if (!session?.user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
   const { classroomId, path: pathSegments } = await params;
 
   // Validate classroomId
   if (!isValidClassroomId(classroomId)) {
     return NextResponse.json({ error: 'Invalid classroom ID' }, { status: 400 });
+  }
+
+  const canAccess = await userHasClassroomAccess(session.user.id, session.user.role, classroomId);
+  if (!canAccess) {
+    return NextResponse.json({ error: 'Access denied' }, { status: 403 });
   }
 
   // Validate path segments — no traversal

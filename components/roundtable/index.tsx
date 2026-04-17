@@ -29,6 +29,7 @@ import { AvatarDisplay } from '@/components/ui/avatar-display';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { DEFAULT_TEACHER_AVATAR, DEFAULT_USER_AVATAR } from '@/components/roundtable/constants';
+import { VoicePanel } from '@/components/roundtable/voice-panel';
 import type { DiscussionAction } from '@/lib/types/action';
 import type { EngineMode, PlaybackView } from '@/lib/playback';
 import type { Participant } from '@/lib/types/roundtable';
@@ -200,6 +201,11 @@ export function Roundtable({
   // End flash visible state (Issue 3)
   const [endFlashVisible, setEndFlashVisible] = useState(false);
 
+  // Voice panel — opened when user clicks a person's avatar in the classroom
+  const [voicePanelId, setVoicePanelId] = useState<string | null>(null);
+  const [voicePanelType, setVoicePanelType] = useState<'teacher' | 'agent' | 'user'>('agent');
+  const [voicePanelAgentIndex, setVoicePanelAgentIndex] = useState(0);
+
   // Send cooldown: lock input from "message sent" until "agent bubble appears"
   const [isSendCooldown, setIsSendCooldown] = useState(false);
   const isSendCooldownRef = useRef(false);
@@ -208,6 +214,9 @@ export function Roundtable({
   const studentParticipants = initialParticipants.filter(
     (p) => p.role !== 'teacher' && p.role !== 'user',
   );
+  const voicePanelParticipant = voicePanelId
+    ? initialParticipants.find((p) => p.id === voicePanelId) || null
+    : null;
 
   // Stable ref object for the current discussion agent's avatar
   const discussionAnchorRef = useRef<HTMLDivElement>(null);
@@ -1090,6 +1099,12 @@ export function Roundtable({
             <div
               ref={teacherAvatarRef}
               className="relative group cursor-pointer flex flex-col items-center justify-center gap-1"
+              onClick={() => {
+                if (!teacherParticipant?.id) return;
+                setVoicePanelId(teacherParticipant.id);
+                setVoicePanelType('teacher');
+                setVoicePanelAgentIndex(0);
+              }}
             >
               <HoverCard openDelay={300} closeDelay={100}>
                 <HoverCardTrigger asChild>
@@ -1826,6 +1841,16 @@ export function Roundtable({
                         else studentAvatarRefs.current.delete(student.id);
                       }}
                       className="relative group/student shrink-0"
+                      onClick={() => {
+                        setVoicePanelId(student.id);
+                          setVoicePanelType('agent');
+                        setVoicePanelAgentIndex(
+                          Math.max(
+                            0,
+                            studentParticipants.findIndex((p) => p.id === student.id),
+                          ),
+                        );
+                      }}
                     >
                       {/* Breathing glow for discussion agent */}
                       {isDiscussionAgent && (
@@ -2036,7 +2061,13 @@ export function Roundtable({
               className="relative group cursor-pointer shrink-0"
               onClick={(e) => {
                 e.stopPropagation();
-                handleToggleInput();
+                if (!userParticipant?.id) {
+                  handleToggleInput();
+                  return;
+                }
+                setVoicePanelId(userParticipant.id);
+                setVoicePanelType('user');
+                setVoicePanelAgentIndex(0);
               }}
             >
               <div
@@ -2089,6 +2120,15 @@ export function Roundtable({
         </div>
       </div>
       {/* close interaction row */}
+
+      <VoicePanel
+        open={!!voicePanelId}
+        onClose={() => setVoicePanelId(null)}
+        participant={voicePanelParticipant}
+        participantId={voicePanelId || ''}
+        profileType={voicePanelType}
+        agentIndex={voicePanelAgentIndex}
+      />
     </div>
   );
 }

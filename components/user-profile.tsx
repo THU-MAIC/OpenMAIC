@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { toast } from 'sonner';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
+import { useSession } from 'next-auth/react';
 
 /** Check whether avatar is a custom upload (data-URL) */
 function isCustomAvatar(avatar: string) {
@@ -22,6 +23,7 @@ const FILE_INPUT_ID = 'user-avatar-upload';
 
 export function UserProfileCard() {
   const { t } = useI18n();
+  const { data: session } = useSession();
   const avatar = useUserProfileStore((s) => s.avatar);
   const nickname = useUserProfileStore((s) => s.nickname);
   const bio = useUserProfileStore((s) => s.bio);
@@ -44,13 +46,19 @@ export function UserProfileCard() {
   }, [editingName]);
 
   const displayName = nickname || t('profile.defaultNickname');
+  const canEditName = session?.user?.role === 'ADMIN';
 
   const startEditName = () => {
+    if (!canEditName) return;
     setNameDraft(nickname);
     setEditingName(true);
   };
 
   const commitName = () => {
+    if (!canEditName) {
+      setEditingName(false);
+      return;
+    }
     setNickname(nameDraft.trim());
     setEditingName(false);
   };
@@ -134,7 +142,7 @@ export function UserProfileCard() {
 
         {/* Name */}
         <div className="flex-1 min-w-0">
-          {editingName ? (
+          {editingName && canEditName ? (
             <div className="flex items-center gap-1.5">
               <input
                 ref={nameInputRef}
@@ -156,7 +164,7 @@ export function UserProfileCard() {
                 <Check className="size-3.5" />
               </button>
             </div>
-          ) : (
+          ) : canEditName ? (
             <button
               onClick={startEditName}
               className="group/name flex items-center gap-1.5 cursor-pointer"
@@ -164,6 +172,8 @@ export function UserProfileCard() {
               <span className="text-sm font-semibold text-foreground truncate">{displayName}</span>
               <Pencil className="size-3 text-muted-foreground/40 opacity-0 group-hover/name:opacity-100 transition-opacity" />
             </button>
+          ) : (
+            <span className="text-sm font-semibold text-foreground truncate">{displayName}</span>
           )}
           <p className="text-[10px] text-muted-foreground/50 mt-0.5">{t('profile.avatarHint')}</p>
         </div>

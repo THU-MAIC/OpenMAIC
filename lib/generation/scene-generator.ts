@@ -45,6 +45,9 @@ import type {
   GenerationCallbacks,
 } from './pipeline-types';
 import { createLogger } from '@/lib/logger';
+import { renderPrompt } from '@/lib/admin/prompt-renderer';
+import { PROMPT_KEYS } from '@/lib/admin/prompt-keys';
+import type { PromptContext } from '@/lib/admin/prompt-context';
 const log = createLogger('Generation');
 
 // ==================== Stage 2: Full Scenes (Two-Step) ====================
@@ -558,7 +561,29 @@ async function generateSlideContent(
     log.debug(`Vision images: ${visionImages.map((img) => img.id).join(', ')}`);
   }
 
-  const response = await aiCall(prompts.system, prompts.user, visionImages);
+  const context: PromptContext = {
+    user: {
+      id: 'system',
+      name: 'System',
+      role: 'INSTRUCTOR',
+      email: '',
+    },
+    language: lang === 'zh-CN' ? 'zh' : 'en',
+    mediaType: 'text',
+    timestamp: new Date(),
+    customFields: {
+      title: outline.title,
+      description: outline.description,
+      keyPoints: (outline.keyPoints || []).join('\n'),
+      assignedImages: assignedImagesText,
+      canvas_width: String(canvasWidth),
+      canvas_height: String(canvasHeight),
+      teacherContext,
+    },
+  };
+
+  const dynamicSystemPrompt = await renderPrompt(PROMPT_KEYS.GENERATION.SCENE_CONTENT, context);
+  const response = await aiCall(dynamicSystemPrompt || prompts.system, prompts.user, visionImages);
   const generatedData = parseJsonResponse<GeneratedSlideData>(response);
 
   if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {

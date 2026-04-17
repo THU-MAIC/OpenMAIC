@@ -24,6 +24,7 @@ import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useUserProfileStore } from '@/lib/store/user-profile';
 import { useStageStore } from '@/lib/store';
+import { useSession } from 'next-auth/react';
 import {
   listQuizAttemptsForScene,
   saveQuizAttempt,
@@ -891,8 +892,12 @@ function getOrCreateQuizStudentId(): string {
 
 export function QuizView({ questions, sceneId }: QuizViewProps) {
   const { t, locale } = useI18n();
+  const { data: session } = useSession();
   const nickname = useUserProfileStore((s) => s.nickname);
   const stageId = useStageStore((s) => s.stage?.id ?? '');
+  const sceneTitle = useStageStore(
+    useCallback((s) => s.scenes.find((scene) => scene.id === sceneId)?.title ?? `Scene ${sceneId}`, [sceneId]),
+  );
   const [phase, setPhase] = useState<Phase>('not_started');
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [results, setResults] = useState<QuestionResult[]>([]);
@@ -1062,6 +1067,46 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
             answers,
             results: ordered,
           });
+
+          const currentUserId = session?.user?.id;
+          const isStudentRole = session?.user?.role === 'STUDENT';
+          const resolvedStudentDbUserId = isStudentRole ? currentUserId : undefined;
+          const resolvedStudentLabel =
+            student.name || session?.user?.name || session?.user?.email || t('common.you');
+          const resultByQuestion = new Map(ordered.map((r) => [r.questionId, r]));
+          const answerItems = questions.map((q) => {
+            const answerValue = answers[q.id];
+            const result = resultByQuestion.get(q.id);
+            const answer = Array.isArray(answerValue)
+              ? answerValue.join(', ')
+              : String(answerValue ?? '').trim();
+            return {
+              questionId: q.id,
+              answer,
+              score: result?.earned ?? 0,
+              comment: result?.aiComment,
+            };
+          });
+
+          const persistRes = await fetch(`/api/instructor/classrooms/${stageId}/grades`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              studentDbUserId: resolvedStudentDbUserId,
+              studentLabel: resolvedStudentLabel,
+              sceneId,
+              sceneTitle,
+              score: ordered.reduce((sum, r) => sum + r.earned, 0),
+              maxScore: questions.reduce((sum, q) => sum + (q.points ?? 1), 0),
+              answers: answerItems,
+              gradedBy: 'ai',
+            }),
+          });
+          if (!persistRes.ok) {
+            const payload = (await persistRes.json().catch(() => ({}))) as { error?: string };
+            log.warn('[quiz-view] Failed to persist quiz result to DB:', payload.error || persistRes.statusText);
+          }
+
           await loadAttempts();
         } catch (saveErr) {
           log.warn('[quiz-view] Failed to persist quiz attempt:', saveErr);
@@ -1083,6 +1128,11 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     sceneId,
     stageId,
     studentId,
+    session?.user?.id,
+    session?.user?.role,
+    session?.user?.name,
+    session?.user?.email,
+    sceneTitle,
     t,
     loadAttempts,
     classroomStudents,

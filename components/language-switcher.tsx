@@ -8,9 +8,11 @@ import { cn } from '@/lib/utils';
 interface LanguageSwitcherProps {
   /** Called when the dropdown opens, so parent can close sibling dropdowns */
   onOpen?: () => void;
+  /** Called after a locale is selected */
+  onLocaleChange?: () => void;
 }
 
-export function LanguageSwitcher({ onOpen }: LanguageSwitcherProps) {
+export function LanguageSwitcher({ onOpen, onLocaleChange }: LanguageSwitcherProps) {
   const { locale, setLocale } = useI18n();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -47,6 +49,7 @@ export function LanguageSwitcher({ onOpen }: LanguageSwitcherProps) {
               onClick={() => {
                 setLocale(l.code);
                 setOpen(false);
+                onLocaleChange?.();
               }}
               className={cn(
                 'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',

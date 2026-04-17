@@ -2,6 +2,7 @@
 
 import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import { motion, AnimatePresence } from 'motion/react';
 import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,7 @@ const log = createLogger('GenerationPreview');
 
 function GenerationPreviewContent() {
   const router = useRouter();
+  const { data: authSession } = useSession();
   const { t } = useI18n();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -360,11 +362,15 @@ function GenerationPreviewContent() {
       }> = [];
 
       // Create stage client-side (needed for agent generation stageId)
-      const stageId = nanoid(10);
+      const stageId = currentSession.targetClassroomId || nanoid(10);
       const stage: Stage = {
         id: stageId,
-        name: extractTopicFromRequirement(currentSession.requirements.requirement),
+        name:
+          currentSession.targetClassroomTitle?.trim() ||
+          extractTopicFromRequirement(currentSession.requirements.requirement),
         description: '',
+        ownerUserId: authSession?.user?.id,
+        ownershipType: 'owned',
         language: currentSession.requirements.language || 'zh-CN',
         style: 'professional',
         createdAt: Date.now(),
@@ -783,6 +789,42 @@ function GenerationPreviewContent() {
 
       sessionStorage.removeItem('generationSession');
       await store.saveToStorage();
+
+      // Persist once server-side so route guard recognizes ownership on first open.
+      // Require success here to ensure generation is written into the target classroom ID.
+      let persisted = false;
+      let persistError: string | null = null;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          const persistRes = await fetch('/api/classroom', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stage,
+              scenes: [...store.scenes],
+            }),
+          });
+
+          if (persistRes.ok) {
+            persisted = true;
+            break;
+          }
+
+          const payload = (await persistRes.json().catch(() => ({}))) as { error?: string };
+          persistError = payload.error || `HTTP ${persistRes.status}`;
+        } catch (persistErr) {
+          persistError = persistErr instanceof Error ? persistErr.message : String(persistErr);
+        }
+
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+        }
+      }
+
+      if (!persisted) {
+        throw new Error(`Failed to persist classroom before entering canvas: ${persistError || 'Unknown error'}`);
+      }
+
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
       // AbortError is expected when navigating away — don't show as error
@@ -803,10 +845,12 @@ function GenerationPreviewContent() {
     return trimmed.substring(0, 500).trim() + '...';
   };
 
+  const homeUrl = authSession?.user?.role === 'INSTRUCTOR' ? '/instructor' : '/';
+
   const goBackToHome = () => {
     abortControllerRef.current?.abort();
     sessionStorage.removeItem('generationSession');
-    router.push('/');
+    router.push(homeUrl);
   };
 
   // Still loading session from sessionStorage
@@ -829,7 +873,7 @@ function GenerationPreviewContent() {
             <AlertCircle className="size-12 text-muted-foreground mx-auto" />
             <h2 className="text-xl font-semibold">{t('generation.sessionNotFound')}</h2>
             <p className="text-sm text-muted-foreground">{t('generation.sessionNotFoundDesc')}</p>
-            <Button onClick={() => router.push('/')} className="w-full">
+            <Button onClick={() => router.push(homeUrl)} className="w-full">
               <ArrowLeft className="size-4 mr-2" />
               {t('generation.backToHome')}
             </Button>

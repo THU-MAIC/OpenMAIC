@@ -71,3 +71,5 @@ next-env.d.ts
 
 # docs
 /docs
+
+/lib/generated/prisma

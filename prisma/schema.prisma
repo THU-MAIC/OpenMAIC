@@ -1,0 +1,283 @@
+// OpenMAIC User Management Schema
+// PDPA-compliant user management with roles, classroom access, and audit trail
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---- Enums ------------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  INSTRUCTOR
+  STUDENT
+}
+
+// ---- Auth.js required models ------------------------------------------------
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String  @map("user_id")
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id")
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// ---- Core user model --------------------------------------------------------
+
+model User {
+  id             String    @id @default(cuid())
+  name           String?
+  email          String    @unique
+  studentId      String?   @unique @map("student_id")
+  emailVerified  DateTime? @map("email_verified")
+  hashedPassword String?   @db.Text @map("hashed_password")
+  image          String?
+  bio            String?
+  role           Role      @default(STUDENT)
+  isActive       Boolean   @default(true) @map("is_active")
+
+  // PDPA fields
+  consentGiven Boolean   @default(false) @map("consent_given")
+  consentAt    DateTime? @map("consent_at")
+  consentIp    String?   @map("consent_ip")
+
+  // Audit fields
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  accounts        Account[]
+  sessions        Session[]
+  classroomAccess ClassroomAccess[]
+  auditLogs       AuditLog[]        @relation("UserAuditLogs")
+  performedAudits AuditLog[]        @relation("ActorAuditLogs")
+
+  @@map("users")
+}
+
+// ---- Classroom access -------------------------------------------------------
+
+model ClassroomAccess {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  classroomId String   @map("classroom_id")
+  assignedBy  String   @map("assigned_by")
+  assignedAt  DateTime @default(now()) @map("assigned_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, classroomId])
+  @@map("classroom_access")
+}
+
+// ---- Audit log (PDPA: who accessed / changed what) -------------------------
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  targetId   String?  @map("target_id")
+  action     String
+  resource   String?
+  resourceId String?  @map("resource_id")
+  details    Json?
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor  User? @relation("ActorAuditLogs", fields: [actorId], references: [id], onDelete: SetNull)
+  target User? @relation("UserAuditLogs", fields: [targetId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ---- First-run setup status -------------------------------------------------
+
+model SetupStatus {
+  id          String    @id @default("singleton")
+  completed   Boolean   @default(false)
+  completedAt DateTime? @map("completed_at")
+
+  @@map("setup_status")
+}
+
+// ---- Role Definitions (RBAC - Phase 2A) ------------------------------------
+
+model RoleDefinition {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  displayName String
+  description String?
+  isBuiltIn   Boolean  @default(false)
+  permissions String[] @default([])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("role_definitions")
+}
+
+// ---- Prompt Templates (AI Prompt Studio - Phase 2B) --------
+
+enum PromptCategory {
+  SYSTEM
+  GENERATION
+  GRADING
+  ANALYSIS
+  CHAT
+}
+
+model PromptTemplate {
+  id          String   @id @default(cuid())
+  key         String   @unique
+  displayName String
+  description String?
+  content     String
+  category    PromptCategory
+  variables   String[] @default([])
+  isActive    Boolean  @default(false)
+  version     Int      @default(1)
+  createdBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("prompt_templates")
+}
+
+// ---- Quiz results (grading) -------------------------------------------------
+
+model QuizResult {
+  id               String   @id @default(cuid())
+  classroomId      String   @map("classroom_id")
+  /// DB user ID of the student (nullable — quiz may be submitted anonymously/locally)
+  studentDbUserId  String?  @map("student_db_user_id")
+  /// Local/roster student identifier (name, studentId field, etc.)
+  studentLabel     String   @map("student_label")
+  sceneId          String   @map("scene_id")
+  sceneTitle       String   @map("scene_title")
+  score            Int
+  maxScore         Int      @map("max_score")
+  /// JSON array of { questionId, answer, score, comment, overrideScore?, overrideComment? }
+  answers          Json     @default("[]")
+  gradedAt         DateTime @default(now()) @map("graded_at")
+  /// "ai" or a User.id of the instructor who last overrode
+  gradedBy         String   @map("graded_by")
+
+  @@index([classroomId])
+  @@index([classroomId, studentDbUserId])
+  @@map("quiz_results")
+}
+
+// ---- System Settings --------------------------------------------------------
+
+model SystemSettings {
+  id                           String   @id @default("singleton")
+  appName                      String   @default("MU-OpenMAIC")
+  appLogo                      String?  // URL or path to logo
+  defaultLanguage              String   @default("en")
+  timezone                     String   @default("UTC")
+  helpUrl                      String?
+  termsUrl                     String?
+  privacyUrl                   String?
+  
+  // Authentication & Security
+  passwordMinLength            Int      @default(10)
+  passwordRequireUppercase     Boolean  @default(true)
+  passwordRequireLowercase     Boolean  @default(true)
+  passwordRequireNumbers       Boolean  @default(true)
+  passwordRequireSpecial       Boolean  @default(true)
+  sessionTimeoutMinutes        Int      @default(60)
+  maxFailedLoginAttempts       Int      @default(5)
+  accountLockoutMinutes        Int      @default(15)
+  enforceOAuthforNewUsers      Boolean  @default(false)
+  pdpaConsentRequired          Boolean  @default(true)
+  googleOAuthEnabled           Boolean  @default(false)
+  githubOAuthEnabled           Boolean  @default(false)
+  
+  // AI/LLM Configuration
+  defaultLlmProvider           String   @default("openai")
+  defaultLlmModel              String   @default("gpt-4o-mini")
+  llmRateLimitPerMinute        Int      @default(60)
+  llmTokenLimitPerRequest      Int      @default(4000)
+  llmTemperature               Float    @default(0.7)
+  llmTopP                      Float    @default(1.0)
+  
+  // Classroom Defaults
+  maxStudentsPerClassroom      Int      @default(100)
+  defaultGradingScale          String   @default("0-100")  // 0-100, A-F, etc
+  quizTimeoutMinutes          Int      @default(60)
+  maxFileUploadMb             Int      @default(50)
+  scenesPerClassroomQuota     Int      @default(50)
+  autoEnrollStudents          Boolean  @default(false)
+  
+  // Email & Notifications
+  smtpEnabled                 Boolean  @default(false)
+  smtpHost                    String?
+  smtpPort                    Int      @default(587)
+  smtpSecure                  Boolean  @default(false)  // true for port 465
+  smtpUser                    String?
+  smtpFrom                    String   @default("noreply@example.com")
+  welcomeEmailEnabled         Boolean  @default(true)
+  gradeNotificationsEnabled   Boolean  @default(true)
+  
+  // Storage & Files
+  maxStoragePerUserMb         Int      @default(1000)
+  maxStoragePerClassroomMb    Int      @default(5000)
+  allowedFileTypes            String   @default(".pdf,.doc,.docx,.xls,.xlsx,.pptx,.jpg,.png,.mp4") // comma separated
+  autoCleanupDaysOld          Int      @default(365)
+  
+  // Data & Privacy
+  auditLogRetentionDays       Int      @default(365)
+  userDataExportEnabled       Boolean  @default(true)
+  accountDeletionGraceDaysDays Int    @default(30)
+  anonymizeOldLogs            Boolean  @default(false)
+  
+  // Logging
+  logLevel                    String   @default("info")  // debug, info, warn, error
+  errorReportingEnabled       Boolean  @default(false)
+  errorReportingUrl          String?
+  
+  // Metadata
+  version                     Int      @default(1)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  @@map("system_settings")
+}

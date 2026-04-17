@@ -25,9 +25,11 @@ export interface StageListItem {
   id: string;
   name: string;
   description?: string;
+  ownerUserId?: string;
   sceneCount: number;
   createdAt: number;
   updatedAt: number;
+  ownershipType?: 'owned' | 'invited';
 }
 
 /**
@@ -42,8 +44,10 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
       id: stageId,
       name: data.stage.name || 'Untitled Stage',
       description: data.stage.description,
+      ownerUserId: data.stage.ownerUserId,
       createdAt: data.stage.createdAt || now,
       updatedAt: now,
+      ownershipType: data.stage.ownershipType,
       language: data.stage.language,
       style: data.stage.style,
       currentSceneId: data.currentSceneId || undefined,
@@ -149,9 +153,11 @@ export async function listStages(): Promise<StageListItem[]> {
           id: stage.id,
           name: stage.name,
           description: stage.description,
+          ownerUserId: stage.ownerUserId,
           sceneCount,
           createdAt: stage.createdAt,
           updatedAt: stage.updatedAt,
+          ownershipType: stage.ownershipType,
         };
       }),
     );

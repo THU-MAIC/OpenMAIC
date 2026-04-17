@@ -42,8 +42,10 @@ export interface StageRecord {
   id: string; // Primary key
   name: string;
   description?: string;
+  ownerUserId?: string;
   createdAt: number; // timestamp
   updatedAt: number; // timestamp
+  ownershipType?: 'owned' | 'invited';
   language?: string;
   style?: string;
   currentSceneId?: string;
@@ -192,6 +194,7 @@ export interface ClassroomStudentRecord {
   id: string;
   stageId: string;
   name: string;
+  studentId?: string;
   email?: string;
   notes?: string;
   createdAt: number;

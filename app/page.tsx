@@ -1,39 +1,38 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowUp,
-  Check,
   ChevronDown,
   Clock,
   Copy,
-  ImagePlus,
   Pencil,
   Trash2,
   Settings,
   Sun,
   Moon,
   Monitor,
+  Type,
   BotOff,
-  ChevronUp,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
-import { Textarea as UITextarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
+import { AccountMenu } from '@/components/account-menu';
 import { useTheme } from '@/lib/hooks/use-theme';
+import { useSession } from 'next-auth/react';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
 import type { UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
-import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
+import { useUserProfileStore } from '@/lib/store/user-profile';
 import {
   StageListItem,
   listStages,
@@ -48,18 +47,42 @@ import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import { BrandLogo } from '@/components/brand-logo';
 
 const log = createLogger('Home');
 
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const LANGUAGE_STORAGE_KEY = 'generationLanguage';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
+const INVITED_OPEN_STORAGE_KEY = 'invitedClassroomsOpen';
+const FONT_SIZE_KEY = 'openmaic-ui-font-size';
+const MAX_STUDENT_OWNED_CLASSROOMS = 20;
+
+const FONT_SIZES = [
+  { label: 'Small', value: 14 },
+  { label: 'Default', value: 16 },
+  { label: 'Large', value: 18 },
+] as const;
+
+function applyRootFontSize(size: number) {
+  if (typeof document === 'undefined') return;
+  document.documentElement.style.fontSize = `${size}px`;
+}
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
   language: 'zh-CN' | 'en-US' | 'th-TH';
   webSearch: boolean;
+}
+
+interface InvitedClassroomItem {
+  id: string;
+  name: string;
+  description?: string;
+  createdAt: number;
+  updatedAt: number;
+  assignedAt: number;
 }
 
 const initialFormState: FormState = {
@@ -72,7 +95,12 @@ const initialFormState: FormState = {
 function HomePage() {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
+  const { data: session } = useSession();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isAdmin = session?.user?.role === 'ADMIN';
+  const isStudent = session?.user?.role === 'STUDENT';
+  const currentUserId = session?.user?.id;
   const [form, setForm] = useState<FormState>(initialFormState);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
@@ -86,6 +114,7 @@ function HomePage() {
   // Model setup state
   const currentModelId = useSettingsStore((s) => s.modelId);
   const [recentOpen, setRecentOpen] = useState(true);
+  const [invitedOpen, setInvitedOpen] = useState(true);
 
   // Hydrate client-only state after mount (avoids SSR mismatch)
   /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
@@ -93,6 +122,12 @@ function HomePage() {
     try {
       const saved = localStorage.getItem(RECENT_OPEN_STORAGE_KEY);
       if (saved !== null) setRecentOpen(saved !== 'false');
+    } catch {
+      /* localStorage unavailable */
+    }
+    try {
+      const savedInvited = localStorage.getItem(INVITED_OPEN_STORAGE_KEY);
+      if (savedInvited !== null) setInvitedOpen(savedInvited !== 'false');
     } catch {
       /* localStorage unavailable */
     }
@@ -126,36 +161,113 @@ function HomePage() {
   }
 
   const [themeOpen, setThemeOpen] = useState(false);
+  const [fontSizeOpen, setFontSizeOpen] = useState(false);
+  const [fontSize, setFontSize] = useState<number>(16);
   const [error, setError] = useState<string | null>(null);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
+  const [invitedClassrooms, setInvitedClassrooms] = useState<InvitedClassroomItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [targetClassroomId, setTargetClassroomId] = useState<string | null>(null);
+  const [targetClassroomTitle, setTargetClassroomTitle] = useState<string | null>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
-    if (!themeOpen) return;
+    if (!themeOpen && !fontSizeOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
         setThemeOpen(false);
+        setFontSizeOpen(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [themeOpen]);
+  }, [themeOpen, fontSizeOpen]);
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(FONT_SIZE_KEY);
+      const parsed = saved ? Number(saved) : 16;
+      const next = Number.isFinite(parsed) && [14, 16, 18].includes(parsed) ? parsed : 16;
+      setFontSize(next);
+      applyRootFontSize(next);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      applyRootFontSize(fontSize);
+      localStorage.setItem(FONT_SIZE_KEY, String(fontSize));
+    } catch {
+      /* ignore */
+    }
+  }, [fontSize]);
 
   const loadClassrooms = async () => {
     try {
       const list = await listStages();
-      setClassrooms(list);
+      const ownedList = list.filter(
+        (c) =>
+          c.ownershipType !== 'invited' &&
+          (!c.ownerUserId || !currentUserId || c.ownerUserId === currentUserId),
+      );
+      let nextOwnedList = ownedList;
+
+      if (isStudent && ownedList.length > 0) {
+        const validated = await Promise.all(
+          ownedList.map(async (classroom) => {
+            try {
+              const res = await fetch(`/api/classroom?id=${encodeURIComponent(classroom.id)}`);
+              if (res.ok) {
+                return classroom;
+              }
+
+              if (res.status === 403 || res.status === 404) {
+                await deleteStageData(classroom.id);
+                return null;
+              }
+
+              return classroom;
+            } catch {
+              return classroom;
+            }
+          }),
+        );
+        nextOwnedList = validated.filter((classroom): classroom is StageListItem => !!classroom);
+      }
+
+      setClassrooms(nextOwnedList);
       // Load first slide thumbnails
-      if (list.length > 0) {
-        const slides = await getFirstSlideByStages(list.map((c) => c.id));
+      if (nextOwnedList.length > 0) {
+        const slides = await getFirstSlideByStages(nextOwnedList.map((c) => c.id));
         setThumbnails(slides);
+      } else {
+        setThumbnails({});
       }
     } catch (err) {
       log.error('Failed to load classrooms:', err);
+    }
+  };
+
+  const loadInvitedClassrooms = async () => {
+    if (!isStudent) {
+      setInvitedClassrooms([]);
+      return;
+    }
+    try {
+      const res = await fetch('/api/user/classrooms');
+      if (!res.ok) return;
+      const json = await res.json();
+      const invited = (json.classrooms || []) as InvitedClassroomItem[];
+      const invitedIds = new Set(invited.map((c) => c.id));
+      setClassrooms((prev) => prev.filter((c) => !invitedIds.has(c.id) && c.ownershipType !== 'invited'));
+      setInvitedClassrooms(invited);
+    } catch (err) {
+      log.error('Failed to load invited classrooms:', err);
     }
   };
 
@@ -168,7 +280,41 @@ function HomePage() {
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Store hydration on mount
     loadClassrooms();
-  }, []);
+  }, [isStudent, currentUserId]);
+
+  useEffect(() => {
+    loadInvitedClassrooms();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStudent, classrooms]);
+
+  useEffect(() => {
+    const wizardClassroomId = searchParams.get('wizardClassroomId')?.trim() || null;
+    if (!wizardClassroomId) return;
+
+    const wizardClassroomTitle = searchParams.get('wizardClassroomTitle')?.trim() || '';
+    const prefillRequirement = searchParams.get('prefillRequirement')?.trim() || '';
+    const wizardLanguage = searchParams.get('wizardLanguage');
+
+    setTargetClassroomId(wizardClassroomId);
+    setTargetClassroomTitle(wizardClassroomTitle || null);
+
+    setForm((prev) => ({
+      ...prev,
+      requirement: prefillRequirement || prev.requirement,
+      language:
+        wizardLanguage === 'zh-CN' || wizardLanguage === 'en-US' || wizardLanguage === 'th-TH'
+          ? wizardLanguage
+          : wizardLanguage === 'en'
+            ? 'en-US'
+            : prev.language,
+    }));
+
+    if (prefillRequirement) {
+      updateRequirementCache(prefillRequirement);
+    }
+
+    router.replace('/');
+  }, [router, searchParams, updateRequirementCache]);
 
   const handleDelete = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -178,6 +324,14 @@ function HomePage() {
   const confirmDelete = async (id: string) => {
     setPendingDeleteId(null);
     try {
+      const deleteRes = await fetch(`/api/classroom?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (!deleteRes.ok && deleteRes.status !== 404) {
+        toast.error('You are not allowed to delete this classroom.');
+        return;
+      }
+
       await deleteStageData(id);
       await loadClassrooms();
     } catch (err) {
@@ -254,6 +408,11 @@ function HomePage() {
       return;
     }
 
+    if (isStudent && classrooms.length >= MAX_STUDENT_OWNED_CLASSROOMS) {
+      setError(t('classroom.studentOwnedLimitReached', { max: MAX_STUDENT_OWNED_CLASSROOMS }));
+      return;
+    }
+
     setError(null);
 
     try {
@@ -289,6 +448,8 @@ function HomePage() {
       const sessionState = {
         sessionId: nanoid(),
         requirements,
+        targetClassroomId: targetClassroomId || undefined,
+        targetClassroomTitle: targetClassroomTitle || undefined,
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
@@ -331,13 +492,20 @@ function HomePage() {
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
+      <AccountMenu />
+
       {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
         className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
       >
         {/* Language Selector */}
-        <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
+        <LanguageSwitcher
+          onOpen={() => {
+            setThemeOpen(false);
+            setFontSizeOpen(false);
+          }}
+        />
 
         <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
 
@@ -346,6 +514,7 @@ function HomePage() {
           <button
             onClick={() => {
               setThemeOpen(!themeOpen);
+              setFontSizeOpen(false);
             }}
             className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
           >
@@ -403,15 +572,56 @@ function HomePage() {
 
         <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
 
-        {/* Settings Button */}
+        {/* Font Size Selector */}
         <div className="relative">
           <button
-            onClick={() => setSettingsOpen(true)}
-            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
+            onClick={() => {
+              setFontSizeOpen(!fontSizeOpen);
+              setThemeOpen(false);
+            }}
+            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
+            title="Font size"
           >
-            <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
+            <Type className="w-4 h-4" />
           </button>
+          {fontSizeOpen && (
+            <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[140px]">
+              {FONT_SIZES.map((size) => (
+                <button
+                  key={size.value}
+                  onClick={() => {
+                    setFontSize(size.value);
+                    setFontSizeOpen(false);
+                  }}
+                  className={cn(
+                    'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
+                    fontSize === size.value &&
+                      'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+                  )}
+                >
+                  <Type className="w-4 h-4" />
+                  {size.label}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+
+        {isAdmin && (
+          <>
+            <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
+
+            {/* Settings Button */}
+            <div className="relative">
+              <button
+                onClick={() => setSettingsOpen(true)}
+                className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
+              >
+                <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
+              </button>
+            </div>
+          </>
+        )}
       </div>
       <SettingsDialog
         open={settingsOpen}
@@ -445,9 +655,7 @@ function HomePage() {
         )}
       >
         {/* ── Logo ── */}
-        <motion.img
-          src="/logo-horizontal.png"
-          alt="OpenMAIC"
+        <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{
@@ -456,8 +664,10 @@ function HomePage() {
             stiffness: 200,
             damping: 20,
           }}
-          className="h-12 md:h-16 mb-2 -ml-2 md:-ml-3"
-        />
+          className="mb-2"
+        >
+          <BrandLogo size="hero" className="-ml-1 md:-ml-2" />
+        </motion.div>
 
         {/* ── Slogan ── */}
         <motion.p
@@ -478,8 +688,7 @@ function HomePage() {
         >
           <div className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]">
             {/* ── Greeting + Profile + Agents ── */}
-            <div className="relative z-20 flex items-start justify-between">
-              <GreetingBar />
+            <div className="relative z-20 flex items-start justify-end">
               <div className="pr-3 pt-3.5 shrink-0">
                 <AgentBar />
               </div>
@@ -559,6 +768,76 @@ function HomePage() {
         </AnimatePresence>
       </motion.div>
 
+      {/* ═══ Invited classrooms (student only) ═══ */}
+      {isStudent && invitedClassrooms.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.45 }}
+          className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
+        >
+          <button
+            onClick={() => {
+              const next = !invitedOpen;
+              setInvitedOpen(next);
+              try {
+                localStorage.setItem(INVITED_OPEN_STORAGE_KEY, String(next));
+              } catch {
+                /* ignore */
+              }
+            }}
+            className="group w-full flex items-center gap-4 py-2 cursor-pointer"
+          >
+            <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
+            <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
+              <Clock className="size-3.5" />
+              {t('classroom.invitedClassrooms')}
+              <span className="text-[11px] tabular-nums opacity-60">{invitedClassrooms.length}</span>
+              <motion.div
+                animate={{ rotate: invitedOpen ? 180 : 0 }}
+                transition={{ duration: 0.3, ease: 'easeInOut' }}
+              >
+                <ChevronDown className="size-3.5" />
+              </motion.div>
+            </span>
+            <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
+          </button>
+
+          <AnimatePresence>
+            {invitedOpen && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
+                className="w-full overflow-hidden"
+              >
+                <div className="pt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8">
+                  {invitedClassrooms.map((classroom, i) => (
+                    <motion.div
+                      key={classroom.id}
+                      initial={{ opacity: 0, y: 16 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{
+                        delay: i * 0.04,
+                        duration: 0.35,
+                        ease: 'easeOut',
+                      }}
+                    >
+                      <InvitedClassroomCard
+                        classroom={classroom}
+                        formatDate={formatDate}
+                        onClick={() => router.push(`/classroom/${classroom.id}`)}
+                      />
+                    </motion.div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </motion.div>
+      )}
+
       {/* ═══ Recent classrooms — collapsible ═══ */}
       {classrooms.length > 0 && (
         <motion.div
@@ -583,7 +862,7 @@ function HomePage() {
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
             <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
               <Clock className="size-3.5" />
-              {t('classroom.recentClassrooms')}
+              {isStudent ? t('classroom.studentOwnedClassrooms') : t('classroom.recentClassrooms')}
               <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
               <motion.div
                 animate={{ rotate: recentOpen ? 180 : 0 }}
@@ -639,293 +918,47 @@ function HomePage() {
 
       {/* Footer — flows with content, at the very end */}
       <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
-        OpenMAIC Open Source Project
+        MU-OpenMAIC Open Source Project
       </div>
     </div>
   );
 }
 
-// ─── Greeting Bar — avatar + "Hi, Name", click to edit in-place ────
-const MAX_AVATAR_SIZE = 5 * 1024 * 1024;
-
-function isCustomAvatar(src: string) {
-  return src.startsWith('data:');
-}
-
-function GreetingBar() {
+function InvitedClassroomCard({
+  classroom,
+  formatDate,
+  onClick,
+}: {
+  classroom: InvitedClassroomItem;
+  formatDate: (ts: number) => string;
+  onClick: () => void;
+}) {
   const { t } = useI18n();
-  const avatar = useUserProfileStore((s) => s.avatar);
-  const nickname = useUserProfileStore((s) => s.nickname);
-  const bio = useUserProfileStore((s) => s.bio);
-  const setAvatar = useUserProfileStore((s) => s.setAvatar);
-  const setNickname = useUserProfileStore((s) => s.setNickname);
-  const setBio = useUserProfileStore((s) => s.setBio);
-
-  const [open, setOpen] = useState(false);
-  const [editingName, setEditingName] = useState(false);
-  const [nameDraft, setNameDraft] = useState('');
-  const [avatarPickerOpen, setAvatarPickerOpen] = useState(false);
-  const nameInputRef = useRef<HTMLInputElement>(null);
-  const avatarInputRef = useRef<HTMLInputElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const displayName = nickname || t('profile.defaultNickname');
-
-  // Click-outside to collapse
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
-        setEditingName(false);
-        setAvatarPickerOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
-  }, [open]);
-
-  const startEditName = () => {
-    setNameDraft(nickname);
-    setEditingName(true);
-    setTimeout(() => nameInputRef.current?.focus(), 50);
-  };
-
-  const commitName = () => {
-    setNickname(nameDraft.trim());
-    setEditingName(false);
-  };
-
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > MAX_AVATAR_SIZE) {
-      toast.error(t('profile.fileTooLarge'));
-      return;
-    }
-    if (!file.type.startsWith('image/')) {
-      toast.error(t('profile.invalidFileType'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const img = new window.Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = 128;
-        canvas.height = 128;
-        const ctx = canvas.getContext('2d')!;
-        const scale = Math.max(128 / img.width, 128 / img.height);
-        const w = img.width * scale;
-        const h = img.height * scale;
-        ctx.drawImage(img, (128 - w) / 2, (128 - h) / 2, w, h);
-        setAvatar(canvas.toDataURL('image/jpeg', 0.85));
-      };
-      img.src = reader.result as string;
-    };
-    reader.readAsDataURL(file);
-    e.target.value = '';
-  };
 
   return (
-    <div ref={containerRef} className="relative pl-4 pr-2 pt-3.5 pb-1 w-auto">
-      <input
-        ref={avatarInputRef}
-        type="file"
-        accept="image/*"
-        className="hidden"
-        onChange={handleAvatarUpload}
-      />
-
-      {/* ── Collapsed pill (always in flow) ── */}
-      {!open && (
-        <div
-          className="flex items-center gap-2.5 cursor-pointer transition-all duration-200 group rounded-full px-2.5 py-1.5 border border-border/50 text-muted-foreground/70 hover:text-foreground hover:bg-muted/60 active:scale-[0.97]"
-          onClick={() => setOpen(true)}
-        >
-          <div className="shrink-0 relative">
-            <div className="size-8 rounded-full overflow-hidden ring-[1.5px] ring-border/30 group-hover:ring-violet-400/60 dark:group-hover:ring-violet-400/40 transition-all duration-300">
-              <img src={avatar} alt="" className="size-full object-cover" />
-            </div>
-            <div className="absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full bg-white dark:bg-slate-800 border border-border/40 flex items-center justify-center opacity-60 group-hover:opacity-100 transition-opacity">
-              <Pencil className="size-[7px] text-muted-foreground/70" />
-            </div>
-          </div>
-          <div className="flex-1 min-w-0">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <span className="leading-none select-none flex items-center gap-1">
-                  <span className="text-[13px] font-semibold text-foreground/85 group-hover:text-foreground transition-colors">
-                    {t('home.greetingWithName', { name: displayName })}
-                  </span>
-                  <ChevronDown className="size-3 text-muted-foreground/30 group-hover:text-muted-foreground/60 transition-colors shrink-0" />
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" sideOffset={4}>
-                {t('profile.editTooltip')}
-              </TooltipContent>
-            </Tooltip>
-          </div>
+    <div className="group cursor-pointer" onClick={onClick}>
+      <div className="relative w-full aspect-[16/9] rounded-2xl bg-gradient-to-br from-blue-50 to-cyan-100 dark:from-blue-900/30 dark:to-cyan-900/20 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]">
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-4 text-center">
+          <p className="text-xs uppercase tracking-wide text-blue-700/70 dark:text-blue-300/70">
+            {t('classroom.invitedTag')}
+          </p>
+          <p className="mt-2 text-sm font-semibold text-blue-900 dark:text-blue-100 line-clamp-2">
+            {classroom.name}
+          </p>
         </div>
-      )}
+      </div>
 
-      {/* ── Expanded panel (absolute, floating) ── */}
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0, y: -4, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -4, scale: 0.97 }}
-            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            className="absolute left-4 top-3.5 z-50 w-64"
-          >
-            <div className="rounded-2xl bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm ring-1 ring-black/[0.04] dark:ring-white/[0.06] shadow-[0_1px_8px_-2px_rgba(0,0,0,0.06)] dark:shadow-[0_1px_8px_-2px_rgba(0,0,0,0.3)] px-2.5 py-2">
-              {/* ── Row: avatar + name ── */}
-              <div
-                className="flex items-center gap-2.5 cursor-pointer transition-all duration-200"
-                onClick={() => {
-                  setOpen(false);
-                  setEditingName(false);
-                  setAvatarPickerOpen(false);
-                }}
-              >
-                {/* Avatar */}
-                <div
-                  className="shrink-0 relative cursor-pointer"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setAvatarPickerOpen(!avatarPickerOpen);
-                  }}
-                >
-                  <div className="size-8 rounded-full overflow-hidden ring-[1.5px] ring-violet-300/70 dark:ring-violet-500/40 transition-all duration-300">
-                    <img src={avatar} alt="" className="size-full object-cover" />
-                  </div>
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    className="absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full bg-white dark:bg-slate-800 border border-border/60 flex items-center justify-center"
-                  >
-                    <ChevronDown
-                      className={cn(
-                        'size-2 text-muted-foreground/70 transition-transform duration-200',
-                        avatarPickerOpen && 'rotate-180',
-                      )}
-                    />
-                  </motion.div>
-                </div>
-
-                {/* Text */}
-                <div className="flex-1 min-w-0">
-                  {editingName ? (
-                    <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        ref={nameInputRef}
-                        value={nameDraft}
-                        onChange={(e) => setNameDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') commitName();
-                          if (e.key === 'Escape') {
-                            setEditingName(false);
-                          }
-                        }}
-                        onBlur={commitName}
-                        maxLength={20}
-                        placeholder={t('profile.defaultNickname')}
-                        className="flex-1 min-w-0 h-6 bg-transparent border-b border-border/80 text-[13px] font-semibold text-foreground outline-none placeholder:text-muted-foreground/40"
-                      />
-                      <button
-                        onClick={commitName}
-                        className="shrink-0 size-5 rounded flex items-center justify-center text-violet-500 hover:bg-violet-100 dark:hover:bg-violet-900/30"
-                      >
-                        <Check className="size-3" />
-                      </button>
-                    </div>
-                  ) : (
-                    <span
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        startEditName();
-                      }}
-                      className="group/name inline-flex items-center gap-1 cursor-pointer"
-                    >
-                      <span className="text-[13px] font-semibold text-foreground/85 group-hover/name:text-foreground transition-colors">
-                        {displayName}
-                      </span>
-                      <Pencil className="size-2.5 text-muted-foreground/30 opacity-0 group-hover/name:opacity-100 transition-opacity" />
-                    </span>
-                  )}
-                </div>
-
-                {/* Collapse arrow */}
-                <motion.div
-                  initial={{ opacity: 0, y: -2 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  className="shrink-0 size-6 rounded-full flex items-center justify-center hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors"
-                >
-                  <ChevronUp className="size-3.5 text-muted-foreground/50" />
-                </motion.div>
-              </div>
-
-              {/* ── Expandable content ── */}
-              <div className="pt-2" onClick={(e) => e.stopPropagation()}>
-                {/* Avatar picker */}
-                <AnimatePresence>
-                  {avatarPickerOpen && (
-                    <motion.div
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: 'auto', opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={{ duration: 0.15, ease: 'easeInOut' }}
-                      className="overflow-hidden"
-                    >
-                      <div className="p-1 pb-2.5 flex items-center gap-1.5 flex-wrap">
-                        {AVATAR_OPTIONS.map((url) => (
-                          <button
-                            key={url}
-                            onClick={() => setAvatar(url)}
-                            className={cn(
-                              'size-7 rounded-full overflow-hidden bg-gray-50 dark:bg-gray-800 cursor-pointer transition-all duration-150',
-                              'hover:scale-110 active:scale-95',
-                              avatar === url
-                                ? 'ring-2 ring-violet-400 dark:ring-violet-500 ring-offset-0'
-                                : 'hover:ring-1 hover:ring-muted-foreground/30',
-                            )}
-                          >
-                            <img src={url} alt="" className="size-full" />
-                          </button>
-                        ))}
-                        <label
-                          className={cn(
-                            'size-7 rounded-full flex items-center justify-center cursor-pointer transition-all duration-150 border border-dashed',
-                            'hover:scale-110 active:scale-95',
-                            isCustomAvatar(avatar)
-                              ? 'ring-2 ring-violet-400 dark:ring-violet-500 ring-offset-0 border-violet-300 dark:border-violet-600 bg-violet-50 dark:bg-violet-900/30'
-                              : 'border-muted-foreground/30 text-muted-foreground/50 hover:border-muted-foreground/50',
-                          )}
-                          onClick={() => avatarInputRef.current?.click()}
-                          title={t('profile.uploadAvatar')}
-                        >
-                          <ImagePlus className="size-3" />
-                        </label>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-
-                {/* Bio */}
-                <UITextarea
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder={t('profile.bioPlaceholder')}
-                  maxLength={200}
-                  rows={2}
-                  className="resize-none border-border/40 bg-transparent min-h-[72px] !text-[13px] !leading-relaxed placeholder:!text-[11px] placeholder:!leading-relaxed focus-visible:ring-1 focus-visible:ring-border/60"
-                />
-              </div>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="mt-3 px-0.5">
+        <h3 className="text-[13px] font-medium text-foreground line-clamp-2 leading-snug">
+          {classroom.name}
+        </h3>
+        <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground/75">
+          <span>
+            {t('classroom.assignedOn')} {formatDate(classroom.assignedAt)}
+          </span>
+          <span className="tabular-nums">{formatDate(classroom.updatedAt)}</span>
+        </div>
+      </div>
     </div>
   );
 }

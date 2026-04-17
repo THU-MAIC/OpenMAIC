@@ -281,7 +281,7 @@ async function runAgentGeneration(
   const effectiveActions = getEffectiveActions(agentConfig.allowedActions, sceneType);
 
   const discussionContext = state.discussionContext || undefined;
-  const systemPrompt = buildStructuredPrompt(
+  const systemPrompt = await buildStructuredPrompt(
     agentConfig,
     state.storeState,
     discussionContext,

@@ -539,6 +539,8 @@ function ModelSelectorPopover({
             {/* Models */}
             {activeProvider.models.map((model) => {
               const isSelected = currentProviderId === drillProvider && currentModelId === model.id;
+              const isServerDeclaredOnly =
+                !!activeProvider.isServerConfigured && model.name === model.id;
               return (
                 <button
                   key={model.id}
@@ -554,6 +556,11 @@ function ModelSelectorPopover({
                   )}
                 >
                   <span className="flex-1 truncate font-mono text-xs">{model.name}</span>
+                  {isServerDeclaredOnly && (
+                    <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
+                      {t('settings.serverConfigured')}
+                    </span>
+                  )}
                   {isSelected && (
                     <Check className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
                   )}

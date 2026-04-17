@@ -252,7 +252,7 @@ export interface SettingsState {
   ) => void;
 
   // Server provider actions
-  fetchServerProviders: () => Promise<void>;
+  fetchServerProviders: () => Promise<boolean>;
 }
 
 // Initialize default providers config
@@ -752,7 +752,12 @@ export const useSettingsStore = create<SettingsState>()(
         fetchServerProviders: async () => {
           try {
             const res = await fetch('/api/server-providers');
-            if (!res.ok) return;
+            if (!res.ok) return false;
+            const contentType = res.headers?.get?.('content-type') || '';
+            if (contentType && !contentType.includes('application/json')) {
+              // Happens during auth redirects / warm-up windows; caller will retry.
+              return false;
+            }
             const data = (await res.json()) as {
               providers: Record<string, { models?: string[]; baseUrl?: string }>;
               tts: Record<string, { baseUrl?: string }>;
@@ -770,11 +775,19 @@ export const useSettingsStore = create<SettingsState>()(
               for (const pid of Object.keys(newProvidersConfig)) {
                 const key = pid as ProviderId;
                 if (newProvidersConfig[key]) {
+                  const provider = PROVIDERS[key];
+                  const existingModels = newProvidersConfig[key].models ?? [];
+                  const builtInModels = provider?.models ?? [];
+                  const mergedModelMap = new Map<string, (typeof existingModels)[number]>();
+                  for (const model of [...builtInModels, ...existingModels]) {
+                    mergedModelMap.set(model.id, model);
+                  }
                   newProvidersConfig[key] = {
                     ...newProvidersConfig[key],
                     isServerConfigured: false,
                     serverModels: undefined,
                     serverBaseUrl: undefined,
+                    models: Array.from(mergedModelMap.values()),
                   };
                 }
               }
@@ -783,9 +796,12 @@ export const useSettingsStore = create<SettingsState>()(
                 const key = pid as ProviderId;
                 if (newProvidersConfig[key]) {
                   const currentModels = newProvidersConfig[key].models;
-                  // When server specifies allowed models, filter the models list
+                  // When server specifies allowed models, keep the exact server list order.
+                  // If a server model ID is unknown to built-ins, keep a minimal model entry
+                  // so provider remains selectable and testable.
+                  const modelById = new Map(currentModels.map((m) => [m.id, m]));
                   const filteredModels = info.models?.length
-                    ? currentModels.filter((m) => info.models!.includes(m.id))
+                    ? info.models.map((id) => modelById.get(id) ?? { id, name: id })
                     : currentModels;
                   newProvidersConfig[key] = {
                     ...newProvidersConfig[key],
@@ -1188,9 +1204,11 @@ export const useSettingsStore = create<SettingsState>()(
                 ...(autoModelId && { modelId: autoModelId }),
               };
             });
+            return true;
           } catch (e) {
             // Silently fail — server providers are optional
             log.warn('Failed to fetch server providers:', e);
+            return false;
           }
         },
       };

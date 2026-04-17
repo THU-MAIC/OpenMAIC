@@ -124,6 +124,7 @@
     @apply bg-background text-foreground;
   }
 }
+
 /* ProseMirror Editor Styles */
 .prosemirror-editor {
   cursor: text;

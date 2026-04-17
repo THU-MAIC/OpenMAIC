@@ -5,6 +5,10 @@ import type { Scene, Stage } from '@/lib/types/stage';
 
 export const CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms');
 export const CLASSROOM_JOBS_DIR = path.join(process.cwd(), 'data', 'classroom-jobs');
+export const DELETED_CLASSROOMS_DIR = path.join(process.cwd(), 'data', 'classrooms-deleted');
+const DELETED_INDEX_FILE = path.join(DELETED_CLASSROOMS_DIR, 'index.json');
+const DELETED_RETENTION_DAYS = 180;
+const DELETED_RETENTION_MS = DELETED_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 async function ensureDir(dir: string) {
   await fs.mkdir(dir, { recursive: true });
@@ -39,6 +43,14 @@ export interface PersistedClassroomData {
   stage: Stage;
   scenes: Scene[];
   createdAt: string;
+}
+
+export interface DeletedClassroomRecord {
+  id: string;
+  ownerUserId: string;
+  deletedBy: string;
+  deletedAt: string;
+  purgeAt: string;
 }
 
 export function isValidClassroomId(id: string): boolean {
@@ -81,4 +93,129 @@ export async function persistClassroom(
     ...classroomData,
     url: `${baseUrl}/classroom/${data.id}`,
   };
+}
+
+function getClassroomFilePath(id: string) {
+  return path.join(CLASSROOMS_DIR, `${id}.json`);
+}
+
+function getDeletedClassroomFilePath(id: string) {
+  return path.join(DELETED_CLASSROOMS_DIR, `${id}.json`);
+}
+
+async function readDeletedIndex(): Promise<DeletedClassroomRecord[]> {
+  try {
+    const content = await fs.readFile(DELETED_INDEX_FILE, 'utf-8');
+    const parsed = JSON.parse(content) as DeletedClassroomRecord[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+}
+
+async function writeDeletedIndex(records: DeletedClassroomRecord[]) {
+  await ensureDir(DELETED_CLASSROOMS_DIR);
+  await writeJsonFileAtomic(DELETED_INDEX_FILE, records);
+}
+
+export async function purgeExpiredDeletedClassrooms() {
+  const now = Date.now();
+  const records = await readDeletedIndex();
+  const keep: DeletedClassroomRecord[] = [];
+  const purge: DeletedClassroomRecord[] = [];
+
+  for (const record of records) {
+    if (new Date(record.purgeAt).getTime() <= now) purge.push(record);
+    else keep.push(record);
+  }
+
+  for (const record of purge) {
+    const deletedPath = getDeletedClassroomFilePath(record.id);
+    try {
+      await fs.unlink(deletedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
+    }
+  }
+
+  if (purge.length > 0) {
+    await writeDeletedIndex(keep);
+  }
+
+  return { purgedCount: purge.length };
+}
+
+export async function softDeleteClassroom(params: {
+  id: string;
+  ownerUserId: string;
+  deletedBy: string;
+}) {
+  await ensureDir(CLASSROOMS_DIR);
+  await ensureDir(DELETED_CLASSROOMS_DIR);
+  await purgeExpiredDeletedClassrooms();
+
+  const source = getClassroomFilePath(params.id);
+  const destination = getDeletedClassroomFilePath(params.id);
+
+  try {
+    await fs.rename(source, destination);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return { deleted: false as const };
+    }
+    throw error;
+  }
+
+  const deletedAt = new Date();
+  const purgeAt = new Date(deletedAt.getTime() + DELETED_RETENTION_MS);
+  const record: DeletedClassroomRecord = {
+    id: params.id,
+    ownerUserId: params.ownerUserId,
+    deletedBy: params.deletedBy,
+    deletedAt: deletedAt.toISOString(),
+    purgeAt: purgeAt.toISOString(),
+  };
+
+  const records = await readDeletedIndex();
+  const next = [...records.filter((r) => r.id !== params.id), record];
+  await writeDeletedIndex(next);
+
+  return { deleted: true as const, record };
+}
+
+export async function listDeletedClassrooms() {
+  await ensureDir(DELETED_CLASSROOMS_DIR);
+  await purgeExpiredDeletedClassrooms();
+  const records = await readDeletedIndex();
+  return records.sort((a, b) => new Date(b.deletedAt).getTime() - new Date(a.deletedAt).getTime());
+}
+
+export async function restoreDeletedClassroom(id: string) {
+  await ensureDir(CLASSROOMS_DIR);
+  await ensureDir(DELETED_CLASSROOMS_DIR);
+  await purgeExpiredDeletedClassrooms();
+
+  const records = await readDeletedIndex();
+  const target = records.find((r) => r.id === id);
+  if (!target) return null;
+
+  const source = getDeletedClassroomFilePath(id);
+  const destination = getClassroomFilePath(id);
+
+  try {
+    await fs.rename(source, destination);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      return null;
+    }
+    throw error;
+  }
+
+  await writeDeletedIndex(records.filter((r) => r.id !== id));
+  return target;
 }

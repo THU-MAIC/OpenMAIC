@@ -292,6 +292,9 @@ export function ModelSelector({
                 const isSelected = providerId === effectiveProvider && modelId === model.id;
                 const isTesting = testingModelId === model.id;
                 const showTestResult = isTesting && testMessage;
+                const isServerDeclaredOnly =
+                  !!providersConfig[effectiveProvider]?.isServerConfigured &&
+                  model.name === model.id;
 
                 return (
                   <div
@@ -308,8 +311,13 @@ export function ModelSelector({
                         className="flex-1 flex items-center gap-2 text-left"
                       >
                         <div className="flex-1 min-w-0">
-                          <div className="font-mono text-sm font-medium mb-1.5 truncate">
-                            {model.name}
+                          <div className="font-mono text-sm font-medium mb-1.5 truncate flex items-center gap-1.5">
+                            <span className="truncate">{model.name}</span>
+                            {isServerDeclaredOnly && (
+                              <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
+                                {t('settings.serverConfigured')}
+                              </span>
+                            )}
                           </div>
                           {(model.capabilities || model.contextWindow || model.outputWindow) && (
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">

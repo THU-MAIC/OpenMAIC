@@ -16,8 +16,10 @@ export interface Stage {
   id: string;
   name: string;
   description?: string;
+  ownerUserId?: string;
   createdAt: number;
   updatedAt: number;
+  ownershipType?: 'owned' | 'invited';
   // Stage metadata
   language?: string;
   style?: string;

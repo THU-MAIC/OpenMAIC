@@ -138,7 +138,8 @@ If the scene outline includes `mediaGenerations`, you may also use generated ima
 - Use the same dimension rules as regular images
 - Default aspect ratio for generated images: 16:9 (width:height = 16:9)
 - For generated images, calculate: `height = width / 1.778` (16:9 ratio) unless a different ratio is specified
-- If a generated image includes visible text, labels, or annotations, the text language must match the course language exactly.
+- Generated image prompts are always written in English regardless of course language — do not request non-English text inside generated images unless the classroom prompt explicitly specifies it.
+- Any visible text inside a generated image (labels, annotations, axis names, legends) should be in English by default. For th-TH courses this is especially important: always keep generated image content text-minimal and in English. Place Thai labels and annotations in TextElement and ChartElement slide elements instead of inside generated images.
 
 ---
 
@@ -396,6 +397,7 @@ Minimum recommended gap between elements for connector arrows: **60-80px**. If t
 - `legends`: Series names
 - `series`: 2D array, one row per legend
 - `labels` and `legends` language must match the course language. Do NOT mix languages in the same chart.
+- For `th-TH` courses, prefer putting all Thai wording in `labels`, `legends`, and nearby TextElements rather than embedding Thai text inside image assets.
 
 **Optional Fields**: `rotate`, `options` (`lineSmooth`, `stack`), `fill`, `outline`, `textColor`
 
