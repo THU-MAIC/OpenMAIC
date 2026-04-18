@@ -285,7 +285,7 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
 const getDefaultAudioConfig = () => ({
   ttsProviderId: 'smallest-tts' as TTSProviderId,
   ttsVoice: 'ethan',
-  ttsSpeed: 1.25,
+  ttsSpeed: 1,
   asrProviderId: 'openai-whisper' as ASRProviderId,
   asrLanguage: 'auto',
   ttsProvidersConfig: {
