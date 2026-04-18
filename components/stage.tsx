@@ -37,6 +37,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
+import { useCourseVideoExport } from '@/lib/export/use-course-video-export';
 
 /**
  * Stage Component
@@ -192,6 +193,9 @@ export function Stage({
   const discussionAbortRef = useRef<AbortController | null>(null);
   const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const stageRef = useRef<HTMLDivElement>(null);
+  /** Ref to the slide container div — used by the video export hook */
+  const slideRef = useRef<HTMLDivElement>(null);
+
   // Guard to prevent double flash when manual stop triggers onDiscussionEnd
   const manualStopRef = useRef(false);
   // Monotonic counter incremented on each scene switch — used to discard stale SSE callbacks
@@ -200,6 +204,14 @@ export function Stage({
   const autoStartRef = useRef(false);
   // Discussion buffer-level pause state (distinct from soft-pause which aborts SSE)
   const [isDiscussionPaused, setIsDiscussionPaused] = useState(false);
+
+  // Video export hook
+  const {
+    isExporting,
+    progress: exportProgress,
+    startExport,
+    abortExport,
+  } = useCourseVideoExport(slideRef);
 
   /**
    * Resume a soft-paused topic: re-call /chat with existing session messages.
@@ -1045,6 +1057,11 @@ export function Stage({
                 : undefined
             }
             onHome={handleHome}
+            slideRef={slideRef}
+            onExportVideo={mode === 'playback' ? startExport : undefined}
+            onAbortExport={mode === 'playback' ? abortExport : undefined}
+            isExporting={isExporting}
+            exportProgress={exportProgress}
           />
         </div>
 
@@ -1193,6 +1210,10 @@ export function Stage({
               captionsCollapsed={captionsCollapsed}
               onToggleCaptions={() => setCaptionsCollapsed(!captionsCollapsed)}
               onHome={handleHome}
+              onExportVideo={startExport}
+              onAbortExport={abortExport}
+              isExporting={isExporting}
+              exportProgress={exportProgress}
             />
           </div>
         )}
