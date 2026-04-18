@@ -441,6 +441,10 @@
     "importFromClipboard": "استيراد من الحافظة",
     "apiSecret": "مفتاح API",
     "apiHost": "العنوان الأساسي",
+    "baseUrlRegion": {
+      "china": "الصين",
+      "international": "دولي"
+    },
     "requestUrl": "عنوان الطلب",
     "models": "النماذج",
     "addModel": "جديد",

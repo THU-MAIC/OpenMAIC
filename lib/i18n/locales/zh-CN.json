@@ -441,6 +441,10 @@
     "importFromClipboard": "从剪贴板导入",
     "apiSecret": "API 密钥",
     "apiHost": "Base URL",
+    "baseUrlRegion": {
+      "china": "国内站",
+      "international": "国际站"
+    },
     "requestUrl": "请求地址",
     "models": "模型",
     "addModel": "新建",
