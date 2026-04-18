@@ -20,6 +20,8 @@ export interface Stage {
   updatedAt: number;
   // Stage metadata
   language?: string;
+  /** BCP-47 code for the learner's base language (for explanations/hints/teacher-chat). */
+  explanationLanguage?: string;
   style?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];

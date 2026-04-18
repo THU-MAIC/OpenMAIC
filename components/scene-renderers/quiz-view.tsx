@@ -17,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { createLogger } from '@/lib/logger';
+import { useStageStore } from '@/lib/store/stage';
 
 const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
@@ -83,7 +84,8 @@ function gradeChoiceQuestions(
 async function gradeShortAnswerQuestion(
   q: QuizQuestion,
   userAnswer: string,
-  language: string,
+  targetLanguage: string | undefined,
+  explanationLanguage: string | undefined,
 ): Promise<QuestionResult> {
   const pts = q.points ?? 1;
   try {
@@ -104,7 +106,8 @@ async function gradeShortAnswerQuestion(
         userAnswer,
         points: pts,
         commentPrompt: q.commentPrompt,
-        language,
+        ...(targetLanguage ? { targetLanguage } : {}),
+        ...(explanationLanguage ? { explanationLanguage } : {}),
       }),
     });
 
@@ -682,7 +685,8 @@ function ScoreBanner({
 // ─── Main Component ─────────────────────────────────────────────────────────
 
 export function QuizView({ questions, sceneId }: QuizViewProps) {
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
+  const stage = useStageStore((s) => s.stage);
   const [phase, setPhase] = useState<Phase>('not_started');
   const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
   const [results, setResults] = useState<QuestionResult[]>([]);
@@ -749,7 +753,12 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
       const shortAnswerQs = questions.filter(isShortAnswer);
       const aiResults = await Promise.all(
         shortAnswerQs.map((q) =>
-          gradeShortAnswerQuestion(q, (answers[q.id] as string) ?? '', locale),
+          gradeShortAnswerQuestion(
+            q,
+            (answers[q.id] as string) ?? '',
+            stage?.language,
+            stage?.explanationLanguage,
+          ),
         ),
       );
 
@@ -770,7 +779,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     return () => {
       cancelled = true;
     };
-  }, [phase, questions, answers, locale]);
+  }, [phase, questions, answers, stage]);
 
   const handleRetry = useCallback(() => {
     setPhase('not_started');

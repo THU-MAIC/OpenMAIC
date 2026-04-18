@@ -222,13 +222,15 @@ export function LessonPlanPlayer({ stage, scene }: LessonPlanPlayerProps) {
             </p>
           </div>
           <div className="flex-1 min-h-0">
-            {cards.length > 0 && (
+            {currentCard && (
               <TeacherChat
                 cefrLevel={cefrLevel}
                 grammarPoint={content?.microGoal?.grammarPoint ?? ''}
                 topic={content?.microGoal?.topic ?? ''}
-                card={currentCard ?? cards[0]}
+                card={currentCard}
                 cardKey={`${cardIndex}`}
+                targetLanguage={stage.language}
+                explanationLanguage={stage.explanationLanguage}
               />
             )}
           </div>

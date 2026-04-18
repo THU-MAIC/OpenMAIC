@@ -18,6 +18,7 @@ import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { resolveLanguageName } from '@/lib/server/resolve-language-name';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
 import { persistClassroom } from '@/lib/server/classroom-storage';
@@ -42,7 +43,7 @@ export interface GenerateClassroomInput {
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
-  agentMode?: 'default' | 'generate';
+  agentMode?: 'default' | 'generate' | 'preset' | (string & {});
   groundingMap?: Record<string, { imageUrl?: string; pronunciation?: string }>;
 }
 
@@ -274,8 +275,14 @@ function validateLessonPlanDeck(
 async function generateLessonPlan(
   requirement: string,
   aiCall: AICallFn,
+  language?: string,
+  explanationLanguage?: string,
 ): Promise<LessonPlanContent> {
-  const prompt = buildPrompt(PROMPT_IDS.LESSON_PLAN, { requirement });
+  const targetLanguageName = resolveLanguageName(language);
+  const explanationLanguageName = explanationLanguage
+    ? resolveLanguageName(explanationLanguage)
+    : 'the learner\'s base language';
+  const prompt = buildPrompt(PROMPT_IDS.LESSON_PLAN, { requirement, targetLanguageName, explanationLanguageName });
   if (!prompt) throw new Error('Failed to load lesson-plan prompt template');
 
   const groundingBlock = requirement.includes('## Grounding')
@@ -446,7 +453,12 @@ export async function generateClassroom(
       totalScenes: 1,
     });
 
-    const lessonContent = await generateLessonPlan(requirement, aiCall);
+    const lessonContent = await generateLessonPlan(
+      requirement,
+      aiCall,
+      input.language,
+      input.explanationLanguage,
+    );
     log.info(`Lesson plan generated: ${lessonContent.cards.length} cards`);
 
     await options.onProgress?.({
@@ -463,6 +475,7 @@ export async function generateClassroom(
       id: stageId,
       name: title,
       language: input.language,
+      explanationLanguage: input.explanationLanguage,
       style: 'lesson_plan',
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -524,9 +537,16 @@ export async function generateClassroom(
   };
   const pdfText = pdfContent?.text || undefined;
 
-  // Resolve agents based on agentMode
+  // Resolve agents based on agentMode.
+  // 'preset' is treated the same as 'generate' (legacy alias sent by some callers).
+  // Any unknown value falls back to 'generate' rather than crashing.
+  const rawMode = input.agentMode ?? 'default';
+  const normalizedMode: 'default' | 'generate' =
+    rawMode === 'default' ? 'default' :
+    rawMode === 'generate' || rawMode === 'preset' ? 'generate' :
+    'generate'; // unknown value → safe fallback
   let agents: AgentInfo[];
-  let agentMode = input.agentMode || 'default';
+  let agentMode = normalizedMode;
   if (agentMode === 'generate') {
     log.info('Generating custom agent profiles via LLM...');
     try {
@@ -623,6 +643,7 @@ export async function generateClassroom(
     name: outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
     language: lang,
+    explanationLanguage: explainLang,
     style: 'interactive',
     createdAt: Date.now(),
     updatedAt: Date.now(),

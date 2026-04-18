@@ -1,3 +1,16 @@
+## Session overview — 2026-04-18 (agent team)
+
+- **agentMode robustness:** GenerateClassroomInput accepts 'preset', falls back to 'generate' on unknown.
+- **TeacherChat null guard:** currentCard checked before render in LessonPlanPlayer (was receiving undefined).
+- **resolveLanguageName helper:** New lib/server/resolve-language-name.ts with Intl.DisplayNames + fallback map.
+- **lesson-plan-chat de-Lithuanian-ized:** Persona strings now use targetLanguage + explanationLanguage variables.
+- **explanationLanguage threaded:** Stage.explanationLanguage populated from request in both modes; passed to prompts.
+- **quiz-grade echoes lexeme:** GradeResponse includes optional lexeme field when score > 0 for client-side learning.
+- **quiz-view reads Stage:** Now uses useStageStore for targetLanguage + explanationLanguage (not UI locale).
+- **No API-CONTRACT.md code change:** Doc was wrong (baseLang/targetLang don't exist); code uses language/explanationLanguage.
+- **No learnedWords in v1:** OpenMAIC does not return learned-words array; learning derives client-side from quiz grades.
+- **Deferred TODO:** .lithuanian/.english field names in Stage/DialogTurn/Carrier left for future coordinated migration.
+
 # Branch: claude/fix-language-voice-settings-xuCgK
 Updated: 2026-04-18 15:57 UTC
 
