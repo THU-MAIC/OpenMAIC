@@ -99,8 +99,8 @@ function LoginContent() {
           transition={{ delay: 0.1, type: 'spring', stiffness: 200, damping: 20 }}
           className="flex items-center justify-center gap-2.5 mb-8"
         >
-          <h1 className="text-5xl font-black text-[#073b4c] tracking-tighter">SLATE</h1>
-          <span className="px-2.5 py-0.5 bg-[#ef476f] text-white text-[10px] font-bold rounded-full border-2 border-[#073b4c] shadow-[2px_2px_0_#073b4c] uppercase tracking-widest mt-1">BETA</span>
+          <h1 className="text-5xl font-black text-[#073b4c] tracking-tighter">SLATE UP</h1>
+          {/* <span className="px-2.5 py-0.5 bg-[#ef476f] text-white text-[10px] font-bold rounded-full border-2 border-[#073b4c] shadow-[2px_2px_0_#073b4c] uppercase tracking-widest mt-1">BETA</span> */}
         </motion.div>
 
         {/* Card */}

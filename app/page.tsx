@@ -600,8 +600,8 @@ function HomePage() {
             }}
             className="flex items-center gap-3 mb-6"
           >
-            <h1 className="text-6xl md:text-8xl font-black text-[#073b4c] tracking-tighter">SLATE</h1>
-            <span className="px-3 py-1 bg-[#ef476f] text-white text-xs md:text-sm font-bold rounded-full border-2 border-[#073b4c] shadow-[2px_2px_0_#073b4c] uppercase tracking-widest mt-2 md:mt-4">BETA</span>
+            <h1 className="text-6xl md:text-8xl font-black text-[#073b4c] tracking-[-0.025em]">SLATE UP</h1>
+            {/* <span className="px-3 py-1 bg-[#ef476f] text-white text-xs md:text-sm font-bold rounded-full border-2 border-[#073b4c] shadow-[2px_2px_0_#073b4c] uppercase tracking-widest mt-2 md:mt-4">BETA</span> */}
           </motion.div>
 
           {/* ── Tagline ── */}
@@ -802,7 +802,7 @@ function HomePage() {
       </div>
       {/* Footer — flows with content, at the very end */}
       <div className="w-full shrink-0 pt-6 pb-4 text-center text-xs text-muted-foreground/100 bg-white/50 dark:bg-slate-950/50 backdrop-blur-sm border-t border-border/10">
-        Slate by Chalk Labs
+        Slate Up your Learning
       </div>
 
       {/* Courses exhausted modal — shown when user has 0 credits */}

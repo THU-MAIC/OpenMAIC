@@ -157,7 +157,7 @@ export function PricingClient() {
 
         <div className="flex items-center gap-2 cursor-pointer" onClick={() => router.push('/')}>
           <h1 className="text-xl md:text-2xl font-black text-[#073b4c] tracking-tight uppercase">
-            SLATE
+            SLATE UP
           </h1>
           <span className="px-2 py-0.5 bg-[#ef476f] text-white text-[10px] font-bold rounded-full border border-[#073b4c] shadow-[1px_1px_0_#073b4c] uppercase tracking-widest mt-1">BETA</span>
         </div>

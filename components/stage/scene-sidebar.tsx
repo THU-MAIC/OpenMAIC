@@ -127,8 +127,8 @@ export function SceneSidebar({
             className="flex items-center gap-1.5 cursor-pointer rounded-lg px-2 -mx-2 py-1 -my-1 hover:bg-gray-100/80 dark:hover:bg-gray-800/60 active:scale-[0.97] transition-all duration-150"
             title={t('generation.backToHome')}
           >
-            <h1 className="text-2xl font-black text-[#073b4c] tracking-tighter">SLATE</h1>
-            <span className="px-2 py-0.5 bg-[#ef476f] text-white text-[10px] font-bold rounded-full border border-[#073b4c] shadow-[1px_1px_0_#073b4c] uppercase tracking-widest mt-1">BETA</span>
+            <h1 className="text-2xl font-black text-[#073b4c] tracking-tighter">SLATE UP</h1>
+            {/* <span className="px-2 py-0.5 bg-[#ef476f] text-white text-[10px] font-bold rounded-full border border-[#073b4c] shadow-[1px_1px_0_#073b4c] uppercase tracking-widest mt-1">BETA</span> */}
           </button>
           <button
             onClick={() => onCollapseChange(true)}

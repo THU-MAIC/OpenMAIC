@@ -259,7 +259,7 @@ function CatalogPageContent() {
       <footer className="mt-20 border-t-[3px] border-[#073b4c] bg-[#073b4c] py-12 text-white">
         <div className="container mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-8">
           <div>
-            <h2 className="text-3xl font-black tracking-tighter mb-2">SLATE</h2>
+            <h2 className="text-3xl font-black tracking-tighter mb-2">SLATE UP</h2>
             <p className="text-white/60 font-medium">The future of interactive learning, powered by AI.</p>
           </div>
           <div className="flex gap-6 font-bold uppercase tracking-widest text-sm">

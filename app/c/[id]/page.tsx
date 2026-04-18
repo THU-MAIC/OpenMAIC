@@ -66,7 +66,7 @@ export default function PublicCertificatePage({ params: paramsPromise }: { param
           <div className="w-10 h-10 bg-violet-600 rounded-xl flex items-center justify-center shadow-lg shadow-violet-500/20 group-hover:scale-110 transition-transform">
             <span className="text-white font-black text-xl">S</span>
           </div>
-          <span className="text-xl font-black text-white tracking-tight">SLATE</span>
+          <span className="text-xl font-black text-white tracking-tight">SLATE UP</span>
         </Link>
       </nav>
 
