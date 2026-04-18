@@ -25,6 +25,7 @@
     "@ai-sdk/google": "^3.0.13",
     "@ai-sdk/openai": "^3.0.13",
     "@ai-sdk/react": "^3.0.44",
+    "@anthropic-ai/sdk": "^0.90.0",
     "@base-ui/react": "^1.1.0",
     "@copilotkit/backend": "^0.37.0",
     "@copilotkit/runtime": "^1.51.2",

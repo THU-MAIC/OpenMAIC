@@ -133,7 +133,8 @@ export interface SettingsState {
   videoGenerationEnabled: boolean;
 
   // Web Search settings
-  webSearchProviderId: WebSearchProviderId;
+  webSearchEnabled: boolean;
+  webSearchProviderId: WebSearchProviderId | null;
   webSearchProvidersConfig: Record<
     WebSearchProviderId,
     {
@@ -142,6 +143,9 @@ export interface SettingsState {
       enabled: boolean;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
+      modelId?: string;
+      tools?: Array<{ type: string; name: string }>;
+      models?: Array<{ id: string; name: string }>;
     }
   >;
 
@@ -275,10 +279,18 @@ export interface SettingsState {
   setVideoGenerationEnabled: (enabled: boolean) => void;
 
   // Web Search actions
-  setWebSearchProvider: (providerId: WebSearchProviderId) => void;
+  setWebSearchEnabled: (enabled: boolean) => void;
+  setWebSearchProvider: (providerId: WebSearchProviderId | null) => void;
   setWebSearchProviderConfig: (
     providerId: WebSearchProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      modelId: string;
+      tools: Array<{ type: string; name: string }>;
+      models: Array<{ id: string; name: string }>;
+    }>,
   ) => void;
 
   // Server provider actions
@@ -371,10 +383,28 @@ const getDefaultVideoConfig = () => ({
 
 // Initialize default Web Search config
 const getDefaultWebSearchConfig = () => ({
-  webSearchProviderId: 'tavily' as WebSearchProviderId,
+  webSearchProviderId: null as WebSearchProviderId | null,
   webSearchProvidersConfig: {
-    tavily: { apiKey: '', baseUrl: '', enabled: true },
-  } as Record<WebSearchProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+    tavily: { apiKey: '', baseUrl: WEB_SEARCH_PROVIDERS.tavily.defaultBaseUrl, enabled: true },
+    claude: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.claude.defaultBaseUrl,
+      enabled: true,
+      modelId: '',
+      tools: [{ type: 'web_search_20260209', name: 'web_search' }],
+      models: WEB_SEARCH_PROVIDERS.claude?.models?.map((m) => ({ id: m.id, name: m.name })) ?? [],
+    },
+  } as Record<
+    WebSearchProviderId,
+    {
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      modelId?: string;
+      tools?: Array<{ type: string; name: string }>;
+      models?: Array<{ id: string; name: string }>;
+    }
+  >,
 });
 
 /**
@@ -400,7 +430,10 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
     state.pdfProviderId = defaultPdfConfig.pdfProviderId;
   }
 
-  if (!hasProviderId(WEB_SEARCH_PROVIDERS, state.webSearchProviderId)) {
+  if (
+    state.webSearchProviderId !== null &&
+    !hasProviderId(WEB_SEARCH_PROVIDERS, state.webSearchProviderId)
+  ) {
     state.webSearchProviderId = defaultWebSearchConfig.webSearchProviderId;
   }
 
@@ -515,6 +548,30 @@ function ensureBuiltInVideoProviders(state: Partial<SettingsState>): void {
     const providerId = pid as VideoProviderId;
     if (!state.videoProvidersConfig![providerId]) {
       state.videoProvidersConfig![providerId] = defaultConfig[providerId];
+    }
+  });
+}
+
+/**
+ * Ensure webSearchProvidersConfig includes all built-in web search providers.
+ * Called on every rehydrate so newly added providers appear automatically.
+ */
+function ensureBuiltInWebSearchProviders(state: Partial<SettingsState>): void {
+  if (!state.webSearchProvidersConfig) return;
+  const defaultConfig = getDefaultWebSearchConfig().webSearchProvidersConfig;
+  Object.keys(defaultConfig).forEach((pid) => {
+    const providerId = pid as WebSearchProviderId;
+    if (!state.webSearchProvidersConfig![providerId]) {
+      state.webSearchProvidersConfig![providerId] = defaultConfig[providerId];
+    } else {
+      const entry = state.webSearchProvidersConfig![providerId];
+      if (!entry.baseUrl) {
+        entry.baseUrl = defaultConfig[providerId].baseUrl;
+      }
+      if (!entry.models?.length && defaultConfig[providerId]?.models?.length) {
+        // Initialize models from defaults if not yet set for this provider
+        entry.models = defaultConfig[providerId].models;
+      }
     }
   });
 }
@@ -635,6 +692,9 @@ export const useSettingsStore = create<SettingsState>()(
         // Media generation toggles (off by default)
         imageGenerationEnabled: false,
         videoGenerationEnabled: false,
+
+        // Web search toggle (off by default)
+        webSearchEnabled: false,
 
         // Audio feature toggles (on by default)
         ttsEnabled: true,
@@ -872,17 +932,80 @@ export const useSettingsStore = create<SettingsState>()(
           }),
 
         // Web Search actions
-        setWebSearchProvider: (providerId) => set({ webSearchProviderId: providerId }),
-        setWebSearchProviderConfig: (providerId, config) =>
-          set((state) => ({
-            webSearchProvidersConfig: {
-              ...state.webSearchProvidersConfig,
-              [providerId]: {
-                ...state.webSearchProvidersConfig[providerId],
-                ...config,
+        setWebSearchEnabled: (enabled) => {
+          if (enabled) {
+            const state = get();
+            const cfg = state.webSearchProvidersConfig;
+            const firstUsableProviderId = (Object.keys(cfg) as WebSearchProviderId[]).find(
+              (id) => cfg[id].isServerConfigured || cfg[id].apiKey,
+            );
+            if (!firstUsableProviderId) return;
+            set({ webSearchEnabled: true });
+            // Auto-select a provider when none is selected yet
+            if (!state.webSearchProviderId) {
+              get().setWebSearchProvider(firstUsableProviderId);
+            }
+          } else {
+            set({ webSearchEnabled: false });
+            // Also deselect provider (which clears modelId per setWebSearchProvider logic)
+            get().setWebSearchProvider(null);
+          }
+        },
+        setWebSearchProvider: (providerId) =>
+          set((state) => {
+            if (providerId !== null) return { webSearchProviderId: providerId };
+            // Deselect: clear modelId for the previously selected provider
+            const prev = state.webSearchProviderId;
+            if (!prev || !state.webSearchProvidersConfig[prev]?.modelId) {
+              return { webSearchProviderId: null };
+            }
+            return {
+              webSearchProviderId: null,
+              webSearchProvidersConfig: {
+                ...state.webSearchProvidersConfig,
+                [prev]: { ...state.webSearchProvidersConfig[prev], modelId: '' },
               },
-            },
-          })),
+            };
+          }),
+        setWebSearchProviderConfig: (providerId, config) =>
+          set((state) => {
+            const updatedProviderConfig = {
+              ...state.webSearchProvidersConfig[providerId],
+              ...config,
+            };
+            const apiKeyRemoved =
+              'apiKey' in config && !config.apiKey && !updatedProviderConfig.isServerConfigured;
+            const isSelected = state.webSearchProviderId === providerId;
+
+            // When the selected provider loses its key, try to switch to another usable provider
+            // or disable web search entirely
+            let extraUpdates: Record<string, unknown> = {};
+            if (apiKeyRemoved && isSelected) {
+              const updatedConfig = {
+                ...state.webSearchProvidersConfig,
+                [providerId]: updatedProviderConfig,
+              };
+              const otherUsableProviderId = (
+                Object.keys(updatedConfig) as WebSearchProviderId[]
+              ).find(
+                (id) =>
+                  id !== providerId &&
+                  (updatedConfig[id].isServerConfigured || updatedConfig[id].apiKey),
+              );
+              extraUpdates = {
+                webSearchProviderId: otherUsableProviderId ?? null,
+                ...(otherUsableProviderId ? {} : { webSearchEnabled: false }),
+              };
+            }
+
+            return {
+              webSearchProvidersConfig: {
+                ...state.webSearchProvidersConfig,
+                [providerId]: updatedProviderConfig,
+              },
+              ...extraUpdates,
+            };
+          }),
 
         // Fetch server-configured providers and merge into local state
         fetchServerProviders: async () => {
@@ -1354,9 +1477,10 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInProviders(state);
         promoteLegacyCustomProviderBaseUrls(state);
 
-        // Ensure image/video configs have all built-in providers
+        // Ensure image/video/web-search configs have all built-in providers
         ensureBuiltInImageProviders(state);
         ensureBuiltInVideoProviders(state);
+        ensureBuiltInWebSearchProviders(state);
 
         // Migrate from old ttsModel to new ttsProviderId
         if (state.ttsModel && !state.ttsProviderId) {
@@ -1464,12 +1588,23 @@ export const useSettingsStore = create<SettingsState>()(
           const oldIsServerConfigured =
             (stateRecord.webSearchIsServerConfigured as boolean) || false;
           state.webSearchProviderId = 'tavily' as WebSearchProviderId;
+          // Enable web search if old user had a configured provider
+          if (oldApiKey || oldIsServerConfigured) {
+            state.webSearchEnabled = true;
+          }
           state.webSearchProvidersConfig = {
             tavily: {
               apiKey: oldApiKey,
               baseUrl: '',
               enabled: true,
               isServerConfigured: oldIsServerConfigured,
+            },
+            claude: {
+              apiKey: '',
+              baseUrl: '',
+              enabled: true,
+              modelId: '',
+              tools: [{ type: 'web_search_20260209', name: 'web_search' }],
             },
           } as SettingsState['webSearchProvidersConfig'];
           delete stateRecord.webSearchApiKey;
@@ -1488,6 +1623,7 @@ export const useSettingsStore = create<SettingsState>()(
         promoteLegacyCustomProviderBaseUrls(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
+        ensureBuiltInWebSearchProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
         return merged as SettingsState;
       },

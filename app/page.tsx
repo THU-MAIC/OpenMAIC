@@ -53,19 +53,16 @@ import { useImportClassroom } from '@/lib/import/use-import-classroom';
 
 const log = createLogger('Home');
 
-const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
-  webSearch: boolean;
 }
 
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
-  webSearch: false,
 };
 
 function HomePage() {
@@ -84,6 +81,8 @@ function HomePage() {
 
   // Model setup state
   const currentModelId = useSettingsStore((s) => s.modelId);
+  const webSearchEnabled = useSettingsStore((s) => s.webSearchEnabled);
+  const setWebSearchEnabled = useSettingsStore((s) => s.setWebSearchEnabled);
   const [recentOpen, setRecentOpen] = useState(true);
 
   // Hydrate client-only state after mount (avoids SSR mismatch)
@@ -96,14 +95,20 @@ function HomePage() {
       /* localStorage unavailable */
     }
     try {
-      const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
-      const updates: Partial<FormState> = {};
-      if (savedWebSearch === 'true') updates.webSearch = true;
-      if (Object.keys(updates).length > 0) {
-        setForm((prev) => ({ ...prev, ...updates }));
+      // Migrate webSearchEnabled from old localStorage key into the Zustand store
+      const oldWebSearch = localStorage.getItem('webSearchEnabled');
+      if (oldWebSearch === 'true' && !useSettingsStore.getState().webSearchEnabled) {
+        const store = useSettingsStore.getState();
+        // Ensure a default provider is selected for backwards compatibility (Tavily was the
+        // only provider before multi-provider support was added)
+        if (!store.webSearchProviderId) {
+          store.setWebSearchProvider('tavily');
+        }
+        store.setWebSearchEnabled(true);
       }
+      if (oldWebSearch !== null) localStorage.removeItem('webSearchEnabled');
     } catch {
-      /* localStorage unavailable */
+      /* ignore */
     }
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -197,7 +202,6 @@ function HomePage() {
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
-      if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
     } catch {
       /* ignore */
@@ -259,7 +263,7 @@ function HomePage() {
         requirement: form.requirement,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
-        webSearch: form.webSearch || undefined,
+        webSearch: webSearchEnabled || undefined,
       };
 
       let pdfStorageKey: string | undefined;
@@ -503,8 +507,8 @@ function HomePage() {
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
-                  webSearch={form.webSearch}
-                  onWebSearchChange={(v) => updateForm('webSearch', v)}
+                  webSearch={webSearchEnabled}
+                  onWebSearchChange={setWebSearchEnabled}
                   onSettingsOpen={(section) => {
                     setSettingsSection(section);
                     setSettingsOpen(true);

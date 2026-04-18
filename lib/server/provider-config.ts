@@ -92,6 +92,9 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
+  CLAUDE: 'claude',
+  // Also recognise ANTHROPIC_API_KEY so server-config detection aligns with resolveWebSearchApiKey
+  ANTHROPIC: 'claude',
 };
 
 // ---------------------------------------------------------------------------
@@ -404,9 +407,9 @@ export function resolveVideoBaseUrl(
 // ---------------------------------------------------------------------------
 
 /** Returns server-configured web search providers (no apiKeys exposed) */
-export function getServerWebSearchProviders(): Record<string, { baseUrl?: string }> {
+export function getServerWebSearchProviders(): Record<string, { baseUrl?: string; path?: string }> {
   const cfg = getConfig();
-  const result: Record<string, { baseUrl?: string }> = {};
+  const result: Record<string, { baseUrl?: string; path?: string }> = {};
   for (const [id, entry] of Object.entries(cfg.webSearch)) {
     result[id] = {};
     if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
@@ -414,10 +417,13 @@ export function getServerWebSearchProviders(): Record<string, { baseUrl?: string
   return result;
 }
 
-/** Resolve Tavily API key: client key > server key > TAVILY_API_KEY env > empty */
-export function resolveWebSearchApiKey(clientKey?: string): string {
+/** Resolve Web Search API key: client key > server key > env fallback > empty */
+export function resolveWebSearchApiKey(providerId: string, clientKey?: string): string {
   if (clientKey) return clientKey;
-  const serverKey = getConfig().webSearch.tavily?.apiKey;
+  const serverKey = getConfig().webSearch[providerId]?.apiKey;
   if (serverKey) return serverKey;
-  return process.env.TAVILY_API_KEY || '';
+  // Claude web search reuses the standard Anthropic API key
+  const envVar =
+    providerId === 'claude' ? 'ANTHROPIC_API_KEY' : `${providerId.toUpperCase()}_API_KEY`;
+  return process.env[envVar] || '';
 }

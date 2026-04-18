@@ -20,6 +20,9 @@ import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
+import { searchWithClaude } from '@/lib/web-search/claude';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
@@ -29,6 +32,7 @@ import {
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
+import { Tool } from '@anthropic-ai/sdk/resources';
 
 const log = createLogger('Classroom');
 
@@ -36,6 +40,10 @@ export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
   enableWebSearch?: boolean;
+  webSearchProviderId?: string;
+  webSearchBaseUrl?: string;
+  webSearchModelId?: string;
+  webSearchTools?: Array<{ type: string; name: string }>;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
@@ -234,31 +242,64 @@ export async function generateClassroom(
   // Web search (optional, graceful degradation)
   let researchContext: string | undefined;
   if (input.enableWebSearch) {
-    const tavilyKey = resolveWebSearchApiKey();
-    if (tavilyKey) {
-      try {
-        const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
+    // Validate and resolve the provider ID; unknown values are treated as 'tavily' (safe default).
+    const rawProviderId = input.webSearchProviderId || 'tavily';
+    const providerId =
+      rawProviderId in WEB_SEARCH_PROVIDERS
+        ? (rawProviderId as keyof typeof WEB_SEARCH_PROVIDERS)
+        : ('tavily' as const);
+    if (rawProviderId !== providerId) {
+      log.warn(`Unknown webSearchProviderId "${rawProviderId}", falling back to tavily`);
+    }
+    const searchKey = resolveWebSearchApiKey(providerId);
+    if (searchKey) {
+      const ssrfError = input.webSearchBaseUrl ? validateUrlForSSRF(input.webSearchBaseUrl) : null;
+      if (ssrfError) {
+        log.warn(`webSearchBaseUrl rejected by SSRF guard (${ssrfError}), skipping web search`);
+      } else {
+        try {
+          const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
 
-        log.info('Running web search for classroom generation', {
-          hasPdfContext: searchQuery.hasPdfContext,
-          rawRequirementLength: searchQuery.rawRequirementLength,
-          rewriteAttempted: searchQuery.rewriteAttempted,
-          finalQueryLength: searchQuery.finalQueryLength,
-        });
+          log.info('Running web search for classroom generation', {
+            provider: providerId,
+            hasPdfContext: searchQuery.hasPdfContext,
+            rawRequirementLength: searchQuery.rawRequirementLength,
+            rewriteAttempted: searchQuery.rewriteAttempted,
+            finalQueryLength: searchQuery.finalQueryLength,
+          });
 
-        const searchResult = await searchWithTavily({
-          query: searchQuery.query,
-          apiKey: tavilyKey,
-        });
-        researchContext = formatSearchResultsAsContext(searchResult);
-        if (researchContext) {
-          log.info(`Web search returned ${searchResult.sources.length} sources`);
+          const effectiveBaseUrl =
+            input.webSearchBaseUrl || WEB_SEARCH_PROVIDERS[providerId]?.defaultBaseUrl || '';
+
+          let searchResult;
+          if (providerId === 'claude') {
+            searchResult = await searchWithClaude({
+              query: searchQuery.query,
+              apiKey: searchKey,
+              baseUrl: effectiveBaseUrl,
+              modelId: input.webSearchModelId,
+              tools: input.webSearchTools?.map((t) => t as Tool) || [],
+            });
+          } else {
+            searchResult = await searchWithTavily({
+              query: searchQuery.query,
+              apiKey: searchKey,
+              baseUrl: effectiveBaseUrl,
+            });
+          }
+
+          researchContext = formatSearchResultsAsContext(searchResult);
+          if (researchContext) {
+            log.info(`Web search returned ${searchResult.sources.length} sources`);
+          }
+        } catch (e) {
+          log.warn('Web search failed, continuing without search context:', e);
         }
-      } catch (e) {
-        log.warn('Web search failed, continuing without search context:', e);
       }
     } else {
-      log.warn('enableWebSearch is true but no Tavily API key configured, skipping web search');
+      log.warn(
+        `enableWebSearch is true but no API key configured for ${providerId}, skipping web search`,
+      );
     }
   }
 

@@ -235,7 +235,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(providerId);
   const [selectedPdfProviderId, setSelectedPdfProviderId] = useState<PDFProviderId>(pdfProviderId);
   const [selectedWebSearchProviderId, setSelectedWebSearchProviderId] =
-    useState<WebSearchProviderId>(webSearchProviderId);
+    useState<WebSearchProviderId | null>(webSearchProviderId ?? 'tavily');
   const [selectedImageProviderId, setSelectedImageProviderId] =
     useState<ImageProviderId>(imageProviderId);
   const [selectedVideoProviderId, setSelectedVideoProviderId] =
@@ -588,7 +588,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         );
       }
       case 'web-search': {
-        const wsProvider = WEB_SEARCH_PROVIDERS[selectedWebSearchProviderId];
+        const wsProvider = selectedWebSearchProviderId
+          ? WEB_SEARCH_PROVIDERS[selectedWebSearchProviderId]
+          : null;
         if (!wsProvider) return null;
         return (
           <>
@@ -863,7 +865,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               <ProviderListColumn
                 providers={Object.values(WEB_SEARCH_PROVIDERS)}
                 configs={webSearchProvidersConfig}
-                selectedId={selectedWebSearchProviderId}
+                selectedId={(selectedWebSearchProviderId ?? 'tavily') as WebSearchProviderId}
                 onSelect={setSelectedWebSearchProviderId}
                 width={providerListWidth}
                 t={t}
@@ -1040,8 +1042,11 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               {activeSection === 'pdf' && (
                 <PDFSettings selectedProviderId={selectedPdfProviderId} />
               )}
-              {activeSection === 'web-search' && (
-                <WebSearchSettings selectedProviderId={selectedWebSearchProviderId} />
+              {activeSection === 'web-search' && selectedWebSearchProviderId && (
+                <WebSearchSettings
+                  key={selectedWebSearchProviderId}
+                  selectedProviderId={selectedWebSearchProviderId}
+                />
               )}
               {activeSection === 'image' && (
                 <ImageSettings selectedProviderId={selectedImageProviderId} />
