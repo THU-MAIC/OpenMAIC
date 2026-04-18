@@ -6,6 +6,7 @@ import {
   isBrowserTTSAbortError,
   playBrowserTTSPreview,
 } from '@/lib/audio/browser-tts-preview';
+import { getBundledSmallestTtsVoiceSampleUrl } from '@/lib/audio/smallest-tts-voice-samples';
 
 export interface TTSPreviewOptions {
   text: string;
@@ -87,6 +88,33 @@ export function useTTSPreview() {
           if (!isStale()) {
             cancelRef.current = null;
             setPreviewing(false);
+          }
+          return;
+        }
+
+        const bundledSmallestUrl = getBundledSmallestTtsVoiceSampleUrl(options.voice);
+        if (options.providerId === 'smallest-tts' && bundledSmallestUrl) {
+          const audio = new Audio(bundledSmallestUrl);
+          audioRef.current = audio;
+          audio.onended = () => {
+            if (!isStale()) {
+              audioRef.current = null;
+              setPreviewing(false);
+            }
+          };
+          audio.onerror = () => {
+            if (!isStale()) {
+              audioRef.current = null;
+              setPreviewing(false);
+            }
+          };
+          try {
+            await audio.play();
+          } catch {
+            if (!isStale()) {
+              audioRef.current = null;
+              setPreviewing(false);
+            }
           }
           return;
         }

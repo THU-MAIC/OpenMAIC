@@ -11,6 +11,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { resolveAgentVoice, getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { playBrowserTTSPreview } from '@/lib/audio/browser-tts-preview';
+import { getBundledSmallestTtsVoiceSampleUrl } from '@/lib/audio/smallest-tts-voice-samples';
 import {
   Sparkles,
   ChevronDown,
@@ -95,6 +96,20 @@ function AgentVoicePill({
           // ignore abort
         }
         setPreviewingId(null);
+        return;
+      }
+
+      const bundledSmallestUrl = getBundledSmallestTtsVoiceSampleUrl(voiceId);
+      if (providerId === 'smallest-tts' && bundledSmallestUrl) {
+        const audio = new Audio(bundledSmallestUrl);
+        previewAudioRef.current = audio;
+        audio.addEventListener('ended', () => setPreviewingId(null));
+        audio.addEventListener('error', () => setPreviewingId(null));
+        try {
+          await audio.play();
+        } catch {
+          setPreviewingId(null);
+        }
         return;
       }
 
@@ -320,6 +335,20 @@ function TeacherVoicePill({
           // ignore abort
         }
         setPreviewingId(null);
+        return;
+      }
+
+      const bundledSmallestUrlTeacher = getBundledSmallestTtsVoiceSampleUrl(voiceId);
+      if (providerId === 'smallest-tts' && bundledSmallestUrlTeacher) {
+        const audio = new Audio(bundledSmallestUrlTeacher);
+        previewAudioRef.current = audio;
+        audio.addEventListener('ended', () => setPreviewingId(null));
+        audio.addEventListener('error', () => setPreviewingId(null));
+        try {
+          await audio.play();
+        } catch {
+          setPreviewingId(null);
+        }
         return;
       }
 
