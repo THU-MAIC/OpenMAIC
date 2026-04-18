@@ -19,9 +19,13 @@ import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { USER_AVATAR } from '@/lib/types/roundtable';
-import { processSSEStream } from './process-sse-stream';
 import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
+import {
+  runAgentLoop,
+  type AgentLoopIterationResult,
+  type AgentLoopStoreState,
+} from '@/lib/chat/agent-loop';
 import { ActionEngine } from '@/lib/action/engine';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
@@ -389,7 +393,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               agentHadContent: data.agentHadContent ?? true,
               cueUserReceived: loopDoneDataRef.current?.cueUserReceived ?? false,
             };
-            // Session completion is handled by runAgentLoop, not here
+            // Session completion is handled by runAgentLoopFn, not here
             // (Lectures don't use the agent loop and complete via endSession)
           },
 
@@ -428,15 +432,12 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
   );
 
   /**
-   * Frontend-driven agent loop. Sends per-agent requests until:
-   * - Director returns END (no agent spoke, no cue_user)
-   * - Director returns USER (cue_user event received)
-   * - maxTurns reached
-   * - Request aborted
+   * Frontend-driven agent loop. Delegates to the shared runAgentLoop
+   * from lib/chat/agent-loop.ts, wiring StreamBuffer for UI pacing.
    *
    * Each iteration: POST /api/chat → process SSE → wait for buffer drain → check outcome.
    */
-  const runAgentLoop = useCallback(
+  const runAgentLoopFn = useCallback(
     async (
       sessionId: string,
       requestTemplate: {
@@ -475,110 +476,144 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         ? parseInt(settingsState.maxTurns, 10) || defaultMaxTurns
         : defaultMaxTurns;
 
-      let directorState: DirectorState | undefined = undefined;
-      let turnCount = 0;
-      let currentMessages = requestTemplate.messages;
-      let consecutiveEmptyTurns = 0;
+      // Per-iteration buffer reference — set in onEvent, used in onIterationEnd
+      let currentBuffer: StreamBuffer | null = null;
+      // Tracks agent_start messageId so text_delta/action events with a missing
+      // messageId can fall back to the current agent.
+      let currentMessageId: string | null = null;
 
-      while (turnCount < maxTurns) {
-        if (controller.signal.aborted) break;
+      const outcome = await runAgentLoop(
+        {
+          config: requestTemplate.config,
+          userProfile: requestTemplate.userProfile,
+          apiKey: requestTemplate.apiKey,
+          baseUrl: requestTemplate.baseUrl,
+          model: requestTemplate.model,
+          providerType: requestTemplate.providerType,
+        },
+        {
+          getStoreState: (): AgentLoopStoreState => {
+            const freshState = useStageStore.getState();
+            return {
+              stage: freshState.stage,
+              scenes: freshState.scenes,
+              currentSceneId: freshState.currentSceneId,
+              mode: freshState.mode,
+              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+            };
+          },
 
-        // Reset loop state for this iteration
-        loopDoneDataRef.current = null;
+          getMessages: () => {
+            const currentSession = sessionsRef.current.find((s) => s.id === sessionId);
+            return currentSession?.messages ?? requestTemplate.messages;
+          },
 
-        // Refresh store state each iteration — agent actions may have changed
-        // whiteboard, scene, or mode between turns
-        const freshState = useStageStore.getState();
-        const freshStoreState = {
-          stage: freshState.stage,
-          scenes: freshState.scenes,
-          currentSceneId: freshState.currentSceneId,
-          mode: freshState.mode,
-          whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-        };
+          fetchChat: (body, signal) =>
+            fetch('/api/chat', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+              signal,
+            }),
 
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            ...requestTemplate,
-            messages: currentMessages,
-            storeState: freshStoreState,
-            directorState,
-          }),
-          signal: controller.signal,
-        });
+          onEvent: (event) => {
+            // Create buffer on first event of each iteration
+            if (!currentBuffer) {
+              currentBuffer = createBufferForSession(sessionId, sessionType);
+            }
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(`API error: ${response.status} - ${errorText}`);
-        }
+            // Pipe SSE events into StreamBuffer.
+            switch (event.type) {
+              case 'agent_start': {
+                const { messageId, agentId, agentName, agentAvatar, agentColor } = event.data;
+                currentMessageId = messageId;
+                currentBuffer.pushAgentStart({
+                  messageId,
+                  agentId,
+                  agentName,
+                  avatar: agentAvatar,
+                  color: agentColor,
+                });
+                break;
+              }
+              case 'agent_end': {
+                currentBuffer.pushAgentEnd({
+                  messageId: event.data.messageId,
+                  agentId: event.data.agentId,
+                });
+                break;
+              }
+              case 'text_delta': {
+                const targetId = event.data.messageId ?? currentMessageId;
+                if (!targetId) break;
+                currentBuffer.pushText(targetId, event.data.content);
+                break;
+              }
+              case 'action': {
+                const targetId = event.data.messageId ?? currentMessageId;
+                if (!targetId) break;
+                if (controller.signal.aborted) break;
+                currentBuffer.pushAction({
+                  actionId: event.data.actionId,
+                  actionName: event.data.actionName,
+                  params: event.data.params,
+                  messageId: targetId,
+                  agentId: event.data.agentId,
+                });
+                break;
+              }
+              case 'thinking':
+                currentBuffer.pushThinking(event.data);
+                break;
+              case 'cue_user':
+                currentBuffer.pushCueUser(event.data);
+                break;
+              case 'done':
+                currentBuffer.pushDone(event.data);
+                break;
+              case 'error':
+                // Surface the error to the buffer (for UI), then throw so the
+                // shared agent loop breaks out instead of silently continuing.
+                currentBuffer.pushError(event.data.message);
+                throw new Error(event.data.message);
+            }
+          },
 
-        const buffer = createBufferForSession(sessionId, sessionType);
-        await processSSEStream(response, sessionId, buffer, controller.signal);
+          onIterationEnd: async () => {
+            if (!currentBuffer) return null;
 
-        // Wait for buffer to finish playing all items (character animations, delays)
-        try {
-          await buffer.waitUntilDrained();
-        } catch {
-          // Buffer was disposed/shutdown (abort or session end) — exit loop
-          break;
-        }
+            // Wait for buffer to finish playing all items (character animations, delays)
+            try {
+              await currentBuffer.waitUntilDrained();
+            } catch {
+              // Buffer was disposed/shutdown (abort or session end)
+              currentBuffer = null;
+              return null;
+            }
 
-        if (controller.signal.aborted) break;
+            currentBuffer = null;
 
-        // Read loop outcome from done data.
-        // loopDoneDataRef is mutated by StreamBuffer callbacks (onDone, onCueUser);
-        // TypeScript's CFA can't track cross-callback mutations.
-        const doneData = loopDoneDataRef.current as {
-          directorState?: DirectorState;
-          totalAgents: number;
-          agentHadContent?: boolean;
-          cueUserReceived: boolean;
-        } | null;
-        if (!doneData) break; // No done event — something went wrong
+            // Read the iteration result from loopDoneDataRef
+            // (populated by buffer's onDone/onCueUser callbacks)
+            const doneData = loopDoneDataRef.current;
+            loopDoneDataRef.current = null;
 
-        // Update accumulated director state
-        directorState = doneData.directorState;
-        turnCount = directorState?.turnCount ?? turnCount + 1;
+            if (!doneData) return null;
+            return {
+              directorState: doneData.directorState,
+              totalAgents: doneData.totalAgents,
+              agentHadContent: doneData.agentHadContent ?? true,
+              cueUserReceived: doneData.cueUserReceived,
+            };
+          },
+        },
+        controller.signal,
+        maxTurns,
+      );
 
-        // Check outcome
-        if (doneData.cueUserReceived) {
-          // Director said USER — stop loop, wait for user input
-          break;
-        }
-        if (doneData.totalAgents === 0) {
-          // Director said END — no agent spoke, conversation complete
-          break;
-        }
-
-        // Track consecutive empty responses (agent dispatched but produced no content)
-        if (doneData.agentHadContent === false) {
-          consecutiveEmptyTurns++;
-          if (consecutiveEmptyTurns >= 2) {
-            log.warn(
-              `[AgentLoop] ${consecutiveEmptyTurns} consecutive empty agent responses, stopping loop`,
-            );
-            break;
-          }
-        } else {
-          consecutiveEmptyTurns = 0;
-        }
-
-        // Agent spoke — continue loop if under maxTurns
-        // Refresh messages from latest session state for next iteration
-        const currentSession = sessionsRef.current.find((s) => s.id === sessionId);
-        if (currentSession) {
-          currentMessages = currentSession.messages;
-        }
-      }
-
-      // Handle loop completion
-      const doneData = loopDoneDataRef.current;
+      // Handle loop completion (UI-specific)
       if (!controller.signal.aborted) {
-        const wasCueUser = doneData?.cueUserReceived ?? false;
-        if (!wasCueUser) {
-          // Session completed normally (END or maxTurns reached)
+        if (outcome.reason !== 'cue_user') {
           setSessions((prev) =>
             prev.map((s) =>
               s.id === sessionId
@@ -591,10 +626,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             ),
           );
           onStopSessionRef.current?.();
-        }
-        // If maxTurns reached, log it
-        if (turnCount >= maxTurns && doneData && doneData.totalAgents > 0) {
-          log.info(`[AgentLoop] Max turns (${maxTurns}) reached for session ${sessionId}`);
         }
       }
     },
@@ -851,7 +882,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             ? useSettingsStore.getState().selectedAgentIds
             : session.config.agentIds;
 
-        await runAgentLoop(
+        await runAgentLoopFn(
           sessionId,
           {
             messages: session.messages,
@@ -896,7 +927,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
       }
     },
-    [clearLiveSessionAfterError, runAgentLoop],
+    [clearLiveSessionAfterError, runAgentLoopFn],
   );
 
   /**
@@ -1062,7 +1093,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         const userProfileState = useUserProfileStore.getState();
         const mc = getCurrentModelConfig();
 
-        await runAgentLoop(
+        await runAgentLoopFn(
           sessionId!,
           {
             messages: sessionMessages,
@@ -1116,7 +1147,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       isStreaming,
       createSession,
       endSession,
-      runAgentLoop,
+      runAgentLoopFn,
       t,
     ],
   );
@@ -1201,7 +1232,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         const userProfileState = useUserProfileStore.getState();
         const mc = getCurrentModelConfig();
 
-        await runAgentLoop(
+        await runAgentLoopFn(
           sessionId,
           {
             messages: [],
@@ -1253,7 +1284,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- t is stable from i18n context
-    [clearLiveSessionAfterError, endSession, runAgentLoop],
+    [clearLiveSessionAfterError, endSession, runAgentLoopFn],
   );
 
   /**
