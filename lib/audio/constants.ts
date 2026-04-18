@@ -62,16 +62,12 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     ],
     defaultModelId: 'lightning-v3.1',
     voices: [
-      { id: 'daniel', name: 'Daniel', language: 'en', gender: 'male' },
-      { id: 'magnus', name: 'Magnus', language: 'en', gender: 'male' },
-      { id: 'alex', name: 'Alex', language: 'en', gender: 'neutral' },
-      { id: 'lucas', name: 'Lucas', language: 'en', gender: 'male' },
-      { id: 'brian', name: 'Brian', language: 'en', gender: 'male' },
-      { id: 'kyle', name: 'Kyle', language: 'en', gender: 'male' },
-      { id: 'jordan', name: 'Jordan', language: 'en', gender: 'neutral' },
       { id: 'ethan', name: 'Ethan', language: 'en', gender: 'male' },
-      { id: 'johnny', name: 'Johnny', language: 'en', gender: 'male' },
-      { id: 'robert', name: 'Robert', language: 'en', gender: 'male' },
+      { id: 'sandra', name: 'Sandra', language: 'en', gender: 'female' },
+      { id: 'vanessa', name: 'Vanessa', language: 'en', gender: 'female' },
+      { id: 'anuja', name: 'Anuja', language: 'en', gender: 'female' }, //Energy
+      { id: 'kunal', name: 'Kunal', language: 'en', gender: 'male' }, // Deep
+      { id: 'siddharth', name: 'Siddharth', language: 'en', gender: 'male' }, // energy
       { id: 'voice_ZPoOA6GhOT', name: 'Rahil', language: 'en', gender: 'male' },
     ],
     supportedFormats: ['wav'],

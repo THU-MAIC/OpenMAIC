@@ -5,10 +5,10 @@ const voiceIdsWithBundledSamples = new Set(
 );
 
 /**
- * Public URL for a bundled Smallest AI voice preview clip (static WAV under /public).
+ * Public URL for a bundled Smallest AI voice preview clip (static MP3 under /public).
  * Used instead of calling the TTS API when previewing voices in the UI.
  */
 export function getBundledSmallestTtsVoiceSampleUrl(voiceId: string): string | null {
   if (!voiceIdsWithBundledSamples.has(voiceId)) return null;
-  return `/audio/tts-previews/smallest-tts/${voiceId}.wav`;
+  return `/audio/tts-previews/smallest-tts/${voiceId}.mp3`;
 }
