@@ -1,7 +1,9 @@
 # Branch: claude/fix-language-voice-settings-xuCgK
-Updated: 2026-04-18 15:36 UTC
+Updated: 2026-04-18 15:57 UTC
 
 ## Recent Commits
+- 89a6018 Add ClassroomErrorBoundary to show exact crash instead of generic Next.js screen
+- 6062c77 chore: update PROGRESS.md [skip ci]
 - fcccefd Fix client-side crash when microGoal or cards is missing in lesson plan
 - 048fe1f chore: update PROGRESS.md [skip ci]
 - 28a9c7b Fix lesson plan JSON parse failures from LLM prose wrapping
@@ -20,8 +22,6 @@ Updated: 2026-04-18 15:36 UTC
 - 070d676 Remove ja-JP/ru-RU UI locales; add BASE_LANGUAGE_NAMES
 - 1315012 Enforce allowedCardKinds and cefrMode in lesson plan validator
 - d58b69a Add FORKING.md — guide for re-forking upstream without losing customisations
-- 9833a90 Remove Chinese (zh-CN) language support
-- 9e1ebdf Fix postinstall to use pnpm workspace commands
 
 ## Decisions & Context
 

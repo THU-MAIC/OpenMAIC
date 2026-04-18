@@ -1,5 +1,6 @@
 'use client';
 
+import { Component, type ReactNode } from 'react';
 import { Stage } from '@/components/stage';
 import { LessonPlanPlayer } from '@/components/lesson-plan-player';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
@@ -13,6 +14,32 @@ import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { createLogger } from '@/lib/logger';
 import { MediaStageProvider } from '@/lib/contexts/media-stage-context';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+
+class ClassroomErrorBoundary extends Component<
+  { children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+  static getDerivedStateFromError(error: Error) { return { error }; }
+  render() {
+    const { error } = this.state;
+    if (!error) return this.props.children;
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 bg-gray-50 dark:bg-gray-900">
+        <p className="text-destructive font-semibold">Classroom render error</p>
+        <pre className="text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-4 max-w-xl w-full overflow-auto whitespace-pre-wrap break-all">
+          {error.message}{'\n\n'}{error.stack}
+        </pre>
+        <button
+          onClick={() => this.setState({ error: null })}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 text-sm"
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
+}
 
 const log = createLogger('Classroom');
 
@@ -189,6 +216,7 @@ export default function ClassroomDetailPage() {
   return (
     <ThemeProvider>
       <MediaStageProvider value={classroomId}>
+        <ClassroomErrorBoundary>
         <div className="h-screen flex flex-col overflow-hidden">
           {loading ? (
             <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
@@ -222,6 +250,7 @@ export default function ClassroomDetailPage() {
             <Stage onRetryOutline={retrySingleOutline} />
           )}
         </div>
+        </ClassroomErrorBoundary>
       </MediaStageProvider>
     </ThemeProvider>
   );
