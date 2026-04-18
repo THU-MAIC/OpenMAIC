@@ -253,6 +253,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       log.warn('Cannot save: stage.id is required');
       return;
     }
+    if (stage.style === 'lesson_plan') return;
 
     try {
       const { saveStageData } = await import('@/lib/utils/stage-storage');

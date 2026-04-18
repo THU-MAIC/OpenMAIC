@@ -158,6 +158,11 @@ export interface Carrier {
   groundingId: string;
 }
 
+export interface GroundingItem {
+  imageUrl?: string;
+  pronunciation?: string;
+}
+
 export interface LessonPlanContent {
   type: 'lesson_plan';
   microGoal: {
@@ -167,6 +172,7 @@ export interface LessonPlanContent {
   };
   groundingIds: string[];
   cards: ExerciseCard[];
+  groundingMap?: Record<string, GroundingItem>;
 }
 
 export type ExerciseCard =

@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
         : {}),
       ...(rawBody.enableTTS != null ? { enableTTS: rawBody.enableTTS } : {}),
       ...(rawBody.agentMode ? { agentMode: rawBody.agentMode } : {}),
+      ...(rawBody.groundingMap ? { groundingMap: rawBody.groundingMap } : {}),
     };
     const { requirement } = body;
 
