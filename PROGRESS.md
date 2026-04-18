@@ -1,7 +1,9 @@
 # Branch: claude/fix-language-voice-settings-xuCgK
-Updated: 2026-04-18 14:58 UTC
+Updated: 2026-04-18 15:18 UTC
 
 ## Recent Commits
+- 28a9c7b Fix lesson plan JSON parse failures from LLM prose wrapping
+- 0052d59 chore: update PROGRESS.md [skip ci]
 - 1979911 Add session-end PROGRESS.md workflow for branch-summary context
 - 7dddcd8 Force cache revalidation on every deploy to fix iOS stale-app problem
 - ac14912 Add AI teacher chat, on-demand TTS, and grounding image support to LessonPlanPlayer
@@ -20,8 +22,6 @@ Updated: 2026-04-18 14:58 UTC
 - 9e1ebdf Fix postinstall to use pnpm workspace commands
 - 9839d6c Split explanation/target language; fix iOS audio routing
 - 8f0587e Fix default locale and Azure TTS voice
-- f7fa27e Merge pull request #18 from thomhoffer-arch/claude/class-generation-error-handling-0Bbyv
-- 9223ed4 Remove Chinese from UI language toggle, keep EN and LT only
 
 ## Decisions & Context
 
