@@ -1,83 +1,46 @@
 'use client';
 
-import { motion } from 'motion/react';
 import type { PercentageGeometry } from '@/lib/types/action';
 
 interface LaserOverlayProps {
   geometry: PercentageGeometry;
   color?: string;
+  /** @deprecated Kept for API compatibility; laser is always visible immediately */
   duration?: number;
 }
 
 /**
- * Laser pointer overlay component
- *
- * Features:
- * - Smoothly flies in from the nearest corner to the element center
- * - Elegant light dot with soft breathing glow
- * - Uses percentage positioning (0-100)
+ * Laser pointer — percentage position (0–100) in the slide viewport.
+ * Rendered at the target immediately (no fly-in) so playback and video export
+ * see the dot on the first frame.
  */
 export function LaserOverlay({
   geometry,
   color = '#ff3b30',
-  duration: _duration = 3000,
 }: LaserOverlayProps) {
   const { centerX, centerY } = geometry;
 
-  const startPos = {
-    x: centerX > 50 ? 105 : -5,
-    y: centerY > 50 ? 105 : -5,
-  };
-
   return (
-    <motion.div
+    <div
       key={`laser-${centerX}-${centerY}`}
-      initial={{
-        opacity: 0,
-        left: `${startPos.x}%`,
-        top: `${startPos.y}%`,
-      }}
-      animate={{
-        opacity: 1,
-        left: `${centerX}%`,
-        top: `${centerY}%`,
-      }}
-      exit={{
-        opacity: 0,
-        left: `${startPos.x}%`,
-        top: `${startPos.y}%`,
-        transition: { duration: 0.25, ease: [0.4, 0, 1, 1] },
-      }}
-      transition={{
-        left: { duration: 0.5, ease: [0.22, 1, 0.36, 1] },
-        top: { duration: 0.5, ease: [0.22, 1, 0.36, 1] },
-        opacity: { duration: 0.15 },
-      }}
-      className="absolute z-[101] pointer-events-none"
+      className="absolute z-[101] pointer-events-none -translate-x-1/2 -translate-y-1/2"
+      style={{ left: `${centerX}%`, top: `${centerY}%` }}
     >
-      <div className="relative -translate-x-1/2 -translate-y-1/2">
-        {/* Ring pulse */}
-        <motion.div
-          animate={{ scale: [1, 2.8], opacity: [0.6, 0] }}
-          transition={{
-            repeat: Infinity,
-            duration: 1.5,
-            ease: 'easeOut',
-            repeatDelay: 0.3,
-          }}
-          className="absolute inset-0 rounded-full"
-          style={{ border: `1.5px solid ${color}` }}
+      <div className="relative">
+        {/* Expanding ring — pure CSS so snapshots / html2canvas see a stable dot */}
+        <span
+          className="absolute left-1/2 top-1/2 size-6 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 opacity-50 motion-safe:animate-ping"
+          style={{ borderColor: color }}
+          aria-hidden
         />
-
-        {/* Light core */}
         <div
-          className="w-2.5 h-2.5 rounded-full"
+          className="absolute left-1/2 top-1/2 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full"
           style={{
             backgroundColor: color,
-            boxShadow: `0 0 8px 2px ${color}60`,
+            boxShadow: `0 0 10px 3px ${color}99`,
           }}
         />
       </div>
-    </motion.div>
+    </div>
   );
 }

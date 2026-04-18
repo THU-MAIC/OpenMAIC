@@ -16,6 +16,9 @@ import {
   Maximize2,
   Minimize2,
   Home,
+  Video,
+  Loader2,
+  Square,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store';
@@ -52,6 +55,11 @@ export interface CanvasToolbarProps {
   readonly playbackSpeed?: number;
   readonly onCycleSpeed?: () => void;
   readonly onHome?: () => void;
+  // Video export
+  readonly onExportVideo?: () => void;
+  readonly onAbortExport?: () => void;
+  readonly isExporting?: boolean;
+  readonly exportProgress?: { sceneIndex: number; sceneTotal: number } | null;
 }
 
 /* Compact control button */
@@ -111,6 +119,10 @@ export function CanvasToolbar({
   playbackSpeed = 1,
   onCycleSpeed,
   onHome,
+  onExportVideo,
+  onAbortExport,
+  isExporting,
+  exportProgress,
 }: CanvasToolbarProps) {
   const { t } = useI18n();
   const canGoPrev = currentSceneIndex > 0;
@@ -454,6 +466,54 @@ export function CanvasToolbar({
           >
             <MessageSquare className="w-3.5 h-3.5" />
           </button>
+        )}
+
+        {/* Export to MP4 / Stop & save */}
+        {(onExportVideo || onAbortExport) && (
+          <>
+            <CtrlDivider />
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  {isExporting ? (
+                    /* ── Exporting: show progress spinner + stop button ── */
+                    <div className="flex items-center gap-0.5">
+                      <Loader2 className="w-3 h-3 text-violet-500 dark:text-violet-400 animate-spin shrink-0" />
+                      {exportProgress && (
+                        <span className="text-[10px] tabular-nums text-violet-500 dark:text-violet-400 font-semibold leading-none min-w-[20px]">
+                          {exportProgress.sceneIndex}/{exportProgress.sceneTotal}
+                        </span>
+                      )}
+                      <button
+                        onClick={onAbortExport}
+                        className={cn(
+                          ctrlBtn,
+                          'w-5 h-5 ml-0.5 text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300',
+                        )}
+                        aria-label="Stop and save partial video"
+                      >
+                        <Square className="w-3 h-3 fill-current" />
+                      </button>
+                    </div>
+                  ) : (
+                    /* ── Idle: start export ── */
+                    <button
+                      onClick={onExportVideo}
+                      className={cn(ctrlBtn, 'w-6 h-6 text-gray-500 dark:text-gray-400')}
+                      aria-label="Export to MP4"
+                    >
+                      <Video className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {isExporting && exportProgress
+                    ? `Exporting ${exportProgress.sceneIndex}/${exportProgress.sceneTotal} — click ■ to stop & save`
+                    : 'Export to MP4'}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </>
         )}
       </div>
     </div>

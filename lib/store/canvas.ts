@@ -355,6 +355,8 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
 
   setSpotlight: (elementId, options = {}) => {
     set({
+      laserElementId: '',
+      laserOptions: null,
       spotlightElementId: elementId,
       spotlightMode: 'pixel',
       spotlightOptions: {
@@ -369,6 +371,8 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
 
   setSpotlightPercentage: (elementId, geometry, options = {}) => {
     set({
+      laserElementId: '',
+      laserOptions: null,
       spotlightElementId: elementId,
       spotlightMode: 'percentage',
       spotlightPercentageGeometry: geometry,
@@ -411,6 +415,10 @@ const useCanvasStoreBase = create<CanvasState>((set, get) => ({
 
   setLaser: (elementId, options = {}) => {
     set({
+      spotlightElementId: '',
+      spotlightOptions: null,
+      spotlightMode: 'pixel',
+      spotlightPercentageGeometry: null,
       laserElementId: elementId,
       laserOptions: {
         color: '#ff0000',
