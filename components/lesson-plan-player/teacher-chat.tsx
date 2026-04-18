@@ -16,6 +16,10 @@ interface TeacherChatProps {
   card: ExerciseCard;
   // Resets chat when card changes
   cardKey: string;
+  /** BCP-47 code for the language being taught (e.g. 'lt-LT'). Forwarded to the chat API. */
+  targetLanguage?: string;
+  /** BCP-47 code for the learner's base language (e.g. 'en-US', 'es-ES'). Forwarded to the chat API. */
+  explanationLanguage?: string;
 }
 
 function getCardPhrase(card: ExerciseCard): string | undefined {
@@ -34,7 +38,7 @@ function getCardAnswer(card: ExerciseCard): string | undefined {
 
 const isEarlyLevel = (level: CEFRLevel) => level === 'A1' || level === 'A2';
 
-export function TeacherChat({ cefrLevel, grammarPoint, topic, card, cardKey }: TeacherChatProps) {
+export function TeacherChat({ cefrLevel, grammarPoint, topic, card, cardKey, targetLanguage, explanationLanguage }: TeacherChatProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -76,6 +80,8 @@ export function TeacherChat({ cefrLevel, grammarPoint, topic, card, cardKey }: T
             answer: getCardAnswer(card),
             grammarPoint,
             topic,
+            ...(targetLanguage ? { targetLanguage } : {}),
+            ...(explanationLanguage ? { explanationLanguage } : {}),
           },
         }),
       });
@@ -108,7 +114,7 @@ export function TeacherChat({ cefrLevel, grammarPoint, topic, card, cardKey }: T
     } finally {
       setIsLoading(false);
     }
-  }, [messages, isLoading, card, cefrLevel, grammarPoint, topic]);
+  }, [messages, isLoading, card, cefrLevel, grammarPoint, topic, targetLanguage, explanationLanguage]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -136,7 +142,7 @@ export function TeacherChat({ cefrLevel, grammarPoint, topic, card, cardKey }: T
         const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
         const form = new FormData();
         form.append('audio', blob, 'recording.webm');
-        form.append('language', 'lt');
+        form.append('language', targetLanguage ?? 'lt-LT');
         try {
           const res = await fetch('/api/transcription', { method: 'POST', body: form });
           if (res.ok) {
@@ -158,7 +164,7 @@ export function TeacherChat({ cefrLevel, grammarPoint, topic, card, cardKey }: T
   const showVoice = !isEarlyLevel(cefrLevel);
   const placeholder = isEarlyLevel(cefrLevel)
     ? 'Ask your teacher...'
-    : 'Answer in Lithuanian or ask a question...';
+    : 'Answer in the target language or ask a question...';
 
   return (
     <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-900">
@@ -169,7 +175,7 @@ export function TeacherChat({ cefrLevel, grammarPoint, topic, card, cardKey }: T
             <p className="text-xs text-gray-400 dark:text-gray-500 text-center px-4">
               {isEarlyLevel(cefrLevel)
                 ? 'Your teacher is here to help! Ask a question or try the exercise.'
-                : 'Practice with your teacher. Answer the exercise or ask questions in Lithuanian.'}
+                : 'Practice with your teacher. Answer the exercise or ask questions in the target language.'}
             </p>
           </div>
         )}
