@@ -216,6 +216,16 @@ function validateLessonPlanDeck(
   requirement: string,
 ): LessonPlanValidationResult {
   const errors: string[] = [];
+
+  // Validate microGoal
+  const mg = data.microGoal as Record<string, unknown> | undefined;
+  if (!mg || typeof mg !== 'object') {
+    return { valid: false, errors: ['microGoal is missing or not an object'] };
+  }
+  if (!mg.grammarPoint) errors.push('microGoal.grammarPoint is missing');
+  if (!mg.topic) errors.push('microGoal.topic is missing');
+  if (!mg.cefrLevel) errors.push('microGoal.cefrLevel is missing');
+
   const cards = data.cards;
 
   if (!Array.isArray(cards)) {

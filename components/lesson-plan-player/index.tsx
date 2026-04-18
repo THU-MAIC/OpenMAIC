@@ -69,12 +69,12 @@ function useTTS(phrase: string | undefined, language = 'lt-LT') {
 
 export function LessonPlanPlayer({ stage, scene }: LessonPlanPlayerProps) {
   const content = scene.content as LessonPlanContent;
-  const cards = content.cards;
-  const groundingMap = content.groundingMap ?? {};
+  const cards = content?.cards ?? [];
+  const groundingMap = content?.groundingMap ?? {};
 
   const [cardIndex, setCardIndex] = useState(0);
-  const currentCard = cards[cardIndex];
-  const cefrLevel = content.microGoal.cefrLevel as CEFRLevel;
+  const currentCard = cards[cardIndex] ?? null;
+  const cefrLevel = (content?.microGoal?.cefrLevel ?? 'A1') as CEFRLevel;
   const cefrColor = CEFR_COLORS[cefrLevel] ?? 'bg-gray-100 text-gray-600';
 
   const phrase = currentCard ? getCardPhrase(currentCard) : undefined;
@@ -216,13 +216,15 @@ export function LessonPlanPlayer({ stage, scene }: LessonPlanPlayerProps) {
             </p>
           </div>
           <div className="flex-1 min-h-0">
-            <TeacherChat
-              cefrLevel={cefrLevel}
-              grammarPoint={content.microGoal.grammarPoint}
-              topic={content.microGoal.topic}
-              card={currentCard}
-              cardKey={`${cardIndex}`}
-            />
+            {cards.length > 0 && (
+              <TeacherChat
+                cefrLevel={cefrLevel}
+                grammarPoint={content?.microGoal?.grammarPoint ?? ''}
+                topic={content?.microGoal?.topic ?? ''}
+                card={currentCard ?? cards[0]}
+                cardKey={`${cardIndex}`}
+              />
+            )}
           </div>
         </div>
       </div>
