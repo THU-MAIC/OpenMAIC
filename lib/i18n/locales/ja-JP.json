@@ -441,6 +441,10 @@
     "importFromClipboard": "クリップボードからインポート",
     "apiSecret": "APIキー",
     "apiHost": "ベースURL",
+    "baseUrlRegion": {
+      "china": "中国",
+      "international": "国際"
+    },
     "requestUrl": "リクエストURL",
     "models": "モデル",
     "addModel": "新規",

@@ -441,6 +441,10 @@
     "importFromClipboard": "Импорт из буфера",
     "apiSecret": "API-ключ",
     "apiHost": "Base URL",
+    "baseUrlRegion": {
+      "china": "Китай",
+      "international": "Международный"
+    },
     "requestUrl": "URL запроса",
     "models": "Модели",
     "addModel": "Новая",

@@ -115,7 +115,7 @@ providers:
     apiKey: sk-ant-...
 ```
 
-支持的服务商：**OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**MiniMax**、**Grok (xAI)**、**豆包**、**Ollama**（本地）以及任何兼容 OpenAI API 的服务。
+支持的服务商：**OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**MiniMax**、**Grok (xAI)**、**豆包**、**智谱 GLM**、**Ollama**（本地）以及任何兼容 OpenAI API 的服务。
 
 MiniMax 快速示例：
 
@@ -132,6 +132,20 @@ IMAGE_MINIMAX_BASE_URL=https://api.minimaxi.com
 
 VIDEO_MINIMAX_API_KEY=...
 VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
+```
+
+智谱 GLM 快速示例：
+
+```env
+# 国内站（默认）
+GLM_API_KEY=...
+GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+
+# 国际站（z.ai）
+GLM_API_KEY=...
+GLM_BASE_URL=https://api.z.ai/api/paas/v4
+
+DEFAULT_MODEL=glm:glm-5.1
 ```
 
 > **推荐模型：** **Gemini 3 Flash** — 效果与速度的最佳平衡。追求最高质量可选 **Gemini 3.1 Pro**（速度较慢）。

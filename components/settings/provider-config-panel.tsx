@@ -260,6 +260,31 @@ export function ProviderConfigPanel({
           onBlur={onSave}
           className="h-8"
         />
+        {provider.alternateBaseUrls && provider.alternateBaseUrls.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {provider.alternateBaseUrls.map((alt) => {
+              const active = (baseUrl || provider.defaultBaseUrl) === alt.url;
+              return (
+                <button
+                  key={alt.url}
+                  type="button"
+                  onClick={() => {
+                    handleBaseUrlChange(alt.url);
+                    onSave();
+                  }}
+                  className={cn(
+                    'px-2 py-0.5 text-xs rounded-md border transition-colors',
+                    active
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background text-muted-foreground border-border hover:bg-muted',
+                  )}
+                >
+                  {t(alt.label)}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {(() => {
           const effectiveBaseUrl = baseUrl || provider.defaultBaseUrl || '';
           if (!effectiveBaseUrl) return null;
