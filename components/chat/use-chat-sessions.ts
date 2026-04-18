@@ -478,6 +478,9 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
 
       // Per-iteration buffer reference — set in onEvent, used in onIterationEnd
       let currentBuffer: StreamBuffer | null = null;
+      // Tracks agent_start messageId so text_delta/action events with a missing
+      // messageId can fall back to the current agent.
+      let currentMessageId: string | null = null;
 
       const outcome = await runAgentLoop(
         {
@@ -519,10 +522,11 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               currentBuffer = createBufferForSession(sessionId, sessionType);
             }
 
-            // Pipe SSE events into StreamBuffer (mirrors processSSEStream)
+            // Pipe SSE events into StreamBuffer.
             switch (event.type) {
               case 'agent_start': {
                 const { messageId, agentId, agentName, agentAvatar, agentColor } = event.data;
+                currentMessageId = messageId;
                 currentBuffer.pushAgentStart({
                   messageId,
                   agentId,
@@ -532,18 +536,32 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 });
                 break;
               }
-              case 'text_delta':
-                currentBuffer.pushText(event.data.messageId ?? '', event.data.content);
+              case 'agent_end': {
+                currentBuffer.pushAgentEnd({
+                  messageId: event.data.messageId,
+                  agentId: event.data.agentId,
+                });
                 break;
-              case 'action':
+              }
+              case 'text_delta': {
+                const targetId = event.data.messageId ?? currentMessageId;
+                if (!targetId) break;
+                currentBuffer.pushText(targetId, event.data.content);
+                break;
+              }
+              case 'action': {
+                const targetId = event.data.messageId ?? currentMessageId;
+                if (!targetId) break;
+                if (controller.signal.aborted) break;
                 currentBuffer.pushAction({
                   actionId: event.data.actionId,
                   actionName: event.data.actionName,
                   params: event.data.params,
-                  messageId: event.data.messageId ?? '',
+                  messageId: targetId,
                   agentId: event.data.agentId,
                 });
                 break;
+              }
               case 'thinking':
                 currentBuffer.pushThinking(event.data);
                 break;
@@ -554,8 +572,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
                 currentBuffer.pushDone(event.data);
                 break;
               case 'error':
+                // Surface the error to the buffer (for UI), then throw so the
+                // shared agent loop breaks out instead of silently continuing.
                 currentBuffer.pushError(event.data.message);
-                break;
+                throw new Error(event.data.message);
             }
           },
 

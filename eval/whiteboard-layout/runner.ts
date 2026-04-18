@@ -32,7 +32,7 @@ const { values: args } = parseArgs({
 });
 
 const BASE_URL = args['base-url']!;
-const CHAT_MODEL = process.env.EVAL_CHAT_MODEL || process.env.DEFAULT_MODEL || 'openai/gpt-4o-mini';
+const CHAT_MODEL = process.env.EVAL_CHAT_MODEL || process.env.DEFAULT_MODEL || 'openai:gpt-4o-mini';
 const SCORER_MODEL = process.env.EVAL_SCORER_MODEL || 'openai:gpt-4o';
 const REPEAT = parseInt(args.repeat || '1', 10);
 const OUTPUT_DIR = args['output-dir']!;
@@ -103,6 +103,12 @@ async function runScenario(
       const textParts: string[] = [];
       const actionParts: Array<{ type: string; actionName: string; params: unknown }> = [];
       let cueUserReceived = false;
+      // Serial action queue: `wb_*` actions must apply in emission order because
+      // ActionEngine.ensureWhiteboardOpen() awaits an internal delay on first
+      // call, which would let later actions race ahead and insert elements
+      // out of order. We chain each execute() onto the previous one and await
+      // the tail in onIterationEnd before the screenshot.
+      let actionChain: Promise<void> = Promise.resolve();
 
       // Use the shared agent loop — same logic as frontend
       const controller = new AbortController();
@@ -124,6 +130,7 @@ async function runScenario(
             actionParts.length = 0;
             cueUserReceived = false;
             iterResult = null;
+            actionChain = Promise.resolve();
 
             return fetch(`${BASE_URL}/api/chat`, {
               method: 'POST',
@@ -150,10 +157,10 @@ async function runScenario(
                   type: event.data.actionName,
                   ...event.data.params,
                 } as Action;
-                // Note: executeAction is async but we fire-and-forget here
-                // to match the shared loop's sync onEvent signature.
-                // Actions are awaited via ActionEngine's internal delay().
-                void stateManager.executeAction(action);
+                // Serialize execution: chain each action onto the previous
+                // one so they apply in emission order. We await `actionChain`
+                // in onIterationEnd before screenshotting.
+                actionChain = actionChain.then(() => stateManager.executeAction(action));
                 actionParts.push({
                   type: `action-${event.data.actionName}`,
                   actionName: event.data.actionName,
@@ -181,6 +188,15 @@ async function runScenario(
           },
 
           onIterationEnd: async () => {
+            // Wait for all queued actions to apply to the store before we
+            // use its state (message construction, screenshot capture).
+            try {
+              await actionChain;
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              console.error(`    Action execution error: ${msg.slice(0, 120)}`);
+            }
+
             // Build assistant message for conversation history
             if (currentMessageId && (textParts.length > 0 || actionParts.length > 0)) {
               const parts: unknown[] = [];
@@ -226,13 +242,8 @@ async function runScenario(
         } catch (scoreErr) {
           const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
           console.error(`    Score error (continuing): ${msg.slice(0, 120)}`);
-          // Push checkpoint without score so screenshot is preserved
-          checkpoints.push({
-            turnIndex: turnIdx,
-            screenshotPath,
-            score: null as unknown as CheckpointResult['score'],
-            elements,
-          });
+          // Preserve screenshot with null score so the report can still include it
+          checkpoints.push({ turnIndex: turnIdx, screenshotPath, score: null, elements });
         }
       }
     }

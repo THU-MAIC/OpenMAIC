@@ -50,7 +50,8 @@ export interface VlmScore {
 export interface CheckpointResult {
   turnIndex: number;
   screenshotPath: string;
-  score: VlmScore;
+  /** null when VLM scoring failed — screenshot is still preserved. */
+  score: VlmScore | null;
   elements: PPTElement[];
 }
 
