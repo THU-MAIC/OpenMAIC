@@ -35,6 +35,9 @@ jobs:
       - name: TypeScript
         run: npx tsc --noEmit
 
+      - name: i18n Key Alignment
+        run: pnpm check:i18n-keys
+
       - name: Unit Tests
         run: pnpm test
 
