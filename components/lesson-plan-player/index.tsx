@@ -104,18 +104,24 @@ export function LessonPlanPlayer({ stage, scene }: LessonPlanPlayerProps) {
       </div>
 
       {/* Micro-goal banner */}
-      <div className="shrink-0 px-6 py-2.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700/40">
-        <div className="max-w-5xl mx-auto flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
-          <span>
-            <span className="font-medium text-gray-700 dark:text-gray-300">Topic:</span>{' '}
-            {content.microGoal.topic}
-          </span>
-          <span>
-            <span className="font-medium text-gray-700 dark:text-gray-300">Grammar:</span>{' '}
-            {content.microGoal.grammarPoint}
-          </span>
+      {content?.microGoal && (content.microGoal.topic || content.microGoal.grammarPoint) && (
+        <div className="shrink-0 px-6 py-2.5 bg-white dark:bg-gray-800 border-b border-gray-100 dark:border-gray-700/40">
+          <div className="max-w-5xl mx-auto flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
+            {content.microGoal.topic && (
+              <span>
+                <span className="font-medium text-gray-700 dark:text-gray-300">Topic:</span>{' '}
+                {content.microGoal.topic}
+              </span>
+            )}
+            {content.microGoal.grammarPoint && (
+              <span>
+                <span className="font-medium text-gray-700 dark:text-gray-300">Grammar:</span>{' '}
+                {content.microGoal.grammarPoint}
+              </span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Main content area */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
