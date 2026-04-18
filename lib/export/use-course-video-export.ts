@@ -3,13 +3,14 @@
 /**
  * useCourseVideoExport
  *
- * Drives the course-to-MP4 pipeline:
+ * Drives the course-to-WebM pipeline:
  *   • Iterates slide scenes only (skips quiz / interactive)
  *   • For speech actions: captures ONE fresh frame, then awaits TTS audio.
- *     The captureStream(5) stream repeats that frame while audio plays —
- *     no need to hammer html2canvas at 10fps for a static slide.
- *   • For spotlight / laser: captures frames at 5fps for ~2s to show the
- *     CSS animation, then clears the effect.
+ *     The canvas capture stream repeats that frame while audio plays — no need to
+ *     re-run html2canvas for static slides.
+ *   • For speech without audio: one capture, then wall-clock hold for reading time.
+ *   • For spotlight / laser: captureFor runs wall-clock–synced samples (~12 fps) for
+ *     POINTER_HOLD_MS so overlay animation lines up as well as html2canvas allows.
  *   • Skips discussion actions.
  *   • On abort: finalises what was recorded and downloads a "-partial" file.
  */
@@ -34,6 +35,9 @@ const POINTER_OVERLAY_SETTLE_MS = 120;
 
 /** DOM settle time after scene navigation (ms) */
 const SCENE_SETTLE_MS = 500;
+
+/** Let VP9 ingest a few seconds of the first sharp frame (same pixels, encoder warm-up). */
+const ENCODER_WARMUP_HOLD_MS = 150;
 
 /** ~1.5 minutes per slide — mirrors ClassroomTimer */
 const MINUTES_PER_SLIDE = 1.5;
@@ -111,6 +115,8 @@ export function useCourseVideoExport(
         await sleep(SCENE_SETTLE_MS);
         if (cancelledRef.current) break;
 
+        await awaitFontsReady();
+
         // Time remaining label — mirrors ClassroomTimer which uses overall index
         const overallIndex = allScenes.findIndex((s) => s.id === scene.id);
         const slidesRemaining = Math.max(0, allScenes.length - overallIndex);
@@ -120,6 +126,9 @@ export function useCourseVideoExport(
         // Capture the first frame of this slide BEFORE processing actions
         // so there's at least one frame even if all actions are discussions.
         await recorder.captureFrame(slideEl, timeLabel);
+        if (cancelledRef.current) break;
+
+        await sleep(ENCODER_WARMUP_HOLD_MS);
         if (cancelledRef.current) break;
 
         const actions = scene.actions ?? [];
@@ -137,16 +146,11 @@ export function useCourseVideoExport(
 
               const blob = await loadAudioBlob(speechAction);
               if (blob && !cancelledRef.current) {
-                // Hold the captured frame while audio plays.
-                // captureStream(5) repeats the canvas at 5fps automatically.
+                // Hold the captured frame while audio plays (stream repeats last canvas).
                 await recorder.playAudio(blob);
               } else if (!cancelledRef.current) {
-                // No pre-generated audio — hold slide for estimated reading time
-                await recorder.captureFor(
-                  slideEl,
-                  estimateReadingMs(speechAction.text),
-                  timeLabel,
-                );
+                // No pre-generated audio — static slide; one frame then reading-time hold
+                await sleep(estimateReadingMs(speechAction.text));
               }
               break;
             }
@@ -199,7 +203,7 @@ export function useCourseVideoExport(
       if (blob.size > 0) {
         const stageName = useStageStore.getState().stage?.name ?? 'course';
         const suffix = wasAborted ? '-partial' : '';
-        downloadBlob(blob, `${slugify(stageName)}${suffix}.mp4`);
+        downloadBlob(blob, `${slugify(stageName)}${suffix}.webm`);
         log.debug(wasAborted ? 'Partial export saved.' : 'Full export saved.');
       } else {
         log.warn('Recorder produced empty blob — nothing to download.');
@@ -250,6 +254,17 @@ function estimateReadingMs(text: string): number {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Avoid fuzzy first frames when web fonts finish loading after scene paint. */
+async function awaitFontsReady(): Promise<void> {
+  try {
+    if (typeof document !== 'undefined' && document.fonts?.ready) {
+      await document.fonts.ready;
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
 function slugify(name: string): string {

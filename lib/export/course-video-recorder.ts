@@ -2,20 +2,22 @@
  * CourseVideoRecorder
  *
  * Owns the low-level recording pipeline:
- *   html2canvas  →  offscreen <canvas>  →  captureStream(5)  →  MediaRecorder
- *   AudioContext →  MediaStreamDestination                   →  MediaRecorder
+ *   html2canvas  →  offscreen <canvas>  →  captureStream(STREAM_FPS)  →  MediaRecorder
+ *   AudioContext →  MediaStreamDestination                             →  MediaRecorder
  *
  * Design decisions
  * ────────────────
- * • captureStream(5) (not 0): the browser auto-samples the canvas at 5 fps.
- *   Manual requestFrame() with captureStream(0) proved unreliable in practice —
+ * • captureStream(STREAM_FPS) (not 0): the browser samples the canvas at a fixed
+ *   rate. Manual requestFrame() with captureStream(0) proved unreliable in practice —
  *   frames were silently dropped by the encoder.
  * • Double requestAnimationFrame before each html2canvas call: ensures React has
  *   committed and the browser has painted the current state before we snapshot.
  *   Without this the frame loop blocks React and the UI freezes.
- * • Low capture rate (5 fps / 200 ms): slides are mostly static so we only need
- *   frequent re-captures during spotlight/laser animations.  For speech we capture
- *   once (or twice), hold the frame, and let the stream repeat it at 5 fps.
+ * • Static segments (speech + TTS): capture once (or twice), then hold — the stream
+ *   repeats the last canvas pixels until the next capture.
+ * • Pointer animations (spotlight / laser): captureFor uses wall-clock–synced slots
+ *   at CAPTURE_FOR_TARGET_FPS so samples align with CSS animation time as well as
+ *   html2canvas latency allows.
  */
 
 import html2canvas from 'html2canvas';
@@ -23,14 +25,21 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('CourseVideoRecorder');
 
-const VIDEO_WIDTH = 2560;
-const VIDEO_HEIGHT = 1440;
+const VIDEO_WIDTH = 1920;
+const VIDEO_HEIGHT = 1080;
 
-/** Auto-capture fps for captureStream — matches our captureFor interval */
-const STREAM_FPS = 30;
+/** Canvas sampling rate for MediaRecorder (video track). */
+const STREAM_FPS = 60;
 
-/** Interval (ms) between html2canvas calls in captureFor loops */
-const CAPTURE_INTERVAL_MS = 33; // 30 fps
+/**
+ * Target sample rate for spotlight / laser only — wall-clock slots so captures line
+ * up with animation time better than a fixed post-capture sleep.
+ */
+const CAPTURE_FOR_TARGET_FPS = 12;
+
+/** 1080p WebM: explicit bitrate avoids mushy defaults and weak first-second quality. */
+const VIDEO_BITS_PER_SECOND = 10_000_000;
+const AUDIO_BITS_PER_SECOND = 160_000;
 
 /**
  * Preferred mime types, ordered so VP9/WebM comes first.
@@ -53,6 +62,43 @@ function chooseMimeType(): string {
     }
   }
   return '';
+}
+
+/**
+ * Prefer explicit video/audio bitrates; fall back if the browser rejects the options
+ * object (some mime combos ignore or throw on unknown fields).
+ */
+function createMediaRecorder(stream: MediaStream, mimeType: string): MediaRecorder {
+  const candidates: MediaRecorderOptions[] = [
+    ...(mimeType
+      ? [
+          {
+            mimeType,
+            videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+            audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+          },
+          { mimeType, videoBitsPerSecond: VIDEO_BITS_PER_SECOND },
+          { mimeType },
+        ]
+      : [
+          {
+            videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+            audioBitsPerSecond: AUDIO_BITS_PER_SECOND,
+          },
+          { videoBitsPerSecond: VIDEO_BITS_PER_SECOND },
+        ]),
+    {},
+  ];
+  for (const opts of candidates) {
+    try {
+      const keys = Object.keys(opts) as (keyof MediaRecorderOptions)[];
+      if (keys.length === 0) return new MediaRecorder(stream);
+      return new MediaRecorder(stream, opts);
+    } catch {
+      /* try next */
+    }
+  }
+  return new MediaRecorder(stream);
 }
 
 /**
@@ -269,13 +315,15 @@ export class CourseVideoRecorder {
     const ctx = this.canvas.getContext('2d');
     if (!ctx) throw new Error('CourseVideoRecorder: could not get 2D context');
     this.ctx = ctx;
+    // High-quality upscale from html2canvas snapshots to 1920×1080 (slides are mostly vector/UI).
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
 
     // Fill with white so the first frame is never black
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, VIDEO_WIDTH, VIDEO_HEIGHT);
 
-    // Auto-capture at STREAM_FPS — browser samples the canvas every 200 ms.
-    // We update canvas content via captureFrame(); the stream picks it up automatically.
+    // Auto-capture at STREAM_FPS — canvas updates from captureFrame(); the encoder samples the surface.
     const videoStream = this.canvas.captureStream(STREAM_FPS);
 
     // Audio pipeline
@@ -290,10 +338,7 @@ export class CourseVideoRecorder {
 
     this.mimeType = chooseMimeType();
 
-    this.mediaRecorder = new MediaRecorder(
-      combined,
-      this.mimeType ? { mimeType: this.mimeType } : undefined,
-    );
+    this.mediaRecorder = createMediaRecorder(combined, this.mimeType);
     this.mediaRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) this.chunks.push(e.data);
     };
@@ -380,16 +425,25 @@ export class CourseVideoRecorder {
   }
 
   /**
-   * Repeatedly capture frames for `durationMs` milliseconds.
-   * Used for spotlight / laser animations where content changes every frame.
-   * Interval matches STREAM_FPS (200 ms) to avoid hammering html2canvas.
+   * Repeatedly capture frames for `durationMs` milliseconds (spotlight / laser only).
+   * Uses wall-clock slots at CAPTURE_FOR_TARGET_FPS so each sample targets a predictable
+   * animation phase; long html2canvas runs skip sleep and continue from the next slot.
    */
   async captureFor(el: HTMLElement, durationMs: number, timeLabel?: string): Promise<void> {
-    const end = Date.now() + durationMs;
-    while (!this.cancelled && Date.now() < end) {
+    const slotMs = 1000 / CAPTURE_FOR_TARGET_FPS;
+    const start = Date.now();
+    const deadline = start + durationMs;
+    let frameIndex = 0;
+    while (!this.cancelled && Date.now() < deadline) {
+      const idealTime = start + frameIndex * slotMs;
+      const nowBefore = Date.now();
+      if (nowBefore < idealTime) {
+        await sleep(Math.min(idealTime - nowBefore, deadline - nowBefore));
+      }
+      if (this.cancelled || Date.now() >= deadline) break;
+
       await this.captureFrame(el, timeLabel);
-      const remaining = end - Date.now();
-      if (remaining > 0) await sleep(Math.min(CAPTURE_INTERVAL_MS, remaining));
+      frameIndex += 1;
     }
   }
 

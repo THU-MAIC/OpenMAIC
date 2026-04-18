@@ -84,7 +84,7 @@ export function SpotlightOverlay() {
             initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.15 }}
+            transition={{ duration: 0 }}
             className="absolute inset-0"
           >
             <svg
@@ -119,7 +119,7 @@ export function SpotlightOverlay() {
               />
 
               {/* THE ONE BORDER - white border */}
-              <motion.rect
+              {/* <motion.rect
                 initial={{
                   x: rect.x - 4,
                   y: rect.y - 4,
@@ -141,11 +141,9 @@ export function SpotlightOverlay() {
                 strokeWidth="1.2"
                 style={{ vectorEffect: 'non-scaling-stroke' } as React.CSSProperties}
                 transition={{
-                  duration: 0.5,
-                  delay: 0.05,
-                  ease: [0.16, 1, 0.3, 1],
+                  duration: 0,
                 }}
-              />
+              /> */}
             </svg>
           </motion.div>
         )}
