@@ -11,6 +11,11 @@ import { Analytics } from '@vercel/analytics/next';
 import { cn } from '@/lib/utils';
 import Script from 'next/script';
 import { SpeedInsights } from '@vercel/speed-insights/next';
+import Clarity from '@microsoft/clarity';
+
+const projectId = "wdjzxzmgvb"
+
+Clarity.init(projectId);
 
 const nunito = Nunito({
   subsets: ['latin'],

@@ -32,6 +32,7 @@
     "@fontsource-variable/inter": "^5.2.8",
     "@langchain/core": "^1.1.16",
     "@langchain/langgraph": "^1.1.1",
+    "@microsoft/clarity": "^1.0.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@napi-rs/canvas": "^0.1.88",
     "@opentelemetry/api": "^1.9.1",
