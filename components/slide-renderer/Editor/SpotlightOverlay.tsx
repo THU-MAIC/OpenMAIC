@@ -97,27 +97,14 @@ export function SpotlightOverlay() {
                 <mask id={`mask-${spotlightElementId}`}>
                   {/* White background = show mask layer (dimmed) */}
                   <rect x="0" y="0" width="100" height="100" fill="white" />
-                  {/* Black rectangle = hide mask layer (highlighted area / cutout) */}
-                  <motion.rect
+                  {/* Black = cutout; use static rect — animated motion rects in masks can mis-composite. */}
+                  <rect
+                    x={rect.x - 0.4}
+                    y={rect.y - 0.6}
+                    width={rect.w + 0.8}
+                    height={rect.h + 1.2}
+                    rx={1}
                     fill="black"
-                    initial={{
-                      x: rect.x - 8,
-                      y: rect.y - 8,
-                      width: rect.w + 16,
-                      height: rect.h + 16,
-                      rx: 4,
-                    }}
-                    animate={{
-                      x: rect.x - 0.4,
-                      y: rect.y - 0.6,
-                      width: rect.w + 0.8,
-                      height: rect.h + 1.2,
-                      rx: 1,
-                    }}
-                    transition={{
-                      duration: 0.6,
-                      ease: [0.16, 1, 0.3, 1],
-                    }}
                   />
                 </mask>
               </defs>
@@ -128,7 +115,6 @@ export function SpotlightOverlay() {
                 height="100"
                 fill={`rgba(0,0,0,${dimness})`}
                 mask={`url(#mask-${spotlightElementId})`}
-                className="backdrop-blur-[1.5px]"
               />
 
               {/* THE ONE BORDER - white border */}
