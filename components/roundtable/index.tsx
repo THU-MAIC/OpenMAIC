@@ -96,11 +96,6 @@ interface RoundtableProps {
   readonly captionsCollapsed?: boolean;
   readonly onToggleCaptions?: () => void;
   readonly onHome?: () => void;
-  // Video export
-  readonly onExportVideo?: () => void;
-  readonly onAbortExport?: () => void;
-  readonly isExporting?: boolean;
-  readonly exportProgress?: { sceneIndex: number; sceneTotal: number } | null;
 }
 
 const VOICE_WAVE_BARS = [
@@ -189,10 +184,6 @@ export function Roundtable({
   captionsCollapsed = true,
   onToggleCaptions,
   onHome,
-  onExportVideo,
-  onAbortExport,
-  isExporting,
-  exportProgress,
 }: RoundtableProps) {
   const { t } = useI18n();
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -668,10 +659,6 @@ export function Roundtable({
       playbackSpeed={playbackSpeed}
       onCycleSpeed={handleCycleSpeed}
       onHome={onHome}
-      onExportVideo={onExportVideo}
-      onAbortExport={onAbortExport}
-      isExporting={isExporting}
-      exportProgress={exportProgress}
     />
   );
 

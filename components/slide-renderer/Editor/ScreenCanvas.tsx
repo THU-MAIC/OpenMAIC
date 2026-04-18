@@ -13,6 +13,7 @@ import type { PPTElement, SlideBackground } from '@/lib/types/slides';
 import type { PercentageGeometry } from '@/lib/types/action';
 import { useViewportSize } from './Canvas/hooks/useViewportSize';
 import { useRef, useMemo } from 'react';
+import { AnimatePresence } from 'motion/react';
 
 export function ScreenCanvas() {
   const canvasScale = useCanvasStore.use.canvasScale();
@@ -100,16 +101,21 @@ export function ScreenCanvas() {
         {/* Spotlight overlay - covers the entire slide, positioned via DOM measurement */}
         <SpotlightOverlay />
 
-        {/* Laser: same full-slide box as spotlight — % coords match findElementGeometry (no padding inset) */}
-        <div className="absolute inset-0 pointer-events-none z-[101]">
-          {laserElementId && laserGeometry && (
-            <LaserOverlay
-              key={`laser-${laserElementId}`}
-              geometry={laserGeometry}
-              color={laserOptions?.color}
-              duration={laserOptions?.duration}
-            />
-          )}
+        {/* Visual effects layer - outside the scale layer, using percentage coordinates */}
+        <div className="absolute inset-0 pointer-events-none" style={{ padding: '5%' }}>
+          <div className="relative w-full h-full">
+            {/* Laser pointer overlay */}
+            <AnimatePresence>
+              {laserElementId && laserGeometry && (
+                <LaserOverlay
+                  key={`laser-${laserElementId}`}
+                  geometry={laserGeometry}
+                  color={laserOptions?.color}
+                  duration={laserOptions?.duration}
+                />
+              )}
+            </AnimatePresence>
+          </div>
         </div>
       </div>
     </div>

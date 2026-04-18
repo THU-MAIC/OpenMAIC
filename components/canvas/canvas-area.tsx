@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback } from 'react';
-import type { RefObject } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -12,7 +11,6 @@ import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
 import type { CanvasToolbarProps } from '@/components/canvas/canvas-toolbar';
 import type { Scene, StageMode } from '@/lib/types/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { ExportProgress } from '@/lib/export/use-course-video-export';
 
 interface CanvasAreaProps extends CanvasToolbarProps {
   readonly currentScene: Scene | null;
@@ -21,13 +19,6 @@ interface CanvasAreaProps extends CanvasToolbarProps {
   readonly isPendingScene?: boolean;
   readonly isGenerationFailed?: boolean;
   readonly onRetryGeneration?: () => void;
-  /** Ref attached to the slide container div — used by the video export hook */
-  readonly slideRef?: RefObject<HTMLDivElement | null>;
-  /** Export props forwarded to toolbar */
-  readonly onExportVideo?: () => void;
-  readonly onAbortExport?: () => void;
-  readonly isExporting?: boolean;
-  readonly exportProgress?: ExportProgress | null;
 }
 
 export function CanvasArea({
@@ -55,11 +46,6 @@ export function CanvasArea({
   isGenerationFailed,
   onRetryGeneration,
   onHome,
-  slideRef,
-  onExportVideo,
-  onAbortExport,
-  isExporting,
-  exportProgress,
 }: CanvasAreaProps) {
   const { t } = useI18n();
   const showControls = mode === 'playback' && !whiteboardOpen;
@@ -68,8 +54,7 @@ export function CanvasArea({
     engineState !== 'playing' &&
     currentScene?.type === 'slide' &&
     !isLiveSession &&
-    !isPendingScene &&
-    !isExporting;
+    !isPendingScene;
 
   const viewportRatio = currentScene?.type === 'slide'
     ? (currentScene.content as any).canvas?.viewportRatio || 0.5625
@@ -112,7 +97,6 @@ export function CanvasArea({
         )}
       >
         <div
-          ref={slideRef}
           className={cn(
             'h-full max-h-full max-w-full bg-white dark:bg-gray-800 shadow-2xl rounded-lg overflow-hidden relative transition-all duration-700 mx-auto',
             showControls && !isLiveSession && currentScene?.type === 'slide' && 'cursor-pointer',
@@ -279,10 +263,6 @@ export function CanvasArea({
           showStopDiscussion={showStopDiscussion}
           onStopDiscussion={onStopDiscussion}
           onHome={onHome}
-          onExportVideo={onExportVideo}
-          onAbortExport={onAbortExport}
-          isExporting={isExporting}
-          exportProgress={exportProgress}
         />
       )}
     </div>

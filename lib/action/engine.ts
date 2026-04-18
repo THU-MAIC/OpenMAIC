@@ -51,10 +51,14 @@ function delay(ms: number): Promise<void> {
 
 // ==================== ActionEngine ====================
 
+/** Default duration (ms) before fire-and-forget effects auto-clear */
+const EFFECT_AUTO_CLEAR_MS = 5000;
+
 export class ActionEngine {
   private stageStore: StageStore;
   private stageAPI: ReturnType<typeof createStageAPI>;
   private audioPlayer: AudioPlayer | null;
+  private effectTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(stageStore: StageStore, audioPlayer?: AudioPlayer) {
     this.stageStore = stageStore;
@@ -62,8 +66,13 @@ export class ActionEngine {
     this.audioPlayer = audioPlayer ?? null;
   }
 
-  /** Clean up when the engine is no longer needed */
-  dispose(): void {}
+  /** Clean up timers when the engine is no longer needed */
+  dispose(): void {
+    if (this.effectTimer) {
+      clearTimeout(this.effectTimer);
+      this.effectTimer = null;
+    }
+  }
 
   /**
    * Execute a single action.
@@ -119,7 +128,22 @@ export class ActionEngine {
 
   /** Clear all active visual effects */
   clearEffects(): void {
+    if (this.effectTimer) {
+      clearTimeout(this.effectTimer);
+      this.effectTimer = null;
+    }
     useCanvasStore.getState().clearAllEffects();
+  }
+
+  /** Schedule auto-clear for fire-and-forget effects */
+  private scheduleEffectClear(): void {
+    if (this.effectTimer) {
+      clearTimeout(this.effectTimer);
+    }
+    this.effectTimer = setTimeout(() => {
+      useCanvasStore.getState().clearAllEffects();
+      this.effectTimer = null;
+    }, EFFECT_AUTO_CLEAR_MS);
   }
 
   // ==================== Fire-and-forget ====================
@@ -128,12 +152,14 @@ export class ActionEngine {
     useCanvasStore.getState().setSpotlight(action.elementId, {
       dimness: action.dimOpacity ?? 0.5,
     });
+    this.scheduleEffectClear();
   }
 
   private executeLaser(action: LaserAction): void {
     useCanvasStore.getState().setLaser(action.elementId, {
       color: action.color ?? '#ff0000',
     });
+    this.scheduleEffectClear();
   }
 
   // ==================== Synchronous — Speech ====================
