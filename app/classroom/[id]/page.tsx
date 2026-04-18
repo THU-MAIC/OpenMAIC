@@ -1,6 +1,7 @@
 'use client';
 
 import { Stage } from '@/components/stage';
+import { LessonPlanPlayer } from '@/components/lesson-plan-player';
 import { ThemeProvider } from '@/lib/hooks/use-theme';
 import { useStageStore } from '@/lib/store';
 import { loadImageMapping } from '@/lib/utils/image-storage';
@@ -181,6 +182,10 @@ export default function ClassroomDetailPage() {
     }
   }, [loading, error, generateRemaining]);
 
+  const stageState = useStageStore.getState();
+  const isLessonPlan = !loading && !error && stageState.stage?.style === 'lesson_plan';
+  const lessonScene = isLessonPlan ? stageState.scenes[0] : null;
+
   return (
     <ThemeProvider>
       <MediaStageProvider value={classroomId}>
@@ -206,6 +211,12 @@ export default function ClassroomDetailPage() {
                   Retry
                 </button>
               </div>
+            </div>
+          ) : isLessonPlan && stageState.stage && lessonScene ? (
+            <LessonPlanPlayer stage={stageState.stage} scene={lessonScene} />
+          ) : isLessonPlan ? (
+            <div className="flex-1 flex items-center justify-center bg-gray-50 dark:bg-gray-900">
+              <p className="text-muted-foreground">No lesson content found.</p>
             </div>
           ) : (
             <Stage onRetryOutline={retrySingleOutline} />
