@@ -102,9 +102,11 @@ export async function searchWithClaude(params: {
             content: `Search for the following and provide a comprehensive summary with source links: ${query}.`,
           },
         ],
-        tools: (tools?.length ? tools : [{ type: 'web_search_20260209', name: 'web_search' }]).map((t) => {
-          return { ...t, allowed_callers: ['direct'] };
-        }),
+        tools: (tools?.length ? tools : [{ type: 'web_search_20260209', name: 'web_search' }]).map(
+          (t) => {
+            return { ...t, allowed_callers: ['direct'] };
+          },
+        ),
       }),
     });
 
