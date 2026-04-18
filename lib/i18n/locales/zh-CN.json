@@ -900,7 +900,8 @@
     "webSearchEditModelTitle": "编辑模型",
     "webSearchModelDialogDesc": "配置 Claude 搜索模型的 ID 和名称",
     "webSearchModelIdField": "模型 ID",
-    "webSearchModelNameField": "模型名称"
+    "webSearchModelNameField": "模型名称",
+    "webSearchModelIdDuplicate": "该模型 ID 已存在"
   },
   "profile": {
     "title": "个人资料",

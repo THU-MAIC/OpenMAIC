@@ -900,7 +900,8 @@
     "webSearchEditModelTitle": "モデルを編集",
     "webSearchModelDialogDesc": "Claude検索用のモデルIDと名前を設定します。",
     "webSearchModelIdField": "モデルID",
-    "webSearchModelNameField": "モデル名"
+    "webSearchModelNameField": "モデル名",
+    "webSearchModelIdDuplicate": "このIDのモデルはすでに存在します"
   },
   "profile": {
     "title": "プロフィール",

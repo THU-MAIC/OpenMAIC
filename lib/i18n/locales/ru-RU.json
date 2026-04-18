@@ -900,7 +900,8 @@
     "webSearchEditModelTitle": "Редактировать модель",
     "webSearchModelDialogDesc": "Настройте ID и название модели для поиска Claude.",
     "webSearchModelIdField": "ID модели",
-    "webSearchModelNameField": "Название модели"
+    "webSearchModelNameField": "Название модели",
+    "webSearchModelIdDuplicate": "Модель с таким ID уже существует"
   },
   "profile": {
     "title": "Профиль",

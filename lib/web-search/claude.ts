@@ -80,9 +80,7 @@ export async function searchWithClaude(params: {
 }): Promise<WebSearchResult> {
   const { query, apiKey, modelId: rawModelId, baseUrl, tools } = params;
   const modelId = rawModelId?.trim() || 'claude-sonnet-4-6';
-
   const apiVersion = '2023-06-01';
-
   const endpoint = `${baseUrl}/v1/messages`;
 
   try {
@@ -104,7 +102,9 @@ export async function searchWithClaude(params: {
             content: `Search for the following and provide a comprehensive summary with source links: ${query}.`,
           },
         ],
-        tools: tools?.length ? tools : [{ type: 'web_search_20260209', name: 'web_search' }],
+        tools: (tools?.length ? tools : [{ type: 'web_search_20260209', name: 'web_search' }]).map((t) => {
+          return { ...t, allowed_callers: ['direct'] };
+        }),
       }),
     });
 

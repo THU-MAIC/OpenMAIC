@@ -899,7 +899,8 @@
     "webSearchEditModelTitle": "تعديل النموذج",
     "webSearchModelDialogDesc": "قم بتكوين معرّف النموذج واسمه لبحث Claude.",
     "webSearchModelIdField": "معرّف النموذج",
-    "webSearchModelNameField": "اسم النموذج"
+    "webSearchModelNameField": "اسم النموذج",
+    "webSearchModelIdDuplicate": "يوجد نموذج بهذا المعرّف بالفعل"
   },
   "profile": {
     "title": "الملف الشخصي",

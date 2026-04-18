@@ -20,6 +20,7 @@ import {
   XCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { toast } from 'sonner';
 import { ToolEditDialog } from './tool-edit-dialog';
 import { WebSearchModelDialog } from './web-search-model-dialog';
 
@@ -159,11 +160,19 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
   const handleSaveModel = () => {
     if (!editingModel) return;
 
+    const trimmedId = editingModel.id.trim();
+    const trimmedName = editingModel.name.trim();
+    const isDuplicate = models.some((m, i) => m.id === trimmedId && i !== editingModelIndex);
+    if (isDuplicate) {
+      toast.error(t('settings.webSearchModelIdDuplicate'));
+      return;
+    }
+
     const newModels = [...models];
     if (editingModelIndex !== null) {
-      newModels[editingModelIndex] = { id: editingModel.id.trim(), name: editingModel.name.trim() };
+      newModels[editingModelIndex] = { id: trimmedId, name: trimmedName };
     } else {
-      newModels.push({ id: editingModel.id.trim(), name: editingModel.name.trim() });
+      newModels.push({ id: trimmedId, name: trimmedName });
     }
     setWebSearchProviderConfig(selectedProviderId, { models: newModels });
     setIsModelDialogOpen(false);
