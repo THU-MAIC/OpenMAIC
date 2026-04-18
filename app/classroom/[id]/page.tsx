@@ -45,20 +45,24 @@ export default function ClassroomDetailPage() {
             const json = await res.json();
             if (json.success && json.classroom) {
               const { stage, scenes } = json.classroom;
-              useStageStore.getState().setStage(stage);
-              useStageStore.setState({
-                scenes,
-                currentSceneId: scenes[0]?.id ?? null,
-              });
-              log.info('Loaded from server-side storage:', classroomId);
+              if (!stage || !Array.isArray(scenes)) {
+                log.warn('Malformed classroom data from server:', classroomId);
+              } else {
+                useStageStore.getState().setStage(stage);
+                useStageStore.setState({
+                  scenes,
+                  currentSceneId: scenes[0]?.id ?? null,
+                });
+                log.info('Loaded from server-side storage:', classroomId);
 
-              // Hydrate server-generated agents into IndexedDB + registry.
-              // Don't set selectedAgentIds here — the general agent
-              // restoration logic below (Path 2) handles it uniformly.
-              if (stage.generatedAgentConfigs?.length) {
-                const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-                await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
-                log.info('Hydrated server-generated agents for stage:', stage.id);
+                // Hydrate server-generated agents into IndexedDB + registry.
+                // Don't set selectedAgentIds here — the general agent
+                // restoration logic below (Path 2) handles it uniformly.
+                if (stage.generatedAgentConfigs?.length) {
+                  const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
+                  await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
+                  log.info('Hydrated server-generated agents for stage:', stage.id);
+                }
               }
             }
           }
@@ -134,7 +138,7 @@ export default function ClassroomDetailPage() {
     if (loading || error || generationStartedRef.current) return;
 
     const state = useStageStore.getState();
-    const { outlines, scenes, stage } = state;
+    const { outlines = [], scenes = [], stage } = state;
 
     // Check if there are pending outlines
     const completedOrders = new Set(scenes.map((s) => s.order));
