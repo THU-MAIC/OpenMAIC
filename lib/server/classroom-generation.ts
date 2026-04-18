@@ -115,6 +115,19 @@ function stripCodeFences(text: string): string {
   return cleaned.trim();
 }
 
+/**
+ * Extract the first complete JSON object from an LLM response.
+ * Handles leading/trailing prose and code fences that don't start at position 0.
+ */
+function extractJsonObject(text: string): string {
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end > start) {
+    return text.slice(start, end + 1);
+  }
+  return text;
+}
+
 async function generateAgentProfiles(
   requirement: string,
   language: string,
@@ -260,20 +273,22 @@ async function generateLessonPlan(
     : '';
 
   let lastErrors: string[] = [];
-  for (let attempt = 0; attempt < 2; attempt++) {
+  for (let attempt = 0; attempt < 3; attempt++) {
     const retryHint = attempt > 0 && lastErrors.length > 0
       ? `\n\nYour previous response had validation errors:\n${lastErrors.map((e) => `- ${e}`).join('\n')}\nPlease fix these issues.`
       : '';
 
     const response = await aiCall(prompt.system, prompt.user + retryHint);
-    const cleaned = stripCodeFences(response);
+    // Strip code fences first, then fall back to extracting the outermost
+    // {...} — handles LLMs that add prose before/after the JSON block.
+    const cleaned = extractJsonObject(stripCodeFences(response));
 
     let parsed: Record<string, unknown>;
     try {
       parsed = JSON.parse(cleaned);
     } catch {
-      lastErrors = [`Invalid JSON: ${cleaned.slice(0, 100)}...`];
-      log.warn(`Lesson plan attempt ${attempt + 1}: JSON parse failed, ${attempt < 1 ? 'retrying' : 'giving up'}`);
+      lastErrors = [`Invalid JSON: ${response.slice(0, 120)}`];
+      log.warn(`Lesson plan attempt ${attempt + 1}: JSON parse failed`, response.slice(0, 200));
       continue;
     }
 
@@ -291,7 +306,7 @@ async function generateLessonPlan(
     log.warn(`Lesson plan attempt ${attempt + 1}: validation failed (${validation.errors.length} errors), ${attempt < 1 ? 'retrying' : 'giving up'}`);
   }
 
-  throw new Error(`Lesson plan validation failed after 2 attempts: ${lastErrors.join('; ')}`);
+  throw new Error(`Lesson plan validation failed after 3 attempts: ${lastErrors.join('; ')}`);
 }
 
 /** Detect rate-limit / overload errors where a fallback model may succeed. */
