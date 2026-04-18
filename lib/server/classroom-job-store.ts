@@ -281,7 +281,13 @@ export async function updateClassroomGenerationJobProgress(
     const now = Date.now();
     if (now - (lastProgressWriteAt.get(jobId) ?? 0) >= PROGRESS_WRITE_THROTTLE_MS) {
       lastProgressWriteAt.set(jobId, now);
-      if (USE_BLOB) {
+      if (USE_NEON) {
+        await neonExec(
+          `INSERT INTO classroom_jobs (id, data, updated_at) VALUES ($1, $2::jsonb, NOW())
+           ON CONFLICT (id) DO UPDATE SET data = $2::jsonb, updated_at = NOW()`,
+          [jobId, JSON.stringify(updated)],
+        );
+      } else if (USE_BLOB) {
         await writeJsonBlob(jobBlobKey(jobId), updated);
       } else {
         await writeJsonFileAtomic(jobFilePath(jobId), updated);
