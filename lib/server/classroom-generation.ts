@@ -43,6 +43,7 @@ export interface GenerateClassroomInput {
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
   agentMode?: 'default' | 'generate';
+  groundingMap?: Record<string, { imageUrl?: string; pronunciation?: string }>;
 }
 
 export type ClassroomGenerationStep =
@@ -448,7 +449,10 @@ export async function generateClassroom(
       type: 'lesson_plan',
       title,
       order: 0,
-      content: lessonContent,
+      content: {
+        ...lessonContent,
+        ...(input.groundingMap ? { groundingMap: input.groundingMap } : {}),
+      },
     };
 
     await options.onProgress?.({
