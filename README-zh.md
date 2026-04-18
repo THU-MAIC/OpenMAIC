@@ -145,7 +145,7 @@ GLM_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 GLM_API_KEY=...
 GLM_BASE_URL=https://api.z.ai/api/paas/v4
 
-DEFAULT_MODEL=glm:glm-4.6
+DEFAULT_MODEL=glm:glm-5.1
 ```
 
 > **推荐模型：** **Gemini 3 Flash** — 效果与速度的最佳平衡。追求最高质量可选 **Gemini 3.1 Pro**（速度较慢）。
