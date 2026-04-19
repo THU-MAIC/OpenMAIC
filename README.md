@@ -38,7 +38,7 @@
 
 ## 🗞️ News
 
-- **2026-04-20** — **v1.0.0 released!** Interactive Mode — 3D visualization, simulations, games, mind maps, and online programming for hands-on learning. See [features](#-features) for details.
+- **2026-04-20** — **v0.2.0 released!** Deep Interactive Mode — 3D visualization, simulations, games, mind maps, and online programming for hands-on learning. See [features](#-features) for details.
 - **2026-04-14** — [v0.1.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1) Automatic language inference, ACCESS_CODE authentication, classroom ZIP export/import, custom TTS/ASR providers, Ollama support, and more. See [changelog](CHANGELOG.md).
 - **2026-03-26** — [v0.1.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0) Discussion TTS, immersive mode, keyboard shortcuts, whiteboard enhancements, new providers, and more. See [changelog](CHANGELOG.md).
 
@@ -208,13 +208,13 @@ Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 
 ## ✨ Features
 
-### Interactive Mode (New!)
+### Deep Interactive Mode (New!)
 
 **Passive listening? ❌  Hands-on exploration! ✅**
 
 As Einstein said: *"Play is the highest form of research."*
 
-While **Standard Mode** focuses on quickly generating classroom content, **Interactive Mode** goes further — creating interactive, explorable, hands-on learning experiences. Students don't just watch knowledge; they adjust experiments, observe simulations, and actively explore how things work.
+While **Standard Mode** focuses on quickly generating classroom content, **Deep Interactive Mode** goes further — creating interactive, explorable, hands-on learning experiences. Students don't just watch knowledge; they adjust experiments, observe simulations, and actively explore how things work.
 
 #### Five Types of Interactive UI
 

@@ -4,6 +4,31 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.2.0] - 2026-04-20
+
+### Features
+
+- **Deep Interactive Mode** — Generate hands-on interactive scenes (3D visualization, simulation, game, mind map/diagram, online programming) with an AI teacher who operates the UI to guide students. Fully responsive across desktop, tablet, and mobile [#461](https://github.com/THU-MAIC/OpenMAIC/pull/461)
+- Add code element support on the whiteboard — AI agents can write, display, and reference runnable code during lessons [#385](https://github.com/THU-MAIC/OpenMAIC/pull/385) (by @cosarah)
+- Add Arabic (ar-SA) interface language [#431](https://github.com/THU-MAIC/OpenMAIC/pull/431) (by @YizukiAme)
+- Add MinerU Cloud API as a PDF parsing provider, with a dedicated settings UI [#438](https://github.com/THU-MAIC/OpenMAIC/pull/438)
+- Add latest OpenAI models to the default config [#416](https://github.com/THU-MAIC/OpenMAIC/pull/416) (by @donghch)
+- Add GLM-5.1 and GLM-5V-Turbo to GLM preset models [#437](https://github.com/THU-MAIC/OpenMAIC/pull/437)
+- Add international base URL shortcuts for GLM, Kimi, and MiniMax in provider settings [#449](https://github.com/THU-MAIC/OpenMAIC/pull/449)
+- Add anti-framing security headers (X-Frame-Options + CSP `frame-ancestors`) with an optional `ALLOWED_FRAME_ANCESTORS` override [#430](https://github.com/THU-MAIC/OpenMAIC/pull/430) (by @YizukiAme)
+- Add i18n key alignment check to CI so missing or extra translation keys fail the build [#447](https://github.com/THU-MAIC/OpenMAIC/pull/447) (by @KanameMadoka520)
+- Add whiteboard layout quality eval harness and unify it with the outline-language harness [#425](https://github.com/THU-MAIC/OpenMAIC/pull/425) [#453](https://github.com/THU-MAIC/OpenMAIC/pull/453)
+
+### Bug Fixes
+
+- Fix classroom ZIP export to use the latest classroom name from IndexedDB [#435](https://github.com/THU-MAIC/OpenMAIC/pull/435)
+- Fix spotlight cutout for text elements and add element-content variant for image/video [#457](https://github.com/THU-MAIC/OpenMAIC/pull/457)
+
+### Other Changes
+
+- Renew the README with Deep Interactive Mode showcase and visual assets [#463](https://github.com/THU-MAIC/OpenMAIC/pull/463) (by @Shirokumaaaa)
+- Update Discord invite links across README, CONTRIBUTING, and issue templates
+
 ## [0.1.1] - 2026-04-14
 
 ### Features
