@@ -312,7 +312,11 @@ export async function generateSceneContent(
     }
 
     // Route to widget generation (handles all 5 types)
-    return generateWidgetContent(outline, aiCall, (languageDirective || 'zh-CN') as 'zh-CN' | 'en-US');
+    return generateWidgetContent(
+      outline,
+      aiCall,
+      (languageDirective || 'zh-CN') as 'zh-CN' | 'en-US',
+    );
   }
 
   switch (outline.type) {
