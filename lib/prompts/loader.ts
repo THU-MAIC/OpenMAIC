@@ -23,7 +23,7 @@ const snippetCache = new Map<string, string>();
  */
 function getPromptsDir(): string {
   // In Next.js, use process.cwd() for the project root
-  return path.join(process.cwd(), 'lib', 'generation', 'prompts');
+  return path.join(process.cwd(), 'lib', 'prompts');
 }
 
 /**
