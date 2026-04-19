@@ -21,6 +21,8 @@
     "selectProvider": "اختر المزوّد",
     "configureProvider": "إعداد المزوّد",
     "configureProviderHint": "قم بتكوين مزوّد نماذج واحد على الأقل لتوليد المقررات",
+    "interactiveModeHint": "تفعيل وضع التفاعل_first للمحتوى العملي",
+    "interactiveModeLabel": "وضع التفاعل",
     "enterClassroom": "دخول الفصل",
     "advancedSettings": "إعدادات متقدمة",
     "ttsTitle": "تحويل النص إلى كلام",
