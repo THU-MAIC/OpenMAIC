@@ -95,7 +95,8 @@ describe('searchWithClaude', () => {
       baseUrl: 'https://api.anthropic.com',
     });
 
-    const wrappedFetch = mockCreateAnthropic.mock.calls[0][0].fetch as (
+    const calls = mockCreateAnthropic.mock.calls as unknown as [options: Record<string, unknown>][];
+    const wrappedFetch = calls[0]![0]!['fetch'] as (
       url: string,
       init?: RequestInit,
     ) => Promise<Response>;
@@ -104,7 +105,8 @@ describe('searchWithClaude', () => {
     mockProxyFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
     await wrappedFetch('https://api.anthropic.com/v1/messages', { method: 'POST', body });
 
-    const sentBody = JSON.parse(mockProxyFetch.mock.calls[0][1].body as string);
+    const proxyCalls = mockProxyFetch.mock.calls as unknown as [string, RequestInit][];
+    const sentBody = JSON.parse(proxyCalls[0]![1]!.body as string);
     expect(sentBody.tools[0].allowed_callers).toEqual(['direct']);
   });
 
@@ -116,7 +118,10 @@ describe('searchWithClaude', () => {
       baseUrl: 'https://api.anthropic.com',
     });
 
-    const wrappedFetch = mockCreateAnthropic.mock.calls[0][0].fetch as (
+    const calls2 = mockCreateAnthropic.mock.calls as unknown as [
+      options: Record<string, unknown>,
+    ][];
+    const wrappedFetch = calls2[0]![0]!['fetch'] as (
       url: string,
       init?: RequestInit,
     ) => Promise<Response>;
@@ -127,7 +132,8 @@ describe('searchWithClaude', () => {
     mockProxyFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
     await wrappedFetch('https://api.anthropic.com/v1/messages', { method: 'POST', body });
 
-    const sentBody = JSON.parse(mockProxyFetch.mock.calls[0][1].body as string);
+    const proxyCalls2 = mockProxyFetch.mock.calls as unknown as [string, RequestInit][];
+    const sentBody = JSON.parse(proxyCalls2[0]![1]!.body as string);
     expect(sentBody.tools[0].allowed_callers).toEqual(['agent']);
   });
 
