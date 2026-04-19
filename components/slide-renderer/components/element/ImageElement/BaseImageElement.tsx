@@ -51,7 +51,7 @@ export function BaseImageElement({ elementInfo }: BaseImageElementProps) {
 
   return (
     <div
-      className="absolute"
+      className="element-content absolute"
       style={{
         top: `${elementInfo.top}px`,
         left: `${elementInfo.left}px`,
