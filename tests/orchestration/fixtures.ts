@@ -40,6 +40,15 @@ export const studentAgent: AgentConfig = {
   persona: 'A curious 9th grader who likes asking why.',
 };
 
+export const assistantAgent: AgentConfig = {
+  ...teacherAgent,
+  id: 'assistant_1',
+  name: 'Aria',
+  role: 'assistant',
+  priority: 75,
+  persona: 'A supportive TA who fills in gaps.',
+};
+
 export const slideStoreState: StatelessChatRequest['storeState'] = {
   stage: {
     id: 'stage-1',
@@ -88,6 +97,35 @@ export const slideStoreState: StatelessChatRequest['storeState'] = {
   currentSceneId: 'scene-1',
   mode: 'autonomous',
   whiteboardOpen: false,
+};
+
+export const quizStoreState: StatelessChatRequest['storeState'] = {
+  ...slideStoreState,
+  scenes: [
+    {
+      id: 'scene-quiz',
+      stageId: 'stage-1',
+      type: 'quiz',
+      title: '测验：力的分解',
+      order: 0,
+      content: {
+        type: 'quiz',
+        questions: [
+          {
+            id: 'q1',
+            type: 'single',
+            question: '斜面上的物体受到哪几个力？',
+            options: [
+              { label: '重力和支持力', value: 'A' },
+              { label: '重力、支持力和摩擦力', value: 'B' },
+            ],
+            answer: ['B'],
+          },
+        ],
+      },
+    },
+  ],
+  currentSceneId: 'scene-quiz',
 };
 
 export const whiteboardLedger: WhiteboardActionRecord[] = [
