@@ -15,12 +15,19 @@ export type PromptId =
   | 'interactive-scientific-model'
   | 'interactive-html'
   | 'interactive-actions'
-  | 'pbl-actions';
+  | 'pbl-actions'
+  | 'agent-system'
+  | 'director'
+  | 'pbl-design';
 
 /**
  * Snippet identifier
  */
-export type SnippetId = 'json-output-rules' | 'element-types' | 'action-types';
+export type SnippetId =
+  | 'json-output-rules'
+  | 'element-types'
+  | 'action-types'
+  | 'speech-guidelines';
 
 /**
  * Loaded prompt template

@@ -11,7 +11,7 @@ import type {
   PdfImage,
   ImageMapping,
 } from '@/lib/types/generation';
-import { buildPrompt, PROMPT_IDS } from './prompts';
+import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
 import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
