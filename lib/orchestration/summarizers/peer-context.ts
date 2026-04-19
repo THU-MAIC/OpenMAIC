@@ -1,4 +1,4 @@
-import type { AgentTurnSummary } from '../director-prompt';
+import type { AgentTurnSummary } from '../types';
 
 // ==================== Peer Context ====================
 

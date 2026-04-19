@@ -8,41 +8,9 @@
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { createLogger } from '@/lib/logger';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
+import type { WhiteboardActionRecord, AgentTurnSummary } from './types';
 
 const log = createLogger('DirectorPrompt');
-
-/**
- * A single whiteboard action performed by an agent, recorded in the ledger.
- */
-export interface WhiteboardActionRecord {
-  actionName:
-    | 'wb_draw_text'
-    | 'wb_draw_shape'
-    | 'wb_draw_chart'
-    | 'wb_draw_latex'
-    | 'wb_draw_table'
-    | 'wb_draw_line'
-    | 'wb_draw_code'
-    | 'wb_edit_code'
-    | 'wb_clear'
-    | 'wb_delete'
-    | 'wb_open'
-    | 'wb_close';
-  agentId: string;
-  agentName: string;
-  params: Record<string, unknown>;
-}
-
-/**
- * Summary of an agent's turn in the current round
- */
-export interface AgentTurnSummary {
-  agentId: string;
-  agentName: string;
-  contentPreview: string;
-  actionCount: number;
-  whiteboardActions: WhiteboardActionRecord[];
-}
 
 /**
  * Build the system prompt for the director agent
