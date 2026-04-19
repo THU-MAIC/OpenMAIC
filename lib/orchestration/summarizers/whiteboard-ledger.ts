@@ -1,5 +1,5 @@
 import type { StatelessChatRequest } from '@/lib/types/chat';
-import type { WhiteboardActionRecord } from '../director-prompt';
+import type { WhiteboardActionRecord } from '../types';
 
 // ==================== Virtual Whiteboard Context ====================
 

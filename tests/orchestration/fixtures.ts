@@ -1,6 +1,6 @@
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { StatelessChatRequest } from '@/lib/types/chat';
-import type { WhiteboardActionRecord, AgentTurnSummary } from '@/lib/orchestration/director-prompt';
+import type { WhiteboardActionRecord, AgentTurnSummary } from '@/lib/orchestration/types';
 
 export const teacherAgent: AgentConfig = {
   id: 'teacher_1',

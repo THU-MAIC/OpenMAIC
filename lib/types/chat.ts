@@ -217,7 +217,7 @@ export interface LectureNoteEntry {
 // ==================== Stateless Multi-Agent API Types ====================
 
 import type { Stage, Scene, StageMode } from '@/lib/types/stage';
-import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/director-prompt';
+import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 
 /**
  * Accumulated director state passed between per-agent requests.

@@ -6,7 +6,7 @@
 
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
-import type { WhiteboardActionRecord, AgentTurnSummary } from './director-prompt';
+import type { WhiteboardActionRecord, AgentTurnSummary } from './types';
 import { getActionDescriptions, getEffectiveActions } from './tool-schemas';
 import { buildStateContext } from './summarizers/state-context';
 import { buildVirtualWhiteboardContext } from './summarizers/whiteboard-ledger';
