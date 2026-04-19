@@ -16,7 +16,9 @@ export type PromptId =
   | 'interactive-html'
   | 'interactive-actions'
   | 'pbl-actions'
-  | 'agent-system';
+  | 'agent-system'
+  | 'director'
+  | 'pbl-design';
 
 /**
  * Snippet identifier

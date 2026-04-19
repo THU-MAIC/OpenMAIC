@@ -33,4 +33,6 @@ export const PROMPT_IDS = {
   INTERACTIVE_ACTIONS: 'interactive-actions',
   PBL_ACTIONS: 'pbl-actions',
   AGENT_SYSTEM: 'agent-system',
+  DIRECTOR: 'director',
+  PBL_DESIGN: 'pbl-design',
 } as const satisfies Record<string, PromptId>;
