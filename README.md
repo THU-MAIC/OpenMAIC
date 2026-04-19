@@ -38,6 +38,7 @@
 
 ## 🗞️ News
 
+- **2026-04-20** — **v1.0.0 released!** Interactive Mode — 3D visualization, simulations, games, mind maps, and online programming for hands-on learning. See [features](#-features) for details.
 - **2026-04-14** — [v0.1.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1) Automatic language inference, ACCESS_CODE authentication, classroom ZIP export/import, custom TTS/ASR providers, Ollama support, and more. See [changelog](CHANGELOG.md).
 - **2026-03-26** — [v0.1.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0) Discussion TTS, immersive mode, keyboard shortcuts, whiteboard enhancements, new providers, and more. See [changelog](CHANGELOG.md).
 
@@ -207,6 +208,114 @@ Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 
 ## ✨ Features
 
+### Interactive Mode (New!)
+
+**Passive listening? ❌  Hands-on exploration! ✅**
+
+As Einstein said: *"Play is the highest form of research."*
+
+While **Standard Mode** focuses on quickly generating classroom content, **Interactive Mode** goes further — creating interactive, explorable, hands-on learning experiences. Students don't just watch knowledge; they adjust experiments, observe simulations, and actively explore how things work.
+
+#### Five Types of Interactive UI
+
+<table>
+<tr>
+<td width="50%" valign="top">
+
+**🌐 3D Visualization**
+
+Three-dimensional visual representations that make abstract structures more intuitive.
+
+<img src="assets/interactive_mode/3D_interactive.gif" width="100%"/>
+
+</td>
+<td width="50%" valign="top">
+
+**⚙️ Simulation**
+
+Process simulations and experimental environments for observing dynamic changes and outcomes.
+
+<img src="assets/interactive_mode/simulation_interactive.gif" width="100%"/>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**🎮 Game**
+
+Knowledge-based mini-games that reinforce understanding and memory through interactive challenges.
+
+<img src="assets/interactive_mode/game_interactive.gif" width="100%"/>
+
+</td>
+<td width="50%" valign="top">
+
+**🧭 Mind Map**
+
+Structured knowledge organization to help learners build an overall conceptual framework.
+
+<img src="assets/interactive_mode/mindmap_interactive.gif" width="100%"/>
+
+</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+
+**💻 Online Programming**
+
+In-browser coding and instant execution for learning by writing, testing, and iterating.
+
+<img src="assets/interactive_mode/code_interactive.gif" width="100%"/>
+
+</td>
+<td width="50%" valign="top">
+
+</td>
+</tr>
+</table>
+
+#### AI Teacher Guidance
+
+The AI teacher can actively operate the UI to guide students — highlighting key areas, setting conditions, providing hints, and directing attention at the right moments.
+
+<img src="assets/interactive_mode/teacher_action_interative.gif" width="100%"/>
+
+#### Available on Any Device
+
+All generated interactive UI is fully responsive — desktop, tablet, or mobile.
+
+<table>
+<tr>
+<td width="50%" align="center">
+
+**Desktop**
+
+<img src="assets/interactive_mode/desktop_interactive.png" width="90%"/>
+
+</td>
+<td width="50%" align="center" rowspan="2">
+
+**Mobile**
+
+<img src="assets/interactive_mode/phone_interactive.png" width="45%"/>
+
+</td>
+</tr>
+<tr>
+<td width="50%" align="center">
+
+**iPad**
+
+<img src="assets/interactive_mode/ipad_interactive.png" width="90%"/>
+
+</td>
+</tr>
+</table>
+
+#### Need a More Complete and Professional UI Generation Experience?
+If you are looking for a version with richer functionality, stronger interactivity, and deeper optimization for high-quality educational UI production, please visit [MAIC-UI](https://github.com/THU-MAIC/MAIC-UI).
+
 ### Lesson Generation
 
 Describe what you want to learn or attach reference materials. OpenMAIC's two-stage pipeline handles the rest:
@@ -218,6 +327,8 @@ Describe what you want to learn or attach reference materials. OpenMAIC's two-st
 
 <!-- PLACEHOLDER: generation pipeline GIF -->
 <!-- <img src="assets/generation-pipeline.gif" width="100%"/> -->
+
+
 
 ### Classroom Components
 
