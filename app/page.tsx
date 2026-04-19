@@ -55,16 +55,19 @@ const log = createLogger('Home');
 
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
+const LANGUAGE_STORAGE_KEY = 'courseLanguage';
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
+  language: 'zh-CN' | 'zh-TW' | 'en-US';
   webSearch: boolean;
 }
 
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
+  language: 'zh-CN',
   webSearch: false,
 };
 
@@ -97,8 +100,15 @@ function HomePage() {
     }
     try {
       const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
+      const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
       const updates: Partial<FormState> = {};
       if (savedWebSearch === 'true') updates.webSearch = true;
+      if (savedLanguage === 'zh-CN' || savedLanguage === 'zh-TW' || savedLanguage === 'en-US') {
+        updates.language = savedLanguage;
+      } else {
+        const detected = navigator.language?.startsWith('zh') ? 'zh-CN' : 'en-US';
+        updates.language = detected;
+      }
       if (Object.keys(updates).length > 0) {
         setForm((prev) => ({ ...prev, ...updates }));
       }
@@ -257,6 +267,7 @@ function HomePage() {
       const userProfile = useUserProfileStore.getState();
       const requirements: UserRequirements = {
         requirement: form.requirement,
+        language: form.language,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: form.webSearch || undefined,
@@ -503,6 +514,8 @@ function HomePage() {
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
+                  language={form.language}
+                  onLanguageChange={(lang) => updateForm('language', lang)}
                   webSearch={form.webSearch}
                   onWebSearchChange={(v) => updateForm('webSearch', v)}
                   onSettingsOpen={(section) => {

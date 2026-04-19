@@ -177,7 +177,7 @@ describe('Outline Language Inference Evaluation', () => {
       async () => {
         // Call the REAL outline generation function
         const result = await generateSceneOutlinesFromRequirements(
-          { requirement: tc.requirement },
+          { requirement: tc.requirement, language: 'zh-CN' },
           tc.pdfTextSample || undefined, // pass PDF text if available
           undefined, // no PDF images
           aiCall,

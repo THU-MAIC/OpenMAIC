@@ -221,6 +221,7 @@ export async function generateClassroom(
 
   const requirements: UserRequirements = {
     requirement,
+    language: 'zh-CN', // Default language for server-side generation
   };
   const pdfText = pdfContent?.text || undefined;
 
