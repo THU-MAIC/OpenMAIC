@@ -12,28 +12,34 @@ interface WidgetIframeState {
   /** Currently active scene ID (used for fallback/legacy support) */
   activeSceneId: string | null;
   /** Register an iframe callback for a specific scene */
-  registerIframe: (sceneId: string, callback: ((type: string, payload: Record<string, unknown>) => void) | null) => void;
+  registerIframe: (
+    sceneId: string,
+    callback: ((type: string, payload: Record<string, unknown>) => void) | null,
+  ) => void;
   /** Set the active scene ID */
   setActiveScene: (sceneId: string | null) => void;
   /** Get sendMessage callback for a specific scene (or current active scene) */
-  getSendMessage: (sceneId?: string) => ((type: string, payload: Record<string, unknown>) => void) | null;
+  getSendMessage: (
+    sceneId?: string,
+  ) => ((type: string, payload: Record<string, unknown>) => void) | null;
 }
 
 export const useWidgetIframeStore = create<WidgetIframeState>((set, get) => ({
   sendMessageByScene: {},
   activeSceneId: null,
-  registerIframe: (sceneId, callback) => set((state) => {
-    if (callback === null) {
-      // Unregister: remove from map
-      const updated = { ...state.sendMessageByScene };
-      delete updated[sceneId];
-      return { sendMessageByScene: updated };
-    }
-    // Register: add to map
-    return {
-      sendMessageByScene: { ...state.sendMessageByScene, [sceneId]: callback }
-    };
-  }),
+  registerIframe: (sceneId, callback) =>
+    set((state) => {
+      if (callback === null) {
+        // Unregister: remove from map
+        const updated = { ...state.sendMessageByScene };
+        delete updated[sceneId];
+        return { sendMessageByScene: updated };
+      }
+      // Register: add to map
+      return {
+        sendMessageByScene: { ...state.sendMessageByScene, [sceneId]: callback },
+      };
+    }),
   setActiveScene: (sceneId) => set({ activeSceneId: sceneId }),
   getSendMessage: (sceneId) => {
     const state = get();

@@ -38,7 +38,14 @@ import {
 } from './prompt-formatters';
 import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@/lib/types/slides';
 import type { QuizQuestion } from '@/lib/types/stage';
-import type { Action, SpeechAction, WidgetHighlightAction, WidgetSetStateAction, WidgetAnnotationAction, WidgetRevealAction } from '@/lib/types/action';
+import type {
+  Action,
+  SpeechAction,
+  WidgetHighlightAction,
+  WidgetSetStateAction,
+  WidgetAnnotationAction,
+  WidgetRevealAction,
+} from '@/lib/types/action';
 import type {
   AgentInfo,
   SceneGenerationContext,
@@ -155,7 +162,9 @@ async function generateSingleScene(
 function convertInteractiveConfigToWidget(outline: SceneOutline): SceneOutline {
   const config = outline.interactiveConfig;
   if (!config) {
-    log.warn(`Interactive outline missing both widget and interactiveConfig, falling back to simulation`);
+    log.warn(
+      `Interactive outline missing both widget and interactiveConfig, falling back to simulation`,
+    );
     return {
       ...outline,
       widgetType: 'simulation' as WidgetType,
@@ -166,7 +175,7 @@ function convertInteractiveConfigToWidget(outline: SceneOutline): SceneOutline {
   const widgetType = inferWidgetType(
     config.subject || '',
     config.conceptName,
-    config.designIdea || ''
+    config.designIdea || '',
   );
 
   log.info(`Converting interactiveConfig to widget: ${widgetType} for "${outline.title}"`);
@@ -185,7 +194,9 @@ function inferWidgetType(subject: string, concept: string, designIdea: string): 
   const text = (subject + ' ' + concept + ' ' + designIdea).toLowerCase();
 
   // Rule-based inference
-  if (/physics|chemistry|力学|化学|运动|反应|force|motion|equilibrium|wave|电路|circuit/.test(text)) {
+  if (
+    /physics|chemistry|力学|化学|运动|反应|force|motion|equilibrium|wave|电路|circuit/.test(text)
+  ) {
     return 'simulation';
   }
   if (/programming|code|algorithm|编程|算法|python|javascript|function|代码/.test(text)) {
@@ -194,7 +205,9 @@ function inferWidgetType(subject: string, concept: string, designIdea: string): 
   if (/process|workflow|步骤|流程|逻辑|step|flow|系统|system/.test(text)) {
     return 'diagram';
   }
-  if (/biology|anatomy|cell|molecular|生物|细胞|分子|3d|三维|solar|planet|skeleton|organ/.test(text)) {
+  if (
+    /biology|anatomy|cell|molecular|生物|细胞|分子|3d|三维|solar|planet|skeleton|organ/.test(text)
+  ) {
     return 'visualization3d';
   }
   if (/game|quiz|practice|练习|游戏|puzzle|match|challenge|挑战/.test(text)) {
@@ -208,7 +221,10 @@ function inferWidgetType(subject: string, concept: string, designIdea: string): 
 /**
  * Build widgetOutline from interactiveConfig for backward compatibility
  */
-function buildWidgetOutline(widgetType: WidgetType, config: { conceptName: string; conceptOverview: string; designIdea: string }): WidgetOutline {
+function buildWidgetOutline(
+  widgetType: WidgetType,
+  config: { conceptName: string; conceptOverview: string; designIdea: string },
+): WidgetOutline {
   const base: WidgetOutline = { concept: config.conceptName };
 
   switch (widgetType) {
@@ -258,7 +274,9 @@ export async function generateSceneContent(
 
     // If still no widgetType after conversion, fallback to simulation
     if (!outline.widgetType) {
-      log.warn(`Interactive outline "${outline.title}" has no widgetType, falling back to simulation`);
+      log.warn(
+        `Interactive outline "${outline.title}" has no widgetType, falling back to simulation`,
+      );
       outline = {
         ...outline,
         widgetType: 'simulation' as WidgetType,
@@ -952,8 +970,8 @@ async function generateWidgetContent(
         description: outline.description,
         keyPoints: (outline.keyPoints || []).join('\n'),
         starterCode: '',
-        testCases: '',  // AI generates appropriate test cases based on challenge
-        hints: '',  // AI generates progressive hints based on challenge
+        testCases: '', // AI generates appropriate test cases based on challenge
+        hints: '', // AI generates progressive hints based on challenge
         language,
       };
       break;
@@ -1014,9 +1032,13 @@ async function generateWidgetContent(
     aiCall,
     language,
   );
-  log.info(`[Ultra Mode] Generated ${teacherActions?.length || 0} teacher actions for "${outline.title}" (${widgetType})`);
+  log.info(
+    `[Ultra Mode] Generated ${teacherActions?.length || 0} teacher actions for "${outline.title}" (${widgetType})`,
+  );
   if (teacherActions && teacherActions.length > 0) {
-    log.info(`[Ultra Mode] Teacher actions for "${outline.title}": ${JSON.stringify(teacherActions, null, 2)}`);
+    log.info(
+      `[Ultra Mode] Teacher actions for "${outline.title}": ${JSON.stringify(teacherActions, null, 2)}`,
+    );
   }
 
   return {
@@ -1031,7 +1053,9 @@ async function generateWidgetContent(
  * Extract widget config from embedded JSON in HTML
  */
 function extractWidgetConfig(html: string): WidgetConfig | undefined {
-  const match = html.match(/<script type="application\/json" id="widget-config">([\s\S]*?)<\/script>/);
+  const match = html.match(
+    /<script type="application\/json" id="widget-config">([\s\S]*?)<\/script>/,
+  );
   if (!match) return undefined;
 
   try {
@@ -1090,14 +1114,18 @@ export async function generateSceneActions(
   // Debug: Log content type and teacherActions presence for interactive scenes
   if (outline.type === 'interactive') {
     const hasHtml = 'html' in content;
-    const teacherActionsCount = hasHtml ? (content.teacherActions?.length || 0) : 0;
-    log.info(`[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, teacherActions=${teacherActionsCount}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`);
+    const teacherActionsCount = hasHtml ? content.teacherActions?.length || 0 : 0;
+    log.info(
+      `[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, teacherActions=${teacherActionsCount}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`,
+    );
   }
 
   // Ultra Mode: If interactive content has teacherActions, convert and use them
   // Skip normal action generation for widget-based interactive scenes
   if (outline.type === 'interactive' && 'html' in content && content.teacherActions?.length) {
-    log.info(`[Ultra Mode] Converting ${content.teacherActions.length} teacherActions to Actions for: ${outline.title}`);
+    log.info(
+      `[Ultra Mode] Converting ${content.teacherActions.length} teacherActions to Actions for: ${outline.title}`,
+    );
     return convertTeacherActionsToActions(content.teacherActions);
   }
 

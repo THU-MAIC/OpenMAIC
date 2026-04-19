@@ -65,17 +65,17 @@ export interface WidgetOutline {
   concept?: string;
 
   // Type-specific fields
-  keyVariables?: string[];  // simulation
-  diagramType?: 'flowchart' | 'mindmap' | 'hierarchy' | 'system';  // diagram
-  language?: 'python' | 'javascript' | 'typescript' | 'java' | 'cpp';  // code
-  gameType?: 'quiz' | 'puzzle' | 'strategy' | 'card' | 'action';  // game
-  visualizationType?: 'molecular' | 'solar' | 'anatomy' | 'geometry' | 'physics' | 'custom';  // visualization3d
-  objects?: string[];  // visualization3d
-  interactions?: string[];  // visualization3d
-  challenge?: string;  // game - description of what player does
-  playerControls?: string[];  // game - what player controls
-  nodeCount?: number;  // diagram - approximate node count
-  challengeType?: string;  // code - type of coding challenge
+  keyVariables?: string[]; // simulation
+  diagramType?: 'flowchart' | 'mindmap' | 'hierarchy' | 'system'; // diagram
+  language?: 'python' | 'javascript' | 'typescript' | 'java' | 'cpp'; // code
+  gameType?: 'quiz' | 'puzzle' | 'strategy' | 'card' | 'action'; // game
+  visualizationType?: 'molecular' | 'solar' | 'anatomy' | 'geometry' | 'physics' | 'custom'; // visualization3d
+  objects?: string[]; // visualization3d
+  interactions?: string[]; // visualization3d
+  challenge?: string; // game - description of what player does
+  playerControls?: string[]; // game - what player controls
+  nodeCount?: number; // diagram - approximate node count
+  challengeType?: string; // code - type of coding challenge
 }
 
 /**

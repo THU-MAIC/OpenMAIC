@@ -50,4 +50,3 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
     </div>
   );
 }
-

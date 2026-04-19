@@ -36,7 +36,7 @@ export function ThumbnailInteractive({
           setIsVisible(entry.isIntersecting);
         });
       },
-      { threshold: 0.1, rootMargin: '50px' } // Pre-load when within 50px of viewport
+      { threshold: 0.1, rootMargin: '50px' }, // Pre-load when within 50px of viewport
     );
 
     observer.observe(containerRef.current);

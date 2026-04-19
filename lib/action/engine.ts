@@ -85,7 +85,11 @@ export class ActionEngine {
   private effectTimer: ReturnType<typeof setTimeout> | null = null;
   private widgetMessageCallback: WidgetMessageCallback | null = null;
 
-  constructor(stageStore: StageStore, audioPlayer?: AudioPlayer | null, widgetMessageCallback?: WidgetMessageCallback | null) {
+  constructor(
+    stageStore: StageStore,
+    audioPlayer?: AudioPlayer | null,
+    widgetMessageCallback?: WidgetMessageCallback | null,
+  ) {
     this.stageStore = stageStore;
     this.stageAPI = createStageAPI(stageStore);
     this.audioPlayer = audioPlayer ?? null;

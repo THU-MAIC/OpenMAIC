@@ -171,8 +171,16 @@ export interface Visualization3DConfig {
   };
   lighting?: {
     ambient?: { color?: string; intensity?: number };
-    directional?: Array<{ color?: string; intensity?: number; position?: { x: number; y: number; z: number } }>;
-    point?: Array<{ color?: string; intensity?: number; position?: { x: number; y: number; z: number } }>;
+    directional?: Array<{
+      color?: string;
+      intensity?: number;
+      position?: { x: number; y: number; z: number };
+    }>;
+    point?: Array<{
+      color?: string;
+      intensity?: number;
+      position?: { x: number; y: number; z: number };
+    }>;
   };
   presets?: Array<{
     name: string;
