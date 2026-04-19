@@ -8,7 +8,9 @@ import type { StatelessChatRequest } from '@/lib/types/chat';
 import {
   teacherAgent,
   studentAgent,
+  assistantAgent,
   slideStoreState,
+  quizStoreState,
   whiteboardLedger,
   peerResponses,
 } from './fixtures';
@@ -57,7 +59,7 @@ describe('buildStructuredPrompt — baseline snapshots', () => {
     expect(out).toMatchSnapshot();
   });
 
-  test('teacher / whiteboard-open scene (no spotlight/laser variants)', () => {
+  test('teacher / slide scene with whiteboard open (mutual-exclusion warning)', () => {
     const wbState: StatelessChatRequest['storeState'] = {
       ...slideStoreState,
       whiteboardOpen: true,
@@ -65,37 +67,54 @@ describe('buildStructuredPrompt — baseline snapshots', () => {
     const out = buildStructuredPrompt(teacherAgent, wbState);
     expect(out).toMatchSnapshot();
   });
+
+  test('teacher / quiz scene (spotlight/laser stripped)', () => {
+    const out = buildStructuredPrompt(teacherAgent, quizStoreState);
+    expect(out).toMatchSnapshot();
+  });
+
+  test('assistant / slide scene', () => {
+    const out = buildStructuredPrompt(assistantAgent, slideStoreState);
+    expect(out).toMatchSnapshot();
+  });
 });
 
 describe('convertMessagesToOpenAI', () => {
-  test('mixed user + assistant + cross-agent messages', () => {
-    const messages: StatelessChatRequest['messages'] = [
-      {
-        id: 'msg-1',
-        role: 'user',
-        parts: [{ type: 'text', text: 'hi' }],
-        metadata: { createdAt: 1 },
-      },
-      {
-        id: 'msg-2',
-        role: 'assistant',
-        parts: [
-          { type: 'text', text: 'hello!' },
-          {
-            type: 'action-spotlight' as 'text',
-            // Cast via unknown to inject action-part shape that convertMessagesToOpenAI reads dynamically
-            ...({
-              type: 'action-spotlight',
-              state: 'result',
-              actionName: 'spotlight',
-              output: { success: true, data: { elementId: 'x' } },
-            } as unknown as { text: string }),
-          },
-        ],
-        metadata: { agentId: 'teacher_1', senderName: 'Mr. Chen' },
-      },
-    ];
-    expect(convertMessagesToOpenAI(messages, 'teacher_1')).toMatchSnapshot();
+  const baseMessages: StatelessChatRequest['messages'] = [
+    {
+      id: 'msg-1',
+      role: 'user',
+      parts: [{ type: 'text', text: 'hi' }],
+      metadata: { createdAt: 1 },
+    },
+    {
+      id: 'msg-2',
+      role: 'assistant',
+      parts: [
+        { type: 'text', text: 'hello!' },
+        {
+          type: 'action-spotlight' as 'text',
+          // Cast via unknown to inject action-part shape that convertMessagesToOpenAI reads dynamically
+          ...({
+            type: 'action-spotlight',
+            state: 'result',
+            actionName: 'spotlight',
+            output: { success: true, data: { elementId: 'x' } },
+          } as unknown as { text: string }),
+        },
+      ],
+      metadata: { agentId: 'teacher_1', senderName: 'Mr. Chen' },
+    },
+  ];
+
+  test('same-agent assistant message stays as assistant role', () => {
+    // currentAgentId matches message's agentId — cross-agent branch is NOT taken
+    expect(convertMessagesToOpenAI(baseMessages, 'teacher_1')).toMatchSnapshot();
+  });
+
+  test('cross-agent assistant message converts to user role with name prefix', () => {
+    // currentAgentId differs from message's agentId — triggers role conversion
+    expect(convertMessagesToOpenAI(baseMessages, 'student_1')).toMatchSnapshot();
   });
 });
 
