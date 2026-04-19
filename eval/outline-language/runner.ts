@@ -38,6 +38,9 @@ function loadScenarios(): LanguageTestCase[] {
   return JSON.parse(readFileSync(path, 'utf-8')) as LanguageTestCase[];
 }
 
+// Pre-validate env with tailored messages (including example model strings).
+// resolveEvalModel() also throws on missing vars, but with a shorter message;
+// surfacing the example before any async work makes misconfiguration obvious.
 function requireModelEnv(): { inferenceModelStr: string; judgeModelStr: string } {
   const inferenceModelStr = process.env.EVAL_INFERENCE_MODEL || process.env.DEFAULT_MODEL;
   const judgeModelStr = process.env.EVAL_JUDGE_MODEL;
