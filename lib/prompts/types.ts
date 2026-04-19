@@ -20,7 +20,8 @@ export type PromptId =
   | 'game-content'
   | 'visualization3d-content'
   | 'widget-teacher-actions'
-  | 'pbl-actions';
+  | 'pbl-actions'
+  | 'agent-system';
 
 /**
  * Snippet identifier

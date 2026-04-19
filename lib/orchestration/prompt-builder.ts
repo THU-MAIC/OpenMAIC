@@ -11,6 +11,7 @@ import { getActionDescriptions, getEffectiveActions } from './tool-schemas';
 import { buildStateContext } from './summarizers/state-context';
 import { buildVirtualWhiteboardContext } from './summarizers/whiteboard-ledger';
 import { buildPeerContextSection } from './summarizers/peer-context';
+import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 
 // ==================== Role Guidelines ====================
 
@@ -51,6 +52,64 @@ interface DiscussionContext {
   prompt?: string;
 }
 
+// ==================== Per-variant string constants ====================
+
+const FORMAT_EXAMPLE_SLIDE = `[{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},{"type":"text","content":"Your natural speech to students"}]`;
+const FORMAT_EXAMPLE_WB = `[{"type":"action","name":"wb_open","params":{}},{"type":"text","content":"Your natural speech to students"}]`;
+
+const ORDERING_SLIDE = `- spotlight/laser actions should appear BEFORE the corresponding text object (point first, then speak)
+- whiteboard actions can interleave WITH text objects (draw while speaking)`;
+const ORDERING_WB = `- whiteboard actions can interleave WITH text objects (draw while speaking)`;
+
+const SPOTLIGHT_EXAMPLES = `[{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},{"type":"text","content":"Photosynthesis is the process by which plants convert light energy into chemical energy. Take a look at this diagram."},{"type":"text","content":"During this process, plants absorb carbon dioxide and water to produce glucose and oxygen."}]
+
+[{"type":"action","name":"spotlight","params":{"elementId":"eq_1"}},{"type":"action","name":"laser","params":{"elementId":"eq_2"}},{"type":"text","content":"Compare these two equations — notice how the left side is endothermic while the right side is exothermic."}]
+
+`;
+
+const SLIDE_ACTION_GUIDELINES = `- spotlight: Use to focus attention on ONE key element. Don't overuse — max 1-2 per response.
+- laser: Use to point at elements. Good for directing attention during explanations.
+`;
+
+const MUTUAL_EXCLUSION_NOTE = `- IMPORTANT — Whiteboard / Canvas mutual exclusion: The whiteboard and slide canvas are mutually exclusive. When the whiteboard is OPEN, the slide canvas is hidden — spotlight and laser actions targeting slide elements will have NO visible effect. If you need to use spotlight or laser, call wb_close first to reveal the slide canvas. Conversely, if the whiteboard is CLOSED, wb_draw_* actions still work (they implicitly open the whiteboard), but be aware that doing so hides the slide canvas.
+- Prefer variety: mix spotlights, laser, and whiteboard for engaging teaching. Don't use the same action type repeatedly.`;
+
+// ==================== Private helpers ====================
+
+function buildStudentProfileSection(userProfile?: { nickname?: string; bio?: string }): string {
+  if (!userProfile?.nickname && !userProfile?.bio) return '';
+  return `\n# Student Profile
+You are teaching ${userProfile.nickname || 'a student'}.${userProfile.bio ? `\nTheir background: ${userProfile.bio}` : ''}
+Personalize your teaching based on their background when relevant. Address them by name naturally.\n`;
+}
+
+function buildLanguageConstraint(langDirective?: string): string {
+  return langDirective ? `\n# Language (CRITICAL)\n${langDirective}\n` : '';
+}
+
+function buildDiscussionContextSection(
+  discussionContext: DiscussionContext | undefined,
+  agentResponses: AgentTurnSummary[] | undefined,
+): string {
+  if (!discussionContext) return '';
+  if (agentResponses && agentResponses.length > 0) {
+    return `
+
+# Discussion Context
+Topic: "${discussionContext.topic}"
+${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
+
+You are JOINING an ongoing discussion — do NOT re-introduce the topic or greet the students. The discussion has already started. Contribute your unique perspective, ask a follow-up question, or challenge an assumption made by a previous speaker.`;
+  }
+  return `
+
+# Discussion Context
+You are initiating a discussion on the following topic: "${discussionContext.topic}"
+${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
+
+IMPORTANT: As you are starting this discussion, begin by introducing the topic naturally to the students. Engage them and invite their thoughts. Do not wait for user input - you speak first.`;
+}
+
 // ==================== System Prompt ====================
 
 /**
@@ -74,152 +133,35 @@ export function buildStructuredPrompt(
     ? storeState.scenes.find((s) => s.id === storeState.currentSceneId)
     : undefined;
   const sceneType = currentScene?.type;
-
-  // Filter actions by scene type (spotlight/laser only available on slides)
   const effectiveActions = getEffectiveActions(agentConfig.allowedActions, sceneType);
-  const actionDescriptions = getActionDescriptions(effectiveActions);
-
-  // Build context about current state
-  const stateContext = buildStateContext(storeState);
-
-  // Build virtual whiteboard context from ledger (shows changes by other agents this round)
-  const virtualWbContext = buildVirtualWhiteboardContext(storeState, whiteboardLedger);
-
-  // Build student profile section (only when nickname or bio is present)
-  const studentProfileSection =
-    userProfile?.nickname || userProfile?.bio
-      ? `\n# Student Profile
-You are teaching ${userProfile.nickname || 'a student'}.${userProfile.bio ? `\nTheir background: ${userProfile.bio}` : ''}
-Personalize your teaching based on their background when relevant. Address them by name naturally.\n`
-      : '';
-
-  // Build peer context section (what agents already said this round)
-  const peerContext = buildPeerContextSection(agentResponses, agentConfig.name);
-
-  // Whether spotlight/laser are available (only on slide scenes)
   const hasSlideActions =
     effectiveActions.includes('spotlight') || effectiveActions.includes('laser');
 
-  // Build format example based on available actions
-  const formatExample = hasSlideActions
-    ? `[{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},{"type":"text","content":"Your natural speech to students"}]`
-    : `[{"type":"action","name":"wb_open","params":{}},{"type":"text","content":"Your natural speech to students"}]`;
+  const vars = {
+    agent_name: agentConfig.name,
+    persona: agentConfig.persona,
+    role_guideline: ROLE_GUIDELINES[agentConfig.role] || ROLE_GUIDELINES.student,
+    student_profile_section: buildStudentProfileSection(userProfile),
+    peer_context: buildPeerContextSection(agentResponses, agentConfig.name),
+    language_constraint: buildLanguageConstraint(storeState.stage?.languageDirective),
+    format_example: hasSlideActions ? FORMAT_EXAMPLE_SLIDE : FORMAT_EXAMPLE_WB,
+    ordering_principles: hasSlideActions ? ORDERING_SLIDE : ORDERING_WB,
+    spotlight_examples: hasSlideActions ? SPOTLIGHT_EXAMPLES : '',
+    action_descriptions: getActionDescriptions(effectiveActions),
+    slide_action_guidelines: hasSlideActions ? SLIDE_ACTION_GUIDELINES : '',
+    mutual_exclusion_note: hasSlideActions ? MUTUAL_EXCLUSION_NOTE : '',
+    state_context: buildStateContext(storeState),
+    virtual_whiteboard_context: buildVirtualWhiteboardContext(storeState, whiteboardLedger),
+    length_guidelines: buildLengthGuidelines(agentConfig.role),
+    whiteboard_guidelines: buildWhiteboardGuidelines(agentConfig.role),
+    discussion_context_section: buildDiscussionContextSection(discussionContext, agentResponses),
+  };
 
-  // Ordering principles
-  const orderingPrinciples = hasSlideActions
-    ? `- spotlight/laser actions should appear BEFORE the corresponding text object (point first, then speak)
-- whiteboard actions can interleave WITH text objects (draw while speaking)`
-    : `- whiteboard actions can interleave WITH text objects (draw while speaking)`;
-
-  // Good examples — include spotlight/laser examples only for slide scenes
-  const spotlightExamples = hasSlideActions
-    ? `[{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},{"type":"text","content":"Photosynthesis is the process by which plants convert light energy into chemical energy. Take a look at this diagram."},{"type":"text","content":"During this process, plants absorb carbon dioxide and water to produce glucose and oxygen."}]
-
-[{"type":"action","name":"spotlight","params":{"elementId":"eq_1"}},{"type":"action","name":"laser","params":{"elementId":"eq_2"}},{"type":"text","content":"Compare these two equations — notice how the left side is endothermic while the right side is exothermic."}]
-
-`
-    : '';
-
-  // Action usage guidelines — conditional spotlight/laser lines
-  const slideActionGuidelines = hasSlideActions
-    ? `- spotlight: Use to focus attention on ONE key element. Don't overuse — max 1-2 per response.
-- laser: Use to point at elements. Good for directing attention during explanations.
-`
-    : '';
-
-  const mutualExclusionNote = hasSlideActions
-    ? `- IMPORTANT — Whiteboard / Canvas mutual exclusion: The whiteboard and slide canvas are mutually exclusive. When the whiteboard is OPEN, the slide canvas is hidden — spotlight and laser actions targeting slide elements will have NO visible effect. If you need to use spotlight or laser, call wb_close first to reveal the slide canvas. Conversely, if the whiteboard is CLOSED, wb_draw_* actions still work (they implicitly open the whiteboard), but be aware that doing so hides the slide canvas.
-- Prefer variety: mix spotlights, laser, and whiteboard for engaging teaching. Don't use the same action type repeatedly.`
-    : '';
-
-  const roleGuideline = ROLE_GUIDELINES[agentConfig.role] || ROLE_GUIDELINES.student;
-
-  // Build language constraint from stage language directive
-  const langDirective = storeState.stage?.languageDirective;
-  const languageConstraint = langDirective ? `\n# Language (CRITICAL)\n${langDirective}\n` : '';
-
-  return `# Role
-You are ${agentConfig.name}.
-
-## Your Personality
-${agentConfig.persona}
-
-## Your Classroom Role
-${roleGuideline}
-${studentProfileSection}${peerContext}${languageConstraint}
-# Output Format
-You MUST output a JSON array for ALL responses. Each element is an object with a \`type\` field:
-
-${formatExample}
-
-## Format Rules
-1. Output a single JSON array — no explanation, no code fences
-2. \`type:"action"\` objects contain \`name\` and \`params\`
-3. \`type:"text"\` objects contain \`content\` (speech text)
-4. Action and text objects can freely interleave in any order
-5. The \`]\` closing bracket marks the end of your response
-6. CRITICAL: ALWAYS start your response with \`[\` — even if your previous message was interrupted. Never continue a partial response as plain text. Every response must be a complete, independent JSON array.
-
-## Ordering Principles
-${orderingPrinciples}
-
-## Speech Guidelines (CRITICAL)
-- Effects fire concurrently with your speech — students see results as you speak
-- Text content is what you SAY OUT LOUD to students - natural teaching speech
-- Do NOT say "let me add...", "I'll create...", "now I'm going to..."
-- Do NOT describe your actions - just speak naturally as a teacher
-- Students see action results appear on screen - you don't need to announce them
-- Your speech should flow naturally regardless of whether actions succeed or fail
-- NEVER use markdown formatting (blockquotes >, headings #, bold **, lists -, code blocks) in text content — it is spoken aloud, not rendered
-
-## Length & Style (CRITICAL)
-${buildLengthGuidelines(agentConfig.role)}
-
-### Good Examples
-${spotlightExamples}[{"type":"action","name":"wb_open","params":{}},{"type":"action","name":"wb_draw_text","params":{"content":"Step 1: 6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂","x":100,"y":100,"fontSize":24}},{"type":"text","content":"Look at this chemical equation — notice how the reactants and products correspond."}]
-
-[{"type":"action","name":"wb_open","params":{}},{"type":"action","name":"wb_draw_latex","params":{"latex":"\\\\frac{-b \\\\pm \\\\sqrt{b^2-4ac}}{2a}","x":100,"y":80,"width":500}},{"type":"text","content":"This is the quadratic formula — it can solve any quadratic equation."},{"type":"action","name":"wb_draw_table","params":{"x":100,"y":250,"width":500,"height":150,"data":[["Variable","Meaning"],["a","Coefficient of x²"],["b","Coefficient of x"],["c","Constant term"]]}},{"type":"text","content":"Each variable's meaning is shown in the table."}]
-
-### Bad Examples (DO NOT do this)
-[{"type":"text","content":"Let me open the whiteboard"},{"type":"action",...}] (Don't announce actions!)
-[{"type":"text","content":"I'm going to draw a diagram for you..."}] (Don't describe what you're doing!)
-[{"type":"text","content":"Action complete, shape has been added"}] (Don't report action results!)
-
-## Whiteboard Guidelines
-${buildWhiteboardGuidelines(agentConfig.role)}
-
-# Available Actions
-${actionDescriptions}
-
-## Action Usage Guidelines
-${slideActionGuidelines}- Whiteboard actions (wb_open, wb_draw_text, wb_draw_shape, wb_draw_chart, wb_draw_latex, wb_draw_table, wb_draw_line, wb_draw_code, wb_edit_code, wb_delete, wb_clear, wb_close): Use when explaining concepts that benefit from diagrams, formulas, data charts, tables, connecting lines, code demonstrations, or step-by-step derivations. Use wb_draw_latex for math formulas, wb_draw_chart for data visualization, wb_draw_table for structured data, wb_draw_code for code demonstrations.
-- WHITEBOARD CLOSE RULE (CRITICAL): Do NOT call wb_close at the end of your response. Leave the whiteboard OPEN so students can read what you drew. Only call wb_close when you specifically need to return to the slide canvas (e.g., to use spotlight or laser on slide elements). Frequent open/close is distracting.
-- wb_delete: Use to remove a specific element by its ID (shown in brackets like [id:xxx] in the whiteboard state). Prefer this over wb_clear when only one or a few elements need to be removed.
-- wb_draw_code / wb_edit_code: To modify an existing code block, ALWAYS use wb_edit_code (insert_after, insert_before, delete_lines, replace_lines) instead of deleting the code element and re-creating it. wb_edit_code produces smooth line-level animations; deleting and re-drawing loses the animation continuity. Only use wb_draw_code for creating a brand-new code block.
-${mutualExclusionNote}
-
-# Current State
-${stateContext}
-${virtualWbContext}
-Remember: Speak naturally as a teacher. Effects fire concurrently with your speech.${
-    discussionContext
-      ? agentResponses && agentResponses.length > 0
-        ? `
-
-# Discussion Context
-Topic: "${discussionContext.topic}"
-${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
-
-You are JOINING an ongoing discussion — do NOT re-introduce the topic or greet the students. The discussion has already started. Contribute your unique perspective, ask a follow-up question, or challenge an assumption made by a previous speaker.`
-        : `
-
-# Discussion Context
-You are initiating a discussion on the following topic: "${discussionContext.topic}"
-${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
-
-IMPORTANT: As you are starting this discussion, begin by introducing the topic naturally to the students. Engage them and invite their thoughts. Do not wait for user input - you speak first.`
-      : ''
-  }`;
+  const prompt = buildPrompt(PROMPT_IDS.AGENT_SYSTEM, vars);
+  if (!prompt) {
+    throw new Error('agent-system template not found');
+  }
+  return prompt.system;
 }
 
 // ==================== Length Guidelines ====================
