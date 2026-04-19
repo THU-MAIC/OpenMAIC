@@ -92,7 +92,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
 
   return (
     <div
-      className="absolute"
+      className="element-content absolute"
       data-video-element
       style={{
         top: `${elementInfo.top}px`,
