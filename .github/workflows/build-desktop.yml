@@ -64,13 +64,6 @@ jobs:
           fs.writeFileSync('tauri.conf.json', JSON.stringify(conf, null, 2));
           "
 
-      - name: Build frontend
-        env:
-          NEXT_OUTPUT_MODE: export
-        run: |
-          pnpm build
-          mv out desktop-dist
-
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

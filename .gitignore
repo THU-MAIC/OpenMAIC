@@ -78,4 +78,3 @@ eval/outline-language/results/
 # Tauri
 /src-tauri/target/
 /src-tauri/gen/
-/desktop-dist/
