@@ -58,11 +58,18 @@ jobs:
         run: |
           cd src-tauri
           node -e "
-            const fs = require('fs');
-            const conf = JSON.parse(fs.readFileSync('tauri.conf.json', 'utf8'));
-            conf.bundle.targets = ['${{ matrix.targets }}'];
-            fs.writeFileSync('tauri.conf.json', JSON.stringify(conf, null, 2));
+          const fs = require('fs');
+          const conf = JSON.parse(fs.readFileSync('tauri.conf.json', 'utf8'));
+          conf.bundle.targets = ['${{ matrix.targets }}'];
+          fs.writeFileSync('tauri.conf.json', JSON.stringify(conf, null, 2));
           "
+
+      - name: Build frontend
+        env:
+          NEXT_OUTPUT_MODE: export
+        run: |
+          pnpm build
+          mv out desktop-dist
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
