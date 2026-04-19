@@ -195,8 +195,8 @@
   }
 }
 
-/* Breathing animation for ultra mode button */
-@keyframes ultra-mode-breathe {
+/* Breathing animation for interactive mode button */
+@keyframes interactive-mode-breathe {
   0%,
   100% {
     opacity: 0.3;

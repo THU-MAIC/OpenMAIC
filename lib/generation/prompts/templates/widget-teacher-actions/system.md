@@ -18,20 +18,20 @@ Generate teacher action sequences for interactive widgets.
 {
   "actions": [
     {
-      "id": "action_1",
+      "id": "intro",
       "type": "speech",
       "content": "Let's explore how angle affects trajectory",
       "label": "Start"
     },
     {
-      "id": "action_2",
+      "id": "highlight_angle",
       "type": "highlight",
       "target": "#angle-slider",
       "content": "This slider controls the launch angle",
       "label": "Highlight angle"
     },
     {
-      "id": "action_3",
+      "id": "demo_angle60",
       "type": "setState",
       "state": { "angle": 60, "velocity": 25 },
       "content": "",
@@ -40,6 +40,8 @@ Generate teacher action sequences for interactive widgets.
   ]
 }
 ```
+
+**ID Naming Convention**: Use descriptive, unique IDs like `intro`, `highlight_angle`, `demo_angle60` instead of sequential numbers.
 
 ## Target Element ID Conventions
 
@@ -87,7 +89,7 @@ For `setState` actions in 3D visualizations:
 
 ```json
 {
-  "id": "show_orbit",
+  "id": "show_orbits",
   "type": "setState",
   "state": {
     "speed": 2,

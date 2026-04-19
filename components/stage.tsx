@@ -383,8 +383,8 @@ export function Stage({
       engineRef.current.stop();
     }
 
-    // Get widget iframe messaging callback for interactive scenes
-    const widgetSendMessage = useWidgetIframeStore.getState().sendMessage;
+    // Get widget iframe messaging callback for interactive scenes (keyed by sceneId)
+    const widgetSendMessage = useWidgetIframeStore.getState().getSendMessage(currentScene.id);
 
     // Create ActionEngine for playback (with audioPlayer for TTS and widget messaging)
     const actionEngine = new ActionEngine(useStageStore, audioPlayerRef.current, widgetSendMessage);

@@ -3,6 +3,7 @@
 import { useMemo, useRef, useEffect, useCallback } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
+import { patchHtmlForIframe } from '@/lib/utils/iframe';
 
 interface InteractiveRendererProps {
   readonly content: InteractiveContent;
@@ -12,6 +13,7 @@ interface InteractiveRendererProps {
 export function InteractiveRenderer({ content, sceneId }: InteractiveRendererProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const registerIframe = useWidgetIframeStore((state) => state.registerIframe);
+  const setActiveScene = useWidgetIframeStore((state) => state.setActiveScene);
 
   const patchedHtml = useMemo(
     () => (content.html ? patchHtmlForIframe(content.html) : undefined),
@@ -26,10 +28,14 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
   }, []);
 
   // Register iframe messaging callback on mount, unregister on unmount
+  // Key by sceneId to prevent race conditions on scene switch
   useEffect(() => {
-    registerIframe(sendMessageToIframe);
-    return () => registerIframe(null);
-  }, [registerIframe, sendMessageToIframe]);
+    registerIframe(sceneId, sendMessageToIframe);
+    setActiveScene(sceneId);
+    return () => {
+      registerIframe(sceneId, null);
+    };
+  }, [sceneId, registerIframe, sendMessageToIframe, setActiveScene]);
 
   return (
     <div className="w-full h-full relative">
@@ -45,45 +51,3 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
   );
 }
 
-/**
- * Patch embedded HTML to display correctly inside an iframe.
- *
- * Fixes:
- * - min-h-screen / h-screen → use 100% of iframe viewport
- * - Ensure html/body fill the iframe with no overflow issues
- * - Canvas elements use container sizing instead of viewport
- */
-function patchHtmlForIframe(html: string): string {
-  const iframeCss = `<style data-iframe-patch>
-  html, body {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-  /* Fix min-h-screen: in iframes 100vh is the iframe height, which is correct,
-     but ensure body actually fills it */
-  body { min-height: 100vh; }
-</style>`;
-
-  // Insert right after <head> or at the start of the document
-  const headIdx = html.indexOf('<head>');
-  if (headIdx !== -1) {
-    const insertPos = headIdx + 6; // after <head>
-    return html.substring(0, insertPos) + '\n' + iframeCss + html.substring(insertPos);
-  }
-
-  const headWithAttrs = html.indexOf('<head ');
-  if (headWithAttrs !== -1) {
-    const closeAngle = html.indexOf('>', headWithAttrs);
-    if (closeAngle !== -1) {
-      const insertPos = closeAngle + 1;
-      return html.substring(0, insertPos) + '\n' + iframeCss + html.substring(insertPos);
-    }
-  }
-
-  // Fallback: prepend
-  return iframeCss + html;
-}

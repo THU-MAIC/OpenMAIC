@@ -265,7 +265,7 @@ export async function generateUltraOutlinesFromRequirements(
       '**IMPORTANT: Do NOT include any video mediaGenerations (type: "video") in the outlines. Video generation is disabled. Image generation is allowed.**';
   }
 
-  const prompts = buildPrompt(PROMPT_IDS.ULTRA_OUTLINES, {
+  const prompts = buildPrompt(PROMPT_IDS.INTERACTIVE_OUTLINES, {
     requirement: requirements.requirement,
     language: requirements.language,
     pdfContent: pdfText

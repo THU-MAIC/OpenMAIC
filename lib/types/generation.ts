@@ -51,7 +51,7 @@ export interface UserRequirements {
   userNickname?: string; // Student nickname for personalization
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
-  ultraMode?: boolean; // Enable Ultra Mode for interactive-first generation
+  interactiveMode?: boolean; // Enable Interactive Mode for interactive-first generation
 }
 
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================

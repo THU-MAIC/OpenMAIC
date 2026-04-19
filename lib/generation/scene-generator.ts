@@ -952,8 +952,8 @@ async function generateWidgetContent(
         description: outline.description,
         keyPoints: (outline.keyPoints || []).join('\n'),
         starterCode: '',
-        testCases: 'Generate appropriate test cases',
-        hints: 'Generate 3 progressive hints',
+        testCases: '',  // AI generates appropriate test cases based on challenge
+        hints: '',  // AI generates progressive hints based on challenge
         language,
       };
       break;
@@ -965,7 +965,6 @@ async function generateWidgetContent(
         gameType: widgetOutline.gameType || 'quiz',
         description: outline.description,
         keyPoints: (outline.keyPoints || []).join('\n'),
-        questions: 'Generate questions based on key points',
         scoring: { correctPoints: 10, speedBonus: 5 },
         language,
       };

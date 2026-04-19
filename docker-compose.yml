@@ -2,7 +2,7 @@ services:
   openmaic:
     build: .
     ports:
-      - "3389:3000"
+      - "3000:3000"
     env_file:
       - .env.local
     volumes:

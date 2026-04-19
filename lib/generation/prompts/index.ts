@@ -22,7 +22,7 @@ export {
 // Prompt IDs constant
 export const PROMPT_IDS = {
   REQUIREMENTS_TO_OUTLINES: 'requirements-to-outlines',
-  ULTRA_OUTLINES: 'ultra-outlines',
+  INTERACTIVE_OUTLINES: 'interactive-outlines',
   WEB_SEARCH_QUERY_REWRITE: 'web-search-query-rewrite',
   SLIDE_CONTENT: 'slide-content',
   QUIZ_CONTENT: 'quiz-content',
