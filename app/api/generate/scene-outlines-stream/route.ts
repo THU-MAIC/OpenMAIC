@@ -14,7 +14,7 @@
 
 import { NextRequest } from 'next/server';
 import { streamLLM } from '@/lib/ai/llm';
-import { buildPrompt, PROMPT_IDS } from '@/lib/generation/prompts';
+import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import {
   formatImageDescription,
   formatImagePlaceholder,
