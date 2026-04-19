@@ -47,8 +47,8 @@ if (!SCORER_MODEL_RAW) {
   );
   process.exit(1);
 }
-const CHAT_MODEL: string = CHAT_MODEL_RAW!;
-const SCORER_MODEL: string = SCORER_MODEL_RAW!;
+const CHAT_MODEL: string = CHAT_MODEL_RAW;
+const SCORER_MODEL: string = SCORER_MODEL_RAW;
 const REPEAT = parseInt(args.repeat || '1', 10);
 const OUTPUT_DIR = args['output-dir']!;
 const SCENARIO_FILTER = args.scenario;
