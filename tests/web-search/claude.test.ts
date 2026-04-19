@@ -89,7 +89,11 @@ describe('searchWithClaude', () => {
 
   it('injects allowed_callers=["direct"] on tools that omit it', async () => {
     mockAIResponse();
-    await searchWithClaude({ query: 'test', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com' });
+    await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     const wrappedFetch = mockCreateAnthropic.mock.calls[0][0].fetch as (
       url: string,
@@ -106,7 +110,11 @@ describe('searchWithClaude', () => {
 
   it('does not overwrite allowed_callers when already set', async () => {
     mockAIResponse();
-    await searchWithClaude({ query: 'test', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com' });
+    await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
 
     const wrappedFetch = mockCreateAnthropic.mock.calls[0][0].fetch as (
       url: string,

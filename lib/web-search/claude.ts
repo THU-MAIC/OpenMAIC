@@ -41,17 +41,21 @@ async function fetchWithAllowedCallers(url: string, init?: RequestInit): Promise
           tool.allowed_callers ? tool : { ...tool, allowed_callers: ['direct'] },
         );
         const after = body.tools.map((t: Record<string, unknown>) => t.allowed_callers);
-        log.debug(`fetchWithAllowedCallers: injecting allowed_callers url: ${url}, before: ${before}, after: ${after}`);
+        log.debug(
+          `fetchWithAllowedCallers: injecting allowed_callers url: ${url}, before: ${before}, after: ${after}`,
+        );
         init = { ...init, body: JSON.stringify(body) };
       } else {
         log.debug(`fetchWithAllowedCallers: POST to ${url} — no tools array in body`);
       }
-      log.debug(`final payload: ${JSON.stringify(body)}`)
+      log.debug(`final payload: ${JSON.stringify(body)}`);
     } catch {
       /* leave body unchanged if it can't be parsed */
     }
   } else {
-    log.info(`fetchWithAllowedCallers: called [method=${init?.method} bodyType=${typeof init?.body}]`);
+    log.info(
+      `fetchWithAllowedCallers: called [method=${init?.method} bodyType=${typeof init?.body}]`,
+    );
   }
   return proxyFetch(url, init);
 }
