@@ -20,7 +20,7 @@ import type {
   WidgetOutline,
 } from '@/lib/types/generation';
 import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
-import type { PromptId } from './prompts/types';
+import type { PromptId } from '@/lib/prompts/types';
 import type { LanguageModel } from 'ai';
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
