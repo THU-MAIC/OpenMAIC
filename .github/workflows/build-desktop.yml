@@ -1,0 +1,86 @@
+name: Build Desktop Client
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            targets: deb
+            artifact: OpenMAIC_0.1.1_amd64.deb
+            rust-target: x86_64-unknown-linux-gnu
+          - os: macos-latest
+            targets: dmg
+            artifact: OpenMAIC_0.1.1_aarch64.dmg
+            rust-target: aarch64-apple-darwin
+          - os: windows-latest
+            targets: nsis
+            artifact: OpenMAIC_0.1.1_x64-setup.exe
+            rust-target: x86_64-pc-windows-msvc
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-target }}
+
+      - name: Install Linux system dependencies
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf \
+            libsoup-3.0-dev libjavascriptcoregtk-4.1-dev
+
+      - name: Update bundle targets
+        shell: bash
+        run: |
+          cd src-tauri
+          node -e "
+            const fs = require('fs');
+            const conf = JSON.parse(fs.readFileSync('tauri.conf.json', 'utf8'));
+            conf.bundle.targets = ['${{ matrix.targets }}'];
+            fs.writeFileSync('tauri.conf.json', JSON.stringify(conf, null, 2));
+          "
+
+      - name: Build Tauri app
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'OpenMAIC Desktop ${{ github.ref_name }}'
+          releaseBody: 'See [CHANGELOG.md](https://github.com/cccczl02/OpenMAIC/blob/main/CHANGELOG.md) for details.'
+          releaseDraft: false
+          prerelease: false
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/nsis/*.exe
+          retention-days: 30

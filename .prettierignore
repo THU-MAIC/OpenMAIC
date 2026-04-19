@@ -19,5 +19,6 @@ out/
 *.yml
 *.yaml
 
-# SVG arc helper (vendored declaration)
-lib/export/svg-arc-to-cubic-bezier.d.ts
+# Tauri generated files
+src-tauri/gen/
+desktop-dist/
