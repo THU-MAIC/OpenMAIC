@@ -38,4 +38,6 @@ export const PROMPT_IDS = {
   WIDGET_TEACHER_ACTIONS: 'widget-teacher-actions',
   PBL_ACTIONS: 'pbl-actions',
   AGENT_SYSTEM: 'agent-system',
+  DIRECTOR: 'director',
+  PBL_DESIGN: 'pbl-design',
 } as const satisfies Record<string, PromptId>;

@@ -21,7 +21,9 @@ export type PromptId =
   | 'visualization3d-content'
   | 'widget-teacher-actions'
   | 'pbl-actions'
-  | 'agent-system';
+  | 'agent-system'
+  | 'director'
+  | 'pbl-design';
 
 /**
  * Snippet identifier
