@@ -26,7 +26,9 @@
     "ttsTitle": "Синтез речи",
     "ttsHint": "Выберите голос для AI-учителя",
     "ttsPreview": "Прослушать",
-    "ttsPreviewing": "Воспроизведение..."
+    "ttsPreviewing": "Воспроизведение...",
+    "interactiveModeHint": "Включить интерактивный режим для более практического контента",
+    "interactiveModeLabel": "Интерактивный режим"
   },
   "export": {
     "pptx": "Экспорт PPTX",

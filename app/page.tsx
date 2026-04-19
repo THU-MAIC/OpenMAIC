@@ -19,6 +19,8 @@ import {
   BotOff,
   ChevronUp,
   Upload,
+  Sparkles,
+  Atom,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -54,15 +56,18 @@ import { useImportClassroom } from '@/lib/import/use-import-classroom';
 const log = createLogger('Home');
 
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
+const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
+  interactiveMode: boolean;
 }
 
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
+  interactiveMode: false,
 };
 
 function HomePage() {
@@ -99,14 +104,14 @@ function HomePage() {
       const oldWebSearch = localStorage.getItem('webSearchEnabled');
       if (oldWebSearch === 'true' && !useSettingsStore.getState().webSearchEnabled) {
         const store = useSettingsStore.getState();
-        // Ensure a default provider is selected for backwards compatibility (Tavily was the
-        // only provider before multi-provider support was added)
         if (!store.webSearchProviderId) {
           store.setWebSearchProvider('tavily');
         }
         store.setWebSearchEnabled(true);
       }
       if (oldWebSearch !== null) localStorage.removeItem('webSearchEnabled');
+      const savedInteractiveMode = localStorage.getItem(INTERACTIVE_MODE_STORAGE_KEY);
+      if (savedInteractiveMode === 'true') setForm((prev) => ({ ...prev, interactiveMode: true }));
     } catch {
       /* ignore */
     }
@@ -202,6 +207,8 @@ function HomePage() {
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
+      if (field === 'interactiveMode')
+        localStorage.setItem(INTERACTIVE_MODE_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
     } catch {
       /* ignore */
@@ -264,6 +271,7 @@ function HomePage() {
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: webSearchEnabled || undefined,
+        interactiveMode: form.interactiveMode,
       };
 
       let pdfStorageKey: string | undefined;
@@ -518,6 +526,37 @@ function HomePage() {
                   onPdfError={setError}
                 />
               </div>
+
+              {/* Interactive mode toggle */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    transition={{ type: 'spring', stiffness: 400, damping: 17 }}
+                    onClick={() => updateForm('interactiveMode', !form.interactiveMode)}
+                    className={cn(
+                      'relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border shrink-0 h-8',
+                      form.interactiveMode
+                        ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-500 shadow-[0_0_12px_rgba(6,182,212,0.35)] dark:shadow-[0_0_12px_rgba(6,182,212,0.25)]'
+                        : 'border-cyan-300/60 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20',
+                    )}
+                  >
+                    {form.interactiveMode && (
+                      <span
+                        className="absolute inset-[-4px] rounded-full border border-cyan-400/40 dark:border-cyan-400/25"
+                        style={{
+                          animation: 'interactive-mode-breathe 2s ease-in-out infinite',
+                        }}
+                      />
+                    )}
+                    <Atom className="size-3.5 relative z-10 animate-[spin_3s_linear_infinite]" />
+                    <span className="relative z-10">{t('toolbar.interactiveModeLabel')}</span>
+                  </motion.button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {t('toolbar.interactiveModeHint')}
+                </TooltipContent>
+              </Tooltip>
 
               {/* Voice input */}
               <SpeechButton

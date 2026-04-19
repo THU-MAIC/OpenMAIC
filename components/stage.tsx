@@ -15,6 +15,7 @@ import type { EngineMode, TriggerEvent, Effect } from '@/lib/playback';
 import { ActionEngine } from '@/lib/action/engine';
 import { createAudioPlayer } from '@/lib/utils/audio-player';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
+import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 import { cn } from '@/lib/utils';
@@ -382,8 +383,11 @@ export function Stage({
       engineRef.current.stop();
     }
 
-    // Create ActionEngine for playback (with audioPlayer for TTS)
-    const actionEngine = new ActionEngine(useStageStore, audioPlayerRef.current);
+    // Get widget iframe messaging callback for interactive scenes (keyed by sceneId)
+    const widgetSendMessage = useWidgetIframeStore.getState().getSendMessage(currentScene.id);
+
+    // Create ActionEngine for playback (with audioPlayer for TTS and widget messaging)
+    const actionEngine = new ActionEngine(useStageStore, audioPlayerRef.current, widgetSendMessage);
 
     // Create new PlaybackEngine
     const engine = new PlaybackEngine([currentScene], actionEngine, audioPlayerRef.current, {

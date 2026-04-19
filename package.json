@@ -18,7 +18,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "eval:whiteboard": "tsx eval/whiteboard-layout/runner.ts"
+    "eval:whiteboard": "tsx eval/whiteboard-layout/runner.ts",
+    "eval:outline-language": "tsx eval/outline-language/runner.ts"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.23",

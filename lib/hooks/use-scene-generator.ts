@@ -188,8 +188,13 @@ async function generateTTSForScene(
   let failedCount = 0;
   let lastError: string | undefined;
 
+  // Use scene order to make audio IDs unique across scenes
+  // This prevents audio collision when action IDs are sequential (e.g., action_1, action_2)
+  const sceneOrder = scene.order;
+
   for (const action of speechActions) {
-    const audioId = `tts_${action.id}`;
+    // Include scene order in audioId to prevent collision across scenes
+    const audioId = `tts_s${sceneOrder}_${action.id}`;
     action.audioId = audioId;
     try {
       await generateAndStoreTTS(audioId, action.text, signal);
@@ -199,6 +204,8 @@ async function generateTTSForScene(
       log.warn('TTS generation failed:', {
         providerId,
         actionId: action.id,
+        sceneOrder,
+        audioId,
         textLength: action.text.length,
         error: lastError,
       });

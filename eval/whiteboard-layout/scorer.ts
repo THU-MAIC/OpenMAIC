@@ -5,15 +5,14 @@
  * so model configuration follows the same `provider:model` convention as the rest
  * of the codebase. Supports all providers (OpenAI, Google, Anthropic, etc.).
  *
- * Environment variable: EVAL_SCORER_MODEL (default: openai:gpt-4o)
+ * The caller supplies the model string explicitly (typically from EVAL_SCORER_MODEL);
+ * this function no longer has a hardcoded default.
  */
 
 import { readFileSync } from 'fs';
 import { generateText } from 'ai';
 import { resolveModel } from '@/lib/server/resolve-model';
 import type { VlmScore } from './types';
-
-const SCORER_MODEL_DEFAULT = 'openai:gpt-4o';
 
 const RUBRIC_PROMPT = `You are evaluating a classroom whiteboard screenshot from an AI teaching assistant. Score like a teacher reviewing their own board work for a student's benefit.
 
@@ -62,18 +61,16 @@ Output ONLY a JSON object with this exact structure (no markdown, no code fences
 /**
  * Score a whiteboard screenshot using a VLM.
  *
- * Model is resolved via EVAL_SCORER_MODEL env var or the provided modelString,
- * using the same resolveModel() infrastructure as the rest of the project.
+ * The caller must provide the model string explicitly (typically from EVAL_SCORER_MODEL);
+ * this function no longer has a hardcoded default.
  */
 export async function scoreScreenshot(
   screenshotPath: string,
-  modelString?: string,
+  modelString: string,
 ): Promise<VlmScore> {
   const imageBuffer = readFileSync(screenshotPath);
 
-  const { model } = await resolveModel({
-    modelString: modelString || process.env.EVAL_SCORER_MODEL || SCORER_MODEL_DEFAULT,
-  });
+  const { model } = await resolveModel({ modelString });
 
   const result = await generateText({
     model,

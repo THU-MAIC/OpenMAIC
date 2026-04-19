@@ -23,7 +23,7 @@ export function SceneRenderer({ scene, mode }: SceneRendererProps) {
         return <QuizView key={scene.id} questions={scene.content.questions} sceneId={scene.id} />;
       case 'interactive':
         if (scene.content.type !== 'interactive') return <div>Invalid interactive content</div>;
-        return <InteractiveRenderer content={scene.content} mode={mode} sceneId={scene.id} />;
+        return <InteractiveRenderer content={scene.content} sceneId={scene.id} />;
       case 'pbl':
         if (scene.content.type !== 'pbl') return <div>Invalid PBL content</div>;
         return <PBLRenderer content={scene.content} mode={mode} sceneId={scene.id} />;

@@ -31,6 +31,10 @@ import type {
   WbDrawLineAction,
   WbDrawCodeAction,
   WbEditCodeAction,
+  WidgetHighlightAction,
+  WidgetSetStateAction,
+  WidgetAnnotationAction,
+  WidgetRevealAction,
 } from '@/lib/types/action';
 import type { CodeLine } from '@/lib/types/slides';
 import katex from 'katex';
@@ -71,16 +75,30 @@ function generateLineIds(count: number): string[] {
 /** Default duration (ms) before fire-and-forget effects auto-clear */
 const EFFECT_AUTO_CLEAR_MS = 5000;
 
+/** Callback for sending messages to widget iframe */
+export type WidgetMessageCallback = (type: string, payload: Record<string, unknown>) => void;
+
 export class ActionEngine {
   private stageStore: StageStore;
   private stageAPI: ReturnType<typeof createStageAPI>;
   private audioPlayer: AudioPlayer | null;
   private effectTimer: ReturnType<typeof setTimeout> | null = null;
+  private widgetMessageCallback: WidgetMessageCallback | null = null;
 
-  constructor(stageStore: StageStore, audioPlayer?: AudioPlayer) {
+  constructor(
+    stageStore: StageStore,
+    audioPlayer?: AudioPlayer | null,
+    widgetMessageCallback?: WidgetMessageCallback | null,
+  ) {
     this.stageStore = stageStore;
     this.stageAPI = createStageAPI(stageStore);
     this.audioPlayer = audioPlayer ?? null;
+    this.widgetMessageCallback = widgetMessageCallback ?? null;
+  }
+
+  /** Set callback for sending messages to widget iframe */
+  setWidgetMessageCallback(callback: WidgetMessageCallback | null): void {
+    this.widgetMessageCallback = callback;
   }
 
   /** Clean up timers when the engine is no longer needed */
@@ -144,6 +162,16 @@ export class ActionEngine {
       case 'discussion':
         // Discussion lifecycle is managed externally via engine callbacks
         return;
+
+      // Widget actions — post message to iframe
+      case 'widget_highlight':
+        return this.executeWidgetHighlight(action as WidgetHighlightAction);
+      case 'widget_setState':
+        return this.executeWidgetSetState(action as WidgetSetStateAction);
+      case 'widget_annotation':
+        return this.executeWidgetAnnotation(action as WidgetAnnotationAction);
+      case 'widget_reveal':
+        return this.executeWidgetReveal(action as WidgetRevealAction);
     }
   }
 
@@ -643,5 +671,46 @@ export class ActionEngine {
     useCanvasStore.getState().setWhiteboardOpen(false);
     // Wait for close animation (500ms ease-out tween)
     await delay(700);
+  }
+
+  // ==================== Widget Actions ====================
+
+  /** Send message to widget iframe */
+  private sendWidgetMessage(type: string, payload: Record<string, unknown>): void {
+    if (this.widgetMessageCallback) {
+      this.widgetMessageCallback(type, payload);
+    } else {
+      log.warn(`Widget message callback not set, cannot send: ${type}`);
+    }
+  }
+
+  /** Execute widget highlight action (quick visual change) */
+  private async executeWidgetHighlight(action: WidgetHighlightAction): Promise<void> {
+    this.sendWidgetMessage('HIGHLIGHT_ELEMENT', {
+      target: action.target,
+    });
+    // Quick delay for visual effect
+    await delay(300);
+  }
+
+  /** Execute widget setState action */
+  private async executeWidgetSetState(action: WidgetSetStateAction): Promise<void> {
+    this.sendWidgetMessage('SET_WIDGET_STATE', { state: action.state });
+    // Quick delay for state change to propagate
+    await delay(300);
+  }
+
+  /** Execute widget annotation action */
+  private async executeWidgetAnnotation(action: WidgetAnnotationAction): Promise<void> {
+    this.sendWidgetMessage('ANNOTATE_ELEMENT', {
+      target: action.target,
+    });
+    await delay(300);
+  }
+
+  /** Execute widget reveal action */
+  private async executeWidgetReveal(action: WidgetRevealAction): Promise<void> {
+    this.sendWidgetMessage('REVEAL_ELEMENT', { target: action.target });
+    await delay(300);
   }
 }

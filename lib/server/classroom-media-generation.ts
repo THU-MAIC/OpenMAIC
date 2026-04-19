@@ -238,10 +238,14 @@ export async function generateTTSForClassroom(
     // mirroring the client-side approach. Each sub-action gets its own audio file.
     scene.actions = splitLongSpeechActions(scene.actions, providerId);
 
+    // Use scene order to make audio IDs unique across scenes
+    const sceneOrder = scene.order;
+
     for (const action of scene.actions) {
       if (action.type !== 'speech' || !(action as SpeechAction).text) continue;
       const speechAction = action as SpeechAction;
-      const audioId = `tts_${action.id}`;
+      // Include scene order in audioId to prevent collision across scenes
+      const audioId = `tts_s${sceneOrder}_${action.id}`;
 
       try {
         const result = await generateTTS(

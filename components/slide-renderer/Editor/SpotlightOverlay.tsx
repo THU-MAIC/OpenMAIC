@@ -122,13 +122,17 @@ export function SpotlightOverlay() {
                 </mask>
               </defs>
 
-              {/* Dimmed Background */}
+              {/* Dimmed Background. No backdrop-filter: combined with SVG <mask>
+                 it breaks compositing (backdrop bypasses the mask cutout) in some
+                 browsers, leaving the focused area dimmed despite the cutout.
+                 Tailwind 3 silently dropped `backdrop-blur-[1.5px]` on SVG via
+                 --tw-* variables; Tailwind 4 emits the property directly and
+                 surfaced the bug. */}
               <rect
                 width="100"
                 height="100"
                 fill={`rgba(0,0,0,${dimness})`}
                 mask={`url(#mask-${spotlightElementId})`}
-                className="backdrop-blur-[1.5px]"
               />
 
               {/* THE ONE BORDER - white border */}

@@ -7,14 +7,19 @@
  */
 export type PromptId =
   | 'requirements-to-outlines'
+  | 'interactive-outlines'
   | 'web-search-query-rewrite'
   | 'slide-content'
   | 'quiz-content'
   | 'slide-actions'
   | 'quiz-actions'
-  | 'interactive-scientific-model'
-  | 'interactive-html'
   | 'interactive-actions'
+  | 'simulation-content'
+  | 'diagram-content'
+  | 'code-content'
+  | 'game-content'
+  | 'visualization3d-content'
+  | 'widget-teacher-actions'
   | 'pbl-actions';
 
 /**

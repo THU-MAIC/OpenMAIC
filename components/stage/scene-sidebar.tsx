@@ -14,9 +14,10 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
+import { ThumbnailInteractive } from '@/components/slide-renderer/components/ThumbnailInteractive';
 import { useStageStore, useCanvasStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { SceneType, SlideContent } from '@/lib/types/stage';
+import type { SceneType, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
 
 interface SceneSidebarProps {
@@ -145,7 +146,9 @@ export function SceneSidebar({
             const isActive = currentSceneId === scene.id;
             const Icon = getSceneTypeIcon(scene.type);
             const isSlide = scene.type === 'slide';
+            const isInteractive = scene.type === 'interactive';
             const slideContent = isSlide ? (scene.content as SlideContent) : null;
+            const interactiveContent = isInteractive ? (scene.content as InteractiveContent) : null;
 
             return (
               <div
@@ -237,6 +240,12 @@ export function SceneSidebar({
                           ))}
                         </div>
                       </div>
+                    ) : scene.type === 'interactive' && interactiveContent?.html ? (
+                      /* Interactive: live iframe preview */
+                      <ThumbnailInteractive
+                        content={interactiveContent}
+                        size={Math.max(100, sidebarWidth - 28)}
+                      />
                     ) : scene.type === 'interactive' ? (
                       /* Interactive: browser window with chrome + content */
                       <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20 p-1.5 flex flex-col">
