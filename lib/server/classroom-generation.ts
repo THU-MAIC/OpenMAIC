@@ -368,7 +368,7 @@ export async function generateClassroom(
       continue;
     }
 
-    const actions = await generateSceneActions(safeOutline, content, aiCall, undefined, agents);
+    const actions = await generateSceneActions(safeOutline, content, aiCall, { agents });
     log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
 
     const sceneId = createSceneWithActions(safeOutline, content, actions, api);

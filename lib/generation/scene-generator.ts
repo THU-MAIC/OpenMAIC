@@ -31,6 +31,7 @@ import { parseActionsFromStructuredOutput } from './action-parser';
 import { parseJsonResponse } from './json-repair';
 import {
   buildCourseContext,
+  buildLanguageText,
   formatAgentsForPrompt,
   formatTeacherPersonaForPrompt,
   formatImageDescription,
@@ -57,6 +58,25 @@ import type {
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
+// ── Options interfaces for scene generation functions ──
+
+export interface SceneContentOptions {
+  assignedImages?: PdfImage[];
+  imageMapping?: ImageMapping;
+  languageModel?: LanguageModel;
+  visionEnabled?: boolean;
+  generatedMediaMapping?: ImageMapping;
+  agents?: AgentInfo[];
+  languageDirective?: string;
+}
+
+export interface SceneActionsOptions {
+  ctx?: SceneGenerationContext;
+  agents?: AgentInfo[];
+  userProfile?: string;
+  languageDirective?: string;
+}
+
 // ==================== Stage 2: Full Scenes (Two-Step) ====================
 
 /**
@@ -73,6 +93,7 @@ export async function generateFullScenes(
   store: StageStore,
   aiCall: AICallFn,
   callbacks?: GenerationCallbacks,
+  languageDirective?: string,
 ): Promise<GenerationResult<string[]>> {
   const api = createStageAPI(store);
   const totalScenes = sceneOutlines.length;
@@ -91,7 +112,7 @@ export async function generateFullScenes(
   const results = await Promise.all(
     sceneOutlines.map(async (outline, index) => {
       try {
-        const sceneId = await generateSingleScene(outline, api, aiCall);
+        const sceneId = await generateSingleScene(outline, api, aiCall, languageDirective);
 
         // Update progress (not atomic, but sufficient for UI display)
         completedCount++;
@@ -135,10 +156,11 @@ async function generateSingleScene(
   outline: SceneOutline,
   api: ReturnType<typeof createStageAPI>,
   aiCall: AICallFn,
+  languageDirective?: string,
 ): Promise<string | null> {
   // Step 3.1: Generate content
   log.info(`Step 3.1: Generating content for: ${outline.title}`);
-  const content = await generateSceneContent(outline, aiCall);
+  const content = await generateSceneContent(outline, aiCall, { languageDirective });
   if (!content) {
     log.error(`Failed to generate content for: ${outline.title}`);
     return null;
@@ -146,7 +168,7 @@ async function generateSingleScene(
 
   // Step 3.2: Generate Actions
   log.info(`Step 3.2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(outline, content, aiCall);
+  const actions = await generateSceneActions(outline, content, aiCall, { languageDirective });
   log.info(`Generated ${actions.length} actions for: ${outline.title}`);
 
   // Create complete Scene
@@ -251,12 +273,7 @@ function buildWidgetOutline(
 export async function generateSceneContent(
   outline: SceneOutline,
   aiCall: AICallFn,
-  assignedImages?: PdfImage[],
-  imageMapping?: ImageMapping,
-  languageModel?: LanguageModel,
-  visionEnabled?: boolean,
-  generatedMediaMapping?: ImageMapping,
-  agents?: AgentInfo[],
+  options: SceneContentOptions = {},
 ): Promise<
   | GeneratedSlideContent
   | GeneratedQuizContent
@@ -264,6 +281,16 @@ export async function generateSceneContent(
   | GeneratedPBLContent
   | null
 > {
+  const {
+    assignedImages,
+    imageMapping,
+    languageModel,
+    visionEnabled,
+    generatedMediaMapping,
+    agents,
+    languageDirective,
+  } = options;
+
   // Unified path for interactive scenes (both normal and ultra mode)
   if (outline.type === 'interactive') {
     // Backward compatibility: convert legacy interactiveConfig
@@ -285,7 +312,7 @@ export async function generateSceneContent(
     }
 
     // Route to widget generation (handles all 5 types)
-    return generateWidgetContent(outline, aiCall, outline.language || 'zh-CN');
+    return generateWidgetContent(outline, aiCall, (languageDirective || 'zh-CN') as 'zh-CN' | 'en-US');
   }
 
   switch (outline.type) {
@@ -574,8 +601,6 @@ async function generateSlideContent(
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
 ): Promise<GeneratedSlideContent | null> {
-  const lang = outline.language || 'zh-CN';
-
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
   let visionImages: Array<{ id: string; src: string }> | undefined;
@@ -588,9 +613,9 @@ async function generateSlideContent(
       const textOnlySlice = withSrc.slice(MAX_VISION_IMAGES);
       const noSrcImages = assignedImages.filter((img) => !imageMapping[img.id]);
 
-      const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img, lang));
+      const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
-        formatImageDescription(img, lang),
+        formatImageDescription(img),
       );
       assignedImagesText = [...visionDescriptions, ...textDescriptions].join('\n');
 
@@ -601,9 +626,7 @@ async function generateSlideContent(
         height: img.height,
       }));
     } else {
-      assignedImagesText = assignedImages
-        .map((img) => formatImageDescription(img, lang))
-        .join('\n');
+      assignedImagesText = assignedImages.map((img) => formatImageDescription(img)).join('\n');
     }
   }
 
@@ -861,7 +884,7 @@ async function generatePBLSceneContent(
         projectDescription: pblConfig.projectDescription,
         targetSkills: pblConfig.targetSkills,
         issueCount: pblConfig.issueCount,
-        language: pblConfig.language,
+        languageDirective: 'Teach in the language that matches the user requirement.',
       },
       languageModel,
       {
@@ -1105,10 +1128,9 @@ export async function generateSceneActions(
     | GeneratedInteractiveContent
     | GeneratedPBLContent,
   aiCall: AICallFn,
-  ctx?: SceneGenerationContext,
-  agents?: AgentInfo[],
-  userProfile?: string,
+  options: SceneActionsOptions = {},
 ): Promise<Action[]> {
+  const { ctx, agents, userProfile, languageDirective } = options;
   const agentsText = formatAgentsForPrompt(agents);
 
   // Debug: Log content type and teacherActions presence for interactive scenes

@@ -111,7 +111,7 @@ export async function buildSceneFromOutline(
   // Step 2: Generate Actions
   onPhaseChange?.('actions');
   log.debug(`Step 2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(outline, content, aiCall, ctx, agents, userProfile);
+  const actions = await generateSceneActions(outline, content, aiCall, { ctx, agents, userProfile });
   log.debug(`Generated ${actions.length} actions for: ${outline.title}`);
 
   // Build complete Scene object
