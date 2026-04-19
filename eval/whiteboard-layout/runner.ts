@@ -9,16 +9,17 @@ import { EvalStateManager } from './state-manager';
 import { initCapture, captureWhiteboard, closeCapture } from './capture';
 import { scoreScreenshot } from './scorer';
 import { generateReport } from './reporter';
+import { createRunDir } from '../shared/run-dir';
 
 // ==================== CLI Args ====================
 //
-// Model configuration follows the same pattern as the outline-language eval:
-//   EVAL_CHAT_MODEL    Model for chat generation (default: DEFAULT_MODEL or gpt-4o-mini)
-//   EVAL_SCORER_MODEL  Model for VLM scoring (default: openai:gpt-4o)
+// Required env:
+//   EVAL_CHAT_MODEL (or DEFAULT_MODEL)  Model for chat generation
+//   EVAL_SCORER_MODEL                   Model for VLM scoring
 //
 // Usage:
-//   EVAL_CHAT_MODEL=google:gemini-3.1-pro-preview \
-//   EVAL_SCORER_MODEL=google:gemini-2.0-flash \
+//   EVAL_CHAT_MODEL=<provider:model> \
+//   EVAL_SCORER_MODEL=<provider:model> \
 //   pnpm eval:whiteboard --scenario physics-force-decomposition
 
 const { values: args } = parseArgs({
@@ -32,8 +33,22 @@ const { values: args } = parseArgs({
 });
 
 const BASE_URL = args['base-url']!;
-const CHAT_MODEL = process.env.EVAL_CHAT_MODEL || process.env.DEFAULT_MODEL || 'openai:gpt-4o-mini';
-const SCORER_MODEL = process.env.EVAL_SCORER_MODEL || 'openai:gpt-4o';
+const CHAT_MODEL_RAW = process.env.EVAL_CHAT_MODEL || process.env.DEFAULT_MODEL;
+const SCORER_MODEL_RAW = process.env.EVAL_SCORER_MODEL;
+if (!CHAT_MODEL_RAW) {
+  console.error(
+    'Error: EVAL_CHAT_MODEL (or DEFAULT_MODEL) must be set. Example: EVAL_CHAT_MODEL=openai:gpt-4.1',
+  );
+  process.exit(1);
+}
+if (!SCORER_MODEL_RAW) {
+  console.error(
+    'Error: EVAL_SCORER_MODEL must be set. Example: EVAL_SCORER_MODEL=google:gemini-2.5-flash',
+  );
+  process.exit(1);
+}
+const CHAT_MODEL: string = CHAT_MODEL_RAW;
+const SCORER_MODEL: string = SCORER_MODEL_RAW;
 const REPEAT = parseInt(args.repeat || '1', 10);
 const OUTPUT_DIR = args['output-dir']!;
 const SCENARIO_FILTER = args.scenario;
@@ -325,11 +340,7 @@ async function main() {
   }
   console.log(`Loaded ${scenarios.length} scenario(s)`);
 
-  // Create run directory: results/<model>/<timestamp>/
-  const sanitizedModel = CHAT_MODEL.replace(/[:/]/g, '-');
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const runDir = join(OUTPUT_DIR, sanitizedModel, timestamp);
-  mkdirSync(runDir, { recursive: true });
+  const runDir = createRunDir(OUTPUT_DIR, CHAT_MODEL);
   console.log(`Output: ${runDir}`);
 
   await initCapture(BASE_URL);
