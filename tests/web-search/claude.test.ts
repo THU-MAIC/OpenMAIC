@@ -1,11 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock proxy-fetch — intercepted for both the Anthropic API call and page-content fetches
-vi.mock('@/lib/server/proxy-fetch', () => ({
-  proxyFetch: vi.fn(),
-}));
+// ── AI SDK mocks ──────────────────────────────────────────────────────────────
 
-// Mock ssrf-guard to avoid real DNS lookups in tests
+const { mockGenerateText, mockProvider, mockTool, mockCreateAnthropic } = vi.hoisted(() => {
+  const mockTool = {};
+  const mockModel = {};
+  const mockProvider = Object.assign(
+    vi.fn(() => mockModel),
+    {
+      tools: {
+        webSearch_20260209: vi.fn(() => mockTool),
+        webSearch_20250305: vi.fn(() => mockTool),
+      },
+    },
+  );
+  const mockCreateAnthropic = vi.fn(() => mockProvider);
+  const mockGenerateText = vi.fn();
+  return { mockGenerateText, mockProvider, mockTool, mockCreateAnthropic };
+});
+
+vi.mock('ai', () => ({ generateText: mockGenerateText }));
+vi.mock('@ai-sdk/anthropic', () => ({ createAnthropic: mockCreateAnthropic }));
+
+// ── Infrastructure mocks ──────────────────────────────────────────────────────
+
+vi.mock('@/lib/server/proxy-fetch', () => ({ proxyFetch: vi.fn() }));
+
 vi.mock('@/lib/server/ssrf-guard', () => ({
   validateUrlForSSRF: async (url: string): Promise<string> => {
     let parsed: URL;
@@ -14,9 +34,7 @@ vi.mock('@/lib/server/ssrf-guard', () => ({
     } catch {
       return 'Invalid URL';
     }
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return 'Only HTTP(S) URLs are allowed';
-    }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return 'Only HTTP(S) URLs are allowed';
     const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
     const privatePatterns = [
       /^localhost$/i,
@@ -27,144 +45,150 @@ vi.mock('@/lib/server/ssrf-guard', () => ({
       /^169\.254\./,
       /^::1$/,
     ];
-    if (privatePatterns.some((p) => p.test(hostname))) {
+    if (privatePatterns.some((p) => p.test(hostname)))
       return 'Local/private network URLs are not allowed';
-    }
     return '';
   },
 }));
 
 vi.mock('@/lib/logger', () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }),
 }));
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import { searchWithClaude } from '@/lib/web-search/claude';
 
 const mockProxyFetch = proxyFetch as ReturnType<typeof vi.fn>;
 
-/** Mock a successful Anthropic Messages API response (first proxyFetch call). */
-function mockApiResponse(overrides: { content?: unknown[] } = {}) {
-  const body = JSON.stringify({
-    id: 'msg_test',
-    type: 'message',
-    role: 'assistant',
-    model: 'claude-sonnet-4-6',
-    stop_reason: 'end_turn',
-    usage: { input_tokens: 10, output_tokens: 20 },
-    content: overrides.content ?? [{ type: 'text', text: 'Search result', citations: [] }],
-  });
-  mockProxyFetch.mockResolvedValueOnce(
-    new Response(body, { status: 200, headers: { 'content-type': 'application/json' } }),
-  );
+type UrlSource = { sourceType: 'url'; type: 'source'; id: string; url: string; title?: string };
+
+function mockAIResponse(text = 'Search result', sources: UrlSource[] = []) {
+  mockGenerateText.mockResolvedValueOnce({ text, sources });
 }
 
-/** Mock a page-content fetch response. */
 function mockPageResponse(html: string) {
-  mockProxyFetch.mockResolvedValueOnce({
-    ok: true,
-    text: async () => html,
-  });
+  mockProxyFetch.mockResolvedValueOnce({ ok: true, text: async () => html });
 }
 
-/** Mock a failing page-content fetch. */
 function mockPageFailure() {
   mockProxyFetch.mockResolvedValueOnce({ ok: false, status: 404 });
 }
 
+// ── Tests ─────────────────────────────────────────────────────────────────────
+
 describe('searchWithClaude', () => {
   beforeEach(() => {
     mockProxyFetch.mockReset();
+    mockGenerateText.mockReset();
+    mockCreateAnthropic.mockClear();
   });
 
-  // ── baseUrl ───────────────────────────────────────────────────────────────
+  // ── fetch interceptor: allowed_callers injection ──────────────────────────
 
-  it('uses the provided baseUrl to construct the messages endpoint', async () => {
-    mockApiResponse();
+  it('injects allowed_callers=["direct"] on tools that omit it', async () => {
+    mockAIResponse();
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com' });
+
+    const wrappedFetch = mockCreateAnthropic.mock.calls[0][0].fetch as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+
+    const body = JSON.stringify({ tools: [{ type: 'web_search_20260209', name: 'web_search' }] });
+    mockProxyFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    await wrappedFetch('https://api.anthropic.com/v1/messages', { method: 'POST', body });
+
+    const sentBody = JSON.parse(mockProxyFetch.mock.calls[0][1].body as string);
+    expect(sentBody.tools[0].allowed_callers).toEqual(['direct']);
+  });
+
+  it('does not overwrite allowed_callers when already set', async () => {
+    mockAIResponse();
+    await searchWithClaude({ query: 'test', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com' });
+
+    const wrappedFetch = mockCreateAnthropic.mock.calls[0][0].fetch as (
+      url: string,
+      init?: RequestInit,
+    ) => Promise<Response>;
+
+    const body = JSON.stringify({
+      tools: [{ type: 'web_search_20260209', name: 'web_search', allowed_callers: ['agent'] }],
+    });
+    mockProxyFetch.mockResolvedValueOnce(new Response('{}', { status: 200 }));
+    await wrappedFetch('https://api.anthropic.com/v1/messages', { method: 'POST', body });
+
+    const sentBody = JSON.parse(mockProxyFetch.mock.calls[0][1].body as string);
+    expect(sentBody.tools[0].allowed_callers).toEqual(['agent']);
+  });
+
+  // ── provider setup ────────────────────────────────────────────────────────
+
+  it('passes baseUrl and apiKey to createAnthropic', async () => {
+    mockAIResponse();
     await searchWithClaude({
       query: 'test',
       apiKey: 'sk-test',
       baseUrl: 'https://api.anthropic.com',
     });
-
-    const [url] = mockProxyFetch.mock.calls[0];
-    expect(url).toBe('https://api.anthropic.com/v1/messages');
+    expect(mockCreateAnthropic).toHaveBeenCalledWith(
+      expect.objectContaining({ baseURL: 'https://api.anthropic.com', apiKey: 'sk-test' }),
+    );
   });
 
-  it('uses a custom baseUrl when provided', async () => {
-    mockApiResponse();
-    await searchWithClaude({
-      query: 'test',
-      apiKey: 'sk-test',
-      baseUrl: 'https://custom.example.com',
-    });
-
-    const [url] = mockProxyFetch.mock.calls[0];
-    expect(url).toBe('https://custom.example.com/v1/messages');
-  });
-
-  // ── tools ─────────────────────────────────────────────────────────────────
-
-  it('uses provided tools with allowed_callers when non-empty', async () => {
-    mockApiResponse();
-    const customTools = [{ type: 'web_search_custom', name: 'my_search', input_schema: {} }];
-    await searchWithClaude({
-      query: 'test',
-      apiKey: 'sk-test',
-      baseUrl: 'https://api.anthropic.com',
-      tools: customTools as never,
-    });
-
-    const body = JSON.parse(mockProxyFetch.mock.calls[0][1].body);
-    expect(body.tools).toEqual(customTools.map((t) => ({ ...t, allowed_callers: ['direct'] })));
-  });
-
-  it('uses default web_search tool when tools is undefined', async () => {
-    mockApiResponse();
+  it('calls generateText with the web_search tool', async () => {
+    mockAIResponse();
     await searchWithClaude({
       query: 'test',
       apiKey: 'sk-test',
       baseUrl: 'https://api.anthropic.com',
     });
+    expect(mockGenerateText).toHaveBeenCalledWith(
+      expect.objectContaining({ tools: expect.objectContaining({ web_search: mockTool }) }),
+    );
+  });
 
-    const body = JSON.parse(mockProxyFetch.mock.calls[0][1].body);
-    expect(body.tools).toEqual([
-      { type: 'web_search_20260209', name: 'web_search', allowed_callers: ['direct'] },
+  it('falls back to claude-sonnet-4-6 when no modelId provided', async () => {
+    mockAIResponse();
+    await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+    expect(mockProvider).toHaveBeenCalledWith('claude-sonnet-4-6');
+  });
+
+  it('uses the provided modelId', async () => {
+    mockAIResponse();
+    await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+      modelId: 'claude-opus-4-7',
+    });
+    expect(mockProvider).toHaveBeenCalledWith('claude-opus-4-7');
+  });
+
+  // ── answer ────────────────────────────────────────────────────────────────
+
+  it('returns the answer text from generateText', async () => {
+    mockAIResponse('Comprehensive answer about the topic');
+    const result = await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+    expect(result.answer).toBe('Comprehensive answer about the topic');
+    expect(result.query).toBe('test');
+  });
+
+  // ── page content fetching ─────────────────────────────────────────────────
+
+  it('fetches page content for each source URL', async () => {
+    mockAIResponse('Answer', [
+      { sourceType: 'url', type: 'source', id: '1', url: 'https://example.com', title: 'Example' },
     ]);
-  });
-
-  it('uses default web_search tool when tools is an empty array', async () => {
-    mockApiResponse();
-    await searchWithClaude({
-      query: 'test',
-      apiKey: 'sk-test',
-      baseUrl: 'https://api.anthropic.com',
-      tools: [],
-    });
-
-    const body = JSON.parse(mockProxyFetch.mock.calls[0][1].body);
-    expect(body.tools).toEqual([
-      { type: 'web_search_20260209', name: 'web_search', allowed_callers: ['direct'] },
-    ]);
-  });
-
-  // ── page content fetching ────────────────────────────────────────────────
-
-  it('fetches page content for sources with no citation content', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [{ type: 'web_search_result', url: 'https://example.com', title: 'Example' }],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
     mockPageResponse('<html><body><p>Page content here</p></body></html>');
 
     const result = await searchWithClaude({
@@ -173,30 +197,20 @@ describe('searchWithClaude', () => {
       baseUrl: 'https://api.anthropic.com',
     });
 
+    expect(mockProxyFetch).toHaveBeenCalledWith('https://example.com', expect.any(Object));
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0].content).toBe('Page content here');
-    // Second proxyFetch call should be the page fetch
-    expect(mockProxyFetch.mock.calls[1][0]).toBe('https://example.com');
   });
 
   it('strips HTML tags and collapses whitespace from fetched page content', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [{ type: 'web_search_result', url: 'https://example.com', title: 'Ex' }],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
+    mockAIResponse('Answer', [
+      { sourceType: 'url', type: 'source', id: '1', url: 'https://example.com', title: 'Ex' },
+    ]);
     mockPageResponse(`
       <html>
         <head><style>body { color: red }</style></head>
         <script>alert('xss')</script>
-        <body>
-          <h1>Title</h1>
-          <p>  Some   content  </p>
-        </body>
+        <body><h1>Title</h1><p>  Some   content  </p></body>
       </html>
     `);
 
@@ -213,53 +227,11 @@ describe('searchWithClaude', () => {
     expect(result.sources[0].content).toContain('Some content');
   });
 
-  it('skips page fetch for sources that already have content from citations', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [{ type: 'web_search_result', url: 'https://example.com', title: 'Ex' }],
-        },
-        {
-          type: 'text',
-          text: 'Answer',
-          citations: [
-            {
-              type: 'web_search_result_location',
-              url: 'https://example.com',
-              title: 'Ex',
-              cited_text: 'Already have this content',
-              encrypted_index: '',
-            },
-          ],
-        },
-      ],
-    });
-
-    const result = await searchWithClaude({
-      query: 'test',
-      apiKey: 'sk-test',
-      baseUrl: 'https://api.anthropic.com',
-    });
-
-    // Only 1 proxyFetch call — the API call; no page fetch
-    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
-    expect(result.sources[0].content).toBe('Already have this content');
-  });
-
-  it('fetches multiple sources in parallel and fills content for each', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [
-            { type: 'web_search_result', url: 'https://a.com', title: 'A' },
-            { type: 'web_search_result', url: 'https://b.com', title: 'B' },
-          ],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
+  it('fetches multiple sources in parallel', async () => {
+    mockAIResponse('Answer', [
+      { sourceType: 'url', type: 'source', id: '1', url: 'https://a.com', title: 'A' },
+      { sourceType: 'url', type: 'source', id: '2', url: 'https://b.com', title: 'B' },
+    ]);
     mockPageResponse('<p>Content A</p>');
     mockPageResponse('<p>Content B</p>');
 
@@ -270,24 +242,17 @@ describe('searchWithClaude', () => {
     });
 
     expect(result.sources).toHaveLength(2);
-    // Page fetches are calls [1] and [2]
-    const fetchedUrls = mockProxyFetch.mock.calls.slice(1).map((call: string[]) => call[0]);
+    const fetchedUrls = mockProxyFetch.mock.calls.map((call: unknown[]) => call[0]);
     expect(fetchedUrls).toContain('https://a.com');
     expect(fetchedUrls).toContain('https://b.com');
     expect(result.sources.find((s) => s.url === 'https://a.com')?.content).toContain('Content A');
     expect(result.sources.find((s) => s.url === 'https://b.com')?.content).toContain('Content B');
   });
 
-  it('filters out sources for which page fetch returns no content (non-ok response)', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [{ type: 'web_search_result', url: 'https://dead.com', title: 'Dead' }],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
+  it('filters out sources where page fetch returns non-ok response', async () => {
+    mockAIResponse('Answer', [
+      { sourceType: 'url', type: 'source', id: '1', url: 'https://dead.com', title: 'Dead' },
+    ]);
     mockPageFailure();
 
     const result = await searchWithClaude({
@@ -295,20 +260,13 @@ describe('searchWithClaude', () => {
       apiKey: 'sk-test',
       baseUrl: 'https://api.anthropic.com',
     });
-
     expect(result.sources).toHaveLength(0);
   });
 
-  it('filters out sources for which page fetch throws (network error)', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [{ type: 'web_search_result', url: 'https://dead.com', title: 'Dead' }],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
+  it('filters out sources where page fetch throws (network error)', async () => {
+    mockAIResponse('Answer', [
+      { sourceType: 'url', type: 'source', id: '1', url: 'https://dead.com', title: 'Dead' },
+    ]);
     mockProxyFetch.mockRejectedValueOnce(new Error('Network timeout'));
 
     const result = await searchWithClaude({
@@ -316,118 +274,14 @@ describe('searchWithClaude', () => {
       apiKey: 'sk-test',
       baseUrl: 'https://api.anthropic.com',
     });
-
-    expect(result.sources).toHaveLength(0);
-  });
-
-  // ── SSRF protection ───────────────────────────────────────────────────────
-
-  it('skips page fetch for localhost URLs (SSRF protection)', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [{ type: 'web_search_result', url: 'http://localhost/secret', title: 'Local' }],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
-
-    const result = await searchWithClaude({
-      query: 'test',
-      apiKey: 'sk-test',
-      baseUrl: 'https://api.anthropic.com',
-    });
-
-    // Only the API call should have been made; no page fetch
-    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
-    expect(result.sources).toHaveLength(0);
-  });
-
-  it('skips page fetch for private IP URLs (SSRF protection)', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [
-            { type: 'web_search_result', url: 'http://192.168.1.1/admin', title: 'Private' },
-          ],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
-
-    const result = await searchWithClaude({
-      query: 'test',
-      apiKey: 'sk-test',
-      baseUrl: 'https://api.anthropic.com',
-    });
-
-    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
-    expect(result.sources).toHaveLength(0);
-  });
-
-  it('skips page fetch for non-HTTP(S) URLs (SSRF protection)', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [{ type: 'web_search_result', url: 'file:///etc/passwd', title: 'File' }],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
-
-    const result = await searchWithClaude({
-      query: 'test',
-      apiKey: 'sk-test',
-      baseUrl: 'https://api.anthropic.com',
-    });
-
-    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
-    expect(result.sources).toHaveLength(0);
-  });
-
-  it('skips page fetch for metadata endpoint URLs (SSRF protection)', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [
-            {
-              type: 'web_search_result',
-              url: 'http://169.254.169.254/latest/meta-data/',
-              title: 'Metadata',
-            },
-          ],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
-
-    const result = await searchWithClaude({
-      query: 'test',
-      apiKey: 'sk-test',
-      baseUrl: 'https://api.anthropic.com',
-    });
-
-    expect(mockProxyFetch).toHaveBeenCalledTimes(1);
     expect(result.sources).toHaveLength(0);
   });
 
   it('keeps sources with content and drops sources without after mixed page fetches', async () => {
-    mockApiResponse({
-      content: [
-        {
-          type: 'web_search_tool_result',
-          content: [
-            { type: 'web_search_result', url: 'https://good.com', title: 'Good' },
-            { type: 'web_search_result', url: 'https://dead.com', title: 'Dead' },
-          ],
-        },
-        { type: 'text', text: 'Answer', citations: [] },
-      ],
-    });
+    mockAIResponse('Answer', [
+      { sourceType: 'url', type: 'source', id: '1', url: 'https://good.com', title: 'Good' },
+      { sourceType: 'url', type: 'source', id: '2', url: 'https://dead.com', title: 'Dead' },
+    ]);
     mockPageResponse('<p>Good content</p>');
     mockPageFailure();
 
@@ -436,29 +290,117 @@ describe('searchWithClaude', () => {
       apiKey: 'sk-test',
       baseUrl: 'https://api.anthropic.com',
     });
-
     expect(result.sources).toHaveLength(1);
     expect(result.sources[0].url).toBe('https://good.com');
   });
 
+  it('ignores non-url sources (document sources)', async () => {
+    mockGenerateText.mockResolvedValueOnce({
+      text: 'Answer',
+      sources: [
+        { sourceType: 'document', type: 'source', id: '1', mediaType: 'text/plain', title: 'Doc' },
+        { sourceType: 'url', type: 'source', id: '2', url: 'https://example.com', title: 'Web' },
+      ],
+    });
+    mockPageResponse('<p>Web content</p>');
+
+    const result = await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+    expect(result.sources).toHaveLength(1);
+    expect(result.sources[0].url).toBe('https://example.com');
+  });
+
+  // ── SSRF protection ───────────────────────────────────────────────────────
+
+  it('skips page fetch for localhost URLs (SSRF protection)', async () => {
+    mockAIResponse('Answer', [
+      {
+        sourceType: 'url',
+        type: 'source',
+        id: '1',
+        url: 'http://localhost/secret',
+        title: 'Local',
+      },
+    ]);
+
+    const result = await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+    expect(mockProxyFetch).not.toHaveBeenCalled();
+    expect(result.sources).toHaveLength(0);
+  });
+
+  it('skips page fetch for private IP URLs (SSRF protection)', async () => {
+    mockAIResponse('Answer', [
+      {
+        sourceType: 'url',
+        type: 'source',
+        id: '1',
+        url: 'http://192.168.1.1/admin',
+        title: 'Private',
+      },
+    ]);
+
+    const result = await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+    expect(mockProxyFetch).not.toHaveBeenCalled();
+    expect(result.sources).toHaveLength(0);
+  });
+
+  it('skips page fetch for non-HTTP(S) URLs (SSRF protection)', async () => {
+    mockAIResponse('Answer', [
+      { sourceType: 'url', type: 'source', id: '1', url: 'file:///etc/passwd', title: 'File' },
+    ]);
+
+    const result = await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+    expect(mockProxyFetch).not.toHaveBeenCalled();
+    expect(result.sources).toHaveLength(0);
+  });
+
+  it('skips page fetch for cloud metadata endpoint URLs (SSRF protection)', async () => {
+    mockAIResponse('Answer', [
+      {
+        sourceType: 'url',
+        type: 'source',
+        id: '1',
+        url: 'http://169.254.169.254/latest/meta-data/',
+        title: 'Meta',
+      },
+    ]);
+
+    const result = await searchWithClaude({
+      query: 'test',
+      apiKey: 'sk-test',
+      baseUrl: 'https://api.anthropic.com',
+    });
+    expect(mockProxyFetch).not.toHaveBeenCalled();
+    expect(result.sources).toHaveLength(0);
+  });
+
   // ── error propagation ─────────────────────────────────────────────────────
 
-  it('throws when the API returns a non-ok response', async () => {
-    const errorBody = JSON.stringify({
-      type: 'error',
-      error: { type: 'authentication_error', message: 'invalid x-api-key' },
-    });
-    mockProxyFetch.mockResolvedValueOnce(
-      new Response(errorBody, { status: 401, headers: { 'content-type': 'application/json' } }),
-    );
+  it('throws when generateText rejects', async () => {
+    mockGenerateText.mockRejectedValueOnce(new Error('Claude API error (401): invalid x-api-key'));
 
     await expect(
       searchWithClaude({ query: 'test', apiKey: 'bad-key', baseUrl: 'https://api.anthropic.com' }),
-    ).rejects.toThrow(/Claude API error \(401\)/);
+    ).rejects.toThrow('Claude API error (401)');
   });
 
-  it('throws when proxyFetch rejects (network error)', async () => {
-    mockProxyFetch.mockRejectedValueOnce(new Error('Network failure'));
+  it('throws when generateText rejects with a network error', async () => {
+    mockGenerateText.mockRejectedValueOnce(new Error('Network failure'));
 
     await expect(
       searchWithClaude({ query: 'test', apiKey: 'sk-test', baseUrl: 'https://api.anthropic.com' }),

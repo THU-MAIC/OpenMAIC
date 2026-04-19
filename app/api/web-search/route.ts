@@ -21,7 +21,6 @@ import {
 import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
-import { Tool } from '@anthropic-ai/sdk/resources';
 
 const log = createLogger('WebSearch');
 
@@ -125,19 +124,12 @@ export async function POST(req: NextRequest) {
     let result;
     switch (providerId) {
       case 'claude': {
-        const defaultTool = { type: 'web_search_20260209', name: 'web_search' };
-        const tools = (providerConfig?.tools?.length ? providerConfig?.tools : [defaultTool]).map(
-          (tool) => {
-            return { ...tool, allowed_callers: ['direct'] } as Tool;
-          },
-        );
-
         result = await searchWithClaude({
           query: searchQuery.query,
           apiKey,
           baseUrl,
-          tools,
           modelId: providerConfig?.modelId,
+          tools: providerConfig?.tools,
         });
         break;
       }

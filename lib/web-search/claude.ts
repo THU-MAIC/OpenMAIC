@@ -1,22 +1,60 @@
 /**
  * Claude Web Search Integration
  *
- * This provider implements the native Claude web search tool via the Anthropic Messages API.
- * It requires a specific model (e.g., claude-opus-4-6) and a specific tool definition.
+ * Uses the AI SDK Anthropic provider with the native web_search_20260209 tool.
  */
 
+import { generateText } from 'ai';
+import { createAnthropic, type AnthropicProvider } from '@ai-sdk/anthropic';
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { createLogger } from '@/lib/logger';
 import type { WebSearchResult, WebSearchSource } from '@/lib/types/web-search';
-import Anthropic from '@anthropic-ai/sdk';
-import { Tool, WebSearchTool20260209 } from '@anthropic-ai/sdk/resources';
 
-const DEFAULT_WEB_SEARCH_TOOL: WebSearchTool20260209 = {
-  type: 'web_search_20260209',
-  name: 'web_search',
-  allowed_callers: ['direct'],
-};
+type ToolDef = { type: string; name: string };
+
+const DEFAULT_TOOLS: ToolDef[] = [{ type: 'web_search_20260209', name: 'web_search' }];
+
+function buildTools(provider: AnthropicProvider, configuredTools?: ToolDef[]) {
+  const defs = configuredTools?.length ? configuredTools : DEFAULT_TOOLS;
+  return Object.fromEntries(
+    defs.map((t) =>
+      t.type === 'web_search_20250305'
+        ? [t.name, provider.tools.webSearch_20250305()]
+        : [t.name, provider.tools.webSearch_20260209()],
+    ),
+  );
+}
+
+/**
+ * Wraps proxyFetch to inject `allowed_callers: ["direct"]` on every tool in outgoing
+ * Anthropic API requests. The AI SDK's provider-defined tool serialisation hard-codes the
+ * tool object and never emits `allowed_callers`, so we must patch it at the fetch layer.
+ */
+async function fetchWithAllowedCallers(url: string, init?: RequestInit): Promise<Response> {
+  if (init?.method === 'POST' && typeof init.body === 'string') {
+    try {
+      const body = JSON.parse(init.body);
+      if (Array.isArray(body?.tools)) {
+        const before = body.tools.map((t: Record<string, unknown>) => t.allowed_callers);
+        body.tools = body.tools.map((tool: Record<string, unknown>) =>
+          tool.allowed_callers ? tool : { ...tool, allowed_callers: ['direct'] },
+        );
+        const after = body.tools.map((t: Record<string, unknown>) => t.allowed_callers);
+        log.debug(`fetchWithAllowedCallers: injecting allowed_callers url: ${url}, before: ${before}, after: ${after}`);
+        init = { ...init, body: JSON.stringify(body) };
+      } else {
+        log.debug(`fetchWithAllowedCallers: POST to ${url} — no tools array in body`);
+      }
+      log.debug(`final payload: ${JSON.stringify(body)}`)
+    } catch {
+      /* leave body unchanged if it can't be parsed */
+    }
+  } else {
+    log.info(`fetchWithAllowedCallers: called [method=${init?.method} bodyType=${typeof init?.body}]`);
+  }
+  return proxyFetch(url, init);
+}
 
 const PAGE_CONTENT_MAX_LENGTH = 2000;
 const PAGE_FETCH_TIMEOUT_MS = 5000;
@@ -58,101 +96,56 @@ async function fetchPageContent(url: string): Promise<string> {
 }
 
 /**
- * Search the web using Claude's native web search tool.
+ * Search the web using Claude's native web search tool via the AI SDK.
  */
 export async function searchWithClaude(params: {
   query: string;
   apiKey: string;
   modelId?: string;
   baseUrl: string;
-  tools?: Tool[];
+  tools?: ToolDef[];
 }): Promise<WebSearchResult> {
-  const { query, apiKey, modelId: rawModelId, baseUrl, tools: rawTools } = params;
+  const { query, apiKey, modelId: rawModelId, baseUrl, tools } = params;
   const modelId = rawModelId?.trim() || 'claude-sonnet-4-6';
-  const tools: (Tool | WebSearchTool20260209)[] =
-    rawTools && rawTools.length > 0
-      ? rawTools.map(
-          (t) => ({ ...t, allowed_callers: ['direct'] }) as Tool & { allowed_callers: string[] },
-        )
-      : [DEFAULT_WEB_SEARCH_TOOL];
+
+  const provider = createAnthropic({
+    apiKey,
+    baseURL: baseUrl,
+    fetch: fetchWithAllowedCallers as typeof fetch,
+  });
 
   try {
     const startTime = Date.now();
-    const client = new Anthropic({ baseURL: baseUrl, apiKey, fetch: proxyFetch as typeof fetch });
-    const response = await client.messages
-      .create({
-        max_tokens: 4096,
-        messages: [
-          {
-            role: 'user',
-            content: `Search for the following and provide a comprehensive summary with source links: ${query}.`,
-          },
-        ],
-        model: modelId || '',
-        tools: tools as Tool[],
-      })
-      .catch(async (err) => {
-        if (err instanceof Anthropic.APIError) {
-          throw new Error(`Claude API error (${err.status}): ${err.message}`);
-        } else {
-          throw err;
-        }
-      });
 
-    const contentBlocks = response.content;
+    const result = await generateText({
+      model: provider(modelId),
+      messages: [
+        {
+          role: 'user',
+          content: `Search for the following and provide a comprehensive summary with source links: ${query}.`,
+        },
+      ],
+      maxOutputTokens: 4096,
+      tools: buildTools(provider, tools),
+    });
 
-    // Extract search results from web_search_tool_result blocks
-    const searchResultMap = new Map<string, WebSearchSource>();
-    for (const block of contentBlocks) {
-      if (block.type !== 'web_search_tool_result') continue;
-      for (const source of getWebSearchResult(block.content)) {
-        if (!searchResultMap.has(source.url)) {
-          searchResultMap.set(source.url, source);
-        }
-      }
-    }
+    // The AI SDK surfaces web search results as sources (url + title only; no snippet content).
+    // We fetch each page to populate content, then drop any that fail.
+    const sources: WebSearchSource[] = result.sources.flatMap((s) => {
+      if (s.sourceType !== 'url') return [];
+      return [{ url: s.url, title: s.title || s.url, content: '' }];
+    });
 
-    // Collect the final answer text blocks (ignore server_tool_use / web_search_tool_result)
-    const answerParts: string[] = [];
-    for (const block of contentBlocks) {
-      if (block.type === 'text' && block.text) {
-        answerParts.push(block.text);
-        // If the block carries citations, make sure those sources are captured
-        for (const citation of block.citations || []) {
-          if (citation.type !== 'web_search_result_location') continue;
-          if (!searchResultMap.has(citation.url)) {
-            searchResultMap.set(citation.url, {
-              title: citation.title || citation.url,
-              url: citation.url,
-              content: citation.cited_text || '',
-            });
-          } else {
-            const existing = searchResultMap.get(citation.url)!;
-            if (!existing.content && citation.cited_text) {
-              existing.content = citation.cited_text;
-            }
-          }
-        }
-      }
-    }
-
-    const answerText = answerParts.join('\n\n');
-    const sources = Array.from(searchResultMap.values());
-
-    // Fetch page content for sources that have no content from citations
     await Promise.all(
-      sources
-        .filter((s) => !s.content)
-        .map(async (s) => {
-          s.content = await fetchPageContent(s.url);
-        }),
+      sources.map(async (s) => {
+        s.content = await fetchPageContent(s.url);
+      }),
     );
 
-    // Drop sources for which we could not obtain any content
     const sourcesWithContent = sources.filter((s) => s.content);
 
     return {
-      answer: answerText,
+      answer: result.text,
       sources: sourcesWithContent,
       query,
       responseTime: Date.now() - startTime,
@@ -161,13 +154,6 @@ export async function searchWithClaude(params: {
     log.error('Claude search failed', e);
     throw e;
   }
-}
-
-function getWebSearchResult(content: Anthropic.WebSearchToolResultBlockContent): WebSearchSource[] {
-  if (!Array.isArray(content)) return [];
-  return content
-    .filter((r) => r.type === 'web_search_result')
-    .map((r) => ({ title: r.title || r.url, url: r.url, content: '' }));
 }
 
 /**
