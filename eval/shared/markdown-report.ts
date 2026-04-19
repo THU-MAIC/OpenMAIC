@@ -29,7 +29,7 @@ export function renderHeader(h: ReportHeader): string[] {
 export function renderSummaryTable(headers: string[], rows: string[][]): string[] {
   const sep = `|${headers.map(() => '---').join('|')}|`;
   const lines = [`| ${headers.join(' | ')} |`, sep];
-  for (const r of rows) lines.push(`| ${r.join(' | ')} |`);
+  for (const r of rows) lines.push(`| ${r.map((c) => c.replace(/\|/g, '\\|')).join(' | ')} |`);
   lines.push(``);
   return lines;
 }
