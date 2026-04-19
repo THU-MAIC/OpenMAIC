@@ -1,9 +1,7 @@
 import { describe, test, expect } from 'vitest';
-import {
-  buildStructuredPrompt,
-  convertMessagesToOpenAI,
-  summarizeConversation,
-} from '@/lib/orchestration/prompt-builder';
+import { buildStructuredPrompt } from '@/lib/orchestration/prompt-builder';
+import { convertMessagesToOpenAI } from '@/lib/orchestration/summarizers/message-converter';
+import { summarizeConversation } from '@/lib/orchestration/summarizers/conversation-summary';
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import {
   teacherAgent,

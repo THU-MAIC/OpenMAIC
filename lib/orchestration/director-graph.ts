@@ -28,11 +28,9 @@ import type { StatelessChatRequest } from '@/lib/types/chat';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import {
-  buildStructuredPrompt,
-  summarizeConversation,
-  convertMessagesToOpenAI,
-} from './prompt-builder';
+import { buildStructuredPrompt } from './prompt-builder';
+import { summarizeConversation } from './summarizers/conversation-summary';
+import { convertMessagesToOpenAI } from './summarizers/message-converter';
 import { buildDirectorPrompt, parseDirectorDecision } from './director-prompt';
 import { getEffectiveActions } from './tool-schemas';
 import type { AgentTurnSummary, WhiteboardActionRecord } from './director-prompt';
