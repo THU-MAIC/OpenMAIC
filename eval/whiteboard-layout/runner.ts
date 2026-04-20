@@ -35,6 +35,9 @@ const { values: args } = parseArgs({
 const BASE_URL = args['base-url']!;
 const CHAT_MODEL_RAW = process.env.EVAL_CHAT_MODEL || process.env.DEFAULT_MODEL;
 const SCORER_MODEL_RAW = process.env.EVAL_SCORER_MODEL;
+const ATTACH_PRIOR_SCREENSHOT =
+  process.env.EVAL_ATTACH_PRIOR_SCREENSHOT === '1' ||
+  process.env.EVAL_ATTACH_PRIOR_SCREENSHOT === 'true';
 if (!CHAT_MODEL_RAW) {
   console.error(
     'Error: EVAL_CHAT_MODEL (or DEFAULT_MODEL) must be set. Example: EVAL_CHAT_MODEL=openai:gpt-4.1',
@@ -98,16 +101,39 @@ async function runScenario(
     metadata?: unknown;
   }> = [];
 
+  // Tracks the most recent whiteboard screenshot file so we can attach it to
+  // the NEXT user message as `prior state` feedback for the VLM.
+  let priorScreenshotPath: string | null = null;
+
   try {
     for (let turnIdx = 0; turnIdx < scenario.turns.length; turnIdx++) {
       const turn = scenario.turns[turnIdx];
       console.log(`    Turn ${turnIdx + 1}: "${turn.userMessage.slice(0, 50)}..."`);
 
-      // Add user message
+      // Build user message parts, optionally including the prior turn's
+      // whiteboard screenshot so the VLM can *see* what it produced last.
+      const parts: unknown[] = [{ type: 'text', text: turn.userMessage }];
+      if (ATTACH_PRIOR_SCREENSHOT && priorScreenshotPath) {
+        try {
+          const base64 = readFileSync(priorScreenshotPath).toString('base64');
+          parts.push({
+            type: 'file',
+            mediaType: 'image/png',
+            url: `data:image/png;base64,${base64}`,
+          });
+          console.log(
+            `      [screenshot] attached prior turn's board (${Math.round(base64.length / 1024)}kb base64)`,
+          );
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          console.warn(`      [screenshot] failed to attach: ${msg.slice(0, 120)}`);
+        }
+      }
+
       messages.push({
         role: 'user',
         content: turn.userMessage,
-        parts: [{ type: 'text', text: turn.userMessage }],
+        parts,
         metadata: { createdAt: Date.now() },
       });
 
@@ -243,22 +269,35 @@ async function runScenario(
 
       // Checkpoint: capture + score
       const isLastTurn = turnIdx === scenario.turns.length - 1;
-      if (turn.checkpoint || isLastTurn) {
+      const isCheckpoint = turn.checkpoint || isLastTurn;
+
+      // When prior-screenshot attachment is on, capture after EVERY turn so
+      // the next turn can see what was produced. Score only on checkpoint
+      // turns to preserve baseline-compatible report shape.
+      if (isCheckpoint || ATTACH_PRIOR_SCREENSHOT) {
         const elements = stateManager.getWhiteboardElements();
         const screenshotFilename = `run${runIndex}_turn${turnIdx}.png`;
         const screenshotPath = await captureWhiteboard(elements, scenarioDir, screenshotFilename);
 
-        console.log(`    Captured: ${screenshotFilename} (${elements.length} elements)`);
+        // Remember for the next turn's message attachment
+        priorScreenshotPath = screenshotPath;
 
-        try {
-          const score = await scoreScreenshot(screenshotPath, SCORER_MODEL);
-          console.log(`    Score: overall=${score.overall}, overlap=${score.overlap.score}`);
-          checkpoints.push({ turnIndex: turnIdx, screenshotPath, score, elements });
-        } catch (scoreErr) {
-          const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
-          console.error(`    Score error (continuing): ${msg.slice(0, 120)}`);
-          // Preserve screenshot with null score so the report can still include it
-          checkpoints.push({ turnIndex: turnIdx, screenshotPath, score: null, elements });
+        if (isCheckpoint) {
+          console.log(`    Captured: ${screenshotFilename} (${elements.length} elements)`);
+
+          try {
+            const score = await scoreScreenshot(screenshotPath, SCORER_MODEL);
+            console.log(`    Score: overall=${score.overall}, overlap=${score.overlap.score}`);
+            checkpoints.push({ turnIndex: turnIdx, screenshotPath, score, elements });
+          } catch (scoreErr) {
+            const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
+            console.error(`    Score error (continuing): ${msg.slice(0, 120)}`);
+            checkpoints.push({ turnIndex: turnIdx, screenshotPath, score: null, elements });
+          }
+        } else {
+          console.log(
+            `    [non-checkpoint] captured ${screenshotFilename} (${elements.length} elements) for next-turn feedback`,
+          );
         }
       }
     }
