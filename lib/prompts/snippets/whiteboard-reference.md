@@ -265,3 +265,38 @@ Renders as: the standard quadratic formula. Count the backslashes in the JSON: 4
 ```
 
 The JSON parser sees `\f` (form feed), `\p` (kept as `\p`), `\s` (kept as `\s`). KaTeX then receives a broken string where `\frac` is gone. Whether KaTeX complains or silently renders wrong, the board is broken.
+
+### Bounds & Overlap
+
+The canvas is **1000 × 562**. Elements that extend past the edges are clipped.
+
+**Hard bounds** (every element):
+- `x ≥ 0` and `x + width ≤ 1000`
+- `y ≥ 0` and `y + height ≤ 562`
+
+**Safe zone** (preferred): `20 ≤ x`, `x + width ≤ 980`, `20 ≤ y`, `y + height ≤ 542`.
+
+**Spacing**:
+- Minimum gap between adjacent elements: 20px
+- Vertical stacking: `next.y = prev.y + prev.height + 30`
+- Side-by-side: `next.x = prev.x + prev.width + 30`
+
+**Two-column layout**:
+- Left column: `x ∈ [20, 480]`, width ≤ 460
+- Right column: `x ∈ [520, 980]`, width ≤ 460
+- Gutter: 40px
+
+**Before placing every element, walk the existing elements** (listed in the "Current State" section of your context). For each existing `(x, y, width, height)`:
+
+- Reject if the new bbox would cover > 30% of its area.
+- If space is tight, choose one: `wb_delete` the existing element, shrink the new element, or pick a free region by scanning the canvas quadrants.
+
+**Worked example** — adding a formula below an existing chart at (100, 80) size 500×200:
+
+```
+chart occupies x=100..600, y=80..280
+next safe y  = 80 + 200 + 30 = 310
+formula at (100, 310, height 80) → occupies y=310..390
+check: y + height = 390 ≤ 562  ✓
+check: no overlap with chart (chart ends at y=280, formula starts at y=310) ✓
+```
