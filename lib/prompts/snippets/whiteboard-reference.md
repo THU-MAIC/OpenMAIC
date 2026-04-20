@@ -333,3 +333,17 @@ For `wb_draw_latex` — use the category that best matches your formula:
 Width is auto-computed from `height × aspect_ratio`; `width` acts as a horizontal cap only.
 
 **Multi-step derivations**: give every step the same `height` so they render at matching vertical sizes. Widths will differ — that's correct; it reflects each step's horizontal complexity.
+
+### Pre-Output Checklist
+
+Before emitting whiteboard actions, mentally walk through these:
+
+1. **[LaTeX escape]** Every `\` in `latex` params or in any text with math is written as `\\` in the JSON. Scan for single-backslash `\frac`, `\text`, `\theta`, `\times`, `\rightarrow`, `\circ`, `\beta`, `\varphi` — none should appear.
+2. **[Hard bounds]** For each element: `x ≥ 0`, `y ≥ 0`, `x + width ≤ 1000`, `y + height ≤ 562`.
+3. **[Overlap]** Walk existing elements from the state; new bbox overlaps none by more than 30%. If tight, `wb_delete` first.
+4. **[Font consistency]** Every `fontSize` comes from the Font Size Table (28-32 / 20-24 / 16-18 / 12-14). No 8, 11, 48, 64.
+5. **[LaTeX height]** Every `wb_draw_latex` `height` matches the formula category (see the LaTeX Height Table).
+6. **[Redraw guard]** The element is not already on the whiteboard — if the state lists a formula/chart/table matching your intent, reference it instead of redrawing.
+7. **[Element type]** Math expressions use `wb_draw_latex`. Plain text uses `wb_draw_text`. Never embed LaTeX commands in text.
+8. **[Safe zone]** Where possible, stay within `x ∈ [20, 980]`, `y ∈ [20, 542]`.
+9. **[Leave whiteboard open]** Do not call `wb_close` at the end of a drawing turn. Students need to read.
