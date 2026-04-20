@@ -3,16 +3,52 @@ import type { StatelessChatRequest } from '@/lib/types/chat';
 // ==================== Message Conversion ====================
 
 /**
- * Convert UI messages to OpenAI format
- * Includes tool call information so the model knows what actions were taken
+ * Content part shapes compatible with Vercel AI SDK's `ModelMessage`.
+ * When a message has no attachments this stays a string; when there are
+ * image attachments it becomes an array.
+ */
+type ImagePart = { type: 'image'; image: string; mediaType?: string };
+type TextPart = { type: 'text'; text: string };
+export type ConvertedContent = string | Array<TextPart | ImagePart>;
+
+export interface ConvertedMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: ConvertedContent;
+}
+
+/**
+ * Extract image URLs from UIMessage parts.
+ * Returns data-URLs or http(s) URLs where `mediaType` starts with `image/`.
+ */
+function extractImageParts(parts: unknown[] | undefined): ImagePart[] {
+  if (!parts) return [];
+  const out: ImagePart[] = [];
+  for (const part of parts) {
+    const p = part as Record<string, unknown>;
+    if (
+      p.type === 'file' &&
+      typeof p.mediaType === 'string' &&
+      p.mediaType.startsWith('image/') &&
+      typeof p.url === 'string'
+    ) {
+      out.push({ type: 'image', image: p.url, mediaType: p.mediaType });
+    }
+  }
+  return out;
+}
+
+/**
+ * Convert UI messages to OpenAI-compatible format.
+ * Includes tool call information so the model knows what actions were taken.
+ * Preserves image attachments on user messages as multimodal content parts.
  */
 export function convertMessagesToOpenAI(
   messages: StatelessChatRequest['messages'],
   currentAgentId?: string,
-): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
+): ConvertedMessage[] {
   return messages
     .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
-    .map((msg) => {
+    .map((msg): ConvertedMessage => {
       if (msg.role === 'assistant') {
         // Assistant messages use JSON array format to serve as few-shot examples
         // that match the expected output format from the system prompt
@@ -51,18 +87,18 @@ export function convertMessagesToOpenAI(
         if (currentAgentId && msgAgentId && msgAgentId !== currentAgentId) {
           const agentName = msg.metadata?.senderName || msgAgentId;
           return {
-            role: 'user' as const,
+            role: 'user',
             content: content ? `[${agentName}]: ${content}` : '',
           };
         }
 
         return {
-          role: 'assistant' as const,
+          role: 'assistant',
           content,
         };
       }
 
-      // User messages: keep plain text concatenation
+      // User messages: keep plain text concatenation + preserve image attachments
       const contentParts: string[] = [];
 
       if (msg.parts) {
@@ -88,9 +124,9 @@ export function convertMessagesToOpenAI(
 
       // Extract speaker name from metadata (e.g. other agents' messages in discussion)
       const senderName = msg.metadata?.senderName;
-      let content = contentParts.join('\n');
+      let textContent = contentParts.join('\n');
       if (senderName) {
-        content = `[${senderName}]: ${content}`;
+        textContent = `[${senderName}]: ${textContent}`;
       }
 
       // Annotate interrupted messages so the LLM knows context was cut short
@@ -98,16 +134,26 @@ export function convertMessagesToOpenAI(
         (msg as unknown as Record<string, unknown>).metadata &&
         ((msg as unknown as Record<string, unknown>).metadata as Record<string, unknown>)
           ?.interrupted;
-      return {
-        role: 'user' as const,
-        content: isInterrupted
-          ? `${content}\n[This response was interrupted — do NOT continue it. Start a new JSON array response.]`
-          : content,
-      };
+      if (isInterrupted) {
+        textContent = `${textContent}\n[This response was interrupted — do NOT continue it. Start a new JSON array response.]`;
+      }
+
+      const images = extractImageParts(msg.parts);
+      if (images.length > 0) {
+        // Multimodal content: text (possibly empty) followed by image parts.
+        const parts: Array<TextPart | ImagePart> = [];
+        if (textContent) parts.push({ type: 'text', text: textContent });
+        parts.push(...images);
+        return { role: 'user', content: parts };
+      }
+
+      return { role: 'user', content: textContent };
     })
     .filter((msg) => {
       // Drop empty messages and messages with only dots/ellipsis/whitespace
-      // (produced by failed agent streams)
+      // (produced by failed agent streams). Messages with image attachments are
+      // always kept, even if the text is empty.
+      if (typeof msg.content !== 'string') return true;
       const stripped = msg.content.replace(/[.\s…]+/g, '');
       return stripped.length > 0;
     });
