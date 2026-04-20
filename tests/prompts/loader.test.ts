@@ -29,4 +29,9 @@ describe('lib/prompts loader', () => {
     // @ts-expect-error — testing runtime behavior with invalid id
     expect(loadPrompt('does-not-exist')).toBeNull();
   });
+
+  test('throws on unknown snippetId instead of passing through literal', () => {
+    // @ts-expect-error — testing runtime behavior with invalid id
+    expect(() => loadSnippet('does-not-exist')).toThrow(/Snippet not found/);
+  });
 });

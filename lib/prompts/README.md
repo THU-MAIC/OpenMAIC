@@ -48,6 +48,20 @@ provides the value.
    exists in the union).
 4. Call `buildPrompt(PROMPT_IDS.NEW_ID, vars)` from the consuming module.
 
+## Still in TypeScript (not yet in templates)
+
+Not every prompt fragment lives in markdown. Some role-conditional content
+still exists as TS template literals and needs editing directly:
+
+| What | Where | Why not in markdown |
+|---|---|---|
+| `ROLE_GUIDELINES` (teacher / assistant / student blocks) | `lib/orchestration/prompt-builder.ts` | Branches by `agentConfig.role` |
+| Length targets (100 / 80 / 50 chars per role) | `buildLengthGuidelines` in `lib/orchestration/prompt-builder.ts` | Branches by role |
+| Whiteboard guidelines (LaTeX sizing table, 1000×562 canvas, layout rules, code block spacing) | `buildWhiteboardGuidelines` in `lib/orchestration/prompt-builder.ts` | Branches by role |
+
+These may migrate into snippets in a later pass once Phase 2 eval feedback
+shows which parts need frequent iteration.
+
 ## Silent-passthrough gotcha
 
 `interpolateVariables` leaves unknown placeholders **unchanged** rather than
@@ -63,6 +77,9 @@ placeholder name ships literal `{{…}}` text to the LLM. Defence:
 - Tests in `tests/prompts/templates.test.ts` assert that the fully-rendered
   agent-system / director / pbl-design prompts contain no surviving
   `{{…}}` tokens. Keep that check passing when adding variables.
+- `{{snippet:name}}` lookups **throw** on a missing snippet file rather than
+  passing through silently, so a typo like `{{snippet:speach-guidelines}}`
+  fails at load time instead of reaching the LLM.
 
 ## Testing a template change locally
 

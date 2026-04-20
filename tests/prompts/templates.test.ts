@@ -122,6 +122,13 @@ describe('role dispatch', () => {
     expect(out).not.toContain('LEAD TEACHER');
     expect(out).toContain('STUDENT');
   });
+
+  test('assistant prompt carries TEACHING ASSISTANT guideline', () => {
+    const assistantAgent: AgentConfig = { ...baseAgent, role: 'assistant' };
+    const out = buildStructuredPrompt(assistantAgent, slideState);
+    expect(out).toContain('TEACHING ASSISTANT');
+    expect(out).not.toContain('LEAD TEACHER');
+  });
 });
 
 describe('scene-type action stripping', () => {
@@ -137,9 +144,120 @@ describe('scene-type action stripping', () => {
   });
 });
 
+describe('optional sections toggle on / off correctly', () => {
+  test('peer context appears when other agents have spoken this round', () => {
+    const out = buildStructuredPrompt(baseAgent, slideState, undefined, undefined, undefined, [
+      {
+        agentId: 'other',
+        agentName: 'Lily',
+        contentPreview: 'quick thought',
+        actionCount: 1,
+        whiteboardActions: [],
+      },
+    ]);
+    expect(out).toContain("This Round's Context");
+    expect(out).toContain('Lily');
+  });
+
+  test('peer context is absent when agentResponses is empty/undefined', () => {
+    const out = buildStructuredPrompt(baseAgent, slideState);
+    expect(out).not.toContain("This Round's Context");
+  });
+
+  test('language constraint is omitted when stage.languageDirective is absent', () => {
+    const stateNoLang: StatelessChatRequest['storeState'] = {
+      ...slideState,
+      stage: { ...slideState.stage!, languageDirective: undefined },
+    };
+    const out = buildStructuredPrompt(baseAgent, stateNoLang);
+    expect(out).not.toContain('# Language (CRITICAL)');
+  });
+});
+
 describe('director routing contract', () => {
   test('output spec mentions next_agent JSON field', () => {
     const out = buildDirectorPrompt([baseAgent], 'No history', [], 0);
     expect(out).toContain('next_agent');
+  });
+
+  test('Q&A mode omits Discussion Mode block', () => {
+    const out = buildDirectorPrompt([baseAgent], 'No history', [], 0);
+    expect(out).not.toContain('Discussion Mode');
+  });
+
+  test('discussion mode inserts Discussion Mode block with topic', () => {
+    const out = buildDirectorPrompt(
+      [baseAgent],
+      'No history',
+      [],
+      0,
+      { topic: 'Force decomposition', prompt: 'Think of real examples' },
+      'student_1',
+    );
+    expect(out).toContain('# Discussion Mode');
+    expect(out).toContain('Force decomposition');
+    expect(out).toContain('student_1');
+  });
+});
+
+describe('pbl-design template fills all repeated placeholders', () => {
+  test('issueCount is substituted at every occurrence (3x in template)', () => {
+    const UNIQUE = 42;
+    const out = buildPBLSystemPrompt({
+      projectTopic: 'Smart Garden',
+      projectDescription: 'IoT project',
+      targetSkills: ['IoT'],
+      issueCount: UNIQUE,
+      languageDirective: 'en',
+    });
+    // Template references {{issueCount}} at 3 positions:
+    // "Suggested Number of Issues: N", "Create N sequential issues", "Create exactly N issues"
+    const occurrences = out.match(new RegExp(`\\b${UNIQUE}\\b`, 'g'))?.length ?? 0;
+    expect(occurrences).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe('placeholder naming convention lint', () => {
+  // The `interpolateVariables` regex is /\{\{(\w+)\}\}/, which is
+  // strictly [A-Za-z0-9_]. Kebab-case placeholders would silently pass
+  // through. Convention (per README) is camelCase. This test scans every
+  // template for non-conforming placeholders.
+  //
+  // slide-content/{system,user}.md predates the convention and still uses
+  // snake_case ({{canvas_width}}, {{canvas_height}}). Grandfather it here;
+  // new templates must be camelCase.
+  test('templates (excluding grandfathered) use camelCase placeholders', async () => {
+    const { readdirSync, readFileSync, statSync } = await import('fs');
+    const { join } = await import('path');
+
+    const templatesDir = join(process.cwd(), 'lib', 'prompts', 'templates');
+    const GRANDFATHERED = new Set(['slide-content']);
+
+    const offenders: string[] = [];
+    for (const promptId of readdirSync(templatesDir)) {
+      if (GRANDFATHERED.has(promptId)) continue;
+      const promptDir = join(templatesDir, promptId);
+      if (!statSync(promptDir).isDirectory()) continue;
+
+      for (const file of ['system.md', 'user.md']) {
+        const p = join(promptDir, file);
+        try {
+          const content = readFileSync(p, 'utf-8');
+          // Match {{placeholder}} but NOT {{snippet:name}}
+          const matches = content.match(/\{\{(?!snippet:)([^}]+)\}\}/g) || [];
+          for (const m of matches) {
+            const name = m.slice(2, -2);
+            // camelCase: starts with lowercase, rest alphanumeric; reject _ and -
+            if (!/^[a-z][a-zA-Z0-9]*$/.test(name)) {
+              offenders.push(`${promptId}/${file}: ${m}`);
+            }
+          }
+        } catch {
+          // user.md is optional
+        }
+      }
+    }
+
+    expect(offenders).toEqual([]);
   });
 });
