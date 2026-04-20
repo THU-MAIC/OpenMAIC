@@ -8,6 +8,7 @@
  */
 
 // Types
+import type { PromptId } from './types';
 export type { PromptId, SnippetId, LoadedPrompt } from './types';
 
 // Loader functions
@@ -36,4 +37,7 @@ export const PROMPT_IDS = {
   VISUALIZATION3D_CONTENT: 'visualization3d-content',
   WIDGET_TEACHER_ACTIONS: 'widget-teacher-actions',
   PBL_ACTIONS: 'pbl-actions',
-} as const;
+  AGENT_SYSTEM: 'agent-system',
+  DIRECTOR: 'director',
+  PBL_DESIGN: 'pbl-design',
+} as const satisfies Record<string, PromptId>;

@@ -23,7 +23,7 @@ const snippetCache = new Map<string, string>();
  */
 function getPromptsDir(): string {
   // In Next.js, use process.cwd() for the project root
-  return path.join(process.cwd(), 'lib', 'generation', 'prompts');
+  return path.join(process.cwd(), 'lib', 'prompts');
 }
 
 /**
@@ -40,8 +40,9 @@ export function loadSnippet(snippetId: SnippetId): string {
     snippetCache.set(snippetId, content);
     return content;
   } catch {
-    log.warn(`Snippet not found: ${snippetId}`);
-    return `{{snippet:${snippetId}}}`;
+    // Fail loud rather than silently shipping `{{snippet:foo}}` to the LLM.
+    // A missing snippet is always a config/typo bug — surface at load time.
+    throw new Error(`Snippet not found: ${snippetId}`);
   }
 }
 
@@ -99,6 +100,10 @@ export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
  * Replaces {{variable}} with values from the variables object
  */
 export function interpolateVariables(template: string, variables: Record<string, unknown>): string {
+  // `\w+` only matches [A-Za-z0-9_], so kebab-case placeholders like
+  // `{{next-agent}}` pass through unchanged. Convention (per README) is
+  // camelCase; tests in tests/prompts/templates.test.ts scan templates
+  // for non-conforming placeholders.
   return template.replace(/\{\{(\w+)\}\}/g, (match, key) => {
     const value = variables[key];
     if (value === undefined) return match;

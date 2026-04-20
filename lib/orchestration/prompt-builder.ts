@@ -6,8 +6,12 @@
 
 import type { StatelessChatRequest } from '@/lib/types/chat';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
-import type { WhiteboardActionRecord, AgentTurnSummary } from './director-prompt';
+import type { WhiteboardActionRecord, AgentTurnSummary } from './types';
 import { getActionDescriptions, getEffectiveActions } from './tool-schemas';
+import { buildStateContext } from './summarizers/state-context';
+import { buildVirtualWhiteboardContext } from './summarizers/whiteboard-ledger';
+import { buildPeerContextSection } from './summarizers/peer-context';
+import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 
 // ==================== Role Guidelines ====================
 
@@ -48,36 +52,62 @@ interface DiscussionContext {
   prompt?: string;
 }
 
-// ==================== Peer Context ====================
+// ==================== Per-variant string constants ====================
 
-/**
- * Build a context section summarizing what other agents said this round.
- * Returns empty string if no agents have spoken yet.
- */
-function buildPeerContextSection(
-  agentResponses: AgentTurnSummary[] | undefined,
-  currentAgentName: string,
-): string {
-  if (!agentResponses || agentResponses.length === 0) return '';
+const FORMAT_EXAMPLE_SLIDE = `[{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},{"type":"text","content":"Your natural speech to students"}]`;
+const FORMAT_EXAMPLE_WB = `[{"type":"action","name":"wb_open","params":{}},{"type":"text","content":"Your natural speech to students"}]`;
 
-  // Filter out self (defensive — director shouldn't dispatch same agent twice)
-  const peers = agentResponses.filter((r) => r.agentName !== currentAgentName);
-  if (peers.length === 0) return '';
+const ORDERING_SLIDE = `- spotlight/laser actions should appear BEFORE the corresponding text object (point first, then speak)
+- whiteboard actions can interleave WITH text objects (draw while speaking)`;
+const ORDERING_WB = `- whiteboard actions can interleave WITH text objects (draw while speaking)`;
 
-  const peerLines = peers.map((r) => `- ${r.agentName}: "${r.contentPreview}"`).join('\n');
+const SPOTLIGHT_EXAMPLES = `[{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},{"type":"text","content":"Photosynthesis is the process by which plants convert light energy into chemical energy. Take a look at this diagram."},{"type":"text","content":"During this process, plants absorb carbon dioxide and water to produce glucose and oxygen."}]
 
-  return `
-# This Round's Context (CRITICAL — READ BEFORE RESPONDING)
-The following agents have already spoken in this discussion round:
-${peerLines}
+[{"type":"action","name":"spotlight","params":{"elementId":"eq_1"}},{"type":"action","name":"laser","params":{"elementId":"eq_2"}},{"type":"text","content":"Compare these two equations — notice how the left side is endothermic while the right side is exothermic."}]
 
-You are ${currentAgentName}, responding AFTER the agents above. You MUST:
-1. NOT repeat greetings or introductions — they have already been made
-2. NOT restate what previous speakers already explained
-3. Add NEW value from YOUR unique perspective as ${currentAgentName}
-4. Build on, question, or extend what was said — do not echo it
-5. If you agree with a previous point, say so briefly and then ADD something new
 `;
+
+const SLIDE_ACTION_GUIDELINES = `- spotlight: Use to focus attention on ONE key element. Don't overuse — max 1-2 per response.
+- laser: Use to point at elements. Good for directing attention during explanations.
+`;
+
+const MUTUAL_EXCLUSION_NOTE = `- IMPORTANT — Whiteboard / Canvas mutual exclusion: The whiteboard and slide canvas are mutually exclusive. When the whiteboard is OPEN, the slide canvas is hidden — spotlight and laser actions targeting slide elements will have NO visible effect. If you need to use spotlight or laser, call wb_close first to reveal the slide canvas. Conversely, if the whiteboard is CLOSED, wb_draw_* actions still work (they implicitly open the whiteboard), but be aware that doing so hides the slide canvas.
+- Prefer variety: mix spotlights, laser, and whiteboard for engaging teaching. Don't use the same action type repeatedly.`;
+
+// ==================== Private helpers ====================
+
+function buildStudentProfileSection(userProfile?: { nickname?: string; bio?: string }): string {
+  if (!userProfile?.nickname && !userProfile?.bio) return '';
+  return `\n# Student Profile
+You are teaching ${userProfile.nickname || 'a student'}.${userProfile.bio ? `\nTheir background: ${userProfile.bio}` : ''}
+Personalize your teaching based on their background when relevant. Address them by name naturally.\n`;
+}
+
+function buildLanguageConstraint(langDirective?: string): string {
+  return langDirective ? `\n# Language (CRITICAL)\n${langDirective}\n` : '';
+}
+
+function buildDiscussionContextSection(
+  discussionContext: DiscussionContext | undefined,
+  agentResponses: AgentTurnSummary[] | undefined,
+): string {
+  if (!discussionContext) return '';
+  if (agentResponses && agentResponses.length > 0) {
+    return `
+
+# Discussion Context
+Topic: "${discussionContext.topic}"
+${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
+
+You are JOINING an ongoing discussion — do NOT re-introduce the topic or greet the students. The discussion has already started. Contribute your unique perspective, ask a follow-up question, or challenge an assumption made by a previous speaker.`;
+  }
+  return `
+
+# Discussion Context
+You are initiating a discussion on the following topic: "${discussionContext.topic}"
+${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
+
+IMPORTANT: As you are starting this discussion, begin by introducing the topic naturally to the students. Engage them and invite their thoughts. Do not wait for user input - you speak first.`;
 }
 
 // ==================== System Prompt ====================
@@ -103,152 +133,35 @@ export function buildStructuredPrompt(
     ? storeState.scenes.find((s) => s.id === storeState.currentSceneId)
     : undefined;
   const sceneType = currentScene?.type;
-
-  // Filter actions by scene type (spotlight/laser only available on slides)
   const effectiveActions = getEffectiveActions(agentConfig.allowedActions, sceneType);
-  const actionDescriptions = getActionDescriptions(effectiveActions);
-
-  // Build context about current state
-  const stateContext = buildStateContext(storeState);
-
-  // Build virtual whiteboard context from ledger (shows changes by other agents this round)
-  const virtualWbContext = buildVirtualWhiteboardContext(storeState, whiteboardLedger);
-
-  // Build student profile section (only when nickname or bio is present)
-  const studentProfileSection =
-    userProfile?.nickname || userProfile?.bio
-      ? `\n# Student Profile
-You are teaching ${userProfile.nickname || 'a student'}.${userProfile.bio ? `\nTheir background: ${userProfile.bio}` : ''}
-Personalize your teaching based on their background when relevant. Address them by name naturally.\n`
-      : '';
-
-  // Build peer context section (what agents already said this round)
-  const peerContext = buildPeerContextSection(agentResponses, agentConfig.name);
-
-  // Whether spotlight/laser are available (only on slide scenes)
   const hasSlideActions =
     effectiveActions.includes('spotlight') || effectiveActions.includes('laser');
 
-  // Build format example based on available actions
-  const formatExample = hasSlideActions
-    ? `[{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},{"type":"text","content":"Your natural speech to students"}]`
-    : `[{"type":"action","name":"wb_open","params":{}},{"type":"text","content":"Your natural speech to students"}]`;
+  const vars = {
+    agentName: agentConfig.name,
+    persona: agentConfig.persona,
+    roleGuideline: ROLE_GUIDELINES[agentConfig.role] || ROLE_GUIDELINES.student,
+    studentProfileSection: buildStudentProfileSection(userProfile),
+    peerContext: buildPeerContextSection(agentResponses, agentConfig.name),
+    languageConstraint: buildLanguageConstraint(storeState.stage?.languageDirective),
+    formatExample: hasSlideActions ? FORMAT_EXAMPLE_SLIDE : FORMAT_EXAMPLE_WB,
+    orderingPrinciples: hasSlideActions ? ORDERING_SLIDE : ORDERING_WB,
+    spotlightExamples: hasSlideActions ? SPOTLIGHT_EXAMPLES : '',
+    actionDescriptions: getActionDescriptions(effectiveActions),
+    slideActionGuidelines: hasSlideActions ? SLIDE_ACTION_GUIDELINES : '',
+    mutualExclusionNote: hasSlideActions ? MUTUAL_EXCLUSION_NOTE : '',
+    stateContext: buildStateContext(storeState),
+    virtualWhiteboardContext: buildVirtualWhiteboardContext(storeState, whiteboardLedger),
+    lengthGuidelines: buildLengthGuidelines(agentConfig.role),
+    whiteboardGuidelines: buildWhiteboardGuidelines(agentConfig.role),
+    discussionContextSection: buildDiscussionContextSection(discussionContext, agentResponses),
+  };
 
-  // Ordering principles
-  const orderingPrinciples = hasSlideActions
-    ? `- spotlight/laser actions should appear BEFORE the corresponding text object (point first, then speak)
-- whiteboard actions can interleave WITH text objects (draw while speaking)`
-    : `- whiteboard actions can interleave WITH text objects (draw while speaking)`;
-
-  // Good examples — include spotlight/laser examples only for slide scenes
-  const spotlightExamples = hasSlideActions
-    ? `[{"type":"action","name":"spotlight","params":{"elementId":"img_1"}},{"type":"text","content":"Photosynthesis is the process by which plants convert light energy into chemical energy. Take a look at this diagram."},{"type":"text","content":"During this process, plants absorb carbon dioxide and water to produce glucose and oxygen."}]
-
-[{"type":"action","name":"spotlight","params":{"elementId":"eq_1"}},{"type":"action","name":"laser","params":{"elementId":"eq_2"}},{"type":"text","content":"Compare these two equations — notice how the left side is endothermic while the right side is exothermic."}]
-
-`
-    : '';
-
-  // Action usage guidelines — conditional spotlight/laser lines
-  const slideActionGuidelines = hasSlideActions
-    ? `- spotlight: Use to focus attention on ONE key element. Don't overuse — max 1-2 per response.
-- laser: Use to point at elements. Good for directing attention during explanations.
-`
-    : '';
-
-  const mutualExclusionNote = hasSlideActions
-    ? `- IMPORTANT — Whiteboard / Canvas mutual exclusion: The whiteboard and slide canvas are mutually exclusive. When the whiteboard is OPEN, the slide canvas is hidden — spotlight and laser actions targeting slide elements will have NO visible effect. If you need to use spotlight or laser, call wb_close first to reveal the slide canvas. Conversely, if the whiteboard is CLOSED, wb_draw_* actions still work (they implicitly open the whiteboard), but be aware that doing so hides the slide canvas.
-- Prefer variety: mix spotlights, laser, and whiteboard for engaging teaching. Don't use the same action type repeatedly.`
-    : '';
-
-  const roleGuideline = ROLE_GUIDELINES[agentConfig.role] || ROLE_GUIDELINES.student;
-
-  // Build language constraint from stage language directive
-  const langDirective = storeState.stage?.languageDirective;
-  const languageConstraint = langDirective ? `\n# Language (CRITICAL)\n${langDirective}\n` : '';
-
-  return `# Role
-You are ${agentConfig.name}.
-
-## Your Personality
-${agentConfig.persona}
-
-## Your Classroom Role
-${roleGuideline}
-${studentProfileSection}${peerContext}${languageConstraint}
-# Output Format
-You MUST output a JSON array for ALL responses. Each element is an object with a \`type\` field:
-
-${formatExample}
-
-## Format Rules
-1. Output a single JSON array — no explanation, no code fences
-2. \`type:"action"\` objects contain \`name\` and \`params\`
-3. \`type:"text"\` objects contain \`content\` (speech text)
-4. Action and text objects can freely interleave in any order
-5. The \`]\` closing bracket marks the end of your response
-6. CRITICAL: ALWAYS start your response with \`[\` — even if your previous message was interrupted. Never continue a partial response as plain text. Every response must be a complete, independent JSON array.
-
-## Ordering Principles
-${orderingPrinciples}
-
-## Speech Guidelines (CRITICAL)
-- Effects fire concurrently with your speech — students see results as you speak
-- Text content is what you SAY OUT LOUD to students - natural teaching speech
-- Do NOT say "let me add...", "I'll create...", "now I'm going to..."
-- Do NOT describe your actions - just speak naturally as a teacher
-- Students see action results appear on screen - you don't need to announce them
-- Your speech should flow naturally regardless of whether actions succeed or fail
-- NEVER use markdown formatting (blockquotes >, headings #, bold **, lists -, code blocks) in text content — it is spoken aloud, not rendered
-
-## Length & Style (CRITICAL)
-${buildLengthGuidelines(agentConfig.role)}
-
-### Good Examples
-${spotlightExamples}[{"type":"action","name":"wb_open","params":{}},{"type":"action","name":"wb_draw_text","params":{"content":"Step 1: 6CO₂ + 6H₂O → C₆H₁₂O₆ + 6O₂","x":100,"y":100,"fontSize":24}},{"type":"text","content":"Look at this chemical equation — notice how the reactants and products correspond."}]
-
-[{"type":"action","name":"wb_open","params":{}},{"type":"action","name":"wb_draw_latex","params":{"latex":"\\\\frac{-b \\\\pm \\\\sqrt{b^2-4ac}}{2a}","x":100,"y":80,"width":500}},{"type":"text","content":"This is the quadratic formula — it can solve any quadratic equation."},{"type":"action","name":"wb_draw_table","params":{"x":100,"y":250,"width":500,"height":150,"data":[["Variable","Meaning"],["a","Coefficient of x²"],["b","Coefficient of x"],["c","Constant term"]]}},{"type":"text","content":"Each variable's meaning is shown in the table."}]
-
-### Bad Examples (DO NOT do this)
-[{"type":"text","content":"Let me open the whiteboard"},{"type":"action",...}] (Don't announce actions!)
-[{"type":"text","content":"I'm going to draw a diagram for you..."}] (Don't describe what you're doing!)
-[{"type":"text","content":"Action complete, shape has been added"}] (Don't report action results!)
-
-## Whiteboard Guidelines
-${buildWhiteboardGuidelines(agentConfig.role)}
-
-# Available Actions
-${actionDescriptions}
-
-## Action Usage Guidelines
-${slideActionGuidelines}- Whiteboard actions (wb_open, wb_draw_text, wb_draw_shape, wb_draw_chart, wb_draw_latex, wb_draw_table, wb_draw_line, wb_draw_code, wb_edit_code, wb_delete, wb_clear, wb_close): Use when explaining concepts that benefit from diagrams, formulas, data charts, tables, connecting lines, code demonstrations, or step-by-step derivations. Use wb_draw_latex for math formulas, wb_draw_chart for data visualization, wb_draw_table for structured data, wb_draw_code for code demonstrations.
-- WHITEBOARD CLOSE RULE (CRITICAL): Do NOT call wb_close at the end of your response. Leave the whiteboard OPEN so students can read what you drew. Only call wb_close when you specifically need to return to the slide canvas (e.g., to use spotlight or laser on slide elements). Frequent open/close is distracting.
-- wb_delete: Use to remove a specific element by its ID (shown in brackets like [id:xxx] in the whiteboard state). Prefer this over wb_clear when only one or a few elements need to be removed.
-- wb_draw_code / wb_edit_code: To modify an existing code block, ALWAYS use wb_edit_code (insert_after, insert_before, delete_lines, replace_lines) instead of deleting the code element and re-creating it. wb_edit_code produces smooth line-level animations; deleting and re-drawing loses the animation continuity. Only use wb_draw_code for creating a brand-new code block.
-${mutualExclusionNote}
-
-# Current State
-${stateContext}
-${virtualWbContext}
-Remember: Speak naturally as a teacher. Effects fire concurrently with your speech.${
-    discussionContext
-      ? agentResponses && agentResponses.length > 0
-        ? `
-
-# Discussion Context
-Topic: "${discussionContext.topic}"
-${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
-
-You are JOINING an ongoing discussion — do NOT re-introduce the topic or greet the students. The discussion has already started. Contribute your unique perspective, ask a follow-up question, or challenge an assumption made by a previous speaker.`
-        : `
-
-# Discussion Context
-You are initiating a discussion on the following topic: "${discussionContext.topic}"
-${discussionContext.prompt ? `Guiding prompt: ${discussionContext.prompt}` : ''}
-
-IMPORTANT: As you are starting this discussion, begin by introducing the topic naturally to the students. Engage them and invite their thoughts. Do not wait for user input - you speak first.`
-      : ''
-  }`;
+  const prompt = buildPrompt(PROMPT_IDS.AGENT_SYSTEM, vars);
+  if (!prompt) {
+    throw new Error('agent-system template not found');
+  }
+  return prompt.system;
 }
 
 // ==================== Length Guidelines ====================
@@ -398,493 +311,4 @@ ${common}`;
 - If no one asked you to use the whiteboard, express your ideas through speech only.
 - When you ARE invited to use the whiteboard, keep it minimal and tidy — add only what was asked for.
 ${common}`;
-}
-
-// ==================== Element Summarization ====================
-
-/**
- * Strip HTML tags to extract plain text
- */
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]*>/g, '').trim();
-}
-
-/**
- * Summarize a single PPT element into a one-line description
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- PPTElement variants have heterogeneous shapes
-function summarizeElement(el: any): string {
-  const id = el.id ? `[id:${el.id}]` : '';
-  const pos = `at (${Math.round(el.left)},${Math.round(el.top)})`;
-  const size =
-    el.width != null && el.height != null
-      ? ` size ${Math.round(el.width)}×${Math.round(el.height)}`
-      : el.width != null
-        ? ` w=${Math.round(el.width)}`
-        : '';
-
-  switch (el.type) {
-    case 'text': {
-      const text = stripHtml(el.content || '').slice(0, 60);
-      const suffix = text.length >= 60 ? '...' : '';
-      return `${id} text${el.textType ? `[${el.textType}]` : ''}: "${text}${suffix}" ${pos}${size}`;
-    }
-    case 'image': {
-      const src = el.src?.startsWith('data:') ? '[embedded]' : el.src?.slice(0, 50) || 'unknown';
-      return `${id} image: ${src} ${pos}${size}`;
-    }
-    case 'shape': {
-      const shapeText = el.text?.content ? stripHtml(el.text.content).slice(0, 40) : '';
-      return `${id} shape${shapeText ? `: "${shapeText}"` : ''} ${pos}${size}`;
-    }
-    case 'chart':
-      return `${id} chart[${el.chartType}]: labels=[${(el.data?.labels || []).slice(0, 4).join(',')}] ${pos}${size}`;
-    case 'table': {
-      const rows = el.data?.length || 0;
-      const cols = el.data?.[0]?.length || 0;
-      return `${id} table: ${rows}x${cols} ${pos}${size}`;
-    }
-    case 'latex':
-      return `${id} latex: "${(el.latex || '').slice(0, 40)}" ${pos}${size}`;
-    case 'line': {
-      const lx = Math.round(el.left ?? 0);
-      const ly = Math.round(el.top ?? 0);
-      const sx = el.start?.[0] ?? 0;
-      const sy = el.start?.[1] ?? 0;
-      const ex = el.end?.[0] ?? 0;
-      const ey = el.end?.[1] ?? 0;
-      return `${id} line: (${lx + sx},${ly + sy}) → (${lx + ex},${ly + ey})`;
-    }
-    case 'code': {
-      const lang = el.language || 'unknown';
-      const lineCount = el.lines?.length || 0;
-      const codeFn = el.fileName ? ` "${el.fileName}"` : '';
-      const linePreview = (el.lines || [])
-        .slice(0, 10)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        .map((l: any) => `    ${l.id}: ${l.content}`)
-        .join('\n');
-      const moreLines = lineCount > 10 ? `\n    ... and ${lineCount - 10} more lines` : '';
-      return `${id} code${codeFn} (${lang}, ${lineCount} lines) ${pos}${size}\n${linePreview}${moreLines}`;
-    }
-    case 'video':
-      return `${id} video ${pos}${size}`;
-    case 'audio':
-      return `${id} audio ${pos}${size}`;
-    default:
-      return `${id} ${el.type || 'unknown'} ${pos}${size}`;
-  }
-}
-
-/**
- * Summarize an array of elements into line descriptions
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- PPTElement variants have heterogeneous shapes
-function summarizeElements(elements: any[]): string {
-  if (elements.length === 0) return '  (empty)';
-
-  const lines = elements.map((el, i) => `  ${i + 1}. ${summarizeElement(el)}`);
-
-  return lines.join('\n');
-}
-
-// ==================== Virtual Whiteboard Context ====================
-
-/**
- * Tracked element from replaying the whiteboard ledger
- */
-interface VirtualWhiteboardElement {
-  agentName: string;
-  summary: string;
-  elementId?: string; // Present for elements from initial whiteboard state
-}
-
-/**
- * Replay the whiteboard ledger to build an attributed element list.
- *
- * - wb_clear resets the accumulated elements
- * - wb_draw_* appends a new element with the agent's name
- * - wb_open / wb_close are ignored (structural, not content)
- *
- * Returns empty string when the ledger is empty (zero extra token overhead).
- */
-function buildVirtualWhiteboardContext(
-  storeState: StatelessChatRequest['storeState'],
-  ledger?: WhiteboardActionRecord[],
-): string {
-  if (!ledger || ledger.length === 0) return '';
-
-  // Replay ledger to build current element list
-  const elements: VirtualWhiteboardElement[] = [];
-
-  for (const record of ledger) {
-    switch (record.actionName) {
-      case 'wb_clear':
-        elements.length = 0;
-        break;
-      case 'wb_delete': {
-        // Remove element by matching elementId from initial whiteboard state
-        // (elements drawn this round don't have tracked IDs)
-        const deleteId = String(record.params.elementId || '');
-        const idx = elements.findIndex((el) => el.elementId === deleteId);
-        if (idx >= 0) elements.splice(idx, 1);
-        break;
-      }
-      case 'wb_draw_text': {
-        const content = String(record.params.content || '').slice(0, 40);
-        const x = record.params.x ?? '?';
-        const y = record.params.y ?? '?';
-        const w = record.params.width ?? 400;
-        const h = record.params.height ?? 100;
-        elements.push({
-          agentName: record.agentName,
-          summary: `text: "${content}${content.length >= 40 ? '...' : ''}" at (${x},${y}), size ~${w}x${h}`,
-        });
-        break;
-      }
-      case 'wb_draw_shape': {
-        const shapeType = record.params.type || record.params.shape || 'rectangle';
-        const x = record.params.x ?? '?';
-        const y = record.params.y ?? '?';
-        const w = record.params.width ?? 100;
-        const h = record.params.height ?? 100;
-        elements.push({
-          agentName: record.agentName,
-          summary: `shape(${shapeType}) at (${x},${y}), size ${w}x${h}`,
-        });
-        break;
-      }
-      case 'wb_draw_chart': {
-        const chartType = record.params.chartType || record.params.type || 'bar';
-        const labels = Array.isArray(record.params.labels)
-          ? record.params.labels
-          : (record.params.data as Record<string, unknown>)?.labels;
-        const x = record.params.x ?? '?';
-        const y = record.params.y ?? '?';
-        const w = record.params.width ?? 350;
-        const h = record.params.height ?? 250;
-        elements.push({
-          agentName: record.agentName,
-          summary: `chart(${chartType})${labels ? `: labels=[${(labels as string[]).slice(0, 4).join(',')}]` : ''} at (${x},${y}), size ${w}x${h}`,
-        });
-        break;
-      }
-      case 'wb_draw_latex': {
-        const latex = String(record.params.latex || '').slice(0, 40);
-        const x = record.params.x ?? '?';
-        const y = record.params.y ?? '?';
-        const w = record.params.width ?? 400;
-        // Estimate latex height: ~80px default for single-line, more for complex formulas
-        const h = record.params.height ?? 80;
-        elements.push({
-          agentName: record.agentName,
-          summary: `latex: "${latex}${latex.length >= 40 ? '...' : ''}" at (${x},${y}), size ~${w}x${h}`,
-        });
-        break;
-      }
-      case 'wb_draw_table': {
-        const data = record.params.data as unknown[][] | undefined;
-        const rows = data?.length || 0;
-        const cols = (data?.[0] as unknown[])?.length || 0;
-        const x = record.params.x ?? '?';
-        const y = record.params.y ?? '?';
-        const w = record.params.width ?? 400;
-        const h = record.params.height ?? rows * 40 + 20;
-        elements.push({
-          agentName: record.agentName,
-          summary: `table(${rows}×${cols}) at (${x},${y}), size ${w}x${h}`,
-        });
-        break;
-      }
-      case 'wb_draw_line': {
-        const sx = record.params.startX ?? '?';
-        const sy = record.params.startY ?? '?';
-        const ex = record.params.endX ?? '?';
-        const ey = record.params.endY ?? '?';
-        const pts = record.params.points as string[] | undefined;
-        const hasArrow = pts?.includes('arrow') ? ' (arrow)' : '';
-        elements.push({
-          agentName: record.agentName,
-          summary: `line${hasArrow}: (${sx},${sy}) → (${ex},${ey})`,
-        });
-        break;
-      }
-      case 'wb_draw_code': {
-        const lang = String(record.params.language || '');
-        const codeFileName = record.params.fileName ? ` "${record.params.fileName}"` : '';
-        const x = record.params.x ?? '?';
-        const y = record.params.y ?? '?';
-        const w = record.params.width ?? 500;
-        const h = record.params.height ?? 300;
-        const code = String(record.params.code || '');
-        const lineCount = code.split('\n').length;
-        elements.push({
-          agentName: record.agentName,
-          summary: `code block${codeFileName} (${lang}, ${lineCount} lines) at (${x},${y}), size ${w}x${h}`,
-        });
-        break;
-      }
-      case 'wb_edit_code': {
-        const op = record.params.operation || 'edit';
-        const targetId = record.params.elementId || '?';
-        elements.push({
-          agentName: record.agentName,
-          summary: `edited code "${targetId}" (${op})`,
-        });
-        break;
-      }
-      // wb_open, wb_close — skip
-    }
-  }
-
-  if (elements.length === 0) return '';
-
-  const elementLines = elements
-    .map((el, i) => `  ${i + 1}. [by ${el.agentName}] ${el.summary}`)
-    .join('\n');
-
-  return `
-## Whiteboard Changes This Round (IMPORTANT)
-Other agents have modified the whiteboard during this discussion round.
-Current whiteboard elements (${elements.length}):
-${elementLines}
-
-DO NOT redraw content that already exists. Check positions above before adding new elements.
-`;
-}
-
-// ==================== State Context ====================
-
-/**
- * Build context string from store state
- */
-function buildStateContext(storeState: StatelessChatRequest['storeState']): string {
-  const { stage, scenes, currentSceneId, mode, whiteboardOpen } = storeState;
-
-  const lines: string[] = [];
-
-  // Mode
-  lines.push(`Mode: ${mode}`);
-
-  // Whiteboard status
-  lines.push(
-    `Whiteboard: ${whiteboardOpen ? 'OPEN (slide canvas is hidden)' : 'closed (slide canvas is visible)'}`,
-  );
-
-  // Stage info
-  if (stage) {
-    lines.push(
-      `Course: ${stage.name || 'Untitled'}${stage.description ? ` - ${stage.description}` : ''}`,
-    );
-  }
-
-  // Scenes summary
-  lines.push(`Total scenes: ${scenes.length}`);
-
-  if (currentSceneId) {
-    const currentScene = scenes.find((s) => s.id === currentSceneId);
-    if (currentScene) {
-      lines.push(
-        `Current scene: "${currentScene.title}" (${currentScene.type}, id: ${currentSceneId})`,
-      );
-
-      // Slide scene: include element details
-      if (currentScene.content.type === 'slide') {
-        const elements = currentScene.content.canvas.elements;
-        lines.push(`Current slide elements (${elements.length}):\n${summarizeElements(elements)}`);
-      }
-
-      // Quiz scene: include question summary
-      if (currentScene.content.type === 'quiz') {
-        const questions = currentScene.content.questions;
-        const qSummary = questions
-          .slice(0, 5)
-          .map((q, i) => `  ${i + 1}. [${q.type}] ${q.question.slice(0, 80)}`)
-          .join('\n');
-        lines.push(
-          `Quiz questions (${questions.length}):\n${qSummary}${questions.length > 5 ? `\n  ... and ${questions.length - 5} more` : ''}`,
-        );
-      }
-    }
-  } else if (scenes.length > 0) {
-    lines.push('No scene currently selected');
-  }
-
-  // List first few scenes
-  if (scenes.length > 0) {
-    const sceneSummary = scenes
-      .slice(0, 5)
-      .map((s, i) => `  ${i + 1}. ${s.title} (${s.type}, id: ${s.id})`)
-      .join('\n');
-    lines.push(
-      `Scenes:\n${sceneSummary}${scenes.length > 5 ? `\n  ... and ${scenes.length - 5} more` : ''}`,
-    );
-  }
-
-  // Whiteboard content (last whiteboard in the stage)
-  if (stage?.whiteboard && stage.whiteboard.length > 0) {
-    const lastWb = stage.whiteboard[stage.whiteboard.length - 1];
-    const wbElements = lastWb.elements || [];
-    lines.push(
-      `Whiteboard (last of ${stage.whiteboard.length}, ${wbElements.length} elements):\n${summarizeElements(wbElements)}`,
-    );
-  }
-
-  return lines.join('\n');
-}
-
-// ==================== Conversation Summary ====================
-
-/**
- * OpenAI message format (used by director)
- */
-interface OpenAIMessage {
-  role: 'system' | 'user' | 'assistant';
-  content: string;
-}
-
-/**
- * Summarize conversation history for the director agent
- *
- * Produces a condensed text summary of the last N messages,
- * truncating long messages and including role labels.
- *
- * @param messages - OpenAI-format messages to summarize
- * @param maxMessages - Maximum number of recent messages to include (default 10)
- * @param maxContentLength - Maximum content length per message (default 200)
- */
-export function summarizeConversation(
-  messages: OpenAIMessage[],
-  maxMessages = 10,
-  maxContentLength = 200,
-): string {
-  if (messages.length === 0) {
-    return 'No conversation history yet.';
-  }
-
-  const recent = messages.slice(-maxMessages);
-  const lines = recent.map((msg) => {
-    const roleLabel =
-      msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
-    const content =
-      msg.content.length > maxContentLength
-        ? msg.content.slice(0, maxContentLength) + '...'
-        : msg.content;
-    return `[${roleLabel}] ${content}`;
-  });
-
-  return lines.join('\n');
-}
-
-// ==================== Message Conversion ====================
-
-/**
- * Convert UI messages to OpenAI format
- * Includes tool call information so the model knows what actions were taken
- */
-export function convertMessagesToOpenAI(
-  messages: StatelessChatRequest['messages'],
-  currentAgentId?: string,
-): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {
-  return messages
-    .filter((msg) => msg.role === 'user' || msg.role === 'assistant')
-    .map((msg) => {
-      if (msg.role === 'assistant') {
-        // Assistant messages use JSON array format to serve as few-shot examples
-        // that match the expected output format from the system prompt
-        const items: Array<{ type: string; [key: string]: string }> = [];
-
-        if (msg.parts) {
-          for (const part of msg.parts) {
-            const p = part as Record<string, unknown>;
-
-            if (p.type === 'text' && p.text) {
-              items.push({ type: 'text', content: p.text as string });
-            } else if ((p.type as string)?.startsWith('action-') && p.state === 'result') {
-              const actionName = (p.actionName ||
-                (p.type as string).replace('action-', '')) as string;
-              const output = p.output as Record<string, unknown> | undefined;
-              const isSuccess = output?.success === true;
-              const resultSummary = isSuccess
-                ? output?.data
-                  ? `result: ${JSON.stringify(output.data).slice(0, 100)}`
-                  : 'success'
-                : (output?.error as string) || 'failed';
-              items.push({
-                type: 'action',
-                name: actionName,
-                result: resultSummary,
-              });
-            }
-          }
-        }
-
-        const content = items.length > 0 ? JSON.stringify(items) : '';
-        const msgAgentId = msg.metadata?.agentId;
-
-        // When currentAgentId is provided and this message is from a DIFFERENT agent,
-        // convert to user role with agent name attribution
-        if (currentAgentId && msgAgentId && msgAgentId !== currentAgentId) {
-          const agentName = msg.metadata?.senderName || msgAgentId;
-          return {
-            role: 'user' as const,
-            content: content ? `[${agentName}]: ${content}` : '',
-          };
-        }
-
-        return {
-          role: 'assistant' as const,
-          content,
-        };
-      }
-
-      // User messages: keep plain text concatenation
-      const contentParts: string[] = [];
-
-      if (msg.parts) {
-        for (const part of msg.parts) {
-          const p = part as Record<string, unknown>;
-
-          if (p.type === 'text' && p.text) {
-            contentParts.push(p.text as string);
-          } else if ((p.type as string)?.startsWith('action-') && p.state === 'result') {
-            const actionName = (p.actionName ||
-              (p.type as string).replace('action-', '')) as string;
-            const output = p.output as Record<string, unknown> | undefined;
-            const isSuccess = output?.success === true;
-            const resultSummary = isSuccess
-              ? output?.data
-                ? `result: ${JSON.stringify(output.data).slice(0, 100)}`
-                : 'success'
-              : (output?.error as string) || 'failed';
-            contentParts.push(`[Action ${actionName}: ${resultSummary}]`);
-          }
-        }
-      }
-
-      // Extract speaker name from metadata (e.g. other agents' messages in discussion)
-      const senderName = msg.metadata?.senderName;
-      let content = contentParts.join('\n');
-      if (senderName) {
-        content = `[${senderName}]: ${content}`;
-      }
-
-      // Annotate interrupted messages so the LLM knows context was cut short
-      const isInterrupted =
-        (msg as unknown as Record<string, unknown>).metadata &&
-        ((msg as unknown as Record<string, unknown>).metadata as Record<string, unknown>)
-          ?.interrupted;
-      return {
-        role: 'user' as const,
-        content: isInterrupted
-          ? `${content}\n[This response was interrupted — do NOT continue it. Start a new JSON array response.]`
-          : content,
-      };
-    })
-    .filter((msg) => {
-      // Drop empty messages and messages with only dots/ellipsis/whitespace
-      // (produced by failed agent streams)
-      const stripped = msg.content.replace(/[.\s…]+/g, '');
-      return stripped.length > 0;
-    });
 }

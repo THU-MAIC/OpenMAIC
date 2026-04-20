@@ -1,5 +1,5 @@
 import { parseJsonResponse } from '@/lib/generation/json-repair';
-import { PROMPT_IDS, buildPrompt } from '@/lib/generation/prompts';
+import { PROMPT_IDS, buildPrompt } from '@/lib/prompts';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import { createLogger } from '@/lib/logger';
 
