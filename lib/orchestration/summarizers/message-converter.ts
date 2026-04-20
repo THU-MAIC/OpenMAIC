@@ -18,7 +18,12 @@ export interface ConvertedMessage {
 
 /**
  * Extract image URLs from UIMessage parts.
- * Returns data-URLs or http(s) URLs where `mediaType` starts with `image/`.
+ * Returns image parts in AI SDK's `ImagePart` shape.
+ *
+ * AI SDK's `streamText`/`generateText` treats strings as URLs to download.
+ * data URLs fail that download check, so we unwrap `data:image/...;base64,<payload>`
+ * into a raw base64 string and carry the media type separately.
+ * http(s) URLs pass through unchanged (AI SDK will fetch them).
  */
 function extractImageParts(parts: unknown[] | undefined): ImagePart[] {
   if (!parts) return [];
@@ -26,12 +31,23 @@ function extractImageParts(parts: unknown[] | undefined): ImagePart[] {
   for (const part of parts) {
     const p = part as Record<string, unknown>;
     if (
-      p.type === 'file' &&
-      typeof p.mediaType === 'string' &&
-      p.mediaType.startsWith('image/') &&
-      typeof p.url === 'string'
+      p.type !== 'file' ||
+      typeof p.mediaType !== 'string' ||
+      !p.mediaType.startsWith('image/') ||
+      typeof p.url !== 'string'
     ) {
-      out.push({ type: 'image', image: p.url, mediaType: p.mediaType });
+      continue;
+    }
+
+    const url = p.url;
+    // Match data URLs: data:<mime>[;base64],<payload>
+    const dataUrlMatch = /^data:([^;,]+)(?:;base64)?,(.*)$/.exec(url);
+    if (dataUrlMatch) {
+      const payload = dataUrlMatch[2];
+      out.push({ type: 'image', image: payload, mediaType: p.mediaType });
+    } else {
+      // http / https URL — AI SDK will fetch it
+      out.push({ type: 'image', image: url, mediaType: p.mediaType });
     }
   }
   return out;

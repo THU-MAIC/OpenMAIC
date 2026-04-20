@@ -70,7 +70,7 @@ describe('convertMessagesToOpenAI — text-only (backwards compatibility)', () =
 });
 
 describe('convertMessagesToOpenAI — image attachments', () => {
-  test('user message with a single image/png file part → multimodal content array', () => {
+  test('user message with a data: URL image → base64 payload + mediaType (data prefix stripped)', () => {
     const msgs: UIMsg[] = [
       userMsg([
         { type: 'text', text: 'Please look at this.' },
@@ -88,14 +88,16 @@ describe('convertMessagesToOpenAI — image attachments', () => {
     const parts = out[0].content as Array<Record<string, unknown>>;
     expect(parts).toHaveLength(2);
     expect(parts[0]).toEqual({ type: 'text', text: 'Please look at this.' });
+    // The data URL prefix must be stripped — AI SDK rejects `data:` strings
+    // as invalid download URLs.
     expect(parts[1]).toEqual({
       type: 'image',
-      image: 'data:image/png;base64,iVBORw0KGgo=',
+      image: 'iVBORw0KGgo=',
       mediaType: 'image/png',
     });
   });
 
-  test('image-only user message (no text) still emits content array with just the image', () => {
+  test('http URL image passes through unchanged', () => {
     const msgs: UIMsg[] = [
       userMsg([
         {
@@ -109,7 +111,11 @@ describe('convertMessagesToOpenAI — image attachments', () => {
     expect(out).toHaveLength(1);
     const parts = out[0].content as Array<Record<string, unknown>>;
     expect(parts).toHaveLength(1);
-    expect(parts[0]).toMatchObject({ type: 'image', image: 'https://example.com/board.png' });
+    expect(parts[0]).toMatchObject({
+      type: 'image',
+      image: 'https://example.com/board.png',
+      mediaType: 'image/png',
+    });
   });
 
   test('non-image file parts (pdf) are ignored (image-only experiment scope)', () => {
