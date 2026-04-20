@@ -300,3 +300,36 @@ formula at (100, 310, height 80) → occupies y=310..390
 check: y + height = 390 ≤ 562  ✓
 check: no overlap with chart (chart ends at y=280, formula starts at y=310) ✓
 ```
+
+### Font Size Table
+
+For `wb_draw_text`:
+
+| Content type | `fontSize` |
+|---|---|
+| Whiteboard title | 28-32 |
+| Section heading | 20-24 |
+| Body / annotation | 16-18 |
+| Caption / fine print | 12-14 |
+
+Keep 2-4px between adjacent hierarchy levels. **Do not use free-form sizes like 8, 11, 48, 64** — pick from this table.
+
+For a given `fontSize` and 1-line text, a matching `height` is roughly `ceil(fontSize × 1.5) + 20` (1.5 line-height plus 10px top/bottom padding).
+
+### LaTeX Element Height Table
+
+For `wb_draw_latex` — use the category that best matches your formula:
+
+| Category | Examples | `height` |
+|---|---|---|
+| Inline equations | `E=mc^2`, `a+b=c` | 50-80 |
+| With fractions | `\\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}` | 60-100 |
+| Integrals / limits | `\\int_0^1 f(x)dx`, `\\lim_{x \\to 0}` | 60-100 |
+| Summations with limits | `\\sum_{i=1}^{n} i^2` | 80-120 |
+| Matrices | `\\begin{pmatrix}a & b \\\\ c & d\\end{pmatrix}` | 100-180 |
+| Standalone fractions | `\\frac{a}{b}` | 50-80 |
+| Nested fractions | `\\frac{\\frac{a}{b}}{\\frac{c}{d}}` | 80-120 |
+
+Width is auto-computed from `height × aspect_ratio`; `width` acts as a horizontal cap only.
+
+**Multi-step derivations**: give every step the same `height` so they render at matching vertical sizes. Widths will differ — that's correct; it reflects each step's horizontal complexity.
