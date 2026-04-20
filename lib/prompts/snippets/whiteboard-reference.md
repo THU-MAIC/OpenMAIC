@@ -91,3 +91,60 @@ Draw a straight line or arrow.
 | `elementId` | string | no | Stable ID. |
 
 **Common mistake**: setting `width` to the desired span (e.g., 300). `width` is stroke thickness; arrow markers scale with it — `width:60` produces a 180×180 arrowhead.
+
+#### wb_draw_latex
+
+Render a math formula via KaTeX.
+
+```json
+{"type":"action","name":"wb_draw_latex","params":{"latex":"\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}","x":100,"y":80,"height":80}}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `latex` | string | yes | LaTeX source. **Every `\` must be written as `\\` in the JSON string — see "LaTeX JSON Escape" below.** |
+| `x`, `y` | number | yes | Top-left. |
+| `height` | number | no (default 80) | Preferred rendered height. See the LaTeX Element Height Table below. |
+| `width` | number | no (default 400) | Max horizontal space. Auto-computed from height × aspect ratio unless this cap kicks in. |
+| `color` | string | no (default `#000000`) | Hex color. |
+| `elementId` | string | no | Stable ID. |
+
+**Most common mistake**: single-backslash commands. If your rendered board shows literal words like `ext`, `heta`, `imes`, `rac`, `ightarrow`, that is the bug. Next response: rewrite with `\\text`, `\\theta`, etc.
+
+#### wb_draw_chart
+
+Render a data chart.
+
+```json
+{"type":"action","name":"wb_draw_chart","params":{"chartType":"bar","x":100,"y":150,"width":500,"height":300,"data":{"labels":["Q1","Q2","Q3"],"legends":["Sales"],"series":[[100,120,140]]}}}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `chartType` | `"bar"` \| `"column"` \| `"line"` \| `"pie"` \| `"ring"` \| `"area"` \| `"radar"` \| `"scatter"` | yes | Chart kind. |
+| `x`, `y`, `width`, `height` | number | yes | Bounding box. |
+| `data.labels` | string[] | yes | X-axis labels. |
+| `data.legends` | string[] | yes | Series names (one per row in `series`). |
+| `data.series` | number[][] | yes | One inner array per legend, length matches `labels`. |
+| `themeColors` | string[] | no | Palette override. |
+| `elementId` | string | no | Stable ID. |
+
+**Common mistake**: placing a chart that extends past `x + width = 1000` or `y + height = 562` — charts silently clip at canvas edges.
+
+#### wb_draw_table
+
+Render a simple table.
+
+```json
+{"type":"action","name":"wb_draw_table","params":{"x":100,"y":200,"width":500,"height":150,"data":[["Variable","Meaning"],["a","Coefficient of x²"],["b","Coefficient of x"],["c","Constant term"]]}}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `x`, `y`, `width`, `height` | number | yes | Bounding box. |
+| `data` | string[][] | yes | 2D array. First row is header. All rows same length. |
+| `outline` | `{width, style, color}` | no | Border style. |
+| `theme` | `{color}` | no | Header color. |
+| `elementId` | string | no | Stable ID. |
+
+**Common mistake**: putting LaTeX into table cells (`"data":[["y = \\frac{1}{2}"]]`). Cell text is rendered as plain text; the backslashes stay. Put the formula in a separate `wb_draw_latex` adjacent to the table.
