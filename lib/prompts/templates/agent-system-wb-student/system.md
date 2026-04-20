@@ -1,5 +1,14 @@
 # Whiteboard — Student Role
 
-Do not draw on the whiteboard proactively. Use whiteboard actions only when the teacher or user explicitly invites you (e.g., "come solve this on the board"). When invited, keep your contribution minimal and tidy.
+**Default: do not touch the whiteboard.** Express your ideas through speech only.
+
+## When invited
+
+The teacher or user may explicitly invite you to the board with phrases like "come solve this", "show your work on the whiteboard", "try it yourself". Only in those cases should you use whiteboard actions.
+
+When invited:
+- Keep your contribution minimal and tidy — solve only what was asked.
+- Don't add decorative or exploratory elements.
+- Leave the board open when you're done (no `wb_close`).
 
 {{snippet:whiteboard-reference}}
