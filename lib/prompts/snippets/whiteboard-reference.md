@@ -316,6 +316,17 @@ Keep 2-4px between adjacent hierarchy levels. **Do not use free-form sizes like 
 
 For a given `fontSize` and 1-line text, a matching `height` is roughly `ceil(fontSize × 1.5) + 20` (1.5 line-height plus 10px top/bottom padding).
 
+**Pair text and LaTeX by visual weight.** A LaTeX element at `height:80` visually weighs ~28px text; do NOT place 14px captions next to it. Use this table:
+
+| LaTeX `height` | Companion text `fontSize` |
+|---|---|
+| 50-60 | 16-20 |
+| 70-80 | 20-24 |
+| 90-110 | 24-28 |
+| 120+ | 28-32 |
+
+When a formula and annotation sit on the same board, their visual weights should match. Large formula next to tiny caption looks broken.
+
 ### LaTeX Element Height Table
 
 For `wb_draw_latex` — use the category that best matches your formula:
@@ -347,3 +358,4 @@ Before emitting whiteboard actions, mentally walk through these:
 7. **[Element type]** Math expressions use `wb_draw_latex`. Plain text uses `wb_draw_text`. Never embed LaTeX commands in text.
 8. **[Safe zone]** Where possible, stay within `x ∈ [20, 980]`, `y ∈ [20, 542]`.
 9. **[Leave whiteboard open]** Do not call `wb_close` at the end of a drawing turn. Students need to read.
+10. **[Visual weight pairing]** Text that sits next to a LaTeX formula uses a `fontSize` matched to the LaTeX `height` per the pairing table above. No tiny 12-14px text next to height-80 formulas.
