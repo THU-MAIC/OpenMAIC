@@ -361,7 +361,7 @@ export async function generateClassroom(
 
   // Resolve fallback model chain for overload resilience.
   // FALLBACK_MODEL accepts a comma-separated list, e.g.
-  // "google:gemini-2.5-flash-lite,google:gemini-3-flash-preview"
+  // "google:gemini-2.5-flash-lite,google:gemini-2.5-flash"
   const fallbackChain: Array<{
     modelString: string;
     model: typeof languageModel;

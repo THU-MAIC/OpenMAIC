@@ -55,7 +55,7 @@ Set:
 
 ```env
 GOOGLE_API_KEY=...
-DEFAULT_MODEL=google:gemini-3-flash-preview
+DEFAULT_MODEL=google:gemini-2.5-flash
 ```
 
 Why:
@@ -84,12 +84,12 @@ DEFAULT_MODEL=deepseek:deepseek-chat
 
 When recommending or showing `DEFAULT_MODEL`, always include the provider prefix:
 
-- `google:gemini-3-flash-preview`
+- `google:gemini-2.5-flash`
 - `anthropic:claude-3-5-haiku-20241022`
 - `openai:gpt-4o-mini`
 - `deepseek:deepseek-chat`
 
-Do not recommend bare model IDs such as `gemini-3-flash-preview` by themselves, because OpenMAIC will otherwise parse them as OpenAI models.
+Do not recommend bare model IDs such as `gemini-2.5-flash` by themselves, because OpenMAIC will otherwise parse them as OpenAI models.
 
 Do not work around a wrong `DEFAULT_MODEL` by changing request parameters. The user should fix the server-side config instead.
 
@@ -120,7 +120,7 @@ providers:
 If using a non-default provider for classroom generation, also set the model selection explicitly:
 
 ```env
-DEFAULT_MODEL=google:gemini-3-flash-preview
+DEFAULT_MODEL=google:gemini-2.5-flash
 ```
 
 ## Recommended Prompts To The User
@@ -128,7 +128,7 @@ DEFAULT_MODEL=google:gemini-3-flash-preview
 Preferred:
 
 - "I recommend configuring OpenMAIC through `.env.local` first. Please edit that file locally and tell me when you're done."
-- "For the simplest setup, I recommend Anthropic. For better speed/cost balance, I recommend Google plus `DEFAULT_MODEL=google:gemini-3-flash-preview`. Which path do you want?"
+- "For the simplest setup, I recommend Anthropic. For better speed/cost balance, I recommend Google plus `DEFAULT_MODEL=google:gemini-2.5-flash`. Which path do you want?"
 
 Avoid as the first move:
 
