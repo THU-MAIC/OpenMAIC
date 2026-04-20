@@ -212,3 +212,56 @@ Close the whiteboard to reveal the slide canvas. **Do NOT call at the end of a d
 ```json
 {"type":"action","name":"wb_close","params":{}}
 ```
+
+### LaTeX JSON Escape (CRITICAL)
+
+This is the single highest-leverage rule on the whiteboard. Read it before every math-heavy response.
+
+**The rule**: in any JSON string containing LaTeX — the `latex` param of `wb_draw_latex`, or a `content` param that happens to contain `\\text{...}` — **every backslash must be written as `\\` (two characters)** in your JSON output. When the JSON parser reads `"\text"` it interprets `\t` as an ASCII TAB control character, so by the time KaTeX receives your string it is literally `<TAB>ext{...}` — no `\text` command, just garbage.
+
+Characters at risk (first character of the LaTeX command collides with a JSON escape):
+
+| Control | JSON escape | LaTeX commands corrupted |
+|---|---|---|
+| TAB (`\t`) | `\t` | `\text`, `\theta`, `\times`, `\tau`, `\top`, `\tan` |
+| CR (`\r`) | `\r` | `\rightarrow`, `\Rightarrow`, `\rho`, `\right`, `\real` |
+| FF (`\f`) | `\f` | `\frac`, `\forall`, `\Phi`, `\phi`, `\flat` |
+| BS (`\b`) | `\b` | `\beta`, `\binom`, `\bar`, `\bot` |
+| VT (`\v`) | `\v` | `\varphi`, `\vec`, `\vdots`, `\vee`, `\varepsilon` |
+| LF (`\n`) | `\n` | `\neq`, `\ni`, `\not`, `\notin` |
+
+**Correctness table** (what you write in JSON → what KaTeX renders):
+
+| LaTeX source | ❌ Wrong in JSON | ✅ Right in JSON |
+|---|---|---|
+| `\frac{a}{b}` | `"\frac{a}{b}"` | `"\\frac{a}{b}"` |
+| `\text{合规}` | `"\text{合规}"` | `"\\text{合规}"` |
+| `\theta` | `"\theta"` | `"\\theta"` |
+| `\times` | `"\times"` | `"\\times"` |
+| `\rightarrow` | `"\rightarrow"` | `"\\rightarrow"` |
+| `\Rightarrow` | `"\Rightarrow"` | `"\\Rightarrow"` |
+| `\circ` | `"\circ"` | `"\\circ"` |
+| `\tau` | `"\tau"` | `"\\tau"` |
+| `\forall` | `"\forall"` | `"\\forall"` |
+| `\beta` | `"\beta"` | `"\\beta"` |
+| `\varphi` | `"\varphi"` | `"\\varphi"` |
+| `\sqrt{x}` | `"\sqrt{x}"` | `"\\sqrt{x}"` |
+| `a^2 + b^2 = c^2` | `"a^2 + b^2 = c^2"` | `"a^2 + b^2 = c^2"` (no backslash — stays the same) |
+
+**Self-check heuristic**: if your previous turn's rendered whiteboard shows literal tokens like `ext`, `heta`, `imes`, `rac`, `irc`, `ightarrow`, `orall`, `eta`, `arphi`, `eq`, you emitted single-backslash LaTeX. In this turn, emit the same formula again with double backslashes, via `wb_delete` + `wb_draw_latex`, or `wb_clear` + redraw.
+
+**Good complete example**:
+
+```json
+{"type":"action","name":"wb_draw_latex","params":{"latex":"\\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}","x":100,"y":80,"height":80}}
+```
+
+Renders as: the standard quadratic formula. Count the backslashes in the JSON: 4 pairs of `\\`. Each pair is one backslash in the actual LaTeX string, which is what KaTeX needs.
+
+**Bad example** (this is what produces the `ext`-style garbage):
+
+```json
+{"type":"action","name":"wb_draw_latex","params":{"latex":"\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}","x":100,"y":80,"height":80}}
+```
+
+The JSON parser sees `\f` (form feed), `\p` (kept as `\p`), `\s` (kept as `\s`). KaTeX then receives a broken string where `\frac` is gone. Whether KaTeX complains or silently renders wrong, the board is broken.
