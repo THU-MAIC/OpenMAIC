@@ -148,3 +148,67 @@ Render a simple table.
 | `elementId` | string | no | Stable ID. |
 
 **Common mistake**: putting LaTeX into table cells (`"data":[["y = \\frac{1}{2}"]]`). Cell text is rendered as plain text; the backslashes stay. Put the formula in a separate `wb_draw_latex` adjacent to the table.
+
+#### wb_draw_code
+
+Draw a code block with syntax highlighting. Includes a ~32px header bar.
+
+```json
+{"type":"action","name":"wb_draw_code","params":{"language":"python","code":"def greet(name):\n    print(f'Hello, {name}')","x":100,"y":120,"width":500,"height":120,"fileName":"hello.py","elementId":"code1"}}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `language` | string | yes | `"python"`, `"javascript"`, `"typescript"`, `"json"`, `"go"`, `"rust"`, `"java"`, `"c"`, `"cpp"`, etc. |
+| `code` | string | yes | Source. Use `\n` for newlines. |
+| `x`, `y` | number | yes | Top-left. |
+| `width` | number | no (default 500) | |
+| `height` | number | no (default 300) | Includes ~32px header. Budget ≈ 32 + 22 per line + 16 padding. |
+| `fileName` | string | no | Shown in the header bar. |
+| `elementId` | string | no | **Recommended** — lets you edit the block later with `wb_edit_code`. |
+
+**Common mistake**: underestimating height — a 10-line block needs ~270px.
+
+#### wb_edit_code
+
+Modify an existing code block line-by-line. Produces smooth animations — prefer this over redrawing.
+
+```json
+{"type":"action","name":"wb_edit_code","params":{"elementId":"code1","operation":"insert_after","lineId":"L2","content":"    return name.upper()"}}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `elementId` | string | yes | Target code block's ID. |
+| `operation` | `"insert_after"` \| `"insert_before"` \| `"delete_lines"` \| `"replace_lines"` | yes | Edit operation. |
+| `lineId` | string | for inserts | Reference line ID (e.g., `"L2"`) — shown in state. |
+| `lineIds` | string[] | for delete/replace | Lines to operate on. |
+| `content` | string | for insert/replace | New code. Use `\n` for multiple lines. |
+
+**Common mistake**: guessing line IDs. Read the current whiteboard state — every code line has a stable ID like `L1`, `L2`, visible in the state context.
+
+#### wb_delete
+
+Remove one element by ID.
+
+```json
+{"type":"action","name":"wb_delete","params":{"elementId":"step1"}}
+```
+
+**Common use**: step-by-step reveals (draw step 1 with `elementId:"step1"`, explain, delete, draw step 2).
+
+#### wb_clear
+
+Remove **all** elements from the whiteboard. Use sparingly — prefer `wb_delete` when 1-2 removals would do.
+
+```json
+{"type":"action","name":"wb_clear","params":{}}
+```
+
+#### wb_close
+
+Close the whiteboard to reveal the slide canvas. **Do NOT call at the end of a drawing response** — students need time to read. Only close when returning to slide-canvas actions (spotlight/laser).
+
+```json
+{"type":"action","name":"wb_close","params":{}}
+```
