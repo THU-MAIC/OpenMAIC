@@ -278,3 +278,37 @@ describe('placeholder naming convention lint', () => {
     expect(offenders).toEqual([]);
   });
 });
+
+describe('whiteboard-reference snippet is wired into every role', () => {
+  const KEY_SECTIONS = [
+    'Canvas Specifications',
+    'Action Reference',
+    'LaTeX JSON Escape (CRITICAL)',
+    'Bounds & Overlap',
+    'Font Size Table',
+    'Pre-Output Checklist',
+  ];
+
+  test('teacher prompt contains every key whiteboard-reference section', () => {
+    const out = buildStructuredPrompt(baseAgent, slideState);
+    for (const section of KEY_SECTIONS) {
+      expect(out).toContain(section);
+    }
+  });
+
+  test('assistant prompt contains every key whiteboard-reference section', () => {
+    const assistantAgent: AgentConfig = { ...baseAgent, role: 'assistant' };
+    const out = buildStructuredPrompt(assistantAgent, slideState);
+    for (const section of KEY_SECTIONS) {
+      expect(out).toContain(section);
+    }
+  });
+
+  test('student prompt contains every key whiteboard-reference section', () => {
+    const studentAgent: AgentConfig = { ...baseAgent, role: 'student' };
+    const out = buildStructuredPrompt(studentAgent, slideState);
+    for (const section of KEY_SECTIONS) {
+      expect(out).toContain(section);
+    }
+  });
+});
