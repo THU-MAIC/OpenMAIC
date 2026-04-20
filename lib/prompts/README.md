@@ -57,7 +57,6 @@ still exists as TS template literals and needs editing directly:
 |---|---|---|
 | `ROLE_GUIDELINES` (teacher / assistant / student blocks) | `lib/orchestration/prompt-builder.ts` | Branches by `agentConfig.role` |
 | Length targets (100 / 80 / 50 chars per role) | `buildLengthGuidelines` in `lib/orchestration/prompt-builder.ts` | Branches by role |
-| Whiteboard guidelines (LaTeX sizing table, 1000×562 canvas, layout rules, code block spacing) | `buildWhiteboardGuidelines` in `lib/orchestration/prompt-builder.ts` | Branches by role |
 
 These may migrate into snippets in a later pass once Phase 2 eval feedback
 shows which parts need frequent iteration.
