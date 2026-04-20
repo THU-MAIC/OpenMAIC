@@ -129,6 +129,23 @@ describe('role dispatch', () => {
     expect(out).toContain('TEACHING ASSISTANT');
     expect(out).not.toContain('LEAD TEACHER');
   });
+
+  test('teacher whiteboard prompt is sourced from agent-system-wb-teacher template', () => {
+    const out = buildStructuredPrompt(baseAgent, slideState);
+    expect(out).toContain('Whiteboard — Teacher Role');
+  });
+
+  test('assistant whiteboard prompt is sourced from agent-system-wb-assistant template', () => {
+    const assistantAgent: AgentConfig = { ...baseAgent, role: 'assistant' };
+    const out = buildStructuredPrompt(assistantAgent, slideState);
+    expect(out).toContain('Whiteboard — Teaching Assistant Role');
+  });
+
+  test('student whiteboard prompt is sourced from agent-system-wb-student template', () => {
+    const studentAgent: AgentConfig = { ...baseAgent, role: 'student' };
+    const out = buildStructuredPrompt(studentAgent, slideState);
+    expect(out).toContain('Whiteboard — Student Role');
+  });
 });
 
 describe('scene-type action stripping', () => {
