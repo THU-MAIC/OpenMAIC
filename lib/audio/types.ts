@@ -88,6 +88,7 @@ export type TTSProviderId =
   | 'minimax-tts'
   | 'smallest-tts'
   | 'hf-tts'
+  | 'fish-tts'
   | 'browser-native-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'fish-audio-tts'

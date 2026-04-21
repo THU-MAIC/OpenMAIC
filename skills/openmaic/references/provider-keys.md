@@ -154,7 +154,7 @@ These features require additional provider keys beyond the core LLM provider. As
 | Web Search | `TAVILY_API_KEY` | Enriches outlines with real-time web research |
 | Image Generation | `IMAGE_SEEDREAM_API_KEY`, `IMAGE_QWEN_IMAGE_API_KEY`, `IMAGE_NANO_BANANA_API_KEY` | Generates images for slides (any one suffices) |
 | Video Generation | `VIDEO_SEEDANCE_API_KEY`, `VIDEO_KLING_API_KEY`, `VIDEO_VEO_API_KEY`, `VIDEO_SORA_API_KEY` | Generates short videos (any one suffices) |
-| TTS | `TTS_OPENAI_API_KEY`, `TTS_AZURE_API_KEY`, `TTS_GLM_API_KEY`, `TTS_QWEN_API_KEY` | Text-to-speech narration (any one suffices) |
+| TTS | `TTS_OPENAI_API_KEY`, `TTS_AZURE_API_KEY`, `TTS_GLM_API_KEY`, `TTS_QWEN_API_KEY`, `TTS_FISH_API_KEY` | Text-to-speech narration (any one suffices) |
 
 These are all optional. The classroom generation works without them — they only unlock richer content.
 
@@ -176,4 +176,7 @@ video:
 tts:
   openai-tts:
     apiKey: sk-...
+  fish-tts:
+    apiKey: rpa_...
+    baseUrl: https://api.runpod.ai/v2/.../run
 ```

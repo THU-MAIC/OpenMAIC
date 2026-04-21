@@ -18,7 +18,7 @@ import { createAdminClient } from '@/utils/supabase/admin';
 
 const log = createLogger('TTS API');
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   let ttsProviderId: string | undefined;

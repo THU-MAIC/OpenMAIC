@@ -283,8 +283,8 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
 
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
-  ttsProviderId: 'hf-tts' as TTSProviderId,
-  ttsVoice: 'af_heart',
+  ttsProviderId: 'fish-tts' as TTSProviderId,
+  ttsVoice: 'us-male-narrative',
   ttsSpeed: 1,
   asrProviderId: 'openai-whisper' as ASRProviderId,
   asrLanguage: 'auto',
@@ -298,6 +298,7 @@ const getDefaultAudioConfig = () => ({
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: false },
     'smallest-tts': { apiKey: '', baseUrl: '', enabled: true },
     'hf-tts': { apiKey: '', baseUrl: '', enabled: true },
+    'fish-tts': { apiKey: '', baseUrl: '', enabled: true },
     'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
   } as Record<
     TTSProviderId,

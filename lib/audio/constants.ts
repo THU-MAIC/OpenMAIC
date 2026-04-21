@@ -939,6 +939,24 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['browser'], // Browser native audio
     speedRange: { min: 0.1, max: 10.0, default: 1.0 },
   },
+
+  'fish-tts': {
+    id: 'fish-tts',
+    name: 'Fish Speech (RunPod)',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.runpod.ai/v2/p174wxl29u5r7n/run',
+    icon: '/logos/fish.svg',
+    models: [{ id: 'fishaudio/s2-pro', name: 'Fish Speech S2 Pro' }],
+    defaultModelId: 'fishaudio/s2-pro',
+    voices: [
+      { id: 'us-male-narrative', name: 'US Male (Narrative)', language: 'en-US', gender: 'male', description: 'Clear US male narrator' },
+      { id: 'us-female-narrative', name: 'US Female (Narrative)', language: 'en-US', gender: 'female', description: 'Soft US female narrator' },
+      { id: 'indian-male-narrative', name: 'Indian Male (Narrative)', language: 'en-IN', gender: 'male', description: 'Clear Indian male narrator' },
+      { id: 'indian-female-narrative', name: 'Indian Female (Narrative)', language: 'en-IN', gender: 'female', description: 'Soft Indian female narrator' },
+    ],
+    supportedFormats: ['wav', 'mp3'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
 };
 
 /**
@@ -1169,6 +1187,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
   'hf-tts': 'af_heart',
+  'fish-tts': 'us-male-narrative',
   'browser-native-tts': 'default',
 };
 
@@ -1182,6 +1201,7 @@ export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
   'hf-tts': 'hexgrad/Kokoro-82M',
+  'fish-tts': 'fish-speech-v1.4',
   'browser-native-tts': '',
 };
 

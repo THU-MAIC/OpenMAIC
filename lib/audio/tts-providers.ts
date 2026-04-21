@@ -171,6 +171,9 @@ export async function generateTTS(
     case 'hf-tts':
       return await generateHFTTS(config, text);
 
+    case 'fish-tts':
+      return await generateFishTTS(config, text);
+
     case 'smallest-tts':
       try {
         return await generateSmallestTTS(config, text);
@@ -677,6 +680,128 @@ async function generateHFTTS(config: TTSModelConfig, text: string): Promise<TTSG
     audio: new Uint8Array(arrayBuffer),
     format: 'mp3',
   };
+}
+
+/**
+ * Fish Speech implementation (RunPod serverless)
+ */
+async function generateFishTTS(config: TTSModelConfig, text: string): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['fish-tts'].defaultBaseUrl!;
+  const apiKey = config.apiKey!;
+
+  // Use runsync for synchronous response
+  const syncUrl = baseUrl.replace(/\/run$/, '/runsync');
+
+  const response = await fetch(syncUrl, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      input: {
+        text,
+        format: config.format || 'wav',
+        temperature: 0.8,
+        top_p: 0.8,
+        repetition_penalty: 1.1,
+        max_new_tokens: 1024,
+        chunk_length: 300,
+        reference_audio: config.providerOptions?.referenceAudio || [],
+        reference_text: config.providerOptions?.referenceText || [],
+        seed: null,
+        use_memory_cache: 'off',
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    throw new Error(`Fish TTS API error: ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+
+  if (data.status === 'FAILED') {
+    throw new Error(`Fish TTS task failed: ${data.error || 'Unknown error'}`);
+  }
+
+  // RunPod usually returns the result in data.output
+  // For Fish Speech, this is often a base64 string or a URL
+  const output = data.output;
+  if (!output) {
+    log.error('Fish TTS error: No output in response', { data });
+    throw new Error(`Fish TTS error: No output in response. Status: ${data.status}`);
+  }
+
+  // If output is a string, it might be base64 or a URL
+  if (typeof output === 'string') {
+    if (output.startsWith('http')) {
+      const audioResponse = await fetch(output);
+      if (!audioResponse.ok) {
+        throw new Error(`Failed to download Fish TTS audio from ${output}`);
+      }
+      return {
+        audio: new Uint8Array(await audioResponse.arrayBuffer()),
+        format: config.format || 'wav',
+      };
+    } else {
+      // Assume base64
+      return {
+        audio: new Uint8Array(Buffer.from(output, 'base64')),
+        format: config.format || 'wav',
+      };
+    }
+  }
+
+  // If it's an object, check common fields for audio data
+  if (typeof output === 'object') {
+    // 1. Try common field names
+    const audioData =
+      output.audio ||
+      output.data ||
+      output.result ||
+      output.wav ||
+      output.mp3 ||
+      output.base64 ||
+      output.content;
+
+    if (audioData && typeof audioData === 'string') {
+      return {
+        audio: new Uint8Array(Buffer.from(audioData, 'base64')),
+        format: output.format || config.format || 'wav',
+      };
+    }
+
+    // 2. Fallback: Find the longest string in the object (likely the audio data)
+    let longestString = '';
+    let longestKey = '';
+    for (const [key, value] of Object.entries(output)) {
+      if (typeof value === 'string' && value.length > longestString.length) {
+        longestString = value;
+        longestKey = key;
+      }
+    }
+
+    if (longestString.length > 100) {
+      log.info(`Using longest string in output as audio data (key: ${longestKey})`);
+      return {
+        audio: new Uint8Array(Buffer.from(longestString, 'base64')),
+        format: output.format || config.format || 'wav',
+      };
+    }
+  }
+
+  log.error('Fish TTS error: Unexpected output format', {
+    status: data.status,
+    outputKeys: typeof output === 'object' ? Object.keys(output) : typeof output,
+  });
+
+  throw new Error(
+    `Fish TTS error: Unexpected output format. Keys: ${
+      typeof output === 'object' ? Object.keys(output).join(', ') : typeof output
+    }`,
+  );
 }
 
 /**
