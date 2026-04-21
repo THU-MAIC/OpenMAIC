@@ -2,7 +2,7 @@ import { type NextRequest, NextResponse } from 'next/server';
 import { after } from 'next/server';
 import { randomUUID } from 'crypto';
 import { createAdminClient } from '@/utils/supabase/admin';
-import { sendWelcomeEmail } from '@/lib/server/waitlist-sendgrid';
+import { addToSendgridContacts, sendWelcomeEmail } from '@/lib/server/waitlist-sendgrid';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('waitlist-api');
@@ -65,6 +65,7 @@ export async function POST(request: NextRequest) {
 
     after(() => {
       void sendWelcomeEmail(email);
+      void addToSendgridContacts(email);
     });
 
     return NextResponse.json({

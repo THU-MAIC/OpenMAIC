@@ -67,3 +67,34 @@ export async function sendWelcomeEmail(toEmail: string): Promise<boolean> {
     return false;
   }
 }
+
+export async function addToSendgridContacts(email: string): Promise<boolean> {
+  const apiKey = process.env.SENDGRID_API_KEY;
+  if (!apiKey) {
+    log.warn('SendGrid not configured, skipping contact add');
+    return false;
+  }
+
+  try {
+    const res = await fetch('https://api.sendgrid.com/v3/marketing/contacts', {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ contacts: [{ email }] }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      log.error('SendGrid marketing contacts error', { status: res.status, body: text, email });
+      return false;
+    }
+
+    log.info('Added to SendGrid marketing contacts', { email, status: res.status });
+    return true;
+  } catch (e) {
+    log.error('Failed to add to SendGrid marketing contacts', { email, error: e });
+    return false;
+  }
+}
