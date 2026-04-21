@@ -95,6 +95,7 @@
 import type { TTSModelConfig } from './types';
 import { TTS_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
+import { InferenceClient } from '@huggingface/inference';
 
 const log = createLogger('TTSGen');
 
@@ -166,6 +167,9 @@ export async function generateTTS(
       return await generateDoubaoTTS(config, text);
     case 'elevenlabs-tts':
       return await generateElevenLabsTTS(config, text);
+
+    case 'hf-tts':
+      return await generateHFTTS(config, text);
 
     case 'smallest-tts':
       try {
@@ -648,6 +652,30 @@ async function generateSmallestTTS(
   return {
     audio: new Uint8Array(arrayBuffer),
     format: 'wav',
+  };
+}
+
+/**
+ * HuggingFace Kokoro-82M TTS via fal-ai provider
+ */
+async function generateHFTTS(config: TTSModelConfig, text: string): Promise<TTSGenerationResult> {
+  const token = config.apiKey || process.env.HF_TOKEN;
+  if (!token) {
+    throw new Error('HuggingFace TTS requires an API token (HF_TOKEN)');
+  }
+
+  const client = new InferenceClient(token);
+  const blob = await client.textToSpeech({
+    provider: 'fal-ai',
+    model: config.modelId || 'hexgrad/Kokoro-82M',
+    inputs: text,
+    parameters: { voice: config.voice || 'am_michael' },
+  });
+
+  const arrayBuffer = await blob.arrayBuffer();
+  return {
+    audio: new Uint8Array(arrayBuffer),
+    format: 'mp3',
   };
 }
 

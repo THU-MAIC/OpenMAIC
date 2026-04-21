@@ -80,6 +80,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'doubao-tts': t('settings.providerDoubaoTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
+    'hf-tts': t('settings.providerHFTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
     'smallest-tts': t('settings.providerSmallestTTS'),
   };
@@ -409,9 +410,29 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
               enabled={ttsEnabled}
               onToggle={setTTSEnabled}
             >
-              <p className="text-[11px] text-muted-foreground/60">
-                {t('settings.ttsVoiceConfigHint')}
-              </p>
+              {(() => {
+                const provider = TTS_PROVIDERS[ttsProviderId];
+                const voices = getTTSVoices(ttsProviderId);
+                if (!provider || !voices.length) return null;
+                const group: SelectGroupData = {
+                  groupId: ttsProviderId,
+                  groupName: getTTSProviderName(ttsProviderId, t),
+                  groupIcon: provider.icon,
+                  available: true,
+                  items: voices.map((v) => ({
+                    id: v.id,
+                    name: getVoiceDisplayName(v.name, locale),
+                  })),
+                };
+                return (
+                  <GroupedSelect
+                    groups={[group]}
+                    selectedGroupId={ttsProviderId}
+                    selectedItemId={ttsVoice}
+                    onSelect={(_gid, voiceId) => setTTSVoice(voiceId)}
+                  />
+                );
+              })()}
             </TabPanel>
           )}
 

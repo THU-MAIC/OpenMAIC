@@ -87,6 +87,7 @@ export type TTSProviderId =
   | 'elevenlabs-tts'
   | 'minimax-tts'
   | 'smallest-tts'
+  | 'hf-tts'
   | 'browser-native-tts';
 // Add new TTS providers below (uncomment and modify):
 // | 'fish-audio-tts'

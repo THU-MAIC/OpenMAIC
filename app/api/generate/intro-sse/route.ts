@@ -1,15 +1,21 @@
 import { NextRequest } from 'next/server';
 import { generateIntroScript } from '@/lib/generation/intro-streaming';
+import { generateTTS } from '@/lib/audio/tts-providers';
+import { resolveTTSApiKey, resolveTTSBaseUrl } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { resolveGenerationLanguage } from '@/lib/constants/generation';
+import { DEFAULT_TTS_VOICES } from '@/lib/audio/constants';
+import type { TTSProviderId } from '@/lib/audio/types';
 
 const log = createLogger('IntroSSE');
 
 export const maxDuration = 300;
 
+const DEFAULT_PROVIDER: TTSProviderId = 'hf-tts';
+
 /**
  * SSE Endpoint for prioritized course introduction.
- * Returns a stream of text (script) and audio chunks (base64).
+ * Sends: script → audio_ready (complete base64 audio + format) → done
  */
 export async function POST(req: NextRequest) {
   const body = await req.json();
@@ -19,73 +25,36 @@ export async function POST(req: NextRequest) {
     return new Response('Missing name or stageId', { status: 400 });
   }
 
-  // 1. Establish SSE stream
   const encoder = new TextEncoder();
-  
+
   const stream = new ReadableStream({
     async start(controller) {
-      const sendEvent = (event: string, data: any) => {
+      const sendEvent = (event: string, data: unknown) => {
         controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
       };
 
       try {
         log.info(`Starting intro generation for: ${name} (${stageId})`);
 
-        // Step 1: Generate the script
         const script = await generateIntroScript({
           courseName: name,
           courseDescription: description,
           language: resolveGenerationLanguage(language),
         });
 
-        // Send the complete script early so the UI can show it
         sendEvent('script', { text: script });
 
-        // Step 2: Stream TTS from Smallest AI (Waves)
-        const apiKey = process.env.TTS_SMALLEST_API_KEY || process.env.SMALLEST_API_KEY;
-        if (!apiKey) {
-          throw new Error('Smallest AI API key not found');
-        }
+        const voiceId = requestedVoiceId || DEFAULT_TTS_VOICES[DEFAULT_PROVIDER];
+        const apiKey = resolveTTSApiKey(DEFAULT_PROVIDER);
+        const baseUrl = resolveTTSBaseUrl(DEFAULT_PROVIDER);
 
-        // Voice selection: Use requestedVoiceId, fallback to language-based defaults
-        const isEnglish = language?.startsWith('en');
-        const voiceId = requestedVoiceId || (isEnglish ? 'magnus' : 'daniel');
+        const { audio, format } = await generateTTS(
+          { providerId: DEFAULT_PROVIDER, voice: voiceId, apiKey, baseUrl },
+          script,
+        );
 
-        const ttsResponse = await fetch('https://api.smallest.ai/waves/v1/lightning-v3.1/get_speech', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            text: script,
-            voice_id: voiceId,
-            sample_rate: 24000,
-            speed: 1.25,
-            output_format: 'pcm',
-          }),
-        });
-
-        if (!ttsResponse.ok) {
-          const errorText = await ttsResponse.text();
-          throw new Error(`Smallest AI TTS error: ${errorText}`);
-        }
-
-        if (!ttsResponse.body) {
-          throw new Error('Smallest AI TTS response body is empty');
-        }
-
-        // Step 3: Read chunks from the TTS response and push as base64 SSE events
-        const reader = ttsResponse.body.getReader();
-        
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          // Convert chunk to base64
-          const base64 = Buffer.from(value).toString('base64');
-          sendEvent('audio', { chunk: base64 });
-        }
+        const base64 = Buffer.from(audio).toString('base64');
+        sendEvent('audio_ready', { audio: base64, format });
 
         sendEvent('done', { success: true });
         log.info(`Intro generation completed for: ${stageId}`);

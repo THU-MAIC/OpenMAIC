@@ -25,13 +25,16 @@ importers:
         version: 1.2.0(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
       '@copilotkit/backend':
         specifier: ^0.37.0
-        version: 0.37.0(@supabase/supabase-js@2.103.0)(axios@1.13.6)(ignore@5.3.2)(lodash@4.17.23)(playwright@1.58.2)(ws@8.19.0)
+        version: 0.37.0(@huggingface/inference@4.13.15)(@supabase/supabase-js@2.103.0)(axios@1.13.6)(ignore@5.3.2)(lodash@4.17.23)(playwright@1.58.2)(ws@8.19.0)
       '@copilotkit/runtime':
         specifier: ^1.51.2
         version: 1.53.0(@ag-ui/encoder@0.0.47)(@cfworker/json-schema@4.1.1)(@copilotkitnext/shared@1.53.0)(@langchain/core@1.1.31(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.214.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.1))(openai@4.104.0(ws@8.19.0)(zod@4.3.6)))(@langchain/langgraph-sdk@1.7.1(@langchain/core@1.1.31(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.214.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.1))(openai@4.104.0(ws@8.19.0)(zod@4.3.6))))(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.214.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.1))(react-dom@19.2.3(react@19.2.3))(react@19.2.3)(ws@8.19.0)
       '@fontsource-variable/inter':
         specifier: ^5.2.8
         version: 5.2.8
+      '@huggingface/inference':
+        specifier: ^4.13.15
+        version: 4.13.15
       '@langchain/core':
         specifier: ^1.1.16
         version: 1.1.31(@opentelemetry/api@1.9.1)(@opentelemetry/exporter-trace-otlp-proto@0.214.0(@opentelemetry/api@1.9.1))(@opentelemetry/sdk-trace-base@2.6.1(@opentelemetry/api@1.9.1))(openai@4.104.0(ws@8.19.0)(zod@4.3.6))
@@ -1283,6 +1286,17 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
+
+  '@huggingface/inference@4.13.15':
+    resolution: {integrity: sha512-V7B13KFDVhYkQqgx8vpMcmtEG+PoePlh65IUvpphTTItHAq6zRLcsS4torh1QavUaT+6nEwho4wFXzBQNGBwKQ==}
+    engines: {node: '>=18'}
+
+  '@huggingface/jinja@0.5.7':
+    resolution: {integrity: sha512-OosMEbF/R6zkKNNzqhI7kvKYCpo1F0UeIv46/h4D4UjVEKKd6k3TiV8sgu6fkreX4lbBiRI+lZG8UnXnqVQmEQ==}
+    engines: {node: '>=18'}
+
+  '@huggingface/tasks@0.19.90':
+    resolution: {integrity: sha512-nfV9luJbvwGQ/5oKXkKhCV9h4X7mwh1YaGG3ORd6UMLDSwr1OFSSatcBX0O9OtBtmNK19aGSjbLFqqgcIR6+IA==}
 
   '@humanfs/core@0.19.1':
     resolution: {integrity: sha512-5DyQ4+1JEUzejeK1JGICcideyfUbGixgS9jNgex5nqkW+cY7WZhxBigmieN5Qnw9ZosSNVC9KQKyb+GUaGyKUA==}
@@ -11497,14 +11511,14 @@ snapshots:
 
   '@cfworker/json-schema@4.1.1': {}
 
-  '@copilotkit/backend@0.37.0(@supabase/supabase-js@2.103.0)(axios@1.13.6)(ignore@5.3.2)(lodash@4.17.23)(playwright@1.58.2)(ws@8.19.0)':
+  '@copilotkit/backend@0.37.0(@huggingface/inference@4.13.15)(@supabase/supabase-js@2.103.0)(axios@1.13.6)(ignore@5.3.2)(lodash@4.17.23)(playwright@1.58.2)(ws@8.19.0)':
     dependencies:
       '@copilotkit/shared': 0.37.0
       '@google/generative-ai': 0.11.5
       '@langchain/core': 0.1.63(openai@4.104.0(ws@8.19.0)(zod@4.3.6))
       '@langchain/openai': 0.0.28(ws@8.19.0)
       js-tiktoken: 1.0.21
-      langchain: 0.1.37(@supabase/supabase-js@2.103.0)(axios@1.13.6)(ignore@5.3.2)(lodash@4.17.23)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.58.2)(ws@8.19.0)
+      langchain: 0.1.37(@huggingface/inference@4.13.15)(@supabase/supabase-js@2.103.0)(axios@1.13.6)(ignore@5.3.2)(lodash@4.17.23)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.58.2)(ws@8.19.0)
       openai: 4.104.0(ws@8.19.0)(zod@3.25.76)
       zod: 3.25.76
     transitivePeerDependencies:
@@ -12041,6 +12055,15 @@ snapshots:
   '@hono/node-server@1.19.11(hono@4.12.7)':
     dependencies:
       hono: 4.12.7
+
+  '@huggingface/inference@4.13.15':
+    dependencies:
+      '@huggingface/jinja': 0.5.7
+      '@huggingface/tasks': 0.19.90
+
+  '@huggingface/jinja@0.5.7': {}
+
+  '@huggingface/tasks@0.19.90': {}
 
   '@humanfs/core@0.19.1': {}
 
@@ -12604,7 +12627,7 @@ snapshots:
       '@jsonjoy.com/codegen': 17.67.0(tslib@2.8.1)
       tslib: 2.8.1
 
-  '@langchain/community@0.0.57(@supabase/supabase-js@2.103.0)(lodash@4.17.23)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0)':
+  '@langchain/community@0.0.57(@huggingface/inference@4.13.15)(@supabase/supabase-js@2.103.0)(lodash@4.17.23)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0)':
     dependencies:
       '@langchain/core': 0.1.63(openai@4.104.0(ws@8.19.0)(zod@4.3.6))
       '@langchain/openai': 0.0.28(ws@8.19.0)
@@ -12615,6 +12638,7 @@ snapshots:
       zod: 3.25.76
       zod-to-json-schema: 3.25.1(zod@3.25.76)
     optionalDependencies:
+      '@huggingface/inference': 4.13.15
       '@supabase/supabase-js': 2.103.0
       lodash: 4.17.23
       ws: 8.19.0
@@ -19252,10 +19276,10 @@ snapshots:
 
   kleur@4.1.5: {}
 
-  langchain@0.1.37(@supabase/supabase-js@2.103.0)(axios@1.13.6)(ignore@5.3.2)(lodash@4.17.23)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.58.2)(ws@8.19.0):
+  langchain@0.1.37(@huggingface/inference@4.13.15)(@supabase/supabase-js@2.103.0)(axios@1.13.6)(ignore@5.3.2)(lodash@4.17.23)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(playwright@1.58.2)(ws@8.19.0):
     dependencies:
       '@anthropic-ai/sdk': 0.9.1
-      '@langchain/community': 0.0.57(@supabase/supabase-js@2.103.0)(lodash@4.17.23)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0)
+      '@langchain/community': 0.0.57(@huggingface/inference@4.13.15)(@supabase/supabase-js@2.103.0)(lodash@4.17.23)(openai@4.104.0(ws@8.19.0)(zod@4.3.6))(ws@8.19.0)
       '@langchain/core': 0.1.63(openai@4.104.0(ws@8.19.0)(zod@4.3.6))
       '@langchain/openai': 0.0.28(ws@8.19.0)
       '@langchain/textsplitters': 0.0.3(openai@4.104.0(ws@8.19.0)(zod@4.3.6))

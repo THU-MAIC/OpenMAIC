@@ -905,6 +905,25 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.7, max: 1.2, default: 1.0 },
   },
 
+  'hf-tts': {
+    id: 'hf-tts',
+    name: 'HuggingFace (Kokoro-82M)',
+    requiresApiKey: true,
+    icon: '/logos/huggingface.svg',
+    models: [{ id: 'hexgrad/Kokoro-82M', name: 'Kokoro 82M' }],
+    defaultModelId: 'hexgrad/Kokoro-82M',
+    voices: [
+      // US Male narration
+      { id: 'am_michael', name: 'Michael (US Male)', language: 'en-US', gender: 'male', description: 'Warm US male narrator' },
+      { id: 'am_adam', name: 'Adam (US Male)', language: 'en-US', gender: 'male', description: 'Deep US male narrator' },
+      // US Female narration
+      { id: 'af_heart', name: 'Heart (US Female)', language: 'en-US', gender: 'female', description: 'Expressive US female narrator' },
+      { id: 'af_bella', name: 'Bella (US Female)', language: 'en-US', gender: 'female', description: 'Clear US female narrator' },
+    ],
+    supportedFormats: ['mp3', 'wav'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: 'Browser Native (Web Speech API)',
@@ -1149,6 +1168,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
+  'hf-tts': 'am_adam',
   'browser-native-tts': 'default',
 };
 
@@ -1161,6 +1181,7 @@ export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
+  'hf-tts': 'hexgrad/Kokoro-82M',
   'browser-native-tts': '',
 };
 

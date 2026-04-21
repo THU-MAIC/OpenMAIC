@@ -539,6 +539,7 @@
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerSmallestTTS": "Smallest AI (Waves)",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerHFTTS": "HuggingFace (Kokoro-82M)",
     "providerBrowserNativeTTS": "Browser Native TTS",
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Browser Native ASR",
