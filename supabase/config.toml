@@ -65,7 +65,7 @@ skip_nonce_check = false
 
 
 [remotes.production.auth]
-site_url = "https://www.thechalklabs.com/"
+site_url = "https://app.slateup.ai"
 
 [remotes.production]
 project_id = "qnvzukpyvpcgoxwiiwia"

@@ -3,7 +3,11 @@ import { updateSession } from "@/utils/supabase/middleware";
 
 function getAllowedOrigins(): string[] {
   const raw = process.env.CORS_ORIGINS;
-  const defaults = ["http://localhost:3001","https://slateup.ai"];
+  const defaults = [
+    "http://localhost:3001",
+    "https://slateup.ai",
+    "https://www.slateup.ai",
+  ];
   if (!raw) return defaults;
   const parsed = raw
     .split(",")
