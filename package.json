@@ -17,6 +17,8 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
+    "migrate:mongo-waitlist": "tsx --env-file=.env.local scripts/migrate-mongo-waitlist-to-postgres.ts",
+    "import:waitlist": "tsx --env-file=.env.local scripts/import-waitlist-from-text.ts",
     "worker": "tsx --env-file=.env.local temporal/worker.ts",
     "worker:prod": "tsx temporal/worker.ts",
     "dev:full": "concurrently \"pnpm dev\" \"pnpm worker\""
@@ -140,6 +142,7 @@
     "concurrently": "^9.2.1",
     "eslint": "^9",
     "eslint-config-next": "16.1.2",
+    "mongodb": "^6.12.0",
     "prettier": "3.8.1",
     "rollup": "^4.35.0",
     "rollup-plugin-typescript2": "^0.36.0",
