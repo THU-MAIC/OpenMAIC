@@ -120,14 +120,19 @@ async function fetchSceneActions(
   return response.json();
 }
 
-/** Generate TTS for one speech action and store in IndexedDB */
+/**
+ * Generate TTS for one speech action and store in IndexedDB.
+ * When stageId is provided, the server also uploads the audio to Supabase Storage
+ * and returns an audioUrl that is persisted across devices.
+ */
 export async function generateAndStoreTTS(
   audioId: string,
   text: string,
   signal?: AbortSignal,
-): Promise<void> {
+  stageId?: string,
+): Promise<string | undefined> {
   const settings = useSettingsStore.getState();
-  if (settings.ttsProviderId === 'browser-native-tts') return;
+  if (settings.ttsProviderId === 'browser-native-tts') return undefined;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
   const response = await fetch('/api/generate/tts', {
@@ -142,6 +147,7 @@ export async function generateAndStoreTTS(
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,
       ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
+      stageId,
     }),
     signal,
   });
@@ -169,6 +175,8 @@ export async function generateAndStoreTTS(
     format: data.format,
     createdAt: Date.now(),
   });
+
+  return data.audioUrl as string | undefined;
 }
 
 /** Generate TTS for all speech actions in a scene. Returns result. */

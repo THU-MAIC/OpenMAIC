@@ -14,6 +14,7 @@ import type { TTSProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { createAdminClient } from '@/utils/supabase/admin';
 
 const log = createLogger('TTS API');
 
@@ -25,7 +26,7 @@ export async function POST(req: NextRequest) {
   let audioId: string | undefined;
   try {
     const body = await req.json();
-    const { text, ttsModelId, ttsSpeed, ttsApiKey, ttsBaseUrl } = body as {
+    const { text, ttsModelId, ttsSpeed, ttsApiKey, ttsBaseUrl, stageId } = body as {
       text: string;
       audioId: string;
       ttsProviderId: TTSProviderId;
@@ -34,6 +35,7 @@ export async function POST(req: NextRequest) {
       ttsSpeed?: number;
       ttsApiKey?: string;
       ttsBaseUrl?: string;
+      stageId?: string;
     };
     ttsProviderId = body.ttsProviderId;
     ttsVoice = body.ttsVoice;
@@ -88,7 +90,32 @@ export async function POST(req: NextRequest) {
     // Convert to base64
     const base64 = Buffer.from(audio).toString('base64');
 
-    return apiSuccess({ audioId, base64, format });
+    // When stageId is provided, also upload to Supabase Storage so the audio URL
+    // is persisted and accessible from other devices without local IndexedDB.
+    let audioUrl: string | undefined;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (stageId && supabaseUrl && supabaseServiceKey) {
+      try {
+        const supabase = createAdminClient();
+        const mimeType = format === 'mp3' ? 'audio/mpeg' : `audio/${format}`;
+        const storagePath = `${stageId}/audio/${audioId}.${format}`;
+        const { error } = await supabase.storage.from('courses').upload(storagePath, audio, {
+          contentType: mimeType,
+          upsert: true,
+        });
+        if (!error) {
+          audioUrl = `${supabaseUrl}/storage/v1/object/public/courses/${storagePath}`;
+          log.info(`TTS uploaded to Supabase: ${storagePath} (${audio.length} bytes)`);
+        } else {
+          log.warn(`TTS Supabase upload failed for ${audioId}:`, error.message);
+        }
+      } catch (uploadErr) {
+        log.warn(`TTS Supabase upload error for ${audioId}:`, uploadErr);
+      }
+    }
+
+    return apiSuccess({ audioId, base64, format, audioUrl });
   } catch (error) {
     log.error(
       `TTS generation failed [provider=${ttsProviderId ?? 'unknown'}, voice=${ttsVoice ?? 'unknown'}, audioId=${audioId ?? 'unknown'}]:`,

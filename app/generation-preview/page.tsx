@@ -819,10 +819,11 @@ function GenerationPreviewContent() {
         );
 
         const results = await Promise.allSettled(
-          speechActions.map((action) => {
+          speechActions.map(async (action) => {
             const audioId = `tts_${action.id}`;
             action.audioId = audioId;
-            return generateAndStoreTTS(audioId, action.text, signal);
+            const audioUrl = await generateAndStoreTTS(audioId, action.text, signal, stage.id);
+            if (audioUrl) action.audioUrl = audioUrl;
           }),
         );
         const ttsFailCount = results.filter((r) => r.status === 'rejected').length;
