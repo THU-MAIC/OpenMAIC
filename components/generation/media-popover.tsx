@@ -83,6 +83,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'hf-tts': t('settings.providerHFTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
     'smallest-tts': t('settings.providerSmallestTTS'),
+    'fish-tts': t('settings.providerFishTTS'),
   };
   return names[providerId] || providerId;
 }

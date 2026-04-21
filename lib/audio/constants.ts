@@ -1201,7 +1201,7 @@ export const DEFAULT_TTS_MODELS: Record<TTSProviderId, string> = {
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
   'hf-tts': 'hexgrad/Kokoro-82M',
-  'fish-tts': 'fish-speech-v1.4',
+  'fish-tts': 'fishaudio/s2-pro',
   'browser-native-tts': '',
 };
 
