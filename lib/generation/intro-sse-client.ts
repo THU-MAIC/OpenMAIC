@@ -110,6 +110,7 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
   const playbackRef = { current: null as AudioContext | null };
   const masterGainRef = { current: null as GainNode | null };
   let muteRafId = 0;
+  let abortHandler: (() => void) | null = null;
 
   const stopMuteSync = () => {
     if (muteRafId !== 0) {
@@ -154,6 +155,26 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
   let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
   try {
+    if (signal) {
+      abortHandler = () => {
+        // Make abort feel instant: cut gain and close the AudioContext immediately.
+        stopMuteSync();
+        try {
+          const mg = masterGainRef.current;
+          const ctx = playbackRef.current;
+          if (mg && ctx) mg.gain.setValueAtTime(0, ctx.currentTime);
+        } catch {
+          // ignore
+        }
+        const ctx = playbackRef.current;
+        if (ctx) {
+          // Don't await here; the caller is already aborting and may navigate away.
+          void ctx.close().catch(() => {});
+        }
+      };
+      signal.addEventListener('abort', abortHandler, { once: true });
+    }
+
     const response = await fetch('/api/generate/intro-sse', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -235,6 +256,10 @@ export async function playIntroSseStream(options: PlayIntroSseOptions): Promise<
     onStatus?.('error');
     return 'error';
   } finally {
+    if (signal && abortHandler) {
+      signal.removeEventListener('abort', abortHandler);
+      abortHandler = null;
+    }
     reader?.cancel().catch(() => {});
     pcmCarryRef.current = null;
     stopMuteSync();

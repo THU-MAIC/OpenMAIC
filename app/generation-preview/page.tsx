@@ -1245,6 +1245,8 @@ function GenerationPreviewContent() {
                   size="lg" 
                   className="h-14 px-8 rounded-full shadow-xl shadow-blue-500/20 bg-blue-600 hover:bg-blue-700 text-lg group" 
                   onClick={() => {
+                    // Ensure intro (and any other in-flight audio) stops immediately before navigation.
+                    abortControllerRef.current?.abort();
                     const st = useStageStore.getState().stage;
                     if (st && st.id === stageIdForEntry) {
                       setPendingIntroPayload({
