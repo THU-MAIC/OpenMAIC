@@ -817,7 +817,9 @@ export function Stage({
   const currentSceneIndex = isPendingScene
     ? scenes.length
     : scenes.findIndex((s) => s.id === currentSceneId);
-  const totalScenesCount = scenes.length + (hasNextPending ? 1 : 0);
+  // Use outlines for the true course length: scenes may still be generating.
+  const totalScenesCount =
+    outlines.length > 0 ? outlines.length : scenes.length + (hasNextPending ? 1 : 0);
 
   // get action information
   const totalActions = currentScene?.actions?.length || 0;
