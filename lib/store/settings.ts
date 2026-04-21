@@ -284,7 +284,7 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
   ttsProviderId: 'hf-tts' as TTSProviderId,
-  ttsVoice: 'am_michael',
+  ttsVoice: 'af_heart',
   ttsSpeed: 1,
   asrProviderId: 'openai-whisper' as ASRProviderId,
   asrLanguage: 'auto',

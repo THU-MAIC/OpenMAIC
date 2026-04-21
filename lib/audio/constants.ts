@@ -910,7 +910,7 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
     name: 'HuggingFace (Kokoro-82M)',
     requiresApiKey: true,
     icon: '/logos/huggingface.svg',
-    models: [{ id: 'hexgrad/Kokoro-82M', name: 'Kokoro 82M' }],
+    models: [{ id: 'hexgrad/Kokoro-82M', name: 'Kokoro 82M (Fastest)' }],
     defaultModelId: 'hexgrad/Kokoro-82M',
     voices: [
       // US Male narration
@@ -1168,7 +1168,7 @@ export const DEFAULT_TTS_VOICES: Record<TTSProviderId, string> = {
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
-  'hf-tts': 'am_adam',
+  'hf-tts': 'af_heart',
   'browser-native-tts': 'default',
 };
 

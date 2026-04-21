@@ -190,9 +190,14 @@ const DEFAULT_FILENAME = 'server-providers.yml';
 const _configs: Map<string, ServerConfig> = new Map();
 
 function buildConfig(yamlData: YamlData): ServerConfig {
+  const tts = loadEnvSection(TTS_ENV_MAP, yamlData.tts);
+  // HF_TOKEN is the standard HuggingFace env var — inject it so hf-tts is recognised as configured
+  if (!tts['hf-tts'] && process.env.HF_TOKEN) {
+    tts['hf-tts'] = { apiKey: process.env.HF_TOKEN };
+  }
   return {
     providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers),
-    tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts),
+    tts,
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr),
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
     image: loadEnvSection(IMAGE_ENV_MAP, yamlData.image),

@@ -218,7 +218,8 @@ export async function generateTTSForClassroom(
     return;
   }
 
-  const providerId = ttsProviderIds[0] as TTSProviderId;
+  // Prefer hf-tts when available
+  const providerId = (ttsProviderIds.includes('hf-tts') ? 'hf-tts' : ttsProviderIds[0]) as TTSProviderId;
   const apiKey = resolveTTSApiKey(providerId);
   if (!apiKey) {
     log.warn(`No API key for TTS provider "${providerId}", skipping TTS generation`);

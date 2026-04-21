@@ -666,10 +666,10 @@ async function generateHFTTS(config: TTSModelConfig, text: string): Promise<TTSG
 
   const client = new InferenceClient(token);
   const blob = await client.textToSpeech({
-    provider: 'fal-ai',
+    provider: 'auto',
     model: config.modelId || 'hexgrad/Kokoro-82M',
     inputs: text,
-    parameters: { voice: config.voice || 'am_michael' },
+    parameters: { voice: config.voice || 'af_heart' },
   });
 
   const arrayBuffer = await blob.arrayBuffer();
