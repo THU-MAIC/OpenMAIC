@@ -375,20 +375,6 @@ export function Stage({
     }
   }, [isPresenting, setChatAreaCollapsed, setSidebarCollapsed]);
 
-  // Keyboard escape hook for web-only fullscreen exit
-  useEffect(() => {
-    if (!isPresenting) return;
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isPresentationInteractionActive) {
-        setIsPresenting(false);
-        setControlsVisible(true);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isPresenting, isPresentationInteractionActive]);
-
   useEffect(() => {
     if (!isPresenting) {
       setControlsVisible(true);
