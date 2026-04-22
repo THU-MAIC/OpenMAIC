@@ -66,6 +66,9 @@ import {
 } from '@/lib/supabase/course-sync';
 import { CoursesExhaustedModal } from '@/components/billing/courses-exhausted-modal';
 import { setPendingIntroPayload } from '@/lib/classroom/pending-intro';
+import { NotificationBell } from '@/components/notifications/notification-bell';
+import { usePlanStore } from '@/lib/store/user-plan';
+import { PLAN_LIMITS } from '@/lib/stripe/plans';
 
 const log = createLogger('Home');
 
@@ -101,7 +104,12 @@ function HomePage() {
 
   const [form, setForm] = useState<FormState>(initialFormState);
   const [enterClassroomLoading, setEnterClassroomLoading] = useState(false);
+  const [createClassroomLoading, setCreateClassroomLoading] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const plan = usePlanStore((s) => s.plan);
+  const canInstantClassroom = plan
+    ? (PLAN_LIMITS[plan.account_type]?.canInstantClassroom ?? false)
+    : false;
   const [settingsSection, setSettingsSection] = useState<
     import('@/lib/types/settings').SettingsSection | undefined
   >(undefined);
@@ -225,6 +233,7 @@ function HomePage() {
   useEffect(() => {
     if (!authLoading) {
       loadClassrooms();
+      if (user) usePlanStore.getState().refetch();
     }
   }, [user, authLoading]);
 
@@ -431,6 +440,51 @@ function HomePage() {
     }
   };
 
+  const handleCreateClassroom = async () => {
+    if (createClassroomLoading) return;
+
+    if (!authLoading && !user) {
+      try { localStorage.setItem('pendingPrompt', form.requirement); } catch { /* ignore */ }
+      router.push(`/auth/login?redirect=${encodeURIComponent('/?pending_generation=true')}`);
+      return;
+    }
+
+    if (!form.requirement.trim()) {
+      setError(t('upload.requirementRequired'));
+      return;
+    }
+
+    setCreateClassroomLoading(true);
+    setError(null);
+
+    try {
+      const res = await fetch('/api/create-classroom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          requirement: form.requirement,
+          language: form.language,
+          enableWebSearch: form.webSearch,
+          enableImageGeneration: true,
+          enableVideoGeneration: false,
+          enableTTS: true,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Failed to queue classroom');
+      }
+
+      toast.success('Classroom queued! We will notify you when it\'s ready.', { duration: 5000 });
+    } catch (err) {
+      log.error('Create classroom error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to queue classroom generation');
+    } finally {
+      setCreateClassroomLoading(false);
+    }
+  };
+
   const formatDate = (timestamp: number) => {
     const date = new Date(timestamp);
     const now = new Date();
@@ -472,6 +526,7 @@ function HomePage() {
 
           {/* Auth button — always visible */}
           <FeedbackButton variant="pill" showLabel />
+          <NotificationBell />
           <AuthButton />
 
           {/* Admin controls */}
@@ -672,28 +727,72 @@ function HomePage() {
                   }}
                 />
 
-                {/* Send button */}
-                <button
-                  type="button"
-                  onClick={handleGenerate}
-                  disabled={!canGenerate || enterClassroomLoading}
-                  aria-busy={enterClassroomLoading}
-                  className={cn(
-                    'shrink-0 h-10 px-5 md:px-6 rounded-full flex items-center justify-center gap-2 transition-all font-bold border-2 border-[#073b4c]',
-                    canGenerate && !enterClassroomLoading
-                      ? 'bg-[#ef476f] text-white hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] cursor-pointer'
-                      : canGenerate && enterClassroomLoading
-                        ? 'bg-[#ef476f] text-white shadow-[3px_3px_0_#073b4c] cursor-wait opacity-95'
-                        : 'bg-[#f0f4f8] text-[#073b4c]/40 cursor-not-allowed',
+                {/* Create Classroom — background Temporal job (all users) */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={handleCreateClassroom}
+                      disabled={!canGenerate || createClassroomLoading}
+                      aria-busy={createClassroomLoading}
+                      className={cn(
+                        'shrink-0 h-10 px-4 md:px-5 rounded-full flex items-center justify-center gap-2 transition-all font-bold border-2 border-[#073b4c]',
+                        canGenerate && !createClassroomLoading
+                          ? 'bg-[#06d6a0] text-[#073b4c] hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] cursor-pointer'
+                          : canGenerate && createClassroomLoading
+                            ? 'bg-[#06d6a0] text-[#073b4c] shadow-[3px_3px_0_#073b4c] cursor-wait opacity-95'
+                            : 'bg-[#f0f4f8] text-[#073b4c]/40 cursor-not-allowed',
+                      )}
+                    >
+                      <span className="text-xs font-medium">Create Classroom</span>
+                      {createClassroomLoading ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <Clock className="size-3.5" aria-hidden />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" sideOffset={8}>
+                    <p className="text-xs">Generate in the background — we&apos;ll notify you when ready</p>
+                  </TooltipContent>
+                </Tooltip>
+
+                {/* Instant Classroom — real-time, Ultra only */}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={canInstantClassroom ? handleGenerate : () => router.push('/pricing')}
+                      disabled={canInstantClassroom && (!canGenerate || enterClassroomLoading)}
+                      aria-busy={enterClassroomLoading}
+                      className={cn(
+                        'shrink-0 h-10 px-5 md:px-6 rounded-full flex items-center justify-center gap-2 transition-all font-bold border-2 border-[#073b4c]',
+                        !canInstantClassroom
+                          ? 'bg-[#ffd166] text-[#073b4c] hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] cursor-pointer'
+                          : canGenerate && !enterClassroomLoading
+                            ? 'bg-[#ef476f] text-white hover:translate-y-[-2px] shadow-[3px_3px_0_#073b4c] hover:shadow-[5px_5px_0_#073b4c] cursor-pointer'
+                            : canGenerate && enterClassroomLoading
+                              ? 'bg-[#ef476f] text-white shadow-[3px_3px_0_#073b4c] cursor-wait opacity-95'
+                              : 'bg-[#f0f4f8] text-[#073b4c]/40 cursor-not-allowed',
+                      )}
+                    >
+                      <span className="text-xs font-medium">
+                        {canInstantClassroom ? 'Instant Classroom' : '⚡ Instant Classroom'}
+                      </span>
+                      {enterClassroomLoading && canInstantClassroom ? (
+                        <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                      ) : (
+                        <ArrowUp className="size-3.5" aria-hidden />
+                      )}
+                    </button>
+                  </TooltipTrigger>
+                  {!canInstantClassroom && (
+                    <TooltipContent side="top" sideOffset={8}>
+                      <p className="text-xs font-bold">Ultra plan required</p>
+                      <p className="text-xs text-muted-foreground">Click to upgrade</p>
+                    </TooltipContent>
                   )}
-                >
-                  <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
-                  {enterClassroomLoading ? (
-                    <Loader2 className="size-3.5 animate-spin" aria-hidden />
-                  ) : (
-                    <ArrowUp className="size-3.5" aria-hidden />
-                  )}
-                </button>
+                </Tooltip>
               </div>
             </div>
           </motion.div>

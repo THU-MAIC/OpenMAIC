@@ -1,15 +1,17 @@
-export type AccountType = 'FREE' | 'PLUS' | 'ADMIN';
+export type AccountType = 'FREE' | 'PLUS' | 'ULTRA' | 'ADMIN';
 export type SubscriptionPeriod = 'monthly' | 'yearly' | 'lifetime' | null;
 
 export interface PlanLimits {
   coursesPerMonth: number;      // for FREE: total lifetime cap
   isUnlimited: boolean;
+  canInstantClassroom: boolean; // whether "Instant Classroom" (real-time) is available
 }
 
 export const PLAN_LIMITS: Record<AccountType, PlanLimits> = {
-  FREE:  { coursesPerMonth: 2,     isUnlimited: false },
-  PLUS:  { coursesPerMonth: 30,    isUnlimited: false },
-  ADMIN: { coursesPerMonth: 99999, isUnlimited: true  },
+  FREE:  { coursesPerMonth: 2,     isUnlimited: false, canInstantClassroom: false },
+  PLUS:  { coursesPerMonth: 30,    isUnlimited: false, canInstantClassroom: false },
+  ULTRA: { coursesPerMonth: 99999, isUnlimited: true,  canInstantClassroom: true  },
+  ADMIN: { coursesPerMonth: 99999, isUnlimited: true,  canInstantClassroom: true  },
 };
 
 export const LIFETIME_MAX_SLOTS = 100;
@@ -18,7 +20,7 @@ export const LIFETIME_MAX_SLOTS = 100;
 export const TOPUP_COURSES_AMOUNT = 10;
 
 export interface PricingPlan {
-  id: 'monthly' | 'yearly' | 'lifetime' | 'topup';
+  id: 'monthly' | 'yearly' | 'lifetime' | 'topup' | 'ultra_monthly' | 'ultra_yearly';
   label: string;
   price: number;          // in cents
   displayPrice: string;
@@ -26,6 +28,7 @@ export interface PricingPlan {
   stripePriceEnvKey: string;
   savings?: string;
   badge?: string;
+  tier?: 'plus' | 'ultra';
 }
 
 export const PRICING_PLANS: PricingPlan[] = [
@@ -36,6 +39,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     displayPrice: '$5',
     period: '/month',
     stripePriceEnvKey: 'STRIPE_PRICE_MONTHLY',
+    tier: 'plus',
   },
   {
     id: 'yearly',
@@ -46,6 +50,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     stripePriceEnvKey: 'STRIPE_PRICE_YEARLY',
     savings: 'Save $10',
     badge: 'Best Value',
+    tier: 'plus',
   },
   {
     id: 'lifetime',
@@ -55,6 +60,7 @@ export const PRICING_PLANS: PricingPlan[] = [
     period: 'one-time',
     stripePriceEnvKey: 'STRIPE_PRICE_LIFETIME',
     badge: 'Limited — 100 spots',
+    tier: 'plus',
   },
   {
     id: 'topup',
@@ -65,9 +71,30 @@ export const PRICING_PLANS: PricingPlan[] = [
     stripePriceEnvKey: 'STRIPE_PRICE_TOPUP',
     badge: '+10 courses',
   },
+  {
+    id: 'ultra_monthly',
+    label: 'Ultra Monthly',
+    price: 2000,
+    displayPrice: '$20',
+    period: '/month',
+    stripePriceEnvKey: 'STRIPE_PRICE_ULTRA_MONTHLY',
+    badge: 'Instant Classroom',
+    tier: 'ultra',
+  },
+  {
+    id: 'ultra_yearly',
+    label: 'Ultra Yearly',
+    price: 18000,
+    displayPrice: '$180',
+    period: '/year',
+    stripePriceEnvKey: 'STRIPE_PRICE_ULTRA_YEARLY',
+    savings: 'Save $60',
+    badge: 'Best Value',
+    tier: 'ultra',
+  },
 ];
 
-export function getStripePriceId(period: 'monthly' | 'yearly' | 'lifetime' | 'topup'): string {
+export function getStripePriceId(period: 'monthly' | 'yearly' | 'lifetime' | 'topup' | 'ultra_monthly' | 'ultra_yearly'): string {
   const plan = PRICING_PLANS.find((p) => p.id === period);
   if (!plan) throw new Error(`Unknown plan period: ${period}`);
   const priceId = process.env[plan.stripePriceEnvKey];
@@ -101,7 +128,7 @@ export function getCreditSummary(plan: UserPlan): {
   remaining: number | 'unlimited';
   resetsAt: string | null;
 } {
-  if (plan.account_type === 'ADMIN') {
+  if (plan.account_type === 'ADMIN' || plan.account_type === 'ULTRA') {
     return { used: plan.courses_generated_total, total: 'unlimited', remaining: 'unlimited', resetsAt: null };
   }
   if (plan.account_type === 'FREE') {

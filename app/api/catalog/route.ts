@@ -1,5 +1,7 @@
 import { type NextRequest } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
+import { createClient } from '@/utils/supabase/server';
 import { apiSuccess, apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 
@@ -7,7 +9,7 @@ const log = createLogger('CatalogAPI');
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const anonSupabase = createSupabaseClient(supabaseUrl, supabaseKey);
 
 export async function GET(req: NextRequest) {
   try {
@@ -16,23 +18,45 @@ export async function GET(req: NextRequest) {
     const topic = searchParams.get('topic');
     const age = searchParams.get('age');
     const query = searchParams.get('q');
-    const page = parseInt(searchParams.get('page') || '1');
-    const limit = parseInt(searchParams.get('limit') || '12');
-    const offset = (page - 1) * limit;
+    const filter = searchParams.get('filter') || 'public'; // 'public' | 'my'
+    const limit = Math.min(parseInt(searchParams.get('limit') || '12'), 50);
+    const offset = parseInt(searchParams.get('offset') || '0');
 
-    let supabaseQuery = supabase
+    // For "my courses" we need the authenticated user
+    let currentUserId: string | null = null;
+    if (filter === 'my') {
+      try {
+        const cookieStore = await cookies();
+        const supabase = createClient(cookieStore);
+        const { data: { user } } = await supabase.auth.getUser();
+        currentUserId = user?.id ?? null;
+      } catch { /* ignore */ }
+
+      if (!currentUserId) {
+        return apiSuccess({ courses: [], total: 0, offset, limit, hasMore: false });
+      }
+    }
+
+    let supabaseQuery = anonSupabase
       .from('courses')
       .select('*, course_tags(*)', { count: 'exact' });
 
-    // 1. Full-text search / Filter by title/description
+    // ── Filter by ownership or public visibility ──────────────────────────────
+    if (filter === 'my' && currentUserId) {
+      supabaseQuery = supabaseQuery.eq('user_id', currentUserId);
+    } else {
+      // Public: only courses from users marked is_public=true in user_plans
+      // We join via a sub-select using the user_id on courses
+      supabaseQuery = supabaseQuery.not('user_id', 'is', null);
+      // We'll filter by public users after fetching (Supabase anon client can't
+      // do server-side JOINs across RLS-protected tables from the catalog query)
+    }
+
+    // ── Full-text search ──────────────────────────────────────────────────────
     if (query) {
       supabaseQuery = supabaseQuery.or(`name.ilike.%${query}%,description.ilike.%${query}%`);
     }
 
-    // 2. Fetch all matching courses first (if we have many filters, this might need refinement)
-    // Supabase filtering on joined tables can be tricky for "has tag with value".
-    // A cleaner way is to use subqueries or filtered joins but let's stick to a robust approach.
-    
     const { data: courses, count, error } = await supabaseQuery
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
@@ -42,14 +66,33 @@ export async function GET(req: NextRequest) {
       return apiError('INTERNAL_ERROR', 500, 'Failed to fetch catalog');
     }
 
-    // 3. Post-filtering for tags (JS side for simplicity with age ranges)
     let filteredCourses = courses || [];
 
+    // ── For public filter: restrict to public users ───────────────────────────
+    if (filter !== 'my' && filteredCourses.length > 0) {
+      const userIds = [...new Set(filteredCourses.map((c) => c.user_id).filter(Boolean))];
+      if (userIds.length > 0) {
+        const { data: publicUsers } = await anonSupabase
+          .from('user_plans')
+          .select('user_id')
+          .eq('is_public', true)
+          .in('user_id', userIds);
+
+        const publicUserSet = new Set((publicUsers ?? []).map((u) => u.user_id));
+        filteredCourses = filteredCourses.filter(
+          (c) => !c.user_id || publicUserSet.has(c.user_id),
+        );
+      } else {
+        filteredCourses = [];
+      }
+    }
+
+    // ── Post-filter for subject / topic / age ─────────────────────────────────
     if (subject || topic || age) {
-      filteredCourses = filteredCourses.filter(course => {
+      filteredCourses = filteredCourses.filter((course) => {
         const matchesSubject = !subject || course.subject === subject;
         const matchesTopic = !topic || course.topic === topic;
-        
+
         let matchesAge = true;
         if (age) {
           const ageNum = parseInt(age);
@@ -57,24 +100,22 @@ export async function GET(req: NextRequest) {
             const [min, max] = course.age_range.split('-').map(Number);
             matchesAge = !isNaN(min) && !isNaN(max) && ageNum >= min && ageNum <= max;
           } else {
-            // Fallback to tags table if new columns missing
             const tags = course.course_tags || [];
-            matchesAge = tags.some((t: any) => {
+            matchesAge = tags.some((t: { tag_type: string; tag_value: string }) => {
               if (t.tag_type === 'age_range') {
-                 const [min, max] = t.tag_value.split('-').map(Number);
-                 return !isNaN(min) && !isNaN(max) && ageNum >= min && ageNum <= max;
+                const [min, max] = t.tag_value.split('-').map(Number);
+                return !isNaN(min) && !isNaN(max) && ageNum >= min && ageNum <= max;
               }
               return false;
             });
           }
         }
-        
+
         return matchesSubject && matchesTopic && matchesAge;
       });
     }
 
-    // Map to a clean response (hide internals)
-    const result = filteredCourses.map(c => ({
+    const result = filteredCourses.map((c) => ({
       id: c.id,
       title: c.name || c.title,
       headline: c.headline,
@@ -87,18 +128,19 @@ export async function GET(req: NextRequest) {
         age_range: c.age_range,
         topic: c.topic,
         sub_topic: c.sub_topic,
-        ...(c.course_tags || []).reduce((acc: any, t: any) => {
+        ...(c.course_tags || []).reduce((acc: Record<string, string>, t: { tag_type: string; tag_value: string }) => {
           acc[t.tag_type] = t.tag_value;
           return acc;
-        }, {})
-      }
+        }, {}),
+      },
     }));
 
     return apiSuccess({
       courses: result,
       total: count,
-      page,
-      limit
+      offset,
+      limit,
+      hasMore: result.length === limit,
     });
   } catch (error) {
     log.error('Catalog processing error:', error);
