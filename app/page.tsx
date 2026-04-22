@@ -69,6 +69,8 @@ import { setPendingIntroPayload } from '@/lib/classroom/pending-intro';
 import { NotificationBell } from '@/components/notifications/notification-bell';
 import { usePlanStore } from '@/lib/store/user-plan';
 import { PLAN_LIMITS } from '@/lib/stripe/plans';
+import { CreateClassroomModal } from '@/components/classroom/create-classroom-modal';
+import { ClassroomGenerationStatus, type ClassroomJobState } from '@/components/classroom/classroom-generation-status';
 
 const log = createLogger('Home');
 
@@ -105,6 +107,9 @@ function HomePage() {
   const [form, setForm] = useState<FormState>(initialFormState);
   const [enterClassroomLoading, setEnterClassroomLoading] = useState(false);
   const [createClassroomLoading, setCreateClassroomLoading] = useState(false);
+  const [classroomJob, setClassroomJob] = useState<ClassroomJobState | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const jobPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const plan = usePlanStore((s) => s.plan);
   const canInstantClassroom = plan
@@ -236,6 +241,35 @@ function HomePage() {
       if (user) usePlanStore.getState().refetch();
     }
   }, [user, authLoading]);
+
+  // Poll for classroom job completion when a background job is running
+  useEffect(() => {
+    if (!classroomJob || classroomJob.phase !== 'background') {
+      if (jobPollRef.current) { clearInterval(jobPollRef.current); jobPollRef.current = null; }
+      return;
+    }
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/notifications?unread_only=false&limit=20', { cache: 'no-store' });
+        if (!res.ok) return;
+        const json = await res.json();
+        const match = (json.notifications ?? []).find(
+          (n: { type: string; metadata?: { job_id?: string }; action_url?: string }) =>
+            n.type === 'classroom_ready' && n.metadata?.job_id === classroomJob.jobId,
+        );
+        if (match) {
+          setClassroomJob((prev) =>
+            prev ? { ...prev, phase: 'done', classroomUrl: match.action_url ?? '' } : prev,
+          );
+          if (jobPollRef.current) { clearInterval(jobPollRef.current); jobPollRef.current = null; }
+        }
+      } catch { /* ignore */ }
+    };
+    poll(); // immediate first check
+    jobPollRef.current = setInterval(poll, 10_000);
+    return () => { if (jobPollRef.current) clearInterval(jobPollRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [classroomJob?.phase, classroomJob?.jobId]);
 
   useEffect(() => {
     // Clear stale media store to prevent cross-course thumbnail contamination.
@@ -476,7 +510,11 @@ function HomePage() {
         throw new Error(err.message || 'Failed to queue classroom');
       }
 
-      toast.success('Classroom queued! We will notify you when it\'s ready.', { duration: 5000 });
+      const json = await res.json();
+      const jobId = json.jobId as string;
+
+      setClassroomJob({ jobId, requirement: form.requirement, phase: 'background' });
+      setShowCreateModal(true);
     } catch (err) {
       log.error('Create classroom error:', err);
       setError(err instanceof Error ? err.message : 'Failed to queue classroom generation');
@@ -513,7 +551,7 @@ function HomePage() {
     <div className="h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center overflow-hidden">
       <div className="flex-1 w-full overflow-y-auto px-4 pt-16 md:p-8 md:pt-16 flex flex-col items-center">
         {/* ═══ Top-right bar: Auth button (always visible) + Admin pill ═══ */}
-        <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <div className="fixed top-4 right-4 z-50 flex items-center gap-2 flex-wrap justify-end">
           {/* Hall of Fame & Catalog — same pill UI as Feedback */}
           <button type="button" onClick={() => router.push('/leaderboard')} className={navPillClassName}>
             <Trophy className="size-3.5" />
@@ -523,6 +561,12 @@ function HomePage() {
             <BookOpen className="size-3.5" />
             <span>Catalog</span>
           </button>
+
+          {/* Classroom generation status chip */}
+          <ClassroomGenerationStatus
+            job={classroomJob}
+            onReopen={() => setShowCreateModal(true)}
+          />
 
           {/* Auth button — always visible */}
           <FeedbackButton variant="pill" showLabel />
@@ -909,6 +953,13 @@ function HomePage() {
         open={showExhaustedModal}
         reason={exhaustedReason}
         onClose={() => setShowExhaustedModal(false)}
+      />
+
+      {/* Create Classroom generation modal */}
+      <CreateClassroomModal
+        open={showCreateModal}
+        requirement={classroomJob?.requirement ?? ''}
+        onClose={() => setShowCreateModal(false)}
       />
     </div>
   );
