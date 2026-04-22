@@ -283,8 +283,8 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
 
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
-  ttsProviderId: 'fish-tts' as TTSProviderId,
-  ttsVoice: 'us-male-narrative',
+  ttsProviderId: 'smallest-tts' as TTSProviderId,
+  ttsVoice: 'ethan',
   ttsSpeed: 1,
   asrProviderId: 'openai-whisper' as ASRProviderId,
   asrLanguage: 'auto',
