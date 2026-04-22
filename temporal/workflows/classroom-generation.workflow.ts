@@ -139,36 +139,35 @@ export async function classroomGenerationWorkflow(
     message = `Generated ${outlines.length} scene outlines`;
     totalScenes = outlines.length;
 
-    // ---- Step 2: Generate scenes one by one ----
+    // ---- Step 2: Generate all scenes in parallel ----
     step = 'generating_scenes';
     progress = 30;
-    message = `Generating scene 0/${outlines.length}`;
+    message = `Generating ${outlines.length} scenes in parallel`;
 
-    const scenes: Scene[] = [];
+    let completed = 0;
+    const sceneResults = await Promise.all(
+      outlines.map(async (outline) => {
+        const scene = await generateSingleSceneActivity({ outline, stage, agents, input });
+        if (scene) {
+          completed++;
+          scenesGenerated = completed;
+          progress = 30 + Math.floor((completed / Math.max(outlines.length, 1)) * 55);
+          message = `Generated ${completed}/${outlines.length} scenes`;
+        }
+        return scene;
+      }),
+    );
 
-    for (const [index, outline] of outlines.entries()) {
-      const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 55);
-      progress = Math.max(progressStart, 31);
-      message = `Generating scene ${index + 1}/${outlines.length}: ${outline.title}`;
-
-      const scene = await generateSingleSceneActivity({ outline, stage, agents, input });
-
-      if (scene) {
-        scenes.push(scene);
-        scenesGenerated = scenes.length;
-
-        // Incremental Supabase sync after each scene
-        await pushSceneToSupabaseActivity({ stage, scenes, courseDescription });
-      }
-
-      const progressEnd = 30 + Math.floor(((index + 1) / Math.max(outlines.length, 1)) * 55);
-      progress = Math.min(progressEnd, 85);
-      message = `Generated ${scenesGenerated}/${outlines.length} scenes`;
-    }
+    const scenes: Scene[] = sceneResults.filter((s): s is Scene => s !== null);
 
     if (scenes.length === 0) {
       throw new Error('No scenes were generated');
     }
+
+    // Single bulk Supabase sync after all scenes are ready
+    progress = 85;
+    message = 'Syncing scenes to cloud';
+    await pushSceneToSupabaseActivity({ stage, scenes, courseDescription });
 
     // ---- Step 3: Media generation (optional) ----
     let finalScenes: Scene[] = scenes;

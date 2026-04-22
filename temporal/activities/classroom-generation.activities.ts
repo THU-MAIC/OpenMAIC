@@ -470,15 +470,11 @@ export async function generateTTSActivity(params: GenerateTTSParams): Promise<Sc
     // Prefer uploading TTS audio to Supabase when configured; filesystem + /api route won't work
     // when the Worker is deployed separately from the web app.
     if (isSupabaseConfigured()) {
-      for (let i = 0; i < scenesCopy.length; i++) {
-        const updatedScene = await generateSceneTTSToSupabaseActivity({
-          scene: scenesCopy[i],
-          stageId,
-        });
-        scenesCopy[i] = updatedScene;
-      }
+      const updatedScenes = await Promise.all(
+        scenesCopy.map((scene) => generateSceneTTSToSupabaseActivity({ scene, stageId })),
+      );
       log.info('TTS generation/upload complete');
-      return scenesCopy;
+      return updatedScenes;
     }
 
     await generateTTSForClassroom(scenesCopy, stageId, baseUrl);
@@ -547,10 +543,9 @@ export async function generateTTSWithProviderActivity(
 
   if (!apiKey) {
     log.warn(`No API key for TTS provider "${providerId}" — falling back to default per-scene TTS`);
-    for (let i = 0; i < scenesCopy.length; i++) {
-      scenesCopy[i] = await generateSceneTTSToSupabaseActivity({ scene: scenesCopy[i], stageId });
-    }
-    return scenesCopy;
+    return Promise.all(
+      scenesCopy.map((scene) => generateSceneTTSToSupabaseActivity({ scene, stageId })),
+    );
   }
 
   const ttsBaseUrl = resolveTTSBaseUrl(providerId) || TTS_PROVIDERS[providerId]?.defaultBaseUrl;
@@ -560,54 +555,53 @@ export async function generateTTSWithProviderActivity(
   const supabase = createAdminClient();
   const supabasePublicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 
-  for (let i = 0; i < scenesCopy.length; i++) {
-    const scene = scenesCopy[i];
-    if (!scene.actions) continue;
+  return Promise.all(
+    scenesCopy.map(async (scene) => {
+      if (!scene.actions) return scene;
 
-    const updatedScene: Scene = JSON.parse(JSON.stringify(scene));
-    updatedScene.actions = splitLongSpeechActions(updatedScene.actions!, providerId);
+      const updatedScene: Scene = JSON.parse(JSON.stringify(scene));
+      updatedScene.actions = splitLongSpeechActions(updatedScene.actions!, providerId);
 
-    const speechActions = (updatedScene.actions ?? []).filter(
-      (a): a is SpeechAction => a.type === 'speech' && !!('text' in a && (a as SpeechAction).text),
-    );
+      const speechActions = (updatedScene.actions ?? []).filter(
+        (a): a is SpeechAction => a.type === 'speech' && !!('text' in a && (a as SpeechAction).text),
+      );
 
-    await Promise.all(
-      speechActions.map(async (speechAction) => {
-        const audioId = `tts_${speechAction.id}`;
-        try {
-          Context.current().heartbeat(`tts:${audioId}`);
-          const result = await generateTTS(
-            {
-              providerId,
-              modelId: DEFAULT_TTS_MODELS[providerId] || '',
-              apiKey,
-              baseUrl: ttsBaseUrl,
-              voice,
-              speed: speechAction.speed,
-            },
-            speechAction.text,
-          );
-          const storagePath = `${stageId}/audio/${audioId}.${format}`;
-          const { error } = await supabase.storage
-            .from('courses')
-            .upload(storagePath, result.audio, { contentType: mimeType, upsert: true });
-          if (error) {
-            log.warn(`TTS upload failed for ${audioId}:`, error.message);
-            return;
+      await Promise.all(
+        speechActions.map(async (speechAction) => {
+          const audioId = `tts_${speechAction.id}`;
+          try {
+            Context.current().heartbeat(`tts:${audioId}`);
+            const result = await generateTTS(
+              {
+                providerId,
+                modelId: DEFAULT_TTS_MODELS[providerId] || '',
+                apiKey,
+                baseUrl: ttsBaseUrl,
+                voice,
+                speed: speechAction.speed,
+              },
+              speechAction.text,
+            );
+            const storagePath = `${stageId}/audio/${audioId}.${format}`;
+            const { error } = await supabase.storage
+              .from('courses')
+              .upload(storagePath, result.audio, { contentType: mimeType, upsert: true });
+            if (error) {
+              log.warn(`TTS upload failed for ${audioId}:`, error.message);
+              return;
+            }
+            speechAction.audioId = audioId;
+            speechAction.audioUrl = `${supabasePublicUrl}/storage/v1/object/public/courses/${storagePath}`;
+            log.info(`TTS (${providerId}) uploaded: ${storagePath}`);
+          } catch (err) {
+            log.warn(`TTS generation failed for ${speechAction.id}:`, err);
           }
-          speechAction.audioId = audioId;
-          speechAction.audioUrl = `${supabasePublicUrl}/storage/v1/object/public/courses/${storagePath}`;
-          log.info(`TTS (${providerId}) uploaded: ${storagePath}`);
-        } catch (err) {
-          log.warn(`TTS generation failed for ${speechAction.id}:`, err);
-        }
-      }),
-    );
+        }),
+      );
 
-    scenesCopy[i] = updatedScene;
-  }
-
-  return scenesCopy;
+      return updatedScene;
+    }),
+  );
 }
 
 // ---------------------------------------------------------------------------
