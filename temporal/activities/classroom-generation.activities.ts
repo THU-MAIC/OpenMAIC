@@ -12,7 +12,7 @@ import { formatTeacherPersonaForPrompt } from '@/lib/generation/prompt-formatter
 import type { AICallFn, AgentInfo } from '@/lib/generation/pipeline-types';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { parseModelString } from '@/lib/ai/providers';
-import { resolveApiKey, resolveWebSearchApiKey } from '@/lib/server/provider-config';
+import { resolveApiKey, resolveWebSearchApiKey, resolveTTSApiKey, resolveTTSBaseUrl } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { searchWithExa, formatSearchResultsAsContext } from '@/lib/web-search/exa';
@@ -35,6 +35,12 @@ import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 import { resolveGenerationLanguage } from '@/lib/constants/generation';
 import type { GenerateClassroomInput } from '@/lib/server/classroom-generation';
+import { generateTTS } from '@/lib/audio/tts-providers';
+import { DEFAULT_TTS_VOICES, DEFAULT_TTS_MODELS, TTS_PROVIDERS } from '@/lib/audio/constants';
+import type { TTSProviderId } from '@/lib/audio/types';
+import type { SpeechAction } from '@/lib/types/action';
+import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { createAdminClient } from '@/utils/supabase/admin';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ClassroomGenerationActivity');
@@ -511,4 +517,194 @@ export async function persistClassroomActivity(params: PersistClassroomParams): 
     scenesCount: scenes.length,
     createdAt: persisted.createdAt,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Activity 7: Generate TTS with an explicit provider override (for queued jobs)
+// ---------------------------------------------------------------------------
+
+export interface GenerateTTSWithProviderParams {
+  scenes: Scene[];
+  stageId: string;
+  baseUrl: string;
+  ttsProviderId: string;
+}
+
+export async function generateTTSWithProviderActivity(
+  params: GenerateTTSWithProviderParams,
+): Promise<Scene[]> {
+  const { scenes, stageId, ttsProviderId } = params;
+
+  const scenesCopy: Scene[] = JSON.parse(JSON.stringify(scenes));
+
+  if (!isSupabaseConfigured()) {
+    log.warn('Supabase not configured — skipping TTS generation');
+    return scenesCopy;
+  }
+
+  const providerId = ttsProviderId as TTSProviderId;
+  const apiKey = resolveTTSApiKey(providerId);
+
+  if (!apiKey) {
+    log.warn(`No API key for TTS provider "${providerId}" — falling back to default per-scene TTS`);
+    for (let i = 0; i < scenesCopy.length; i++) {
+      scenesCopy[i] = await generateSceneTTSToSupabaseActivity({ scene: scenesCopy[i], stageId });
+    }
+    return scenesCopy;
+  }
+
+  const ttsBaseUrl = resolveTTSBaseUrl(providerId) || TTS_PROVIDERS[providerId]?.defaultBaseUrl;
+  const voice = DEFAULT_TTS_VOICES[providerId] || 'default';
+  const format = TTS_PROVIDERS[providerId]?.supportedFormats?.[0] || 'mp3';
+  const mimeType = format === 'mp3' ? 'audio/mpeg' : `audio/${format}`;
+  const supabase = createAdminClient();
+  const supabasePublicUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+
+  for (let i = 0; i < scenesCopy.length; i++) {
+    const scene = scenesCopy[i];
+    if (!scene.actions) continue;
+
+    const updatedScene: Scene = JSON.parse(JSON.stringify(scene));
+    updatedScene.actions = splitLongSpeechActions(updatedScene.actions!, providerId);
+
+    const speechActions = (updatedScene.actions ?? []).filter(
+      (a): a is SpeechAction => a.type === 'speech' && !!('text' in a && (a as SpeechAction).text),
+    );
+
+    await Promise.all(
+      speechActions.map(async (speechAction) => {
+        const audioId = `tts_${speechAction.id}`;
+        try {
+          Context.current().heartbeat(`tts:${audioId}`);
+          const result = await generateTTS(
+            {
+              providerId,
+              modelId: DEFAULT_TTS_MODELS[providerId] || '',
+              apiKey,
+              baseUrl: ttsBaseUrl,
+              voice,
+              speed: speechAction.speed,
+            },
+            speechAction.text,
+          );
+          const storagePath = `${stageId}/audio/${audioId}.${format}`;
+          const { error } = await supabase.storage
+            .from('courses')
+            .upload(storagePath, result.audio, { contentType: mimeType, upsert: true });
+          if (error) {
+            log.warn(`TTS upload failed for ${audioId}:`, error.message);
+            return;
+          }
+          speechAction.audioId = audioId;
+          speechAction.audioUrl = `${supabasePublicUrl}/storage/v1/object/public/courses/${storagePath}`;
+          log.info(`TTS (${providerId}) uploaded: ${storagePath}`);
+        } catch (err) {
+          log.warn(`TTS generation failed for ${speechAction.id}:`, err);
+        }
+      }),
+    );
+
+    scenesCopy[i] = updatedScene;
+  }
+
+  return scenesCopy;
+}
+
+// ---------------------------------------------------------------------------
+// Activity 8: Send completion notification (in-app + email)
+// ---------------------------------------------------------------------------
+
+export interface SendCompletionNotificationParams {
+  userId: string;
+  userEmail?: string;
+  jobId: string;
+  classroomId: string;
+  classroomUrl: string;
+  requirementSnippet: string;
+}
+
+export async function sendCompletionNotificationActivity(
+  params: SendCompletionNotificationParams,
+): Promise<void> {
+  const { userId, userEmail, jobId, classroomId, classroomUrl, requirementSnippet } = params;
+
+  try {
+    const admin = createAdminClient();
+
+    // 1. Update classroom_jobs record
+    await admin
+      .from('classroom_jobs')
+      .update({ status: 'succeeded', classroom_id: classroomId, classroom_url: classroomUrl })
+      .eq('temporal_id', jobId);
+
+    // 2. Insert in-app notification
+    await admin.from('notifications').insert({
+      user_id: userId,
+      type: 'classroom_ready',
+      title: 'Your classroom is ready!',
+      body: `"${requirementSnippet}" has been generated and is ready to explore.`,
+      action_url: classroomUrl,
+      metadata: { classroom_id: classroomId, job_id: jobId },
+    });
+
+    log.info(`Notification created for user ${userId}, classroom ${classroomId}`);
+
+    // 3. Send email if configured and email provided
+    if (userEmail && process.env.SENDGRID_API_KEY && process.env.SENDER_EMAIL) {
+      await sendEmailNotification({
+        to: userEmail,
+        subject: 'Your Slate classroom is ready!',
+        html: buildClassroomReadyEmail({ requirementSnippet, classroomUrl }),
+      });
+    }
+  } catch (err) {
+    // Non-fatal — classroom is still generated even if notification fails
+    log.warn('Failed to send completion notification:', err);
+  }
+}
+
+async function sendEmailNotification(params: {
+  to: string;
+  subject: string;
+  html: string;
+}): Promise<void> {
+  const { to, subject, html } = params;
+  const apiKey = process.env.SENDGRID_API_KEY!;
+  const from = process.env.SENDER_EMAIL!;
+
+  const res = await fetch('https://api.sendgrid.com/v3/mail/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      personalizations: [{ to: [{ email: to }] }],
+      from: { email: from },
+      subject,
+      content: [{ type: 'text/html', value: html }],
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`SendGrid API error ${res.status}: ${body}`);
+  }
+}
+
+function buildClassroomReadyEmail(params: {
+  requirementSnippet: string;
+  classroomUrl: string;
+}): string {
+  const { requirementSnippet, classroomUrl } = params;
+  return `
+    <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto;">
+      <h2 style="color: #073b4c;">Your classroom is ready! 🎓</h2>
+      <p>Your Slate classroom based on <strong>"${requirementSnippet}…"</strong> has been generated and is ready to explore.</p>
+      <a href="${classroomUrl}"
+         style="display:inline-block;margin-top:16px;padding:12px 24px;background:#ef476f;color:#fff;border-radius:8px;text-decoration:none;font-weight:bold;">
+        Enter Classroom
+      </a>
+      <p style="margin-top:24px;color:#666;font-size:13px;">
+        Powered by <strong>Slate Up</strong> — AI-powered interactive classrooms.
+      </p>
+    </div>
+  `;
 }
