@@ -20,12 +20,10 @@ import {
   Settings,
   CheckCircle2,
   XCircle,
-  FileText,
   Image as ImageIcon,
   Film,
   Search,
   Volume2,
-  Mic,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -36,9 +34,6 @@ import { cn } from '@/lib/utils';
 import { getProviderTypeLabel } from './utils';
 import { ProviderList } from './provider-list';
 import { ProviderConfigPanel } from './provider-config-panel';
-import { PDFSettings } from './pdf-settings';
-import { PDF_PROVIDERS } from '@/lib/pdf/constants';
-import type { PDFProviderId } from '@/lib/pdf/types';
 import { ImageSettings } from './image-settings';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import type { ImageProviderId } from '@/lib/media/types';
@@ -48,9 +43,6 @@ import type { VideoProviderId } from '@/lib/media/types';
 import { TTSSettings } from './tts-settings';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
-import { ASRSettings } from './asr-settings';
-import { ASR_PROVIDERS } from '@/lib/audio/constants';
-import type { ASRProviderId } from '@/lib/audio/types';
 import { WebSearchSettings } from './web-search-settings';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
@@ -132,15 +124,6 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
   return names[providerId];
 }
 
-function getASRProviderName(providerId: ASRProviderId, t: (key: string) => string): string {
-  const names: Record<ASRProviderId, string> = {
-    'openai-whisper': t('settings.providerOpenAIWhisper'),
-    'browser-native': t('settings.providerBrowserNative'),
-    'qwen-asr': t('settings.providerQwenASR'),
-  };
-  return names[providerId];
-}
-
 // ─── Image/Video provider name helpers ───
 const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   seedream: 'providerSeedream',
@@ -189,8 +172,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const providerId = useSettingsStore((state) => state.providerId);
   const _modelId = useSettingsStore((state) => state.modelId);
   const providersConfig = useSettingsStore((state) => state.providersConfig);
-  const pdfProviderId = useSettingsStore((state) => state.pdfProviderId);
-  const pdfProvidersConfig = useSettingsStore((state) => state.pdfProvidersConfig);
   const webSearchProviderId = useSettingsStore((state) => state.webSearchProviderId);
   const webSearchProvidersConfig = useSettingsStore((state) => state.webSearchProvidersConfig);
   const imageProviderId = useSettingsStore((state) => state.imageProviderId);
@@ -199,20 +180,14 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const videoProvidersConfig = useSettingsStore((state) => state.videoProvidersConfig);
   const ttsProviderId = useSettingsStore((state) => state.ttsProviderId);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
-  const asrProviderId = useSettingsStore((state) => state.asrProviderId);
-  const asrProvidersConfig = useSettingsStore((state) => state.asrProvidersConfig);
-
   // Store actions
   const setModel = useSettingsStore((state) => state.setModel);
   const setProviderConfig = useSettingsStore((state) => state.setProviderConfig);
   const setProvidersConfig = useSettingsStore((state) => state.setProvidersConfig);
   const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
-  const setASRProvider = useSettingsStore((state) => state.setASRProvider);
-
   // Navigation
   const [activeSection, setActiveSection] = useState<SettingsSection>('providers');
   const [selectedProviderId, setSelectedProviderId] = useState<ProviderId>(providerId);
-  const [selectedPdfProviderId, setSelectedPdfProviderId] = useState<PDFProviderId>(pdfProviderId);
   const [selectedWebSearchProviderId, setSelectedWebSearchProviderId] =
     useState<WebSearchProviderId>(webSearchProviderId);
   const [selectedImageProviderId, setSelectedImageProviderId] =
@@ -493,12 +468,10 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   // Sections that show a provider list column
   const _hasProviderList = [
     'providers',
-    'pdf',
     'web-search',
     'image',
     'video',
     'tts',
-    'asr',
   ].includes(activeSection);
 
   // Get header content based on section
@@ -540,27 +513,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
           );
         }
         return null;
-      case 'pdf': {
-        const pdfProvider = PDF_PROVIDERS[selectedPdfProviderId];
-        if (!pdfProvider) return null;
-        return (
-          <>
-            {pdfProvider.icon ? (
-              <img
-                src={pdfProvider.icon}
-                alt={pdfProvider.name}
-                className="w-8 h-8 rounded"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <Box className="h-8 w-8 text-muted-foreground" />
-            )}
-            <h2 className="text-lg font-semibold">{pdfProvider.name}</h2>
-          </>
-        );
-      }
       case 'web-search': {
         const wsProvider = WEB_SEARCH_PROVIDERS[selectedWebSearchProviderId];
         if (!wsProvider) return null;
@@ -648,26 +600,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
           </>
         );
       }
-      case 'asr': {
-        const asrIcon = ASR_PROVIDERS[asrProviderId]?.icon;
-        return (
-          <>
-            {asrIcon ? (
-              <img
-                src={asrIcon}
-                alt=""
-                className="w-8 h-8 rounded"
-                onError={(e) => {
-                  (e.target as HTMLImageElement).style.display = 'none';
-                }}
-              />
-            ) : (
-              <Mic className="h-6 w-6 text-muted-foreground" />
-            )}
-            <h2 className="text-lg font-semibold">{getASRProviderName(asrProviderId, t)}</h2>
-          </>
-        );
-      }
       default:
         return null;
     }
@@ -734,32 +666,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             </button>
 
             <button
-              onClick={() => setActiveSection('asr')}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
-                activeSection === 'asr'
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'hover:bg-muted',
-              )}
-            >
-              <Mic className="h-4 w-4 shrink-0" />
-              <span className="truncate">{t('settings.asrSettings')}</span>
-            </button>
-
-            <button
-              onClick={() => setActiveSection('pdf')}
-              className={cn(
-                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
-                activeSection === 'pdf'
-                  ? 'bg-primary/10 text-primary font-medium'
-                  : 'hover:bg-muted',
-              )}
-            >
-              <FileText className="h-4 w-4 shrink-0" />
-              <span className="truncate">{t('settings.pdfSettings')}</span>
-            </button>
-
-            <button
               onClick={() => setActiveSection('web-search')}
               className={cn(
                 'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
@@ -803,25 +709,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                 onSelect={handleProviderSelect}
                 onAddProvider={() => setShowAddProviderDialog(true)}
                 width={providerListWidth}
-              />
-              <div
-                onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
-              >
-                <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
-              </div>
-            </>
-          )}
-
-          {activeSection === 'pdf' && (
-            <>
-              <ProviderListColumn
-                providers={Object.values(PDF_PROVIDERS)}
-                configs={pdfProvidersConfig}
-                selectedId={selectedPdfProviderId}
-                onSelect={setSelectedPdfProviderId}
-                width={providerListWidth}
-                t={t}
               />
               <div
                 onMouseDown={(e) => handleResizeStart(e, 'providerList')}
@@ -991,9 +878,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                 />
               )}
 
-              {activeSection === 'pdf' && (
-                <PDFSettings selectedProviderId={selectedPdfProviderId} />
-              )}
               {activeSection === 'web-search' && (
                 <WebSearchSettings selectedProviderId={selectedWebSearchProviderId} />
               )}
@@ -1004,7 +888,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                 <VideoSettings selectedProviderId={selectedVideoProviderId} />
               )}
               {activeSection === 'tts' && <TTSSettings selectedProviderId={ttsProviderId} />}
-              {activeSection === 'asr' && <ASRSettings selectedProviderId={asrProviderId} />}
             </div>
 
             {/* Footer */}
