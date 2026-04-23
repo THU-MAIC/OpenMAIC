@@ -26,6 +26,7 @@ import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { generatePBLContent } from '@/lib/pbl/generate-pbl';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
+import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator';
 import { postProcessInteractiveHtml } from './interactive-post-processor';
 import { parseActionsFromStructuredOutput } from './action-parser';
 import { parseJsonResponse } from './json-repair';
@@ -890,8 +891,7 @@ async function generatePBLSceneContent(
         projectDescription: pblConfig.projectDescription,
         targetSkills: pblConfig.targetSkills,
         issueCount: pblConfig.issueCount,
-        languageDirective:
-          languageDirective || 'Teach in the language that matches the user requirement.',
+        languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
       },
       languageModel,
       {

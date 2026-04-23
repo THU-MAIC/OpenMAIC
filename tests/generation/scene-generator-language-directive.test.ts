@@ -188,6 +188,36 @@ describe('scene-generator language directive threading (issue #472)', () => {
     });
   });
 
+  describe('widget generation (interactive scenes)', () => {
+    it('threads languageDirective into widget content AND widget-teacher-actions prompts', async () => {
+      const captured: string[] = [];
+      // 1st call: widget HTML content; 2nd call: widget-teacher-actions JSON
+      const aiCall: AICallFn = async (_system, user) => {
+        captured.push(user);
+        return captured.length === 1
+          ? '<!DOCTYPE html><html><body>widget</body></html>'
+          : JSON.stringify({ actions: [] });
+      };
+
+      await generateSceneContent(
+        baseOutline({
+          type: 'interactive',
+          widgetType: 'simulation',
+          widgetOutline: { concept: 'Projectile', keyVariables: ['angle'] },
+        }),
+        aiCall,
+        { languageDirective: DIRECTIVE },
+      );
+
+      expect(captured).toHaveLength(2);
+      for (const user of captured) {
+        expect(user).toContain(DIRECTIVE);
+        expect(user).not.toContain('{{languageDirective}}');
+        expect(user).not.toContain('{{language}}');
+      }
+    });
+  });
+
   describe('buildSceneFromOutline (high-level pipeline)', () => {
     it('threads languageDirective through content AND actions for a slide', async () => {
       const captured: string[] = [];
