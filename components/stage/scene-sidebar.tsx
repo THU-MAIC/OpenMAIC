@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation';
 import {
   PanelLeftClose,
   PieChart,
-  Cpu,
   MousePointer2,
   BookOpen,
   Globe,
@@ -93,7 +92,6 @@ export function SceneSidebar({
       slide: BookOpen,
       quiz: PieChart,
       interactive: MousePointer2,
-      pbl: Cpu,
       lesson_plan: BookOpen,
     };
     return icons[type] || BookOpen;
@@ -261,41 +259,6 @@ export function SceneSidebar({
                           <div className="flex-1 bg-emerald-100/40 dark:bg-emerald-800/20 rounded flex items-center justify-center border border-emerald-200/40 dark:border-emerald-700/20">
                             <Globe className="w-4 h-4 text-emerald-300/80 dark:text-emerald-600/50" />
                           </div>
-                        </div>
-                      </div>
-                    ) : scene.type === 'pbl' ? (
-                      /* PBL: kanban board with 3 columns */
-                      <div className="w-full h-full bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/20 p-1.5 flex flex-col">
-                        <div className="flex items-center gap-1 mb-1.5">
-                          <div className="w-1.5 h-1.5 rounded bg-blue-300 dark:bg-blue-600" />
-                          <div className="h-1 w-8 bg-blue-200/60 dark:bg-blue-700/30 rounded-full" />
-                        </div>
-                        <div className="flex-1 flex gap-1 overflow-hidden">
-                          {[0, 1, 2].map((col) => (
-                            <div
-                              key={col}
-                              className="flex-1 bg-white/50 dark:bg-white/5 rounded p-0.5 flex flex-col gap-0.5"
-                            >
-                              <div
-                                className={cn(
-                                  'h-0.5 w-3 rounded-full mb-0.5',
-                                  col === 0
-                                    ? 'bg-blue-300/70'
-                                    : col === 1
-                                      ? 'bg-amber-300/70'
-                                      : 'bg-green-300/70',
-                                )}
-                              />
-                              {Array.from({
-                                length: col === 0 ? 3 : col === 1 ? 2 : 1,
-                              }).map((_, i) => (
-                                <div
-                                  key={i}
-                                  className="h-2 w-full bg-blue-100/60 dark:bg-blue-800/20 rounded border border-blue-200/30 dark:border-blue-700/20"
-                                />
-                              ))}
-                            </div>
-                          ))}
                         </div>
                       </div>
                     ) : (

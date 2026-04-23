@@ -13,7 +13,6 @@ import type {
   SlideContent,
   QuizContent,
   InteractiveContent,
-  PBLContent,
   LessonPlanContent,
 } from '@/lib/types/stage';
 
@@ -93,21 +92,6 @@ export function createDefaultInteractiveContent(): InteractiveContent {
 }
 
 /**
- * Create default PBLContent
- */
-export function createDefaultPBLContent(): PBLContent {
-  return {
-    type: 'pbl',
-    projectConfig: {
-      projectInfo: { title: '', description: '' },
-      agents: [],
-      issueboard: { agent_ids: [], issues: [], current_issue_id: null },
-      chat: { messages: [] },
-    },
-  };
-}
-
-/**
  * Create default LessonPlanContent
  */
 export function createDefaultLessonPlanContent(): LessonPlanContent {
@@ -130,8 +114,6 @@ export function createDefaultContent(type: SceneType): SceneContent {
       return createDefaultQuizContent();
     case 'interactive':
       return createDefaultInteractiveContent();
-    case 'pbl':
-      return createDefaultPBLContent();
     case 'lesson_plan':
       return createDefaultLessonPlanContent();
     default:

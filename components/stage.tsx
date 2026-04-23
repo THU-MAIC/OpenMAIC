@@ -525,8 +525,7 @@ export function Stage({
               const currentScene = allScenes[idx];
               if (
                 currentScene.type === 'quiz' ||
-                currentScene.type === 'interactive' ||
-                currentScene.type === 'pbl'
+                currentScene.type === 'interactive'
               ) {
                 return;
               }
@@ -537,8 +536,7 @@ export function Stage({
               const currentScene = allScenes[idx];
               if (
                 currentScene.type === 'quiz' ||
-                currentScene.type === 'interactive' ||
-                currentScene.type === 'pbl'
+                currentScene.type === 'interactive'
               ) {
                 return;
               }

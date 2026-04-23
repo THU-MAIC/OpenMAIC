@@ -807,29 +807,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             </>
           )}
 
-          {activeSection === 'asr' && (
-            <>
-              <ProviderListColumn
-                providers={Object.values(ASR_PROVIDERS).map((p) => ({
-                  id: p.id,
-                  name: getASRProviderName(p.id, t),
-                  icon: p.icon,
-                }))}
-                configs={asrProvidersConfig}
-                selectedId={asrProviderId}
-                onSelect={setASRProvider}
-                width={providerListWidth}
-                t={t}
-              />
-              <div
-                onMouseDown={(e) => handleResizeStart(e, 'providerList')}
-                className="flex-shrink-0 w-[5px] cursor-col-resize group flex justify-center"
-              >
-                <div className="w-px h-full bg-border group-hover:bg-primary/50 transition-colors" />
-              </div>
-            </>
-          )}
-
           {/* Right - Configuration Panel */}
           <div className="flex-1 flex flex-col overflow-hidden min-w-0">
             {/* Header */}

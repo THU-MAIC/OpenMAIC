@@ -546,7 +546,10 @@ export function Roundtable({
   }, [playbackSpeed, setPlaybackSpeed]);
 
   // Agent registry removed — getAgentConfig returns null; avatar/name come from Participant instead.
-  const getAgentConfig = (_id: string) => null;
+  const getAgentConfig = (
+    _id: string,
+  ): { name?: string; avatar?: string; color?: string; role?: string; persona?: string } | null =>
+    null;
 
   const presentationDiscussionParticipant = discussionRequest
     ? discussionRequest.agentId === teacherParticipant?.id

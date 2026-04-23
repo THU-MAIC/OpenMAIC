@@ -29,7 +29,6 @@ import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { storePdfBlob } from '@/lib/utils/image-storage';
 import type { UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
@@ -55,14 +54,12 @@ const LANGUAGE_STORAGE_KEY = 'generationLanguage';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 
 interface FormState {
-  pdfFile: File | null;
   requirement: string;
   language: string;
   webSearch: boolean;
 }
 
 const initialFormState: FormState = {
-  pdfFile: null,
   requirement: '',
   language: 'en-US',
   webSearch: false,
@@ -262,36 +259,12 @@ function HomePage() {
         webSearch: form.webSearch || undefined,
       };
 
-      let pdfStorageKey: string | undefined;
-      let pdfFileName: string | undefined;
-      let pdfProviderId: string | undefined;
-      let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
-
-      if (form.pdfFile) {
-        pdfStorageKey = await storePdfBlob(form.pdfFile);
-        pdfFileName = form.pdfFile.name;
-
-        const settings = useSettingsStore.getState();
-        pdfProviderId = settings.pdfProviderId;
-        const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
-        if (providerCfg) {
-          pdfProviderConfig = {
-            apiKey: providerCfg.apiKey,
-            baseUrl: providerCfg.baseUrl,
-          };
-        }
-      }
-
       const sessionState = {
         sessionId: nanoid(),
         requirements,
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
-        pdfStorageKey,
-        pdfFileName,
-        pdfProviderId,
-        pdfProviderConfig,
         sceneOutlines: null,
         currentStep: 'generating' as const,
       };
@@ -501,9 +474,6 @@ function HomePage() {
                     setSettingsSection(section);
                     setSettingsOpen(true);
                   }}
-                  pdfFile={form.pdfFile}
-                  onPdfFileChange={(f) => updateForm('pdfFile', f)}
-                  onPdfError={setError}
                 />
               </div>
 

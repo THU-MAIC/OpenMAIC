@@ -3,7 +3,6 @@ import { execSync } from 'child_process';
 
 const nextConfig: NextConfig = {
   output: process.env.VERCEL ? undefined : 'standalone',
-  transpilePackages: ['mathml2omml', 'pptxgenjs'],
   serverExternalPackages: [],
   experimental: {
     proxyClientMaxBodySize: '200mb',

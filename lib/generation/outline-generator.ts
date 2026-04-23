@@ -173,11 +173,5 @@ export function applyOutlineFallbacks(
     );
     return { ...outline, type: 'slide' };
   }
-  if (outline.type === 'pbl' && (!outline.pblConfig || !hasLanguageModel)) {
-    log.warn(
-      `PBL outline "${outline.title}" missing pblConfig or languageModel, falling back to slide`,
-    );
-    return { ...outline, type: 'slide' };
-  }
   return outline;
 }
