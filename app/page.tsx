@@ -1076,6 +1076,13 @@ function ClassroomCard({
           </div>
         ) : null}
 
+        {classroom.interactiveMode && (
+          <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-cyan-500/85 dark:bg-cyan-500/80 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm shadow-sm">
+            <Atom className="size-3" />
+            {t('classroom.deepInteractive')}
+          </span>
+        )}
+
         {/* Delete — top-right, only on hover */}
         <AnimatePresence>
           {!confirmingDelete && (
@@ -1146,12 +1153,6 @@ function ClassroomCard({
         <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
           {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
         </span>
-        {classroom.interactiveMode && (
-          <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-cyan-100 dark:bg-cyan-900/30 px-2 py-0.5 text-[11px] font-medium text-cyan-600 dark:text-cyan-400">
-            <Atom className="size-3" />
-            {t('classroom.deepInteractive')}
-          </span>
-        )}
         {editing ? (
           <div className="flex-1 min-w-0" onClick={(e) => e.stopPropagation()}>
             <input
