@@ -1012,6 +1012,15 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
+              // Always upgrade away from browser-native TTS if a server provider is available
+              if (state.ttsProviderId === 'browser-native-tts' && !autoTtsProvider) {
+                const serverTtsIds = Object.keys(data.tts) as TTSProviderId[];
+                if (serverTtsIds.length > 0) {
+                  autoTtsProvider = serverTtsIds[0];
+                  autoTtsVoice = DEFAULT_TTS_VOICES[autoTtsProvider] || 'default';
+                }
+              }
+
               // LLM auto-select: only on true first load (no provider selected yet)
               let autoProviderId: ProviderId | undefined;
               let autoModelId: string | undefined;
