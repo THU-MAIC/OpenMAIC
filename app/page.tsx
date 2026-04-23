@@ -677,7 +677,6 @@ function HomePage() {
                     ref={searchButtonRef}
                     type="button"
                     aria-label={t('classroom.searchAriaLabel')}
-                    aria-expanded={false}
                     onClick={() => {
                       setSearchOpen(true);
                       if (!recentOpen) {
@@ -732,7 +731,7 @@ function HomePage() {
                         }}
                         placeholder={t('classroom.searchPlaceholder')}
                         aria-label={t('classroom.searchAriaLabel')}
-                        className="h-7 text-[12px]"
+                        className="h-7"
                       />
                       {searchQuery && (
                         <InputGroupButton
@@ -776,7 +775,7 @@ function HomePage() {
                 transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
                 className="w-full overflow-hidden"
               >
-                {filteredClassrooms.length === 0 ? (
+                {searchQuery.trim() && filteredClassrooms.length === 0 ? (
                   <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
                     {t('classroom.searchEmpty')}
                   </div>
