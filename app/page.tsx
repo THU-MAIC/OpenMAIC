@@ -28,11 +28,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { createLogger } from '@/lib/logger';
 import { Button } from '@/components/ui/button';
-import {
-  InputGroup,
-  InputGroupInput,
-  InputGroupButton,
-} from '@/components/ui/input-group';
+import { InputGroup, InputGroupInput, InputGroupButton } from '@/components/ui/input-group';
 import { Textarea as UITextarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
@@ -721,9 +717,7 @@ function HomePage() {
                               setSearchQuery('');
                             } else {
                               setSearchOpen(false);
-                              requestAnimationFrame(() =>
-                                searchButtonRef.current?.focus(),
-                              );
+                              requestAnimationFrame(() => searchButtonRef.current?.focus());
                             }
                           }
                         }}
