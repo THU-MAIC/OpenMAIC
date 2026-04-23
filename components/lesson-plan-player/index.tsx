@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { ChevronLeft, ChevronRight, Volume2, Loader2 } from 'lucide-react';
+import { nanoid } from 'nanoid';
 import type { Stage, Scene, LessonPlanContent, CEFRLevel } from '@/lib/types/stage';
+import { useSettingsStore } from '@/lib/store/settings';
 import { CardDispatch } from './card-dispatch';
 import { TeacherChat } from './teacher-chat';
 
@@ -33,38 +35,82 @@ function getCardGroundingId(card: LessonPlanContent['cards'][number]): string | 
   return undefined;
 }
 
-function useTTS(phrase: string | undefined, language = 'lt-LT') {
+function useTTS(phrase: string | undefined) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const cache = useRef<Record<string, string>>({});
 
+  const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
+  const ttsVoice = useSettingsStore((s) => s.ttsVoice);
+  const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
+  const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
+
   useEffect(() => {
     setAudioUrl(null);
-    if (!phrase) return;
-    if (cache.current[phrase]) {
-      setAudioUrl(cache.current[phrase]);
+    if (!phrase || ttsProviderId === 'browser-native-tts') return;
+
+    const cacheKey = `${ttsProviderId}:${ttsVoice}:${phrase}`;
+    if (cache.current[cacheKey]) {
+      setAudioUrl(cache.current[cacheKey]);
       return;
     }
+
     let cancelled = false;
     setLoading(true);
+    const audioId = nanoid();
+    const providerConfig = ttsProvidersConfig[ttsProviderId as keyof typeof ttsProvidersConfig] as
+      | { apiKey?: string; baseUrl?: string; modelId?: string }
+      | undefined;
+
     fetch('/api/generate/tts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: phrase, language }),
+      body: JSON.stringify({
+        text: phrase,
+        audioId,
+        ttsProviderId,
+        ttsVoice,
+        ttsSpeed,
+        ttsModelId: providerConfig?.modelId,
+        ttsApiKey: providerConfig?.apiKey,
+        ttsBaseUrl: providerConfig?.baseUrl,
+      }),
     })
-      .then((r) => (r.ok ? r.blob() : null))
-      .then((blob) => {
-        if (cancelled || !blob) return;
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data: { audioId: string; base64: string; format: string } | null) => {
+        if (cancelled || !data?.base64) return;
+        const mimeType = data.format === 'mp3' ? 'audio/mpeg' : `audio/${data.format}`;
+        const binary = atob(data.base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        const blob = new Blob([bytes], { type: mimeType });
         const url = URL.createObjectURL(blob);
-        cache.current[phrase] = url;
+        cache.current[cacheKey] = url;
         setAudioUrl(url);
       })
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [phrase, language]);
+  }, [phrase, ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig]);
 
-  return { audioUrl, loading };
+  const play = useCallback(() => {
+    if (!phrase) return;
+    if (ttsProviderId === 'browser-native-tts') {
+      const utter = new SpeechSynthesisUtterance(phrase);
+      if (ttsVoice && ttsVoice !== 'default') {
+        const voices = speechSynthesis.getVoices();
+        const match = voices.find((v) => v.name === ttsVoice);
+        if (match) utter.voice = match;
+      }
+      speechSynthesis.speak(utter);
+    } else if (audioUrl) {
+      new Audio(audioUrl).play().catch(() => {});
+    }
+  }, [phrase, ttsProviderId, ttsVoice, audioUrl]);
+
+  const canPlay = ttsProviderId === 'browser-native-tts' ? !!phrase : !!audioUrl;
+
+  return { play, loading, canPlay };
 }
 
 export function LessonPlanPlayer({ stage, scene }: LessonPlanPlayerProps) {
@@ -82,12 +128,7 @@ export function LessonPlanPlayer({ stage, scene }: LessonPlanPlayerProps) {
   const grounding = gId ? groundingMap[gId] : undefined;
   const imageUrl = grounding?.imageUrl;
 
-  const { audioUrl, loading: ttsLoading } = useTTS(phrase, stage.language ?? 'lt-LT');
-
-  const playAudio = () => {
-    if (!audioUrl) return;
-    new Audio(audioUrl).play().catch(() => {});
-  };
+  const { play: playAudio, loading: ttsLoading, canPlay } = useTTS(phrase);
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
@@ -151,7 +192,7 @@ export function LessonPlanPlayer({ stage, scene }: LessonPlanPlayerProps) {
                 <div className="flex justify-end mb-3">
                   <button
                     onClick={playAudio}
-                    disabled={!audioUrl || ttsLoading}
+                    disabled={!canPlay || ttsLoading}
                     className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500 hover:text-blue-500 dark:hover:text-blue-400 disabled:opacity-40 disabled:pointer-events-none transition-colors"
                   >
                     {ttsLoading ? (
