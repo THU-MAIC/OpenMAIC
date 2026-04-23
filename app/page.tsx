@@ -1077,13 +1077,20 @@ function ClassroomCard({
         ) : null}
 
         {classroom.interactiveMode && (
-          <span
-            title={t('classroom.deepInteractive')}
-            aria-label={t('classroom.deepInteractive')}
-            className="absolute top-2 left-2 inline-flex items-center justify-center size-5 rounded-full bg-white/70 dark:bg-slate-900/60 text-cyan-600 dark:text-cyan-300 backdrop-blur-sm shadow-sm ring-1 ring-cyan-500/30"
-          >
-            <Atom className="size-3" />
-          </span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                aria-label={t('classroom.deepInteractive')}
+                onClick={(e) => e.stopPropagation()}
+                className="absolute top-2 left-2 inline-flex items-center justify-center size-5 rounded-full bg-white/70 dark:bg-slate-900/60 text-cyan-600 dark:text-cyan-300 backdrop-blur-sm shadow-sm ring-1 ring-cyan-500/30 z-10"
+              >
+                <Atom className="size-3" />
+              </span>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={4} className="text-xs">
+              {t('classroom.deepInteractive')}
+            </TooltipContent>
+          </Tooltip>
         )}
 
         {/* Delete — top-right, only on hover */}
