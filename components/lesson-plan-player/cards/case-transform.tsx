@@ -10,8 +10,8 @@ export function CaseTransformCard({ card }: { card: CaseTransformCard }) {
     <div className="flex flex-col gap-4">
       <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5">
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Source</p>
-        <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">{card.source.lithuanian}</p>
-        <p className="text-sm text-gray-500 dark:text-gray-400">{card.source.english}</p>
+        <p className="text-lg font-semibold text-gray-900 dark:text-gray-100">{card.source?.lithuanian}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400">{card.source?.english}</p>
       </div>
       <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-4">
         <p className="text-sm text-amber-700 dark:text-amber-400">{card.instruction}</p>

@@ -19,8 +19,8 @@ export function DialogSnippetCard({ card }: { card: DialogSnippetCard }) {
                   : 'bg-blue-100 dark:bg-blue-900/30 rounded-tr-sm'
               }`}
             >
-              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{turn.lithuanian}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{turn.english}</p>
+              <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{turn?.lithuanian}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{turn?.english}</p>
             </div>
           </div>
         ))}

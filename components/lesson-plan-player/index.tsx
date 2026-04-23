@@ -21,10 +21,10 @@ const CEFR_COLORS: Record<string, string> = {
 };
 
 function getCardPhrase(card: LessonPlanContent['cards'][number]): string | undefined {
-  if ('phrase' in card) return card.phrase.lithuanian;
-  if ('target' in card) return card.target.lithuanian;
-  if ('word' in card) return card.word.lithuanian;
-  if ('source' in card && 'lithuanian' in card.source) return card.source.lithuanian;
+  if ('phrase' in card) return card.phrase?.lithuanian ?? '';
+  if ('target' in card) return card.target?.lithuanian ?? '';
+  if ('word' in card) return card.word?.lithuanian ?? '';
+  if ('source' in card && card.source && 'lithuanian' in card.source) return card.source.lithuanian;
   return undefined;
 }
 

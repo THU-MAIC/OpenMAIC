@@ -11,8 +11,8 @@ export function GrammarPatternCard({ card }: { card: GrammarPatternCard }) {
       <div className="flex flex-col gap-2">
         {(card.examples ?? []).map((ex, i) => (
           <div key={i} className="flex items-baseline gap-3 px-4 py-3 rounded-lg bg-gray-50 dark:bg-gray-800">
-            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">{ex.lithuanian}</span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">— {ex.english}</span>
+            <span className="text-base font-semibold text-gray-900 dark:text-gray-100">{ex?.lithuanian}</span>
+            <span className="text-sm text-gray-500 dark:text-gray-400">— {ex?.english}</span>
           </div>
         ))}
       </div>
