@@ -1077,9 +1077,12 @@ function ClassroomCard({
         ) : null}
 
         {classroom.interactiveMode && (
-          <span className="absolute top-2 left-2 inline-flex items-center gap-1 rounded-full bg-cyan-500/85 dark:bg-cyan-500/80 px-2 py-0.5 text-[11px] font-medium text-white backdrop-blur-sm shadow-sm">
+          <span
+            title={t('classroom.deepInteractive')}
+            aria-label={t('classroom.deepInteractive')}
+            className="absolute top-2 left-2 inline-flex items-center justify-center size-5 rounded-full bg-white/70 dark:bg-slate-900/60 text-cyan-600 dark:text-cyan-300 backdrop-blur-sm shadow-sm ring-1 ring-cyan-500/30"
+          >
             <Atom className="size-3" />
-            {t('classroom.deepInteractive')}
           </span>
         )}
 
