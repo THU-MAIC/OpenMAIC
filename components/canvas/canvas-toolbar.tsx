@@ -7,6 +7,7 @@ import {
   Play,
   Pause,
   PencilLine,
+  Image as ImageIcon,
   LayoutList,
   MessageSquare,
   Volume1,
@@ -35,6 +36,8 @@ export interface CanvasToolbarProps {
   readonly onNextSlide: () => void;
   readonly onPlayPause: () => void;
   readonly onWhiteboardClose: () => void;
+  readonly canPreviewImages?: boolean;
+  readonly onPreviewImages?: () => void;
   readonly showStopDiscussion?: boolean;
   readonly onStopDiscussion?: () => void;
   readonly isPresenting?: boolean;
@@ -94,6 +97,8 @@ export function CanvasToolbar({
   onNextSlide,
   onPlayPause,
   onWhiteboardClose,
+  canPreviewImages,
+  onPreviewImages,
   showStopDiscussion,
   onStopDiscussion,
   isPresenting,
@@ -374,25 +379,57 @@ export function CanvasToolbar({
           )}
 
           {/* Whiteboard */}
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              onWhiteboardClose();
-            }}
-            className={cn(
-              ctrlBtn,
-              'w-6 h-6',
-              whiteboardOpen
-                ? 'text-violet-600 dark:text-violet-400'
-                : 'text-gray-500 dark:text-gray-400',
-            )}
-            title={whiteboardOpen ? t('whiteboard.minimize') : t('whiteboard.open')}
-          >
-            <PencilLine className="w-3.5 h-3.5" />
-            {!whiteboardOpen && whiteboardElementCount > 0 && (
-              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-violet-500 dark:bg-violet-400 rounded-full" />
-            )}
-          </button>
+          <TooltipProvider delayDuration={0}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onWhiteboardClose();
+                  }}
+                  className={cn(
+                    ctrlBtn,
+                    'w-6 h-6',
+                    whiteboardOpen
+                      ? 'text-violet-600 dark:text-violet-400'
+                      : 'text-gray-500 dark:text-gray-400',
+                  )}
+                  aria-label={whiteboardOpen ? t('whiteboard.minimize') : t('whiteboard.open')}
+                >
+                  <PencilLine className="w-3.5 h-3.5" />
+                  {!whiteboardOpen && whiteboardElementCount > 0 && (
+                    <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-violet-500 dark:bg-violet-400 rounded-full" />
+                  )}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {whiteboardOpen ? t('whiteboard.minimize') : t('whiteboard.open')}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {/* Image preview */}
+          {canPreviewImages && onPreviewImages && (
+            <TooltipProvider delayDuration={0}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onPreviewImages();
+                    }}
+                    className={cn(ctrlBtn, 'w-6 h-6 text-gray-500 dark:text-gray-400')}
+                    aria-label={t('stage.previewImages')}
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="text-xs">
+                  {t('stage.previewImages')}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
         </div>
       </div>
 
