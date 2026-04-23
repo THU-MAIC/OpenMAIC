@@ -27,7 +27,6 @@ export const enum ElementTypes {
   IMAGE = 'image',
   SHAPE = 'shape',
   LINE = 'line',
-  CHART = 'chart',
   TABLE = 'table',
   LATEX = 'latex',
   VIDEO = 'video',
@@ -436,52 +435,6 @@ export interface PPTLineElement extends Omit<PPTBaseElement, 'height' | 'rotate'
   cubic?: [[number, number], [number, number]];
 }
 
-export type ChartType = 'bar' | 'column' | 'line' | 'pie' | 'ring' | 'area' | 'radar' | 'scatter';
-
-export interface ChartOptions {
-  lineSmooth?: boolean;
-  stack?: boolean;
-}
-
-export interface ChartData {
-  labels: string[];
-  legends: string[];
-  series: number[][];
-}
-
-/**
- * 图表元素
- *
- * type: 元素类型（chart）
- *
- * fill?: 填充色
- *
- * chartType: 图表基础类型（bar/line/pie），所有图表类型都是由这三种基本类型衍生而来
- *
- * data: 图表数据
- *
- * options: 扩展选项
- *
- * outline?: 边框
- *
- * themeColors: 主题色
- *
- * textColor?: 坐标和文字颜色
- *
- * lineColor?: 网格颜色
- */
-export interface PPTChartElement extends PPTBaseElement {
-  type: 'chart';
-  fill?: string;
-  chartType: ChartType;
-  data: ChartData;
-  options?: ChartOptions;
-  outline?: PPTElementOutline;
-  themeColors: string[];
-  textColor?: string;
-  lineColor?: string;
-}
-
 export type TextAlign = 'left' | 'center' | 'right' | 'justify';
 /**
  * 表格单元格样式
@@ -668,7 +621,6 @@ export type PPTElement =
   | PPTImageElement
   | PPTShapeElement
   | PPTLineElement
-  | PPTChartElement
   | PPTTableElement
   | PPTLatexElement
   | PPTVideoElement

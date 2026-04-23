@@ -27,12 +27,6 @@ function semanticPart(e: PPTElement): unknown {
         style: e.style,
         points: e.points,
       };
-    case 'chart':
-      return {
-        chartType: e.chartType,
-        data: e.data,
-        themeColors: e.themeColors,
-      };
     case 'table':
       return {
         data: e.data.map((row) => row.map((c) => c.text)),

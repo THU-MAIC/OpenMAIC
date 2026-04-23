@@ -5,7 +5,6 @@ import { BaseImageElement } from '../element/ImageElement/BaseImageElement';
 import { BaseTextElement } from '../element/TextElement/BaseTextElement';
 import { BaseShapeElement } from '../element/ShapeElement/BaseShapeElement';
 import { BaseLineElement } from '../element/LineElement/BaseLineElement';
-import { BaseChartElement } from '../element/ChartElement/BaseChartElement';
 import { BaseLatexElement } from '../element/LatexElement/BaseLatexElement';
 import { BaseTableElement } from '../element/TableElement/BaseTableElement';
 import { BaseVideoElement } from '../element/VideoElement/BaseVideoElement';
@@ -28,10 +27,8 @@ export function ThumbnailElement({ elementInfo, elementIndex }: ThumbnailElement
       [ElementTypes.TEXT]: BaseTextElement,
       [ElementTypes.SHAPE]: BaseShapeElement,
       [ElementTypes.LINE]: BaseLineElement,
-      [ElementTypes.CHART]: BaseChartElement,
       [ElementTypes.LATEX]: BaseLatexElement,
       [ElementTypes.TABLE]: BaseTableElement,
-      // TODO: Add other element types
       [ElementTypes.VIDEO]: BaseVideoElement,
       // [ElementTypes.AUDIO]: BaseAudioElement,
     };

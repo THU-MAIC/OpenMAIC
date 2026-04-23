@@ -4,7 +4,6 @@ import { ImageElement } from '../../components/element/ImageElement';
 import { TextElement } from '../../components/element/TextElement';
 import { LineElement } from '../../components/element/LineElement';
 import { ShapeElement } from '../../components/element/ShapeElement';
-import { ChartElement } from '../../components/element/ChartElement';
 import { LatexElement } from '../../components/element/LatexElement';
 import { TableElement } from '../../components/element/TableElement';
 import { VideoElement } from '../../components/element/VideoElement';
@@ -58,7 +57,6 @@ export function EditableElement({
       [ElementTypes.TEXT]: TextElement,
       [ElementTypes.SHAPE]: ShapeElement,
       [ElementTypes.LINE]: LineElement,
-      [ElementTypes.CHART]: ChartElement,
       [ElementTypes.LATEX]: LatexElement,
       [ElementTypes.TABLE]: TableElement,
       [ElementTypes.VIDEO]: VideoElement,

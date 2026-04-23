@@ -1,6 +1,16 @@
 import type { TTSProviderId } from '@/lib/audio/types';
-import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
+
+/** Minimal agent config needed for voice resolution */
+export interface AgentVoiceConfig {
+  id: string;
+  role: string;
+  voiceConfig?: {
+    providerId: TTSProviderId;
+    modelId?: string;
+    voiceId: string;
+  };
+}
 
 export interface ResolvedVoice {
   providerId: TTSProviderId;
@@ -14,7 +24,7 @@ export interface ResolvedVoice {
  * 2. Otherwise, use the first available provider + deterministic voice by index
  */
 export function resolveAgentVoice(
-  agent: AgentConfig,
+  agent: AgentVoiceConfig,
   agentIndex: number,
   availableProviders: ProviderWithVoices[],
 ): ResolvedVoice {

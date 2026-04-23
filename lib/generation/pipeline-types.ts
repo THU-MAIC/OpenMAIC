@@ -32,7 +32,7 @@ export interface SceneGenerationContext {
  */
 export interface GeneratedSlideData {
   elements: Array<{
-    type: 'text' | 'image' | 'video' | 'shape' | 'chart' | 'latex' | 'line';
+    type: 'text' | 'image' | 'video' | 'shape' | 'latex' | 'line';
     left: number;
     top: number;
     width: number;

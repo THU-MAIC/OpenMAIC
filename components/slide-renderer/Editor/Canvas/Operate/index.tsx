@@ -7,7 +7,6 @@ import {
   type PPTVideoElement,
   type PPTAudioElement,
   type PPTShapeElement,
-  type PPTChartElement,
   type Slide,
   type PPTAnimation,
 } from '@/lib/types/slides';
@@ -30,7 +29,7 @@ interface OperateProps {
     e: React.MouseEvent,
     element: Exclude<
       PPTElement,
-      PPTChartElement | PPTLineElement | PPTVideoElement | PPTAudioElement
+      PPTLineElement | PPTVideoElement | PPTAudioElement
     >,
   ) => void;
   readonly scaleElement: (
@@ -108,7 +107,6 @@ export function Operate({
       [ElementTypes.SHAPE]: ShapeElementOperate,
       [ElementTypes.LINE]: LineElementOperate,
       [ElementTypes.TABLE]: TableElementOperate,
-      [ElementTypes.CHART]: CommonElementOperate,
       [ElementTypes.LATEX]: CommonElementOperate,
       [ElementTypes.VIDEO]: CommonElementOperate,
       [ElementTypes.AUDIO]: CommonElementOperate,

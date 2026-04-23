@@ -4,7 +4,6 @@ import type {
   PPTLineElement,
   PPTVideoElement,
   PPTAudioElement,
-  PPTChartElement,
 } from '@/lib/types/slides';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
@@ -44,7 +43,7 @@ export function useRotateElement(
       e: React.MouseEvent | React.TouchEvent,
       element: Exclude<
         PPTElement,
-        PPTChartElement | PPTLineElement | PPTVideoElement | PPTAudioElement
+        PPTLineElement | PPTVideoElement | PPTAudioElement
       >,
     ) => {
       const native = e.nativeEvent;

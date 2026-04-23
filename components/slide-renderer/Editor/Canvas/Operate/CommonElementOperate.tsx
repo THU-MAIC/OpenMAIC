@@ -4,7 +4,6 @@ import type {
   PPTVideoElement,
   PPTLatexElement,
   PPTAudioElement,
-  PPTChartElement,
 } from '@/lib/types/slides';
 import type { OperateResizeHandlers } from '@/lib/types/edit';
 import { useCommonOperate } from '../hooks/useCommonOperate';
@@ -12,7 +11,7 @@ import { RotateHandler } from './RotateHandler';
 import { ResizeHandler } from './ResizeHandler';
 import { BorderLine } from './BorderLine';
 
-type PPTElement = PPTVideoElement | PPTLatexElement | PPTAudioElement | PPTChartElement;
+type PPTElement = PPTVideoElement | PPTLatexElement | PPTAudioElement;
 
 interface CommonElementOperateProps {
   readonly elementInfo: PPTElement;

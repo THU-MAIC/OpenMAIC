@@ -10,7 +10,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -25,7 +24,6 @@ import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/genera
 import { nanoid } from 'nanoid';
 import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
-import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
 import { fetchWithRetry } from '@/lib/utils/fetch-retry';
 import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
@@ -50,19 +48,6 @@ function GenerationPreviewContent() {
   const [webSearchSources, setWebSearchSources] = useState<Array<{ title: string; url: string }>>(
     [],
   );
-  const [showAgentReveal, setShowAgentReveal] = useState(false);
-  const [generatedAgents, setGeneratedAgents] = useState<
-    Array<{
-      id: string;
-      name: string;
-      role: string;
-      persona: string;
-      avatar: string;
-      color: string;
-      priority: number;
-    }>
-  >([]);
-  const agentRevealResolveRef = useRef<(() => void) | null>(null);
 
   // Compute active steps based on session state
   const activeSteps = getActiveSteps(session);
@@ -371,149 +356,25 @@ function GenerationPreviewContent() {
         updatedAt: Date.now(),
       };
 
-      if (settings.agentMode === 'auto') {
-        const agentStepIdx = activeSteps.findIndex((s) => s.id === 'agent-generation');
-        if (agentStepIdx >= 0) setCurrentStepIndex(agentStepIdx);
-
-        try {
-          const allAvatars = [
-            {
-              path: '/avatars/teacher.png',
-              desc: 'Male teacher with glasses, holding a book, green background',
-            },
-            {
-              path: '/avatars/teacher-2.png',
-              desc: 'Female teacher with long dark hair, blue traditional outfit, gentle expression',
-            },
-            {
-              path: '/avatars/assist.png',
-              desc: 'Young female assistant with glasses, pink background, friendly smile',
-            },
-            {
-              path: '/avatars/assist-2.png',
-              desc: 'Young female in orange top and purple overalls, cheerful and approachable',
-            },
-            {
-              path: '/avatars/clown.png',
-              desc: 'Energetic girl with glasses pointing up, green shirt, lively and fun',
-            },
-            {
-              path: '/avatars/clown-2.png',
-              desc: 'Playful girl with curly hair doing rock gesture, blue shirt, humorous vibe',
-            },
-            {
-              path: '/avatars/curious.png',
-              desc: 'Surprised boy with glasses, hand on cheek, curious expression',
-            },
-            {
-              path: '/avatars/curious-2.png',
-              desc: 'Boy with backpack holding a book and question mark bubble, inquisitive',
-            },
-            {
-              path: '/avatars/note-taker.png',
-              desc: 'Studious boy with glasses, blue shirt, calm and organized',
-            },
-            {
-              path: '/avatars/note-taker-2.png',
-              desc: 'Active boy with yellow backpack waving, blue outfit, enthusiastic learner',
-            },
-            {
-              path: '/avatars/thinker.png',
-              desc: 'Thoughtful girl with hand on chin, purple background, contemplative',
-            },
-            {
-              path: '/avatars/thinker-2.png',
-              desc: 'Girl reading a book intently, long dark hair, intellectual and focused',
-            },
-          ];
-
-          const getAvailableVoicesForGeneration = () => {
-            const providers = getAvailableProvidersWithVoices(settings.ttsProvidersConfig);
-            return providers.flatMap((p) =>
-              p.voices.map((v) => ({
-                providerId: p.providerId,
-                voiceId: v.id,
-                voiceName: v.name,
-              })),
-            );
-          };
-
-          // No outlines yet — agent generation uses only stage name + description
-          const agentResp = await fetchWithRetry('/api/generate/agent-profiles', {
-            method: 'POST',
-            headers: getApiHeaders(),
-            body: JSON.stringify({
-              stageInfo: { name: stage.name, description: stage.description },
-              language: currentSession.requirements.language || 'en-US',
-              availableAvatars: allAvatars.map((a) => a.path),
-              avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
-              availableVoices: getAvailableVoicesForGeneration(),
-            }),
-            signal,
-          });
-
-          if (!agentResp.ok) throw new Error('Agent generation failed');
-          const agentData = await agentResp.json();
-          if (!agentData.success) throw new Error(agentData.error || 'Agent generation failed');
-
-          // Save to IndexedDB and registry
-          const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-          const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
-          settings.setSelectedAgentIds(savedIds);
-          stage.agentIds = savedIds;
-
-          // Show card-reveal modal, continue generation once all cards are revealed
-          setGeneratedAgents(agentData.agents);
-          setShowAgentReveal(true);
-          await new Promise<void>((resolve) => {
-            agentRevealResolveRef.current = resolve;
-          });
-
-          agents = savedIds
-            .map((id) => useAgentRegistry.getState().getAgent(id))
-            .filter(Boolean)
-            .map((a) => ({
-              id: a!.id,
-              name: a!.name,
-              role: a!.role,
-              persona: a!.persona,
-            }));
-        } catch (err: unknown) {
-          log.warn('[Generation] Agent generation failed, falling back to presets:', err);
-          const registry = useAgentRegistry.getState();
-          const fallbackIds = settings.selectedAgentIds.filter((id) => {
-            const a = registry.getAgent(id);
-            return a && !a.isGenerated;
-          });
-          agents = fallbackIds
-            .map((id) => registry.getAgent(id))
-            .filter(Boolean)
-            .map((a) => ({
-              id: a!.id,
-              name: a!.name,
-              role: a!.role,
-              persona: a!.persona,
-            }));
-          stage.agentIds = fallbackIds;
-        }
-      } else {
-        // Preset mode — use selected agents (include persona)
-        // Filter out stale generated agent IDs that may linger in settings
-        const registry = useAgentRegistry.getState();
-        const presetAgentIds = settings.selectedAgentIds.filter((id) => {
-          const a = registry.getAgent(id);
-          return a && !a.isGenerated;
-        });
-        agents = presetAgentIds
-          .map((id) => registry.getAgent(id))
-          .filter(Boolean)
-          .map((a) => ({
-            id: a!.id,
-            name: a!.name,
-            role: a!.role,
-            persona: a!.persona,
-          }));
-        stage.agentIds = presetAgentIds;
+      // Agent generation removed — always use preset agent IDs.
+      // The orchestration registry has been removed; default agents are built from well-known IDs.
+      {
+        const defaultAgentMeta: Record<string, { role: string; persona: string }> = {
+          'default-1': { role: 'teacher', persona: 'A knowledgeable and engaging teacher.' },
+          'default-2': { role: 'student', persona: 'A curious and enthusiastic student.' },
+          'default-3': { role: 'student', persona: 'A playful and humorous class clown.' },
+        };
+        const selectedIds =
+          settings.selectedAgentIds?.length > 0
+            ? settings.selectedAgentIds
+            : ['default-1', 'default-2', 'default-3'];
+        agents = selectedIds.map((id) => ({
+          id,
+          name: id,
+          role: defaultAgentMeta[id]?.role ?? 'student',
+          persona: defaultAgentMeta[id]?.persona,
+        }));
+        stage.agentIds = selectedIds;
       }
 
       // ── Generate outlines (with agent personas for teacher context) ──
@@ -1046,31 +907,12 @@ function GenerationPreviewContent() {
               >
                 <Sparkles className="size-3 animate-pulse" />
                 {t('generation.aiWorking')}
-                {generatedAgents.length > 0 && !showAgentReveal && (
-                  <button
-                    onClick={() => setShowAgentReveal(true)}
-                    className="ml-2 flex items-center gap-1.5 rounded-full border border-purple-300/30 bg-purple-500/10 px-3 py-1 text-xs font-medium normal-case tracking-normal text-purple-400 transition-colors hover:bg-purple-500/20 hover:text-purple-300"
-                  >
-                    <Bot className="size-3" />
-                    {t('generation.viewAgents')}
-                  </button>
-                )}
               </motion.div>
             ) : null}
           </AnimatePresence>
         </div>
       </div>
 
-      {/* Agent Reveal Modal */}
-      <AgentRevealModal
-        agents={generatedAgents}
-        open={showAgentReveal}
-        onClose={() => setShowAgentReveal(false)}
-        onAllRevealed={() => {
-          agentRevealResolveRef.current?.();
-          agentRevealResolveRef.current = null;
-        }}
-      />
     </div>
   );
 }

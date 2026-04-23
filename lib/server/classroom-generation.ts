@@ -14,7 +14,6 @@ import {
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { formatTeacherPersonaForPrompt } from '@/lib/generation/prompt-formatters';
-import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { resolveModel } from '@/lib/server/resolve-model';
@@ -31,6 +30,13 @@ import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage, LessonPlanContent, ExerciseCard } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 import { buildPrompt, PROMPT_IDS } from '@/lib/generation/prompts';
+
+/** Default agents used when agentMode is 'default' */
+const DEFAULT_AGENTS: AgentInfo[] = [
+  { id: 'default-1', name: 'Teacher', role: 'teacher', persona: 'A knowledgeable and engaging teacher.' },
+  { id: 'default-2', name: 'Student A', role: 'student', persona: 'A curious and enthusiastic student.' },
+  { id: 'default-3', name: 'Student B', role: 'student', persona: 'A thoughtful and analytical student.' },
+];
 
 const log = createLogger('Classroom');
 
@@ -554,11 +560,11 @@ export async function generateClassroom(
       log.info(`Generated ${agents.length} agent profiles`);
     } catch (e) {
       log.warn('Agent profile generation failed, falling back to defaults:', e);
-      agents = getDefaultAgents();
+      agents = DEFAULT_AGENTS;
       agentMode = 'default';
     }
   } else {
-    agents = getDefaultAgents();
+    agents = DEFAULT_AGENTS;
   }
   const teacherContext = formatTeacherPersonaForPrompt(agents);
 
