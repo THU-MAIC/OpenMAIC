@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "تبديل المشهد",
     "confirmSwitchMessage": "يوجد موضوع قيد التقدم حاليًا. سيؤدي تبديل المشهد إلى إنهاء الموضوع الحالي. هل أنت متأكد؟",
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
+    "courseComplete": "اكتملت الدورة",
     "fullscreen": "ملء الشاشة",
     "exitFullscreen": "الخروج من ملء الشاشة"
+  },
+  "classroomComplete": {
+    "title": "اكتملت الدورة",
+    "trailLabels": {
+      "slide": "صفحات",
+      "quiz": "اختبارات",
+      "interactive": "تفاعلات",
+      "pbl": "مشاريع"
+    },
+    "quizScoreLabel": "{correct} / {total} صحيحة",
+    "encouragement": {
+      "high": "ممتاز — أبدعت!",
+      "mid": "عمل جيد — استمر.",
+      "low": "بداية جيدة — راجع وحاول مجددًا."
+    }
   },
   "whiteboard": {
     "title": "السبورة التفاعلية",

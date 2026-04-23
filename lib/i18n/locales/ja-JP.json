@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "シーンの切り替え",
     "confirmSwitchMessage": "現在トピックが進行中です。シーンを切り替えると、現在のトピックが終了します。よろしいですか？",
     "generatingNextPage": "シーンを生成中です。お待ちください...",
+    "courseComplete": "コース完了",
     "fullscreen": "全画面表示",
     "exitFullscreen": "全画面表示を終了"
+  },
+  "classroomComplete": {
+    "title": "コース完了",
+    "trailLabels": {
+      "slide": "ページ",
+      "quiz": "クイズ",
+      "interactive": "インタラクティブ",
+      "pbl": "プロジェクト"
+    },
+    "quizScoreLabel": "{correct} / {total} 正解",
+    "encouragement": {
+      "high": "素晴らしい！完璧です。",
+      "mid": "いい感じ、その調子。",
+      "low": "始まりはこれから。復習しましょう。"
+    }
   },
   "whiteboard": {
     "title": "インタラクティブホワイトボード",

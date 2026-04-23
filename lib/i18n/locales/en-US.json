@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "Switch Scene",
     "confirmSwitchMessage": "A topic is currently in progress. Switching scenes will end the current topic. Are you sure?",
     "generatingNextPage": "Scene is being generated, please wait...",
+    "courseComplete": "Course complete",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit Fullscreen"
+  },
+  "classroomComplete": {
+    "title": "Course complete",
+    "trailLabels": {
+      "slide": "pages",
+      "quiz": "quizzes",
+      "interactive": "interactives",
+      "pbl": "projects"
+    },
+    "quizScoreLabel": "{correct} / {total} correct",
+    "encouragement": {
+      "high": "Outstanding — you nailed it.",
+      "mid": "Solid work — keep it up.",
+      "low": "A good start — review and try again."
+    }
   },
   "whiteboard": {
     "title": "Interactive Whiteboard",

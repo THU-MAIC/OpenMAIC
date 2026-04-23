@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "切换页面",
     "confirmSwitchMessage": "当前话题正在进行中，切换页面将结束当前话题。确定要切换吗？",
     "generatingNextPage": "场景正在生成，请稍候...",
+    "courseComplete": "课程完成",
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏"
+  },
+  "classroomComplete": {
+    "title": "课程完成",
+    "trailLabels": {
+      "slide": "页",
+      "quiz": "小测",
+      "interactive": "互动",
+      "pbl": "项目"
+    },
+    "quizScoreLabel": "答对 {correct} / {total}",
+    "encouragement": {
+      "high": "太棒了，完美发挥！",
+      "mid": "表现不错，继续加油！",
+      "low": "万事开头难，回去再练练吧。"
+    }
   },
   "whiteboard": {
     "title": "互动白板",
