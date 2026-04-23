@@ -27,7 +27,7 @@ export function FillBlankCard({ card }: { card: FillBlankCard }) {
         <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{card.sentence.english}</p>
       </div>
       <div className="flex flex-wrap justify-center gap-2">
-        {card.options.map((opt, i) => (
+        {(card.options ?? []).map((opt, i) => (
           <button
             key={i}
             onClick={() => setSelected(opt)}

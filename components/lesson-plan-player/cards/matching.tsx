@@ -4,8 +4,8 @@ import { useState, useCallback } from 'react';
 import type { MatchingCard } from '@/lib/types/stage';
 
 export function MatchingCard({ card }: { card: MatchingCard }) {
-  const lefts = card.pairs.map((p) => p.left);
-  const rights = [...card.pairs.map((p) => p.right)].sort(() => Math.random() - 0.5);
+  const lefts = (card.pairs ?? []).map((p) => p.left);
+  const rights = [...(card.pairs ?? []).map((p) => p.right)].sort(() => Math.random() - 0.5);
 
   const [selectedLeft, setSelectedLeft] = useState<number | null>(null);
   const [matched, setMatched] = useState<Record<number, number>>({});

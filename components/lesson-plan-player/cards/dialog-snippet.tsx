@@ -7,7 +7,7 @@ export function DialogSnippetCard({ card }: { card: DialogSnippetCard }) {
     <div className="flex flex-col gap-3">
       <p className="text-sm text-gray-500 dark:text-gray-400 italic">{card.primer}</p>
       <div className="flex flex-col gap-2">
-        {card.turns.map((turn, i) => (
+        {(card.turns ?? []).map((turn, i) => (
           <div
             key={i}
             className={`flex gap-3 ${i % 2 === 0 ? 'justify-start' : 'justify-end'}`}
