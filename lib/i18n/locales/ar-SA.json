@@ -134,7 +134,10 @@
     "confirmSwitchMessage": "يوجد موضوع قيد التقدم حاليًا. سيؤدي تبديل المشهد إلى إنهاء الموضوع الحالي. هل أنت متأكد؟",
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
     "fullscreen": "ملء الشاشة",
-    "exitFullscreen": "الخروج من ملء الشاشة"
+    "exitFullscreen": "الخروج من ملء الشاشة",
+    "previewImages": "معاينة الصور",
+    "imagePreviewTitle": "معاينة الصورة",
+    "imagePreviewCount": "{{current}} / {{total}}"
   },
   "whiteboard": {
     "title": "السبورة التفاعلية",

@@ -134,7 +134,10 @@
     "confirmSwitchMessage": "В данный момент идёт обсуждение. Переключение сцены завершит текущую тему. Продолжить?",
     "generatingNextPage": "Сцена генерируется, пожалуйста подождите...",
     "fullscreen": "Полный экран",
-    "exitFullscreen": "Свернуть"
+    "exitFullscreen": "Свернуть",
+    "previewImages": "Просмотр изображений",
+    "imagePreviewTitle": "Предпросмотр изображения",
+    "imagePreviewCount": "{{current}} / {{total}}"
   },
   "whiteboard": {
     "title": "Интерактивная доска",

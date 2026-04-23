@@ -134,7 +134,10 @@
     "confirmSwitchMessage": "当前话题正在进行中，切换页面将结束当前话题。确定要切换吗？",
     "generatingNextPage": "场景正在生成，请稍候...",
     "fullscreen": "全屏",
-    "exitFullscreen": "退出全屏"
+    "exitFullscreen": "退出全屏",
+    "previewImages": "查看大图",
+    "imagePreviewTitle": "图片预览",
+    "imagePreviewCount": "{{current}} / {{total}}"
   },
   "whiteboard": {
     "title": "互动白板",

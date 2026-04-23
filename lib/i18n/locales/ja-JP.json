@@ -134,7 +134,10 @@
     "confirmSwitchMessage": "現在トピックが進行中です。シーンを切り替えると、現在のトピックが終了します。よろしいですか？",
     "generatingNextPage": "シーンを生成中です。お待ちください...",
     "fullscreen": "全画面表示",
-    "exitFullscreen": "全画面表示を終了"
+    "exitFullscreen": "全画面表示を終了",
+    "previewImages": "画像を拡大表示",
+    "imagePreviewTitle": "画像プレビュー",
+    "imagePreviewCount": "{{current}} / {{total}}"
   },
   "whiteboard": {
     "title": "インタラクティブホワイトボード",

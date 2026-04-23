@@ -7,6 +7,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SceneSidebar } from './stage/scene-sidebar';
+import { ImagePreviewDialog } from './stage/image-preview-dialog';
 import { Header } from './header';
 import { CanvasArea } from '@/components/canvas/canvas-area';
 import { Roundtable } from '@/components/roundtable';
@@ -18,6 +19,7 @@ import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
+import type { PPTImageElement } from '@/lib/types/slides';
 import { cn } from '@/lib/utils';
 // Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
@@ -52,6 +54,13 @@ export function Stage({
   const failedOutlines = useStageStore.use.failedOutlines();
 
   const currentScene = getCurrentScene();
+  const currentSlideImages = useMemo<PPTImageElement[]>(() => {
+    if (currentScene?.type !== 'slide' || currentScene.content.type !== 'slide') return [];
+
+    return currentScene.content.canvas.elements.filter(
+      (element): element is PPTImageElement => element.type === 'image',
+    );
+  }, [currentScene]);
 
   // Layout state from settings store (persisted via localStorage)
   const sidebarCollapsed = useSettingsStore((s) => s.sidebarCollapsed);
@@ -102,6 +111,8 @@ export function Stage({
   const [isPresenting, setIsPresenting] = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
+  const [imagePreviewOpen, setImagePreviewOpen] = useState(false);
+  const [selectedPreviewImageId, setSelectedPreviewImageId] = useState<string | null>(null);
 
   // Whiteboard state (from canvas store so AI tools can open it)
   const whiteboardOpen = useCanvasStore.use.whiteboardOpen();
@@ -775,6 +786,30 @@ export function Stage({
     setWhiteboardOpen(!whiteboardOpen);
   };
 
+  const handleOpenImagePreview = useCallback(() => {
+    if (currentSlideImages.length === 0) return;
+    setSelectedPreviewImageId((currentId) =>
+      currentId && currentSlideImages.some((image) => image.id === currentId)
+        ? currentId
+        : currentSlideImages[0].id,
+    );
+    setImagePreviewOpen(true);
+  }, [currentSlideImages]);
+
+  useEffect(() => {
+    if (currentSlideImages.length === 0) {
+      setImagePreviewOpen(false);
+      setSelectedPreviewImageId(null);
+      return;
+    }
+
+    setSelectedPreviewImageId((currentId) =>
+      currentId && currentSlideImages.some((image) => image.id === currentId)
+        ? currentId
+        : currentSlideImages[0].id,
+    );
+  }, [currentSlideImages]);
+
   const isPresentationShortcutTarget = useCallback((target: EventTarget | null) => {
     if (!(target instanceof HTMLElement)) return false;
 
@@ -973,6 +1008,8 @@ export function Stage({
             onNextSlide={handleNextScene}
             onPlayPause={handlePlayPause}
             onWhiteboardClose={handleWhiteboardToggle}
+            canPreviewImages={currentSlideImages.length > 0}
+            onPreviewImages={handleOpenImagePreview}
             isPresenting={isPresenting}
             onTogglePresentation={togglePresentation}
             showStopDiscussion={
@@ -1125,6 +1162,8 @@ export function Stage({
               onPrevSlide={handlePreviousScene}
               onNextSlide={handleNextScene}
               onWhiteboardClose={handleWhiteboardToggle}
+              canPreviewImages={currentSlideImages.length > 0}
+              onPreviewImages={handleOpenImagePreview}
               isPresenting={isPresenting}
               controlsVisible={controlsVisible}
               onTogglePresentation={togglePresentation}
@@ -1188,6 +1227,15 @@ export function Stage({
         onStopSession={doSessionCleanup}
         onSegmentSealed={discussionTTS.handleSegmentSealed}
         shouldHoldAfterReveal={discussionTTS.shouldHold}
+      />
+
+      <ImagePreviewDialog
+        open={imagePreviewOpen}
+        onOpenChange={setImagePreviewOpen}
+        images={currentSlideImages}
+        selectedImageId={selectedPreviewImageId}
+        onSelectedImageChange={setSelectedPreviewImageId}
+        container={isPresenting ? stageRef.current : undefined}
       />
 
       {/* Scene switch confirmation dialog */}
