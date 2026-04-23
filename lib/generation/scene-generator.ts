@@ -13,15 +13,12 @@ import type {
   GeneratedSlideContent,
   GeneratedQuizContent,
   GeneratedInteractiveContent,
-  GeneratedPBLContent,
   ScientificModel,
   PdfImage,
   ImageMapping,
 } from '@/lib/types/generation';
-import type { LanguageModel } from 'ai';
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
-import { generatePBLContent } from '@/lib/pbl/generate-pbl';
 import { buildPrompt, PROMPT_IDS } from './prompts';
 import { postProcessInteractiveHtml } from './interactive-post-processor';
 import { parseActionsFromStructuredOutput } from './action-parser';
@@ -151,7 +148,7 @@ export async function generateSceneContent(
   aiCall: AICallFn,
   assignedImages?: PdfImage[],
   imageMapping?: ImageMapping,
-  languageModel?: LanguageModel,
+  _languageModel?: unknown,
   visionEnabled?: boolean,
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
@@ -159,7 +156,6 @@ export async function generateSceneContent(
   | GeneratedSlideContent
   | GeneratedQuizContent
   | GeneratedInteractiveContent
-  | GeneratedPBLContent
   | null
 > {
   // If outline is interactive but missing interactiveConfig, fall back to slide
@@ -194,8 +190,6 @@ export async function generateSceneContent(
       return generateQuizContent(outline, aiCall);
     case 'interactive':
       return generateInteractiveContent(outline, aiCall, outline.language);
-    case 'pbl':
-      return generatePBLSceneContent(outline, languageModel);
     default:
       return null;
   }
@@ -820,52 +814,6 @@ async function generateInteractiveContent(
 }
 
 /**
- * Generate PBL project content
- * Uses the agentic loop from lib/pbl/generate-pbl.ts
- */
-async function generatePBLSceneContent(
-  outline: SceneOutline,
-  languageModel?: LanguageModel,
-): Promise<GeneratedPBLContent | null> {
-  if (!languageModel) {
-    log.error('LanguageModel required for PBL generation');
-    return null;
-  }
-
-  const pblConfig = outline.pblConfig;
-  if (!pblConfig) {
-    log.error(`PBL outline "${outline.title}" missing pblConfig`);
-    return null;
-  }
-
-  log.info(`Generating PBL content for: ${outline.title}`);
-
-  try {
-    const projectConfig = await generatePBLContent(
-      {
-        projectTopic: pblConfig.projectTopic,
-        projectDescription: pblConfig.projectDescription,
-        targetSkills: pblConfig.targetSkills,
-        issueCount: pblConfig.issueCount,
-        language: pblConfig.language,
-      },
-      languageModel,
-      {
-        onProgress: (msg) => log.info(`${msg}`),
-      },
-    );
-    log.info(
-      `PBL generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,
-    );
-
-    return { projectConfig };
-  } catch (error) {
-    log.error(`Failed:`, error);
-    return null;
-  }
-}
-
-/**
  * Extract HTML document from AI response.
  * Tries to find <!DOCTYPE html>...</html> first, then falls back to code block extraction.
  */
@@ -910,8 +858,7 @@ export async function generateSceneActions(
   content:
     | GeneratedSlideContent
     | GeneratedQuizContent
-    | GeneratedInteractiveContent
-    | GeneratedPBLContent,
+    | GeneratedInteractiveContent,
   aiCall: AICallFn,
   ctx?: SceneGenerationContext,
   agents?: AgentInfo[],
@@ -1004,48 +951,7 @@ export async function generateSceneActions(
     return generateDefaultInteractiveActions(outline);
   }
 
-  if (outline.type === 'pbl' && 'projectConfig' in content) {
-    const pblConfig = outline.pblConfig;
-    const agentsText = formatAgentsForPrompt(agents);
-    const prompts = buildPrompt(PROMPT_IDS.PBL_ACTIONS, {
-      title: outline.title,
-      keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
-      description: outline.description,
-      projectTopic: pblConfig?.projectTopic || outline.title,
-      projectDescription: pblConfig?.projectDescription || outline.description,
-      courseContext: buildCourseContext(ctx),
-      agents: agentsText,
-    });
-
-    if (!prompts) {
-      return generateDefaultPBLActions(outline);
-    }
-
-    const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(response, outline.type);
-
-    if (actions.length > 0) {
-      return processActions(actions, [], agents);
-    }
-
-    return generateDefaultPBLActions(outline);
-  }
-
   return [];
-}
-
-/**
- * Generate default PBL Actions (fallback)
- */
-function generateDefaultPBLActions(_outline: SceneOutline): Action[] {
-  return [
-    {
-      id: `action_${nanoid(8)}`,
-      type: 'speech',
-      title: 'PBL 项目介绍',
-      text: '现在让我们开始一个项目式学习活动。请选择你的角色，查看任务看板，开始协作完成项目。',
-    },
-  ];
 }
 
 /**
@@ -1059,8 +965,6 @@ function formatElementsForPrompt(elements: PPTElement[]): string {
         // Extract text content summary (strip HTML tags)
         const textContent = ((el.content as string) || '').replace(/<[^>]*>/g, '').substring(0, 50);
         summary = `Content summary: "${textContent}${textContent.length >= 50 ? '...' : ''}"`;
-      } else if (el.type === 'chart' && 'chartType' in el) {
-        summary = `Chart type: ${el.chartType}`;
       } else if (el.type === 'image') {
         summary = 'Image element';
       } else if (el.type === 'shape' && 'shapeName' in el) {
@@ -1207,8 +1111,7 @@ export function createSceneWithActions(
   content:
     | GeneratedSlideContent
     | GeneratedQuizContent
-    | GeneratedInteractiveContent
-    | GeneratedPBLContent,
+    | GeneratedInteractiveContent,
   actions: Action[],
   api: ReturnType<typeof createStageAPI>,
 ): string | null {
@@ -1270,21 +1173,6 @@ export function createSceneWithActions(
         type: 'interactive',
         url: '',
         html: content.html,
-      },
-      actions,
-    });
-
-    return sceneResult.success ? (sceneResult.data ?? null) : null;
-  }
-
-  if (outline.type === 'pbl' && 'projectConfig' in content) {
-    const sceneResult = api.scene.create({
-      type: 'pbl',
-      title: outline.title,
-      order: outline.order,
-      content: {
-        type: 'pbl',
-        projectConfig: content.projectConfig,
       },
       actions,
     });

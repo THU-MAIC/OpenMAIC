@@ -7,7 +7,6 @@ import { BaseImageElement } from '../components/element/ImageElement/BaseImageEl
 import { BaseTextElement } from '../components/element/TextElement/BaseTextElement';
 import { BaseShapeElement } from '../components/element/ShapeElement/BaseShapeElement';
 import { BaseLineElement } from '../components/element/LineElement/BaseLineElement';
-import { BaseChartElement } from '../components/element/ChartElement/BaseChartElement';
 import { BaseLatexElement } from '../components/element/LatexElement/BaseLatexElement';
 import { BaseTableElement } from '../components/element/TableElement/BaseTableElement';
 import { BaseVideoElement } from '../components/element/VideoElement/BaseVideoElement';
@@ -28,7 +27,6 @@ export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElem
       [ElementTypes.TEXT]: BaseTextElement,
       [ElementTypes.SHAPE]: BaseShapeElement,
       [ElementTypes.LINE]: BaseLineElement,
-      [ElementTypes.CHART]: BaseChartElement,
       [ElementTypes.LATEX]: BaseLatexElement,
       [ElementTypes.TABLE]: BaseTableElement,
       [ElementTypes.VIDEO]: BaseVideoElement,

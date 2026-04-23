@@ -15,7 +15,6 @@ import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useUserProfileStore } from '@/lib/store/user-profile';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { USER_AVATAR } from '@/lib/types/roundtable';
@@ -235,14 +234,13 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         {
           onAgentStart(data: AgentStartItem) {
             const now = Date.now();
-            const agentConfig = useAgentRegistry.getState().getAgent(data.agentId);
             const newMsg: UIMessage<ChatMessageMetadata> = {
               id: data.messageId,
               role: 'assistant',
               parts: [],
               metadata: {
-                senderName: agentConfig?.name || data.agentName,
-                senderAvatar: data.avatar || agentConfig?.avatar,
+                senderName: data.agentName,
+                senderAvatar: data.avatar,
                 originalRole: 'agent',
                 agentId: data.agentId,
                 createdAt: now,
@@ -458,17 +456,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       sessionType: SessionType,
     ): Promise<void> => {
       const settingsState = useSettingsStore.getState();
-
-      // Attach full configs for generated (non-default) agents so the server can use them.
-      // The server-side registry only has default agents; generated agents exist only client-side.
-      const generatedConfigs = requestTemplate.config.agentIds
-        .filter((id: string) => !id.startsWith('default-'))
-        .map((id: string) => useAgentRegistry.getState().getAgent(id))
-        .filter((agent): agent is NonNullable<typeof agent> => Boolean(agent))
-        .map(({ createdAt: _c, updatedAt: _u, isDefault: _d, ...rest }) => rest);
-      if (generatedConfigs.length > 0) {
-        requestTemplate.config.agentConfigs = generatedConfigs;
-      }
 
       const defaultMaxTurns = requestTemplate.config.agentIds.length <= 1 ? 1 : 10;
       const maxTurns = settingsState.maxTurns
@@ -1313,16 +1300,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       const scene = useStageStore.getState().scenes.find((s) => s.id === sceneId);
       const title = scene?.title || t('chat.lecture');
 
-      const agentConfig = useAgentRegistry.getState().getAgent('default-1');
-
       // Create session with a single assistant message (all actions append parts here)
       const lectureMessage: UIMessage<ChatMessageMetadata> = {
         id: messageId,
         role: 'assistant',
         parts: [],
         metadata: {
-          senderName: agentConfig?.name || t('settings.agentNames.default-1'),
-          senderAvatar: agentConfig?.avatar,
+          senderName: t('settings.agentNames.default-1'),
+          senderAvatar: undefined,
           originalRole: 'teacher',
           agentId: 'default-1',
           createdAt: now,

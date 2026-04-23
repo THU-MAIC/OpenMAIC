@@ -1,9 +1,8 @@
 // Stage and Scene data types
 import type { Slide } from '@/lib/types/slides';
 import type { Action } from '@/lib/types/action';
-import type { PBLProjectConfig } from '@/lib/pbl/types';
 
-export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl' | 'lesson_plan';
+export type SceneType = 'slide' | 'quiz' | 'interactive' | 'lesson_plan';
 
 export type StageMode = 'autonomous' | 'playback';
 
@@ -78,7 +77,7 @@ export interface Scene {
 /**
  * Scene content based on type
  */
-export type SceneContent = SlideContent | QuizContent | InteractiveContent | PBLContent | LessonPlanContent;
+export type SceneContent = SlideContent | QuizContent | InteractiveContent | LessonPlanContent;
 
 /**
  * Slide content - PPTist Canvas data
@@ -122,14 +121,6 @@ export interface InteractiveContent {
   url: string; // URL of the interactive page
   // Optional: embedded HTML content
   html?: string;
-}
-
-/**
- * PBL content - Project-based learning
- */
-export interface PBLContent {
-  type: 'pbl';
-  projectConfig: PBLProjectConfig;
 }
 
 // ---------------------------------------------------------------------------

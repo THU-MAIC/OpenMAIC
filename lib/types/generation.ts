@@ -105,14 +105,6 @@ export interface SceneOutline {
     designIdea: string;
     subject?: string;
   };
-  // PBL-specific config
-  pblConfig?: {
-    projectTopic: string;
-    projectDescription: string;
-    targetSkills: string[];
-    issueCount?: number;
-    language: string;
-  };
 }
 
 // ==================== Stage 3 Output: Generated Content ====================
@@ -134,17 +126,6 @@ export interface GeneratedSlideContent {
  */
 export interface GeneratedQuizContent {
   questions: QuizQuestion[];
-}
-
-// ==================== PBL Generation Types ====================
-
-import type { PBLProjectConfig } from '@/lib/pbl/types';
-
-/**
- * AI-generated PBL content
- */
-export interface GeneratedPBLContent {
-  projectConfig: PBLProjectConfig;
 }
 
 // ==================== Interactive Generation Types ====================
@@ -170,11 +151,10 @@ export interface GeneratedInteractiveContent {
 // ==================== Legacy Types (for compatibility) ====================
 
 export interface SuggestedSlideElement {
-  type: 'text' | 'image' | 'shape' | 'chart' | 'latex' | 'line';
+  type: 'text' | 'image' | 'shape' | 'latex' | 'line';
   purpose: 'title' | 'subtitle' | 'content' | 'example' | 'diagram' | 'formula' | 'highlight';
   contentHint: string;
   position?: 'top' | 'center' | 'bottom' | 'left' | 'right';
-  chartType?: 'bar' | 'line' | 'pie' | 'radar';
   textOutline?: string[];
 }
 

@@ -20,8 +20,7 @@ import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action'
 import { cn } from '@/lib/utils';
 // Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
-import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
-import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import type { AgentVoiceConfig } from '@/lib/audio/voice-resolver';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -111,18 +110,38 @@ export function Stage({
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
 
-  // Generate participants from selected agents
+  // Build participants from selected agent IDs using default agent metadata.
+  // Orchestration registry removed — roles/names are derived from well-known defaults.
+  const DEFAULT_AGENT_META: Record<string, { role: 'teacher' | 'student'; avatar: string }> = {
+    'default-1': { role: 'teacher', avatar: '/avatars/teacher.png' },
+    'default-2': { role: 'student', avatar: '/avatars/assist.png' },
+    'default-3': { role: 'student', avatar: '/avatars/clown.png' },
+  };
   const participants = useMemo(
-    () => agentsToParticipants(selectedAgentIds, t),
+    () =>
+      selectedAgentIds.map((id) => {
+        const meta = DEFAULT_AGENT_META[id] ?? { role: 'student' as const, avatar: '/avatars/user.png' };
+        return {
+          id,
+          name: t(`settings.agentNames.${id}`) || id,
+          role: meta.role,
+          avatar: meta.avatar,
+          isOnline: true,
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [selectedAgentIds, t],
   );
 
-  // Resolved AgentConfig array for hooks that need full agent objects
-  // Subscribe to the agents record so voiceConfig changes trigger re-resolution
-  const agentsRecord = useAgentRegistry((s) => s.agents);
+  // Minimal AgentVoiceConfig array for TTS (no custom voiceConfig for default agents)
   const selectedAgents = useMemo(
-    () => selectedAgentIds.map((id) => agentsRecord[id]).filter((a): a is AgentConfig => a != null),
-    [agentsRecord, selectedAgentIds],
+    (): AgentVoiceConfig[] =>
+      selectedAgentIds.map((id) => ({
+        id,
+        role: DEFAULT_AGENT_META[id]?.role ?? 'student',
+      })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedAgentIds],
   );
 
   // Discussion TTS: audio indicator state
@@ -140,10 +159,10 @@ export function Stage({
 
   // Pick a student agent for discussion trigger (prioritize student > non-teacher > fallback)
   const pickStudentAgent = useCallback((): string => {
-    const registry = useAgentRegistry.getState();
-    const agents = selectedAgentIds
-      .map((id) => registry.getAgent(id))
-      .filter((a): a is AgentConfig => a != null);
+    const agents = selectedAgentIds.map((id) => ({
+      id,
+      role: DEFAULT_AGENT_META[id]?.role ?? 'student',
+    }));
     const students = agents.filter((a) => a.role === 'student');
     if (students.length > 0) {
       return students[Math.floor(Math.random() * students.length)].id;
@@ -153,6 +172,7 @@ export function Stage({
       return nonTeachers[Math.floor(Math.random() * nonTeachers.length)].id;
     }
     return agents[0]?.id || 'default-1';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedAgentIds]);
 
   const engineRef = useRef<PlaybackEngine | null>(null);
@@ -505,8 +525,7 @@ export function Stage({
               const currentScene = allScenes[idx];
               if (
                 currentScene.type === 'quiz' ||
-                currentScene.type === 'interactive' ||
-                currentScene.type === 'pbl'
+                currentScene.type === 'interactive'
               ) {
                 return;
               }
@@ -517,8 +536,7 @@ export function Stage({
               const currentScene = allScenes[idx];
               if (
                 currentScene.type === 'quiz' ||
-                currentScene.type === 'interactive' ||
-                currentScene.type === 'pbl'
+                currentScene.type === 'interactive'
               ) {
                 return;
               }
@@ -618,8 +636,8 @@ export function Stage({
   // Whether the speaking agent is a student (for bubble role derivation)
   const speakingStudentFlag = useMemo(() => {
     if (!speakingAgentId) return false;
-    const agent = useAgentRegistry.getState().getAgent(speakingAgentId);
-    return agent?.role !== 'teacher';
+    return DEFAULT_AGENT_META[speakingAgentId]?.role !== 'teacher';
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [speakingAgentId]);
 
   // Centralised derived playback view

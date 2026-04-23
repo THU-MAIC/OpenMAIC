@@ -1,4 +1,8 @@
-import type { ChartData } from '@/lib/types/slides';
+interface ChartData {
+  labels: string[];
+  legends: string[];
+  series: number[][];
+}
 
 export const CHART_TYPE_MAP: Record<string, string> = {
   bar: '柱状图',

@@ -450,7 +450,8 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
           <button
             onClick={() => {
               setOpen(false);
-              onSettingsOpen(activeTab);
+              // 'asr' is not a standalone settings section; map to 'tts' for settings navigation
+              onSettingsOpen(activeTab === 'asr' ? 'tts' : activeTab);
             }}
             className="w-full flex items-center justify-between px-3.5 py-2.5 text-[11px] text-muted-foreground/60 hover:text-muted-foreground transition-colors"
           >

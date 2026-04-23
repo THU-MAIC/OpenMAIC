@@ -7,7 +7,6 @@ import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import type { PPTTextElement } from '@/lib/types/slides';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { ElementOutline } from '../ElementOutline';
-import { ProsemirrorEditor } from '../ProsemirrorEditor';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
 
 export interface TextElementProps {
@@ -203,17 +202,10 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
             outline={elementInfo.outline}
           />
 
-          <div className="text relative">
-            <ProsemirrorEditor
-              elementId={elementInfo.id}
-              defaultColor={elementInfo.defaultColor}
-              defaultFontName={elementInfo.defaultFontName}
-              editable={!elementInfo.lock}
-              value={elementInfo.content}
-              onUpdate={({ value, ignore }) => updateContent(value, ignore)}
-              onMouseDown={(e) => handleSelectElement(e as React.MouseEvent, false)}
-            />
-          </div>
+          <div
+            className="text relative"
+            dangerouslySetInnerHTML={{ __html: elementInfo.content }}
+          />
 
           {/* Drag handlers for better interaction when text overflows */}
           <div className="drag-handler top absolute left-0 right-0 h-[10px] top-0" />

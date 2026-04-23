@@ -10,8 +10,6 @@ import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
 import type { TTSProviderId, ASRProviderId } from '@/lib/audio/types';
 import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
-import { PDF_PROVIDERS } from '@/lib/pdf/constants';
-import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -68,19 +66,6 @@ export interface SettingsState {
       modelId?: string;
       customModels?: Array<{ id: string; name: string }>;
       providerOptions?: Record<string, unknown>;
-      isServerConfigured?: boolean;
-      serverBaseUrl?: string;
-    }
-  >;
-
-  // PDF settings
-  pdfProviderId: PDFProviderId;
-  pdfProvidersConfig: Record<
-    PDFProviderId,
-    {
-      apiKey: string;
-      baseUrl: string;
-      enabled: boolean;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
     }
@@ -207,13 +192,6 @@ export interface SettingsState {
   setTTSEnabled: (enabled: boolean) => void;
   setASREnabled: (enabled: boolean) => void;
 
-  // PDF actions
-  setPDFProvider: (providerId: PDFProviderId) => void;
-  setPDFProviderConfig: (
-    providerId: PDFProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
-  ) => void;
-
   // Image Generation actions
   setImageProvider: (providerId: ImageProviderId) => void;
   setImageModelId: (modelId: string) => void;
@@ -302,15 +280,6 @@ const getDefaultAudioConfig = () => ({
   } as Record<ASRProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
 
-// Initialize default PDF config
-const getDefaultPDFConfig = () => ({
-  pdfProviderId: 'unpdf' as PDFProviderId,
-  pdfProvidersConfig: {
-    unpdf: { apiKey: '', baseUrl: '', enabled: true },
-    mineru: { apiKey: '', baseUrl: '', enabled: false },
-  } as Record<PDFProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
-});
-
 // Initialize default Image config
 const getDefaultImageConfig = () => ({
   imageProviderId: 'seedream' as ImageProviderId,
@@ -360,14 +329,9 @@ function hasProviderId(providerMap: Record<string, unknown>, providerId?: string
  */
 function ensureValidProviderSelections(state: Partial<SettingsState>): void {
   const defaultAudioConfig = getDefaultAudioConfig();
-  const defaultPdfConfig = getDefaultPDFConfig();
   const defaultImageConfig = getDefaultImageConfig();
   const defaultVideoConfig = getDefaultVideoConfig();
   const defaultWebSearchConfig = getDefaultWebSearchConfig();
-
-  if (!hasProviderId(PDF_PROVIDERS, state.pdfProviderId)) {
-    state.pdfProviderId = defaultPdfConfig.pdfProviderId;
-  }
 
   if (!hasProviderId(WEB_SEARCH_PROVIDERS, state.webSearchProviderId)) {
     state.webSearchProviderId = defaultWebSearchConfig.webSearchProviderId;
@@ -531,7 +495,6 @@ export const useSettingsStore = create<SettingsState>()(
       // Try to migrate from old storage
       const migratedData = migrateFromOldStorage();
       const defaultAudioConfig = getDefaultAudioConfig();
-      const defaultPDFConfig = getDefaultPDFConfig();
       const defaultImageConfig = getDefaultImageConfig();
       const defaultVideoConfig = getDefaultVideoConfig();
       const defaultWebSearchConfig = getDefaultWebSearchConfig();
@@ -560,9 +523,6 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Audio settings (use defaults)
         ...defaultAudioConfig,
-
-        // PDF settings (use defaults)
-        ...defaultPDFConfig,
 
         // Image settings (use defaults)
         ...defaultImageConfig,
@@ -671,20 +631,6 @@ export const useSettingsStore = create<SettingsState>()(
             },
           })),
 
-        // PDF actions
-        setPDFProvider: (providerId) => set({ pdfProviderId: providerId }),
-
-        setPDFProviderConfig: (providerId, config) =>
-          set((state) => ({
-            pdfProvidersConfig: {
-              ...state.pdfProvidersConfig,
-              [providerId]: {
-                ...state.pdfProvidersConfig[providerId],
-                ...config,
-              },
-            },
-          })),
-
         // Image Generation actions
         setImageProvider: (providerId) => set({ imageProviderId: providerId }),
         setImageModelId: (modelId) => set({ imageModelId: modelId }),
@@ -757,7 +703,6 @@ export const useSettingsStore = create<SettingsState>()(
               providers: Record<string, { models?: string[]; baseUrl?: string }>;
               tts: Record<string, { baseUrl?: string }>;
               asr: Record<string, { baseUrl?: string }>;
-              pdf: Record<string, { baseUrl?: string }>;
               image: Record<string, { baseUrl?: string }>;
               video: Record<string, { baseUrl?: string }>;
               webSearch: Record<string, { baseUrl?: string }>;
@@ -837,29 +782,6 @@ export const useSettingsStore = create<SettingsState>()(
                 if (newASRConfig[key]) {
                   newASRConfig[key] = {
                     ...newASRConfig[key],
-                    isServerConfigured: true,
-                    serverBaseUrl: info.baseUrl,
-                  };
-                }
-              }
-
-              // Merge PDF providers
-              const newPDFConfig = { ...state.pdfProvidersConfig };
-              for (const pid of Object.keys(newPDFConfig)) {
-                const key = pid as PDFProviderId;
-                if (newPDFConfig[key]) {
-                  newPDFConfig[key] = {
-                    ...newPDFConfig[key],
-                    isServerConfigured: false,
-                    serverBaseUrl: undefined,
-                  };
-                }
-              }
-              for (const [pid, info] of Object.entries(data.pdf)) {
-                const key = pid as PDFProviderId;
-                if (newPDFConfig[key]) {
-                  newPDFConfig[key] = {
-                    ...newPDFConfig[key],
                     isServerConfigured: true,
                     serverBaseUrl: info.baseUrl,
                   };
@@ -952,7 +874,6 @@ export const useSettingsStore = create<SettingsState>()(
               const llmFallback = buildFallback<ProviderId>(newProvidersConfig);
               const ttsFallback = buildFallback<TTSProviderId>(newTTSConfig);
               const asrFallback = buildFallback<ASRProviderId>(newASRConfig);
-              const pdfFallback = buildFallback<PDFProviderId>(newPDFConfig);
               const imageFallback = buildFallback<ImageProviderId>(newImageConfig);
               const videoFallback = buildFallback<VideoProviderId>(newVideoConfig);
 
@@ -972,12 +893,6 @@ export const useSettingsStore = create<SettingsState>()(
                 newASRConfig,
                 asrFallback,
                 'browser-native' as ASRProviderId,
-              );
-              const validPDFProvider = validateProvider(
-                state.pdfProviderId,
-                newPDFConfig,
-                pdfFallback,
-                'unpdf' as PDFProviderId,
               );
               let validImageProvider = validateProvider(
                 state.imageProviderId,
@@ -1041,7 +956,6 @@ export const useSettingsStore = create<SettingsState>()(
               let autoTtsProvider: TTSProviderId | undefined;
               let autoTtsVoice: string | undefined;
               let autoAsrProvider: ASRProviderId | undefined;
-              let autoPdfProvider: PDFProviderId | undefined;
               let autoImageProvider: ImageProviderId | undefined;
               let autoImageModel: string | undefined;
               let autoVideoProvider: VideoProviderId | undefined;
@@ -1050,11 +964,6 @@ export const useSettingsStore = create<SettingsState>()(
               let autoVideoEnabled: boolean | undefined;
 
               if (!state.autoConfigApplied) {
-                // PDF: unpdf → mineru if server has it
-                if (newPDFConfig.mineru?.isServerConfigured && state.pdfProviderId === 'unpdf') {
-                  autoPdfProvider = 'mineru' as PDFProviderId;
-                }
-
                 // TTS: select first server provider if current is not server-configured
                 const serverTtsIds = Object.keys(data.tts) as TTSProviderId[];
                 if (
@@ -1127,7 +1036,6 @@ export const useSettingsStore = create<SettingsState>()(
                 providersConfig: newProvidersConfig,
                 ttsProvidersConfig: newTTSConfig,
                 asrProvidersConfig: newASRConfig,
-                pdfProvidersConfig: newPDFConfig,
                 imageProvidersConfig: newImageConfig,
                 videoProvidersConfig: newVideoConfig,
                 webSearchProvidersConfig: newWebSearchConfig,
@@ -1143,9 +1051,6 @@ export const useSettingsStore = create<SettingsState>()(
                 }),
                 ...(validASRProvider !== state.asrProviderId && {
                   asrProviderId: validASRProvider as ASRProviderId,
-                }),
-                ...(validPDFProvider !== state.pdfProviderId && {
-                  pdfProviderId: validPDFProvider as PDFProviderId,
                 }),
                 ...(validImageProvider !== state.imageProviderId && {
                   imageProviderId: validImageProvider as ImageProviderId,
@@ -1164,7 +1069,6 @@ export const useSettingsStore = create<SettingsState>()(
                 // First-run auto-select overrides validation (autoConfigApplied guard).
                 // On first sync, auto-select picks the best provider. On subsequent syncs,
                 // auto* variables stay undefined so only validation spreads take effect.
-                ...(autoPdfProvider && { pdfProviderId: autoPdfProvider }),
                 ...(autoTtsProvider && {
                   ttsProviderId: autoTtsProvider,
                   ttsVoice: autoTtsVoice,
@@ -1261,12 +1165,6 @@ export const useSettingsStore = create<SettingsState>()(
             cfg.modelId = cfg.model;
             delete cfg.model;
           }
-        }
-
-        // Add default PDF config if missing
-        if (!state.pdfProvidersConfig) {
-          const defaultPDFConfig = getDefaultPDFConfig();
-          Object.assign(state, defaultPDFConfig);
         }
 
         // Add default Image config if missing

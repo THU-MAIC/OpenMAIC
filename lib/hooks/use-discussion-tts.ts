@@ -7,14 +7,14 @@ import {
   resolveAgentVoice,
   getAvailableProvidersWithVoices,
   type ResolvedVoice,
+  type AgentVoiceConfig,
 } from '@/lib/audio/voice-resolver';
-import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
 
 interface DiscussionTTSOptions {
   enabled: boolean;
-  agents: AgentConfig[];
+  agents: AgentVoiceConfig[];
   onAudioStateChange?: (agentId: string | null, state: AudioIndicatorState) => void;
 }
 

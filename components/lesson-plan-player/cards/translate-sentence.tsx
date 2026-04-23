@@ -15,7 +15,7 @@ export function TranslateSentenceCard({ card }: { card: TranslateSentenceCard })
       </div>
       {card.mode === 'closed' && card.options ? (
         <div className="flex flex-col gap-2">
-          {card.options.map((opt, i) => (
+          {(card.options ?? []).map((opt, i) => (
             <button
               key={i}
               onClick={() => !selected && setSelected(opt)}

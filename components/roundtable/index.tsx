@@ -19,15 +19,12 @@ import {
 import { cn } from '@/lib/utils';
 import type { AudioIndicatorState } from './audio-indicator';
 import { CanvasToolbar } from '@/components/canvas/canvas-toolbar';
-import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { toast } from 'sonner';
 import { useSettingsStore, PLAYBACK_SPEEDS } from '@/lib/store/settings';
 import { ProactiveCard } from '@/components/chat/proactive-card';
 import { PresentationSpeechOverlay } from '@/components/roundtable/presentation-speech-overlay';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { DEFAULT_TEACHER_AVATAR, DEFAULT_USER_AVATAR } from '@/components/roundtable/constants';
 import type { DiscussionAction } from '@/lib/types/action';
 import type { EngineMode, PlaybackView } from '@/lib/playback';
@@ -329,31 +326,12 @@ export function Roundtable({
   const teacherName = teacherParticipant?.name || t('roundtable.teacher');
   const userAvatar = userParticipant?.avatar || DEFAULT_USER_AVATAR;
 
-  // Audio recording
-  const { isRecording, isProcessing, startRecording, stopRecording, cancelRecording } =
-    useAudioRecorder({
-      onTranscription: (text) => {
-        if (!text.trim()) {
-          toast.info(t('roundtable.noSpeechDetected'));
-          setIsVoiceOpen(false);
-          return;
-        }
-        // Block if in send cooldown (e.g. text was sent while voice was processing)
-        if (isSendCooldownRef.current) {
-          setIsVoiceOpen(false);
-          return;
-        }
-        showLocalUserMessage(text);
-        onMessageSend?.(text);
-        setIsSendCooldown(true);
-        isSendCooldownRef.current = true;
-        setIsVoiceOpen(false);
-      },
-      onError: (error) => {
-        toast.error(error);
-        setIsVoiceOpen(false);
-      },
-    });
+  // Audio recording — ASR removed; stubs keep the rest of the component functional
+  const isRecording = false;
+  const isProcessing = false;
+  const startRecording = () => {};
+  const stopRecording = () => {};
+  const cancelRecording = () => {};
 
   const handleSendMessage = () => {
     if (!inputValue.trim() || isSendCooldown) return;
@@ -567,9 +545,11 @@ export function Roundtable({
     setPlaybackSpeed(PLAYBACK_SPEEDS[nextIndex]);
   }, [playbackSpeed, setPlaybackSpeed]);
 
-  // Intentionally non-reactive: agent metadata is treated as immutable during a classroom session.
-  const agentRegistry = useAgentRegistry.getState();
-  const getAgentConfig = (id: string) => agentRegistry.getAgent(id);
+  // Agent registry removed — getAgentConfig returns null; avatar/name come from Participant instead.
+  const getAgentConfig = (
+    _id: string,
+  ): { name?: string; avatar?: string; color?: string; role?: string; persona?: string } | null =>
+    null;
 
   const presentationDiscussionParticipant = discussionRequest
     ? discussionRequest.agentId === teacherParticipant?.id

@@ -9,7 +9,6 @@ import type {
   GeneratedSlideContent,
   GeneratedQuizContent,
   GeneratedInteractiveContent,
-  GeneratedPBLContent,
   PdfImage,
   ImageMapping,
 } from '@/lib/types/generation';
@@ -124,8 +123,7 @@ export function buildCompleteScene(
   content:
     | GeneratedSlideContent
     | GeneratedQuizContent
-    | GeneratedInteractiveContent
-    | GeneratedPBLContent,
+    | GeneratedInteractiveContent,
   actions: Action[],
   stageId: string,
 ): Scene | null {
@@ -195,23 +193,6 @@ export function buildCompleteScene(
         type: 'interactive',
         url: '',
         html: content.html,
-      },
-      actions,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-  }
-
-  if (outline.type === 'pbl' && 'projectConfig' in content) {
-    return {
-      id: sceneId,
-      stageId,
-      type: 'pbl',
-      title: outline.title,
-      order: outline.order,
-      content: {
-        type: 'pbl',
-        projectConfig: content.projectConfig,
       },
       actions,
       createdAt: Date.now(),

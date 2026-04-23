@@ -15,7 +15,7 @@ export function RoleplayCard({ card }: { card: RoleplayCard }) {
       </div>
       {card.mode === 'closed' && card.options && (
         <div className="flex flex-col gap-2">
-          {card.options.map((opt, i) => (
+          {(card.options ?? []).map((opt, i) => (
             <button
               key={i}
               onClick={() => setRevealed(true)}

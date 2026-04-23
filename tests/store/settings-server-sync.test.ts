@@ -547,32 +547,6 @@ describe('fetchServerProviders — ASR stale selection', () => {
   });
 });
 
-describe('fetchServerProviders — PDF stale selection', () => {
-  beforeEach(() => {
-    vi.resetModules();
-    storage.clear();
-    mockFetch.mockReset();
-  });
-
-  async function getStore() {
-    const { useSettingsStore } = await import('@/lib/store/settings');
-    return useSettingsStore;
-  }
-
-  it('falls back to unpdf when mineru loses server config', async () => {
-    const store = await getStore();
-
-    mockServerResponse({ pdf: { mineru: {} } });
-    await store.getState().fetchServerProviders();
-    store.getState().setPDFProvider('mineru');
-
-    mockServerResponse({});
-    await store.getState().fetchServerProviders();
-
-    expect(store.getState().pdfProviderId).toBe('unpdf');
-  });
-});
-
 describe('fetchServerProviders — Image stale selection', () => {
   beforeEach(() => {
     vi.resetModules();

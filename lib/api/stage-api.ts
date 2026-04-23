@@ -53,7 +53,6 @@ export {
   createDefaultSlideContent,
   createDefaultQuizContent,
   createDefaultInteractiveContent,
-  createDefaultPBLContent,
 } from './stage-api-defaults';
 
 // Import sub-API factories

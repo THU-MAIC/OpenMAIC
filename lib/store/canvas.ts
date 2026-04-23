@@ -1,8 +1,21 @@
 import { create } from 'zustand';
 import { createSelectors } from '@/lib/utils/create-selectors';
-import type { TextAttrs } from '@/lib/prosemirror/utils';
-import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
 import type { TextFormatPainter, ShapeFormatPainter, CreatingElement } from '@/lib/types/edit';
+
+/** Minimal rich-text attribute state (formerly from lib/prosemirror) */
+export interface TextAttrs {
+  bold?: boolean;
+  em?: boolean;
+  underline?: boolean;
+  strikethrough?: boolean;
+  color?: string;
+  backcolor?: string;
+  fontsize?: string;
+  fontname?: string;
+  align?: string;
+}
+
+const defaultRichTextAttrs: TextAttrs = {};
 import type { PercentageGeometry } from '@/lib/types/action';
 
 /**
