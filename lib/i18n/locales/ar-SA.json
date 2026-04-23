@@ -280,7 +280,8 @@
     "delete": "حذف",
     "rename": "إعادة تسمية",
     "renamePlaceholder": "أدخل اسم الفصل",
-    "renameFailed": "فشلت إعادة تسمية الفصل"
+    "renameFailed": "فشلت إعادة تسمية الفصل",
+    "deepInteractive": "تفاعل متعمق"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",

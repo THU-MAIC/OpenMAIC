@@ -280,7 +280,8 @@
     "delete": "Удалить",
     "rename": "Переименовать",
     "renamePlaceholder": "Введите название класса",
-    "renameFailed": "Не удалось переименовать класс"
+    "renameFailed": "Не удалось переименовать класс",
+    "deepInteractive": "Глубокая интерактивность"
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",
