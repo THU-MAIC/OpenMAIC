@@ -668,6 +668,90 @@ function HomePage() {
                   <ChevronDown className="size-3.5" />
                 </motion.div>
               </button>
+
+              {/* Search toggle — icon that expands into an input in place */}
+              <AnimatePresence initial={false} mode="wait">
+                {!searchOpen ? (
+                  <motion.button
+                    key="search-icon"
+                    ref={searchButtonRef}
+                    type="button"
+                    aria-label={t('classroom.searchAriaLabel')}
+                    aria-expanded={false}
+                    onClick={() => {
+                      setSearchOpen(true);
+                      if (!recentOpen) {
+                        setRecentOpen(true);
+                        try {
+                          localStorage.setItem(RECENT_OPEN_STORAGE_KEY, 'true');
+                        } catch {
+                          /* ignore */
+                        }
+                      }
+                      requestAnimationFrame(() => searchInputRef.current?.focus());
+                    }}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                    className="flex items-center justify-center size-6 rounded-full text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/50 transition-colors cursor-pointer"
+                  >
+                    <Search className="size-3.5" />
+                  </motion.button>
+                ) : (
+                  <motion.div
+                    key="search-input"
+                    initial={{ opacity: 0, width: 0 }}
+                    animate={{ opacity: 1, width: 200 }}
+                    exit={{ opacity: 0, width: 0 }}
+                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    className="overflow-hidden"
+                  >
+                    <InputGroup className="h-7 text-[12px]">
+                      <InputGroupInput
+                        ref={searchInputRef}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            e.preventDefault();
+                            if (searchQuery) {
+                              setSearchQuery('');
+                            } else {
+                              setSearchOpen(false);
+                              requestAnimationFrame(() =>
+                                searchButtonRef.current?.focus(),
+                              );
+                            }
+                          }
+                        }}
+                        onBlur={() => {
+                          if (!searchQuery) {
+                            setSearchOpen(false);
+                          }
+                        }}
+                        placeholder={t('classroom.searchPlaceholder')}
+                        aria-label={t('classroom.searchAriaLabel')}
+                        className="h-7 text-[12px]"
+                      />
+                      {searchQuery && (
+                        <InputGroupButton
+                          size="icon-xs"
+                          aria-label={t('classroom.clearSearch')}
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={() => {
+                            setSearchQuery('');
+                            searchInputRef.current?.focus();
+                          }}
+                        >
+                          <X />
+                        </InputGroupButton>
+                      )}
+                    </InputGroup>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
               <button
                 onClick={triggerFileSelect}
                 disabled={importing}
@@ -692,32 +776,38 @@ function HomePage() {
                 transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
                 className="w-full overflow-hidden"
               >
-                <div className="pt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8">
-                  {classrooms.map((classroom, i) => (
-                    <motion.div
-                      key={classroom.id}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        delay: i * 0.04,
-                        duration: 0.35,
-                        ease: 'easeOut',
-                      }}
-                    >
-                      <ClassroomCard
-                        classroom={classroom}
-                        slide={thumbnails[classroom.id]}
-                        formatDate={formatDate}
-                        onDelete={handleDelete}
-                        onRename={handleRename}
-                        confirmingDelete={pendingDeleteId === classroom.id}
-                        onConfirmDelete={() => confirmDelete(classroom.id)}
-                        onCancelDelete={() => setPendingDeleteId(null)}
-                        onClick={() => router.push(`/classroom/${classroom.id}`)}
-                      />
-                    </motion.div>
-                  ))}
-                </div>
+                {filteredClassrooms.length === 0 ? (
+                  <div className="pt-8 pb-2 text-center text-[13px] text-muted-foreground/60">
+                    {t('classroom.searchEmpty')}
+                  </div>
+                ) : (
+                  <div className="pt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8">
+                    {filteredClassrooms.map((classroom, i) => (
+                      <motion.div
+                        key={classroom.id}
+                        initial={{ opacity: 0, y: 16 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                          delay: i * 0.04,
+                          duration: 0.35,
+                          ease: 'easeOut',
+                        }}
+                      >
+                        <ClassroomCard
+                          classroom={classroom}
+                          slide={thumbnails[classroom.id]}
+                          formatDate={formatDate}
+                          onDelete={handleDelete}
+                          onRename={handleRename}
+                          confirmingDelete={pendingDeleteId === classroom.id}
+                          onConfirmDelete={() => confirmDelete(classroom.id)}
+                          onCancelDelete={() => setPendingDeleteId(null)}
+                          onClick={() => router.push(`/classroom/${classroom.id}`)}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
