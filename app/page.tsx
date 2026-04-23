@@ -670,7 +670,7 @@ function HomePage() {
               </button>
 
               {/* Search toggle — icon that expands into an input in place */}
-              <AnimatePresence initial={false} mode="wait">
+              <AnimatePresence initial={false}>
                 {!searchOpen ? (
                   <motion.button
                     key="search-icon"
@@ -689,10 +689,10 @@ function HomePage() {
                       }
                       requestAnimationFrame(() => searchInputRef.current?.focus());
                     }}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    transition={{ duration: 0.15, ease: 'easeOut' }}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.12, ease: 'easeOut' }}
                     className="flex items-center justify-center size-6 rounded-full text-muted-foreground/50 hover:text-foreground/70 hover:bg-muted/50 transition-colors cursor-pointer"
                   >
                     <Search className="size-3.5" />
@@ -703,10 +703,19 @@ function HomePage() {
                     initial={{ opacity: 0, width: 0 }}
                     animate={{ opacity: 1, width: 200 }}
                     exit={{ opacity: 0, width: 0 }}
-                    transition={{ duration: 0.2, ease: 'easeOut' }}
+                    transition={{ duration: 0.18, ease: [0.25, 0.1, 0.25, 1] }}
                     className="overflow-hidden"
                   >
-                    <InputGroup className="h-7 text-[12px]">
+                    <InputGroup
+                      className={cn(
+                        'h-7 text-[12px] rounded-full bg-muted/40 border-transparent shadow-none',
+                        'transition-colors',
+                        'hover:bg-muted/60',
+                        'has-[[data-slot=input-group-control]:focus-visible]:bg-muted/60',
+                        'has-[[data-slot=input-group-control]:focus-visible]:border-transparent',
+                        'has-[[data-slot=input-group-control]:focus-visible]:ring-0',
+                      )}
+                    >
                       <InputGroupInput
                         ref={searchInputRef}
                         value={searchQuery}
@@ -731,7 +740,7 @@ function HomePage() {
                         }}
                         placeholder={t('classroom.searchPlaceholder')}
                         aria-label={t('classroom.searchAriaLabel')}
-                        className="h-7"
+                        className="h-7 pl-3 placeholder:text-muted-foreground/50"
                       />
                       {searchQuery && (
                         <InputGroupButton
