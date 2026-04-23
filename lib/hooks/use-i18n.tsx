@@ -37,7 +37,9 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     try {
       const stored = localStorage.getItem(LOCALE_STORAGE_KEY);
-      const raw = stored || navigator.language || defaultLocale;
+      // Discard stored locale if it's no longer in the supported list (e.g. after removing zh-CN)
+      const validStored = stored && supportedLocales.some((l) => l.code === stored) ? stored : null;
+      const raw = validStored || navigator.language || defaultLocale;
       const target = resolveLocale(raw);
       if (target !== i18n.language) i18n.changeLanguage(target);
     } catch {
