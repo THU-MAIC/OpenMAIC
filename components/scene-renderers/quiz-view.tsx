@@ -22,61 +22,19 @@ const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
+import {
+  gradeChoiceQuestions,
+  isShortAnswer,
+  type QuestionResult,
+} from '@/lib/quiz/grading';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
 type Phase = 'not_started' | 'answering' | 'grading' | 'reviewing';
 
-interface QuestionResult {
-  questionId: string;
-  correct: boolean | null;
-  status: 'correct' | 'incorrect';
-  earned: number;
-  aiComment?: string;
-}
-
 interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
-}
-
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-function arraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) return false;
-  const sa = [...a].sort();
-  const sb = [...b].sort();
-  return sa.every((v, i) => v === sb[i]);
-}
-
-function toArray(v: string | string[] | undefined): string[] {
-  if (!v) return [];
-  return Array.isArray(v) ? v : [v];
-}
-
-function isShortAnswer(q: QuizQuestion): boolean {
-  return q.type === 'short_answer' || (!q.hasAnswer && (!q.answer || q.answer.length === 0));
-}
-
-/** Grade choice questions locally. Returns results only for non-short-answer questions. */
-function gradeChoiceQuestions(
-  questions: QuizQuestion[],
-  answers: Record<string, string | string[]>,
-): QuestionResult[] {
-  return questions
-    .filter((q) => !isShortAnswer(q))
-    .map((q) => {
-      const pts = q.points ?? 1;
-      const userAnswer = toArray(answers[q.id]);
-      const correctAnswer = toArray(q.answer);
-      const correct = arraysEqual(userAnswer, correctAnswer);
-      return {
-        questionId: q.id,
-        correct,
-        status: correct ? ('correct' as const) : ('incorrect' as const),
-        earned: correct ? pts : 0,
-      };
-    });
 }
 
 /** Call /api/quiz-grade for a single short-answer question. */
