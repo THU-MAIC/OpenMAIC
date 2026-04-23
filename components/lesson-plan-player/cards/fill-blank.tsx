@@ -10,7 +10,7 @@ export function FillBlankCard({ card }: { card: FillBlankCard }) {
     <div className="flex flex-col gap-4">
       <div className="bg-gray-50 dark:bg-gray-800 rounded-xl p-5 text-center">
         <p className="text-lg text-gray-900 dark:text-gray-100">
-          {card.sentence.before}
+          {card.sentence?.before}
           <span
             className={`inline-block mx-1 px-3 py-0.5 rounded border-b-2 min-w-[80px] text-center font-semibold ${
               selected
@@ -22,9 +22,9 @@ export function FillBlankCard({ card }: { card: FillBlankCard }) {
           >
             {selected ?? '___'}
           </span>
-          {card.sentence.after}
+          {card.sentence?.after}
         </p>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{card.sentence.english}</p>
+        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">{card.sentence?.english}</p>
       </div>
       <div className="flex flex-wrap justify-center gap-2">
         {(card.options ?? []).map((opt, i) => (

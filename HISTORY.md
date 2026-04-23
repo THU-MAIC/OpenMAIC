@@ -162,3 +162,18 @@ packages/
 9839d6c Split explanation/target language; fix iOS audio routing
 8f0587e Fix default locale and Azure TTS voice
 ```
+
+---
+
+### Branch snapshot — 2026-04-23 20:08 UTC
+
+**4 commit(s) in the last 12 hours:**
+
+  - claude/investigate-database-setup-TIHlw (1 new commit)
+
+```
+d4f9057 Fix useTTS hook and fill-blank crash in lesson-plan-player
+ef14e8f Normalize turn.text → turn.lithuanian and clarify field name in prompt
+a5f5e89 Drop stale localStorage locale if no longer in supportedLocales
+504c89a Require pronunciation on all LithuanianWord fields and A1/A2 dialog turns
+```
