@@ -48,6 +48,7 @@ export interface StageRecord {
   style?: string;
   currentSceneId?: string;
   agentIds?: string[]; // Agent IDs selected at creation time
+  interactiveMode?: boolean; // v0.2.0 Interactive Mode flag; non-indexed
 }
 
 /**
