@@ -27,8 +27,8 @@ export function DialogueCompletionCard({ card }: { card: DialogueCompletionCard 
                   </p>
                 ) : (
                   <>
-                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{turn.lithuanian}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{turn.english}</p>
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">{turn?.lithuanian}</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">{turn?.english}</p>
                   </>
                 )}
               </div>

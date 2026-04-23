@@ -885,15 +885,14 @@ export const TTS_PROVIDERS: Record<TTSProviderId, TTSProviderConfig> = {
 
   'browser-native-tts': {
     id: 'browser-native-tts',
-    name: '浏览器原生 (Web Speech API)',
+    name: 'Browser (Web Speech API)',
     requiresApiKey: false,
     icon: '/logos/browser.svg',
     models: [],
     defaultModelId: '',
     voices: [
-      // Note: Actual voices are determined by the browser and OS
-      // These are placeholder - real voices are fetched dynamically via speechSynthesis.getVoices()
-      { id: 'default', name: '默认', language: 'zh-CN', gender: 'neutral' },
+      // Actual voices are fetched dynamically via speechSynthesis.getVoices()
+      { id: 'default', name: 'Default', language: 'en-US', gender: 'neutral' },
     ],
     supportedFormats: ['browser'], // Browser native audio
     speedRange: { min: 0.1, max: 10.0, default: 1.0 },

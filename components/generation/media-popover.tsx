@@ -29,6 +29,7 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { useStageStore } from '@/lib/store/stage';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
@@ -105,11 +106,29 @@ function getVoiceDisplayName(name: string, lang: string): string {
   return name;
 }
 
+/** Extract the short BCP-47 code (e.g. "lt" from "lt-LT") if the value looks like a language tag. */
+function toLangCode(value: string | undefined): string | null {
+  if (!value) return null;
+  const code = value.split('-')[0].toLowerCase();
+  return /^[a-z]{2,3}$/.test(code) ? code : null;
+}
+
 export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const { t, locale } = useI18n();
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>('image');
   const { previewing, startPreview, stopPreview } = useTTSPreview();
+
+  // ─── Stage language filter ───
+  const stage = useStageStore((s) => s.stage);
+  const allowedVoiceLangs = useMemo<Set<string> | null>(() => {
+    const codes = new Set<string>();
+    const target = toLangCode(stage?.language);
+    const explanation = toLangCode(stage?.explanationLanguage);
+    if (target) codes.add(target);
+    if (explanation) codes.add(explanation);
+    return codes.size > 0 ? codes : null;
+  }, [stage?.language, stage?.explanationLanguage]);
 
   // ─── Store ───
   const imageGenerationEnabled = useSettingsStore((s) => s.imageGenerationEnabled);
@@ -224,11 +243,12 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
 
       const providerName = getTTSProviderName(p.id, t);
 
-      // For browser-native-tts, split voices by language
+      // For browser-native-tts, split voices by language (filtered to stage languages)
       if (p.id === 'browser-native-tts' && browserVoices.length > 0) {
         const byLang = new Map<string, SpeechSynthesisVoice[]>();
         for (const v of browserVoices) {
           const langKey = v.lang.split('-')[0]; // "zh-CN" → "zh"
+          if (allowedVoiceLangs && !allowedVoiceLangs.has(langKey)) continue;
           if (!byLang.has(langKey)) byLang.set(langKey, []);
           byLang.get(langKey)!.push(v);
         }
