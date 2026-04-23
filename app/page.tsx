@@ -1080,13 +1080,15 @@ function ClassroomCard({
           <Tooltip>
             <TooltipTrigger asChild>
               <span
-                aria-label={t('classroom.deepInteractive')}
+                aria-label={t('toolbar.interactiveModeLabel')}
                 onClick={(e) => e.stopPropagation()}
                 className="absolute bottom-2 left-2 inline-flex items-center justify-center size-5 rounded-full bg-white/70 dark:bg-slate-900/60 text-cyan-600 dark:text-cyan-300 backdrop-blur-sm shadow-sm ring-1 ring-cyan-500/30 z-10"
               >
                 <Atom className="size-3" />
               </span>
             </TooltipTrigger>
+            {/* Negative sideOffset compensates for the global Tooltip Arrow's
+                rotate-45 bounding box, which Radix reserves as spacing. */}
             <TooltipContent
               side="top"
               align="start"
@@ -1094,7 +1096,7 @@ function ClassroomCard({
               collisionPadding={0}
               className="text-xs"
             >
-              {t('classroom.deepInteractive')}
+              {t('toolbar.interactiveModeLabel')}
             </TooltipContent>
           </Tooltip>
         )}

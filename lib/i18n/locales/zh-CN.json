@@ -280,8 +280,7 @@
     "delete": "删除",
     "rename": "重命名",
     "renamePlaceholder": "输入课堂名称",
-    "renameFailed": "重命名失败",
-    "deepInteractive": "深度交互"
+    "renameFailed": "重命名失败"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",

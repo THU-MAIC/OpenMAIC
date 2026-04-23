@@ -280,8 +280,7 @@
     "delete": "Delete",
     "rename": "Rename",
     "renamePlaceholder": "Enter classroom name",
-    "renameFailed": "Failed to rename classroom",
-    "deepInteractive": "Deep Interactive"
+    "renameFailed": "Failed to rename classroom"
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",
