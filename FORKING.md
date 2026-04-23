@@ -52,7 +52,7 @@ vercel.json
 |------|---------------------|
 | `lib/i18n/types.ts` | `defaultLocale = 'en-US'` |
 | `lib/audio/constants.ts` | `'azure-tts': 'lt-LT-OnaNeural'` in `DEFAULT_TTS_VOICES` |
-| `package.json` | `postinstall`: `pnpm --filter mathml2omml build && pnpm --filter pptxgenjs build` |
+| `package.json` | `build` script uses `next build --turbopack`; postinstall removed (pptxgenjs/mathml2omml not used) |
 | `lib/utils/audio-player.ts` | `audio.setAttribute('playsinline', '')` after each `new Audio()` (2 places) |
 | `lib/audio/use-tts-preview.ts` | `audio.setAttribute('playsinline', '')` after `new Audio(url)` |
 | `lib/hooks/use-discussion-tts.ts` | `audio.setAttribute('playsinline', '')` after `new Audio(audioUrl)` |
@@ -182,7 +182,7 @@ For each new target language (example: French `fr-FR`):
 ```
 OPENMAIC_API_KEY          # Bearer token learning.thomhoffer uses
 DEFAULT_MODEL             # e.g. google:gemini-2.5-flash
-GOOGLE_GENERATIVE_AI_API_KEY
+GOOGLE_API_KEY
 AZURE_TTS_KEY
 AZURE_TTS_REGION
 BLOB_READ_WRITE_TOKEN     # Vercel Blob
