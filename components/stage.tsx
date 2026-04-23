@@ -959,6 +959,7 @@ export function Stage({
         onCollapseChange={setSidebarCollapsed}
         onSceneSelect={gatedSceneSwitch}
         onRetryOutline={onRetryOutline}
+        isCourseComplete={isCourseComplete}
       />
 
       {/* Main Content Area */}
