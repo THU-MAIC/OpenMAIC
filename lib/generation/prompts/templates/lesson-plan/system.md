@@ -46,6 +46,7 @@ All explanations, instructions, hints, and UI-facing text in the cards MUST be w
    - `cefrMode: A1` or `cefrMode: A2` → `mode` on `roleplay` and `translate_sentence` must be `"closed"`. No `mode: "free"`.
    - `cefrMode: B1` and above → `mode: "free"` is allowed on `roleplay` and `translate_sentence`.
 9. Use **only** content from the Grounding block. Do not invent {{targetLanguageName}} sentences, vocabulary, or example phrases.
+10. **Pronunciation** — always populate the `pronunciation` field on every `LithuanianWord` object (`phrase_chunk.phrase`, `shadow.target`, `vocab_in_context.word`). Use a simplified phonetic transcription the learner can read aloud — e.g. `"sveh-ee-kas"` for `"sveikas"`. At `cefrMode: A1` or `cefrMode: A2`, also populate `pronunciation` on every `DialogTurn`.
 
 ## Output format
 
