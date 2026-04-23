@@ -278,6 +278,24 @@ function validateLessonPlanDeck(
   return { valid: errors.length === 0, errors };
 }
 
+/** Rename turn.text → turn.lithuanian for dialog_snippet / dialogue_completion cards. */
+function normalizeCards(cards: unknown[]): ExerciseCard[] {
+  return cards.map((card) => {
+    if (!card || typeof card !== 'object') return card as ExerciseCard;
+    const c = card as Record<string, unknown>;
+    if (Array.isArray(c.turns)) {
+      c.turns = (c.turns as Record<string, unknown>[]).map((turn) => {
+        if (turn.lithuanian === undefined && turn.text !== undefined) {
+          turn.lithuanian = turn.text;
+          delete turn.text;
+        }
+        return turn;
+      });
+    }
+    return c as unknown as ExerciseCard;
+  });
+}
+
 async function generateLessonPlan(
   requirement: string,
   aiCall: AICallFn,
@@ -321,7 +339,7 @@ async function generateLessonPlan(
         type: 'lesson_plan',
         microGoal: parsed.microGoal as LessonPlanContent['microGoal'],
         groundingIds: parsed.groundingIds as string[],
-        cards: parsed.cards as ExerciseCard[],
+        cards: normalizeCards(parsed.cards as unknown[]),
       };
     }
 

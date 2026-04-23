@@ -66,3 +66,8 @@ Return ONLY a valid JSON object with this structure — no markdown fences, no p
 
 The `groundingIds` array lists every grounding item ID used by at least one card.
 Each card in `cards` follows the exact TypeScript shape for its `kind`.
+
+`dialog_snippet` and `dialogue_completion` turns use this exact shape — the target-language field is **`lithuanian`**, not `text` or `content`:
+```json
+{ "speaker": "A", "lithuanian": "Labas!", "english": "Hello!", "pronunciation": "LAH-bahs" }
+```
