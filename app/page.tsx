@@ -1090,7 +1090,7 @@ function ClassroomCard({
             <TooltipContent
               side="top"
               align="start"
-              sideOffset={-14}
+              sideOffset={-4}
               collisionPadding={0}
               className="text-xs"
             >
