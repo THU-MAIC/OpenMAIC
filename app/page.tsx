@@ -1087,7 +1087,13 @@ function ClassroomCard({
                 <Atom className="size-3" />
               </span>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={4} className="text-xs">
+            <TooltipContent
+              side="top"
+              align="start"
+              sideOffset={6}
+              collisionPadding={0}
+              className="text-xs"
+            >
               {t('classroom.deepInteractive')}
             </TooltipContent>
           </Tooltip>
