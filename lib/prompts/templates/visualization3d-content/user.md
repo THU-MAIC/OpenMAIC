@@ -22,7 +22,7 @@ Create a 3D visualization widget for: {{title}}
 
 ## Language
 
-{{language}}
+{{languageDirective}}
 
 ---
 

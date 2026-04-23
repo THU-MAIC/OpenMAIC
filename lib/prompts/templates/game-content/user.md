@@ -18,7 +18,7 @@ Create an educational GAME widget for: {{title}}
 
 ## Language
 
-{{language}}
+{{languageDirective}}
 
 ---
 

@@ -41,6 +41,12 @@ export interface Stage {
     color: string;
     priority: number;
   }>;
+  /**
+   * True when this classroom was generated with Interactive Mode enabled
+   * (the INTERACTIVE_OUTLINES prompt branch).
+   * Absent on legacy classrooms, imports, and regular-mode generations.
+   */
+  interactiveMode?: boolean;
 }
 
 /**

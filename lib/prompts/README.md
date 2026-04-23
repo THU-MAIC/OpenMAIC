@@ -99,9 +99,8 @@ EVAL_CHAT_MODEL=<provider:model> EVAL_SCORER_MODEL=<provider:model> \
   --scenario econ-tech-innovation
 ```
 
-## Caching
+## Loading
 
-`loadPrompt` and `loadSnippet` cache on first read for the lifetime of the
-process. Call `clearPromptCache()` if you're iterating on markdown in a
-long-lived REPL / dev server and want to pick up changes. Production reads
-are idempotent so the cache is always hot.
+`loadPrompt` and `loadSnippet` read from disk on every call. No caching —
+markdown edits take effect immediately without restarting any dev server.
+Prompt disk I/O is negligible next to the LLM call it feeds.

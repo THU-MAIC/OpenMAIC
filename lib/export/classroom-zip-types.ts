@@ -23,6 +23,8 @@ export interface ManifestStage {
   style?: string;
   createdAt: number;
   updatedAt: number;
+  // Note: Stage.interactiveMode is intentionally NOT exported — it reflects the
+  // original generation prompt branch, which imports can't faithfully reproduce.
 }
 
 export interface ManifestAgent {

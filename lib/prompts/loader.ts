@@ -5,7 +5,6 @@
  * - Loading prompts from templates/{promptId}/ directory
  * - Snippet inclusion via {{snippet:name}} syntax
  * - Variable interpolation via {{variable}} syntax
- * - Caching for performance
  */
 
 import fs from 'fs';
@@ -13,10 +12,6 @@ import path from 'path';
 import type { PromptId, LoadedPrompt, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('PromptLoader');
-
-// Cache for loaded prompts and snippets
-const promptCache = new Map<string, LoadedPrompt>();
-const snippetCache = new Map<string, string>();
 
 /**
  * Get the prompts directory path
@@ -30,15 +25,10 @@ function getPromptsDir(): string {
  * Load a snippet by ID
  */
 export function loadSnippet(snippetId: SnippetId): string {
-  const cached = snippetCache.get(snippetId);
-  if (cached) return cached;
-
   const snippetPath = path.join(getPromptsDir(), 'snippets', `${snippetId}.md`);
 
   try {
-    const content = fs.readFileSync(snippetPath, 'utf-8').trim();
-    snippetCache.set(snippetId, content);
-    return content;
+    return fs.readFileSync(snippetPath, 'utf-8').trim();
   } catch {
     // Fail loud rather than silently shipping `{{snippet:foo}}` to the LLM.
     // A missing snippet is always a config/typo bug — surface at load time.
@@ -60,9 +50,6 @@ function processSnippets(template: string): string {
  * Load a prompt by ID
  */
 export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
-  const cached = promptCache.get(promptId);
-  if (cached) return cached;
-
   const promptDir = path.join(getPromptsDir(), 'templates', promptId);
 
   try {
@@ -81,14 +68,11 @@ export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
       // user.md is optional
     }
 
-    const loaded: LoadedPrompt = {
+    return {
       id: promptId,
       systemPrompt,
       userPromptTemplate,
     };
-
-    promptCache.set(promptId, loaded);
-    return loaded;
   } catch (error) {
     log.error(`Failed to load prompt ${promptId}:`, error);
     return null;
@@ -126,12 +110,4 @@ export function buildPrompt(
     system: interpolateVariables(prompt.systemPrompt, variables),
     user: interpolateVariables(prompt.userPromptTemplate, variables),
   };
-}
-
-/**
- * Clear all caches (useful for development/testing)
- */
-export function clearPromptCache(): void {
-  promptCache.clear();
-  snippetCache.clear();
 }

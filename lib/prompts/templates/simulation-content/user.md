@@ -18,7 +18,7 @@ Create a simulation widget for: {{conceptName}}
 
 ## Language
 
-{{language}}
+{{languageDirective}}
 
 ---
 

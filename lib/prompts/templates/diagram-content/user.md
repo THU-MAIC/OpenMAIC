@@ -10,7 +10,7 @@ Create an interactive diagram for: {{title}}
 {{keyPoints}}
 
 ## Language
-{{language}}
+{{languageDirective}}
 
 ---
 

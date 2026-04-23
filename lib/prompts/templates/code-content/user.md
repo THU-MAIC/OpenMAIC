@@ -28,7 +28,7 @@ Create a code playground widget for: {{title}}
 
 ## Course Language
 
-{{language}}
+{{languageDirective}}
 
 ---
 
