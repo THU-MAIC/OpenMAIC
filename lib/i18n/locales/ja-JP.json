@@ -145,7 +145,7 @@
       "interactive": "インタラクティブ",
       "pbl": "プロジェクト"
     },
-    "quizScoreLabel": "{correct} / {total} 正解",
+    "quizScoreLabel": "{{correct}} / {{total}} 正解",
     "encouragement": {
       "high": "素晴らしい！完璧です。",
       "mid": "いい感じ、その調子。",

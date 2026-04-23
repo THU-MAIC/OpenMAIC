@@ -145,7 +145,7 @@
       "interactive": "互动",
       "pbl": "项目"
     },
-    "quizScoreLabel": "答对 {correct} / {total}",
+    "quizScoreLabel": "答对 {{correct}} / {{total}}",
     "encouragement": {
       "high": "太棒了，完美发挥！",
       "mid": "表现不错，继续加油！",

@@ -145,7 +145,7 @@
       "interactive": "interactives",
       "pbl": "projects"
     },
-    "quizScoreLabel": "{correct} / {total} correct",
+    "quizScoreLabel": "{{correct}} / {{total}} correct",
     "encouragement": {
       "high": "Outstanding — you nailed it.",
       "mid": "Solid work — keep it up.",

@@ -145,7 +145,7 @@
       "interactive": "تفاعلات",
       "pbl": "مشاريع"
     },
-    "quizScoreLabel": "{correct} / {total} صحيحة",
+    "quizScoreLabel": "{{correct}} / {{total}} صحيحة",
     "encouragement": {
       "high": "ممتاز — أبدعت!",
       "mid": "عمل جيد — استمر.",

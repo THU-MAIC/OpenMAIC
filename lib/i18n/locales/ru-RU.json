@@ -145,7 +145,7 @@
       "interactive": "интерактивов",
       "pbl": "проектов"
     },
-    "quizScoreLabel": "Верно {correct} из {total}",
+    "quizScoreLabel": "Верно {{correct}} из {{total}}",
     "encouragement": {
       "high": "Отлично — вы справились!",
       "mid": "Хорошая работа — продолжайте.",
