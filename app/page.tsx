@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useDeferredValue } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -212,15 +212,16 @@ function HomePage() {
     }
   };
 
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const filteredClassrooms = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
+    const q = deferredSearchQuery.trim().toLowerCase();
     if (!q) return classrooms;
     return classrooms.filter((c) => {
       const name = c.name?.toLowerCase() ?? '';
       const desc = c.description?.toLowerCase() ?? '';
       return name.includes(q) || desc.includes(q);
     });
-  }, [classrooms, searchQuery]);
+  }, [classrooms, deferredSearchQuery]);
 
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
