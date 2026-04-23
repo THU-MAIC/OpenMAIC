@@ -280,7 +280,11 @@
     "delete": "حذف",
     "rename": "إعادة تسمية",
     "renamePlaceholder": "أدخل اسم الفصل",
-    "renameFailed": "فشلت إعادة تسمية الفصل"
+    "renameFailed": "فشلت إعادة تسمية الفصل",
+    "searchPlaceholder": "البحث عن الدروس...",
+    "searchAriaLabel": "البحث عن الدروس",
+    "clearSearch": "مسح",
+    "searchEmpty": "لا توجد دروس مطابقة"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",

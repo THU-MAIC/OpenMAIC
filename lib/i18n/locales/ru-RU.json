@@ -280,7 +280,11 @@
     "delete": "Удалить",
     "rename": "Переименовать",
     "renamePlaceholder": "Введите название класса",
-    "renameFailed": "Не удалось переименовать класс"
+    "renameFailed": "Не удалось переименовать класс",
+    "searchPlaceholder": "Поиск курсов...",
+    "searchAriaLabel": "Поиск курсов",
+    "clearSearch": "Очистить",
+    "searchEmpty": "Курсы не найдены"
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",

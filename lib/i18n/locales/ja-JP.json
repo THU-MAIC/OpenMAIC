@@ -280,7 +280,11 @@
     "delete": "削除",
     "rename": "名前を変更",
     "renamePlaceholder": "教室名を入力",
-    "renameFailed": "教室名の変更に失敗しました"
+    "renameFailed": "教室名の変更に失敗しました",
+    "searchPlaceholder": "コースを検索...",
+    "searchAriaLabel": "コースを検索",
+    "clearSearch": "クリア",
+    "searchEmpty": "該当するコースが見つかりません"
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",

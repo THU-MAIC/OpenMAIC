@@ -280,7 +280,11 @@
     "delete": "删除",
     "rename": "重命名",
     "renamePlaceholder": "输入课堂名称",
-    "renameFailed": "重命名失败"
+    "renameFailed": "重命名失败",
+    "searchPlaceholder": "搜索课程...",
+    "searchAriaLabel": "搜索课程",
+    "clearSearch": "清空",
+    "searchEmpty": "没有找到匹配的课程"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",
