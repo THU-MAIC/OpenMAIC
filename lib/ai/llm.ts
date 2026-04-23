@@ -117,16 +117,8 @@ function buildDisableThinking(
       return { anthropic: { thinking: { type: 'disabled' } } };
 
     case 'google': {
-      // Gemini 3.x: uses thinkingLevel (cannot fully disable)
       // Gemini 2.5 Flash/Flash-Lite: uses thinkingBudget=0 (fully off)
       // Gemini 2.5 Pro: minimum thinkingBudget=128 (cannot fully disable)
-      if (modelId.startsWith('gemini-3')) {
-        const level = modelId.includes('flash') ? 'minimal' : 'low';
-        log.info(
-          `[thinking-adapter] Model ${modelId} cannot fully disable thinking, using thinkingLevel=${level}`,
-        );
-        return { google: { thinkingConfig: { thinkingLevel: level } } };
-      }
       if (modelId === 'gemini-2.5-pro') {
         log.info(
           `[thinking-adapter] Model ${modelId} cannot fully disable thinking, using thinkingBudget=128`,
@@ -176,10 +168,6 @@ function buildEnableThinking(
     }
 
     case 'google': {
-      // Gemini 3.x: uses thinkingLevel (no numeric budget)
-      if (modelId.startsWith('gemini-3')) {
-        return { google: { thinkingConfig: { thinkingLevel: 'high' } } };
-      }
       // Gemini 2.5: uses thinkingBudget
       if (budgetTokens !== undefined) {
         const min = modelId === 'gemini-2.5-pro' ? 128 : 0;
@@ -222,12 +210,8 @@ function buildThinkingProviderOptions(
 
 /**
  * Default providerOptions for specific models (fallback when no ThinkingConfig is provided).
- * Gemini 3.x models use thinkingLevel instead of thinkingBudget.
  */
-function getDefaultProviderOptions(modelId: string): ProviderOptions | undefined {
-  if (modelId === 'gemini-3.1-pro-preview') {
-    return { google: { thinkingConfig: { thinkingLevel: 'high' } } };
-  }
+function getDefaultProviderOptions(_modelId: string): ProviderOptions | undefined {
   return undefined;
 }
 

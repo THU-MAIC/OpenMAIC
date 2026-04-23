@@ -133,9 +133,9 @@ VIDEO_MINIMAX_API_KEY=...
 VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
 ```
 
-> **Recommended model:** **Gemini 3 Flash** — best balance of quality and speed. For highest quality (at slower speed), try **Gemini 3.1 Pro**.
+> **Recommended model:** **Gemini 2.5 Flash** — best balance of quality and speed. For highest quality (at slower speed), try **Gemini 2.5 Pro**.
 >
-> If you want OpenMAIC server APIs to use Gemini by default, also set `DEFAULT_MODEL=google:gemini-3-flash-preview`.
+> If you want OpenMAIC server APIs to use Gemini by default, also set `DEFAULT_MODEL=google:gemini-2.5-flash`.
 >
 > If you want to use MiniMax as the default server model, set `DEFAULT_MODEL=minimax:MiniMax-M2.7-highspeed`.
 
