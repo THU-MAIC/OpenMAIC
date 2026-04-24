@@ -425,6 +425,10 @@
       "glm": "GLM",
       "siliconflow": "SiliconFlow",
       "doubao": "豆包",
+      "openrouter": "OpenRouter",
+      "grok": "Grok",
+      "tencent-hunyuan": "Tencent Hunyuan",
+      "xiaomi": "Xiaomi MiMo",
       "ollama": "Ollama（ローカルモデル）"
     },
     "providerTypes": {
@@ -823,6 +827,7 @@
     "imageProvider": "画像生成プロバイダー",
     "imageModel": "画像生成モデル",
     "providerSeedream": "Seedream（ByteDance）",
+    "providerOpenAIImage": "OpenAI Image",
     "providerQwenImage": "Qwen Image（Alibaba）",
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax Image",
