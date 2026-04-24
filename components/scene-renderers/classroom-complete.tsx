@@ -31,9 +31,14 @@ const CONFETTI_COLORS = [
 function readQuizAnswers(sceneId: string): Record<string, string | string[]> {
   if (typeof window === 'undefined') return {};
   try {
-    const raw = localStorage.getItem(`quizDraft:${sceneId}`);
-    if (!raw) return {};
-    return JSON.parse(raw) as Record<string, string | string[]>;
+    // Primary: submitted answers persisted by quiz-view at submit time.
+    const submitted = localStorage.getItem(`quizAnswers:${sceneId}`);
+    if (submitted) return JSON.parse(submitted) as Record<string, string | string[]>;
+    // Fallback: in-progress draft (user started but never submitted) — gives a
+    // partial preview rather than 0 / N.
+    const draft = localStorage.getItem(`quizDraft:${sceneId}`);
+    if (draft) return JSON.parse(draft) as Record<string, string | string[]>;
+    return {};
   } catch {
     return {};
   }

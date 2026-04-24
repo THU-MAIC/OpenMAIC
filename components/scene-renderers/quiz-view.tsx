@@ -691,7 +691,14 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
   const handleSubmit = useCallback(() => {
     setPhase('grading');
     clearAnswersCache();
-  }, [clearAnswersCache]);
+    // Persist submitted answers for the course-complete page to grade later.
+    try {
+      localStorage.setItem(`quizAnswers:${sceneId}`, JSON.stringify(answers));
+    } catch {
+      // Swallow quota / disabled storage errors — the completion page will just
+      // show 0 for this scene.
+    }
+  }, [clearAnswersCache, answers, sceneId]);
 
   // When entering grading phase, grade choice questions locally + call API for short-answer
   useEffect(() => {
@@ -734,7 +741,12 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     setAnswers({});
     setResults([]);
     clearAnswersCache();
-  }, [clearAnswersCache]);
+    try {
+      localStorage.removeItem(`quizAnswers:${sceneId}`);
+    } catch {
+      // ignore
+    }
+  }, [clearAnswersCache, sceneId]);
 
   const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
 
