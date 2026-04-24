@@ -638,11 +638,47 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
+type SubmittedState =
+  | { kind: 'reviewing'; answers: Record<string, string | string[]>; results: QuestionResult[] }
+  | { kind: 'answering'; answers: Record<string, string | string[]> }
+  | null;
+
+function readSubmittedState(sceneId: string): SubmittedState {
+  if (typeof window === 'undefined') return null;
+  try {
+    const rawA = localStorage.getItem(`quizAnswers:${sceneId}`);
+    if (!rawA) return null;
+    const answers = JSON.parse(rawA) as Record<string, string | string[]>;
+    const rawR = localStorage.getItem(`quizResults:${sceneId}`);
+    if (rawR) {
+      const results = JSON.parse(rawR) as QuestionResult[];
+      if (Array.isArray(results) && results.length > 0) {
+        return { kind: 'reviewing', answers, results };
+      }
+    }
+    return { kind: 'answering', answers };
+  } catch {
+    return null;
+  }
+}
+
 export function QuizView({ questions, sceneId }: QuizViewProps) {
   const { t, locale } = useI18n();
-  const [phase, setPhase] = useState<Phase>('not_started');
-  const [answers, setAnswers] = useState<Record<string, string | string[]>>({});
-  const [results, setResults] = useState<QuestionResult[]>([]);
+
+  // Rehydrate submitted state from localStorage on first mount. Runs once.
+  const [initialSubmitted] = useState<SubmittedState>(() => readSubmittedState(sceneId));
+
+  const [phase, setPhase] = useState<Phase>(() => {
+    if (initialSubmitted?.kind === 'reviewing') return 'reviewing';
+    if (initialSubmitted?.kind === 'answering') return 'answering';
+    return 'not_started';
+  });
+  const [answers, setAnswers] = useState<Record<string, string | string[]>>(
+    () => initialSubmitted?.answers ?? {},
+  );
+  const [results, setResults] = useState<QuestionResult[]>(() =>
+    initialSubmitted?.kind === 'reviewing' ? initialSubmitted.results : [],
+  );
 
   // Draft cache for quiz answers, keyed by sceneId to isolate across classrooms
   const {
@@ -653,11 +689,16 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     key: `quizDraft:${sceneId}`,
   });
 
-  // Restore cached answers during render (derived state pattern)
+  // Restore cached draft answers (only when there is no submitted state).
   const [prevCachedAnswers, setPrevCachedAnswers] = useState(cachedAnswers);
   if (cachedAnswers !== prevCachedAnswers) {
     setPrevCachedAnswers(cachedAnswers);
-    if (cachedAnswers && Object.keys(cachedAnswers).length > 0 && phase === 'not_started') {
+    if (
+      !initialSubmitted &&
+      cachedAnswers &&
+      Object.keys(cachedAnswers).length > 0 &&
+      phase === 'not_started'
+    ) {
       setAnswers(cachedAnswers);
       setPhase('answering');
     }
@@ -727,14 +768,18 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
       const ordered = questions.map((q) => allResultsMap.get(q.id)!).filter(Boolean);
 
       setResults(ordered);
-
       setPhase('reviewing');
+      try {
+        localStorage.setItem(`quizResults:${sceneId}`, JSON.stringify(ordered));
+      } catch {
+        // ignore quota / disabled storage errors
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [phase, questions, answers, locale]);
+  }, [phase, questions, answers, locale, sceneId]);
 
   const handleRetry = useCallback(() => {
     setPhase('not_started');
@@ -743,6 +788,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     clearAnswersCache();
     try {
       localStorage.removeItem(`quizAnswers:${sceneId}`);
+      localStorage.removeItem(`quizResults:${sceneId}`);
     } catch {
       // ignore
     }
