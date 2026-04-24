@@ -1,26 +1,11 @@
 // ==================== Conversation Summary ====================
 
 /**
- * OpenAI-style message used by the director.
- * Content may be a string or a multimodal content array; only the text
- * portion is summarized (images are denoted as `[image]`).
+ * OpenAI message format (used by director)
  */
 export interface OpenAIMessage {
   role: 'system' | 'user' | 'assistant';
-  content:
-    | string
-    | Array<{ type: 'text'; text: string } | { type: 'image'; image: string; mediaType?: string }>;
-}
-
-/**
- * Flatten a multimodal content to plain text for summarization.
- */
-function contentToSummaryText(content: OpenAIMessage['content']): string {
-  if (typeof content === 'string') return content;
-  return content
-    .map((part) => (part.type === 'text' ? part.text : '[image]'))
-    .filter(Boolean)
-    .join(' ');
+  content: string;
 }
 
 /**
@@ -46,8 +31,10 @@ export function summarizeConversation(
   const lines = recent.map((msg) => {
     const roleLabel =
       msg.role === 'user' ? 'User' : msg.role === 'assistant' ? 'Assistant' : 'System';
-    const text = contentToSummaryText(msg.content);
-    const content = text.length > maxContentLength ? text.slice(0, maxContentLength) + '...' : text;
+    const content =
+      msg.content.length > maxContentLength
+        ? msg.content.slice(0, maxContentLength) + '...'
+        : msg.content;
     return `[${roleLabel}] ${content}`;
   });
 

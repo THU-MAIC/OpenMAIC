@@ -75,6 +75,30 @@ export function generateReport(
   }
   lines.push('');
 
+  // Timing summary across all turns in all scenario runs
+  const allTurnDurations: number[] = [];
+  for (const scenario of report.scenarios) {
+    if (scenario.turnDurationsMs) {
+      for (const ms of scenario.turnDurationsMs) allTurnDurations.push(ms);
+    }
+  }
+  if (allTurnDurations.length > 0) {
+    const sorted = [...allTurnDurations].sort((a, b) => a - b);
+    const p50 = sorted[Math.floor(sorted.length * 0.5)];
+    const p95 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))];
+    const meanMs = mean(allTurnDurations);
+    const totalS = allTurnDurations.reduce((a, b) => a + b, 0) / 1000;
+    lines.push('## Turn latency');
+    lines.push('| Metric | Value |');
+    lines.push('|--------|-------|');
+    lines.push(`| Turns measured | ${allTurnDurations.length} |`);
+    lines.push(`| Mean | ${(meanMs / 1000).toFixed(2)}s |`);
+    lines.push(`| p50  | ${(p50 / 1000).toFixed(2)}s |`);
+    lines.push(`| p95  | ${(p95 / 1000).toFixed(2)}s |`);
+    lines.push(`| Total across all turns | ${totalS.toFixed(1)}s |`);
+    lines.push('');
+  }
+
   lines.push('## Scenarios');
   for (const scenario of report.scenarios) {
     const lastCp = scenario.checkpoints[scenario.checkpoints.length - 1];

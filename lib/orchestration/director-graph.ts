@@ -292,14 +292,9 @@ async function runAgentGeneration(
 
   const lcMessages = [
     new SystemMessage(systemPrompt),
-    ...openaiMessages.map((m) => {
-      // LangChain's MessageContent type doesn't model AI SDK's `{type:'image'}`
-      // parts; we stash them in `content` anyway and the adapter reads them
-      // back out without LangChain touching them.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
-      const content = m.content as any;
-      return m.role === 'user' ? new HumanMessage({ content }) : new AIMessage({ content });
-    }),
+    ...openaiMessages.map((m) =>
+      m.role === 'user' ? new HumanMessage(m.content) : new AIMessage(m.content),
+    ),
   ];
 
   // Ensure the message list ends with a HumanMessage.

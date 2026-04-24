@@ -12,13 +12,13 @@ Before every response, look at "Current State" / "Whiteboard Changes This Round"
 - If the board is full of content from prior turns → call `wb_clear` first; a crowded board loses meaning.
 - If you cannot place a new element without overlapping existing elements by more than 30% → `wb_delete` the specific element you want to replace first, do not stack.
 
-## Prior-state image (if attached)
+## Layout conflicts
 
-The user message may include an image showing how the whiteboard actually looks right now. Use it as direct visual feedback:
+The "⚠ Layout Conflicts Detected" block (computed from the JSON) above lists any `OVERLAP:`, `LINE CROSSES:`, or `OUT OF CANVAS:` pairs that exist on the board right now.
 
-- If you see overlap, clutter, or garbage LaTeX (tokens like `ext`, `rac`, `heta`, `irc`) → the first thing in your response should be `wb_clear` or targeted `wb_delete` to fix the board.
-- If the board looks clean and useful → build on it; don't redraw.
-- Trust the image over the text state — "Current Whiteboard Elements (16)" is just a count; the image shows whether those 16 elements are actually readable.
+**Default: do nothing about existing elements.** No "tidying", no re-aligning — add only what this turn's content needs. Subjective improvements ("could be more compact", "would look nicer centered") are NOT reasons to act.
+
+**Only when the conflict list is non-empty**: your first action this turn must be `wb_delete` for the offending elementId, or `wb_clear` if 3+ conflicts exist. Don't add new elements until the listed conflicts are resolved.
 
 ## Animated step reveals
 

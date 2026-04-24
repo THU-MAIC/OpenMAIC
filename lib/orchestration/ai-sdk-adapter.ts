@@ -59,29 +59,20 @@ export class AISdkLangGraphAdapter extends BaseChatModel {
   }
 
   /**
-   * Convert LangChain messages to AI SDK message format.
-   *
-   * Content may be a plain string or a multimodal content array (e.g., a text
-   * part alongside image parts); we pass it through unchanged so downstream
-   * `streamText` / `generateText` calls receive multimodal input natively.
+   * Convert LangChain messages to AI SDK message format
    */
   private convertMessages(
     messages: BaseMessage[],
-  ): {
-    role: 'system' | 'user' | 'assistant';
-    content: string | Array<Record<string, unknown>>;
-  }[] {
+  ): { role: 'system' | 'user' | 'assistant'; content: string }[] {
     return messages.map((msg) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- LangChain content is MessageContent which widens to string | complex[]
-      const content = msg.content as any;
       if (msg instanceof HumanMessage) {
-        return { role: 'user' as const, content };
+        return { role: 'user' as const, content: msg.content as string };
       } else if (msg instanceof AIMessage) {
-        return { role: 'assistant' as const, content };
+        return { role: 'assistant' as const, content: msg.content as string };
       } else if (msg instanceof SystemMessage) {
-        return { role: 'system' as const, content };
+        return { role: 'system' as const, content: msg.content as string };
       } else {
-        return { role: 'user' as const, content };
+        return { role: 'user' as const, content: msg.content as string };
       }
     });
   }
@@ -97,10 +88,7 @@ export class AISdkLangGraphAdapter extends BaseChatModel {
       const result = await callLLM(
         {
           model: this.languageModel,
-          // AI SDK's ModelMessage type accepts the `{type:'image'}` parts on
-          // user messages — our adapter just needs to pass them through.
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see above
-          messages: aiMessages as any,
+          messages: aiMessages,
         },
         'chat-adapter',
         undefined,
@@ -146,8 +134,7 @@ export class AISdkLangGraphAdapter extends BaseChatModel {
     const result = streamLLM(
       {
         model: this.languageModel,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- see convertMessages comment
-        messages: aiMessages as any,
+        messages: aiMessages,
         abortSignal: options?.signal,
       },
       'chat-adapter-stream',

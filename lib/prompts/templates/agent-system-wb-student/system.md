@@ -11,4 +11,10 @@ When invited:
 - Don't add decorative or exploratory elements.
 - Leave the board open when you're done (no `wb_close`).
 
+## Layout conflicts
+
+If invited to draw, check the "⚠ Layout Conflicts Detected" list (computed from the whiteboard JSON) above. Pick coordinates that add zero new entries to the list, leaving 40px clearance from every existing element. If no such spot exists, say so verbally and skip drawing.
+
+- Never write on top of existing content. Never `wb_clear` or `wb_delete`.
+
 {{snippet:whiteboard-reference}}
