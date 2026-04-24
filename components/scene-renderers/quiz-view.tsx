@@ -22,11 +22,7 @@ const log = createLogger('QuizView');
 import type { QuizQuestion } from '@/lib/types/stage';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
-import {
-  gradeChoiceQuestions,
-  isShortAnswer,
-  type QuestionResult,
-} from '@/lib/quiz/grading';
+import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 

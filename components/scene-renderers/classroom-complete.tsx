@@ -140,9 +140,7 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
                 correct: summary.quiz.correct,
                 total: summary.quiz.total,
               })}
-              <span className="ml-2 text-amber-600 dark:text-amber-400">
-                · {summary.quiz.pct}%
-              </span>
+              <span className="ml-2 text-amber-600 dark:text-amber-400">· {summary.quiz.pct}%</span>
             </div>
             <div className="mt-1 text-sm text-amber-700/80 dark:text-amber-300/80">
               {t(`classroomComplete.encouragement.${encouragementKey(summary.quiz.pct)}`)}
