@@ -10,6 +10,7 @@ import { ChatSession } from '../types/chat';
 import { db } from './database';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
 import { clearPlaybackState } from './playback-storage';
+import { clearAllForScene } from '@/lib/quiz/persistence';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('StageStorage');
@@ -117,6 +118,10 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
  */
 export async function deleteStageData(stageId: string): Promise<void> {
   try {
+    // Collect scene ids before deletion so we can sweep per-scene localStorage
+    // keys (quiz draft / submitted answers / graded results).
+    const sceneIds = (await db.scenes.where('stageId').equals(stageId).toArray()).map((s) => s.id);
+
     // Delete stage
     await db.stages.delete(stageId);
 
@@ -126,6 +131,11 @@ export async function deleteStageData(stageId: string): Promise<void> {
     // Delete chat sessions and playback state
     await deleteChatSessions(stageId);
     await clearPlaybackState(stageId);
+
+    // Sweep quiz persistence keys for each deleted scene.
+    for (const sceneId of sceneIds) {
+      clearAllForScene(sceneId);
+    }
 
     log.info(`Deleted stage: ${stageId}`);
   } catch (error) {

@@ -23,6 +23,13 @@ import type { QuizQuestion } from '@/lib/types/stage';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
+import {
+  clearSubmitted,
+  readSubmittedState,
+  writeSubmittedAnswers,
+  writeSubmittedResults,
+  type SubmittedState,
+} from '@/lib/quiz/persistence';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -638,30 +645,6 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-type SubmittedState =
-  | { kind: 'reviewing'; answers: Record<string, string | string[]>; results: QuestionResult[] }
-  | { kind: 'answering'; answers: Record<string, string | string[]> }
-  | null;
-
-function readSubmittedState(sceneId: string): SubmittedState {
-  if (typeof window === 'undefined') return null;
-  try {
-    const rawA = localStorage.getItem(`quizAnswers:${sceneId}`);
-    if (!rawA) return null;
-    const answers = JSON.parse(rawA) as Record<string, string | string[]>;
-    const rawR = localStorage.getItem(`quizResults:${sceneId}`);
-    if (rawR) {
-      const results = JSON.parse(rawR) as QuestionResult[];
-      if (Array.isArray(results) && results.length > 0) {
-        return { kind: 'reviewing', answers, results };
-      }
-    }
-    return { kind: 'answering', answers };
-  } catch {
-    return null;
-  }
-}
-
 export function QuizView({ questions, sceneId }: QuizViewProps) {
   const { t, locale } = useI18n();
 
@@ -732,13 +715,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
   const handleSubmit = useCallback(() => {
     setPhase('grading');
     clearAnswersCache();
-    // Persist submitted answers for the course-complete page to grade later.
-    try {
-      localStorage.setItem(`quizAnswers:${sceneId}`, JSON.stringify(answers));
-    } catch {
-      // Swallow quota / disabled storage errors — the completion page will just
-      // show 0 for this scene.
-    }
+    writeSubmittedAnswers(sceneId, answers);
   }, [clearAnswersCache, answers, sceneId]);
 
   // When entering grading phase, grade choice questions locally + call API for short-answer
@@ -769,11 +746,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
 
       setResults(ordered);
       setPhase('reviewing');
-      try {
-        localStorage.setItem(`quizResults:${sceneId}`, JSON.stringify(ordered));
-      } catch {
-        // ignore quota / disabled storage errors
-      }
+      writeSubmittedResults(sceneId, ordered);
     })();
 
     return () => {
@@ -786,12 +759,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     setAnswers({});
     setResults([]);
     clearAnswersCache();
-    try {
-      localStorage.removeItem(`quizAnswers:${sceneId}`);
-      localStorage.removeItem(`quizResults:${sceneId}`);
-    } catch {
-      // ignore
-    }
+    clearSubmitted(sceneId);
   }, [clearAnswersCache, sceneId]);
 
   const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);

@@ -8,6 +8,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store';
 import type { Scene, SceneType } from '@/lib/types/stage';
 import { summarizeScenes } from '@/lib/classroom/complete-summary';
+import { readAnswersForSummary } from '@/lib/quiz/persistence';
 
 const SCENE_TYPE_ICONS: Record<SceneType, typeof FileText> = {
   slide: FileText,
@@ -27,22 +28,6 @@ const CONFETTI_COLORS = [
   '#3b82f6',
   '#10b981',
 ];
-
-function readQuizAnswers(sceneId: string): Record<string, string | string[]> {
-  if (typeof window === 'undefined') return {};
-  try {
-    // Primary: submitted answers persisted by quiz-view at submit time.
-    const submitted = localStorage.getItem(`quizAnswers:${sceneId}`);
-    if (submitted) return JSON.parse(submitted) as Record<string, string | string[]>;
-    // Fallback: in-progress draft (user started but never submitted) — gives a
-    // partial preview rather than 0 / N.
-    const draft = localStorage.getItem(`quizDraft:${sceneId}`);
-    if (draft) return JSON.parse(draft) as Record<string, string | string[]>;
-    return {};
-  } catch {
-    return {};
-  }
-}
 
 function encouragementKey(pct: number): 'high' | 'mid' | 'low' {
   if (pct >= 90) return 'high';
@@ -319,7 +304,7 @@ interface ClassroomCompletePageProps {
 export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePageProps) {
   const { t, locale } = useI18n();
 
-  const summary = useMemo(() => summarizeScenes(scenes, readQuizAnswers), [scenes]);
+  const summary = useMemo(() => summarizeScenes(scenes, readAnswersForSummary), [scenes]);
 
   const dateLabel = useMemo(() => {
     try {
@@ -339,7 +324,12 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
   );
 
   return (
-    <div className="absolute inset-0 z-[105] flex items-center justify-center overflow-auto">
+    <div
+      className="absolute inset-0 z-[105] flex items-center justify-center overflow-auto"
+      role="status"
+      aria-live="polite"
+      aria-label={t('classroomComplete.title')}
+    >
       {/* Base background */}
       <div className="absolute inset-0 bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-900 dark:via-gray-900 dark:to-amber-950/30" />
       {/* Radial glow */}
