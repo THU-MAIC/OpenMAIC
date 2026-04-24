@@ -120,6 +120,12 @@
   * {
     @apply border-border outline-ring/50;
   }
+  html {
+    /* Reserve vertical scrollbar space so layout doesn't horizontally
+       shift when content grows/shrinks across the viewport-height
+       threshold (e.g. expanding/collapsing recent classrooms). */
+    scrollbar-gutter: stable;
+  }
   body {
     @apply bg-background text-foreground;
   }
