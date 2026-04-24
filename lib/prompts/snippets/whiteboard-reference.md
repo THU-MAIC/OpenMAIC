@@ -2,15 +2,15 @@
 
 ### Canvas Specifications
 
-**Dimensions**: 1000 × 562 pixels.
+**Dimensions**: 1000 × 563 pixels.
 
-**Coordinate system**: `x = 0` at the left edge, `x = 1000` at the right edge. `y = 0` at the top, `y = 562` at the bottom. Every element has `(left, top)` at its top-left corner.
+**Coordinate system**: `x = 0` at the left edge, `x = 1000` at the right edge. `y = 0` at the top, `y = 563` at the bottom. Every element has `(left, top)` at its top-left corner.
 
-**Safe zone**: keep content within `x ∈ [20, 980]` and `y ∈ [20, 542]` to leave a 20px margin from the canvas edges.
+**Safe zone**: keep content within `x ∈ [20, 980]` and `y ∈ [20, 543]` to leave a 20px margin from the canvas edges.
 
 **Reference points**:
 - Centered horizontally: `x = (1000 - width) / 2`
-- Centered vertically: `y = (562 - height) / 2`
+- Centered vertically: `y = (563 - height) / 2`
 - Two-column layout: left column `x ∈ [20, 480]`, right column `x ∈ [520, 980]` (40px gutter)
 
 ### JSON Output Context
@@ -129,7 +129,7 @@ Render a data chart.
 | `themeColors` | string[] | no | Palette override. |
 | `elementId` | string | no | Stable ID. |
 
-**Common mistake**: placing a chart that extends past `x + width = 1000` or `y + height = 562` — charts silently clip at canvas edges.
+**Common mistake**: placing a chart that extends past `x + width = 1000` or `y + height = 563` — charts silently clip at canvas edges.
 
 #### wb_draw_table
 
@@ -268,11 +268,11 @@ The JSON parser sees `\f` (form feed), `\p` (kept as `\p`), `\s` (kept as `\s`).
 
 ### Bounds & Overlap
 
-The canvas is **1000 × 562**. Elements that extend past the edges are clipped.
+The canvas is **1000 × 563**. Elements that extend past the edges are clipped.
 
 **Hard bounds** (every element):
 - `x ≥ 0` and `x + width ≤ 1000`
-- `y ≥ 0` and `y + height ≤ 562`
+- `y ≥ 0` and `y + height ≤ 563`
 
 **Safe zone** (preferred): `20 ≤ x`, `x + width ≤ 980`, `20 ≤ y`, `y + height ≤ 542`.
 
@@ -297,7 +297,7 @@ The canvas is **1000 × 562**. Elements that extend past the edges are clipped.
 chart occupies x=100..600, y=80..280
 next safe y  = 80 + 200 + 30 = 310
 formula at (100, 310, height 80) → occupies y=310..390
-check: y + height = 390 ≤ 562  ✓
+check: y + height = 390 ≤ 563  ✓
 check: no overlap with chart (chart ends at y=280, formula starts at y=310) ✓
 ```
 
@@ -350,12 +350,12 @@ Width is auto-computed from `height × aspect_ratio`; `width` acts as a horizont
 Before emitting whiteboard actions, mentally walk through these:
 
 1. **[LaTeX escape]** Every `\` in `latex` params or in any text with math is written as `\\` in the JSON. Scan for single-backslash `\frac`, `\text`, `\theta`, `\times`, `\rightarrow`, `\circ`, `\beta`, `\varphi` — none should appear.
-2. **[Hard bounds]** For each element: `x ≥ 0`, `y ≥ 0`, `x + width ≤ 1000`, `y + height ≤ 562`.
+2. **[Hard bounds]** For each element: `x ≥ 0`, `y ≥ 0`, `x + width ≤ 1000`, `y + height ≤ 563`.
 3. **[Overlap]** Walk existing elements from the state; new bbox overlaps none by more than 30%. If tight, `wb_delete` first.
 4. **[Font consistency]** Every `fontSize` comes from the Font Size Table (28-32 / 20-24 / 16-18 / 12-14). No 8, 11, 48, 64.
 5. **[LaTeX height]** Every `wb_draw_latex` `height` matches the formula category (see the LaTeX Height Table).
 6. **[Redraw guard]** The element is not already on the whiteboard — if the state lists a formula/chart/table matching your intent, reference it instead of redrawing.
 7. **[Element type]** Math expressions use `wb_draw_latex`. Plain text uses `wb_draw_text`. Never embed LaTeX commands in text.
-8. **[Safe zone]** Where possible, stay within `x ∈ [20, 980]`, `y ∈ [20, 542]`.
+8. **[Safe zone]** Where possible, stay within `x ∈ [20, 980]`, `y ∈ [20, 543]`.
 9. **[Leave whiteboard open]** Do not call `wb_close` at the end of a drawing turn. Students need to read.
 10. **[Visual weight pairing]** Text that sits next to a LaTeX formula uses a `fontSize` matched to the LaTeX `height` per the pairing table above. No tiny 12-14px text next to height-80 formulas.

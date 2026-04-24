@@ -11,7 +11,7 @@
  */
 
 const CANVAS_WIDTH = 1000;
-const CANVAS_HEIGHT = 562;
+const CANVAS_HEIGHT = 563;
 const OVERLAP_THRESHOLD = 0.3; // intersection / min-area; flag if >= 30%
 
 interface BBox {
@@ -172,7 +172,7 @@ function shortId(id: string): string {
  * Detected conflicts:
  * - bbox overlap >= 30% of the smaller element's area
  * - line/arrow path crossing through any non-line element's bbox
- * - any element extending past the 1000×562 canvas bounds
+ * - any element extending past the 1000×563 canvas bounds
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- PPTElement variants
 export function buildWhiteboardConflicts(elements: any[]): string {
@@ -236,7 +236,7 @@ export function buildWhiteboardConflicts(elements: any[]): string {
 
   const lines_out = conflicts.map((c) => `  - ${c}`).join('\n');
   return `\n## ⚠ Layout Conflicts Detected (computed from current whiteboard JSON)
-The following geometric conflicts exist on the board RIGHT NOW. Each one corresponds to a real visible problem in the prior-state image. You MUST address these before adding new content — either wb_delete one of the conflicting elements, or wb_clear and start fresh:
+The following geometric conflicts exist on the board RIGHT NOW. Each entry is a real visible problem on the current board. You MUST address these before adding new content — either wb_delete one of the conflicting elements, or wb_clear and start fresh:
 ${lines_out}
 `;
 }

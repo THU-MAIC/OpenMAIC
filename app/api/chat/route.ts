@@ -120,12 +120,7 @@ export async function POST(req: NextRequest) {
         // Default: thinking disabled for low-latency chat. Callers (e.g. eval
         // harness) can opt in per-request by sending `thinking: { enabled: true }`
         // in the body.
-        const requestedThinking = (body as unknown as { thinking?: ThinkingConfig })
-          .thinking;
-        const thinkingConfig: ThinkingConfig =
-          requestedThinking && typeof requestedThinking === 'object'
-            ? requestedThinking
-            : { enabled: false };
+        const thinkingConfig: ThinkingConfig = body.thinking ?? { enabled: false };
 
         const generator = statelessGenerate(
           {
