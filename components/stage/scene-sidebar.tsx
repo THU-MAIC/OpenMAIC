@@ -506,24 +506,24 @@ export function SceneSidebar({
                   <div
                     className={cn(
                       'relative aspect-video w-full rounded overflow-hidden ring-1 flex items-center justify-center transition-all',
-                      'bg-gradient-to-br from-amber-200 via-orange-200 to-amber-300 dark:from-amber-900/70 dark:via-orange-900/60 dark:to-amber-950/80',
+                      'bg-amber-50/80 dark:bg-amber-950/20',
                       isActive
-                        ? 'ring-amber-400 dark:ring-amber-600 shadow-md shadow-amber-300/40'
-                        : 'ring-amber-200 dark:ring-amber-800',
+                        ? 'ring-amber-300 dark:ring-amber-700'
+                        : 'ring-amber-100 dark:ring-amber-900/40',
                     )}
                   >
-                    {/* radial glow */}
+                    {/* soft radial glow */}
                     <div
                       className="absolute inset-0"
                       style={{
                         background:
-                          'radial-gradient(circle at 50% 55%, rgba(255,255,255,0.35), transparent 60%)',
+                          'radial-gradient(circle at 50% 55%, rgba(251, 191, 36, 0.14), transparent 65%)',
                       }}
                     />
-                    {/* sparkles */}
+                    {/* sparkles (subtle) */}
                     <svg
                       viewBox="0 0 20 20"
-                      className="absolute top-1 right-1.5 w-2 h-2 text-white/80 dark:text-amber-200/80"
+                      className="absolute top-1 right-1.5 w-1.5 h-1.5 text-amber-300/70 dark:text-amber-400/60"
                       aria-hidden
                     >
                       <path
@@ -533,7 +533,7 @@ export function SceneSidebar({
                     </svg>
                     <svg
                       viewBox="0 0 20 20"
-                      className="absolute bottom-1 left-1.5 w-1.5 h-1.5 text-white/70 dark:text-amber-200/70"
+                      className="absolute bottom-1 left-1.5 w-1 h-1 text-amber-300/60 dark:text-amber-400/50"
                       aria-hidden
                     >
                       <path
@@ -542,10 +542,8 @@ export function SceneSidebar({
                       />
                     </svg>
                     <Trophy
-                      className="relative w-9 h-9 text-white dark:text-amber-100 drop-shadow-[0_2px_3px_rgba(120,53,15,0.45)]"
-                      strokeWidth={1.8}
-                      fill="currentColor"
-                      fillOpacity={0.15}
+                      className="relative w-8 h-8 text-amber-500 dark:text-amber-400"
+                      strokeWidth={1.6}
                     />
                   </div>
                 </div>

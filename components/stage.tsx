@@ -965,7 +965,14 @@ export function Stage({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
         {/* Header */}
-        {!isPresenting && <Header currentSceneTitle={currentScene?.title || ''} />}
+        {!isPresenting && (
+          <Header
+            currentSceneTitle={
+              currentScene?.title ||
+              (isCourseComplete && isPendingScene ? t('stage.courseComplete') : '')
+            }
+          />
+        )}
 
         {/* Canvas Area */}
         <div
