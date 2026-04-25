@@ -177,3 +177,15 @@ ef14e8f Normalize turn.text → turn.lithuanian and clarify field name in prompt
 a5f5e89 Drop stale localStorage locale if no longer in supportedLocales
 504c89a Require pronunciation on all LithuanianWord fields and A1/A2 dialog turns
 ```
+
+---
+
+### Branch snapshot — 2026-04-25 09:09 UTC
+
+**1 commit(s) in the last 12 hours:**
+
+  - claude/fix-lithuanian-tts-IFo5y (1 new commit)
+
+```
+dc6b53e Fix Lithuanian Azure TTS: correct SSML locale and lesson-plan-player fallback
+```
