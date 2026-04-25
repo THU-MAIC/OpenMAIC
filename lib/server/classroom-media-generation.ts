@@ -228,20 +228,34 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
 // ---------------------------------------------------------------------------
 
 /**
- * Resolve the best TTS voice for a given provider and content language.
- * Falls back to the provider default if no language-specific voice is known.
+ * Azure persona aliases (env-overridable):
+ *   - "Maicus" = lt-LT teacher voice    (default lt-LT-LeonasNeural, male)
+ *   - "Linus"  = base-language explainer (default en-US-GuyNeural, male)
+ * Resolved once at import time; treat env vars as deploy-time config.
  */
-function resolveTTSVoice(providerId: TTSProviderId, language?: string): string {
-  // Azure supports language-specific neural voices
-  if (providerId === 'azure-tts' && language) {
-    const azureVoiceMap: Record<string, string> = {
-      'lt-LT': 'lt-LT-OnaNeural',
-      'lt': 'lt-LT-OnaNeural',
-      'en-US': 'en-US-JennyNeural',
-      'en': 'en-US-JennyNeural',
+const AZURE_VOICE_MAP: Record<string, string> = (() => {
+  const maicus = process.env.AZURE_VOICE_MAICUS || 'lt-LT-LeonasNeural';
+  const linus = process.env.AZURE_VOICE_LINUS || 'en-US-GuyNeural';
+  return {
+    'lt-LT': maicus,
+    'lt': maicus,
+    'en-US': linus,
+    'en': linus,
+    'es-ES': process.env.AZURE_VOICE_ES || 'es-ES-AlvaroNeural',
+    'fr-FR': process.env.AZURE_VOICE_FR || 'fr-FR-HenriNeural',
+    'de-DE': process.env.AZURE_VOICE_DE || 'de-DE-ConradNeural',
+    'it-IT': process.env.AZURE_VOICE_IT || 'it-IT-DiegoNeural',
+    'pt-PT': process.env.AZURE_VOICE_PT || 'pt-PT-DuarteNeural',
+    'pl-PL': process.env.AZURE_VOICE_PL || 'pl-PL-MarekNeural',
+    'ru-RU': process.env.AZURE_VOICE_RU || 'ru-RU-DmitryNeural',
+    'ja-JP': process.env.AZURE_VOICE_JA || 'ja-JP-KeitaNeural',
+    'zh-CN': process.env.AZURE_VOICE_ZH || 'zh-CN-YunxiNeural',
+  };
+})();
 
-    };
-    const voice = azureVoiceMap[language];
+function resolveTTSVoice(providerId: TTSProviderId, language?: string): string {
+  if (providerId === 'azure-tts' && language) {
+    const voice = AZURE_VOICE_MAP[language];
     if (voice) return voice;
   }
   return DEFAULT_TTS_VOICES[providerId] || 'default';
