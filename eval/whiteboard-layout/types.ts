@@ -60,6 +60,8 @@ export interface ScenarioRunResult {
   runIndex: number;
   model: string;
   checkpoints: CheckpointResult[];
+  /** Per-turn wall-clock latency (ms) from runAgentLoop start to end. */
+  turnDurationsMs?: number[];
   error?: string;
 }
 

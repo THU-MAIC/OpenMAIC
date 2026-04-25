@@ -9,7 +9,7 @@ import type { PPTElement } from '@/lib/types/slides';
 const EVAL_STAGE_ID = '__eval_stage__';
 const EVAL_SCENE_ID = '__eval_scene__';
 const CANVAS_WIDTH = 1000;
-const CANVAS_HEIGHT = 562.5;
+const CANVAS_HEIGHT = 563;
 
 function WhiteboardCanvas() {
   const [elements, setElements] = useState<PPTElement[]>([]);

@@ -202,113 +202,20 @@ ${common}
 /**
  * Build role-aware whiteboard guidelines.
  *
- * - Teacher / Assistant: full whiteboard freedom with dedup & coordination rules.
- * - Student: whiteboard is opt-in — only use it when explicitly invited by the
- *   teacher (e.g., "come solve this on the board"), never proactively.
+ * Content lives in markdown templates under lib/prompts/templates/agent-system-wb-<role>/
+ * with the shared reference at lib/prompts/snippets/whiteboard-reference.md.
  */
 function buildWhiteboardGuidelines(role: string): string {
-  const common = `- Before drawing on the whiteboard, check the "Current State" section below for existing whiteboard elements.
-- Do NOT redraw content that already exists — if a formula, chart, concept, or table is already on the whiteboard, reference it instead of duplicating it.
-- When adding new elements, calculate positions carefully: check existing elements' coordinates and sizes in the whiteboard state, and ensure at least 20px gap between elements. Canvas size is 1000×562. All elements MUST stay within the canvas boundaries — ensure x >= 0, y >= 0, x + width <= 1000, and y + height <= 562. Never place elements that extend beyond the edges.
-- If another agent has already drawn related content, build upon or extend it rather than starting from scratch.`;
+  const templateId =
+    role === 'teacher'
+      ? PROMPT_IDS.AGENT_SYSTEM_WB_TEACHER
+      : role === 'assistant'
+        ? PROMPT_IDS.AGENT_SYSTEM_WB_ASSISTANT
+        : PROMPT_IDS.AGENT_SYSTEM_WB_STUDENT;
 
-  const latexGuidelines = `
-### LaTeX Element Sizing (CRITICAL)
-LaTeX elements have **auto-calculated width** (width = height × aspectRatio). You control **height**, and the system computes the width to preserve the formula's natural proportions. The height you specify is the ACTUAL rendered height — use it to plan vertical layout.
-
-**Height guide by formula category:**
-| Category | Examples | Recommended height |
-|----------|---------|-------------------|
-| Inline equations | E=mc^2, a+b=c | 50-80 |
-| Equations with fractions | \\frac{-b±√(b²-4ac)}{2a} | 60-100 |
-| Integrals / limits | \\int_0^1 f(x)dx, \\lim_{x→0} | 60-100 |
-| Summations with limits | \\sum_{i=1}^{n} i^2 | 80-120 |
-| Matrices | \\begin{pmatrix}...\\end{pmatrix} | 100-180 |
-| Standalone fractions | \\frac{a}{b}, \\frac{1}{2} | 50-80 |
-| Nested fractions | \\frac{\\frac{a}{b}}{\\frac{c}{d}} | 80-120 |
-
-**Key rules:**
-- ALWAYS specify height. The height you set is the actual rendered height.
-- When placing elements below each other, add height + 20-40px gap.
-- Width is auto-computed — long formulas expand horizontally, short ones stay narrow.
-- If a formula's auto-computed width exceeds the whiteboard, reduce height.
-
-**Multi-step derivations:**
-Give each step the **same height** (e.g., 70-80px). The system auto-computes width proportionally — all steps render at the same vertical size.
-
-### LaTeX Support
-This project uses KaTeX for formula rendering, which supports virtually all standard LaTeX math commands. You may use any standard LaTeX math command freely.
-
-- \\text{} can render English text. For non-Latin labels, use a separate TextElement.`;
-
-  if (role === 'teacher') {
-    return `- Use text elements for notes, steps, and explanations.
-- Use chart elements for data visualization (bar charts, line graphs, pie charts, etc.).
-- Use latex elements for mathematical formulas and scientific equations.
-- Use table elements for structured data, comparisons, and organized information.
-- Use code elements for demonstrating code, algorithms, and programming concepts. Code blocks have syntax highlighting and support line-by-line editing.
-- Use shape elements sparingly — only for simple diagrams. Do not add large numbers of meaningless shapes.
-- Use line elements to connect related elements, draw arrows showing relationships, or annotate diagrams. Specify arrow markers via the points parameter.
-- If the whiteboard is too crowded, call wb_clear to wipe it clean before adding new elements.
-
-### Deleting Elements
-- Use wb_delete to remove a specific element by its ID (shown as [id:xxx] in whiteboard state).
-- Prefer wb_delete over wb_clear when only 1-2 elements need removal.
-- Common use cases: removing an outdated formula before writing the corrected version, clearing a step after explaining it to make room for the next step.
-
-### Animation-Like Effects with Delete + Draw
-All wb_draw_* actions accept an optional **elementId** parameter. When you specify elementId, you can later use wb_delete with that same ID to remove the element. This is essential for creating animation effects.
-- To use: add elementId (e.g. "step1", "box_a") when drawing, then wb_delete with that elementId to remove it later.
-- Step-by-step reveal: Draw step 1 (elementId:"step1") → speak → delete "step1" → draw step 2 (elementId:"step2") → speak → ...
-- State transitions: Draw initial state (elementId:"state") → explain → delete "state" → draw final state
-- Progressive diagrams: Draw base diagram → add elements one by one with speech between each
-- Example: draw a shape at position A with elementId "obj", explain it, delete "obj", draw the same shape at position B — this creates the illusion of movement.
-- Combine wb_delete (by element ID) with wb_draw_* actions to update specific parts without clearing everything.
-
-### Layout Constraints (IMPORTANT)
-The whiteboard canvas is 1000 × 562 pixels. Follow these rules to prevent element overlap:
-
-**Coordinate system:**
-- X range: 0 (left) to 1000 (right), Y range: 0 (top) to 562 (bottom)
-- Leave 20px margin from edges (safe area: x 20-980, y 20-542)
-
-**Spacing rules:**
-- Maintain at least 20px gap between adjacent elements
-- Vertical stacking: next_y = previous_y + previous_height + 30
-- Side by side: next_x = previous_x + previous_width + 30
-
-**Layout patterns:**
-- Top-down flow: Start from y=30, stack downward with gaps
-- Two-column: Left column x=20-480, right column x=520-980
-- Center single element: x = (1000 - element_width) / 2
-
-**Before adding a new element:**
-- Check existing elements' positions in the whiteboard state
-- Ensure your new element's bounding box does not overlap with any existing element
-- If space is insufficient, use wb_delete to remove unneeded elements or wb_clear to start fresh
-
-### Code Element Layout & Usage
-- Code blocks have a **header bar (~32px)** showing the file name and language. The actual code content starts below the header. When calculating vertical space, account for this overhead: effective code area height ≈ element height - 32px.
-- Each code line is ~22px tall (at default fontSize 14). Plan height accordingly: a 10-line code block needs about height = 32 (header) + 10 × 22 (lines) + 16 (padding) ≈ 270px.
-- Use **wb_edit_code** for step-by-step code demonstrations: draw a skeleton first, then incrementally insert/modify lines with speech between each edit. This creates a "live coding" effect.
-- When editing code, reference lines by their stable IDs (L1, L2, ...) shown in the whiteboard state. Do NOT guess line IDs — always check the current whiteboard state first.
-${latexGuidelines}
-${common}`;
+  const prompt = buildPrompt(templateId, {});
+  if (!prompt) {
+    throw new Error(`${templateId} template not found`);
   }
-
-  if (role === 'assistant') {
-    return `- The whiteboard is primarily the teacher's space. As an assistant, use it sparingly to supplement.
-- If the teacher has already set up content on the whiteboard (exercises, formulas, tables), do NOT add parallel derivations or extra formulas — explain verbally instead.
-- Only draw on the whiteboard to clarify something the teacher missed, or to add a brief supplementary note that won't clutter the board.
-- Limit yourself to at most 1-2 small elements per response. Prefer speech over drawing.
-${latexGuidelines}
-${common}`;
-  }
-
-  // Student role: suppress proactive whiteboard usage
-  return `- The whiteboard is primarily the teacher's space. Do NOT draw on it proactively.
-- Only use whiteboard actions when the teacher or user explicitly invites you to write on the board (e.g., "come solve this", "show your work on the whiteboard").
-- If no one asked you to use the whiteboard, express your ideas through speech only.
-- When you ARE invited to use the whiteboard, keep it minimal and tidy — add only what was asked for.
-${common}`;
+  return prompt.system;
 }

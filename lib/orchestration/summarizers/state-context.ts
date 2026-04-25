@@ -1,4 +1,5 @@
 import type { StatelessChatRequest } from '@/lib/types/chat';
+import { buildWhiteboardConflicts } from './whiteboard-conflicts';
 
 // ==================== Element Summarization ====================
 
@@ -163,6 +164,8 @@ export function buildStateContext(storeState: StatelessChatRequest['storeState']
     lines.push(
       `Whiteboard (last of ${stage.whiteboard.length}, ${wbElements.length} elements):\n${summarizeElements(wbElements)}`,
     );
+    const conflictsText = buildWhiteboardConflicts(wbElements);
+    if (conflictsText) lines.push(conflictsText);
   }
 
   return lines.join('\n');

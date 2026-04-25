@@ -121,6 +121,13 @@ providers:
 
 Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), and any OpenAI-compatible API.
 
+OpenAI quick example:
+
+```env
+OPENAI_API_KEY=sk-...
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
 MiniMax quick examples:
 
 ```env

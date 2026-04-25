@@ -35,6 +35,8 @@ const { values: args } = parseArgs({
 const BASE_URL = args['base-url']!;
 const CHAT_MODEL_RAW = process.env.EVAL_CHAT_MODEL || process.env.DEFAULT_MODEL;
 const SCORER_MODEL_RAW = process.env.EVAL_SCORER_MODEL;
+const ENABLE_THINKING =
+  process.env.EVAL_ENABLE_THINKING === '1' || process.env.EVAL_ENABLE_THINKING === 'true';
 if (!CHAT_MODEL_RAW) {
   console.error(
     'Error: EVAL_CHAT_MODEL (or DEFAULT_MODEL) must be set. Example: EVAL_CHAT_MODEL=openai:gpt-4.1',
@@ -98,12 +100,15 @@ async function runScenario(
     metadata?: unknown;
   }> = [];
 
+  // Per-turn wall-clock latency around runAgentLoop. Used to compare cost
+  // when toggling EVAL_ENABLE_THINKING.
+  const turnDurationsMs: number[] = [];
+
   try {
     for (let turnIdx = 0; turnIdx < scenario.turns.length; turnIdx++) {
       const turn = scenario.turns[turnIdx];
       console.log(`    Turn ${turnIdx + 1}: "${turn.userMessage.slice(0, 50)}..."`);
 
-      // Add user message
       messages.push({
         role: 'user',
         content: turn.userMessage,
@@ -127,6 +132,7 @@ async function runScenario(
 
       // Use the shared agent loop — same logic as frontend
       const controller = new AbortController();
+      const turnStartMs = Date.now();
       await runAgentLoop(
         {
           config: scenario.config,
@@ -147,10 +153,17 @@ async function runScenario(
             iterResult = null;
             actionChain = Promise.resolve();
 
+            // Inject thinking config when EVAL_ENABLE_THINKING is set.
+            // The chat route defaults to disabled; this opt-in lets us
+            // measure latency / quality tradeoff without changing prod.
+            const bodyWithThinking = ENABLE_THINKING
+              ? { ...body, thinking: { enabled: true } }
+              : body;
+
             return fetch(`${BASE_URL}/api/chat`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(body),
+              body: JSON.stringify(bodyWithThinking),
               signal,
             });
           },
@@ -240,14 +253,20 @@ async function runScenario(
         controller.signal,
         MAX_AGENT_TURNS,
       );
+      const turnDurationMs = Date.now() - turnStartMs;
+      turnDurationsMs.push(turnDurationMs);
+      console.log(
+        `      [timing] turn ${turnIdx + 1} ran in ${(turnDurationMs / 1000).toFixed(1)}s`,
+      );
 
       // Checkpoint: capture + score
       const isLastTurn = turnIdx === scenario.turns.length - 1;
-      if (turn.checkpoint || isLastTurn) {
+      const isCheckpoint = turn.checkpoint || isLastTurn;
+
+      if (isCheckpoint) {
         const elements = stateManager.getWhiteboardElements();
         const screenshotFilename = `run${runIndex}_turn${turnIdx}.png`;
         const screenshotPath = await captureWhiteboard(elements, scenarioDir, screenshotFilename);
-
         console.log(`    Captured: ${screenshotFilename} (${elements.length} elements)`);
 
         try {
@@ -257,7 +276,6 @@ async function runScenario(
         } catch (scoreErr) {
           const msg = scoreErr instanceof Error ? scoreErr.message : String(scoreErr);
           console.error(`    Score error (continuing): ${msg.slice(0, 120)}`);
-          // Preserve screenshot with null score so the report can still include it
           checkpoints.push({ turnIndex: turnIdx, screenshotPath, score: null, elements });
         }
       }
@@ -265,12 +283,12 @@ async function runScenario(
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error(`    Error: ${msg}`);
-    return { scenarioId: scenario.id, runIndex, model, checkpoints, error: msg };
+    return { scenarioId: scenario.id, runIndex, model, checkpoints, turnDurationsMs, error: msg };
   } finally {
     stateManager.dispose();
   }
 
-  return { scenarioId: scenario.id, runIndex, model, checkpoints };
+  return { scenarioId: scenario.id, runIndex, model, checkpoints, turnDurationsMs };
 }
 
 // ==================== Rescore Mode ====================
@@ -331,6 +349,7 @@ async function main() {
 
   console.log('=== Whiteboard Layout Eval ===');
   console.log(`Chat: ${CHAT_MODEL} | Scorer: ${SCORER_MODEL} | Repeats: ${REPEAT}`);
+  console.log(`Thinking: ${ENABLE_THINKING ? 'ON' : 'OFF'}`);
   console.log('');
 
   const scenarios = loadScenarios();

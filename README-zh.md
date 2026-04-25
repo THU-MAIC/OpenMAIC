@@ -121,6 +121,13 @@ providers:
 
 支持的服务商：**OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）以及任何兼容 OpenAI API 的服务。
 
+OpenAI 快速示例：
+
+```env
+OPENAI_API_KEY=sk-...
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
 MiniMax 快速示例：
 
 ```env
