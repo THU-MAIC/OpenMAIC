@@ -189,3 +189,22 @@ a5f5e89 Drop stale localStorage locale if no longer in supportedLocales
 ```
 dc6b53e Fix Lithuanian Azure TTS: correct SSML locale and lesson-plan-player fallback
 ```
+
+---
+
+### Branch snapshot — 2026-04-25 13:39 UTC
+
+**7 commit(s) in the last 12 hours:**
+
+  - claude/setup-agent-team-6hBJQ (1 new commit)
+  - claude/fix-lithuanian-tts-IFo5y (1 new commit)
+
+```
+2f4f08c refactor(maicus): collapse objective helpers, hoist Azure voice map, stop mutating cards
+4bfad52 feat(maicus): expose Maicus + Linus in /api/health (easter egg + diag aid)
+efb029a feat(maicus): embed Maicus + Linus personas in lesson_plan stage
+4986183 feat(maicus): Stage.objective, matching validator, Azure voice aliases (Maicus/Linus)
+e80ed85 docs(team): Maicus scope — classroom teacher, paired with Linus on learning.thomhoffer
+d708fca chore: update HISTORY.md branch snapshot [skip ci]
+dc6b53e Fix Lithuanian Azure TTS: correct SSML locale and lesson-plan-player fallback
+```
