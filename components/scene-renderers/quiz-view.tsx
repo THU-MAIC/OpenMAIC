@@ -25,6 +25,7 @@ import { SpeechButton } from '@/components/audio/speech-button';
 import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
 import {
   clearSubmitted,
+  draftKey,
   readSubmittedState,
   writeSubmittedAnswers,
   writeSubmittedResults,
@@ -669,7 +670,7 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     updateCache: updateAnswersCache,
     clearCache: clearAnswersCache,
   } = useDraftCache<Record<string, string | string[]>>({
-    key: `quizDraft:${sceneId}`,
+    key: draftKey(sceneId),
   });
 
   // Restore cached draft answers (only when there is no submitted state).

@@ -741,10 +741,15 @@ export function Stage({
   // get scene information
   const isPendingScene = currentSceneId === PENDING_SCENE_ID;
   const hasNextPending = generatingOutlines.length > 0;
-  // True when the outline is fully materialized into scenes — signals the
-  // classroom has finished generating and the user can see a completion page.
+  // True when every outline has materialized into a scene and nothing is
+  // currently generating — signals the classroom has finished and the user
+  // can see a completion page. Comparing scenes.length === outlines.length
+  // (rather than just `scenes.length > 0`) means a partial generation with
+  // some failed outlines does not falsely trigger completion.
   const isCourseComplete =
-    generatingOutlines.length === 0 && outlines.length > 0 && scenes.length > 0;
+    outlines.length > 0 &&
+    scenes.length === outlines.length &&
+    generatingOutlines.length === 0;
   const canAdvanceToPendingSlot = hasNextPending || isCourseComplete;
 
   // previous scene (gated)

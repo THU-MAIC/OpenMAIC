@@ -19,6 +19,11 @@ export const DRAFT_KEY_PREFIX = 'quizDraft:';
 export const ANSWERS_KEY_PREFIX = 'quizAnswers:';
 export const RESULTS_KEY_PREFIX = 'quizResults:';
 
+/** Build the draft cache key for a scene. Use this everywhere that needs the
+ *  in-progress quiz answers (e.g. `useDraftCache`) so the prefix stays in
+ *  sync with the readers/clearers below. */
+export const draftKey = (sceneId: string): string => DRAFT_KEY_PREFIX + sceneId;
+
 export type QuizAnswers = Record<string, string | string[]>;
 
 export type SubmittedState =

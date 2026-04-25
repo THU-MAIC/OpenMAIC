@@ -122,7 +122,16 @@ export function CanvasArea({
           {/* Pending Scene Loading / Completion Overlay */}
           <AnimatePresence>
             {isPendingScene && !currentScene && isCourseComplete && (
-              <ClassroomCompletePageConnected />
+              <motion.div
+                key="course-complete"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.3, ease: 'easeOut' }}
+                className="absolute inset-0"
+              >
+                <ClassroomCompletePageConnected />
+              </motion.div>
             )}
             {isPendingScene && !currentScene && !isCourseComplete && (
               <motion.div

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { animate, motion, useReducedMotion } from 'motion/react';
+import { animate, motion, MotionConfig, useReducedMotion } from 'motion/react';
 import { FileText, HelpCircle, Gamepad2, Puzzle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -76,7 +76,10 @@ function Confetti() {
   if (prefersReducedMotion) return null;
 
   return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-visible">
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-visible"
+    >
       {particles.map((p) => (
         <motion.div
           key={p.id}
@@ -129,6 +132,7 @@ function Sparkles() {
       {sparkles.map((s, i) => (
         <motion.div
           key={i}
+          aria-hidden
           className="absolute text-amber-300 dark:text-amber-200"
           style={{
             width: s.size,
@@ -303,7 +307,11 @@ interface ClassroomCompletePageProps {
 
 export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePageProps) {
   const { t, locale } = useI18n();
+  const prefersReducedMotion = useReducedMotion();
 
+  // Computed once on mount: re-grading on every render would be wasteful and
+  // the underlying localStorage values only change when the user revisits a
+  // quiz scene (which unmounts this page).
   const summary = useMemo(() => summarizeScenes(scenes, readAnswersForSummary), [scenes]);
 
   const dateLabel = useMemo(() => {
@@ -324,12 +332,16 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
   );
 
   return (
-    <div
-      className="absolute inset-0 z-[105] flex items-center justify-center overflow-auto"
-      role="status"
-      aria-live="polite"
-      aria-label={t('classroomComplete.title')}
-    >
+    <MotionConfig reducedMotion={prefersReducedMotion ? 'always' : 'user'}>
+      <section
+        className="absolute inset-0 z-[105] flex items-center justify-center overflow-auto"
+        aria-label={t('classroomComplete.title')}
+      >
+        {/* Single-shot announcement for screen readers — replaces the noisy
+            outer aria-live region that used to wrap the live-updating counters. */}
+        <span className="sr-only" role="status">
+          {t('classroomComplete.title')}
+        </span>
       {/* Base background */}
       <div className="absolute inset-0 bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-900 dark:via-gray-900 dark:to-amber-950/30" />
       {/* Radial glow */}
@@ -370,6 +382,7 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
             }}
           />
           <motion.div
+            aria-hidden
             initial={{ y: 44, scale: 0.4, opacity: 0 }}
             animate={{ y: 0, scale: 1, opacity: 1 }}
             transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.2 }}
@@ -475,7 +488,8 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
           </motion.div>
         )}
       </div>
-    </div>
+      </section>
+    </MotionConfig>
   );
 }
 
