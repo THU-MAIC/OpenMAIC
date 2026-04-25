@@ -50,20 +50,10 @@ const OBJECTIVE_TEMPLATES: Record<string, (topic: string, level: string) => stri
   lt: (t, l) => `Šiandien mokysiesi ${t}${l ? ` (CEFR ${l})` : ''}.`,
 };
 
-function pickObjectiveTemplate(language: string) {
+function buildObjectiveText(topic: string, cefrLevel: string, language: string): string {
   const base = (language || 'en').toLowerCase().split('-')[0];
-  return OBJECTIVE_TEMPLATES[base] ?? OBJECTIVE_TEMPLATES.en;
-}
-
-function buildObjectiveText(
-  microGoal: { topic: string; cefrLevel: string },
-  language: string,
-): string {
-  return pickObjectiveTemplate(language)(microGoal.topic || 'today\'s topic', microGoal.cefrLevel || '');
-}
-
-function buildGenericObjective(title: string, language: string): string {
-  return pickObjectiveTemplate(language)(title, '');
+  const template = OBJECTIVE_TEMPLATES[base] ?? OBJECTIVE_TEMPLATES.en;
+  return template(topic || "today's topic", cefrLevel || '');
 }
 
 /** Default agents used when agentMode is 'default' */
@@ -321,19 +311,19 @@ function normalizeCards(cards: unknown[]): ExerciseCard[] {
       out.push(card as ExerciseCard);
       continue;
     }
-    const c = card as Record<string, unknown>;
+    const c = { ...(card as Record<string, unknown>) };
     if (Array.isArray(c.turns)) {
       c.turns = (c.turns as Record<string, unknown>[]).map((turn) => {
         if (turn.lithuanian === undefined && turn.text !== undefined) {
-          turn.lithuanian = turn.text;
-          delete turn.text;
+          const { text, ...rest } = turn;
+          return { ...rest, lithuanian: text };
         }
         return turn;
       });
     }
-    // Matching-card pair guard: drop any pair with empty left/right so the
-    // client never renders a blank-row dropdown. If nothing valid remains,
-    // skip the entire card — better to render one fewer card than a broken one.
+    // Matching-card pair guard: drop empty-left/empty-right pairs so the
+    // client never renders a blank-row dropdown. Drop the card entirely if
+    // nothing valid remains — better one fewer card than a broken one.
     if (c.kind === 'matching' && Array.isArray(c.pairs)) {
       const validPairs = (c.pairs as Array<Record<string, unknown>>).filter((p) => {
         const left = typeof p?.left === 'string' ? p.left.trim() : '';
@@ -555,7 +545,7 @@ export async function generateClassroom(
       id: stageId,
       name: title,
       objective: {
-        text: buildObjectiveText(lessonContent.microGoal, objectiveLang),
+        text: buildObjectiveText(lessonContent.microGoal.topic, lessonContent.microGoal.cefrLevel, objectiveLang),
         language: objectiveLang,
       },
       language: input.language,
@@ -753,7 +743,7 @@ export async function generateClassroom(
     name: stageTitle,
     description: undefined,
     objective: {
-      text: buildGenericObjective(stageTitle, explainLang || 'en-US'),
+      text: buildObjectiveText(stageTitle, '', explainLang || 'en-US'),
       language: explainLang || 'en-US',
     },
     language: lang,
