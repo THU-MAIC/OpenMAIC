@@ -255,7 +255,9 @@ async function runScenario(
       );
       const turnDurationMs = Date.now() - turnStartMs;
       turnDurationsMs.push(turnDurationMs);
-      console.log(`      [timing] turn ${turnIdx + 1} ran in ${(turnDurationMs / 1000).toFixed(1)}s`);
+      console.log(
+        `      [timing] turn ${turnIdx + 1} ran in ${(turnDurationMs / 1000).toFixed(1)}s`,
+      );
 
       // Checkpoint: capture + score
       const isLastTurn = turnIdx === scenario.turns.length - 1;

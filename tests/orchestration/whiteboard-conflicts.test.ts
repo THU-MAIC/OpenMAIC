@@ -80,10 +80,7 @@ describe('buildWhiteboardConflicts — bbox overlap', () => {
     expect(overlapping).toContain('50%');
 
     // Overlap area = 10×100 = 1000 → 10% — below threshold.
-    const tiny = buildWhiteboardConflicts([
-      text('a', 0, 0, 100, 100),
-      text('b', 90, 0, 100, 100),
-    ]);
+    const tiny = buildWhiteboardConflicts([text('a', 0, 0, 100, 100), text('b', 90, 0, 100, 100)]);
     expect(tiny).toBe('');
   });
 
@@ -157,10 +154,7 @@ describe('buildWhiteboardConflicts — canvas edge clipping', () => {
 
 describe('buildWhiteboardConflicts — output format', () => {
   test('renders a single markdown block with a header and bullet list', () => {
-    const out = buildWhiteboardConflicts([
-      text('a', 0, 0, 100, 100),
-      text('b', 50, 0, 100, 100),
-    ]);
+    const out = buildWhiteboardConflicts([text('a', 0, 0, 100, 100), text('b', 50, 0, 100, 100)]);
     expect(out).toMatch(/## ⚠ Layout Conflicts Detected/);
     expect(out).toMatch(/\n {2}- OVERLAP:/);
   });
