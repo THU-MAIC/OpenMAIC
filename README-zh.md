@@ -116,6 +116,13 @@ providers:
 
 支持的服务商：**OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**MiniMax**、**Grok (xAI)** 以及任何兼容 OpenAI API 的服务。
 
+OpenAI 快速示例：
+
+```env
+OPENAI_API_KEY=sk-...
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
 MiniMax 快速示例：
 
 ```env

@@ -116,6 +116,13 @@ providers:
 
 Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **MiniMax**, **Grok (xAI)**, and any OpenAI-compatible API.
 
+OpenAI quick example:
+
+```env
+OPENAI_API_KEY=sk-...
+DEFAULT_MODEL=openai:gpt-5.5
+```
+
 MiniMax quick examples:
 
 ```env
