@@ -35,7 +35,15 @@ function getCardGroundingId(card: LessonPlanContent['cards'][number]): string | 
   return undefined;
 }
 
-function useTTS(phrase: string | undefined) {
+// Maps BCP-47 language codes to Azure Neural voices (female, high quality)
+const AZURE_LANGUAGE_VOICES: Record<string, string> = {
+  'lt-LT': 'lt-LT-OnaNeural',
+  lt: 'lt-LT-OnaNeural',
+  'en-US': 'en-US-JennyNeural',
+  en: 'en-US-JennyNeural',
+};
+
+function useTTS(phrase: string | undefined, language?: string) {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const cache = useRef<Record<string, string>>({});
@@ -45,11 +53,24 @@ function useTTS(phrase: string | undefined) {
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
 
+  // When browser-native is selected but Azure is server-configured, use Azure for the target language.
+  // Browser native TTS has no Lithuanian voice on most systems, causing garbled output.
+  const isAzureServerConfigured = ttsProvidersConfig['azure-tts']?.isServerConfigured === true;
+  let effectiveProviderId = ttsProviderId;
+  let effectiveVoice = ttsVoice;
+  if (ttsProviderId === 'browser-native-tts' && isAzureServerConfigured && language) {
+    const azureVoice = AZURE_LANGUAGE_VOICES[language];
+    if (azureVoice) {
+      effectiveProviderId = 'azure-tts';
+      effectiveVoice = azureVoice;
+    }
+  }
+
   useEffect(() => {
     setAudioUrl(null);
-    if (!phrase || ttsProviderId === 'browser-native-tts') return;
+    if (!phrase || effectiveProviderId === 'browser-native-tts') return;
 
-    const cacheKey = `${ttsProviderId}:${ttsVoice}:${phrase}`;
+    const cacheKey = `${effectiveProviderId}:${effectiveVoice}:${phrase}`;
     if (cache.current[cacheKey]) {
       setAudioUrl(cache.current[cacheKey]);
       return;
@@ -58,7 +79,7 @@ function useTTS(phrase: string | undefined) {
     let cancelled = false;
     setLoading(true);
     const audioId = nanoid();
-    const providerConfig = ttsProvidersConfig[ttsProviderId as keyof typeof ttsProvidersConfig] as
+    const providerConfig = ttsProvidersConfig[effectiveProviderId as keyof typeof ttsProvidersConfig] as
       | { apiKey?: string; baseUrl?: string; modelId?: string }
       | undefined;
 
@@ -68,8 +89,8 @@ function useTTS(phrase: string | undefined) {
       body: JSON.stringify({
         text: phrase,
         audioId,
-        ttsProviderId,
-        ttsVoice,
+        ttsProviderId: effectiveProviderId,
+        ttsVoice: effectiveVoice,
         ttsSpeed,
         ttsModelId: providerConfig?.modelId,
         ttsApiKey: providerConfig?.apiKey,
@@ -91,24 +112,24 @@ function useTTS(phrase: string | undefined) {
       .catch(() => {})
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [phrase, ttsProviderId, ttsVoice, ttsSpeed, ttsProvidersConfig]);
+  }, [phrase, effectiveProviderId, effectiveVoice, ttsSpeed, ttsProvidersConfig]);
 
   const play = useCallback(() => {
     if (!phrase) return;
-    if (ttsProviderId === 'browser-native-tts') {
+    if (effectiveProviderId === 'browser-native-tts') {
       const utter = new SpeechSynthesisUtterance(phrase);
-      if (ttsVoice && ttsVoice !== 'default') {
+      if (effectiveVoice && effectiveVoice !== 'default') {
         const voices = speechSynthesis.getVoices();
-        const match = voices.find((v) => v.name === ttsVoice);
+        const match = voices.find((v) => v.name === effectiveVoice);
         if (match) utter.voice = match;
       }
       speechSynthesis.speak(utter);
     } else if (audioUrl) {
       new Audio(audioUrl).play().catch(() => {});
     }
-  }, [phrase, ttsProviderId, ttsVoice, audioUrl]);
+  }, [phrase, effectiveProviderId, effectiveVoice, audioUrl]);
 
-  const canPlay = ttsProviderId === 'browser-native-tts' ? !!phrase : !!audioUrl;
+  const canPlay = effectiveProviderId === 'browser-native-tts' ? !!phrase : !!audioUrl;
 
   return { play, loading, canPlay };
 }
@@ -128,7 +149,7 @@ export function LessonPlanPlayer({ stage, scene }: LessonPlanPlayerProps) {
   const grounding = gId ? groundingMap[gId] : undefined;
   const imageUrl = grounding?.imageUrl;
 
-  const { play: playAudio, loading: ttsLoading, canPlay } = useTTS(phrase);
+  const { play: playAudio, loading: ttsLoading, canPlay } = useTTS(phrase, stage.language);
 
   return (
     <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-900">
