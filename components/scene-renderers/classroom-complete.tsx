@@ -342,152 +342,155 @@ export function ClassroomCompletePage({ scenes, title }: ClassroomCompletePagePr
         <span className="sr-only" role="status">
           {t('classroomComplete.title')}
         </span>
-      {/* Base background */}
-      <div className="absolute inset-0 bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-900 dark:via-gray-900 dark:to-amber-950/30" />
-      {/* Radial glow */}
-      <motion.div
-        aria-hidden
-        initial={{ opacity: 0, scale: 0.6 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        className="pointer-events-none absolute inset-0"
-        style={{
-          background:
-            'radial-gradient(circle at 50% 42%, rgba(251, 191, 36, 0.32), rgba(249, 115, 22, 0.12) 38%, transparent 68%)',
-        }}
-      />
-      {/* Confetti */}
-      <Confetti />
+        {/* Base background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-50 via-white to-orange-50 dark:from-gray-900 dark:via-gray-900 dark:to-amber-950/30" />
+        {/* Radial glow */}
+        <motion.div
+          aria-hidden
+          initial={{ opacity: 0, scale: 0.6 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.6, ease: 'easeOut' }}
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              'radial-gradient(circle at 50% 42%, rgba(251, 191, 36, 0.32), rgba(249, 115, 22, 0.12) 38%, transparent 68%)',
+          }}
+        />
+        {/* Confetti */}
+        <Confetti />
 
-      {/* Content */}
-      <div className="relative flex flex-col items-center gap-6 max-w-2xl w-full px-8 py-10">
-        {/* Trophy + halo + sparkles */}
-        <div className="relative" style={{ width: 200, height: 200 }}>
-          <motion.div
-            aria-hidden
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: [0.9, 1.15, 0.95, 1.1], opacity: [0, 0.55, 0.4, 0.5] }}
-            transition={{
-              delay: 0.15,
-              duration: 2.6,
-              repeat: Infinity,
-              repeatType: 'reverse',
-              ease: 'easeInOut',
-            }}
-            className="absolute inset-0 rounded-full"
-            style={{
-              background:
-                'radial-gradient(circle, rgba(251, 191, 36, 0.5), rgba(249, 115, 22, 0.12) 55%, transparent 72%)',
-              filter: 'blur(14px)',
-            }}
-          />
-          <motion.div
-            aria-hidden
-            initial={{ y: 44, scale: 0.4, opacity: 0 }}
-            animate={{ y: 0, scale: 1, opacity: 1 }}
-            transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.2 }}
-            className="absolute inset-0 flex items-center justify-center"
-          >
+        {/* Content */}
+        <div className="relative flex flex-col items-center gap-6 max-w-2xl w-full px-8 py-10">
+          {/* Trophy + halo + sparkles */}
+          <div className="relative" style={{ width: 200, height: 200 }}>
             <motion.div
-              animate={{ y: [0, -5, 0] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
-              style={{ width: 148, height: 185 }}
+              aria-hidden
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: [0.9, 1.15, 0.95, 1.1], opacity: [0, 0.55, 0.4, 0.5] }}
+              transition={{
+                delay: 0.15,
+                duration: 2.6,
+                repeat: Infinity,
+                repeatType: 'reverse',
+                ease: 'easeInOut',
+              }}
+              className="absolute inset-0 rounded-full"
+              style={{
+                background:
+                  'radial-gradient(circle, rgba(251, 191, 36, 0.5), rgba(249, 115, 22, 0.12) 55%, transparent 72%)',
+                filter: 'blur(14px)',
+              }}
+            />
+            <motion.div
+              aria-hidden
+              initial={{ y: 44, scale: 0.4, opacity: 0 }}
+              animate={{ y: 0, scale: 1, opacity: 1 }}
+              transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.2 }}
+              className="absolute inset-0 flex items-center justify-center"
             >
-              <TrophySvg className="w-full h-full drop-shadow-[0_10px_18px_rgba(180,83,9,0.35)]" />
+              <motion.div
+                animate={{ y: [0, -5, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                style={{ width: 148, height: 185 }}
+              >
+                <TrophySvg className="w-full h-full drop-shadow-[0_10px_18px_rgba(180,83,9,0.35)]" />
+              </motion.div>
             </motion.div>
-          </motion.div>
-          <Sparkles />
-        </div>
-
-        {/* Ribbon */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.7, y: 10 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ delay: 0.65, type: 'spring', stiffness: 280, damping: 18 }}
-          className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-amber-500/30"
-        >
-          <Sparkle className="w-3 h-3" />
-          {t('classroomComplete.title')}
-          <Sparkle className="w-3 h-3" />
-        </motion.div>
-
-        {/* Title + date */}
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.78, duration: 0.4, ease: 'easeOut' }}
-          className="text-center space-y-1.5"
-        >
-          <h2 className="text-3xl md:text-4xl font-black leading-tight bg-gradient-to-br from-amber-700 via-orange-600 to-amber-800 dark:from-amber-200 dark:via-orange-200 dark:to-amber-300 bg-clip-text text-transparent">
-            {title || t('classroomComplete.title')}
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">{dateLabel}</p>
-        </motion.div>
-
-        {/* Stats cards */}
-        {trailItems.length > 0 && (
-          <div
-            className={cn(
-              'grid gap-3 w-full',
-              trailItems.length === 1 && 'grid-cols-1 max-w-[180px]',
-              trailItems.length === 2 && 'grid-cols-2 max-w-md',
-              trailItems.length === 3 && 'grid-cols-3',
-              trailItems.length === 4 && 'grid-cols-2 sm:grid-cols-4',
-            )}
-          >
-            {trailItems.map(({ type, count, Icon, label }, idx) => {
-              const cardDelay = 0.96 + idx * 0.08;
-              return (
-                <motion.div
-                  key={type}
-                  initial={{ opacity: 0, y: 14, scale: 0.9 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  transition={{
-                    delay: cardDelay,
-                    type: 'spring',
-                    stiffness: 260,
-                    damping: 20,
-                  }}
-                  className="rounded-2xl bg-white/90 dark:bg-gray-900/70 border border-amber-100 dark:border-amber-900/40 shadow-sm px-4 py-4 flex flex-col items-center gap-1.5 backdrop-blur-sm"
-                >
-                  <Icon className="w-6 h-6 text-amber-500 dark:text-amber-400" strokeWidth={1.8} />
-                  <div className="text-3xl font-black text-gray-900 dark:text-gray-100 leading-none">
-                    <AnimatedCounter value={count} delay={cardDelay + 0.15} />
-                  </div>
-                  <div className="text-[11px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    {label}
-                  </div>
-                </motion.div>
-              );
-            })}
+            <Sparkles />
           </div>
-        )}
 
-        {/* Quiz card */}
-        {summary.quiz && (
+          {/* Ribbon */}
           <motion.div
-            initial={{ opacity: 0, y: 14, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: 1.2, type: 'spring', stiffness: 220, damping: 20 }}
-            className="w-full rounded-2xl bg-gradient-to-br from-amber-100 via-orange-50 to-amber-100 dark:from-amber-950/50 dark:via-orange-950/30 dark:to-amber-950/50 border border-amber-200 dark:border-amber-900/50 px-6 py-5 shadow-md shadow-amber-200/30 dark:shadow-amber-950/20"
+            initial={{ opacity: 0, scale: 0.7, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            transition={{ delay: 0.65, type: 'spring', stiffness: 280, damping: 18 }}
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-gradient-to-r from-amber-400 via-orange-400 to-amber-500 text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-amber-500/30"
           >
-            <div className="flex items-center gap-5">
-              <QuizRing pct={summary.quiz.pct} delay={1.3} />
-              <div className="flex-1 min-w-0">
-                <div className="text-base font-bold text-amber-700 dark:text-amber-300">
-                  {t('classroomComplete.quizScoreLabel', {
-                    correct: summary.quiz.correct,
-                    total: summary.quiz.total,
-                  })}
-                </div>
-                <div className="mt-1 text-sm text-amber-700/80 dark:text-amber-300/80">
-                  {t(`classroomComplete.encouragement.${encouragementKey(summary.quiz.pct)}`)}
+            <Sparkle className="w-3 h-3" />
+            {t('classroomComplete.title')}
+            <Sparkle className="w-3 h-3" />
+          </motion.div>
+
+          {/* Title + date */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.78, duration: 0.4, ease: 'easeOut' }}
+            className="text-center space-y-1.5"
+          >
+            <h2 className="text-3xl md:text-4xl font-black leading-tight bg-gradient-to-br from-amber-700 via-orange-600 to-amber-800 dark:from-amber-200 dark:via-orange-200 dark:to-amber-300 bg-clip-text text-transparent">
+              {title || t('classroomComplete.title')}
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">{dateLabel}</p>
+          </motion.div>
+
+          {/* Stats cards */}
+          {trailItems.length > 0 && (
+            <div
+              className={cn(
+                'grid gap-3 w-full',
+                trailItems.length === 1 && 'grid-cols-1 max-w-[180px]',
+                trailItems.length === 2 && 'grid-cols-2 max-w-md',
+                trailItems.length === 3 && 'grid-cols-3',
+                trailItems.length === 4 && 'grid-cols-2 sm:grid-cols-4',
+              )}
+            >
+              {trailItems.map(({ type, count, Icon, label }, idx) => {
+                const cardDelay = 0.96 + idx * 0.08;
+                return (
+                  <motion.div
+                    key={type}
+                    initial={{ opacity: 0, y: 14, scale: 0.9 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{
+                      delay: cardDelay,
+                      type: 'spring',
+                      stiffness: 260,
+                      damping: 20,
+                    }}
+                    className="rounded-2xl bg-white/90 dark:bg-gray-900/70 border border-amber-100 dark:border-amber-900/40 shadow-sm px-4 py-4 flex flex-col items-center gap-1.5 backdrop-blur-sm"
+                  >
+                    <Icon
+                      className="w-6 h-6 text-amber-500 dark:text-amber-400"
+                      strokeWidth={1.8}
+                    />
+                    <div className="text-3xl font-black text-gray-900 dark:text-gray-100 leading-none">
+                      <AnimatedCounter value={count} delay={cardDelay + 0.15} />
+                    </div>
+                    <div className="text-[11px] text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      {label}
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Quiz card */}
+          {summary.quiz && (
+            <motion.div
+              initial={{ opacity: 0, y: 14, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ delay: 1.2, type: 'spring', stiffness: 220, damping: 20 }}
+              className="w-full rounded-2xl bg-gradient-to-br from-amber-100 via-orange-50 to-amber-100 dark:from-amber-950/50 dark:via-orange-950/30 dark:to-amber-950/50 border border-amber-200 dark:border-amber-900/50 px-6 py-5 shadow-md shadow-amber-200/30 dark:shadow-amber-950/20"
+            >
+              <div className="flex items-center gap-5">
+                <QuizRing pct={summary.quiz.pct} delay={1.3} />
+                <div className="flex-1 min-w-0">
+                  <div className="text-base font-bold text-amber-700 dark:text-amber-300">
+                    {t('classroomComplete.quizScoreLabel', {
+                      correct: summary.quiz.correct,
+                      total: summary.quiz.total,
+                    })}
+                  </div>
+                  <div className="mt-1 text-sm text-amber-700/80 dark:text-amber-300/80">
+                    {t(`classroomComplete.encouragement.${encouragementKey(summary.quiz.pct)}`)}
+                  </div>
                 </div>
               </div>
-            </div>
-          </motion.div>
-        )}
-      </div>
+            </motion.div>
+          )}
+        </div>
       </section>
     </MotionConfig>
   );

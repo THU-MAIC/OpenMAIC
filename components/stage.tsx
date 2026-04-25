@@ -747,9 +747,7 @@ export function Stage({
   // (rather than just `scenes.length > 0`) means a partial generation with
   // some failed outlines does not falsely trigger completion.
   const isCourseComplete =
-    outlines.length > 0 &&
-    scenes.length === outlines.length &&
-    generatingOutlines.length === 0;
+    outlines.length > 0 && scenes.length === outlines.length && generatingOutlines.length === 0;
   const canAdvanceToPendingSlot = hasNextPending || isCourseComplete;
 
   // previous scene (gated)
