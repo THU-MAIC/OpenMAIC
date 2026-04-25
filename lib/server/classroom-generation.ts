@@ -563,6 +563,31 @@ export async function generateClassroom(
       style: 'lesson_plan',
       createdAt: Date.now(),
       updatedAt: Date.now(),
+      // Persona pair: Maicus is the in-class teacher (target language);
+      // Linus is the school adviser (base language). Embedded here so any
+      // client that hydrates this classroom sees the same names.
+      generatedAgentConfigs: [
+        {
+          id: 'maicus',
+          name: 'Maicus',
+          role: 'Lithuanian teacher',
+          persona:
+            "I'm Maicus, your Lithuanian teacher. I run today's classroom — pronunciation, exercises, real conversation.",
+          avatar: AGENT_DEFAULT_AVATARS[0],
+          color: AGENT_COLOR_PALETTE[0],
+          priority: 1,
+        },
+        {
+          id: 'linus',
+          name: 'Linus',
+          role: 'School adviser',
+          persona:
+            "I'm Linus, your school adviser. I keep your schedule, streak, and remember what you've learned across devices.",
+          avatar: AGENT_DEFAULT_AVATARS[1 % AGENT_DEFAULT_AVATARS.length],
+          color: AGENT_COLOR_PALETTE[1 % AGENT_COLOR_PALETTE.length],
+          priority: 2,
+        },
+      ],
     };
 
     const scene: Scene = {
