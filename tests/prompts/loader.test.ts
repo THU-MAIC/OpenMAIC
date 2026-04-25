@@ -1,9 +1,7 @@
-import { describe, test, expect, beforeEach } from 'vitest';
-import { loadPrompt, loadSnippet, buildPrompt, clearPromptCache } from '@/lib/prompts';
+import { describe, test, expect } from 'vitest';
+import { loadPrompt, loadSnippet, buildPrompt } from '@/lib/prompts';
 
 describe('lib/prompts loader', () => {
-  beforeEach(() => clearPromptCache());
-
   test('loads a known template + interpolates variables', () => {
     const result = buildPrompt('slide-actions', {
       title: 'Test Slide',

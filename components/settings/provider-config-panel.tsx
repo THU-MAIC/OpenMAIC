@@ -337,8 +337,6 @@ export function ProviderConfigPanel({
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">{t('settings.modelsManagementDescription')}</p>
-
         <div className="space-y-1.5">
           {models.map((model, index) => {
             return (

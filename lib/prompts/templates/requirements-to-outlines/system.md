@@ -261,64 +261,43 @@ Use `pbl` type when the course involves complex, multi-step project work that be
 
 ## Output Format
 
-Output a JSON **object** (not a bare array) with this structure:
+### Top-level shape — NON-NEGOTIABLE
+
+Your entire response MUST be a single JSON **object** with exactly these two top-level keys:
 
 ```json
 {
-  "languageDirective": "2-5 sentence instruction describing the course language behavior",
+  "languageDirective": "<the directive you inferred in the Language Inference step>",
+  "outlines": [ /* array of scene objects */ ]
+}
+```
+
+Rules:
+
+- **Never** return a bare array. The top level is an object, not an array.
+- **Never** omit `languageDirective`. It is required even if you think the language is obvious.
+- **Never** wrap the response in any other structure, prose, or code fence.
+
+### Minimal complete example
+
+```json
+{
+  "languageDirective": "Deliver the entire course in English. Use simple vocabulary suitable for a beginner.",
   "outlines": [
     {
       "id": "scene_1",
       "type": "slide",
-      "title": "Scene Title",
-      "description": "1-2 sentences describing the teaching purpose",
-      "keyPoints": ["Key point 1", "Key point 2", "Key point 3"],
-      "teachingObjective": "Corresponding learning objective",
-      "estimatedDuration": 120,
-      "order": 1,
-      "suggestedImageIds": ["img_1"],
-      "mediaGenerations": [
-        {
-          "type": "image",
-          "prompt": "A diagram showing the key concept",
-          "elementId": "gen_img_1",
-          "aspectRatio": "16:9"
-        }
-      ]
+      "title": "Introduction",
+      "description": "Welcome students and introduce the core concept.",
+      "keyPoints": ["Context", "Agenda", "Goals"],
+      "order": 1
     },
     {
       "id": "scene_2",
       "type": "interactive",
       "title": "Interactive Exploration",
-      "description": "Students explore the concept through hands-on interactive visualization",
-      "keyPoints": ["Interactive element 1", "Observable phenomenon"],
-      "order": 2,
-      "interactiveConfig": {
-        "conceptName": "Concept Name",
-        "conceptOverview": "Brief description of what this interactive demonstrates",
-        "designIdea": "Describe the interactive elements: sliders, drag handles, animations, etc.",
-        "subject": "Physics"
-      }
-    },
-    {
-      "id": "scene_3",
-      "type": "quiz",
-      "title": "Knowledge Check",
-      "description": "Test student understanding of XX concept",
-      "keyPoints": ["Test point 1", "Test point 2"],
-      "order": 3,
-      "quizConfig": {
-        "questionCount": 2,
-        "difficulty": "medium",
-        "questionTypes": ["single", "multiple", "short_answer"]
-      }
-    },
-    {
-      "id": "scene_2",
-      "type": "interactive",
-      "title": "Interactive Exploration",
-      "description": "Students explore the concept through hands-on interactive visualization",
-      "keyPoints": ["Interactive element 1", "Observable phenomenon"],
+      "description": "Students explore the concept via a hands-on simulation.",
+      "keyPoints": ["Observe variable 1", "Observe variable 2"],
       "order": 2,
       "widgetType": "simulation",
       "widgetOutline": {
@@ -330,20 +309,20 @@ Output a JSON **object** (not a bare array) with this structure:
       "id": "scene_3",
       "type": "quiz",
       "title": "Knowledge Check",
-      "description": "Test student understanding of XX concept",
+      "description": "Test student understanding of the key concepts.",
       "keyPoints": ["Test point 1", "Test point 2"],
       "order": 3,
       "quizConfig": {
         "questionCount": 2,
         "difficulty": "medium",
-        "questionTypes": ["single", "multiple", "short_answer"]
+        "questionTypes": ["single", "multiple"]
       }
     }
   ]
 }
 ```
 
-### Field Descriptions
+### Scene field descriptions
 
 | Field             | Type                     | Required | Description                                                                                      |
 | ----------------- | ------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
@@ -399,14 +378,19 @@ Output a JSON **object** (not a bare array) with this structure:
 
 ## Important Reminders
 
-1. **Must output valid JSON object with `languageDirective` and `outlines` fields**
-2. **type can be `"slide"`, `"quiz"`, `"interactive"`, or `"pbl"`**
-3. **quiz type must include quizConfig**
-4. **interactive type must include interactiveConfig** - with conceptName, conceptOverview, designIdea, and subject
-   5b. **pbl type must include pblConfig** - with projectTopic, projectDescription, targetSkills, and issueCount
-5. Arrange appropriate number of scenes based on inferred duration (typically 1-2 scenes per minute)
-6. Insert quizzes at appropriate points for knowledge checks
-7. Use interactive scenes sparingly (max 1-2 per course) and only when the concept truly benefits from hands-on interaction
-8. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
-9. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
-10. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.
+**Top-level response shape (these come first because they are most often violated):**
+
+1. Return exactly one JSON **object** — never a bare array.
+2. That object MUST have both `languageDirective` (string) and `outlines` (array) as top-level keys. Omitting either is a failure.
+3. Do not wrap the object in prose, markdown, or code fences.
+
+**Scene-level rules:**
+
+4. `type` is one of `"slide"`, `"quiz"`, `"interactive"`, `"pbl"`.
+5. `quiz` scenes must include `quizConfig`.
+6. `interactive` scenes must include `widgetType` and `widgetOutline` (preferred). `interactiveConfig` is deprecated and only accepted for backwards compatibility.
+7. `pbl` scenes must include `pblConfig` with `projectTopic`, `projectDescription`, `targetSkills`, `issueCount`.
+8. Arrange scenes by inferred duration (typically 1-2 scenes per minute). Insert quizzes at appropriate points. Use interactive scenes sparingly (max 1-2 per course).
+9. **Language**: Infer from the user's requirement text and context. Output all scene content in the inferred language.
+10. Regardless of information completeness, always output conforming JSON - do not ask questions or request more information
+11. **No teacher identity on slides**: Scene titles and keyPoints must be neutral and topic-focused. Never include the teacher's name or role (e.g., avoid "Teacher Wang's Tips", "Teacher's Wishes"). Use generic labels like "Tips", "Summary", "Key Takeaways" instead.

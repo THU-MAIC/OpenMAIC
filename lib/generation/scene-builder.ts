@@ -115,6 +115,7 @@ export async function buildSceneFromOutline(
     ctx,
     agents,
     userProfile,
+    languageDirective: langText,
   });
   log.debug(`Generated ${actions.length} actions for: ${outline.title}`);
 

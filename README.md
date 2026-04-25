@@ -104,6 +104,9 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=...
 GROK_API_KEY=xai-...
+OPENROUTER_API_KEY=sk-or-...
+TENCENT_API_KEY=sk-...
+XIAOMI_API_KEY=...
 ```
 
 You can also configure providers via `server-providers.yml`:
@@ -116,7 +119,14 @@ providers:
     apiKey: sk-ant-...
 ```
 
-Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **MiniMax**, **Grok (xAI)**, **Doubao**, **GLM (Zhipu)**, **Ollama** (local), and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), and any OpenAI-compatible API.
+
+OpenAI quick example:
+
+```env
+OPENAI_API_KEY=sk-...
+DEFAULT_MODEL=openai:gpt-5.5
+```
 
 MiniMax quick examples:
 
@@ -130,6 +140,9 @@ TTS_MINIMAX_BASE_URL=https://api.minimaxi.com
 
 IMAGE_MINIMAX_API_KEY=...
 IMAGE_MINIMAX_BASE_URL=https://api.minimaxi.com
+
+IMAGE_OPENAI_API_KEY=...
+IMAGE_OPENAI_BASE_URL=https://api.openai.com/v1
 
 VIDEO_MINIMAX_API_KEY=...
 VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
@@ -639,4 +652,3 @@ If you find OpenMAIC useful in your research, please consider citing:
 ## 📄 License
 
 This project is licensed under the [GNU Affero General Public License v3.0](LICENSE).
-

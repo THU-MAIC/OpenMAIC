@@ -16,7 +16,10 @@ export type BuiltInProviderId =
   | 'glm'
   | 'siliconflow'
   | 'doubao'
+  | 'openrouter'
   | 'grok'
+  | 'tencent-hunyuan'
+  | 'xiaomi'
   | 'ollama';
 
 /**
