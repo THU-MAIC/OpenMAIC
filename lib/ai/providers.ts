@@ -61,6 +61,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/openai.svg',
     models: [
       {
+        id: 'gpt-5.5',
+        name: 'GPT-5.5',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
         id: 'gpt-5.4-pro',
         name: 'GPT-5.4 Pro',
         contextWindow: 1050000,

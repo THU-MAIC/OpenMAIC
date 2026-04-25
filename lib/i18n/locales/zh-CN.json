@@ -529,7 +529,6 @@
     "deleteModel": "删除",
     "cancelEdit": "取消",
     "saveModel": "保存",
-    "modelsManagementDescription": "在此管理该提供方的模型列表。若需选择使用的模型，请前往\"常规设置\"。",
     "howToUse": "使用说明",
     "step1ConfigureProvider": "前往\"模型提供方\"页面，选择或添加一个提供方，配置连接信息（API 密钥、Base URL 等）",
     "step2SelectModel": "在下方\"使用模型\"中选择要使用的模型",

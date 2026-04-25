@@ -529,7 +529,6 @@
     "deleteModel": "Delete",
     "cancelEdit": "Cancel",
     "saveModel": "Save",
-    "modelsManagementDescription": "Manage models for this provider. To select the active model, go to \"General\".",
     "howToUse": "How to Use",
     "step1ConfigureProvider": "Go to \"Model Providers\", select or add a provider, and configure connection settings (API key, Base URL, etc.)",
     "step2SelectModel": "Select the model you want to use in \"Active Model\" below",
