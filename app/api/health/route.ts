@@ -21,5 +21,6 @@ export async function GET() {
       videoGeneration: Object.keys(getServerVideoProviders()).length > 0,
       tts: Object.keys(getServerTTSProviders()).length > 0,
     },
+    team: { classroom: 'Maicus', school: 'Linus' },
   });
 }
