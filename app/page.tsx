@@ -58,21 +58,18 @@ import { useImportClassroom } from '@/lib/import/use-import-classroom';
 
 const log = createLogger('Home');
 
-const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
-  webSearch: boolean;
   interactiveMode: boolean;
 }
 
 const initialFormState: FormState = {
   pdfFile: null,
   requirement: '',
-  webSearch: false,
   interactiveMode: false,
 };
 
@@ -92,6 +89,8 @@ function HomePage() {
 
   // Model setup state
   const currentModelId = useSettingsStore((s) => s.modelId);
+  const webSearchEnabled = useSettingsStore((s) => s.webSearchEnabled);
+  const setWebSearchEnabled = useSettingsStore((s) => s.setWebSearchEnabled);
   const [recentOpen, setRecentOpen] = useState(true);
   const persistRecentOpen = (next: boolean) => {
     setRecentOpen(next);
@@ -112,16 +111,20 @@ function HomePage() {
       /* localStorage unavailable */
     }
     try {
-      const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
-      const savedInteractiveMode = localStorage.getItem(INTERACTIVE_MODE_STORAGE_KEY);
-      const updates: Partial<FormState> = {};
-      if (savedWebSearch === 'true') updates.webSearch = true;
-      if (savedInteractiveMode === 'true') updates.interactiveMode = true;
-      if (Object.keys(updates).length > 0) {
-        setForm((prev) => ({ ...prev, ...updates }));
+      // Migrate webSearchEnabled from old localStorage key into the Zustand store
+      const oldWebSearch = localStorage.getItem('webSearchEnabled');
+      if (oldWebSearch === 'true' && !useSettingsStore.getState().webSearchEnabled) {
+        const store = useSettingsStore.getState();
+        if (!store.webSearchProviderId) {
+          store.setWebSearchProvider('tavily');
+        }
+        store.setWebSearchEnabled(true);
       }
+      if (oldWebSearch !== null) localStorage.removeItem('webSearchEnabled');
+      const savedInteractiveMode = localStorage.getItem(INTERACTIVE_MODE_STORAGE_KEY);
+      if (savedInteractiveMode === 'true') setForm((prev) => ({ ...prev, interactiveMode: true }));
     } catch {
-      /* localStorage unavailable */
+      /* ignore */
     }
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
@@ -230,7 +233,6 @@ function HomePage() {
   const updateForm = <K extends keyof FormState>(field: K, value: FormState[K]) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     try {
-      if (field === 'webSearch') localStorage.setItem(WEB_SEARCH_STORAGE_KEY, String(value));
       if (field === 'interactiveMode')
         localStorage.setItem(INTERACTIVE_MODE_STORAGE_KEY, String(value));
       if (field === 'requirement') updateRequirementCache(value as string);
@@ -294,7 +296,7 @@ function HomePage() {
         requirement: form.requirement,
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
-        webSearch: form.webSearch || undefined,
+        webSearch: webSearchEnabled || undefined,
         interactiveMode: form.interactiveMode,
       };
 
@@ -539,8 +541,8 @@ function HomePage() {
             <div className="px-3 pb-3 flex items-end gap-2">
               <div className="flex-1 min-w-0">
                 <GenerationToolbar
-                  webSearch={form.webSearch}
-                  onWebSearchChange={(v) => updateForm('webSearch', v)}
+                  webSearch={webSearchEnabled}
+                  onWebSearchChange={setWebSearchEnabled}
                   onSettingsOpen={(section) => {
                     setSettingsSection(section);
                     setSettingsOpen(true);

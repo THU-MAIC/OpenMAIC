@@ -21,21 +21,21 @@ describe('validateUrlForSSRF', () => {
 
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    await expect(validateUrlForSSRF('https://api.openai.com')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('https://api.openai.com')).resolves.toBe('');
     expect(lookupMock).toHaveBeenCalledWith('api.openai.com', { all: true, verbatim: true });
   });
 
   it('allows a public IP literal without DNS lookup', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    await expect(validateUrlForSSRF('https://8.8.8.8')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('https://8.8.8.8')).resolves.toBe('');
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
   it('allows a public IPv6 literal without DNS lookup', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    await expect(validateUrlForSSRF('https://[2606:4700:4700::1111]')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('https://[2606:4700:4700::1111]')).resolves.toBe('');
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
@@ -126,7 +126,7 @@ describe('validateUrlForSSRF', () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
     // 2002:0808:0808:: embeds 8.8.8.8
-    await expect(validateUrlForSSRF('http://[2002:0808:0808::]')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('http://[2002:0808:0808::]')).resolves.toBe('');
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
@@ -146,7 +146,7 @@ describe('validateUrlForSSRF', () => {
     // Client IPv4 8.8.8.8 XOR 0xFFFFFFFF = 0xF7F7F7F7 → hextets f7f7:f7f7
     await expect(
       validateUrlForSSRF('http://[2001:0000:4136:e378:8000:63bf:f7f7:f7f7]'),
-    ).resolves.toBeNull();
+    ).resolves.toBe('');
     expect(lookupMock).not.toHaveBeenCalled();
   });
 

@@ -2,7 +2,7 @@ export interface WebSearchSource {
   title: string;
   url: string;
   content: string;
-  score: number;
+  score?: number;
 }
 
 export interface WebSearchResult {
