@@ -31,6 +31,41 @@ import type { Scene, Stage, LessonPlanContent, ExerciseCard } from '@/lib/types/
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
 import { buildPrompt, PROMPT_IDS } from '@/lib/generation/prompts';
 
+// Tiny static localization map for the pre-class objective banner.
+// Keeps the field readable for the learner without spending an extra LLM
+// call on a one-line preamble. Falls back to English for unknown base
+// languages.
+const OBJECTIVE_TEMPLATES: Record<string, (topic: string, level: string) => string> = {
+  en: (t, l) => `Today you will learn ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  es: (t, l) => `Hoy aprenderás ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  fr: (t, l) => `Aujourd'hui, tu vas apprendre ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  de: (t, l) => `Heute lernst du ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  it: (t, l) => `Oggi imparerai ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  pt: (t, l) => `Hoje você vai aprender ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  nl: (t, l) => `Vandaag leer je ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  pl: (t, l) => `Dzisiaj nauczysz się ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  ru: (t, l) => `Сегодня вы изучите ${t}${l ? ` (CEFR ${l})` : ''}.`,
+  ja: (t, l) => `今日は${t}を学びます${l ? `（CEFR ${l}）` : ''}。`,
+  zh: (t, l) => `今天你将学习${t}${l ? `（CEFR ${l}）` : ''}。`,
+  lt: (t, l) => `Šiandien mokysiesi ${t}${l ? ` (CEFR ${l})` : ''}.`,
+};
+
+function pickObjectiveTemplate(language: string) {
+  const base = (language || 'en').toLowerCase().split('-')[0];
+  return OBJECTIVE_TEMPLATES[base] ?? OBJECTIVE_TEMPLATES.en;
+}
+
+function buildObjectiveText(
+  microGoal: { topic: string; cefrLevel: string },
+  language: string,
+): string {
+  return pickObjectiveTemplate(language)(microGoal.topic || 'today\'s topic', microGoal.cefrLevel || '');
+}
+
+function buildGenericObjective(title: string, language: string): string {
+  return pickObjectiveTemplate(language)(title, '');
+}
+
 /** Default agents used when agentMode is 'default' */
 const DEFAULT_AGENTS: AgentInfo[] = [
   { id: 'default-1', name: 'Teacher', role: 'teacher', persona: 'A knowledgeable and engaging teacher.' },
@@ -280,8 +315,12 @@ function validateLessonPlanDeck(
 
 /** Rename turn.text → turn.lithuanian for dialog_snippet / dialogue_completion cards. */
 function normalizeCards(cards: unknown[]): ExerciseCard[] {
-  return cards.map((card) => {
-    if (!card || typeof card !== 'object') return card as ExerciseCard;
+  const out: ExerciseCard[] = [];
+  for (const card of cards) {
+    if (!card || typeof card !== 'object') {
+      out.push(card as ExerciseCard);
+      continue;
+    }
     const c = card as Record<string, unknown>;
     if (Array.isArray(c.turns)) {
       c.turns = (c.turns as Record<string, unknown>[]).map((turn) => {
@@ -292,8 +331,24 @@ function normalizeCards(cards: unknown[]): ExerciseCard[] {
         return turn;
       });
     }
-    return c as unknown as ExerciseCard;
-  });
+    // Matching-card pair guard: drop any pair with empty left/right so the
+    // client never renders a blank-row dropdown. If nothing valid remains,
+    // skip the entire card — better to render one fewer card than a broken one.
+    if (c.kind === 'matching' && Array.isArray(c.pairs)) {
+      const validPairs = (c.pairs as Array<Record<string, unknown>>).filter((p) => {
+        const left = typeof p?.left === 'string' ? p.left.trim() : '';
+        const right = typeof p?.right === 'string' ? p.right.trim() : '';
+        return left.length > 0 && right.length > 0;
+      });
+      if (validPairs.length === 0) {
+        log.warn('Dropping matching card with zero valid pairs');
+        continue;
+      }
+      c.pairs = validPairs;
+    }
+    out.push(c as unknown as ExerciseCard);
+  }
+  return out;
 }
 
 async function generateLessonPlan(
@@ -495,9 +550,14 @@ export async function generateClassroom(
 
     const stageId = nanoid(10);
     const title = lessonContent.microGoal.topic || requirement.slice(0, 50);
+    const objectiveLang = input.explanationLanguage || 'en-US';
     const stage: Stage = {
       id: stageId,
       name: title,
+      objective: {
+        text: buildObjectiveText(lessonContent.microGoal, objectiveLang),
+        language: objectiveLang,
+      },
       language: input.language,
       explanationLanguage: input.explanationLanguage,
       style: 'lesson_plan',
@@ -662,10 +722,15 @@ export async function generateClassroom(
   });
 
   const stageId = nanoid(10);
+  const stageTitle = outlines[0]?.title || requirement.slice(0, 50);
   const stage: Stage = {
     id: stageId,
-    name: outlines[0]?.title || requirement.slice(0, 50),
+    name: stageTitle,
     description: undefined,
+    objective: {
+      text: buildGenericObjective(stageTitle, explainLang || 'en-US'),
+      language: explainLang || 'en-US',
+    },
     language: lang,
     explanationLanguage: explainLang,
     style: 'interactive',

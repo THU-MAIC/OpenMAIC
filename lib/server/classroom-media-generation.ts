@@ -230,16 +230,31 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
 /**
  * Resolve the best TTS voice for a given provider and content language.
  * Falls back to the provider default if no language-specific voice is known.
+ *
+ * Azure persona aliases (env-overridable):
+ *   - "Maicus" = lt-LT teacher voice  (default lt-LT-LeonasNeural, male)
+ *   - "Linus"  = base-language explainer (default en-US-GuyNeural, male)
  */
 function resolveTTSVoice(providerId: TTSProviderId, language?: string): string {
-  // Azure supports language-specific neural voices
   if (providerId === 'azure-tts' && language) {
+    const maicusVoice = process.env.AZURE_VOICE_MAICUS || 'lt-LT-LeonasNeural';
+    const linusVoice = process.env.AZURE_VOICE_LINUS || 'en-US-GuyNeural';
     const azureVoiceMap: Record<string, string> = {
-      'lt-LT': 'lt-LT-OnaNeural',
-      'lt': 'lt-LT-OnaNeural',
-      'en-US': 'en-US-JennyNeural',
-      'en': 'en-US-JennyNeural',
-
+      'lt-LT': maicusVoice,
+      'lt': maicusVoice,
+      'en-US': linusVoice,
+      'en': linusVoice,
+      // Other base languages — use a sensible Azure neural voice per locale.
+      // Override individually with env vars if you ship to that locale.
+      'es-ES': process.env.AZURE_VOICE_ES || 'es-ES-AlvaroNeural',
+      'fr-FR': process.env.AZURE_VOICE_FR || 'fr-FR-HenriNeural',
+      'de-DE': process.env.AZURE_VOICE_DE || 'de-DE-ConradNeural',
+      'it-IT': process.env.AZURE_VOICE_IT || 'it-IT-DiegoNeural',
+      'pt-PT': process.env.AZURE_VOICE_PT || 'pt-PT-DuarteNeural',
+      'pl-PL': process.env.AZURE_VOICE_PL || 'pl-PL-MarekNeural',
+      'ru-RU': process.env.AZURE_VOICE_RU || 'ru-RU-DmitryNeural',
+      'ja-JP': process.env.AZURE_VOICE_JA || 'ja-JP-KeitaNeural',
+      'zh-CN': process.env.AZURE_VOICE_ZH || 'zh-CN-YunxiNeural',
     };
     const voice = azureVoiceMap[language];
     if (voice) return voice;

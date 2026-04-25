@@ -15,6 +15,12 @@ export interface Stage {
   id: string;
   name: string;
   description?: string;
+  /**
+   * Pre-class objective shown to the learner at the start of the class
+   * ("Today you will learn …"). Always written in `objective.language`,
+   * which matches the learner's `explanationLanguage` (base language).
+   */
+  objective?: { text: string; language: string };
   createdAt: number;
   updatedAt: number;
   // Stage metadata
