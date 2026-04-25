@@ -26,10 +26,16 @@ Two kinds of placeholder:
 |---|---|---|
 | `{{variableName}}` | Value is provided by the caller via `buildPrompt(id, vars)` | `interpolateVariables` in `loader.ts` |
 | `{{snippet:snippet-name}}` | File content is spliced in at load time | `processSnippets` in `loader.ts` |
+| `{{snippet:snippet-name?if=conditionName}}` | File content is spliced in only when `conditionName` is truthy in the prompt load conditions | `processSnippets` in `loader.ts` |
 
 Processing order is **snippet includes first, then variable interpolation**, so
 snippets may themselves contain `{{variableName}}` placeholders if the caller
 provides the value.
+
+Conditional snippets are resolved during the same snippet pass. `buildPrompt`
+uses the provided variables as snippet conditions by default; callers can pass
+an explicit `conditions` record when snippet flags should differ from
+interpolation variables.
 
 ## Naming conventions
 

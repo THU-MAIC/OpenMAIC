@@ -1,0 +1,1 @@
+- Use only the provided image IDs (for example, `img_1`) for source image `src` fields

@@ -1,0 +1,4 @@
+- ✓ [src-image-id] Source image `src` values only use image IDs from the assigned media list (for example, "img_1", "img_2")
+  - Do not invent image IDs or URLs not listed in the available media
+  - If no suitable image exists, do not create image elements; use text and shapes only
+- ✓ [src-image-ratio] Source image aspect ratio is preserved: `height = width / aspect_ratio` (use ratio from image metadata)

@@ -35,8 +35,34 @@ export type SnippetId =
   | 'json-output-rules'
   | 'element-types'
   | 'action-types'
+  | 'image-instructions'
+  | 'video-instructions'
+  | 'media-safety-guidelines'
+  | 'outline-image-fields'
+  | 'outline-media-field'
+  | 'outline-image-resources'
+  | 'slide-image-resources'
+  | 'slide-image-user-rule'
+  | 'slide-image-instructions'
+  | 'slide-generated-image-instructions'
+  | 'slide-video-instructions'
+  | 'slide-video-user-rule'
+  | 'slide-source-image-checklist'
+  | 'slide-generated-image-checklist'
+  | 'slide-video-checklist'
   | 'speech-guidelines'
   | 'whiteboard-reference';
+
+/**
+ * Prompt load/build options
+ */
+export interface PromptLoadOptions {
+  /**
+   * Values used by conditional snippet includes:
+   * {{snippet:name?if=conditionName}}
+   */
+  conditions?: Record<string, unknown>;
+}
 
 /**
  * Loaded prompt template

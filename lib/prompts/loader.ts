@@ -3,13 +3,13 @@
  *
  * Supports:
  * - Loading prompts from templates/{promptId}/ directory
- * - Snippet inclusion via {{snippet:name}} syntax
+ * - Snippet inclusion via {{snippet:name}} and {{snippet:name?if=condition}} syntax
  * - Variable interpolation via {{variable}} syntax
  */
 
 import fs from 'fs';
 import path from 'path';
-import type { PromptId, LoadedPrompt, SnippetId } from './types';
+import type { PromptId, LoadedPrompt, PromptLoadOptions, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('PromptLoader');
 
@@ -38,32 +38,48 @@ export function loadSnippet(snippetId: SnippetId): string {
 
 /**
  * Process snippet includes in a template
- * Replaces {{snippet:name}} with actual snippet content
+ * Replaces {{snippet:name}} with actual snippet content.
+ * Replaces {{snippet:name?if=condition}} with snippet content only when
+ * the named condition is truthy.
  */
-function processSnippets(template: string): string {
-  return template.replace(/\{\{snippet:(\w[\w-]*)\}\}/g, (_, snippetId) => {
-    return loadSnippet(snippetId as SnippetId);
-  });
+export function processSnippets(
+  template: string,
+  conditions: Record<string, unknown> = {},
+): string {
+  return template.replace(
+    /\{\{snippet:(\w[\w-]*)(?:\?if=(\w+))?\}\}/g,
+    (_, snippetId: string, conditionName: string | undefined) => {
+      if (conditionName && !conditions[conditionName]) {
+        return '';
+      }
+
+      return loadSnippet(snippetId as SnippetId);
+    },
+  );
 }
 
 /**
  * Load a prompt by ID
  */
-export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
+export function loadPrompt(
+  promptId: PromptId,
+  options: PromptLoadOptions = {},
+): LoadedPrompt | null {
   const promptDir = path.join(getPromptsDir(), 'templates', promptId);
+  const conditions = options.conditions || {};
 
   try {
     // Load system.md
     const systemPath = path.join(promptDir, 'system.md');
     let systemPrompt = fs.readFileSync(systemPath, 'utf-8').trim();
-    systemPrompt = processSnippets(systemPrompt);
+    systemPrompt = processSnippets(systemPrompt, conditions);
 
     // Load user.md (optional, may not exist)
     const userPath = path.join(promptDir, 'user.md');
     let userPromptTemplate = '';
     try {
       userPromptTemplate = fs.readFileSync(userPath, 'utf-8').trim();
-      userPromptTemplate = processSnippets(userPromptTemplate);
+      userPromptTemplate = processSnippets(userPromptTemplate, conditions);
     } catch {
       // user.md is optional
     }
@@ -102,8 +118,12 @@ export function interpolateVariables(template: string, variables: Record<string,
 export function buildPrompt(
   promptId: PromptId,
   variables: Record<string, unknown>,
+  options: PromptLoadOptions = {},
 ): { system: string; user: string } | null {
-  const prompt = loadPrompt(promptId);
+  const prompt = loadPrompt(promptId, {
+    ...options,
+    conditions: options.conditions || variables,
+  });
   if (!prompt) return null;
 
   return {

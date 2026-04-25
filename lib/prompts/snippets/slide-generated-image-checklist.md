@@ -1,0 +1,2 @@
+- ✓ [gen-image-id] Generated image `src` values only use generated image IDs from the assigned media list (for example, "gen_img_1")
+- ✓ [gen-image-ratio] Generated image aspect ratio is preserved, usually 16:9 unless a different ratio is listed
