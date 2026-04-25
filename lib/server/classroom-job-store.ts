@@ -12,7 +12,6 @@ import {
   writeJsonFileAtomic,
 } from '@/lib/server/classroom-storage';
 import { readJsonBlob, writeJsonBlob, USE_BLOB } from '@/lib/server/blob-store';
-import { USE_NEON, neonSelect, neonExec } from '@/lib/server/neon-store';
 
 export type ClassroomGenerationJobStatus = 'queued' | 'running' | 'succeeded' | 'failed';
 
@@ -137,14 +136,7 @@ export function isValidClassroomJobId(jobId: string): boolean {
 /** Write a job record to the configured store and update the in-process cache. */
 async function writeJob(jobId: string, job: ClassroomGenerationJob): Promise<void> {
   jobCache.set(jobId, job);
-  if (USE_NEON) {
-    await neonExec(
-      `INSERT INTO classroom_jobs (id, data, updated_at)
-       VALUES ($1, $2::jsonb, NOW())
-       ON CONFLICT (id) DO UPDATE SET data = $2::jsonb, updated_at = NOW()`,
-      [jobId, JSON.stringify(job)],
-    );
-  } else if (USE_BLOB) {
+  if (USE_BLOB) {
     await writeJsonBlob(jobBlobKey(jobId), job);
   } else {
     await writeJsonFileAtomic(jobFilePath(jobId), job);
@@ -178,16 +170,6 @@ export async function readClassroomGenerationJob(
 ): Promise<ClassroomGenerationJob | null> {
   const cached = jobCache.get(jobId);
   if (cached) return markStaleIfNeeded(cached);
-
-  if (USE_NEON) {
-    const rows = await neonSelect<{ data: ClassroomGenerationJob }>(
-      'SELECT data FROM classroom_jobs WHERE id = $1',
-      [jobId],
-    );
-    const job = rows[0]?.data ?? null;
-    if (job) jobCache.set(jobId, job);
-    return job ? markStaleIfNeeded(job) : null;
-  }
 
   if (USE_BLOB) {
     const job = await readJsonBlob<ClassroomGenerationJob>(jobBlobKey(jobId));
@@ -281,13 +263,7 @@ export async function updateClassroomGenerationJobProgress(
     const now = Date.now();
     if (now - (lastProgressWriteAt.get(jobId) ?? 0) >= PROGRESS_WRITE_THROTTLE_MS) {
       lastProgressWriteAt.set(jobId, now);
-      if (USE_NEON) {
-        await neonExec(
-          `INSERT INTO classroom_jobs (id, data, updated_at) VALUES ($1, $2::jsonb, NOW())
-           ON CONFLICT (id) DO UPDATE SET data = $2::jsonb, updated_at = NOW()`,
-          [jobId, JSON.stringify(updated)],
-        );
-      } else if (USE_BLOB) {
+      if (USE_BLOB) {
         await writeJsonBlob(jobBlobKey(jobId), updated);
       } else {
         await writeJsonFileAtomic(jobFilePath(jobId), updated);

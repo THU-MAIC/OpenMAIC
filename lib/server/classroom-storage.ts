@@ -4,7 +4,6 @@ import type { NextRequest } from 'next/server';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { createLogger } from '@/lib/logger';
 import { readJsonBlob, writeJsonBlob, USE_BLOB } from '@/lib/server/blob-store';
-import { USE_NEON, neonSelect, neonExec } from '@/lib/server/neon-store';
 
 const log = createLogger('ClassroomStorage');
 
@@ -51,14 +50,6 @@ export function isValidClassroomId(id: string): boolean {
 }
 
 export async function readClassroom(id: string): Promise<PersistedClassroomData | null> {
-  if (USE_NEON) {
-    const rows = await neonSelect<{ data: PersistedClassroomData }>(
-      'SELECT data FROM classrooms WHERE id = $1',
-      [id],
-    );
-    return rows[0]?.data ?? null;
-  }
-
   if (USE_BLOB) {
     return readJsonBlob<PersistedClassroomData>(`classrooms/${id}.json`);
   }
@@ -90,15 +81,7 @@ export async function persistClassroom(
     createdAt: new Date().toISOString(),
   };
 
-  if (USE_NEON) {
-    await neonExec(
-      `INSERT INTO classrooms (id, data)
-       VALUES ($1, $2::jsonb)
-       ON CONFLICT (id) DO UPDATE SET data = $2::jsonb`,
-      [data.id, JSON.stringify(classroomData)],
-    );
-    log.info(`Classroom ${data.id} persisted to Neon`);
-  } else if (USE_BLOB) {
+  if (USE_BLOB) {
     await writeJsonBlob(`classrooms/${data.id}.json`, classroomData);
     log.info(`Classroom ${data.id} persisted to blob storage`);
   } else {
