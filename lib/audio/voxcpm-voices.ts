@@ -32,13 +32,16 @@ function createId(): string {
 }
 
 async function blobToBase64(blob: Blob): Promise<string> {
-  const buffer = await blob.arrayBuffer();
-  let binary = '';
-  const bytes = new Uint8Array(buffer);
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return btoa(binary);
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error || new Error('Failed to read reference audio'));
+    reader.onload = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const commaIndex = result.indexOf(',');
+      resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result);
+    };
+    reader.readAsDataURL(blob);
+  });
 }
 
 function isWavAudio(blob: Blob, fileName?: string): boolean {
@@ -171,7 +174,7 @@ export function getVoxCPMVoiceOptions(
     ...visibleProfiles.map((profile) => ({
       id: getVoxCPMProfileVoiceId(profile.id),
       name: profile.name,
-      language: 'zh',
+      language: 'auto',
       gender: 'neutral' as const,
       description:
         profile.kind === 'clone' ? 'Browser-saved cloned voice' : 'Browser-saved prompt voice',
@@ -298,17 +301,14 @@ export async function getVoxCPMProviderOptions(
   }
 
   if (profile.kind === 'clone' && profile.referenceAudio) {
-    const referenceAudio = await normalizeVoxCPMReferenceAudio(
-      profile.referenceAudio,
-      profile.referenceAudioName || `${profile.name}.wav`,
-    );
     return {
       voiceMode: 'clone',
       voicePrompt: profile.voicePrompt,
       promptText: profile.promptText,
-      referenceAudioBase64: await blobToBase64(referenceAudio.blob),
-      referenceAudioMimeType: referenceAudio.mimeType,
-      referenceAudioName: referenceAudio.name,
+      referenceAudioBase64: await blobToBase64(profile.referenceAudio),
+      referenceAudioMimeType:
+        profile.referenceAudioMimeType || profile.referenceAudio.type || 'audio/wav',
+      referenceAudioName: profile.referenceAudioName || `${profile.name}.wav`,
     };
   }
 

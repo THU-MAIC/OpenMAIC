@@ -283,7 +283,11 @@ async function generateVoxCPMTTS(
 }
 
 function buildVoxCPMTargetText(text: string, voicePrompt?: string): string {
-  const prompt = voicePrompt?.replace(/[()（）]/gu, '').trim();
+  const prompt = voicePrompt
+    ?.replace(/[\p{C}]+/gu, ' ')
+    .replace(/[()（）]/gu, '')
+    .replace(/\s+/gu, ' ')
+    .trim();
   return prompt ? `(${prompt})${text}` : text;
 }
 

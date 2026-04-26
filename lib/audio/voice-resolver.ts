@@ -152,7 +152,7 @@ export function getAvailableProvidersWithVoices(
           ? visibleVoxCPMProfiles.map((profile) => ({
               id: getVoxCPMProfileVoiceId(profile.id),
               name: profile.name,
-              language: 'zh',
+              language: 'auto',
             }))
           : []),
       ];
@@ -169,7 +169,7 @@ export function getAvailableProvidersWithVoices(
               ...visibleVoxCPMProfiles.map((profile) => ({
                 id: getVoxCPMProfileVoiceId(profile.id),
                 name: profile.name,
-                language: 'zh',
+                language: 'auto',
               })),
             );
           }

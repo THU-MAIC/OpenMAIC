@@ -5,6 +5,7 @@ export const VOXCPM_MODEL_ID = 'VoxCPM2';
 export const VOXCPM_VLLM_MODEL_ID = 'voxcpm2';
 export const VOXCPM_AUTO_VOICE_ID = 'voxcpm:auto';
 export const VOXCPM_PROFILE_VOICE_PREFIX = 'voxcpm:profile:';
+const VOXCPM_AUTO_VOICE_PROMPT_MAX_CHARS = 200;
 
 export const VOXCPM_BACKENDS = [
   {
@@ -92,12 +93,22 @@ export function getVoxCPMProfileIdFromVoiceId(voiceId: string): string | null {
   return voiceId.slice(VOXCPM_PROFILE_VOICE_PREFIX.length);
 }
 
+function sanitizeAutoVoicePromptPart(value?: string): string {
+  return (value || '')
+    .replace(/[\p{C}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim()
+    .slice(0, VOXCPM_AUTO_VOICE_PROMPT_MAX_CHARS)
+    .trim();
+}
+
 export function buildAutoVoxCPMVoicePrompt(context: VoxCPMVoicePromptContext = {}): string {
-  const persona = context.persona?.replace(/[\p{C}]/gu, '').trim();
+  const persona = sanitizeAutoVoicePromptPart(context.persona);
   if (persona) return persona;
 
   const fallbackParts = [context.role, context.agentName]
-    .map((value) => value?.replace(/[\p{C}]/gu, '').trim())
+    .map(sanitizeAutoVoicePromptPart)
     .filter(Boolean);
-  return fallbackParts.length > 0 ? fallbackParts.join(' ') : 'natural classroom voice';
+  const fallbackPrompt = sanitizeAutoVoicePromptPart(fallbackParts.join(' '));
+  return fallbackPrompt || 'natural classroom voice';
 }
