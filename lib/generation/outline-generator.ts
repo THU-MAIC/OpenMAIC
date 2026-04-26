@@ -20,6 +20,15 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
 /**
+ * Used when the outline stage fails to produce an explicit directive (LLM
+ * schema regression, empty response, upstream error). Downstream prompts
+ * still need *something* that steers the model toward the requirement's
+ * language rather than defaulting to the training-distribution prior.
+ */
+export const DEFAULT_LANGUAGE_DIRECTIVE =
+  'Teach in the language that matches the user requirement.';
+
+/**
  * Generate scene outlines from user requirements
  * Now uses simplified UserRequirements with just requirement text and language
  */
@@ -126,11 +135,10 @@ export async function generateSceneOutlinesFromRequirements(
 
     if (Array.isArray(parsed)) {
       // Fallback: LLM returned old flat array format
-      languageDirective = 'Teach in the language that matches the user requirement.';
+      languageDirective = DEFAULT_LANGUAGE_DIRECTIVE;
       rawOutlines = parsed;
     } else if (parsed && parsed.outlines) {
-      languageDirective =
-        parsed.languageDirective || 'Teach in the language that matches the user requirement.';
+      languageDirective = parsed.languageDirective || DEFAULT_LANGUAGE_DIRECTIVE;
       rawOutlines = parsed.outlines;
     } else {
       return { success: false, error: 'Failed to parse scene outlines response' };

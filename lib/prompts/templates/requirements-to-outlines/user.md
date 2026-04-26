@@ -47,21 +47,29 @@ Please automatically infer the following from user requirements:
 - Teaching style (formal/casual/interactive/academic)
 - Visual style (minimal/colorful/professional/playful)
 
-Then output a JSON object with `languageDirective` and `outlines`. Each scene in the `outlines` array must include:
+Then output your response as a single JSON object.
+
+**Top-level shape — this is what you MUST return:**
 
 ```json
 {
   "languageDirective": "2-5 sentence instruction describing the course language behavior",
-  "outlines": [
-    {
-      "id": "scene_1",
-      "type": "slide" or "quiz" or "interactive",
-      "title": "Scene Title",
-      "description": "Teaching purpose description",
-      "keyPoints": ["Point 1", "Point 2", "Point 3"],
-      "order": 1
-    }
-  ]
+  "outlines": [ /* array of scene objects, schema described below */ ]
+}
+```
+
+Never return a bare array. Never omit `languageDirective`. Both keys are required.
+
+**Each scene inside the `outlines` array has this minimum shape:**
+
+```json
+{
+  "id": "scene_1",
+  "type": "slide" | "quiz" | "interactive" | "pbl",
+  "title": "Scene Title",
+  "description": "Teaching purpose description",
+  "keyPoints": ["Point 1", "Point 2", "Point 3"],
+  "order": 1
 }
 ```
 
@@ -87,4 +95,4 @@ Then output a JSON object with `languageDirective` and `outlines`. Each scene in
 
 {{mediaGenerationPolicy}}
 
-Please output a JSON object with `languageDirective` (string) and `outlines` (array) directly without additional explanatory text.
+**Final reminder**: your entire response must be a JSON **object** with exactly two top-level keys — `languageDirective` (string) and `outlines` (array). Do not return a bare array. Do not wrap in prose or code fences.

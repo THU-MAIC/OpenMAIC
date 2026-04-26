@@ -358,6 +358,7 @@ function GenerationPreviewContent() {
         style: 'professional',
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        interactiveMode: !!currentSession.requirements.interactiveMode,
       };
 
       // ── Generate outlines first (infers languageDirective) ──

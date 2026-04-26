@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "切换页面",
     "confirmSwitchMessage": "当前话题正在进行中，切换页面将结束当前话题。确定要切换吗？",
     "generatingNextPage": "场景正在生成，请稍候...",
+    "courseComplete": "课程完成",
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏"
+  },
+  "classroomComplete": {
+    "title": "课程完成",
+    "trailLabels": {
+      "slide": "页",
+      "quiz": "小测",
+      "interactive": "互动",
+      "pbl": "项目"
+    },
+    "quizScoreLabel": "答对 {{correct}} / {{total}}",
+    "encouragement": {
+      "high": "太棒了，完美发挥！",
+      "mid": "表现不错，继续加油！",
+      "low": "万事开头难，回去再练练吧。"
+    }
   },
   "whiteboard": {
     "title": "互动白板",
@@ -280,7 +296,11 @@
     "delete": "删除",
     "rename": "重命名",
     "renamePlaceholder": "输入课堂名称",
-    "renameFailed": "重命名失败"
+    "renameFailed": "重命名失败",
+    "searchPlaceholder": "搜索课程...",
+    "searchAriaLabel": "搜索课程",
+    "clearSearch": "清空",
+    "searchEmpty": "没有找到匹配的课程"
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",
@@ -421,6 +441,10 @@
       "glm": "GLM",
       "siliconflow": "硅基流动",
       "doubao": "豆包",
+      "openrouter": "OpenRouter",
+      "grok": "Grok",
+      "tencent-hunyuan": "腾讯混元",
+      "xiaomi": "小米 MiMo",
       "ollama": "Ollama（本地模型）"
     },
     "providerTypes": {
@@ -521,7 +545,6 @@
     "deleteModel": "删除",
     "cancelEdit": "取消",
     "saveModel": "保存",
-    "modelsManagementDescription": "在此管理该提供方的模型列表。若需选择使用的模型，请前往\"常规设置\"。",
     "howToUse": "使用说明",
     "step1ConfigureProvider": "前往\"模型提供方\"页面，选择或添加一个提供方，配置连接信息（API 密钥、Base URL 等）",
     "step2SelectModel": "在下方\"使用模型\"中选择要使用的模型",
@@ -819,6 +842,7 @@
     "imageProvider": "图像生成提供商",
     "imageModel": "图像生成模型",
     "providerSeedream": "Seedream（字节豆包）",
+    "providerOpenAIImage": "OpenAI 图像",
     "providerQwenImage": "Qwen Image（阿里通义）",
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax 图像",

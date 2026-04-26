@@ -23,6 +23,7 @@ import {
   formatTeacherPersonaForPrompt,
 } from '@/lib/generation/generation-pipeline';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
+import { DEFAULT_LANGUAGE_DIRECTIVE } from '@/lib/generation/outline-generator';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { nanoid } from 'nanoid';
 import type {
@@ -371,8 +372,7 @@ export async function POST(req: NextRequest) {
             const doneEvent = JSON.stringify({
               type: 'done',
               outlines: uniquifiedOutlines,
-              languageDirective:
-                languageDirective || 'Teach in the language that matches the user requirement.',
+              languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else {

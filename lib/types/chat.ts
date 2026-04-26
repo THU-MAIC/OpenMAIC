@@ -6,6 +6,7 @@
  */
 
 import type { UIMessage } from 'ai';
+import type { ThinkingConfig } from './provider';
 
 // Session Types
 export type SessionType = 'qa' | 'discussion' | 'lecture';
@@ -280,6 +281,12 @@ export interface StatelessChatRequest {
   baseUrl?: string;
   model?: string;
   providerType?: string;
+  /**
+   * Opt-in: enable provider-side thinking for this request. Default is
+   * `{ enabled: false }` (low-latency chat). Eval harness sets this to
+   * `{ enabled: true }` when `EVAL_ENABLE_THINKING=1`.
+   */
+  thinking?: ThinkingConfig;
 }
 
 /**

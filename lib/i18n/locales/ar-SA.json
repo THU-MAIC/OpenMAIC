@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "تبديل المشهد",
     "confirmSwitchMessage": "يوجد موضوع قيد التقدم حاليًا. سيؤدي تبديل المشهد إلى إنهاء الموضوع الحالي. هل أنت متأكد؟",
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
+    "courseComplete": "اكتملت الدورة",
     "fullscreen": "ملء الشاشة",
     "exitFullscreen": "الخروج من ملء الشاشة"
+  },
+  "classroomComplete": {
+    "title": "اكتملت الدورة",
+    "trailLabels": {
+      "slide": "صفحات",
+      "quiz": "اختبارات",
+      "interactive": "تفاعلات",
+      "pbl": "مشاريع"
+    },
+    "quizScoreLabel": "{{correct}} / {{total}} صحيحة",
+    "encouragement": {
+      "high": "ممتاز — أبدعت!",
+      "mid": "عمل جيد — استمر.",
+      "low": "بداية جيدة — راجع وحاول مجددًا."
+    }
   },
   "whiteboard": {
     "title": "السبورة التفاعلية",
@@ -280,7 +296,11 @@
     "delete": "حذف",
     "rename": "إعادة تسمية",
     "renamePlaceholder": "أدخل اسم الفصل",
-    "renameFailed": "فشلت إعادة تسمية الفصل"
+    "renameFailed": "فشلت إعادة تسمية الفصل",
+    "searchPlaceholder": "البحث عن الدروس...",
+    "searchAriaLabel": "البحث عن الدروس",
+    "clearSearch": "مسح",
+    "searchEmpty": "لا توجد دروس مطابقة"
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",
@@ -421,6 +441,10 @@
       "glm": "GLM",
       "siliconflow": "SiliconFlow",
       "doubao": "Doubao",
+      "openrouter": "OpenRouter",
+      "grok": "Grok",
+      "tencent-hunyuan": "Tencent Hunyuan",
+      "xiaomi": "Xiaomi MiMo",
       "ollama": "Ollama (محلي)"
     },
     "providerTypes": {
@@ -520,7 +544,6 @@
     "deleteModel": "حذف",
     "cancelEdit": "إلغاء",
     "saveModel": "حفظ",
-    "modelsManagementDescription": "إدارة نماذج هذا المزوّد. لاختيار النموذج النشط، انتقل إلى \"عام\".",
     "howToUse": "كيفية الاستخدام",
     "step1ConfigureProvider": "انتقل إلى \"مزوّدو النماذج\"، اختر أو أضف مزوّدًا، وقم بتكوين إعدادات الاتصال (مفتاح API، العنوان الأساسي، إلخ.)",
     "step2SelectModel": "اختر النموذج الذي تريد استخدامه في \"النموذج النشط\" أدناه",
@@ -818,6 +841,7 @@
     "imageProvider": "مزوّد توليد الصور",
     "imageModel": "نموذج توليد الصور",
     "providerSeedream": "Seedream (ByteDance)",
+    "providerOpenAIImage": "OpenAI Image",
     "providerQwenImage": "Qwen Image (Alibaba)",
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",

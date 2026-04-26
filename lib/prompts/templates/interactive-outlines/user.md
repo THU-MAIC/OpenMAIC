@@ -10,9 +10,12 @@ Generate an Ultra Mode course outline based on the following requirements.
 
 {{userProfile}}
 
-## Course Language
+## Language Context
 
-**Required language**: {{language}}
+Infer the course language directive by applying the decision rules from the system prompt. Key reminders:
+- Requirement language = teaching language (unless overridden by explicit request or learner context)
+- Foreign language learning → teach in user's native language, not the target language
+- PDF language does NOT override teaching language — translate/explain document content instead
 
 ---
 
@@ -116,4 +119,4 @@ Choose widgets based on the content:
 
 {{mediaGenerationPolicy}}
 
-Please output JSON array directly without additional explanatory text.
+**Final reminder**: your entire response must be a JSON **object** with exactly two top-level keys — `languageDirective` (string, inferred via the Language Inference rules in the system prompt) and `outlines` (array of scene objects). Do not return a bare array. Do not wrap in prose or code fences.

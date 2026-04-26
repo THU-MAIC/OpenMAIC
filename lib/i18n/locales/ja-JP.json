@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "シーンの切り替え",
     "confirmSwitchMessage": "現在トピックが進行中です。シーンを切り替えると、現在のトピックが終了します。よろしいですか？",
     "generatingNextPage": "シーンを生成中です。お待ちください...",
+    "courseComplete": "コース完了",
     "fullscreen": "全画面表示",
     "exitFullscreen": "全画面表示を終了"
+  },
+  "classroomComplete": {
+    "title": "コース完了",
+    "trailLabels": {
+      "slide": "ページ",
+      "quiz": "クイズ",
+      "interactive": "インタラクティブ",
+      "pbl": "プロジェクト"
+    },
+    "quizScoreLabel": "{{correct}} / {{total}} 正解",
+    "encouragement": {
+      "high": "素晴らしい！完璧です。",
+      "mid": "いい感じ、その調子。",
+      "low": "始まりはこれから。復習しましょう。"
+    }
   },
   "whiteboard": {
     "title": "インタラクティブホワイトボード",
@@ -280,7 +296,11 @@
     "delete": "削除",
     "rename": "名前を変更",
     "renamePlaceholder": "教室名を入力",
-    "renameFailed": "教室名の変更に失敗しました"
+    "renameFailed": "教室名の変更に失敗しました",
+    "searchPlaceholder": "コースを検索...",
+    "searchAriaLabel": "コースを検索",
+    "clearSearch": "クリア",
+    "searchEmpty": "該当するコースが見つかりません"
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",
@@ -421,6 +441,10 @@
       "glm": "GLM",
       "siliconflow": "SiliconFlow",
       "doubao": "豆包",
+      "openrouter": "OpenRouter",
+      "grok": "Grok",
+      "tencent-hunyuan": "Tencent Hunyuan",
+      "xiaomi": "Xiaomi MiMo",
       "ollama": "Ollama（ローカルモデル）"
     },
     "providerTypes": {
@@ -521,7 +545,6 @@
     "deleteModel": "削除",
     "cancelEdit": "キャンセル",
     "saveModel": "保存",
-    "modelsManagementDescription": "このプロバイダーのモデルを管理します。使用するモデルの選択は「一般」から行ってください。",
     "howToUse": "使い方",
     "step1ConfigureProvider": "「モデルプロバイダー」でプロバイダーを選択または追加し、接続設定（APIキー、ベースURLなど）を設定します",
     "step2SelectModel": "下の「使用中のモデル」で使用するモデルを選択します",
@@ -819,6 +842,7 @@
     "imageProvider": "画像生成プロバイダー",
     "imageModel": "画像生成モデル",
     "providerSeedream": "Seedream（ByteDance）",
+    "providerOpenAIImage": "OpenAI Image",
     "providerQwenImage": "Qwen Image（Alibaba）",
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax Image",

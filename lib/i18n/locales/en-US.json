@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "Switch Scene",
     "confirmSwitchMessage": "A topic is currently in progress. Switching scenes will end the current topic. Are you sure?",
     "generatingNextPage": "Scene is being generated, please wait...",
+    "courseComplete": "Course complete",
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit Fullscreen"
+  },
+  "classroomComplete": {
+    "title": "Course complete",
+    "trailLabels": {
+      "slide": "pages",
+      "quiz": "quizzes",
+      "interactive": "interactives",
+      "pbl": "projects"
+    },
+    "quizScoreLabel": "{{correct}} / {{total}} correct",
+    "encouragement": {
+      "high": "Outstanding — you nailed it.",
+      "mid": "Solid work — keep it up.",
+      "low": "A good start — review and try again."
+    }
   },
   "whiteboard": {
     "title": "Interactive Whiteboard",
@@ -280,7 +296,11 @@
     "delete": "Delete",
     "rename": "Rename",
     "renamePlaceholder": "Enter classroom name",
-    "renameFailed": "Failed to rename classroom"
+    "renameFailed": "Failed to rename classroom",
+    "searchPlaceholder": "Search courses...",
+    "searchAriaLabel": "Search courses",
+    "clearSearch": "Clear",
+    "searchEmpty": "No courses match your search"
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",
@@ -421,6 +441,10 @@
       "glm": "GLM",
       "siliconflow": "SiliconFlow",
       "doubao": "Doubao",
+      "openrouter": "OpenRouter",
+      "grok": "Grok",
+      "tencent-hunyuan": "Tencent Hunyuan",
+      "xiaomi": "Xiaomi MiMo",
       "ollama": "Ollama (Local)"
     },
     "providerTypes": {
@@ -521,7 +545,6 @@
     "deleteModel": "Delete",
     "cancelEdit": "Cancel",
     "saveModel": "Save",
-    "modelsManagementDescription": "Manage models for this provider. To select the active model, go to \"General\".",
     "howToUse": "How to Use",
     "step1ConfigureProvider": "Go to \"Model Providers\", select or add a provider, and configure connection settings (API key, Base URL, etc.)",
     "step2SelectModel": "Select the model you want to use in \"Active Model\" below",
@@ -819,6 +842,7 @@
     "imageProvider": "Image Generation Provider",
     "imageModel": "Image Generation Model",
     "providerSeedream": "Seedream (ByteDance)",
+    "providerOpenAIImage": "OpenAI Image",
     "providerQwenImage": "Qwen Image (Alibaba)",
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",

@@ -133,8 +133,24 @@
     "confirmSwitchTitle": "Переключить сцену",
     "confirmSwitchMessage": "В данный момент идёт обсуждение. Переключение сцены завершит текущую тему. Продолжить?",
     "generatingNextPage": "Сцена генерируется, пожалуйста подождите...",
+    "courseComplete": "Курс завершён",
     "fullscreen": "Полный экран",
     "exitFullscreen": "Свернуть"
+  },
+  "classroomComplete": {
+    "title": "Курс завершён",
+    "trailLabels": {
+      "slide": "страниц",
+      "quiz": "тестов",
+      "interactive": "интерактивов",
+      "pbl": "проектов"
+    },
+    "quizScoreLabel": "Верно {{correct}} из {{total}}",
+    "encouragement": {
+      "high": "Отлично — вы справились!",
+      "mid": "Хорошая работа — продолжайте.",
+      "low": "Неплохое начало — повторите ещё раз."
+    }
   },
   "whiteboard": {
     "title": "Интерактивная доска",
@@ -280,7 +296,11 @@
     "delete": "Удалить",
     "rename": "Переименовать",
     "renamePlaceholder": "Введите название класса",
-    "renameFailed": "Не удалось переименовать класс"
+    "renameFailed": "Не удалось переименовать класс",
+    "searchPlaceholder": "Поиск курсов...",
+    "searchAriaLabel": "Поиск курсов",
+    "clearSearch": "Очистить",
+    "searchEmpty": "Курсы не найдены"
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",
@@ -421,6 +441,10 @@
       "glm": "GLM",
       "siliconflow": "SiliconFlow",
       "doubao": "Doubao",
+      "openrouter": "OpenRouter",
+      "grok": "Grok",
+      "tencent-hunyuan": "Tencent Hunyuan",
+      "xiaomi": "Xiaomi MiMo",
       "ollama": "Ollama (Локальный)"
     },
     "providerTypes": {
@@ -521,7 +545,6 @@
     "deleteModel": "Удалить",
     "cancelEdit": "Отмена",
     "saveModel": "Сохранить",
-    "modelsManagementDescription": "Управление моделями этого провайдера. Чтобы выбрать активную модель, перейдите в «Общие».",
     "howToUse": "Как использовать",
     "step1ConfigureProvider": "Перейдите в «Провайдеры моделей», выберите или добавьте провайдера и настройте подключение (API-ключ, Base URL и т.д.)",
     "step2SelectModel": "Выберите нужную модель в разделе «Активная модель» ниже",
@@ -819,6 +842,7 @@
     "imageProvider": "Провайдер генерации изображений",
     "imageModel": "Модель генерации изображений",
     "providerSeedream": "Seedream (ByteDance)",
+    "providerOpenAIImage": "OpenAI Image",
     "providerQwenImage": "Qwen Image (Alibaba)",
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",

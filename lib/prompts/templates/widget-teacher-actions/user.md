@@ -18,7 +18,7 @@ Generate teacher actions for this widget.
 
 ## Course Language
 
-{{language}}
+{{languageDirective}}
 
 ---
 
