@@ -52,7 +52,7 @@ Infer the course language from all available signals and produce:
 ### MAIC Platform Technical Constraints
 
 - **Scene Types**: `slide` (presentation), `quiz` (assessment), `interactive` (interactive visualization), and `pbl` (project-based learning) are supported
-- **Slide Scene**: Static PPT pages supporting text, images, charts, formulas, etc.
+- **Slide Scene**: Static PPT pages supporting text, charts, formulas, and other visual components.
 - **Quiz Scene**: Supports single-choice, multiple-choice, and short-answer (text) questions
 - **Interactive Scene**: Self-contained interactive HTML page rendered in an iframe, ideal for simulations and visualizations
 - **PBL Scene**: Complete project-based learning module with roles, issues, and collaboration workflow. Ideal for complex projects, engineering practice, and research tasks
@@ -111,69 +111,17 @@ When comparing or listing information, specify in keyPoints:
 ]
 ```
 
-### Image Usage
+{{#if imageEnabled}}
+{{snippet:image-instructions}}
+{{/if}}
 
-- If images are provided (suggestedImageIds), match image descriptions to scene themes
-- Each slide scene can use 0-3 images
-- Images can be reused across scenes
-- Quiz scenes typically don't need images
+{{#if videoEnabled}}
+{{snippet:video-instructions}}
+{{/if}}
 
-### AI-Generated Media
-
-When a slide scene needs an image or video but no suitable PDF image exists, mark it for AI generation:
-
-- Add a `mediaGenerations` array to the scene outline
-- Each entry specifies: `type` ("image" or "video"), `prompt` (description for the generation model), `elementId` (unique placeholder), and optionally `aspectRatio` (default "16:9") and `style`
-- **Image IDs**: use `"gen_img_1"`, `"gen_img_2"`, etc. — IDs are **globally unique across the entire course**, NOT reset per scene
-- **Video IDs**: use `"gen_vid_1"`, `"gen_vid_2"`, etc. — same global numbering rule
-- The prompt should describe the desired media clearly and specifically
-- **Language in images**: If the image contains text, labels, or annotations, the prompt MUST explicitly specify that all text in the image should be in the course language (e.g., "all labels in Chinese" for zh-CN courses, "all labels in English" for en-US courses). For purely visual images without text, language does not matter.
-- Only request media generation when it genuinely enhances the content — not every slide needs an image or video
-- Video generation is slow (1-2 minutes each), so only request videos when motion genuinely enhances understanding
-- If a suitable PDF image exists, prefer using `suggestedImageIds` instead
-- **Avoid duplicate media across slides**: Each generated image/video must be visually distinct. Do NOT request near-identical media for different slides (e.g., two "diagram of cell structure" images). If multiple slides cover the same topic, vary the visual angle, scope, or style
-- **Cross-scene reuse**: To reuse a generated image/video in a different scene, reference the same `elementId` in the later scene's content WITHOUT adding a new `mediaGenerations` entry. Only the scene that first defines the `elementId` in its `mediaGenerations` should include the generation request — later scenes just reference the ID. For example, if scene 1 defines `gen_img_1`, scene 3 can also use `gen_img_1` as an image src without declaring it again in mediaGenerations
-
-**Content safety guidelines for media prompts** (to avoid being blocked by the generation model's safety filter):
-
-- Do NOT describe specific human facial features, body details, or physical appearance — use abstract or iconographic representations (e.g., "a silhouette of a person" instead of detailed descriptions)
-- Do NOT include violence, weapons, blood, or gore
-- Do NOT reference politically sensitive content: national flags, military imagery, or real political figures
-- Do NOT depict real public figures or celebrities by name or likeness
-- Prefer abstract, diagrammatic, infographic, or icon-based styles for educational illustrations
-- Keep all prompts academic and education-oriented in tone
-
-**When to use video vs image**:
-
-- Use **video** for content that benefits from motion/animation: physical processes, step-by-step demonstrations, biological movements, chemical reactions, mechanical operations
-- Use **image** for static content: diagrams, charts, illustrations, portraits, landscapes
-- Video generation takes 1-2 minutes, so use it sparingly and only when motion is essential
-
-Image example:
-
-```json
-"mediaGenerations": [
-  {
-    "type": "image",
-    "prompt": "A colorful diagram showing the water cycle with evaporation, condensation, and precipitation arrows",
-    "elementId": "gen_img_1",
-    "aspectRatio": "16:9"
-  }
-]
-```
-
-Video example:
-
-```json
-"mediaGenerations": [
-  {
-    "type": "video",
-    "prompt": "A smooth animation showing water molecules evaporating from the ocean surface, rising into the atmosphere, and forming clouds",
-    "elementId": "gen_vid_1",
-    "aspectRatio": "16:9"
-  }
-]
-```
+{{#if mediaEnabled}}
+{{snippet:media-safety-guidelines}}
+{{/if}}
 
 ### Interactive Scene Guidelines
 
@@ -334,8 +282,12 @@ Rules:
 | teachingObjective | string                   | ❌       | Corresponding learning objective                                                                 |
 | estimatedDuration | number                   | ❌       | Estimated duration (seconds)                                                                     |
 | order             | number                   | ✅       | Sort order, starting from 1                                                                      |
+{{#if hasSourceImages}}
 | suggestedImageIds | string[]                 | ❌       | Suggested image IDs to use                                                                       |
-| mediaGenerations  | MediaGenerationRequest[] | ❌       | AI image/video generation requests when PDF images insufficient                                  |
+{{/if}}
+{{#if mediaEnabled}}
+| mediaGenerations  | MediaGenerationRequest[] | ❌       | AI-generated media requests when generated media would enhance a slide scene                     |
+{{/if}}
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |

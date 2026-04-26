@@ -115,8 +115,4 @@ Choose widgets based on the content:
 }
 ```
 
----
-
-{{mediaGenerationPolicy}}
-
 **Final reminder**: your entire response must be a JSON **object** with exactly two top-level keys — `languageDirective` (string, inferred via the Language Inference rules in the system prompt) and `outlines` (array of scene objects). Do not return a bare array. Do not wrap in prose or code fences.
