@@ -33,8 +33,6 @@ export type ProviderId = BuiltInProviderId | `custom-${string}`;
  */
 export type ProviderType = 'openai' | 'anthropic' | 'google';
 
-export type ModelLifecycle = 'recommended' | 'legacy' | 'deprecated';
-
 export type ThinkingControlType =
   | 'none'
   | 'toggle'
@@ -138,7 +136,6 @@ export interface ThinkingConfig {
 export interface ModelInfo {
   id: string;
   name: string;
-  lifecycle?: ModelLifecycle;
   contextWindow?: number;
   outputWindow?: number;
   capabilities?: {

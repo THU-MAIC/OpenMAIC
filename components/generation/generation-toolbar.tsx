@@ -28,8 +28,8 @@ import type {
 } from '@/lib/types/provider';
 import {
   getDefaultThinkingConfig,
-  getThinkingConfigKey,
   getThinkingDisplayValue,
+  getThinkingConfigKey,
   normalizeThinkingConfig,
   supportsConfigurableThinking,
 } from '@/lib/ai/thinking-config';
@@ -108,6 +108,8 @@ export function GenerationToolbar({
 
   const currentProviderConfig = providersConfig?.[currentProviderId];
   const currentModel = currentProviderConfig?.models.find((model) => model.id === currentModelId);
+  const currentThinkingConfig =
+    thinkingConfigs[getThinkingConfigKey(currentProviderId, currentModelId)];
 
   // PDF handler
   const handleFileSelect = (file: File) => {
@@ -137,7 +139,7 @@ export function GenerationToolbar({
           currentProviderConfig={currentProviderConfig}
           currentModel={currentModel}
           setModel={setModel}
-          thinkingConfig={thinkingConfigs[getThinkingConfigKey(currentProviderId, currentModelId)]}
+          thinkingConfig={currentThinkingConfig}
           onThinkingChange={(config) =>
             setThinkingConfig(currentProviderId, currentModelId, config)
           }
@@ -162,186 +164,50 @@ export function GenerationToolbar({
         </Tooltip>
       )}
 
-      {/* ── Separator ── */}
-      <div className="w-px h-4 bg-border/60 mx-1" />
+      <div className="flex min-w-0 items-center gap-1">
+        {/* ── Separator ── */}
+        <div className="w-px h-4 bg-border/60 mx-1" />
 
-      {/* ── PDF (parser + upload) combined Popover ── */}
-      <Popover>
-        <PopoverTrigger asChild>
-          {pdfFile ? (
-            <button className={pillActive}>
-              <Paperclip className="size-3.5" />
-              <span className="max-w-[100px] truncate">{pdfFile.name}</span>
-              <span
-                role="button"
-                className="size-4 rounded-full inline-flex items-center justify-center hover:bg-violet-200 dark:hover:bg-violet-800 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onPdfFileChange(null);
-                }}
-              >
-                <X className="size-2.5" />
-              </span>
-            </button>
-          ) : (
-            <button className={pillMuted}>
-              <Paperclip className="size-3.5" />
-            </button>
-          )}
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-72 p-0">
-          {/* Parser selector */}
-          <div className="flex items-center gap-2 px-3 pt-3 pb-2">
-            <span className="text-xs font-medium text-muted-foreground shrink-0">
-              {t('toolbar.pdfParser')}
-            </span>
-            <Select value={pdfProviderId} onValueChange={(v) => setPDFProvider(v as PDFProviderId)}>
-              <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {Object.values(PDF_PROVIDERS).map((provider) => {
-                  const cfg = pdfProvidersConfig[provider.id];
-                  const available =
-                    !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
-                  return (
-                    <SelectItem key={provider.id} value={provider.id} disabled={!available}>
-                      <div className={cn('flex items-center gap-1.5', !available && 'opacity-50')}>
-                        {provider.icon && (
-                          <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
-                        )}
-                        {provider.name}
-                        {cfg?.isServerConfigured && (
-                          <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
-                            {t('settings.serverConfigured')}
-                          </span>
-                        )}
-                      </div>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* Upload area / file info */}
-          <div className="px-3 pb-3">
-            <input
-              type="file"
-              ref={fileInputRef}
-              className="hidden"
-              accept=".pdf"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) handleFileSelect(f);
-                e.target.value = '';
-              }}
-            />
-            {pdfFile ? (
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
-                    <FileText className="size-4 text-violet-600 dark:text-violet-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{pdfFile.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => onPdfFileChange(null)}
-                  className="w-full text-xs text-destructive hover:underline text-left"
-                >
-                  {t('toolbar.removePdf')}
-                </button>
-              </div>
-            ) : (
-              <div
-                className={cn(
-                  'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
-                  isDragging
-                    ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
-                    : 'border-muted-foreground/20 hover:border-violet-300',
-                )}
-                onClick={() => fileInputRef.current?.click()}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  setIsDragging(true);
-                }}
-                onDragLeave={() => setIsDragging(false)}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  setIsDragging(false);
-                  const f = e.dataTransfer.files?.[0];
-                  if (f) handleFileSelect(f);
-                }}
-              >
-                <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
-                <p className="text-xs font-medium">{t('toolbar.pdfUpload')}</p>
-                <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                  {t('upload.pdfSizeLimit')}
-                </p>
-              </div>
-            )}
-          </div>
-        </PopoverContent>
-      </Popover>
-
-      {/* ── Web Search ── */}
-      {webSearchAvailable ? (
+        {/* ── PDF (parser + upload) combined Popover ── */}
         <Popover>
           <PopoverTrigger asChild>
-            <button className={webSearch ? pillActive : pillMuted}>
-              <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
-              {webSearch && (
-                <span>{WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || 'Search'}</span>
-              )}
-            </button>
+            {pdfFile ? (
+              <button className={pillActive}>
+                <Paperclip className="size-3.5" />
+                <span className="max-w-[100px] truncate">{pdfFile.name}</span>
+                <span
+                  role="button"
+                  className="size-4 rounded-full inline-flex items-center justify-center hover:bg-violet-200 dark:hover:bg-violet-800 transition-colors"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onPdfFileChange(null);
+                  }}
+                >
+                  <X className="size-2.5" />
+                </span>
+              </button>
+            ) : (
+              <button className={pillMuted}>
+                <Paperclip className="size-3.5" />
+              </button>
+            )}
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-3 space-y-3">
-            {/* Toggle */}
-            <button
-              onClick={() => onWebSearchChange(!webSearch)}
-              className={cn(
-                'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
-                webSearch
-                  ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
-                  : 'border-border hover:bg-muted/50',
-              )}
-            >
-              <Globe2
-                className={cn(
-                  'size-4 shrink-0',
-                  webSearch ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground',
-                )}
-              />
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium">
-                  {webSearch ? t('toolbar.webSearchOn') : t('toolbar.webSearchOff')}
-                </p>
-                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
-                  {t('toolbar.webSearchDesc')}
-                </p>
-              </div>
-            </button>
-
-            {/* Provider selector */}
-            <div className="flex items-center gap-2">
+          <PopoverContent align="start" className="w-72 p-0">
+            {/* Parser selector */}
+            <div className="flex items-center gap-2 px-3 pt-3 pb-2">
               <span className="text-xs font-medium text-muted-foreground shrink-0">
-                {t('toolbar.webSearchProvider')}
+                {t('toolbar.pdfParser')}
               </span>
               <Select
-                value={webSearchProviderId}
-                onValueChange={(v) => setWebSearchProvider(v as WebSearchProviderId)}
+                value={pdfProviderId}
+                onValueChange={(v) => setPDFProvider(v as PDFProviderId)}
               >
                 <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.values(WEB_SEARCH_PROVIDERS).map((provider) => {
-                    const cfg = webSearchProvidersConfig[provider.id];
+                  {Object.values(PDF_PROVIDERS).map((provider) => {
+                    const cfg = pdfProvidersConfig[provider.id];
                     const available =
                       !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
                     return (
@@ -349,6 +215,9 @@ export function GenerationToolbar({
                         <div
                           className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
                         >
+                          {provider.icon && (
+                            <img src={provider.icon} alt={provider.name} className="w-3.5 h-3.5" />
+                          )}
                           {provider.name}
                           {cfg?.isServerConfigured && (
                             <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
@@ -362,24 +231,167 @@ export function GenerationToolbar({
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Upload area / file info */}
+            <div className="px-3 pb-3">
+              <input
+                type="file"
+                ref={fileInputRef}
+                className="hidden"
+                accept=".pdf"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleFileSelect(f);
+                  e.target.value = '';
+                }}
+              />
+              {pdfFile ? (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="size-8 rounded-lg bg-violet-100 dark:bg-violet-900/30 flex items-center justify-center shrink-0">
+                      <FileText className="size-4 text-violet-600 dark:text-violet-400" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{pdfFile.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(pdfFile.size / 1024 / 1024).toFixed(2)} MB
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => onPdfFileChange(null)}
+                    className="w-full text-xs text-destructive hover:underline text-left"
+                  >
+                    {t('toolbar.removePdf')}
+                  </button>
+                </div>
+              ) : (
+                <div
+                  className={cn(
+                    'flex flex-col items-center justify-center rounded-lg border-2 border-dashed p-4 transition-colors cursor-pointer',
+                    isDragging
+                      ? 'border-violet-400 bg-violet-50 dark:bg-violet-950/20'
+                      : 'border-muted-foreground/20 hover:border-violet-300',
+                  )}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setIsDragging(true);
+                  }}
+                  onDragLeave={() => setIsDragging(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setIsDragging(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) handleFileSelect(f);
+                  }}
+                >
+                  <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
+                  <p className="text-xs font-medium">{t('toolbar.pdfUpload')}</p>
+                  <p className="text-[10px] text-muted-foreground/60 mt-0.5">
+                    {t('upload.pdfSizeLimit')}
+                  </p>
+                </div>
+              )}
+            </div>
           </PopoverContent>
         </Popover>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button className={cn(pillCls, 'text-muted-foreground/40 cursor-not-allowed')} disabled>
-              <Globe2 className="size-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
-        </Tooltip>
-      )}
 
-      {/* ── Separator ── */}
-      <div className="w-px h-4 bg-border/60 mx-1" />
+        {/* ── Web Search ── */}
+        {webSearchAvailable ? (
+          <Popover>
+            <PopoverTrigger asChild>
+              <button className={webSearch ? pillActive : pillMuted}>
+                <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
+                {webSearch && (
+                  <span>{WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || 'Search'}</span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="start" className="w-64 p-3 space-y-3">
+              {/* Toggle */}
+              <button
+                onClick={() => onWebSearchChange(!webSearch)}
+                className={cn(
+                  'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
+                  webSearch
+                    ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
+                    : 'border-border hover:bg-muted/50',
+                )}
+              >
+                <Globe2
+                  className={cn(
+                    'size-4 shrink-0',
+                    webSearch ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground',
+                  )}
+                />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium">
+                    {webSearch ? t('toolbar.webSearchOn') : t('toolbar.webSearchOff')}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                    {t('toolbar.webSearchDesc')}
+                  </p>
+                </div>
+              </button>
 
-      {/* ── Media popover ── */}
-      <MediaPopover onSettingsOpen={onSettingsOpen} />
+              {/* Provider selector */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground shrink-0">
+                  {t('toolbar.webSearchProvider')}
+                </span>
+                <Select
+                  value={webSearchProviderId}
+                  onValueChange={(v) => setWebSearchProvider(v as WebSearchProviderId)}
+                >
+                  <SelectTrigger className="h-7 text-xs flex-1 min-w-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.values(WEB_SEARCH_PROVIDERS).map((provider) => {
+                      const cfg = webSearchProvidersConfig[provider.id];
+                      const available =
+                        !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
+                      return (
+                        <SelectItem key={provider.id} value={provider.id} disabled={!available}>
+                          <div
+                            className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
+                          >
+                            {provider.name}
+                            {cfg?.isServerConfigured && (
+                              <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
+                                {t('settings.serverConfigured')}
+                              </span>
+                            )}
+                          </div>
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                className={cn(pillCls, 'text-muted-foreground/40 cursor-not-allowed')}
+                disabled
+              >
+                <Globe2 className="size-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
+          </Tooltip>
+        )}
+
+        {/* ── Separator ── */}
+        <div className="w-px h-4 bg-border/60 mx-1" />
+
+        {/* ── Media popover ── */}
+        <MediaPopover onSettingsOpen={onSettingsOpen} />
+      </div>
     </div>
   );
 }
@@ -393,18 +405,27 @@ function formatThinkingValue(value?: string, t?: (key: string) => string) {
   return value === 'xhigh' ? 'x-high' : value;
 }
 
-function ThinkingControlPanel({
+function formatCompactThinkingValue(value?: string, t?: (key: string) => string) {
+  if (!value) return '';
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && value.trim() !== '') {
+    return numericValue >= 10000 ? `${Math.round(numericValue / 1000)}k` : `${numericValue}`;
+  }
+  return formatThinkingValue(value, t);
+}
+
+function InlineThinkingControl({
   model,
   config,
   onChange,
   t,
 }: {
-  model: ModelInfo;
+  model?: ModelInfo;
   config?: ThinkingConfig;
   onChange: (config: ThinkingConfig | undefined) => void;
   t: (key: string) => string;
 }) {
-  const thinking = model.capabilities?.thinking;
+  const thinking = model?.capabilities?.thinking;
   if (!supportsConfigurableThinking(thinking)) return null;
 
   const effective = normalizeThinkingConfig(thinking, config) ?? getDefaultThinkingConfig(thinking);
@@ -412,7 +433,33 @@ function ThinkingControlPanel({
     onChange(normalizeThinkingConfig(thinking, next));
   };
 
-  const applyMode = (mode: 'disabled' | 'enabled' | 'auto') => {
+  const applyBudget = (value: number | undefined) => {
+    applyConfig({ ...effective, mode: effective?.mode ?? 'enabled', budgetTokens: value });
+  };
+  const defaultEnabledBudget =
+    typeof thinking.defaultBudgetTokens === 'number' && thinking.defaultBudgetTokens > 0
+      ? thinking.defaultBudgetTokens
+      : (thinking.budgetRange?.step ?? thinking.budgetRange?.min);
+  const applyAutoBudget = () => {
+    applyConfig({ ...effective, mode: 'auto', enabled: undefined, budgetTokens: -1 });
+  };
+  const applyBudgetMode = (mode: 'disabled' | 'enabled' | 'auto') => {
+    if (mode === 'auto') {
+      applyAutoBudget();
+      return;
+    }
+
+    applyConfig({
+      ...effective,
+      mode,
+      enabled: mode === 'enabled',
+      budgetTokens:
+        mode === 'enabled' && effective?.budgetTokens === -1
+          ? defaultEnabledBudget
+          : effective?.budgetTokens,
+    });
+  };
+  const applySimpleMode = (mode: 'disabled' | 'enabled' | 'auto') => {
     applyConfig({
       ...effective,
       mode,
@@ -420,117 +467,146 @@ function ThinkingControlPanel({
     });
   };
 
-  const applyBudget = (value: number | undefined) => {
-    applyConfig({ ...effective, mode: effective?.mode ?? 'enabled', budgetTokens: value });
-  };
-
-  const segmentCls =
-    'h-7 rounded-md px-2.5 text-[11px] font-medium transition-colors border whitespace-nowrap';
-  const activeSegment =
-    'border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-700 dark:bg-violet-900/25 dark:text-violet-300';
-  const inactiveSegment =
-    'border-border text-muted-foreground hover:bg-muted/60 hover:text-foreground';
+  const selectTriggerCls =
+    'h-6 min-w-[84px] rounded-full border-0 bg-violet-100 px-2 py-0 !text-[10px] font-medium leading-none text-violet-700 shadow-none focus-visible:ring-0 data-[size=sm]:h-6 dark:bg-violet-900/40 dark:text-violet-200 [&_svg]:size-3';
+  const selectItemCls = 'py-1 text-xs';
+  const hasAutoBudget =
+    (thinking.control === 'toggle-budget' || thinking.control === 'budget-only') &&
+    !!thinking.budgetRange?.allowDynamic;
+  const autoBudgetMode =
+    effective?.budgetTokens === -1 && thinking.budgetRange?.allowDynamic
+      ? 'auto'
+      : effective?.mode === 'disabled'
+        ? 'disabled'
+        : 'enabled';
+  const simpleMode =
+    thinking.control === 'mode' && effective?.mode === 'auto'
+      ? 'auto'
+      : effective?.mode === 'disabled'
+        ? 'disabled'
+        : 'enabled';
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-md">
-      <div className="flex min-w-0 shrink-0 items-center gap-1.5 text-xs font-semibold">
-        <Brain className="size-3.5 shrink-0 text-violet-500" />
-        <span>{t('toolbar.thinking')}</span>
-      </div>
-
-      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-        {(thinking.control === 'toggle' || thinking.control === 'toggle-budget') && (
-          <div className="inline-flex shrink-0 rounded-md border bg-background p-0.5">
-            {(['disabled', 'enabled'] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => applyMode(mode)}
-                className={cn(
-                  'h-6 min-w-12 rounded px-2 text-[11px] font-medium transition-colors',
-                  effective?.mode === mode
-                    ? 'bg-violet-100 text-violet-700 dark:bg-violet-900/35 dark:text-violet-300'
-                    : 'text-muted-foreground hover:text-foreground',
-                )}
-              >
-                {mode === 'enabled' ? t('toolbar.on') : t('toolbar.off')}
-              </button>
-            ))}
-          </div>
+    <div
+      className="flex min-w-0 shrink-0 items-center gap-1"
+      onClick={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => event.stopPropagation()}
+    >
+      <Brain className="size-3.5 shrink-0 text-violet-500" />
+      <div className="flex min-w-0 items-center gap-0.5 rounded-full border border-violet-200/70 bg-white/65 p-0.5 dark:border-violet-800/70 dark:bg-violet-950/25">
+        {hasAutoBudget && (
+          <Select
+            value={autoBudgetMode}
+            onValueChange={(mode) => applyBudgetMode(mode as 'disabled' | 'enabled' | 'auto')}
+          >
+            <SelectTrigger
+              size="sm"
+              className="h-6 min-w-[76px] rounded-full border-0 bg-violet-100 px-2 py-0 !text-[10px] font-medium leading-none text-violet-700 shadow-none focus-visible:ring-0 data-[size=sm]:h-6 dark:bg-violet-900/40 dark:text-violet-200 [&_svg]:size-3"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-[96px]">
+              {thinking.control === 'toggle-budget' && (
+                <SelectItem value="disabled" className={selectItemCls}>
+                  {t('toolbar.off')}
+                </SelectItem>
+              )}
+              <SelectItem value="enabled" className={selectItemCls}>
+                {t('toolbar.on')}
+              </SelectItem>
+              <SelectItem value="auto" className={selectItemCls}>
+                {t('toolbar.auto')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         )}
 
-        {thinking.control === 'mode' && (
-          <div className="flex min-w-[210px] gap-1.5">
-            {(['auto', 'enabled', 'disabled'] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => applyMode(mode)}
-                className={cn(
-                  segmentCls,
-                  'min-w-16',
-                  effective?.mode === mode ? activeSegment : inactiveSegment,
-                )}
-              >
-                {mode === 'auto'
-                  ? t('toolbar.auto')
-                  : mode === 'enabled'
-                    ? t('toolbar.on')
-                    : t('toolbar.off')}
-              </button>
-            ))}
-          </div>
+        {(thinking.control === 'toggle' ||
+          (thinking.control === 'toggle-budget' && !hasAutoBudget) ||
+          thinking.control === 'mode') && (
+          <Select
+            value={simpleMode}
+            onValueChange={(mode) => applySimpleMode(mode as 'disabled' | 'enabled' | 'auto')}
+          >
+            <SelectTrigger
+              size="sm"
+              className="h-6 min-w-[76px] rounded-full border-0 bg-violet-100 px-2 py-0 !text-[10px] font-medium leading-none text-violet-700 shadow-none focus-visible:ring-0 data-[size=sm]:h-6 dark:bg-violet-900/40 dark:text-violet-200 [&_svg]:size-3"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-[96px]">
+              {thinking.control === 'mode' && (
+                <SelectItem value="auto" className={selectItemCls}>
+                  {t('toolbar.auto')}
+                </SelectItem>
+              )}
+              <SelectItem value="disabled" className={selectItemCls}>
+                {t('toolbar.off')}
+              </SelectItem>
+              <SelectItem value="enabled" className={selectItemCls}>
+                {t('toolbar.on')}
+              </SelectItem>
+            </SelectContent>
+          </Select>
         )}
 
-        {thinking.control === 'level' && (
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {(thinking.levelValues ?? []).map((level: ThinkingLevel) => (
-              <button
-                key={level}
-                onClick={() => applyConfig({ ...effective, mode: 'enabled', level })}
-                className={cn(
-                  segmentCls,
-                  effective?.level === level ? activeSegment : inactiveSegment,
-                )}
-              >
-                {level}
-              </button>
-            ))}
-          </div>
+        {thinking.control === 'level' && !!thinking.levelValues?.length && (
+          <Select
+            value={effective?.level ?? thinking.defaultLevel ?? thinking.levelValues[0]}
+            onValueChange={(level) =>
+              applyConfig({ ...effective, mode: 'enabled', level: level as ThinkingLevel })
+            }
+          >
+            <SelectTrigger size="sm" className={selectTriggerCls}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-[96px]">
+              {thinking.levelValues.map((level: ThinkingLevel) => (
+                <SelectItem key={level} value={level} className={selectItemCls}>
+                  {level}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
 
-        {thinking.control === 'effort' && (
-          <div className="flex min-w-0 flex-wrap gap-1.5">
-            {(thinking.effortValues ?? []).map((effort: ThinkingEffort) => (
-              <button
-                key={effort}
-                onClick={() =>
-                  applyConfig({
-                    ...effective,
-                    mode: effort === 'none' ? 'disabled' : 'enabled',
-                    effort,
-                  })
-                }
-                className={cn(
-                  segmentCls,
-                  effective?.effort === effort ? activeSegment : inactiveSegment,
-                )}
-              >
-                {formatThinkingValue(effort, t)}
-              </button>
-            ))}
-          </div>
+        {thinking.control === 'effort' && !!thinking.effortValues?.length && (
+          <Select
+            value={effective?.effort ?? thinking.defaultEffort ?? thinking.effortValues[0]}
+            onValueChange={(effort) =>
+              applyConfig({
+                ...effective,
+                mode: effort === 'none' ? 'disabled' : 'enabled',
+                effort: effort as ThinkingEffort,
+              })
+            }
+          >
+            <SelectTrigger size="sm" className={selectTriggerCls}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent align="end" className="min-w-[104px]">
+              {thinking.effortValues.map((effort: ThinkingEffort) => (
+                <SelectItem key={effort} value={effort} className={selectItemCls}>
+                  {formatThinkingValue(effort, t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
 
         {(thinking.control === 'toggle-budget' || thinking.control === 'budget-only') &&
-          thinking.budgetRange && (
-            <label className="flex h-7 shrink-0 items-center overflow-hidden rounded-md border bg-background">
-              <span className="border-r bg-muted/35 px-2 text-[11px] font-medium text-muted-foreground">
+          thinking.budgetRange &&
+          (!hasAutoBudget || autoBudgetMode === 'enabled') && (
+            <label className="ml-0.5 grid h-6 shrink-0 grid-cols-[auto_60px] items-stretch overflow-hidden rounded-full border border-violet-200/70 bg-background dark:border-violet-800/70">
+              <span className="grid h-[22px] shrink-0 place-items-center border-r border-violet-200/70 bg-muted/30 px-2 font-sans text-[11px] font-medium leading-[22px] text-muted-foreground dark:border-violet-800/70">
                 {t('toolbar.thinkingBudget')}
               </span>
-              <Input
-                type="number"
-                min={thinking.budgetRange.min}
-                max={thinking.budgetRange.max}
-                step={thinking.budgetRange.step ?? 1}
+              <input
+                type="text"
+                inputMode="numeric"
+                aria-label={t('toolbar.thinkingBudget')}
                 disabled={effective?.mode === 'disabled'}
                 value={
                   typeof effective?.budgetTokens === 'number' && effective.budgetTokens !== -1
@@ -540,40 +616,21 @@ function ThinkingControlPanel({
                 placeholder={`${thinking.budgetRange.min}-${thinking.budgetRange.max}`}
                 title={`${thinking.budgetRange.min}-${thinking.budgetRange.max} tokens`}
                 onChange={(event) => {
-                  const value = event.target.value ? Number(event.target.value) : undefined;
+                  const rawValue = event.target.value.trim();
+                  if (!/^\d*$/.test(rawValue)) return;
+                  const value = rawValue ? Number(rawValue) : undefined;
                   applyBudget(value);
                 }}
-                className="h-7 w-28 rounded-none border-0 bg-transparent px-2 text-xs shadow-none focus-visible:ring-0"
+                className="block h-[22px] w-[60px] border-0 bg-transparent px-1 py-0 text-center font-sans text-[11px] font-medium leading-[22px] tabular-nums outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
               />
-              <span className="border-l px-2 text-[10px] text-muted-foreground">tokens</span>
             </label>
           )}
-
-        {thinking.budgetRange?.allowDynamic && effective?.budgetTokens !== -1 && (
-          <button
-            onClick={() => applyBudget(-1)}
-            className={cn(
-              segmentCls,
-              'w-fit',
-              effective?.budgetTokens === -1 ? activeSegment : inactiveSegment,
-            )}
-          >
-            {t('toolbar.dynamic')}
-          </button>
-        )}
       </div>
-
-      <button
-        onClick={() => onChange(undefined)}
-        className="ml-auto text-[11px] text-muted-foreground hover:text-foreground"
-      >
-        {t('toolbar.default')}
-      </button>
     </div>
   );
 }
 
-// ─── ModelSettingsPopover (provider + model + thinking) ─────
+// ─── ModelSettingsPopover (provider + model picker) ─────
 interface ConfiguredProvider {
   id: ProviderId;
   name: string;
@@ -606,7 +663,6 @@ function ModelSettingsPopover({
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [activeProviderId, setActiveProviderId] = useState<ProviderId>(currentProviderId);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showAllModels, setShowAllModels] = useState(false);
 
   const currentProvider = configuredProviders.find((provider) => provider.id === currentProviderId);
   const searchTerm = searchQuery.trim().toLowerCase();
@@ -621,9 +677,6 @@ function ModelSettingsPopover({
       .map((provider) => ({
         provider,
         matchingModels: provider.models.filter(matchesSearch),
-        recommendedCount: provider.models.filter(
-          (model) => (model.lifecycle ?? 'recommended') === 'recommended',
-        ).length,
       }))
       .filter((entry) => !isSearching || entry.matchingModels.length > 0);
   }, [configuredProviders, isSearching, searchTerm]);
@@ -642,38 +695,27 @@ function ModelSettingsPopover({
   const visibleModelEntries = useMemo(() => {
     if (!activeProviderEntry) return [];
     const { provider, matchingModels } = activeProviderEntry;
-    return matchingModels
-      .filter((model) => {
-        if (isSearching || showAllModels) return true;
-        return (
-          (model.lifecycle ?? 'recommended') === 'recommended' ||
-          (currentProviderId === provider.id && currentModelId === model.id)
-        );
-      })
-      .map((model) => ({ provider, model }));
-  }, [activeProviderEntry, currentModelId, currentProviderId, isSearching, showAllModels]);
+    return matchingModels.map((model) => ({ provider, model }));
+  }, [activeProviderEntry]);
 
-  const currentThinking = currentModel?.capabilities?.thinking;
-  const thinkingDisplay =
-    supportsConfigurableThinking(currentThinking) && currentModel
-      ? getThinkingDisplayValue(currentThinking, thinkingConfig)
-      : undefined;
   const currentProviderName =
     currentProvider?.name ?? currentProviderConfig?.name ?? currentProviderId;
   const currentProviderIcon = currentProvider?.icon ?? currentProviderConfig?.icon;
   const currentModelLabel = currentModel?.name || currentModelId || t('settings.selectModel');
-  const hasLegacyModels =
-    !isSearching && activeProvider?.models.some((model) => model.lifecycle === 'legacy');
+  const currentThinkingValue = getThinkingDisplayValue(
+    currentModel?.capabilities?.thinking,
+    thinkingConfig,
+  );
+  const currentThinkingLabel = formatCompactThinkingValue(currentThinkingValue, t);
 
   return (
     <Popover
       open={popoverOpen}
-      onOpenChange={(open) => {
-        setPopoverOpen(open);
-        if (open) {
+      onOpenChange={(nextOpen) => {
+        setPopoverOpen(nextOpen);
+        if (nextOpen) {
           setActiveProviderId(currentProviderId);
           setSearchQuery('');
-          setShowAllModels(false);
         }
       }}
     >
@@ -683,7 +725,7 @@ function ModelSettingsPopover({
             <button
               aria-label={`${currentProviderName} / ${currentModelLabel}`}
               className={cn(
-                'inline-flex h-8 w-[160px] min-w-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-all sm:w-[176px]',
+                'inline-flex h-8 max-w-[184px] min-w-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-all',
                 'border-violet-200/70 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800/70 dark:bg-violet-950/30 dark:text-violet-300',
                 currentModelId &&
                   'shadow-[0_0_0_1px_rgba(124,58,237,0.12)] dark:shadow-[0_0_0_1px_rgba(167,139,250,0.16)]',
@@ -698,13 +740,10 @@ function ModelSettingsPopover({
               ) : (
                 <Bot className="size-3.5 shrink-0" />
               )}
-              <span className="min-w-0 flex-1 truncate text-left">{currentModelLabel}</span>
-              {thinkingDisplay && (
-                <span
-                  className="inline-flex size-5 shrink-0 items-center justify-center rounded-full bg-white/75 text-violet-700 dark:bg-violet-900/40 dark:text-violet-200"
-                  title={`${t('toolbar.thinking')}: ${formatThinkingValue(thinkingDisplay, t)}`}
-                >
-                  <Brain className="size-3" />
+              <span className="min-w-0 truncate text-left">{currentModelLabel}</span>
+              {currentThinkingLabel && (
+                <span className="shrink-0 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-violet-700 ring-1 ring-violet-200/70 dark:bg-violet-950/50 dark:text-violet-200 dark:ring-violet-800/70">
+                  {currentThinkingLabel}
                 </span>
               )}
             </button>
@@ -724,34 +763,7 @@ function ModelSettingsPopover({
         collisionPadding={12}
         className="w-[640px] max-w-[calc(100vw-2rem)] overflow-hidden p-0"
       >
-        <div className="border-b bg-muted/20 px-3 py-2.5">
-          <div className="flex items-center gap-2">
-            {currentProviderIcon ? (
-              <img
-                src={currentProviderIcon}
-                alt={currentProviderName}
-                className="size-5 rounded-sm"
-              />
-            ) : (
-              <Bot className="size-5 text-muted-foreground" />
-            )}
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-1.5">
-                <span className="truncate text-sm font-semibold">{currentProviderName}</span>
-                {currentProvider?.isServerConfigured && (
-                  <span className="rounded border px-1 py-0 text-[9px] text-muted-foreground">
-                    {t('settings.serverConfigured')}
-                  </span>
-                )}
-              </div>
-              <div className="truncate font-mono text-[11px] text-muted-foreground">
-                {currentModelLabel}
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid h-[374px] grid-cols-[128px_minmax(0,1fr)] sm:grid-cols-[160px_minmax(0,1fr)]">
+        <div className="grid h-[430px] grid-cols-[128px_minmax(0,1fr)] sm:grid-cols-[160px_minmax(0,1fr)]">
           <div className="min-h-0 border-r bg-muted/20">
             <div className="px-3 py-2 text-[10px] font-semibold uppercase text-muted-foreground">
               {t('toolbar.selectProvider')}
@@ -762,16 +774,13 @@ function ModelSettingsPopover({
                   {t('settings.noModelsFound')}
                 </div>
               ) : (
-                providerEntries.map(({ provider, matchingModels, recommendedCount }) => {
+                providerEntries.map(({ provider, matchingModels }) => {
                   const isActive = activeProvider?.id === provider.id;
                   const isCurrent = currentProviderId === provider.id;
                   return (
                     <button
                       key={provider.id}
-                      onClick={() => {
-                        setActiveProviderId(provider.id);
-                        setShowAllModels(false);
-                      }}
+                      onClick={() => setActiveProviderId(provider.id)}
                       className={cn(
                         'mb-1 flex h-10 w-full items-center gap-2 rounded-md px-2 text-left transition-colors',
                         isActive
@@ -791,7 +800,7 @@ function ModelSettingsPopover({
                       <div className="min-w-0 flex-1">
                         <div className="truncate text-xs font-medium">{provider.name}</div>
                         <div className="text-[10px] text-muted-foreground">
-                          {isSearching ? matchingModels.length : recommendedCount}/
+                          {isSearching ? `${matchingModels.length}/` : ''}
                           {provider.models.length}
                         </div>
                       </div>
@@ -813,23 +822,12 @@ function ModelSettingsPopover({
                     onChange={(event) => {
                       const nextSearch = event.target.value;
                       setSearchQuery(nextSearch);
-                      setShowAllModels(false);
                       if (!nextSearch.trim()) setActiveProviderId(currentProviderId);
                     }}
                     placeholder={t('settings.searchModels')}
                     className="h-8 pl-8 text-xs"
                   />
                 </div>
-                {hasLegacyModels && (
-                  <button
-                    onClick={() => setShowAllModels((value) => !value)}
-                    className="h-8 w-full shrink-0 rounded-md border px-2 text-[11px] text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground sm:w-auto"
-                  >
-                    {showAllModels
-                      ? t('toolbar.showRecommendedModels')
-                      : t('toolbar.showAllModels')}
-                  </button>
-                )}
               </div>
             </div>
 
@@ -842,14 +840,20 @@ function ModelSettingsPopover({
                 visibleModelEntries.map(({ provider, model }) => {
                   const isSelected =
                     currentProviderId === provider.id && currentModelId === model.id;
-                  const isLegacy = model.lifecycle === 'legacy';
-                  const thinking = model.capabilities?.thinking;
+                  const selectModel = () => {
+                    setActiveProviderId(provider.id);
+                    setModel(provider.id, model.id);
+                  };
                   return (
-                    <button
+                    <div
                       key={`${provider.id}:${model.id}`}
-                      onClick={() => {
-                        setActiveProviderId(provider.id);
-                        setModel(provider.id, model.id);
+                      role="button"
+                      tabIndex={0}
+                      onClick={selectModel}
+                      onKeyDown={(event) => {
+                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                        event.preventDefault();
+                        selectModel();
                       }}
                       className={cn(
                         'mb-1 flex min-h-11 w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition-colors',
@@ -866,33 +870,22 @@ function ModelSettingsPopover({
                           </div>
                         )}
                       </div>
-                      {supportsConfigurableThinking(thinking) && (
-                        <Brain className="size-3.5 shrink-0 text-violet-500" />
-                      )}
-                      {isLegacy && (
-                        <span className="shrink-0 rounded border px-1 py-0 text-[9px] text-muted-foreground">
-                          {t('toolbar.legacy')}
-                        </span>
+                      {isSelected && currentModel && (
+                        <InlineThinkingControl
+                          model={currentModel}
+                          config={thinkingConfig}
+                          onChange={onThinkingChange}
+                          t={t}
+                        />
                       )}
                       {isSelected && (
                         <Check className="size-3.5 shrink-0 text-violet-600 dark:text-violet-400" />
                       )}
-                    </button>
+                    </div>
                   );
                 })
               )}
             </div>
-
-            {currentModel && supportsConfigurableThinking(currentModel.capabilities?.thinking) && (
-              <div className="border-t bg-muted/20 px-3 py-2">
-                <ThinkingControlPanel
-                  model={currentModel}
-                  config={thinkingConfig}
-                  onChange={onThinkingChange}
-                  t={t}
-                />
-              </div>
-            )}
           </div>
         </div>
       </PopoverContent>

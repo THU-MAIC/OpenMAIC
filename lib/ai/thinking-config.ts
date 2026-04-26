@@ -202,6 +202,7 @@ export function getThinkingDisplayValue(
   }
   if (thinking.control === 'toggle-budget') {
     if (normalized.mode === 'disabled') return 'off';
+    if (normalized.budgetTokens === -1 && thinking.budgetRange?.allowDynamic) return 'auto';
     return normalized.budgetTokens && normalized.budgetTokens !== -1
       ? `${normalized.budgetTokens}`
       : 'on';

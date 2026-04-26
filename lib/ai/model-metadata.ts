@@ -1,6 +1,4 @@
 import type {
-  ModelInfo,
-  ModelLifecycle,
   ProviderConfig,
   ProviderId,
   ThinkingCapability,
@@ -206,7 +204,7 @@ const doubaoSeed20Effort: ThinkingCapability = {
 const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('openai', 'gpt-5.5')]: effortCapability(
     'openai',
-    ['low', 'medium', 'high'],
+    ['low', 'medium', 'high', 'xhigh'],
     'medium',
   ),
   [getModelMetadataKey('openai', 'gpt-5.4-pro')]: effortCapability(
@@ -228,51 +226,6 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
     'openai',
     ['none', 'low', 'medium', 'high', 'xhigh'],
     'none',
-  ),
-  [getModelMetadataKey('openai', 'gpt-5.2')]: effortCapability(
-    'openai',
-    ['none', 'low', 'medium', 'high', 'xhigh'],
-    'none',
-  ),
-  [getModelMetadataKey('openai', 'gpt-5.1')]: effortCapability(
-    'openai',
-    ['none', 'low', 'medium', 'high'],
-    'none',
-  ),
-  [getModelMetadataKey('openai', 'gpt-5')]: effortCapability(
-    'openai',
-    ['minimal', 'low', 'medium', 'high'],
-    'medium',
-  ),
-  [getModelMetadataKey('openai', 'gpt-5-mini')]: effortCapability(
-    'openai',
-    ['minimal', 'low', 'medium', 'high'],
-    'medium',
-  ),
-  [getModelMetadataKey('openai', 'gpt-5-nano')]: effortCapability(
-    'openai',
-    ['minimal', 'low', 'medium', 'high'],
-    'medium',
-  ),
-  [getModelMetadataKey('openai', 'o4-mini')]: effortCapability(
-    'openai',
-    ['low', 'medium', 'high'],
-    'medium',
-  ),
-  [getModelMetadataKey('openai', 'o3')]: effortCapability(
-    'openai',
-    ['low', 'medium', 'high'],
-    'medium',
-  ),
-  [getModelMetadataKey('openai', 'o3-mini')]: effortCapability(
-    'openai',
-    ['low', 'medium', 'high'],
-    'medium',
-  ),
-  [getModelMetadataKey('openai', 'o1')]: effortCapability(
-    'openai',
-    ['low', 'medium', 'high'],
-    'medium',
   ),
 
   [getModelMetadataKey('anthropic', 'claude-opus-4-7')]: anthropicOpus47Effort,
@@ -316,9 +269,6 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('glm', 'glm-4.6')]: toggleCapability('glm'),
   [getModelMetadataKey('glm', 'glm-4.6v')]: toggleCapability('glm'),
   [getModelMetadataKey('glm', 'glm-4.6v-flash')]: toggleCapability('glm'),
-  [getModelMetadataKey('glm', 'glm-4.5-air')]: toggleCapability('glm'),
-  [getModelMetadataKey('glm', 'glm-4.5-airx')]: toggleCapability('glm'),
-  [getModelMetadataKey('glm', 'glm-4.5-flash')]: toggleCapability('glm'),
 
   [getModelMetadataKey('qwen', 'qwen3.6-max-preview')]: qwenBudgetDisabled,
   [getModelMetadataKey('qwen', 'qwen3.6-plus')]: qwenBudgetEnabled,
@@ -363,11 +313,8 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
 
   [getModelMetadataKey('grok', 'grok-4.20-reasoning')]: fixedThinkingCapability,
   [getModelMetadataKey('grok', 'grok-4.20-multi-agent')]: fixedThinkingCapability,
-  [getModelMetadataKey('grok', 'grok-4.20-beta-0309-reasoning')]: fixedThinkingCapability,
   [getModelMetadataKey('grok', 'grok-4-1-fast-reasoning')]: fixedThinkingCapability,
-  [getModelMetadataKey('grok', 'grok-4-fast-reasoning')]: fixedThinkingCapability,
 
-  [getModelMetadataKey('minimax', 'MiniMax-M2.7-highspeed')]: fixedThinkingCapability,
   [getModelMetadataKey('minimax', 'MiniMax-M2.7')]: fixedThinkingCapability,
 
   [getModelMetadataKey('tencent-hunyuan', 'hy3-preview')]: hunyuanHy3Effort,
@@ -375,45 +322,6 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('xiaomi', 'mimo-v2.5-pro')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.5')]: toggleCapability('xiaomi'),
 };
-
-const MODEL_LIFECYCLE: Record<string, ModelLifecycle> = {
-  [getModelMetadataKey('openai', 'gpt-4o')]: 'legacy',
-  [getModelMetadataKey('openai', 'gpt-4o-mini')]: 'legacy',
-  [getModelMetadataKey('openai', 'gpt-4-turbo')]: 'legacy',
-  [getModelMetadataKey('openai', 'o1')]: 'legacy',
-  [getModelMetadataKey('openai', 'o3-mini')]: 'legacy',
-  [getModelMetadataKey('glm', 'glm-4-long')]: 'legacy',
-  [getModelMetadataKey('kimi', 'kimi-k2-turbo-preview')]: 'legacy',
-  [getModelMetadataKey('kimi', 'kimi-k2-0905-preview')]: 'legacy',
-  [getModelMetadataKey('kimi', 'moonshot-v1-128k')]: 'legacy',
-  [getModelMetadataKey('kimi', 'moonshot-v1-32k')]: 'legacy',
-  [getModelMetadataKey('kimi', 'moonshot-v1-8k')]: 'legacy',
-  [getModelMetadataKey('minimax', 'MiniMax-M2.5-highspeed')]: 'legacy',
-  [getModelMetadataKey('minimax', 'MiniMax-M2.5')]: 'legacy',
-  [getModelMetadataKey('minimax', 'MiniMax-M2.1-highspeed')]: 'legacy',
-  [getModelMetadataKey('minimax', 'MiniMax-M2.1')]: 'legacy',
-  [getModelMetadataKey('minimax', 'MiniMax-M2')]: 'legacy',
-  [getModelMetadataKey('siliconflow', 'deepseek-ai/DeepSeek-V3')]: 'legacy',
-  [getModelMetadataKey('siliconflow', 'Qwen/Qwen2.5-72B-Instruct')]: 'legacy',
-  [getModelMetadataKey('siliconflow', 'Qwen/Qwen2.5-7B-Instruct')]: 'legacy',
-  [getModelMetadataKey('siliconflow', 'Qwen/Qwen2.5-Coder-7B-Instruct')]: 'legacy',
-  [getModelMetadataKey('grok', 'grok-4.20-beta-0309-reasoning')]: 'legacy',
-  [getModelMetadataKey('grok', 'grok-4.20-beta-0309-non-reasoning')]: 'legacy',
-  [getModelMetadataKey('grok', 'grok-4-fast-reasoning')]: 'legacy',
-  [getModelMetadataKey('grok', 'grok-4-fast-non-reasoning')]: 'legacy',
-  [getModelMetadataKey('grok', 'grok-4-0709')]: 'legacy',
-  [getModelMetadataKey('grok', 'grok-3')]: 'legacy',
-  [getModelMetadataKey('grok', 'grok-3-mini')]: 'legacy',
-  [getModelMetadataKey('ollama', 'llama3.2')]: 'legacy',
-  [getModelMetadataKey('ollama', 'qwen2.5:32b')]: 'legacy',
-  [getModelMetadataKey('ollama', 'qwen2.5')]: 'legacy',
-  [getModelMetadataKey('ollama', 'phi4')]: 'legacy',
-  [getModelMetadataKey('ollama', 'mistral')]: 'legacy',
-};
-
-export function getModelLifecycle(providerId: string, modelId: string): ModelLifecycle {
-  return MODEL_LIFECYCLE[getModelMetadataKey(providerId, modelId)] ?? 'recommended';
-}
 
 export function getCatalogThinkingCapability(
   providerId: string,
@@ -425,8 +333,6 @@ export function getCatalogThinkingCapability(
 export function applyModelMetadata(providers: Record<ProviderId, ProviderConfig>): void {
   for (const provider of Object.values(providers)) {
     for (const model of provider.models) {
-      model.lifecycle = getModelLifecycle(provider.id, model.id);
-
       const thinking = getCatalogThinkingCapability(provider.id, model.id);
       if (thinking) {
         model.capabilities = {
@@ -436,8 +342,4 @@ export function applyModelMetadata(providers: Record<ProviderId, ProviderConfig>
       }
     }
   }
-}
-
-export function isRecommendedModel(model: ModelInfo): boolean {
-  return (model.lifecycle ?? 'recommended') === 'recommended';
 }

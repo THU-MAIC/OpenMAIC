@@ -493,7 +493,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
       if (firstRemainingPid && firstModel) {
         setModel(firstRemainingPid, firstModel);
       } else {
-        setModel('openai' as ProviderId, 'gpt-4o-mini');
+        setModel('openai' as ProviderId, 'gpt-5.4-mini');
       }
     }
     setProviderToDelete(null);

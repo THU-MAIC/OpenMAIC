@@ -13,7 +13,6 @@ import {
   XCircle,
   FileText,
   Send,
-  Brain,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -21,7 +20,6 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderId } from '@/lib/ai/providers';
 import { MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
-import { supportsConfigurableThinking } from '@/lib/ai/thinking-config';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { createVerifyModelRequest, formatContextWindow } from './utils';
 
@@ -304,8 +302,6 @@ export function ModelSelector({
                 const isSelected = providerId === effectiveProvider && modelId === model.id;
                 const isTesting = testingModelId === model.id;
                 const showTestResult = isTesting && testMessage;
-                const isLegacy = model.lifecycle === 'legacy';
-                const thinking = model.capabilities?.thinking;
 
                 return (
                   <div
@@ -324,11 +320,6 @@ export function ModelSelector({
                         <div className="flex-1 min-w-0">
                           <div className="font-mono text-sm font-medium mb-1.5 truncate flex items-center gap-1.5">
                             <span className="truncate">{model.name}</span>
-                            {isLegacy && (
-                              <span className="font-sans text-[10px] px-1 py-0 rounded border text-muted-foreground shrink-0">
-                                {t('toolbar.legacy')}
-                              </span>
-                            )}
                           </div>
                           {(model.capabilities || model.contextWindow || model.outputWindow) && (
                             <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -347,11 +338,6 @@ export function ModelSelector({
                                 {model.capabilities?.streaming && (
                                   <div title={t('settings.capabilities.streaming')}>
                                     <Zap className="h-3 w-3" />
-                                  </div>
-                                )}
-                                {supportsConfigurableThinking(thinking) && (
-                                  <div title={t('toolbar.thinking')}>
-                                    <Brain className="h-3 w-3" />
                                   </div>
                                 )}
                               </div>

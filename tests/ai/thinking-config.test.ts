@@ -33,22 +33,31 @@ describe('thinking config metadata', () => {
     expect(supportsConfigurableThinking(minimaxThinking)).toBe(false);
   });
 
-  it('marks legacy models without dropping their thinking config', () => {
-    const model = getProvider('openai')?.models.find((item) => item.id === 'o3-mini');
-
-    expect(model?.lifecycle).toBe('legacy');
-    expect(supportsConfigurableThinking(model?.capabilities?.thinking)).toBe(true);
-  });
-
-  it('removes deprecated Gemini 3 Pro and legacy DeepSeek aliases from the catalog', () => {
+  it('removes deprecated and legacy models from the built-in catalog', () => {
+    const openaiModels = getProvider('openai')?.models.map((item) => item.id);
+    const glmModels = getProvider('glm')?.models.map((item) => item.id);
     const googleModels = getProvider('google')?.models.map((item) => item.id);
     const deepseekModels = getProvider('deepseek')?.models.map((item) => item.id);
     const hunyuanModels = getProvider('tencent-hunyuan')?.models.map((item) => item.id);
+    const minimaxModels = getProvider('minimax')?.models.map((item) => item.id);
+    const siliconflowModels = getProvider('siliconflow')?.models.map((item) => item.id);
 
+    expect(openaiModels).not.toContain('o3-mini');
+    expect(openaiModels).not.toContain('o3');
+    expect(openaiModels).not.toContain('o4-mini');
+    expect(openaiModels).not.toContain('gpt-5.2');
+    expect(openaiModels).not.toContain('gpt-5.1');
+    expect(openaiModels).not.toContain('gpt-5');
+    expect(openaiModels).not.toContain('gpt-4o');
+    expect(glmModels).not.toContain('glm-4.5-air');
+    expect(glmModels).not.toContain('glm-4.5-airx');
+    expect(glmModels).not.toContain('glm-4.5-flash');
     expect(googleModels).toContain('gemini-3.1-pro-preview');
     expect(googleModels).not.toContain('gemini-3-pro-preview');
     expect(deepseekModels).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash']);
     expect(hunyuanModels).toEqual(['hy3-preview']);
+    expect(minimaxModels).toEqual(['MiniMax-M2.7']);
+    expect(siliconflowModels).not.toContain('MiniMaxAI/MiniMax-M2');
   });
 });
 
@@ -77,7 +86,7 @@ describe('thinking config normalization', () => {
       mode: 'enabled',
       effort: 'low',
     });
-    expect(thinking?.effortValues).toEqual(['low', 'medium', 'high']);
+    expect(thinking?.effortValues).toEqual(['low', 'medium', 'high', 'xhigh']);
   });
 
   it('normalizes Claude 4.5+ thinking as effort levels', () => {
@@ -147,7 +156,7 @@ describe('thinking config normalization', () => {
       mode: 'enabled',
       budgetTokens: -1,
     });
-    expect(getThinkingDisplayValue(thinking, undefined)).toBe('on');
+    expect(getThinkingDisplayValue(thinking, undefined)).toBe('auto');
     expect(getThinkingDisplayValue(thinking, { mode: 'enabled', budgetTokens: 8192 })).toBe('8192');
   });
 });
