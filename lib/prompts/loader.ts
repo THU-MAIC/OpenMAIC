@@ -3,13 +3,14 @@
  *
  * Supports:
  * - Loading prompts from templates/{promptId}/ directory
- * - Snippet inclusion via {{snippet:name}} and {{snippet:name?if=condition}} syntax
+ * - Snippet inclusion via {{snippet:name}} syntax
+ * - Conditional blocks via {{#if condition}}...{{/if}} syntax
  * - Variable interpolation via {{variable}} syntax
  */
 
 import fs from 'fs';
 import path from 'path';
-import type { PromptId, LoadedPrompt, PromptLoadOptions, SnippetId } from './types';
+import type { PromptId, LoadedPrompt, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('PromptLoader');
 
@@ -37,23 +38,31 @@ export function loadSnippet(snippetId: SnippetId): string {
 }
 
 /**
- * Process snippet includes in a template
+ * Process snippet includes in a template.
  * Replaces {{snippet:name}} with actual snippet content.
- * Replaces {{snippet:name?if=condition}} with snippet content only when
- * the named condition is truthy.
  */
-export function processSnippets(
+export function processSnippets(template: string): string {
+  return template.replace(/\{\{snippet:(\w[\w-]*)\}\}/g, (_, snippetId) => {
+    return loadSnippet(snippetId as SnippetId);
+  });
+}
+
+/**
+ * Process conditional blocks in a template.
+ * Replaces {{#if conditionName}}...{{/if}} with the inner content when the
+ * named condition is truthy, or removes the entire block when it is falsy.
+ *
+ * Blocks do not nest — this is intentional to keep the prompt templating
+ * language simple and reviewable.
+ */
+export function processConditionalBlocks(
   template: string,
-  conditions: Record<string, unknown> = {},
+  conditions: Record<string, unknown>,
 ): string {
   return template.replace(
-    /\{\{snippet:(\w[\w-]*)(?:\?if=(\w+))?\}\}/g,
-    (_, snippetId: string, conditionName: string | undefined) => {
-      if (conditionName && !conditions[conditionName]) {
-        return '';
-      }
-
-      return loadSnippet(snippetId as SnippetId);
+    /\{\{#if (\w+)\}\}([\s\S]*?)\{\{\/if\}\}/g,
+    (_, conditionName: string, content: string) => {
+      return conditions[conditionName] ? content : '';
     },
   );
 }
@@ -61,25 +70,21 @@ export function processSnippets(
 /**
  * Load a prompt by ID
  */
-export function loadPrompt(
-  promptId: PromptId,
-  options: PromptLoadOptions = {},
-): LoadedPrompt | null {
+export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
   const promptDir = path.join(getPromptsDir(), 'templates', promptId);
-  const conditions = options.conditions || {};
 
   try {
     // Load system.md
     const systemPath = path.join(promptDir, 'system.md');
     let systemPrompt = fs.readFileSync(systemPath, 'utf-8').trim();
-    systemPrompt = processSnippets(systemPrompt, conditions);
+    systemPrompt = processSnippets(systemPrompt);
 
     // Load user.md (optional, may not exist)
     const userPath = path.join(promptDir, 'user.md');
     let userPromptTemplate = '';
     try {
       userPromptTemplate = fs.readFileSync(userPath, 'utf-8').trim();
-      userPromptTemplate = processSnippets(userPromptTemplate, conditions);
+      userPromptTemplate = processSnippets(userPromptTemplate);
     } catch {
       // user.md is optional
     }
@@ -113,21 +118,28 @@ export function interpolateVariables(template: string, variables: Record<string,
 }
 
 /**
- * Build a complete prompt with variables
+ * Build a complete prompt with variables.
+ *
+ * Processing order:
+ *   1. Snippet includes ({{snippet:name}}) — file content spliced in
+ *   2. Conditional blocks ({{#if flag}}...{{/if}}) — gated on `variables`
+ *   3. Variable interpolation ({{varName}}) — values substituted
  */
 export function buildPrompt(
   promptId: PromptId,
   variables: Record<string, unknown>,
-  options: PromptLoadOptions = {},
 ): { system: string; user: string } | null {
-  const prompt = loadPrompt(promptId, {
-    ...options,
-    conditions: options.conditions || variables,
-  });
+  const prompt = loadPrompt(promptId);
   if (!prompt) return null;
 
   return {
-    system: interpolateVariables(prompt.systemPrompt, variables),
-    user: interpolateVariables(prompt.userPromptTemplate, variables),
+    system: interpolateVariables(
+      processConditionalBlocks(prompt.systemPrompt, variables),
+      variables,
+    ),
+    user: interpolateVariables(
+      processConditionalBlocks(prompt.userPromptTemplate, variables),
+      variables,
+    ),
   };
 }

@@ -4,12 +4,13 @@
  * Features:
  * - File-based prompt storage in templates/
  * - Snippet composition via {{snippet:name}} syntax
+ * - Conditional blocks via {{#if flag}}...{{/if}} syntax
  * - Variable interpolation via {{variable}} syntax
  */
 
 // Types
 import type { PromptId } from './types';
-export type { PromptId, SnippetId, LoadedPrompt, PromptLoadOptions } from './types';
+export type { PromptId, SnippetId, LoadedPrompt } from './types';
 
 // Loader functions
 export {
@@ -18,6 +19,7 @@ export {
   buildPrompt,
   interpolateVariables,
   processSnippets,
+  processConditionalBlocks,
 } from './loader';
 
 // Prompt IDs constant

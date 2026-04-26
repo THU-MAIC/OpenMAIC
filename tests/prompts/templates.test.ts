@@ -260,8 +260,8 @@ describe('placeholder naming convention lint', () => {
         const p = join(promptDir, file);
         try {
           const content = readFileSync(p, 'utf-8');
-          // Match {{placeholder}} but NOT {{snippet:name}}
-          const matches = content.match(/\{\{(?!snippet:)([^}]+)\}\}/g) || [];
+          // Match {{placeholder}} but NOT {{snippet:name}}, {{#if}}, or {{/if}}
+          const matches = content.match(/\{\{(?!snippet:|#if |\/if)([^}]+)\}\}/g) || [];
           for (const m of matches) {
             const name = m.slice(2, -2);
             // camelCase: starts with lowercase, rest alphanumeric; reject _ and -

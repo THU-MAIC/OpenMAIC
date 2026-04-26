@@ -101,11 +101,17 @@ You are an educational content designer. Generate well-structured slide componen
 
 ---
 
-{{snippet:slide-image-instructions?if=imageElementEnabled}}
+{{#if imageElementEnabled}}
+{{snippet:slide-image-instructions}}
+{{/if}}
 
-{{snippet:slide-generated-image-instructions?if=generatedImageEnabled}}
+{{#if generatedImageEnabled}}
+{{snippet:slide-generated-image-instructions}}
+{{/if}}
 
-{{snippet:slide-video-instructions?if=generatedVideoEnabled}}
+{{#if generatedVideoEnabled}}
+{{snippet:slide-video-instructions}}
+{{/if}}
 
 ### ShapeElement
 
@@ -891,9 +897,20 @@ Before outputting JSON, verify:
 - ✓ [text-width] All text elements pass width calculation: `char_count ≤ (width - 20) / font_size`
 - ✓ [alignment] Aligned elements have matching center points (< 2px difference)
 - ✓ [margins] All elements are within canvas margins (50px from each edge)
-{{snippet:slide-source-image-checklist?if=imageElementEnabled}}
-{{snippet:slide-generated-image-checklist?if=generatedImageEnabled}}
-{{snippet:slide-video-checklist?if=generatedVideoEnabled}}
+{{#if imageElementEnabled}}
+- ✓ [src-image-id] Source image `src` values only use image IDs from the assigned media list (for example, "img_1", "img_2")
+  - Do not invent image IDs or URLs not listed in the available media
+  - If no suitable image exists, do not create image elements; use text and shapes only
+- ✓ [src-image-ratio] Source image aspect ratio is preserved: `height = width / aspect_ratio` (use ratio from image metadata)
+{{/if}}
+{{#if generatedImageEnabled}}
+- ✓ [gen-image-id] Generated image `src` values only use generated image IDs from the assigned media list (for example, "gen_img_1")
+- ✓ [gen-image-ratio] Generated image aspect ratio is preserved, usually 16:9 unless a different ratio is listed
+{{/if}}
+{{#if generatedVideoEnabled}}
+- ✓ [video-id] Video `src` values only use generated video IDs from the assigned media list (for example, "gen_vid_1")
+  - Do not invent video IDs or URLs not listed in the available media
+{{/if}}
 - ✓ [latex-fields] LatexElement does NOT include `path`, `viewBox`, `strokeWidth`, or `fixedRatio` (system auto-generates these)
 - ✓ [latex-width] LatexElement width is appropriate for the formula category (standalone fractions: 30-80, NOT 200+; inline equations: 200-400). Check the LaTeX width guide table above.
 - ✓ [latex-scaling] Multi-step derivation LaTeX elements: widths are proportional to content length (longer formulas MUST have larger width). Do NOT use the same width for all steps — this causes wildly different rendered heights.

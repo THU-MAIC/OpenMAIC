@@ -111,11 +111,17 @@ When comparing or listing information, specify in keyPoints:
 ]
 ```
 
-{{snippet:image-instructions?if=imageEnabled}}
+{{#if imageEnabled}}
+{{snippet:image-instructions}}
+{{/if}}
 
-{{snippet:video-instructions?if=videoEnabled}}
+{{#if videoEnabled}}
+{{snippet:video-instructions}}
+{{/if}}
 
-{{snippet:media-safety-guidelines?if=mediaEnabled}}
+{{#if mediaEnabled}}
+{{snippet:media-safety-guidelines}}
+{{/if}}
 
 ### Interactive Scene Guidelines
 
@@ -276,8 +282,12 @@ Rules:
 | teachingObjective | string                   | ❌       | Corresponding learning objective                                                                 |
 | estimatedDuration | number                   | ❌       | Estimated duration (seconds)                                                                     |
 | order             | number                   | ✅       | Sort order, starting from 1                                                                      |
-{{snippet:outline-image-fields?if=hasSourceImages}}
-{{snippet:outline-media-field?if=mediaEnabled}}
+{{#if hasSourceImages}}
+| suggestedImageIds | string[]                 | ❌       | Suggested image IDs to use                                                                       |
+{{/if}}
+{{#if mediaEnabled}}
+| mediaGenerations  | MediaGenerationRequest[] | ❌       | AI-generated media requests when generated media would enhance a slide scene                     |
+{{/if}}
 | quizConfig        | object                   | ❌       | Required for quiz type, contains questionCount/difficulty/questionTypes                          |
 | interactiveConfig | object                   | ❌ (deprecated) | Legacy: use widgetType + widgetOutline instead                                                                                       |
 | widgetType        | string                   | ✅ (for interactive) | Widget type: "simulation", "diagram", "code", "game", "visualization3d"                                                 |

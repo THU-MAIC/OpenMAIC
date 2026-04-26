@@ -83,7 +83,9 @@ Never return a bare array. Never omit `languageDirective`. Both keys are require
      "questionTypes": ["single", "multiple"]
    }
    ```
-{{snippet:outline-image-resources?if=hasSourceImages}}
+{{#if hasSourceImages}}
+- **If source images are available**, add `suggestedImageIds` to relevant slide scenes. Only use image IDs listed under Available Images.
+{{/if}}
 - **Interactive scenes**: If a concept benefits from hands-on simulation/visualization, use `"type": "interactive"` with `widgetType` and `widgetOutline` fields. Limit to 1-2 per course.
    - Select widgetType based on concept: simulation (physics/chem), diagram (processes), code (programming), game (practice), visualization3d (3D models)
    - Provide appropriate widgetOutline for the widget type

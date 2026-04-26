@@ -1,2 +1,0 @@
-- ✓ [video-id] Video `src` values only use generated video IDs from the assigned media list (for example, "gen_vid_1")
-  - Do not invent video IDs or URLs not listed in the available media

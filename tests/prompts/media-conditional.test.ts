@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { buildPrompt, PROMPT_IDS, processSnippets } from '@/lib/prompts';
+import { buildPrompt, PROMPT_IDS, processConditionalBlocks } from '@/lib/prompts';
 
 function buildOutlinePrompt(flags: {
   hasSourceImages?: boolean;
@@ -32,7 +32,7 @@ function buildSlidePrompt(flags: {
   return buildPrompt(PROMPT_IDS.SLIDE_CONTENT, {
     title: 'Water Cycle',
     description: 'Explain evaporation and condensation',
-    keyPoints: '1. Evaporation\n2. Condensation',
+    keyPoints: '1. Evaporation\\n2. Condensation',
     assignedImages: flags.imageElementEnabled ? '- img_1: source image' : 'No images available',
     canvas_width: 1000,
     canvas_height: 562.5,
@@ -50,13 +50,13 @@ function combined(prompt: { system: string; user: string } | null) {
   return `${prompt!.system}\n${prompt!.user}`;
 }
 
-describe('conditional prompt snippets', () => {
-  test('processSnippets includes conditional snippets only when enabled', () => {
+describe('conditional blocks', () => {
+  test('processConditionalBlocks includes content only when flag is truthy', () => {
     expect(
-      processSnippets('A {{snippet:json-output-rules?if=enabled}} B', { enabled: true }),
-    ).toContain('JSON');
+      processConditionalBlocks('A {{#if enabled}}INCLUDED{{/if}} B', { enabled: true }),
+    ).toBe('A INCLUDED B');
     expect(
-      processSnippets('A {{snippet:json-output-rules?if=enabled}} B', { enabled: false }),
+      processConditionalBlocks('A {{#if enabled}}INCLUDED{{/if}} B', { enabled: false }),
     ).toBe('A  B');
   });
 });
