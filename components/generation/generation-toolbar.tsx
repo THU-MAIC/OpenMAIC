@@ -725,7 +725,7 @@ function ModelSettingsPopover({
             <button
               aria-label={`${currentProviderName} / ${currentModelLabel}`}
               className={cn(
-                'inline-flex h-8 max-w-[184px] min-w-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-all',
+                'inline-flex h-8 max-w-[128px] min-w-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-all sm:max-w-[144px]',
                 'border-violet-200/70 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-800/70 dark:bg-violet-950/30 dark:text-violet-300',
                 currentModelId &&
                   'shadow-[0_0_0_1px_rgba(124,58,237,0.12)] dark:shadow-[0_0_0_1px_rgba(167,139,250,0.16)]',
