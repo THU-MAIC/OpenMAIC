@@ -597,6 +597,7 @@
     "providerAzureTTS": "Azure TTS",
     "providerGLMTTS": "GLM TTS",
     "providerQwenTTS": "Qwen TTS（阿里云百炼）",
+    "providerVoxCPMTTS": "VoxCPM2",
     "providerDoubaoTTS": "豆包 TTS 2.0（火山引擎）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",

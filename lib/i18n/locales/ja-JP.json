@@ -597,6 +597,7 @@
     "providerAzureTTS": "Azure TTS",
     "providerGLMTTS": "GLM TTS",
     "providerQwenTTS": "Qwen TTS（Alibaba Cloud百錬）",
+    "providerVoxCPMTTS": "VoxCPM2",
     "providerDoubaoTTS": "Doubao TTS 2.0（火山エンジン）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",

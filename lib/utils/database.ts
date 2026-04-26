@@ -168,6 +168,23 @@ export interface GeneratedAgentRecord {
   createdAt: number;
 }
 
+/**
+ * VoiceProfile table - Browser-local TTS voice profiles
+ */
+export interface VoiceProfileRecord {
+  id: string;
+  providerId: string;
+  kind: 'prompt' | 'clone';
+  name: string;
+  voicePrompt?: string;
+  promptText?: string;
+  referenceAudio?: Blob;
+  referenceAudioName?: string;
+  referenceAudioMimeType?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** Build the compound primary key for mediaFiles: `${stageId}:${elementId}` */
 export function mediaFileKey(stageId: string, elementId: string): string {
   return `${stageId}:${elementId}`;
@@ -176,7 +193,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 9;
+const _DATABASE_VERSION = 10;
 
 /**
  * MAIC Database Instance
@@ -193,6 +210,7 @@ class MAICDatabase extends Dexie {
   stageOutlines!: EntityTable<StageOutlinesRecord, 'stageId'>;
   mediaFiles!: EntityTable<MediaFileRecord, 'id'>;
   generatedAgents!: EntityTable<GeneratedAgentRecord, 'id'>;
+  voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -344,6 +362,21 @@ class MAICDatabase extends Dexie {
           delete stage.language;
         });
       });
+
+    // Version 10: Add browser-local voice profiles for serverless TTS voice storage.
+    this.version(10).stores({
+      stages: 'id, updatedAt',
+      scenes: 'id, stageId, order, [stageId+order]',
+      audioFiles: 'id, createdAt',
+      imageFiles: 'id, createdAt',
+      snapshots: '++id',
+      chatSessions: 'id, stageId, [stageId+createdAt]',
+      playbackState: 'stageId',
+      stageOutlines: 'stageId',
+      mediaFiles: 'id, stageId, [stageId+type]',
+      generatedAgents: 'id, stageId',
+      voiceProfiles: 'id, providerId, kind, updatedAt',
+    });
   }
 }
 

@@ -13,6 +13,7 @@ import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thi
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
+import { DEFAULT_VOXCPM_BACKEND, VOXCPM_MODEL_ID, VOXCPM_VLLM_MODEL_ID } from '@/lib/audio/voxcpm';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
@@ -345,6 +346,13 @@ const getDefaultAudioConfig = () => ({
     'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
     'glm-tts': { apiKey: '', baseUrl: '', enabled: false },
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
+    'voxcpm-tts': {
+      apiKey: '',
+      baseUrl: '',
+      modelId: VOXCPM_VLLM_MODEL_ID,
+      enabled: false,
+      providerOptions: { backend: DEFAULT_VOXCPM_BACKEND },
+    },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: false },
@@ -463,6 +471,36 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
     )
   ) {
     state.asrProviderId = defaultAudioConfig.asrProviderId;
+  }
+}
+
+function ensureBuiltInAudioProviders(state: Partial<SettingsState>): void {
+  const defaultAudioConfig = getDefaultAudioConfig();
+
+  if (state.ttsProvidersConfig) {
+    for (const providerId of Object.keys(TTS_PROVIDERS) as BuiltInTTSProviderId[]) {
+      if (!state.ttsProvidersConfig[providerId]) {
+        state.ttsProvidersConfig[providerId] = defaultAudioConfig.ttsProvidersConfig[providerId];
+      }
+    }
+    const voxcpmConfig = state.ttsProvidersConfig['voxcpm-tts'];
+    if (voxcpmConfig) {
+      if (!voxcpmConfig.modelId || voxcpmConfig.modelId === VOXCPM_MODEL_ID) {
+        voxcpmConfig.modelId = VOXCPM_VLLM_MODEL_ID;
+      }
+      voxcpmConfig.providerOptions = {
+        backend: DEFAULT_VOXCPM_BACKEND,
+        ...(voxcpmConfig.providerOptions || {}),
+      };
+    }
+  }
+
+  if (state.asrProvidersConfig) {
+    for (const providerId of Object.keys(ASR_PROVIDERS) as ASRProviderId[]) {
+      if (!state.asrProvidersConfig[providerId]) {
+        state.asrProvidersConfig[providerId] = defaultAudioConfig.asrProvidersConfig[providerId];
+      }
+    }
   }
 }
 
@@ -1434,6 +1472,7 @@ export const useSettingsStore = create<SettingsState>()(
           const defaultAudioConfig = getDefaultAudioConfig();
           Object.assign(state, defaultAudioConfig);
         }
+        ensureBuiltInAudioProviders(state);
 
         // Migrate global ttsModelId to per-provider
         if ((state as Record<string, unknown>).ttsModelId) {
@@ -1539,6 +1578,7 @@ export const useSettingsStore = create<SettingsState>()(
         }
 
         ensureValidProviderSelections(state);
+        ensureBuiltInAudioProviders(state);
         state.thinkingConfigs = pruneThinkingConfigs(state.thinkingConfigs, state.providersConfig);
 
         return state;
@@ -1549,6 +1589,7 @@ export const useSettingsStore = create<SettingsState>()(
         const merged = { ...currentState, ...(persistedState as object) };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
         promoteLegacyCustomProviderBaseUrls(merged as Partial<SettingsState>);
+        ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);

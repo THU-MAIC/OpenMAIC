@@ -10,6 +10,7 @@ import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
 
@@ -135,6 +136,13 @@ export async function generateAndStoreTTS(
   if (settings.ttsProviderId === 'browser-native-tts') return;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+  const providerOptions =
+    settings.ttsProviderId === 'voxcpm-tts'
+      ? {
+          ...(ttsProviderConfig?.providerOptions || {}),
+          ...(await getVoxCPMProviderOptions(settings.ttsVoice, { role: 'teacher' })),
+        }
+      : undefined;
   const response = await fetch('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -147,7 +155,11 @@ export async function generateAndStoreTTS(
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,
       ttsBaseUrl:
-        ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
+        ttsProviderConfig?.serverBaseUrl ||
+        ttsProviderConfig?.baseUrl ||
+        ttsProviderConfig?.customDefaultBaseUrl ||
+        undefined,
+      ttsProviderOptions: providerOptions,
     }),
     signal,
   });

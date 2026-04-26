@@ -260,7 +260,7 @@ export async function generateTTSForClassroom(
           speechAction.text,
         );
 
-        const filename = `${audioId}.${format}`;
+        const filename = `${audioId}.${result.format || format}`;
         await fs.writeFile(path.join(audioDir, filename), result.audio);
 
         speechAction.audioId = audioId;

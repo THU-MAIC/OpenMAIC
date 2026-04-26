@@ -18,6 +18,12 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { getTTSVoices } from '@/lib/audio/constants';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import {
+  getVoxCPMProviderOptions,
+  getVoxCPMVoiceOptions,
+  useVoxCPMVoiceProfiles,
+} from '@/lib/audio/voxcpm-voices';
+import { normalizeVoxCPMBackend, voxCPMBackendSupportsReferenceAudio } from '@/lib/audio/voxcpm';
 
 /** Extract the English name from voice name format "ChineseName (English)" */
 function getVoiceDisplayName(name: string, lang: string): string {
@@ -40,8 +46,17 @@ export function TtsConfigPopover() {
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
+  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
+  const voxcpmBackend = normalizeVoxCPMBackend(
+    ttsProvidersConfig['voxcpm-tts']?.providerOptions?.backend,
+  );
 
-  const voices = getTTSVoices(ttsProviderId);
+  const voices =
+    ttsProviderId === 'voxcpm-tts'
+      ? getVoxCPMVoiceOptions(voxcpmProfiles, {
+          supportsClone: voxCPMBackendSupportsReferenceAudio(voxcpmBackend),
+        })
+      : getTTSVoices(ttsProviderId);
   const localizedVoices = useMemo(
     () =>
       voices.map((v) => ({
@@ -61,6 +76,13 @@ export function TtsConfigPopover() {
     }
     try {
       const providerConfig = ttsProvidersConfig[ttsProviderId];
+      const providerOptions =
+        ttsProviderId === 'voxcpm-tts'
+          ? {
+              ...(providerConfig?.providerOptions || {}),
+              ...(await getVoxCPMProviderOptions(ttsVoice)),
+            }
+          : undefined;
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: ttsProviderId,
@@ -68,7 +90,11 @@ export function TtsConfigPopover() {
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
-        baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
+        baseUrl:
+          providerConfig?.serverBaseUrl ||
+          providerConfig?.baseUrl ||
+          providerConfig?.customDefaultBaseUrl,
+        providerOptions,
       });
     } catch (error) {
       const message =

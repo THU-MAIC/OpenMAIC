@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
   let audioId: string | undefined;
   try {
     const body = await req.json();
-    const { text, ttsModelId, ttsSpeed, ttsApiKey, ttsBaseUrl } = body as {
+    const { text, ttsModelId, ttsSpeed, ttsApiKey, ttsBaseUrl, ttsProviderOptions } = body as {
       text: string;
       audioId: string;
       ttsProviderId: TTSProviderId;
@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
       ttsSpeed?: number;
       ttsApiKey?: string;
       ttsBaseUrl?: string;
+      ttsProviderOptions?: Record<string, unknown>;
     };
     ttsProviderId = body.ttsProviderId;
     ttsVoice = body.ttsVoice;
@@ -76,6 +77,7 @@ export async function POST(req: NextRequest) {
       speed: ttsSpeed ?? 1.0,
       apiKey,
       baseUrl,
+      providerOptions: ttsProviderOptions,
     };
 
     log.info(
