@@ -52,12 +52,12 @@ function combined(prompt: { system: string; user: string } | null) {
 
 describe('conditional blocks', () => {
   test('processConditionalBlocks includes content only when flag is truthy', () => {
-    expect(
-      processConditionalBlocks('A {{#if enabled}}INCLUDED{{/if}} B', { enabled: true }),
-    ).toBe('A INCLUDED B');
-    expect(
-      processConditionalBlocks('A {{#if enabled}}INCLUDED{{/if}} B', { enabled: false }),
-    ).toBe('A  B');
+    expect(processConditionalBlocks('A {{#if enabled}}INCLUDED{{/if}} B', { enabled: true })).toBe(
+      'A INCLUDED B',
+    );
+    expect(processConditionalBlocks('A {{#if enabled}}INCLUDED{{/if}} B', { enabled: false })).toBe(
+      'A  B',
+    );
   });
 });
 
