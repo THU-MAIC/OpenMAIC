@@ -34,7 +34,7 @@ import type {
 } from '@/lib/types/generation';
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -132,8 +132,13 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
 
-    // Get API configuration from request headers
-    const { model: languageModel, modelInfo, modelString } = await resolveModelFromHeaders(req);
+    // Get API configuration from request headers/body
+    const {
+      model: languageModel,
+      modelInfo,
+      modelString,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body);
     resolvedModelString = modelString;
 
     if (!body.requirements) {
@@ -285,7 +290,7 @@ export async function POST(req: NextRequest) {
 
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
             try {
-              const result = streamLLM(streamParams, 'scene-outlines-stream');
+              const result = streamLLM(streamParams, 'scene-outlines-stream', thinkingConfig);
 
               let fullText = '';
               parsedOutlines = [];

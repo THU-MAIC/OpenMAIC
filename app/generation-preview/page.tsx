@@ -117,6 +117,11 @@ function GenerationPreviewContent() {
     };
   };
 
+  const withThinkingConfig = <T extends Record<string, unknown>>(body: T) => {
+    const { thinkingConfig } = getCurrentModelConfig();
+    return thinkingConfig ? { ...body, thinkingConfig } : body;
+  };
+
   // Auto-start generation when session is loaded
   useEffect(() => {
     if (session && !hasStartedRef.current) {
@@ -305,11 +310,13 @@ function GenerationPreviewContent() {
         const res = await fetch('/api/web-search', {
           method: 'POST',
           headers: getApiHeaders(),
-          body: JSON.stringify({
-            query: currentSession.requirements.requirement,
-            pdfText: currentSession.pdfText || undefined,
-            apiKey: wsApiKey || undefined,
-          }),
+          body: JSON.stringify(
+            withThinkingConfig({
+              query: currentSession.requirements.requirement,
+              pdfText: currentSession.pdfText || undefined,
+              apiKey: wsApiKey || undefined,
+            }),
+          ),
           signal,
         });
 
@@ -381,13 +388,15 @@ function GenerationPreviewContent() {
           fetch('/api/generate/scene-outlines-stream', {
             method: 'POST',
             headers: getApiHeaders(),
-            body: JSON.stringify({
-              requirements: currentSession.requirements,
-              pdfText: currentSession.pdfText,
-              pdfImages: currentSession.pdfImages,
-              imageMapping,
-              researchContext: currentSession.researchContext,
-            }),
+            body: JSON.stringify(
+              withThinkingConfig({
+                requirements: currentSession.requirements,
+                pdfText: currentSession.pdfText,
+                pdfImages: currentSession.pdfImages,
+                imageMapping,
+                researchContext: currentSession.researchContext,
+              }),
+            ),
             signal,
           })
             .then((res) => {
@@ -568,14 +577,19 @@ function GenerationPreviewContent() {
           const agentResp = await fetch('/api/generate/agent-profiles', {
             method: 'POST',
             headers: getApiHeaders(),
-            body: JSON.stringify({
-              stageInfo: { name: stage.name, description: stage.description },
-              sceneOutlines: outlines.map((o) => ({ title: o.title, description: o.description })),
-              languageDirective,
-              availableAvatars: allAvatars.map((a) => a.path),
-              avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
-              availableVoices: getAvailableVoicesForGeneration(),
-            }),
+            body: JSON.stringify(
+              withThinkingConfig({
+                stageInfo: { name: stage.name, description: stage.description },
+                sceneOutlines: outlines.map((o) => ({
+                  title: o.title,
+                  description: o.description,
+                })),
+                languageDirective,
+                availableAvatars: allAvatars.map((a) => a.path),
+                avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
+                availableVoices: getAvailableVoicesForGeneration(),
+              }),
+            ),
             signal,
           });
 
@@ -679,16 +693,18 @@ function GenerationPreviewContent() {
       const contentResp = await fetch('/api/generate/scene-content', {
         method: 'POST',
         headers: getApiHeaders(),
-        body: JSON.stringify({
-          outline: firstOutline,
-          allOutlines: outlines,
-          pdfImages: currentSession.pdfImages,
-          imageMapping,
-          stageInfo,
-          stageId: stage.id,
-          agents,
-          languageDirective,
-        }),
+        body: JSON.stringify(
+          withThinkingConfig({
+            outline: firstOutline,
+            allOutlines: outlines,
+            pdfImages: currentSession.pdfImages,
+            imageMapping,
+            stageInfo,
+            stageId: stage.id,
+            agents,
+            languageDirective,
+          }),
+        ),
         signal,
       });
 
@@ -709,16 +725,18 @@ function GenerationPreviewContent() {
       const actionsResp = await fetch('/api/generate/scene-actions', {
         method: 'POST',
         headers: getApiHeaders(),
-        body: JSON.stringify({
-          outline: contentData.effectiveOutline || firstOutline,
-          allOutlines: outlines,
-          content: contentData.content,
-          stageId: stage.id,
-          agents,
-          previousSpeeches: [],
-          userProfile,
-          languageDirective,
-        }),
+        body: JSON.stringify(
+          withThinkingConfig({
+            outline: contentData.effectiveOutline || firstOutline,
+            allOutlines: outlines,
+            content: contentData.content,
+            stageId: stage.id,
+            agents,
+            previousSpeeches: [],
+            userProfile,
+            languageDirective,
+          }),
+        ),
         signal,
       });
 

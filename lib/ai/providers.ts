@@ -34,6 +34,8 @@ import type {
   ModelConfig,
   ThinkingConfig,
 } from '@/lib/types/provider';
+import { applyModelMetadata, getCatalogThinkingCapability } from './model-metadata';
+import { getThinkingMode, pickThinkingBudget } from './thinking-config';
 import { createLogger } from '@/lib/logger';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
 // which is server-only, and this file is also used on the client via
@@ -755,7 +757,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           vision: false,
           thinking: {
             toggleable: true,
-            budgetAdjustable: false,
+            budgetAdjustable: true,
             defaultEnabled: true,
           },
         },
@@ -771,39 +773,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           vision: false,
           thinking: {
             toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'deepseek-chat',
-        name: 'DeepSeek-Chat',
-        contextWindow: 1048576,
-        outputWindow: 393216,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: false,
-          },
-        },
-      },
-      {
-        id: 'deepseek-reasoner',
-        name: 'DeepSeek-Reasoner',
-        contextWindow: 1048576,
-        outputWindow: 393216,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
+            budgetAdjustable: true,
             defaultEnabled: true,
           },
         },
@@ -1307,36 +1277,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         outputWindow: 64000,
         capabilities: { streaming: true, tools: true, vision: false },
       },
-      {
-        id: 'tencent/Hy3-preview',
-        name: 'Tencent Hy3 Preview (repository ID)',
-        contextWindow: 256000,
-        outputWindow: 64000,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'hunyuan-2.0-instruct-20251111',
-        name: 'Hunyuan 2.0 Instruct',
-        contextWindow: 256000,
-        outputWindow: 64000,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'hunyuan-2.0-thinking-20251109',
-        name: 'Hunyuan 2.0 Thinking',
-        contextWindow: 256000,
-        outputWindow: 64000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
     ],
   },
 
@@ -1451,6 +1391,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
   },
 };
 
+applyModelMetadata(PROVIDERS);
+
 /**
  * Get provider config (from built-in or unified config in localStorage)
  */
@@ -1495,45 +1437,108 @@ export interface ModelWithInfo {
   modelInfo: ModelInfo | null;
 }
 
-/**
- * Return vendor-specific body params to inject for OpenAI-compatible providers.
- * Called from the custom fetch wrapper inside getModel().
- */
 function getCompatThinkingBodyParams(
   providerId: ProviderId,
+  modelId: string,
   config: ThinkingConfig,
 ): Record<string, unknown> | undefined {
-  if (config.enabled === false) {
-    switch (providerId) {
-      // Kimi / DeepSeek / GLM / Xiaomi use { thinking: { type: "disabled" } }
-      case 'kimi':
-      case 'deepseek':
-      case 'glm':
-      case 'xiaomi':
+  const capability = getCatalogThinkingCapability(providerId, modelId);
+  if (!capability || capability.control === 'none') return undefined;
+
+  const mode = getThinkingMode(config);
+  const budget = pickThinkingBudget(capability, config);
+
+  switch (capability.requestAdapter) {
+    case 'kimi':
+    case 'glm':
+    case 'xiaomi':
+      if (mode === 'disabled') return { thinking: { type: 'disabled' } };
+      if (mode === 'enabled') return { thinking: { type: 'enabled' } };
+      return undefined;
+
+    case 'deepseek': {
+      if (mode === 'disabled' || config.effort === 'none') {
         return { thinking: { type: 'disabled' } };
-      // Qwen / SiliconFlow use { enable_thinking: false }
-      case 'qwen':
-      case 'siliconflow':
-        return { enable_thinking: false };
-      default:
-        return undefined;
+      }
+
+      const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
+      return {
+        thinking: { type: 'enabled' },
+        reasoning_effort: effort,
+      };
     }
-  }
-  if (config.enabled === true) {
-    switch (providerId) {
-      case 'kimi':
-      case 'deepseek':
-      case 'glm':
-      case 'xiaomi':
-        return { thinking: { type: 'enabled' } };
-      case 'qwen':
-      case 'siliconflow':
-        return { enable_thinking: true };
-      default:
-        return undefined;
+
+    case 'qwen': {
+      if (mode === 'disabled') return { enable_thinking: false };
+      const body: Record<string, unknown> = {};
+      if (mode === 'enabled') body.enable_thinking = true;
+      if (budget !== undefined) body.thinking_budget = budget;
+      return Object.keys(body).length > 0 ? body : undefined;
     }
+
+    case 'siliconflow': {
+      const body: Record<string, unknown> = {};
+      if (capability.control === 'toggle-budget') {
+        if (mode === 'disabled') body.enable_thinking = false;
+        if (mode === 'enabled') body.enable_thinking = true;
+      }
+      if (budget !== undefined) body.thinking_budget = budget;
+      return Object.keys(body).length > 0 ? body : undefined;
+    }
+
+    case 'doubao': {
+      if (capability.control === 'effort') {
+        const effort =
+          mode === 'disabled'
+            ? 'minimal'
+            : config.effort && capability.effortValues?.includes(config.effort)
+              ? config.effort
+              : mode === 'enabled'
+                ? capability.defaultEffort
+                : undefined;
+        return effort ? { reasoning_effort: effort } : undefined;
+      }
+      if (mode === 'auto') return { thinking: { type: 'auto' } };
+      if (mode === 'disabled') return { thinking: { type: 'disabled' } };
+      if (mode === 'enabled') return { thinking: { type: 'enabled' } };
+      return undefined;
+    }
+
+    case 'openrouter': {
+      const reasoning: Record<string, unknown> = {};
+      if (mode === 'disabled') reasoning.enabled = false;
+      if (mode === 'enabled') reasoning.enabled = true;
+      if (config.effort) reasoning.effort = config.effort;
+      if (budget !== undefined) reasoning.max_tokens = budget;
+      if (typeof config.excludeReasoningOutput === 'boolean') {
+        reasoning.exclude = config.excludeReasoningOutput;
+      }
+      return Object.keys(reasoning).length > 0 ? { reasoning } : undefined;
+    }
+
+    case 'hunyuan': {
+      let reasoningEffort: 'no_think' | 'low' | 'high' | undefined;
+      if (mode === 'disabled' || config.effort === 'none') {
+        reasoningEffort = 'no_think';
+      } else if (config.effort === 'high' || config.effort === 'max' || config.effort === 'xhigh') {
+        reasoningEffort = 'high';
+      } else if (
+        config.effort === 'low' ||
+        config.effort === 'medium' ||
+        config.effort === 'minimal'
+      ) {
+        reasoningEffort = 'low';
+      } else if (mode === 'enabled') {
+        reasoningEffort = capability.defaultEffort === 'high' ? 'high' : 'low';
+      }
+      return reasoningEffort
+        ? { chat_template_kwargs: { reasoning_effort: reasoningEffort } }
+        : undefined;
+    }
+
+    default:
+      return undefined;
   }
-  return undefined;
 }
 
 function normalizeMiniMaxAnthropicBaseUrl(
@@ -1623,7 +1628,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             | undefined;
           const thinking = thinkingCtx?.getStore?.() as ThinkingConfig | undefined;
           if (thinking && init?.body && typeof init.body === 'string') {
-            const extra = getCompatThinkingBodyParams(providerId, thinking);
+            const extra = getCompatThinkingBodyParams(providerId, config.modelId, thinking);
             if (extra) {
               try {
                 const body = JSON.parse(init.body);
@@ -1660,15 +1665,25 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         baseURL: effectiveBaseUrl,
       };
       if (config.proxy) {
-        // Dynamic require to avoid bundling undici on the client side
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { ProxyAgent, fetch: undiciFetch } = require('undici');
-        const agent = new ProxyAgent(config.proxy);
-        googleOptions.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
-          undiciFetch(input as string, {
+        const proxy = config.proxy;
+        let agent: unknown;
+        googleOptions.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const { ProxyAgent, fetch: undiciFetch } = (await import(
+            /* webpackIgnore: true */ 'undici'
+          )) as {
+            ProxyAgent: new (proxyUrl: string) => unknown;
+            fetch: (
+              input: string | URL | Request,
+              init?: Record<string, unknown>,
+            ) => Promise<unknown>;
+          };
+          agent ??= new ProxyAgent(proxy);
+          const response = await undiciFetch(input, {
             ...(init as Record<string, unknown>),
             dispatcher: agent,
-          }).then((r: unknown) => r as Response)) as typeof fetch;
+          });
+          return response as Response;
+        }) as typeof fetch;
       }
       const google = createGoogleGenerativeAI(googleOptions);
       model = google.chat(config.modelId);

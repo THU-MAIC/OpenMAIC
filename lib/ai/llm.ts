@@ -9,7 +9,14 @@ import type { GenerateTextResult, StreamTextResult } from 'ai';
 import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
-import type { ProviderType, ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
+import { getModelMetadataKey } from './model-metadata';
+import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
+import {
+  getThinkingMode,
+  pickThinkingBudget,
+  pickThinkingEffort,
+  pickThinkingLevel,
+} from '@/lib/ai/thinking-config';
 const log = createLogger('LLM');
 
 // Re-export for external use
@@ -44,26 +51,44 @@ function getModelId(params: GenerateTextParams | StreamTextParams): string {
 //
 // Builds a lookup table from PROVIDERS at module load time, then uses it to
 // map a unified ThinkingConfig into provider-specific providerOptions.
-// Currently handles: openai (native), anthropic (native), google (native).
-// OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, etc.) are NOT
-// handled — their vendor-specific thinking params can't be reliably passed
-// through Vercel AI SDK's createOpenAI.
+// Native providers (OpenAI/Anthropic/Google) are mapped to providerOptions.
+// OpenAI-compatible providers are injected by the providers.ts fetch wrapper.
 // ---------------------------------------------------------------------------
 
 interface ModelThinkingInfo {
-  providerType: ProviderType;
   thinking?: ThinkingCapability;
 }
 
-/** Model ID → provider type + thinking capability (built once at module load) */
+/** Provider/model → thinking capability (built once at module load) */
 const MODEL_THINKING_MAP: Map<string, ModelThinkingInfo> = (() => {
   const map = new Map<string, ModelThinkingInfo>();
   for (const provider of Object.values(PROVIDERS)) {
     for (const model of provider.models) {
-      map.set(model.id, {
-        providerType: provider.type,
+      map.set(getModelMetadataKey(provider.id, model.id), {
         thinking: model.capabilities?.thinking,
       });
+    }
+  }
+  return map;
+})();
+
+/** Model ID → thinking capability for IDs that are unique across providers. */
+const UNIQUE_MODEL_THINKING_MAP: Map<string, ModelThinkingInfo> = (() => {
+  const counts = new Map<string, number>();
+  for (const provider of Object.values(PROVIDERS)) {
+    for (const model of provider.models) {
+      counts.set(model.id, (counts.get(model.id) ?? 0) + 1);
+    }
+  }
+
+  const map = new Map<string, ModelThinkingInfo>();
+  for (const provider of Object.values(PROVIDERS)) {
+    for (const model of provider.models) {
+      if (counts.get(model.id) === 1) {
+        map.set(model.id, {
+          thinking: model.capabilities?.thinking,
+        });
+      }
     }
   }
   return map;
@@ -72,166 +97,95 @@ const MODEL_THINKING_MAP: Map<string, ModelThinkingInfo> = (() => {
 /** Global thinking override from environment variable */
 function getGlobalThinkingConfig(): ThinkingConfig | undefined {
   if (process.env.LLM_THINKING_DISABLED === 'true') {
-    return { enabled: false };
+    return { mode: 'disabled', enabled: false };
   }
   return undefined;
 }
 
 type ProviderOptions = Record<string, Record<string, unknown>>;
 
-/**
- * Build providerOptions to disable thinking, using the lowest possible
- * intensity for models that cannot be fully turned off.
- */
-function buildDisableThinking(
-  modelId: string,
-  providerType: ProviderType,
-  _thinking: ThinkingCapability,
-): ProviderOptions | undefined {
-  switch (providerType) {
-    case 'openai': {
-      // GPT-5.5: lowest supported effort is low
-      // GPT-5.1/5.2/5.4: support effort=none (fully off)
-      // GPT-5/mini/nano: lowest is minimal
-      // o-series: lowest is low
-      let effort: string;
-      if (/^gpt-5\.5(?:-|$)/.test(modelId)) {
-        effort = 'low';
-      } else if (modelId.startsWith('gpt-5.')) {
-        effort = 'none';
-      } else if (modelId.startsWith('gpt-5')) {
-        effort = 'minimal';
-      } else if (modelId.startsWith('o')) {
-        effort = 'low';
-      } else {
-        // Non-thinking OpenAI models (gpt-4o etc.) — no injection needed
-        return undefined;
-      }
-      if (!_thinking.toggleable && effort !== 'none') {
-        log.info(
-          `[thinking-adapter] Model ${modelId} cannot fully disable thinking, using effort=${effort}`,
-        );
-      }
-      return { openai: { reasoningEffort: effort } };
-    }
-
-    case 'anthropic':
-      // All Claude models support type=disabled
-      return { anthropic: { thinking: { type: 'disabled' } } };
-
-    case 'google': {
-      // Gemini 3.x: uses thinkingLevel (cannot fully disable)
-      // Gemini 2.5 Flash/Flash-Lite: uses thinkingBudget=0 (fully off)
-      // Gemini 2.5 Pro: minimum thinkingBudget=128 (cannot fully disable)
-      if (modelId.startsWith('gemini-3')) {
-        const level = modelId.includes('flash') ? 'minimal' : 'low';
-        log.info(
-          `[thinking-adapter] Model ${modelId} cannot fully disable thinking, using thinkingLevel=${level}`,
-        );
-        return { google: { thinkingConfig: { thinkingLevel: level } } };
-      }
-      if (modelId === 'gemini-2.5-pro') {
-        log.info(
-          `[thinking-adapter] Model ${modelId} cannot fully disable thinking, using thinkingBudget=128`,
-        );
-        return { google: { thinkingConfig: { thinkingBudget: 128 } } };
-      }
-      // gemini-2.5-flash / flash-lite: can fully disable
-      return { google: { thinkingConfig: { thinkingBudget: 0 } } };
-    }
-
-    default:
-      return undefined;
-  }
+function getAnthropicEffort(
+  thinking: ThinkingCapability,
+  config: ThinkingConfig,
+): 'low' | 'medium' | 'high' | 'xhigh' | 'max' | undefined {
+  const effort = pickThinkingEffort(thinking, config);
+  if (!effort || effort === 'none' || effort === 'minimal') return undefined;
+  return effort;
 }
 
-/**
- * Build providerOptions to enable thinking, optionally with a budget hint.
- */
-function buildEnableThinking(
-  modelId: string,
-  providerType: ProviderType,
-  _thinking: ThinkingCapability,
-  budgetTokens?: number,
-): ProviderOptions | undefined {
-  switch (providerType) {
-    case 'openai':
-      // OpenAI uses discrete effort levels, no token-based budget.
-      // Don't inject anything — let the model use its default effort.
-      return undefined;
-
-    case 'anthropic': {
-      // 4.6 models: prefer adaptive (model decides depth automatically)
-      // 4.5 models: require explicit budget
-      if (modelId.includes('4-6')) {
-        if (budgetTokens !== undefined) {
-          return { anthropic: { thinking: { type: 'enabled', budgetTokens } } };
-        }
-        return { anthropic: { thinking: { type: 'adaptive' } } };
-      }
-      // Sonnet 4.5 / Haiku 4.5: must use enabled + budgetTokens
-      const budget = budgetTokens ?? 10240; // sensible default
-      return {
-        anthropic: {
-          thinking: { type: 'enabled', budgetTokens: Math.max(1024, budget) },
-        },
-      };
-    }
-
-    case 'google': {
-      // Gemini 3.x: uses thinkingLevel (no numeric budget)
-      if (modelId.startsWith('gemini-3')) {
-        return { google: { thinkingConfig: { thinkingLevel: 'high' } } };
-      }
-      // Gemini 2.5: uses thinkingBudget
-      if (budgetTokens !== undefined) {
-        const min = modelId === 'gemini-2.5-pro' ? 128 : 0;
-        return {
-          google: {
-            thinkingConfig: {
-              thinkingBudget: Math.max(min, Math.min(24576, budgetTokens)),
-            },
-          },
-        };
-      }
-      // No budget specified — let model use dynamic default
-      return undefined;
-    }
-
-    default:
-      return undefined;
-  }
+function getModelProviderId(params: GenerateTextParams | StreamTextParams): string | undefined {
+  const m = params.model;
+  if (!m || typeof m !== 'object' || !('provider' in m)) return undefined;
+  const provider = (m as { provider?: string }).provider;
+  if (!provider) return undefined;
+  if (provider in PROVIDERS) return provider;
+  const prefix = provider.split('.')[0];
+  return prefix in PROVIDERS ? prefix : undefined;
 }
 
 /**
  * Map a unified ThinkingConfig to provider-specific providerOptions.
  */
 function buildThinkingProviderOptions(
+  providerId: string | undefined,
   modelId: string,
   config: ThinkingConfig,
 ): ProviderOptions | undefined {
-  const info = MODEL_THINKING_MAP.get(modelId);
+  const info = providerId
+    ? MODEL_THINKING_MAP.get(getModelMetadataKey(providerId, modelId))
+    : UNIQUE_MODEL_THINKING_MAP.get(modelId);
   if (!info?.thinking) return undefined; // model has no thinking capability
+  const thinking = info.thinking;
+  if (thinking.control === 'none') return undefined;
 
-  if (config.enabled === undefined) return undefined; // use model default
+  const mode = getThinkingMode(config);
 
-  if (config.enabled === false) {
-    return buildDisableThinking(modelId, info.providerType, info.thinking);
+  switch (thinking.requestAdapter) {
+    case 'openai': {
+      const effort = pickThinkingEffort(thinking, config);
+      return effort ? { openai: { reasoningEffort: effort } } : undefined;
+    }
+
+    case 'anthropic': {
+      if (mode === 'disabled') return { anthropic: { thinking: { type: 'disabled' } } };
+      const effort = getAnthropicEffort(thinking, config);
+      if (!effort) return undefined;
+
+      if (thinking.anthropicThinking?.type === 'adaptive') {
+        return {
+          anthropic: {
+            thinking: { type: 'adaptive' },
+            effort,
+          },
+        };
+      }
+
+      const manualEffort = effort === 'xhigh' ? 'max' : effort;
+      const budget = thinking.anthropicThinking?.budgetByEffort?.[manualEffort];
+      if (!budget) return undefined;
+      return {
+        anthropic: {
+          thinking: { type: 'enabled', budgetTokens: budget },
+          effort: manualEffort,
+        },
+      };
+    }
+
+    case 'google': {
+      if (thinking.control === 'level') {
+        const level = pickThinkingLevel(thinking, config);
+        return level ? { google: { thinkingConfig: { thinkingLevel: level } } } : undefined;
+      }
+
+      const budget = pickThinkingBudget(thinking, config);
+      if (budget === undefined) return undefined;
+      return { google: { thinkingConfig: { thinkingBudget: budget } } };
+    }
+
+    default:
+      // OpenAI-compatible providers are injected in providers.ts fetch wrapper.
+      return undefined;
   }
-
-  // enabled === true
-  return buildEnableThinking(modelId, info.providerType, info.thinking, config.budgetTokens);
-}
-
-/**
- * Default providerOptions for specific models (fallback when no ThinkingConfig is provided).
- * Gemini 3.x models use thinkingLevel instead of thinkingBudget.
- */
-function getDefaultProviderOptions(modelId: string): ProviderOptions | undefined {
-  if (modelId === 'gemini-3.1-pro-preview') {
-    return { google: { thinkingConfig: { thinkingLevel: 'high' } } };
-  }
-  return undefined;
 }
 
 /**
@@ -241,7 +195,7 @@ function getDefaultProviderOptions(modelId: string): ProviderOptions | undefined
  * For OpenAI-compatible providers, providerOptions won't work (stripped by
  * zod schema) — those are handled by the custom fetch wrapper via thinkingContext.
  *
- * Priority: caller's providerOptions > ThinkingConfig > model defaults
+ * Priority: caller's providerOptions > ThinkingConfig
  */
 function injectProviderOptions<T extends GenerateTextParams | StreamTextParams>(
   params: T,
@@ -250,15 +204,12 @@ function injectProviderOptions<T extends GenerateTextParams | StreamTextParams>(
   if ((params as Record<string, unknown>).providerOptions) return params; // caller explicitly set providerOptions
 
   const modelId = getModelId(params);
+  const providerId = getModelProviderId(params);
 
   if (thinking) {
-    const opts = buildThinkingProviderOptions(modelId, thinking);
+    const opts = buildThinkingProviderOptions(providerId, modelId, thinking);
     if (opts) return { ...params, providerOptions: opts };
   }
-
-  // No thinking config — use model defaults (backward compat)
-  const defaults = getDefaultProviderOptions(modelId);
-  if (defaults) return { ...params, providerOptions: defaults };
 
   return params;
 }

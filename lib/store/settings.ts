@@ -8,6 +8,8 @@ import { persist } from 'zustand/middleware';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
+import type { ThinkingConfig } from '@/lib/types/provider';
+import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thinking-config';
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
@@ -23,6 +25,26 @@ import { validateProvider, validateModel } from '@/lib/store/settings-validation
 
 const log = createLogger('Settings');
 
+function pruneThinkingConfigs(
+  thinkingConfigs: Record<string, ThinkingConfig> | undefined,
+  providersConfig: ProvidersConfig | undefined,
+): Record<string, ThinkingConfig> {
+  if (!thinkingConfigs || !providersConfig) return {};
+
+  const validKeys = new Set<string>();
+  for (const [providerId, providerConfig] of Object.entries(providersConfig)) {
+    for (const model of providerConfig.models) {
+      if (supportsConfigurableThinking(model.capabilities?.thinking)) {
+        validKeys.add(getThinkingConfigKey(providerId, model.id));
+      }
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(thinkingConfigs).filter(([key]) => validKeys.has(key)),
+  ) as Record<string, ThinkingConfig>;
+}
+
 /** Available playback speed tiers */
 export const PLAYBACK_SPEEDS = [1, 1.25, 1.5, 2] as const;
 export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
@@ -31,6 +53,7 @@ export interface SettingsState {
   // Model selection
   providerId: ProviderId;
   modelId: string;
+  thinkingConfigs: Record<string, ThinkingConfig>;
 
   // Provider configurations (unified JSON storage)
   providersConfig: ProvidersConfig;
@@ -171,6 +194,11 @@ export interface SettingsState {
 
   // Actions
   setModel: (providerId: ProviderId, modelId: string) => void;
+  setThinkingConfig: (
+    providerId: ProviderId,
+    modelId: string,
+    config: ThinkingConfig | undefined,
+  ) => void;
   setProviderConfig: (providerId: ProviderId, config: Partial<ProvidersConfig[ProviderId]>) => void;
   setProvidersConfig: (config: ProvidersConfig) => void;
   setTtsModel: (model: string) => void;
@@ -581,6 +609,7 @@ const migrateFromOldStorage = () => {
   return {
     providerId,
     modelId,
+    thinkingConfigs: {},
     providersConfig,
     ttsModel,
     selectedAgentIds,
@@ -599,11 +628,17 @@ export const useSettingsStore = create<SettingsState>()(
       const defaultVideoConfig = getDefaultVideoConfig();
       const defaultWebSearchConfig = getDefaultWebSearchConfig();
 
+      const initialProvidersConfig = migratedData?.providersConfig || getDefaultProvidersConfig();
+
       return {
         // Initial state (use migrated data if available)
         providerId: migratedData?.providerId || 'openai',
         modelId: migratedData?.modelId || '',
-        providersConfig: migratedData?.providersConfig || getDefaultProvidersConfig(),
+        thinkingConfigs: pruneThinkingConfigs(
+          migratedData?.thinkingConfigs || {},
+          initialProvidersConfig,
+        ),
+        providersConfig: initialProvidersConfig,
         ttsModel: migratedData?.ttsModel || 'openai-tts',
         selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
         maxTurns: migratedData?.maxTurns?.toString() || '10',
@@ -649,18 +684,38 @@ export const useSettingsStore = create<SettingsState>()(
         // Actions
         setModel: (providerId, modelId) => set({ providerId, modelId }),
 
+        setThinkingConfig: (providerId, modelId, config) =>
+          set((state) => {
+            const key = getThinkingConfigKey(providerId, modelId);
+            const next = { ...state.thinkingConfigs };
+            if (config) {
+              next[key] = config;
+            } else {
+              delete next[key];
+            }
+            return { thinkingConfigs: next };
+          }),
+
         setProviderConfig: (providerId, config) =>
-          set((state) => ({
-            providersConfig: {
+          set((state) => {
+            const providersConfig = {
               ...state.providersConfig,
               [providerId]: {
                 ...state.providersConfig[providerId],
                 ...config,
               },
-            },
-          })),
+            };
+            return {
+              providersConfig,
+              thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, providersConfig),
+            };
+          }),
 
-        setProvidersConfig: (config) => set({ providersConfig: config }),
+        setProvidersConfig: (config) =>
+          set((state) => ({
+            providersConfig: config,
+            thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, config),
+          })),
 
         setTtsModel: (model) => set({ ttsModel: model }),
 
@@ -1460,6 +1515,10 @@ export const useSettingsStore = create<SettingsState>()(
           (state as Record<string, unknown>).autoAgentCount = 3;
         }
 
+        if ((state as Record<string, unknown>).thinkingConfigs === undefined) {
+          (state as Record<string, unknown>).thinkingConfigs = {};
+        }
+
         // Migrate Web Search: old flat fields → new provider-based config
         if (!state.webSearchProvidersConfig) {
           const stateRecord = state as Record<string, unknown>;
@@ -1480,6 +1539,7 @@ export const useSettingsStore = create<SettingsState>()(
         }
 
         ensureValidProviderSelections(state);
+        state.thinkingConfigs = pruneThinkingConfigs(state.thinkingConfigs, state.providersConfig);
 
         return state;
       },
@@ -1492,6 +1552,11 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
+        const typedMerged = merged as Partial<SettingsState>;
+        typedMerged.thinkingConfigs = pruneThinkingConfigs(
+          typedMerged.thinkingConfigs,
+          typedMerged.providersConfig,
+        );
         return merged as SettingsState;
       },
     },

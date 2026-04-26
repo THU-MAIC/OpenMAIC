@@ -22,10 +22,10 @@
     "eval:outline-language": "tsx eval/outline-language/runner.ts"
   },
   "dependencies": {
-    "@ai-sdk/anthropic": "^3.0.23",
-    "@ai-sdk/google": "^3.0.13",
-    "@ai-sdk/openai": "^3.0.13",
-    "@ai-sdk/react": "^3.0.44",
+    "@ai-sdk/anthropic": "^3.0.71",
+    "@ai-sdk/google": "^3.0.64",
+    "@ai-sdk/openai": "^3.0.53",
+    "@ai-sdk/react": "^3.0.170",
     "@base-ui/react": "^1.1.0",
     "@copilotkit/backend": "^0.37.0",
     "@copilotkit/runtime": "^1.51.2",
@@ -41,7 +41,7 @@
     "@radix-ui/react-use-controllable-state": "^1.2.2",
     "@types/js-yaml": "^4.0.9",
     "@xyflow/react": "^12.10.0",
-    "ai": "^6.0.42",
+    "ai": "^6.0.168",
     "animate.css": "^4.1.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

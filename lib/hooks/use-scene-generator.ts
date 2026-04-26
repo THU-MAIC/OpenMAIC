@@ -8,8 +8,7 @@ import { db } from '@/lib/utils/database';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
-import type { Action, SpeechAction } from '@/lib/types/action';
-import type { TTSProviderId } from '@/lib/audio/types';
+import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
@@ -58,6 +57,11 @@ function getApiHeaders(): HeadersInit {
   };
 }
 
+function withThinkingConfig<T extends Record<string, unknown>>(body: T): T {
+  const { thinkingConfig } = getCurrentModelConfig();
+  return thinkingConfig ? ({ ...body, thinkingConfig } as T) : body;
+}
+
 /** Call POST /api/generate/scene-content (step 1) */
 async function fetchSceneContent(
   params: {
@@ -80,7 +84,7 @@ async function fetchSceneContent(
   const response = await fetch('/api/generate/scene-content', {
     method: 'POST',
     headers: getApiHeaders(),
-    body: JSON.stringify(params),
+    body: JSON.stringify(withThinkingConfig(params)),
     signal,
   });
 
@@ -109,7 +113,7 @@ async function fetchSceneActions(
   const response = await fetch('/api/generate/scene-actions', {
     method: 'POST',
     headers: getApiHeaders(),
-    body: JSON.stringify(params),
+    body: JSON.stringify(withThinkingConfig(params)),
     signal,
   });
 

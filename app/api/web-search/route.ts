@@ -15,7 +15,7 @@ import {
   buildSearchQuery,
   SEARCH_QUERY_REWRITE_EXCERPT_LENGTH,
 } from '@/lib/server/search-query-builder';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 
 const log = createLogger('WebSearch');
@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
 
     let aiCall: AICallFn | undefined;
     try {
-      const { model: languageModel } = await resolveModelFromHeaders(req);
+      const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(req, body);
       aiCall = async (systemPrompt, userPrompt) => {
         const result = await callLLM(
           {
@@ -65,6 +65,8 @@ export async function POST(req: NextRequest) {
             maxOutputTokens: 256,
           },
           'web-search-query-rewrite',
+          undefined,
+          thinkingConfig,
         );
         return result.text;
       };
