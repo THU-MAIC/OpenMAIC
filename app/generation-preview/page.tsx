@@ -762,7 +762,10 @@ function GenerationPreviewContent() {
           settings.ttsProviderId === 'voxcpm-tts'
             ? {
                 ...(ttsProviderConfig?.providerOptions || {}),
-                ...(await getVoxCPMProviderOptions(settings.ttsVoice, { role: 'teacher' })),
+                ...(await getVoxCPMProviderOptions(settings.ttsVoice, {
+                  role: 'teacher',
+                  language: languageDirective,
+                })),
               }
             : undefined;
         const speechActions = (data.scene.actions || []).filter(

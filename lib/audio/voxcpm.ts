@@ -36,6 +36,7 @@ export interface VoxCPMVoicePromptContext {
   role?: string;
   persona?: string;
   language?: string;
+  locale?: string;
 }
 
 export interface VoxCPMProviderOptions {
@@ -54,10 +55,10 @@ export interface VoxCPMProviderOptions {
 
 export const VOXCPM_AUTO_VOICE: TTSVoiceInfo = {
   id: VOXCPM_AUTO_VOICE_ID,
-  name: '自动音色',
-  language: 'zh',
+  name: 'Auto Voice',
+  language: 'auto',
   gender: 'neutral',
-  description: '根据 Agent 角色自动生成音色提示词',
+  description: 'Generate a voice prompt from agent metadata',
 };
 
 export function normalizeVoxCPMBackend(value: unknown): VoxCPMBackendType {
@@ -92,23 +93,11 @@ export function getVoxCPMProfileIdFromVoiceId(voiceId: string): string | null {
 }
 
 export function buildAutoVoxCPMVoicePrompt(context: VoxCPMVoicePromptContext = {}): string {
-  const role = context.role?.toLowerCase() || '';
-  const persona = context.persona || '';
-  const combined = `${role}\n${persona}`;
+  const persona = context.persona?.replace(/[\p{C}]/gu, '').trim();
+  if (persona) return persona;
 
-  const gender =
-    /女|female|girl|woman/i.test(combined) && !/男|male|boy|man/i.test(combined)
-      ? '女声'
-      : /男|male|boy|man/i.test(combined)
-        ? '男声'
-        : '中性声音';
-
-  const roleTone = role.includes('student')
-    ? '年轻、自然、带有好奇心'
-    : role.includes('assistant')
-      ? '友好、清晰、善于引导'
-      : '专业、清晰、富有教学感';
-
-  const namePart = context.agentName ? `，适合角色${context.agentName}` : '';
-  return `${roleTone}的中文${gender}${namePart}，语速适中，吐字清楚，情绪自然，适合AI课堂对话`;
+  const fallbackParts = [context.role, context.agentName]
+    .map((value) => value?.replace(/[\p{C}]/gu, '').trim())
+    .filter(Boolean);
+  return fallbackParts.length > 0 ? fallbackParts.join(' ') : 'natural classroom voice';
 }

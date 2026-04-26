@@ -98,7 +98,6 @@ import { TTS_PROVIDERS } from './constants';
 import {
   VOXCPM_VLLM_MODEL_ID,
   VOXCPM_AUTO_VOICE_ID,
-  buildAutoVoxCPMVoicePrompt,
   normalizeVoxCPMBackend,
   type VoxCPMProviderOptions,
 } from './voxcpm';
@@ -238,11 +237,12 @@ async function generateVoxCPMTTS(
   const backend = normalizeVoxCPMBackend(options.backend);
   const voicePrompt =
     options.voicePrompt ||
-    (config.voice === VOXCPM_AUTO_VOICE_ID
-      ? buildAutoVoxCPMVoicePrompt()
-      : config.voice && config.voice !== 'default'
-        ? config.voice
-        : undefined);
+    (config.voice && config.voice !== 'default' && config.voice !== VOXCPM_AUTO_VOICE_ID
+      ? config.voice
+      : undefined);
+  if (config.voice === VOXCPM_AUTO_VOICE_ID && !voicePrompt) {
+    throw new Error('VoxCPM Auto Voice requires agent context');
+  }
   const cfgValue = options.cfgValue ?? 2.0;
   const inferenceTimesteps = options.inferenceTimesteps ?? 10;
   const normalize = options.normalize ?? false;
@@ -291,6 +291,8 @@ function getAudioResponseFormat(contentType: string): string {
   if (contentType.includes('audio/wav') || contentType.includes('audio/x-wav')) return 'wav';
   if (contentType.includes('audio/mpeg') || contentType.includes('audio/mp3')) return 'mp3';
   if (contentType.includes('audio/flac')) return 'flac';
+  if (contentType.includes('audio/ogg')) return 'ogg';
+  if (contentType.includes('audio/webm')) return 'webm';
   return 'mp3';
 }
 
@@ -334,6 +336,7 @@ async function postVoxCPMVLLMOmni(
   const payload: Record<string, unknown> = {
     model: getVLLMOmniModelId(config),
     input: params.targetText,
+    // VoxCPM2's vLLM-Omni adapter currently ignores named voices; prompts/ref_audio carry voice identity.
     voice: 'default',
     response_format: 'wav',
     stream: false,

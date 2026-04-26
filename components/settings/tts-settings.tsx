@@ -52,6 +52,8 @@ import { isCustomTTSProvider } from '@/lib/audio/types';
 import {
   getVoxCPMProviderOptions,
   normalizeVoxCPMReferenceAudio,
+  validateVoxCPMReferenceAudio,
+  VOXCPM_REFERENCE_AUDIO_MAX_SECONDS,
   useVoxCPMVoiceProfiles,
 } from '@/lib/audio/voxcpm-voices';
 import {
@@ -72,7 +74,7 @@ interface TTSSettingsProps {
 }
 
 export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
@@ -150,7 +152,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         selectedProviderId === 'voxcpm-tts'
           ? {
               ...(ttsProvidersConfig[selectedProviderId]?.providerOptions || {}),
-              ...(await getVoxCPMProviderOptions(effectiveVoice, { role: 'teacher' })),
+              ...(await getVoxCPMProviderOptions(effectiveVoice, { role: 'teacher', locale })),
             }
           : undefined;
       await startPreview({
@@ -211,8 +213,6 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         ? buildVoxCPMBackendUrl(effectiveBaseUrl, voxcpmBackend)
         : effectiveBaseUrl + endpointPath
       : '';
-  const selectedVoxCPMBackend =
-    VOXCPM_BACKENDS.find((backend) => backend.id === voxcpmBackend) || VOXCPM_BACKENDS[0];
   const isVoxCPMVLLMOmni = voxcpmBackend === 'vllm-omni';
 
   return (
@@ -232,7 +232,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               <div className="min-w-0 md:w-[150px] md:shrink-0">
                 <Label className="mb-1 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
                   <Server className="h-3 w-3" />
-                  Backend
+                  {t('settings.voxcpmBackend')}
                 </Label>
                 <Select
                   value={voxcpmBackend}
@@ -282,7 +282,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               {isVoxCPMVLLMOmni && (
                 <div className="min-w-0 md:w-[130px] md:shrink-0">
                   <Label className="mb-1 block text-[11px] font-medium text-muted-foreground">
-                    Model
+                    {t('media.model')}
                   </Label>
                   <Input
                     name={`tts-model-${selectedProviderId}`}
@@ -316,7 +316,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                   {requestUrl}
                 </code>
               ) : (
-                <span className="min-w-0 flex-1 truncate">填写 Base URL 后生成</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {t('settings.voxcpmBaseUrlPending')}
+                </span>
               )}
             </div>
           </div>
@@ -641,6 +643,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 }
 
 function VoxCPMVoiceManager() {
+  const { t, locale } = useI18n();
   const { profiles, addPromptVoice, addCloneVoice, deleteVoice } = useVoxCPMVoiceProfiles();
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
@@ -681,7 +684,7 @@ function VoxCPMVoiceManager() {
   const startReferenceRecording = async () => {
     if (isRecordingReference) return;
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
-      toast.error('当前浏览器不支持录音');
+      toast.error(t('settings.voxcpmRecordingUnsupported'));
       return;
     }
 
@@ -710,9 +713,11 @@ function VoxCPMVoiceManager() {
                 type: referenceAudio.mimeType,
               });
               setCloneFile(file);
-              if (!cloneName.trim()) setCloneName('录制音色');
+              if (!cloneName.trim()) setCloneName(t('settings.voxcpmRecordedVoiceName'));
             } catch (error) {
-              toast.error(error instanceof Error ? error.message : '录音转换失败');
+              toast.error(
+                error instanceof Error ? error.message : t('settings.voxcpmRecordingFailed'),
+              );
             }
           }
           recordingChunksRef.current = [];
@@ -727,13 +732,21 @@ function VoxCPMVoiceManager() {
       setIsRecordingReference(true);
       setRecordingSeconds(0);
       recordingTimerRef.current = setInterval(() => {
-        setRecordingSeconds((seconds) => seconds + 1);
+        setRecordingSeconds((seconds) => {
+          const nextSeconds = seconds + 1;
+          if (nextSeconds >= VOXCPM_REFERENCE_AUDIO_MAX_SECONDS) {
+            stopReferenceRecording();
+          }
+          return nextSeconds;
+        });
       }, 1000);
     } catch (error) {
       setIsRecordingReference(false);
       stopRecordingTimer();
       stopRecordingStream();
-      toast.error(error instanceof Error ? error.message : '无法开始录音');
+      toast.error(
+        error instanceof Error ? error.message : t('settings.voxcpmRecordingStartFailed'),
+      );
     }
   };
 
@@ -771,15 +784,18 @@ function VoxCPMVoiceManager() {
       providerConfig?.customDefaultBaseUrl ||
       '';
     if (!baseUrl.trim()) {
-      toast.error('请先填写 VoxCPM Base URL');
+      toast.error(t('settings.voxcpmBaseUrlRequired'));
       return;
     }
 
     setPreviewingVoiceId(voiceId);
     try {
-      const providerOptions = await getVoxCPMProviderOptions(voiceId, { role: 'teacher' });
+      const providerOptions = await getVoxCPMProviderOptions(voiceId, {
+        role: 'teacher',
+        locale,
+      });
       await startPreview({
-        text: '你好，这是 VoxCPM 音色试听。',
+        text: t('settings.ttsTestTextDefault'),
         providerId: VOXCPM_TTS_PROVIDER_ID,
         modelId:
           providerConfig?.modelId || TTS_PROVIDERS[VOXCPM_TTS_PROVIDER_ID]?.defaultModelId || '',
@@ -794,7 +810,7 @@ function VoxCPMVoiceManager() {
       });
     } catch (error) {
       setPreviewingVoiceId(null);
-      toast.error(error instanceof Error ? error.message : '试听失败');
+      toast.error(error instanceof Error ? error.message : t('settings.voxcpmPreviewFailed'));
     }
   };
 
@@ -808,11 +824,27 @@ function VoxCPMVoiceManager() {
       });
       setPromptName('');
       setVoicePrompt('');
-      toast.success('已保存 VoxCPM 音色');
+      toast.success(t('settings.voxcpmVoiceSaved'));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '保存音色失败');
+      toast.error(error instanceof Error ? error.message : t('settings.voxcpmVoiceSaveFailed'));
     } finally {
       setSaving(null);
+    }
+  };
+
+  const handleCloneFileChange = async (file: File | null) => {
+    if (!file) {
+      setCloneFile(null);
+      return;
+    }
+    try {
+      await validateVoxCPMReferenceAudio(file);
+      setCloneFile(file);
+    } catch (error) {
+      setCloneFile(null);
+      toast.error(
+        error instanceof Error ? error.message : t('settings.voxcpmReferenceAudioInvalid'),
+      );
     }
   };
 
@@ -832,9 +864,9 @@ function VoxCPMVoiceManager() {
       setClonePromptText('');
       setCloneVoicePrompt('');
       setCloneFile(null);
-      toast.success('已保存 VoxCPM 克隆音色');
+      toast.success(t('settings.voxcpmCloneSaved'));
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : '保存克隆音色失败');
+      toast.error(error instanceof Error ? error.message : t('settings.voxcpmCloneSaveFailed'));
     } finally {
       setSaving(null);
     }
@@ -847,19 +879,24 @@ function VoxCPMVoiceManager() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <Label className="text-base font-semibold">VoxCPM 音色</Label>
+          <Label className="text-base font-semibold">{t('settings.voxcpmVoicesTitle')}</Label>
           <p className="mt-1 text-xs text-muted-foreground">
-            保存在当前浏览器，进入统一音色池后可在 Agent Bar 中使用。
+            {t('settings.voxcpmVoicesDescription')}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground/70">
+            {t('settings.voxcpmAutoVoicePrivacyNote')}
           </p>
         </div>
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="rounded-md border border-border/60 px-2 py-1">
-            Prompt {promptCount + 1}
+            {t('settings.voxcpmPromptCount', { count: promptCount + 1 })}
           </span>
-          <span className="rounded-md border border-border/60 px-2 py-1">克隆 {cloneCount}</span>
+          <span className="rounded-md border border-border/60 px-2 py-1">
+            {t('settings.voxcpmCloneCount', { count: cloneCount })}
+          </span>
           {!supportsReferenceAudio && (
             <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300">
-              当前后端不支持克隆
+              {t('settings.voxcpmCloneUnsupported')}
             </span>
           )}
         </div>
@@ -869,15 +906,18 @@ function VoxCPMVoiceManager() {
         <div className="grid lg:grid-cols-[minmax(280px,0.95fr)_minmax(0,1.15fr)]">
           <section className="border-b border-border/60 lg:border-b-0 lg:border-r">
             <div className="flex h-12 items-center justify-between border-b border-border/60 px-4">
-              <span className="text-sm font-medium">音色池</span>
-              <span className="text-xs text-muted-foreground">{profiles.length + 1} 条</span>
+              <span className="text-sm font-medium">{t('settings.voxcpmVoicePool')}</span>
+              <span className="text-xs text-muted-foreground">
+                {t('settings.voxcpmVoiceCount', { count: profiles.length + 1 })}
+              </span>
             </div>
             <div className="max-h-[420px] overflow-y-auto">
               <VoiceProfileRow
                 icon={<Wand2 className="h-4 w-4" />}
-                title="自动音色"
-                badge="默认"
-                detail="Agent 角色生成 prompt"
+                title={t('settings.voxcpmAutoVoice')}
+                badge={t('toolbar.default')}
+                badgeTone="default"
+                detail={t('settings.voxcpmAutoVoiceDescription')}
                 kind="auto"
               />
               {profiles.length > 0 ? (
@@ -897,14 +937,17 @@ function VoxCPMVoiceManager() {
                       title={profile.name}
                       badge={
                         profile.kind === 'clone' && !supportsReferenceAudio
-                          ? '不可用'
+                          ? t('settings.voxcpmUnavailable')
                           : profile.kind === 'clone'
-                            ? '克隆'
+                            ? t('settings.voxcpmClone')
                             : 'Prompt'
+                      }
+                      badgeTone={
+                        profile.kind === 'clone' && !supportsReferenceAudio ? 'warning' : 'neutral'
                       }
                       detail={
                         profile.kind === 'clone' && !supportsReferenceAudio
-                          ? '当前后端不支持克隆'
+                          ? t('settings.voxcpmCloneUnsupportedDetail')
                           : profile.kind === 'clone'
                             ? profile.referenceAudioName || 'reference audio'
                             : profile.voicePrompt || ''
@@ -921,7 +964,7 @@ function VoxCPMVoiceManager() {
                 })
               ) : (
                 <div className="px-4 py-8 text-center text-sm text-muted-foreground/60">
-                  暂无自定义音色
+                  {t('settings.voxcpmNoCustomVoices')}
                 </div>
               )}
             </div>
@@ -940,12 +983,12 @@ function VoxCPMVoiceManager() {
                   </TabsTrigger>
                   <TabsTrigger value="clone" className="gap-1.5 rounded-sm px-3 text-sm">
                     <Upload className="h-3.5 w-3.5" />
-                    克隆
+                    {t('settings.voxcpmClone')}
                   </TabsTrigger>
                 </TabsList>
                 {createMode === 'clone' && !supportsReferenceAudio && (
                   <span className="rounded-md border border-amber-200 bg-amber-50 px-2 py-1 text-xs text-amber-700 dark:border-amber-800/60 dark:bg-amber-950/30 dark:text-amber-300">
-                    当前后端仅保存
+                    {t('settings.voxcpmCloneSaveOnly')}
                   </span>
                 )}
               </div>
@@ -954,13 +997,13 @@ function VoxCPMVoiceManager() {
                 <Input
                   value={promptName}
                   onChange={(e) => setPromptName(e.target.value)}
-                  placeholder="音色名称"
+                  placeholder={t('settings.voxcpmVoiceNamePlaceholder')}
                   className="h-10 rounded-md text-sm"
                 />
                 <Textarea
                   value={voicePrompt}
                   onChange={(e) => setVoicePrompt(e.target.value)}
-                  placeholder="例如：清晰自然的中文老师声音，语速适中"
+                  placeholder={t('settings.voxcpmPromptPlaceholder')}
                   className="min-h-28 resize-none rounded-md text-sm"
                 />
                 <div className="flex justify-end">
@@ -975,7 +1018,7 @@ function VoxCPMVoiceManager() {
                     ) : (
                       <Plus className="h-3.5 w-3.5" />
                     )}
-                    添加音色
+                    {t('settings.voxcpmAddVoice')}
                   </Button>
                 </div>
               </TabsContent>
@@ -985,19 +1028,22 @@ function VoxCPMVoiceManager() {
                   <Input
                     value={cloneName}
                     onChange={(e) => setCloneName(e.target.value)}
-                    placeholder="克隆音色名称"
+                    placeholder={t('settings.voxcpmCloneVoiceNamePlaceholder')}
                     className="h-10 rounded-md text-sm"
                   />
                   <label className="inline-flex h-10 min-w-0 cursor-pointer items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-sm hover:bg-accent hover:text-accent-foreground">
                     <Upload className="h-3.5 w-3.5 shrink-0" />
                     <span className="max-w-[180px] truncate">
-                      {cloneFile ? cloneFile.name : '上传参考音频'}
+                      {cloneFile ? cloneFile.name : t('settings.voxcpmUploadReferenceAudio')}
                     </span>
                     <input
                       type="file"
                       accept="audio/*"
                       className="hidden"
-                      onChange={(e) => setCloneFile(e.target.files?.[0] || null)}
+                      onChange={(e) => {
+                        void handleCloneFileChange(e.target.files?.[0] || null);
+                        e.target.value = '';
+                      }}
                     />
                   </label>
                   <Button
@@ -1017,21 +1063,24 @@ function VoxCPMVoiceManager() {
                     ) : (
                       <>
                         <Mic className="h-3.5 w-3.5" />
-                        录制
+                        {t('settings.voxcpmRecord')}
                       </>
                     )}
                   </Button>
                 </div>
+                <p className="text-xs text-muted-foreground/70">
+                  {t('settings.voxcpmReferenceAudioLimitHint')}
+                </p>
                 <Textarea
                   value={clonePromptText}
                   onChange={(e) => setClonePromptText(e.target.value)}
-                  placeholder="参考音频对应文本，可选"
+                  placeholder={t('settings.voxcpmReferenceTextPlaceholder')}
                   className="min-h-20 resize-none rounded-md text-sm"
                 />
                 <Input
                   value={cloneVoicePrompt}
                   onChange={(e) => setCloneVoicePrompt(e.target.value)}
-                  placeholder="音色描述，可选"
+                  placeholder={t('settings.voxcpmVoiceDescriptionPlaceholder')}
                   className="h-10 rounded-md text-sm"
                 />
                 <div className="flex justify-end">
@@ -1046,7 +1095,7 @@ function VoxCPMVoiceManager() {
                     ) : (
                       <Plus className="h-3.5 w-3.5" />
                     )}
-                    添加克隆
+                    {t('settings.voxcpmAddClone')}
                   </Button>
                 </div>
               </TabsContent>
@@ -1068,6 +1117,7 @@ function VoiceProfileRow({
   icon,
   title,
   badge,
+  badgeTone = 'neutral',
   detail,
   kind = 'prompt',
   muted,
@@ -1078,6 +1128,7 @@ function VoiceProfileRow({
   icon: ReactNode;
   title: string;
   badge: string;
+  badgeTone?: 'default' | 'warning' | 'neutral';
   detail: string;
   kind?: 'auto' | 'prompt' | 'clone';
   muted?: boolean;
@@ -1092,11 +1143,12 @@ function VoiceProfileRow({
         ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/40 dark:text-sky-300'
         : 'bg-muted text-muted-foreground';
   const badgeClassName =
-    badge === '默认'
+    badgeTone === 'default'
       ? 'border-violet-200 bg-violet-50 text-violet-700 dark:border-violet-800/70 dark:bg-violet-950/40 dark:text-violet-300'
-      : badge === '不可用'
+      : badgeTone === 'warning'
         ? 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-800/70 dark:bg-amber-950/40 dark:text-amber-300'
         : 'border-border/70 bg-background text-muted-foreground';
+  const { t } = useI18n();
 
   return (
     <div
@@ -1132,7 +1184,9 @@ function VoiceProfileRow({
           variant="ghost"
           size="icon"
           onClick={() => onPreview()}
-          aria-label={previewing ? '停止试听' : '试听音色'}
+          aria-label={
+            previewing ? t('settings.voxcpmStopPreview') : t('settings.voxcpmPreviewVoice')
+          }
           className="h-8 w-8 text-muted-foreground opacity-70 hover:text-foreground group-hover:opacity-100"
         >
           {previewing ? (
@@ -1147,7 +1201,7 @@ function VoiceProfileRow({
           variant="ghost"
           size="icon"
           onClick={() => void onDelete()}
-          aria-label="删除音色"
+          aria-label={t('settings.voxcpmDeleteVoice')}
           className="h-8 w-8 text-muted-foreground opacity-70 hover:text-destructive group-hover:opacity-100"
         >
           <Trash2 className="h-3.5 w-3.5" />

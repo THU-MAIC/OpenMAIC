@@ -12,6 +12,7 @@ import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/vo
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
+import { useI18n } from '@/lib/hooks/use-i18n';
 
 interface DiscussionTTSOptions {
   enabled: boolean;
@@ -30,6 +31,7 @@ interface QueueItem {
 }
 
 export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: DiscussionTTSOptions) {
+  const { locale } = useI18n();
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -159,6 +161,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
                 agentName: agent?.name,
                 role: agent?.role,
                 persona: agent?.persona,
+                locale,
               })),
             }
           : undefined;
@@ -232,7 +235,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         queueMicrotask(() => processQueueRef.current());
       }
     }
-  }, [agents, enabled, ttsMuted, ttsVolume, ttsProvidersConfig, ttsSpeed, playbackSpeed]);
+  }, [agents, enabled, locale, ttsMuted, ttsVolume, ttsProvidersConfig, ttsSpeed, playbackSpeed]);
 
   processQueueRef.current = processQueue;
 

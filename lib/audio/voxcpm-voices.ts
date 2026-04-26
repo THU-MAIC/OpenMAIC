@@ -17,6 +17,8 @@ import {
 export type VoxCPMVoiceProfile = VoiceProfileRecord;
 
 const VOXCPM_VOICE_PROFILES_CHANGED = 'voxcpm-voice-profiles-changed';
+export const VOXCPM_REFERENCE_AUDIO_MAX_BYTES = 10 * 1024 * 1024;
+export const VOXCPM_REFERENCE_AUDIO_MAX_SECONDS = 60;
 
 function notifyVoiceProfilesChanged(): void {
   window.dispatchEvent(new Event(VOXCPM_VOICE_PROFILES_CHANGED));
@@ -96,24 +98,39 @@ function audioBufferToMonoWav(audioBuffer: AudioBuffer): ArrayBuffer {
   return buffer;
 }
 
-async function audioBlobToWav(blob: Blob): Promise<Blob> {
+async function decodeAudioBlob(blob: Blob): Promise<AudioBuffer> {
   if (typeof window === 'undefined') {
-    throw new Error('Audio conversion requires a browser environment');
+    throw new Error('Audio decoding requires a browser environment');
   }
   const AudioContextConstructor =
     window.AudioContext ||
     (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioContextConstructor) {
-    throw new Error('当前浏览器不支持音频转换');
+    throw new Error('This browser does not support audio conversion');
   }
 
   const audioContext = new AudioContextConstructor();
   try {
     const arrayBuffer = await blob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer.slice(0));
-    return new Blob([audioBufferToMonoWav(audioBuffer)], { type: 'audio/wav' });
+    return await audioContext.decodeAudioData(arrayBuffer.slice(0));
   } finally {
     await audioContext.close().catch(() => undefined);
+  }
+}
+
+async function audioBlobToWav(blob: Blob): Promise<Blob> {
+  const audioBuffer = await decodeAudioBlob(blob);
+  return new Blob([audioBufferToMonoWav(audioBuffer)], { type: 'audio/wav' });
+}
+
+export async function validateVoxCPMReferenceAudio(blob: Blob): Promise<void> {
+  if (blob.size > VOXCPM_REFERENCE_AUDIO_MAX_BYTES) {
+    throw new Error('Reference audio must be 10 MB or smaller');
+  }
+
+  const audioBuffer = await decodeAudioBlob(blob);
+  if (audioBuffer.duration > VOXCPM_REFERENCE_AUDIO_MAX_SECONDS) {
+    throw new Error('Reference audio must be 60 seconds or shorter');
   }
 }
 
@@ -121,6 +138,8 @@ export async function normalizeVoxCPMReferenceAudio(
   blob: Blob,
   fileName?: string,
 ): Promise<{ blob: Blob; name: string; mimeType: string }> {
+  await validateVoxCPMReferenceAudio(blob);
+
   if (isWavAudio(blob, fileName)) {
     return {
       blob,
@@ -130,6 +149,9 @@ export async function normalizeVoxCPMReferenceAudio(
   }
 
   const wavBlob = await audioBlobToWav(blob);
+  if (wavBlob.size > VOXCPM_REFERENCE_AUDIO_MAX_BYTES) {
+    throw new Error('Reference audio must be 10 MB or smaller after conversion');
+  }
   return {
     blob: wavBlob,
     name: replaceFileExtension(fileName, 'wav'),
@@ -151,7 +173,8 @@ export function getVoxCPMVoiceOptions(
       name: profile.name,
       language: 'zh',
       gender: 'neutral' as const,
-      description: profile.kind === 'clone' ? '浏览器保存的克隆音色' : '浏览器保存的提示词音色',
+      description:
+        profile.kind === 'clone' ? 'Browser-saved cloned voice' : 'Browser-saved prompt voice',
     })),
   ];
 }
