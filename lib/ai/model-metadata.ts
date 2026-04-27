@@ -129,6 +129,13 @@ const anthropicAdaptiveEffort: ThinkingCapability = {
   anthropicThinking: { type: 'adaptive' },
 };
 
+const anthropicBudget: ThinkingCapability = toggleBudgetCapability(
+  'anthropic',
+  { min: 1024, max: 64000, step: 1024 },
+  false,
+  1024,
+);
+
 const anthropicOpus47Effort: ThinkingCapability = {
   ...anthropicAdaptiveEffort,
   effortValues: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
@@ -232,7 +239,7 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('anthropic', 'claude-opus-4-6')]: anthropicAdaptiveEffort,
   [getModelMetadataKey('anthropic', 'claude-sonnet-4-6')]: anthropicAdaptiveEffort,
   [getModelMetadataKey('anthropic', 'claude-sonnet-4-5')]: anthropicManualEffort,
-  [getModelMetadataKey('anthropic', 'claude-haiku-4-5')]: anthropicManualEffort,
+  [getModelMetadataKey('anthropic', 'claude-haiku-4-5')]: anthropicBudget,
 
   [getModelMetadataKey('google', 'gemini-3.1-pro-preview')]: levelCapability(
     ['minimal', 'low', 'medium', 'high'],

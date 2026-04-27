@@ -33,6 +33,23 @@ describe('thinking config metadata', () => {
     expect(supportsConfigurableThinking(minimaxThinking)).toBe(false);
   });
 
+  it('exposes Claude Haiku 4.5 thinking as budget-only, not effort', () => {
+    const thinking = getThinking('anthropic', 'claude-haiku-4-5');
+
+    expect(supportsConfigurableThinking(thinking)).toBe(true);
+    expect(thinking?.control).toBe('toggle-budget');
+    expect(thinking?.requestAdapter).toBe('anthropic');
+    expect(thinking?.effortValues).toBeUndefined();
+    expect(getDefaultThinkingConfig(thinking)).toEqual({
+      mode: 'disabled',
+      budgetTokens: 1024,
+    });
+    expect(normalizeThinkingConfig(thinking, { mode: 'enabled', budgetTokens: 4096 })).toEqual({
+      mode: 'enabled',
+      budgetTokens: 4096,
+    });
+  });
+
   it('removes deprecated and legacy models from the built-in catalog', () => {
     const openaiModels = getProvider('openai')?.models.map((item) => item.id);
     const glmModels = getProvider('glm')?.models.map((item) => item.id);

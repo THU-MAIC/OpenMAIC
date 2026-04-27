@@ -148,6 +148,14 @@ function buildThinkingProviderOptions(
 
     case 'anthropic': {
       if (mode === 'disabled') return { anthropic: { thinking: { type: 'disabled' } } };
+
+      if (thinking.control === 'toggle-budget' || thinking.control === 'budget-only') {
+        const budget = pickThinkingBudget(thinking, config);
+        return budget === undefined
+          ? undefined
+          : { anthropic: { thinking: { type: 'enabled', budgetTokens: budget } } };
+      }
+
       const effort = getAnthropicEffort(thinking, config);
       if (!effort) return undefined;
 
