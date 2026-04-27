@@ -218,6 +218,40 @@ docker compose up --build
 
 在 `.env.local` 中设置 `PDF_MINERU_BASE_URL`（如需认证则同时设置 `PDF_MINERU_API_KEY`）。
 
+### 可选：VoxCPM2（自托管 TTS，支持音色克隆）
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) 是 OpenBMB 开源的 TTS 模型，音色克隆能力强。OpenMAIC 作为适配层接入：你在自己的硬件上跑 VoxCPM 后端，OpenMAIC 负责调用。音色档案（包括参考音频克隆）存在浏览器本地，保持纯前端的部署模型。
+
+**1. 部署 VoxCPM 后端。** OpenMAIC 支持三种部署形态，按你的环境选一种即可：
+
+| 后端 | 接口 | 适用场景 |
+| --- | --- | --- |
+| **vLLM-Omni** | `/v1/audio/speech` | OpenAI 兼容的语音接口，适合 GPU 服务器 |
+| **Python API** | `/tts/upload` | 官方 VoxCPM Python 运行时（FastAPI） |
+| **Nano-vLLM** | `/generate` | 轻量级 Nano-vLLM FastAPI 部署 |
+
+每种后端的部署步骤详见 [VoxCPM 仓库](https://github.com/OpenBMB/VoxCPM)。
+
+**2. 在 OpenMAIC 中配置。** 打开 设置 → **语音合成** → **VoxCPM2**，选择后端类型并填入 Base URL，下方的 Request URL 预览会确认实际调用地址：
+
+<img src="assets/voxcpm/voxcpm-connection.png" width="85%" alt="VoxCPM2 连接设置：后端选择、Base URL、模型名" />
+
+也可以通过环境变量预先配置（不需要 API Key）：
+
+```env
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+**3. 管理音色。** 音色管理器支持构建一个浏览器本地的音色池，Agent Bar 会自动接入：
+
+<img src="assets/voxcpm/voxcpm-voice-manager.png" width="85%" alt="VoxCPM2 音色管理器：音色池、Prompt 与 Clone 创建" />
+
+- **Auto Voice**（默认）—— 在合成时根据每个智能体的人设自动生成 voice prompt，零配置。
+- **Prompt 音色** —— 用自然语言描述音色（例如 *"温暖的女性教师嗓音，平静而鼓励，中等音调"*）。
+- **Clone 音色** —— 上传一段参考音频或在浏览器里录一段，OpenMAIC 会把参考音频传给后端作为克隆样本。音色克隆需要后端支持参考音频（vLLM-Omni / Python API / Nano-vLLM 都支持）。
+
+> 音色档案存放在浏览器 IndexedDB 中，不会同步到服务端。
+
 ---
 
 ## ✨ 功能特性
