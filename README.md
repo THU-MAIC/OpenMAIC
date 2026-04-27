@@ -220,9 +220,9 @@ Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 
 ### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
 
-[VoxCPM2](https://github.com/OpenBMB/VoxCPM) is an open-source TTS model from OpenBMB with strong voice cloning. OpenMAIC ships an adapter — you bring up VoxCPM on your own hardware, and OpenMAIC speaks to it. Voice profiles (including reference-audio clones) live in your browser, so the serverless setup model is preserved.
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) is an open-source TTS model from OpenBMB with voice cloning. OpenMAIC ships an adapter; run VoxCPM on your own hardware and OpenMAIC will talk to it.
 
-**1. Run a VoxCPM backend.** OpenMAIC supports three deployment styles — pick whichever your environment fits:
+**1. Run a VoxCPM backend.** Three deployment styles, all behind the same OpenMAIC adapter. You toggle which one in Settings.
 
 | Backend | Endpoint | When to use |
 | --- | --- | --- |
@@ -230,27 +230,25 @@ Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
 | **Python API** | `/tts/upload` | Official VoxCPM Python runtime via FastAPI |
 | **Nano-vLLM** | `/generate` | Lightweight Nano-vLLM FastAPI deployment |
 
-See the [VoxCPM repo](https://github.com/OpenBMB/VoxCPM) for setup instructions for each backend.
+See the [VoxCPM repo](https://github.com/OpenBMB/VoxCPM) for backend setup.
 
-**2. Point OpenMAIC at it.** Open Settings → **Text-to-Speech** → **VoxCPM2**, pick the backend, and paste your Base URL. The Request URL preview confirms OpenMAIC will hit the right endpoint:
+**2. Point OpenMAIC at it.** Open Settings → **Text-to-Speech** → **VoxCPM2**, pick the backend, and paste your Base URL. The Request URL preview confirms OpenMAIC will hit the right endpoint.
 
 <img src="assets/voxcpm/voxcpm-connection.png" width="85%" alt="VoxCPM2 connection settings: backend selector, Base URL, model" />
 
-You can also pre-configure it via env vars (no API key required):
+Or pre-configure it via env var (no API key required):
 
 ```env
 TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
 ```
 
-**3. Manage voices.** The voice manager lets you build a per-browser voice pool that the Agent Bar picks up automatically:
+**3. Manage voices.** Three voice modes, all under **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices**.
 
-<img src="assets/voxcpm/voxcpm-voice-manager.png" width="85%" alt="VoxCPM2 voice manager with Voice Pool, Prompt and Clone tabs" />
+<img src="assets/voxcpm/voxcpm-voice-manager.png" width="85%" alt="VoxCPM2 VoxCPM Voices section with Auto, Prompt and Clone modes" />
 
-- **Auto Voice** (default) — generates a voice prompt from each agent's persona at synthesis time. No setup required.
-- **Prompt voice** — describe the voice in natural language (e.g. *"Warm female teacher voice, calm and encouraging, mid-pitch"*).
-- **Clone voice** — upload a short reference audio clip or record one in the browser; OpenMAIC sends it to your backend as the cloning reference. Voice cloning requires a backend that supports reference audio (vLLM-Omni, Python API, or Nano-vLLM).
-
-> Voice profiles are stored in your browser's IndexedDB and are not synced to the server.
+- **Auto Voice** (default): OpenMAIC generates a voice prompt from each agent's persona at synthesis time. No setup required.
+- **Prompt voice**: describe the voice in natural language, e.g. *"warm female teacher voice, calm and encouraging, mid-pitch"*.
+- **Clone voice**: upload a short reference audio clip or record one in the browser. The clip is stored in IndexedDB and sent to your VoxCPM backend on each synthesis.
 
 ---
 
