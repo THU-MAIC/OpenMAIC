@@ -144,7 +144,10 @@
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
     "courseComplete": "اكتملت الدورة",
     "fullscreen": "ملء الشاشة",
-    "exitFullscreen": "الخروج من ملء الشاشة"
+    "exitFullscreen": "الخروج من ملء الشاشة",
+    "previewImages": "معاينة الصور",
+    "imagePreviewTitle": "معاينة الصورة",
+    "imagePreviewCount": "{{current}} / {{total}}"
   },
   "classroomComplete": {
     "title": "اكتملت الدورة",

@@ -144,7 +144,10 @@
     "generatingNextPage": "场景正在生成，请稍候...",
     "courseComplete": "课程完成",
     "fullscreen": "全屏",
-    "exitFullscreen": "退出全屏"
+    "exitFullscreen": "退出全屏",
+    "previewImages": "查看大图",
+    "imagePreviewTitle": "图片预览",
+    "imagePreviewCount": "{{current}} / {{total}}"
   },
   "classroomComplete": {
     "title": "课程完成",

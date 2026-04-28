@@ -144,7 +144,10 @@
     "generatingNextPage": "Сцена генерируется, пожалуйста подождите...",
     "courseComplete": "Курс завершён",
     "fullscreen": "Полный экран",
-    "exitFullscreen": "Свернуть"
+    "exitFullscreen": "Свернуть",
+    "previewImages": "Просмотр изображений",
+    "imagePreviewTitle": "Предпросмотр изображения",
+    "imagePreviewCount": "{{current}} / {{total}}"
   },
   "classroomComplete": {
     "title": "Курс завершён",
