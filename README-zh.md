@@ -38,6 +38,7 @@
 
 ## 🗞️ 动态
 
+- **2026-04-26** — [v0.2.1 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1) 接入 [VoxCPM2](https://github.com/OpenBMB/VoxCPM) TTS，支持音色克隆与自动生成音色；新增按模型思考配置；新增课程完成页与作答状态持久化；新增 DeepSeek-V4 / GPT-5.5 / GPT-Image-2 / 小米 MiMo / Hy3 等最新发布的模型。查看[更新日志](CHANGELOG.md)。
 - **2026-04-20** — **v0.2.0 发布！** 深度交互模式 — 3D 可视化、模拟实验、游戏、思维导图、在线编程，动手学习新体验。详见[功能特性](#-功能特性)。
 - **2026-04-14** — [v0.1.1 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1) 自动语言推断、ACCESS_CODE 站点认证、课堂 ZIP 导入导出、自定义 TTS/ASR、Ollama 支持等。查看[更新日志](CHANGELOG.md)。
 - **2026-03-26** — [v0.1.0 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0) 讨论语音、沉浸模式、键盘快捷键、白板增强、新 provider 等。查看[更新日志](CHANGELOG.md)。
@@ -216,6 +217,38 @@ docker compose up --build
 [MinerU](https://github.com/opendatalab/MinerU) 提供更强的表格、公式和 OCR 解析能力。你可以使用 [MinerU 官方 API](https://mineru.net/) 或[自行部署](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/)。
 
 在 `.env.local` 中设置 `PDF_MINERU_BASE_URL`（如需认证则同时设置 `PDF_MINERU_API_KEY`）。
+
+### 可选：VoxCPM2（自托管 TTS，支持音色克隆）
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) 是 OpenBMB 开源的 TTS 模型，支持声音克隆。OpenMAIC 自带适配器，把 VoxCPM 跑在自己机器上即可对接。
+
+**1. 部署 VoxCPM 后端。** 三种部署形态，背后是同一套 OpenMAIC 适配器，在设置里切换即可。
+
+| 后端 | 接口 | 适用场景 |
+| --- | --- | --- |
+| **vLLM-Omni** | `/v1/audio/speech` | OpenAI 兼容的语音接口，适合 GPU 服务器 |
+| **Python API** | `/tts/upload` | 官方 VoxCPM Python 运行时（FastAPI） |
+| **Nano-vLLM** | `/generate` | 轻量级 Nano-vLLM FastAPI 部署 |
+
+每种后端的具体启动步骤见 [VoxCPM 仓库](https://github.com/OpenBMB/VoxCPM)。
+
+**2. 在 OpenMAIC 中配置。** 打开 设置 → **语音合成** → **VoxCPM2**，选择后端类型并填入 Base URL，下方的 Request URL 预览会显示实际请求地址。
+
+<img src="assets/voxcpm/voxcpm-connection.png" width="85%" alt="VoxCPM2 连接设置：后端选择、Base URL、模型名" />
+
+也可以通过环境变量预先配置（不需要 API Key）：
+
+```env
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+**3. 管理音色。** 三种音色模式，都在 **设置 → 语音合成 → VoxCPM2 → VoxCPM 音色** 里。
+
+<img src="assets/voxcpm/voxcpm-voice-manager.png" width="85%" alt="VoxCPM2 音色管理：Auto / Prompt / Clone 三种模式" />
+
+- **Auto Voice**（默认）：合成时根据每个智能体的人设动态生成 voice prompt，零配置。
+- **Prompt 音色**：用自然语言描述音色，例如 *"温暖的女性教师嗓音，平静而鼓励，中等音调"*。
+- **Clone 音色**：上传一段参考音频或在浏览器里录一段。音频存在 IndexedDB 中，每次合成时发给后端。
 
 ---
 

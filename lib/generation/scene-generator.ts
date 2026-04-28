@@ -56,6 +56,7 @@ import type {
   GenerationResult,
   GenerationCallbacks,
 } from './pipeline-types';
+import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
@@ -69,6 +70,7 @@ export interface SceneContentOptions {
   generatedMediaMapping?: ImageMapping;
   agents?: AgentInfo[];
   languageDirective?: string;
+  thinkingConfig?: ThinkingConfig;
 }
 
 export interface SceneActionsOptions {
@@ -290,6 +292,7 @@ export async function generateSceneContent(
     generatedMediaMapping,
     agents,
     languageDirective,
+    thinkingConfig,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -331,7 +334,7 @@ export async function generateSceneContent(
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective);
     case 'pbl':
-      return generatePBLSceneContent(outline, languageModel, languageDirective);
+      return generatePBLSceneContent(outline, languageModel, languageDirective, thinkingConfig);
     default:
       return null;
   }
@@ -633,14 +636,20 @@ async function generateSlideContent(
     }
   }
 
+  const generatedImageEntries = outline.mediaGenerations?.filter((mg) => mg.type === 'image') ?? [];
+  const generatedVideoEntries = outline.mediaGenerations?.filter((mg) => mg.type === 'video') ?? [];
+  const hasAssignedImages = (assignedImages?.length ?? 0) > 0;
+  const generatedImageEnabled = generatedImageEntries.length > 0;
+  const generatedVideoEnabled = generatedVideoEntries.length > 0;
+  const imageElementEnabled = hasAssignedImages || generatedImageEnabled;
+  const mediaElementEnabled = imageElementEnabled || generatedVideoEnabled;
+
   // Add generated media placeholders info (images + videos)
   if (outline.mediaGenerations && outline.mediaGenerations.length > 0) {
-    const genImgDescs = outline.mediaGenerations
-      .filter((mg) => mg.type === 'image')
+    const genImgDescs = generatedImageEntries
       .map((mg) => `- ${mg.elementId}: "${mg.prompt}" (aspect ratio: ${mg.aspectRatio || '16:9'})`)
       .join('\n');
-    const genVidDescs = outline.mediaGenerations
-      .filter((mg) => mg.type === 'video')
+    const genVidDescs = generatedVideoEntries
       .map((mg) => `- ${mg.elementId}: "${mg.prompt}" (aspect ratio: ${mg.aspectRatio || '16:9'})`)
       .join('\n');
 
@@ -678,6 +687,10 @@ async function generateSlideContent(
     canvas_height: canvasHeight,
     teacherContext,
     languageDirective: languageDirective || '',
+    imageElementEnabled,
+    generatedImageEnabled,
+    generatedVideoEnabled,
+    mediaElementEnabled,
   });
 
   if (!prompts) {
@@ -870,6 +883,7 @@ async function generatePBLSceneContent(
   outline: SceneOutline,
   languageModel?: LanguageModel,
   languageDirective?: string,
+  thinkingConfig?: ThinkingConfig,
 ): Promise<GeneratedPBLContent | null> {
   if (!languageModel) {
     log.error('LanguageModel required for PBL generation');
@@ -897,6 +911,7 @@ async function generatePBLSceneContent(
       {
         onProgress: (msg) => log.info(`${msg}`),
       },
+      thinkingConfig,
     );
     log.info(
       `PBL generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,

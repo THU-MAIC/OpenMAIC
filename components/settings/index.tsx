@@ -141,6 +141,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
+    'voxcpm-tts': t('settings.providerVoxCPMTTS'),
     'doubao-tts': t('settings.providerDoubaoTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
@@ -493,7 +494,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
       if (firstRemainingPid && firstModel) {
         setModel(firstRemainingPid, firstModel);
       } else {
-        setModel('openai' as ProviderId, 'gpt-4o-mini');
+        setModel('openai' as ProviderId, 'gpt-5.4-mini');
       }
     }
     setProviderToDelete(null);

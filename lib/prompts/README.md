@@ -20,16 +20,20 @@ lib/prompts/
 
 ## Template syntax
 
-Two kinds of placeholder:
+Three kinds of placeholder:
 
 | Syntax | Semantics | Resolved by |
 |---|---|---|
 | `{{variableName}}` | Value is provided by the caller via `buildPrompt(id, vars)` | `interpolateVariables` in `loader.ts` |
 | `{{snippet:snippet-name}}` | File content is spliced in at load time | `processSnippets` in `loader.ts` |
+| `{{#if conditionName}}...{{/if}}` | Content is included only when `conditionName` is truthy in the template variables | `processConditionalBlocks` in `loader.ts` |
 
-Processing order is **snippet includes first, then variable interpolation**, so
-snippets may themselves contain `{{variableName}}` placeholders if the caller
-provides the value.
+Processing order is **snippet includes first, then conditional blocks, then
+variable interpolation**, so snippets may themselves contain `{{#if}}`
+blocks and `{{variableName}}` placeholders if the caller provides the value.
+
+Conditional blocks read from the same `variables` record passed to
+`buildPrompt` — no separate conditions object is needed.
 
 ## Naming conventions
 

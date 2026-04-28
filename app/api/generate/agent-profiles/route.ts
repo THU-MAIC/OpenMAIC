@@ -10,7 +10,7 @@ import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 
 const log = createLogger('Agent Profiles API');
@@ -65,8 +65,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Model resolution from request headers ──
-    const { model: languageModel, modelString: _modelString } = await resolveModelFromHeaders(req);
+    // ── Model resolution from request headers/body ──
+    const {
+      model: languageModel,
+      modelString: _modelString,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body);
     modelString = _modelString;
 
     // ── Build prompt ──
@@ -142,6 +146,8 @@ Return a JSON object with this exact structure:
         prompt: userPrompt,
       },
       'agent-profiles',
+      undefined,
+      thinkingConfig,
     );
 
     // ── Parse LLM response ──

@@ -18,9 +18,27 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { getTTSVoices } from '@/lib/audio/constants';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import {
+  getVoxCPMProviderOptions,
+  getVoxCPMVoiceOptions,
+  useVoxCPMVoiceProfiles,
+} from '@/lib/audio/voxcpm-voices';
+import {
+  VOXCPM_AUTO_VOICE_ID,
+  normalizeVoxCPMBackend,
+  voxCPMBackendSupportsReferenceAudio,
+} from '@/lib/audio/voxcpm';
 
 /** Extract the English name from voice name format "ChineseName (English)" */
-function getVoiceDisplayName(name: string, lang: string): string {
+function getVoiceDisplayName(
+  id: string,
+  name: string,
+  lang: string,
+  t: (key: string) => string,
+): string {
+  if (id === VOXCPM_AUTO_VOICE_ID) {
+    return t('settings.voxcpmAutoVoice');
+  }
   if (lang === 'en-US') {
     const match = name.match(/\(([^)]+)\)/);
     return match ? match[1] : name;
@@ -40,27 +58,48 @@ export function TtsConfigPopover() {
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const setTTSVoice = useSettingsStore((s) => s.setTTSVoice);
+  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
+  const voxcpmBackend = normalizeVoxCPMBackend(
+    ttsProvidersConfig['voxcpm-tts']?.providerOptions?.backend,
+  );
 
-  const voices = getTTSVoices(ttsProviderId);
+  const voices =
+    ttsProviderId === 'voxcpm-tts'
+      ? getVoxCPMVoiceOptions(voxcpmProfiles, {
+          supportsClone: voxCPMBackendSupportsReferenceAudio(voxcpmBackend),
+        })
+      : getTTSVoices(ttsProviderId);
   const localizedVoices = useMemo(
     () =>
       voices.map((v) => ({
         ...v,
-        displayName: getVoiceDisplayName(v.name, locale),
+        displayName: getVoiceDisplayName(v.id, v.name, locale, t),
       })),
-    [voices, locale],
+    [voices, locale, t],
   );
 
   const pillCls =
     'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border';
+  const canPreview = ttsProviderId !== 'voxcpm-tts' || ttsVoice !== VOXCPM_AUTO_VOICE_ID;
 
   const handlePreview = useCallback(async () => {
     if (previewing) {
       stopPreview();
       return;
     }
+    if (!canPreview) {
+      toast.info(t('settings.voxcpmAutoVoiceNoPreview'));
+      return;
+    }
     try {
       const providerConfig = ttsProvidersConfig[ttsProviderId];
+      const providerOptions =
+        ttsProviderId === 'voxcpm-tts'
+          ? {
+              ...(providerConfig?.providerOptions || {}),
+              ...(await getVoxCPMProviderOptions(ttsVoice, { role: 'teacher', locale })),
+            }
+          : undefined;
       await startPreview({
         text: t('settings.ttsTestTextDefault'),
         providerId: ttsProviderId,
@@ -68,7 +107,11 @@ export function TtsConfigPopover() {
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
-        baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
+        baseUrl:
+          providerConfig?.serverBaseUrl ||
+          providerConfig?.baseUrl ||
+          providerConfig?.customDefaultBaseUrl,
+        providerOptions,
       });
     } catch (error) {
       const message =
@@ -77,9 +120,11 @@ export function TtsConfigPopover() {
     }
   }, [
     previewing,
+    canPreview,
     startPreview,
     stopPreview,
     t,
+    locale,
     ttsProviderId,
     ttsProvidersConfig,
     ttsSpeed,
@@ -160,8 +205,10 @@ export function TtsConfigPopover() {
               </Select>
               <button
                 onClick={handlePreview}
+                disabled={!canPreview}
                 className={cn(
                   'inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition-all shrink-0',
+                  !canPreview && 'cursor-not-allowed opacity-50',
                   previewing
                     ? 'bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300'
                     : 'bg-muted/60 text-muted-foreground hover:bg-muted hover:text-foreground',

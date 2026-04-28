@@ -8,9 +8,12 @@ import { persist } from 'zustand/middleware';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
+import type { ThinkingConfig } from '@/lib/types/provider';
+import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thinking-config';
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
+import { DEFAULT_VOXCPM_BACKEND, VOXCPM_MODEL_ID, VOXCPM_VLLM_MODEL_ID } from '@/lib/audio/voxcpm';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
@@ -23,6 +26,26 @@ import { validateProvider, validateModel } from '@/lib/store/settings-validation
 
 const log = createLogger('Settings');
 
+function pruneThinkingConfigs(
+  thinkingConfigs: Record<string, ThinkingConfig> | undefined,
+  providersConfig: ProvidersConfig | undefined,
+): Record<string, ThinkingConfig> {
+  if (!thinkingConfigs || !providersConfig) return {};
+
+  const validKeys = new Set<string>();
+  for (const [providerId, providerConfig] of Object.entries(providersConfig)) {
+    for (const model of providerConfig.models) {
+      if (supportsConfigurableThinking(model.capabilities?.thinking)) {
+        validKeys.add(getThinkingConfigKey(providerId, model.id));
+      }
+    }
+  }
+
+  return Object.fromEntries(
+    Object.entries(thinkingConfigs).filter(([key]) => validKeys.has(key)),
+  ) as Record<string, ThinkingConfig>;
+}
+
 /** Available playback speed tiers */
 export const PLAYBACK_SPEEDS = [1, 1.25, 1.5, 2] as const;
 export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
@@ -31,6 +54,7 @@ export interface SettingsState {
   // Model selection
   providerId: ProviderId;
   modelId: string;
+  thinkingConfigs: Record<string, ThinkingConfig>;
 
   // Provider configurations (unified JSON storage)
   providersConfig: ProvidersConfig;
@@ -171,6 +195,11 @@ export interface SettingsState {
 
   // Actions
   setModel: (providerId: ProviderId, modelId: string) => void;
+  setThinkingConfig: (
+    providerId: ProviderId,
+    modelId: string,
+    config: ThinkingConfig | undefined,
+  ) => void;
   setProviderConfig: (providerId: ProviderId, config: Partial<ProvidersConfig[ProviderId]>) => void;
   setProvidersConfig: (config: ProvidersConfig) => void;
   setTtsModel: (model: string) => void;
@@ -317,6 +346,13 @@ const getDefaultAudioConfig = () => ({
     'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
     'glm-tts': { apiKey: '', baseUrl: '', enabled: false },
     'qwen-tts': { apiKey: '', baseUrl: '', enabled: false },
+    'voxcpm-tts': {
+      apiKey: '',
+      baseUrl: '',
+      modelId: VOXCPM_VLLM_MODEL_ID,
+      enabled: false,
+      providerOptions: { backend: DEFAULT_VOXCPM_BACKEND },
+    },
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: false },
@@ -438,6 +474,36 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
   }
 }
 
+function ensureBuiltInAudioProviders(state: Partial<SettingsState>): void {
+  const defaultAudioConfig = getDefaultAudioConfig();
+
+  if (state.ttsProvidersConfig) {
+    for (const providerId of Object.keys(TTS_PROVIDERS) as BuiltInTTSProviderId[]) {
+      if (!state.ttsProvidersConfig[providerId]) {
+        state.ttsProvidersConfig[providerId] = defaultAudioConfig.ttsProvidersConfig[providerId];
+      }
+    }
+    const voxcpmConfig = state.ttsProvidersConfig['voxcpm-tts'];
+    if (voxcpmConfig) {
+      if (!voxcpmConfig.modelId || voxcpmConfig.modelId === VOXCPM_MODEL_ID) {
+        voxcpmConfig.modelId = VOXCPM_VLLM_MODEL_ID;
+      }
+      voxcpmConfig.providerOptions = {
+        backend: DEFAULT_VOXCPM_BACKEND,
+        ...(voxcpmConfig.providerOptions || {}),
+      };
+    }
+  }
+
+  if (state.asrProvidersConfig) {
+    for (const providerId of Object.keys(ASR_PROVIDERS) as ASRProviderId[]) {
+      if (!state.asrProvidersConfig[providerId]) {
+        state.asrProvidersConfig[providerId] = defaultAudioConfig.asrProvidersConfig[providerId];
+      }
+    }
+  }
+}
+
 /**
  * Ensure providersConfig includes all built-in providers and their latest models.
  * Called on every rehydrate (not just version migrations) so new providers
@@ -539,7 +605,7 @@ const migrateFromOldStorage = () => {
 
   // Parse model selection
   let providerId: ProviderId = 'openai';
-  let modelId = 'gpt-4o-mini';
+  let modelId = 'gpt-5.4-mini';
   if (oldLlmModel) {
     const [pid, mid] = oldLlmModel.split(':');
     if (pid && mid) {
@@ -581,6 +647,7 @@ const migrateFromOldStorage = () => {
   return {
     providerId,
     modelId,
+    thinkingConfigs: {},
     providersConfig,
     ttsModel,
     selectedAgentIds,
@@ -599,11 +666,17 @@ export const useSettingsStore = create<SettingsState>()(
       const defaultVideoConfig = getDefaultVideoConfig();
       const defaultWebSearchConfig = getDefaultWebSearchConfig();
 
+      const initialProvidersConfig = migratedData?.providersConfig || getDefaultProvidersConfig();
+
       return {
         // Initial state (use migrated data if available)
         providerId: migratedData?.providerId || 'openai',
         modelId: migratedData?.modelId || '',
-        providersConfig: migratedData?.providersConfig || getDefaultProvidersConfig(),
+        thinkingConfigs: pruneThinkingConfigs(
+          migratedData?.thinkingConfigs || {},
+          initialProvidersConfig,
+        ),
+        providersConfig: initialProvidersConfig,
         ttsModel: migratedData?.ttsModel || 'openai-tts',
         selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
         maxTurns: migratedData?.maxTurns?.toString() || '10',
@@ -649,18 +722,38 @@ export const useSettingsStore = create<SettingsState>()(
         // Actions
         setModel: (providerId, modelId) => set({ providerId, modelId }),
 
+        setThinkingConfig: (providerId, modelId, config) =>
+          set((state) => {
+            const key = getThinkingConfigKey(providerId, modelId);
+            const next = { ...state.thinkingConfigs };
+            if (config) {
+              next[key] = config;
+            } else {
+              delete next[key];
+            }
+            return { thinkingConfigs: next };
+          }),
+
         setProviderConfig: (providerId, config) =>
-          set((state) => ({
-            providersConfig: {
+          set((state) => {
+            const providersConfig = {
               ...state.providersConfig,
               [providerId]: {
                 ...state.providersConfig[providerId],
                 ...config,
               },
-            },
-          })),
+            };
+            return {
+              providersConfig,
+              thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, providersConfig),
+            };
+          }),
 
-        setProvidersConfig: (config) => set({ providersConfig: config }),
+        setProvidersConfig: (config) =>
+          set((state) => ({
+            providersConfig: config,
+            thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, config),
+          })),
 
         setTtsModel: (model) => set({ ttsModel: model }),
 
@@ -1379,6 +1472,7 @@ export const useSettingsStore = create<SettingsState>()(
           const defaultAudioConfig = getDefaultAudioConfig();
           Object.assign(state, defaultAudioConfig);
         }
+        ensureBuiltInAudioProviders(state);
 
         // Migrate global ttsModelId to per-provider
         if ((state as Record<string, unknown>).ttsModelId) {
@@ -1460,6 +1554,10 @@ export const useSettingsStore = create<SettingsState>()(
           (state as Record<string, unknown>).autoAgentCount = 3;
         }
 
+        if ((state as Record<string, unknown>).thinkingConfigs === undefined) {
+          (state as Record<string, unknown>).thinkingConfigs = {};
+        }
+
         // Migrate Web Search: old flat fields → new provider-based config
         if (!state.webSearchProvidersConfig) {
           const stateRecord = state as Record<string, unknown>;
@@ -1480,6 +1578,8 @@ export const useSettingsStore = create<SettingsState>()(
         }
 
         ensureValidProviderSelections(state);
+        ensureBuiltInAudioProviders(state);
+        state.thinkingConfigs = pruneThinkingConfigs(state.thinkingConfigs, state.providersConfig);
 
         return state;
       },
@@ -1489,9 +1589,15 @@ export const useSettingsStore = create<SettingsState>()(
         const merged = { ...currentState, ...(persistedState as object) };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
         promoteLegacyCustomProviderBaseUrls(merged as Partial<SettingsState>);
+        ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
+        const typedMerged = merged as Partial<SettingsState>;
+        typedMerged.thinkingConfigs = pruneThinkingConfigs(
+          typedMerged.thinkingConfigs,
+          typedMerged.providersConfig,
+        );
         return merged as SettingsState;
       },
     },

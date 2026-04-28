@@ -12,6 +12,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   loadImageMapping,
@@ -37,6 +38,7 @@ function GenerationPreviewContent() {
   const { t } = useI18n();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
 
   const [session, setSession] = useState<GenerationSessionState | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
@@ -115,6 +117,11 @@ function GenerationPreviewContent() {
       'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
       'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
     };
+  };
+
+  const withThinkingConfig = <T extends Record<string, unknown>>(body: T) => {
+    const { thinkingConfig } = getCurrentModelConfig();
+    return thinkingConfig ? { ...body, thinkingConfig } : body;
   };
 
   // Auto-start generation when session is loaded
@@ -305,11 +312,13 @@ function GenerationPreviewContent() {
         const res = await fetch('/api/web-search', {
           method: 'POST',
           headers: getApiHeaders(),
-          body: JSON.stringify({
-            query: currentSession.requirements.requirement,
-            pdfText: currentSession.pdfText || undefined,
-            apiKey: wsApiKey || undefined,
-          }),
+          body: JSON.stringify(
+            withThinkingConfig({
+              query: currentSession.requirements.requirement,
+              pdfText: currentSession.pdfText || undefined,
+              apiKey: wsApiKey || undefined,
+            }),
+          ),
           signal,
         });
 
@@ -381,13 +390,15 @@ function GenerationPreviewContent() {
           fetch('/api/generate/scene-outlines-stream', {
             method: 'POST',
             headers: getApiHeaders(),
-            body: JSON.stringify({
-              requirements: currentSession.requirements,
-              pdfText: currentSession.pdfText,
-              pdfImages: currentSession.pdfImages,
-              imageMapping,
-              researchContext: currentSession.researchContext,
-            }),
+            body: JSON.stringify(
+              withThinkingConfig({
+                requirements: currentSession.requirements,
+                pdfText: currentSession.pdfText,
+                pdfImages: currentSession.pdfImages,
+                imageMapping,
+                researchContext: currentSession.researchContext,
+              }),
+            ),
             signal,
           })
             .then((res) => {
@@ -555,7 +566,10 @@ function GenerationPreviewContent() {
           ];
 
           const getAvailableVoicesForGeneration = () => {
-            const providers = getAvailableProvidersWithVoices(settings.ttsProvidersConfig);
+            const providers = getAvailableProvidersWithVoices(
+              settings.ttsProvidersConfig,
+              voxcpmProfiles,
+            );
             return providers.flatMap((p) =>
               p.voices.map((v) => ({
                 providerId: p.providerId,
@@ -568,14 +582,19 @@ function GenerationPreviewContent() {
           const agentResp = await fetch('/api/generate/agent-profiles', {
             method: 'POST',
             headers: getApiHeaders(),
-            body: JSON.stringify({
-              stageInfo: { name: stage.name, description: stage.description },
-              sceneOutlines: outlines.map((o) => ({ title: o.title, description: o.description })),
-              languageDirective,
-              availableAvatars: allAvatars.map((a) => a.path),
-              avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
-              availableVoices: getAvailableVoicesForGeneration(),
-            }),
+            body: JSON.stringify(
+              withThinkingConfig({
+                stageInfo: { name: stage.name, description: stage.description },
+                sceneOutlines: outlines.map((o) => ({
+                  title: o.title,
+                  description: o.description,
+                })),
+                languageDirective,
+                availableAvatars: allAvatars.map((a) => a.path),
+                avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
+                availableVoices: getAvailableVoicesForGeneration(),
+              }),
+            ),
             signal,
           });
 
@@ -679,16 +698,18 @@ function GenerationPreviewContent() {
       const contentResp = await fetch('/api/generate/scene-content', {
         method: 'POST',
         headers: getApiHeaders(),
-        body: JSON.stringify({
-          outline: firstOutline,
-          allOutlines: outlines,
-          pdfImages: currentSession.pdfImages,
-          imageMapping,
-          stageInfo,
-          stageId: stage.id,
-          agents,
-          languageDirective,
-        }),
+        body: JSON.stringify(
+          withThinkingConfig({
+            outline: firstOutline,
+            allOutlines: outlines,
+            pdfImages: currentSession.pdfImages,
+            imageMapping,
+            stageInfo,
+            stageId: stage.id,
+            agents,
+            languageDirective,
+          }),
+        ),
         signal,
       });
 
@@ -709,16 +730,18 @@ function GenerationPreviewContent() {
       const actionsResp = await fetch('/api/generate/scene-actions', {
         method: 'POST',
         headers: getApiHeaders(),
-        body: JSON.stringify({
-          outline: contentData.effectiveOutline || firstOutline,
-          allOutlines: outlines,
-          content: contentData.content,
-          stageId: stage.id,
-          agents,
-          previousSpeeches: [],
-          userProfile,
-          languageDirective,
-        }),
+        body: JSON.stringify(
+          withThinkingConfig({
+            outline: contentData.effectiveOutline || firstOutline,
+            allOutlines: outlines,
+            content: contentData.content,
+            stageId: stage.id,
+            agents,
+            previousSpeeches: [],
+            userProfile,
+            languageDirective,
+          }),
+        ),
         signal,
       });
 
@@ -735,6 +758,16 @@ function GenerationPreviewContent() {
       // Generate TTS for first scene (part of actions step — blocking)
       if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
         const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+        const providerOptions =
+          settings.ttsProviderId === 'voxcpm-tts'
+            ? {
+                ...(ttsProviderConfig?.providerOptions || {}),
+                ...(await getVoxCPMProviderOptions(settings.ttsVoice, {
+                  role: 'teacher',
+                  language: languageDirective,
+                })),
+              }
+            : undefined;
         const speechActions = (data.scene.actions || []).filter(
           (a: { type: string; text?: string }) => a.type === 'speech' && a.text,
         );
@@ -756,9 +789,11 @@ function GenerationPreviewContent() {
                 ttsSpeed: settings.ttsSpeed,
                 ttsApiKey: ttsProviderConfig?.apiKey || undefined,
                 ttsBaseUrl:
+                  ttsProviderConfig?.serverBaseUrl ||
                   ttsProviderConfig?.baseUrl ||
                   ttsProviderConfig?.customDefaultBaseUrl ||
                   undefined,
+                ttsProviderOptions: providerOptions,
               }),
               signal,
             });

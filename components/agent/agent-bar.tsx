@@ -10,6 +10,8 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { resolveAgentVoice, getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { playBrowserTTSPreview } from '@/lib/audio/browser-tts-preview';
+import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import {
   Sparkles,
   ChevronDown,
@@ -21,11 +23,43 @@ import {
   MessageSquare,
   Minus,
   Plus,
+  Search,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { ProviderWithVoices } from '@/lib/audio/voice-resolver';
+
+function matchesVoiceQuery(value: string | undefined, query: string): boolean {
+  return !!value?.toLowerCase().includes(query);
+}
+
+function getFilteredModelGroups(provider: ProviderWithVoices, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return provider.modelGroups;
+
+  return provider.modelGroups
+    .map((group) => {
+      const groupMatches =
+        matchesVoiceQuery(provider.providerName, normalizedQuery) ||
+        matchesVoiceQuery(provider.providerId, normalizedQuery) ||
+        matchesVoiceQuery(group.modelName, normalizedQuery) ||
+        matchesVoiceQuery(group.modelId, normalizedQuery);
+      const voices = group.voices.filter(
+        (voice) =>
+          groupMatches ||
+          matchesVoiceQuery(voice.name, normalizedQuery) ||
+          matchesVoiceQuery(voice.id, normalizedQuery) ||
+          matchesVoiceQuery(voice.language, normalizedQuery),
+      );
+      return { ...group, voices };
+    })
+    .filter((group) => group.voices.length > 0);
+}
+
+function isNonPreviewableVoice(providerId: TTSProviderId, voiceId: string): boolean {
+  return providerId === VOXCPM_TTS_PROVIDER_ID && voiceId === VOXCPM_AUTO_VOICE_ID;
+}
 
 function AgentVoicePill({
   agent,
@@ -38,20 +72,28 @@ function AgentVoicePill({
   availableProviders: ProviderWithVoices[];
   disabled?: boolean;
 }) {
+  const { t, locale } = useI18n();
   const updateAgent = useAgentRegistry((s) => s.updateAgent);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const resolved = resolveAgentVoice(agent, agentIndex, availableProviders);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [voiceQuery, setVoiceQuery] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const previewCancelRef = useRef<(() => void) | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewAbortRef = useRef<AbortController | null>(null);
+  const visibleProviderGroups = availableProviders
+    .map((provider) => ({
+      provider,
+      groups: getFilteredModelGroups(provider, voiceQuery),
+    }))
+    .filter(({ groups }) => groups.length > 0);
 
   const displayName = (() => {
     for (const p of availableProviders) {
       if (p.providerId === resolved.providerId) {
         const v = p.voices.find((voice) => voice.id === resolved.voiceId);
-        if (v) return v.name;
+        if (v) return v.id === VOXCPM_AUTO_VOICE_ID ? t('settings.voxcpmAutoVoice') : v.name;
       }
     }
     return resolved.voiceId;
@@ -71,12 +113,7 @@ function AgentVoicePill({
   }, []);
 
   const handlePreview = useCallback(
-    async (
-      providerId: TTSProviderId,
-      voiceId: string,
-      modelId?: string,
-      voiceLanguage?: string,
-    ) => {
+    async (providerId: TTSProviderId, voiceId: string, modelId?: string) => {
       const key = `${providerId}::${voiceId}`;
       if (previewingId === key) {
         stopPreview();
@@ -85,8 +122,7 @@ function AgentVoicePill({
       stopPreview();
       setPreviewingId(key);
 
-      const isEnglish = voiceLanguage?.startsWith('en') ?? false;
-      const previewText = isEnglish ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
+      const previewText = t('settings.ttsTestTextDefault');
 
       if (providerId === 'browser-native-tts') {
         const { promise, cancel } = playBrowserTTSPreview({ text: previewText, voice: voiceId });
@@ -105,6 +141,18 @@ function AgentVoicePill({
         const controller = new AbortController();
         previewAbortRef.current = controller;
         const providerConfig = ttsProvidersConfig[providerId];
+        const providerOptions =
+          providerId === 'voxcpm-tts'
+            ? {
+                ...(providerConfig?.providerOptions || {}),
+                ...(await getVoxCPMProviderOptions(voiceId, {
+                  agentName: agent.name,
+                  role: agent.role,
+                  persona: agent.persona,
+                  locale,
+                })),
+              }
+            : undefined;
         const res = await fetch('/api/generate/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -120,6 +168,7 @@ function AgentVoicePill({
               providerConfig?.serverBaseUrl ||
               providerConfig?.baseUrl ||
               providerConfig?.customDefaultBaseUrl,
+            ttsProviderOptions: providerOptions,
           }),
           signal: controller.signal,
         });
@@ -136,7 +185,16 @@ function AgentVoicePill({
         setPreviewingId(null);
       }
     },
-    [previewingId, stopPreview, ttsProvidersConfig],
+    [
+      agent.name,
+      agent.persona,
+      agent.role,
+      locale,
+      previewingId,
+      stopPreview,
+      t,
+      ttsProvidersConfig,
+    ],
   );
 
   // Cleanup on unmount
@@ -160,7 +218,10 @@ function AgentVoicePill({
       open={popoverOpen}
       onOpenChange={(open) => {
         setPopoverOpen(open);
-        if (!open) stopPreview();
+        if (!open) {
+          setVoiceQuery('');
+          stopPreview();
+        }
       }}
     >
       <PopoverTrigger asChild>
@@ -179,77 +240,102 @@ function AgentVoicePill({
         side="bottom"
         align="end"
         sideOffset={4}
-        className="w-56 px-1 pb-1 pt-0 max-h-64 overflow-y-auto"
+        className="w-80 p-0 sm:w-96"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        {availableProviders.map((provider) =>
-          provider.modelGroups.map((group) => (
-            <div key={`${provider.providerId}::${group.modelId}`}>
-              <div className="text-[11px] text-muted-foreground/60 font-medium px-2 py-1 sticky top-0 bg-popover">
-                {group.modelId
-                  ? `${provider.providerName} · ${group.modelName}`
-                  : provider.providerName}
-              </div>
-              {group.voices.map((voice) => {
-                const isActive =
-                  resolved.providerId === provider.providerId &&
-                  resolved.voiceId === voice.id &&
-                  (resolved.modelId || '') === (group.modelId || '');
-                const previewKey = `${provider.providerId}::${voice.id}`;
-                const isPreviewing = previewingId === previewKey;
-                return (
-                  <div
-                    key={previewKey}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-sm transition-colors',
-                      isActive ? 'bg-primary/10' : 'hover:bg-muted',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        updateAgent(agent.id, {
-                          voiceConfig: {
-                            providerId: provider.providerId,
-                            modelId: group.modelId || undefined,
-                            voiceId: voice.id,
-                          },
-                        });
-                        setPopoverOpen(false);
-                      }}
-                      className={cn(
-                        'flex-1 text-left text-[13px] px-2 py-1.5 min-w-0 truncate',
-                        isActive ? 'text-primary font-medium' : 'text-foreground',
-                      )}
-                    >
-                      {voice.name}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePreview(provider.providerId, voice.id, group.modelId, voice.language);
-                      }}
-                      className={cn(
-                        'shrink-0 size-6 flex items-center justify-center rounded-sm transition-colors',
-                        isPreviewing
-                          ? 'text-primary'
-                          : 'text-muted-foreground/40 hover:text-muted-foreground',
-                      )}
-                    >
-                      {isPreviewing ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <Volume2 className="size-3.5" />
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
+        <div className="border-b border-border/50 p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <input
+              value={voiceQuery}
+              onChange={(e) => setVoiceQuery(e.target.value)}
+              autoFocus
+              aria-label={t('agentBar.searchVoice')}
+              placeholder={t('agentBar.searchVoice')}
+              className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/10"
+            />
+          </div>
+        </div>
+        <div className="max-h-80 overflow-y-auto p-1">
+          {visibleProviderGroups.length === 0 && (
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground/60">
+              {t('agentBar.noMatchingVoices')}
             </div>
-          )),
-        )}
+          )}
+          {visibleProviderGroups.map(({ provider, groups }) =>
+            groups.map((group) => (
+              <div key={`${provider.providerId}::${group.modelId}`}>
+                <div className="sticky top-0 bg-popover px-2 py-1 text-[11px] font-medium text-muted-foreground/60">
+                  {group.modelId
+                    ? `${provider.providerName} · ${group.modelName}`
+                    : provider.providerName}
+                </div>
+                {group.voices.map((voice) => {
+                  const isActive =
+                    resolved.providerId === provider.providerId &&
+                    resolved.voiceId === voice.id &&
+                    (resolved.modelId || '') === (group.modelId || '');
+                  const previewKey = `${provider.providerId}::${voice.id}`;
+                  const isPreviewing = previewingId === previewKey;
+                  const canPreview = !isNonPreviewableVoice(provider.providerId, voice.id);
+                  return (
+                    <div
+                      key={previewKey}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-sm transition-colors',
+                        isActive ? 'bg-primary/10' : 'hover:bg-muted',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          updateAgent(agent.id, {
+                            voiceConfig: {
+                              providerId: provider.providerId,
+                              modelId: group.modelId || undefined,
+                              voiceId: voice.id,
+                            },
+                          });
+                          setPopoverOpen(false);
+                        }}
+                        className={cn(
+                          'flex-1 text-left text-[13px] px-2 py-1.5 min-w-0 truncate',
+                          isActive ? 'text-primary font-medium' : 'text-foreground',
+                        )}
+                      >
+                        {voice.id === VOXCPM_AUTO_VOICE_ID
+                          ? t('settings.voxcpmAutoVoice')
+                          : voice.name}
+                      </button>
+                      {canPreview && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePreview(provider.providerId, voice.id, group.modelId);
+                          }}
+                          className={cn(
+                            'flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
+                            isPreviewing
+                              ? 'text-primary'
+                              : 'text-muted-foreground/40 hover:text-muted-foreground',
+                          )}
+                        >
+                          {isPreviewing ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Volume2 className="size-3.5" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )),
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -266,6 +352,7 @@ function TeacherVoicePill({
   availableProviders: ProviderWithVoices[];
   disabled?: boolean;
 }) {
+  const { t, locale } = useI18n();
   const ttsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const ttsVoice = useSettingsStore((s) => s.ttsVoice);
   const setTTSProvider = useSettingsStore((s) => s.setTTSProvider);
@@ -273,16 +360,23 @@ function TeacherVoicePill({
   const setTTSProviderConfig = useSettingsStore((s) => s.setTTSProviderConfig);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const [popoverOpen, setPopoverOpen] = useState(false);
+  const [voiceQuery, setVoiceQuery] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
   const previewCancelRef = useRef<(() => void) | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewAbortRef = useRef<AbortController | null>(null);
+  const visibleProviderGroups = availableProviders
+    .map((provider) => ({
+      provider,
+      groups: getFilteredModelGroups(provider, voiceQuery),
+    }))
+    .filter(({ groups }) => groups.length > 0);
 
   const displayName = (() => {
     for (const p of availableProviders) {
       if (p.providerId === ttsProviderId) {
         const v = p.voices.find((voice) => voice.id === ttsVoice);
-        if (v) return v.name;
+        if (v) return v.id === VOXCPM_AUTO_VOICE_ID ? t('settings.voxcpmAutoVoice') : v.name;
       }
     }
     return ttsVoice || 'default';
@@ -302,12 +396,7 @@ function TeacherVoicePill({
   }, []);
 
   const handlePreview = useCallback(
-    async (
-      providerId: TTSProviderId,
-      voiceId: string,
-      modelId?: string,
-      voiceLanguage?: string,
-    ) => {
+    async (providerId: TTSProviderId, voiceId: string, modelId?: string) => {
       const key = `${providerId}::${voiceId}`;
       if (previewingId === key) {
         stopPreview();
@@ -316,8 +405,7 @@ function TeacherVoicePill({
       stopPreview();
       setPreviewingId(key);
 
-      const isEnglish = voiceLanguage?.startsWith('en') ?? false;
-      const previewText = isEnglish ? 'Welcome to AI Classroom' : '欢迎来到AI课堂';
+      const previewText = t('settings.ttsTestTextDefault');
 
       if (providerId === 'browser-native-tts') {
         const { promise, cancel } = playBrowserTTSPreview({ text: previewText, voice: voiceId });
@@ -335,6 +423,17 @@ function TeacherVoicePill({
         const controller = new AbortController();
         previewAbortRef.current = controller;
         const providerConfig = ttsProvidersConfig[providerId];
+        const providerOptions =
+          providerId === 'voxcpm-tts'
+            ? {
+                ...(providerConfig?.providerOptions || {}),
+                ...(await getVoxCPMProviderOptions(voiceId, {
+                  agentName: 'Teacher',
+                  role: 'teacher',
+                  locale,
+                })),
+              }
+            : undefined;
         const res = await fetch('/api/generate/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -350,6 +449,7 @@ function TeacherVoicePill({
               providerConfig?.serverBaseUrl ||
               providerConfig?.baseUrl ||
               providerConfig?.customDefaultBaseUrl,
+            ttsProviderOptions: providerOptions,
           }),
           signal: controller.signal,
         });
@@ -365,7 +465,7 @@ function TeacherVoicePill({
         setPreviewingId(null);
       }
     },
-    [previewingId, stopPreview, ttsProvidersConfig],
+    [locale, previewingId, stopPreview, t, ttsProvidersConfig],
   );
 
   useEffect(() => () => stopPreview(), [stopPreview]);
@@ -388,7 +488,10 @@ function TeacherVoicePill({
       open={popoverOpen}
       onOpenChange={(open) => {
         setPopoverOpen(open);
-        if (!open) stopPreview();
+        if (!open) {
+          setVoiceQuery('');
+          stopPreview();
+        }
       }}
     >
       <PopoverTrigger asChild>
@@ -407,76 +510,101 @@ function TeacherVoicePill({
         side="bottom"
         align="end"
         sideOffset={4}
-        className="w-56 px-1 pb-1 pt-0 max-h-64 overflow-y-auto"
+        className="w-80 p-0 sm:w-96"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
-        {availableProviders.map((provider) =>
-          provider.modelGroups.map((group) => (
-            <div key={`${provider.providerId}::${group.modelId}`}>
-              <div className="text-[11px] text-muted-foreground/60 font-medium px-2 py-1 sticky top-0 bg-popover">
-                {group.modelId
-                  ? `${provider.providerName} · ${group.modelName}`
-                  : provider.providerName}
-              </div>
-              {group.voices.map((voice) => {
-                const currentModelId = ttsProvidersConfig[ttsProviderId]?.modelId || '';
-                const isActive =
-                  ttsProviderId === provider.providerId &&
-                  ttsVoice === voice.id &&
-                  currentModelId === (group.modelId || '');
-                const previewKey = `${provider.providerId}::${voice.id}`;
-                const isPreviewing = previewingId === previewKey;
-                return (
-                  <div
-                    key={previewKey}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-sm transition-colors',
-                      isActive ? 'bg-primary/10' : 'hover:bg-muted',
-                    )}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setTTSProvider(provider.providerId);
-                        setTTSVoice(voice.id);
-                        if (group.modelId) {
-                          setTTSProviderConfig(provider.providerId, { modelId: group.modelId });
-                        }
-                        setPopoverOpen(false);
-                      }}
-                      className={cn(
-                        'flex-1 text-left text-[13px] px-2 py-1.5 min-w-0 truncate',
-                        isActive ? 'text-primary font-medium' : 'text-foreground',
-                      )}
-                    >
-                      {voice.name}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handlePreview(provider.providerId, voice.id, group.modelId, voice.language);
-                      }}
-                      className={cn(
-                        'shrink-0 size-6 flex items-center justify-center rounded-sm transition-colors',
-                        isPreviewing
-                          ? 'text-primary'
-                          : 'text-muted-foreground/40 hover:text-muted-foreground',
-                      )}
-                    >
-                      {isPreviewing ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <Volume2 className="size-3.5" />
-                      )}
-                    </button>
-                  </div>
-                );
-              })}
+        <div className="border-b border-border/50 p-2">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/50" />
+            <input
+              value={voiceQuery}
+              onChange={(e) => setVoiceQuery(e.target.value)}
+              autoFocus
+              aria-label={t('agentBar.searchVoice')}
+              placeholder={t('agentBar.searchVoice')}
+              className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-3 text-sm outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-primary/50 focus:ring-2 focus:ring-primary/10"
+            />
+          </div>
+        </div>
+        <div className="max-h-80 overflow-y-auto p-1">
+          {visibleProviderGroups.length === 0 && (
+            <div className="px-3 py-6 text-center text-sm text-muted-foreground/60">
+              {t('agentBar.noMatchingVoices')}
             </div>
-          )),
-        )}
+          )}
+          {visibleProviderGroups.map(({ provider, groups }) =>
+            groups.map((group) => (
+              <div key={`${provider.providerId}::${group.modelId}`}>
+                <div className="sticky top-0 bg-popover px-2 py-1 text-[11px] font-medium text-muted-foreground/60">
+                  {group.modelId
+                    ? `${provider.providerName} · ${group.modelName}`
+                    : provider.providerName}
+                </div>
+                {group.voices.map((voice) => {
+                  const currentModelId = ttsProvidersConfig[ttsProviderId]?.modelId || '';
+                  const isActive =
+                    ttsProviderId === provider.providerId &&
+                    ttsVoice === voice.id &&
+                    currentModelId === (group.modelId || '');
+                  const previewKey = `${provider.providerId}::${voice.id}`;
+                  const isPreviewing = previewingId === previewKey;
+                  const canPreview = !isNonPreviewableVoice(provider.providerId, voice.id);
+                  return (
+                    <div
+                      key={previewKey}
+                      className={cn(
+                        'flex items-center gap-1.5 rounded-sm transition-colors',
+                        isActive ? 'bg-primary/10' : 'hover:bg-muted',
+                      )}
+                    >
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setTTSProvider(provider.providerId);
+                          setTTSVoice(voice.id);
+                          if (group.modelId) {
+                            setTTSProviderConfig(provider.providerId, { modelId: group.modelId });
+                          }
+                          setPopoverOpen(false);
+                        }}
+                        className={cn(
+                          'flex-1 text-left text-[13px] px-2 py-1.5 min-w-0 truncate',
+                          isActive ? 'text-primary font-medium' : 'text-foreground',
+                        )}
+                      >
+                        {voice.id === VOXCPM_AUTO_VOICE_ID
+                          ? t('settings.voxcpmAutoVoice')
+                          : voice.name}
+                      </button>
+                      {canPreview && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handlePreview(provider.providerId, voice.id, group.modelId);
+                          }}
+                          className={cn(
+                            'flex size-6 shrink-0 items-center justify-center rounded-sm transition-colors',
+                            isPreviewing
+                              ? 'text-primary'
+                              : 'text-muted-foreground/40 hover:text-muted-foreground',
+                          )}
+                        >
+                          {isPreviewing ? (
+                            <Loader2 className="size-3.5 animate-spin" />
+                          ) : (
+                            <Volume2 className="size-3.5" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )),
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -496,6 +624,7 @@ export function AgentBar() {
 
   const [open, setOpen] = useState(false);
   const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
   const containerRef = useRef<HTMLDivElement>(null);
 
   // Load browser native TTS voices
@@ -513,7 +642,7 @@ export function AgentBar() {
   const selectedAgents = agents.filter((a) => selectedAgentIds.includes(a.id));
   const nonTeacherSelected = selectedAgents.filter((a) => a.role !== 'teacher');
 
-  const serverProviders = getAvailableProvidersWithVoices(ttsProvidersConfig);
+  const serverProviders = getAvailableProvidersWithVoices(ttsProvidersConfig, voxcpmProfiles);
   const availableProviders: ProviderWithVoices[] = [
     ...serverProviders,
     ...(browserVoices.length > 0

@@ -19,6 +19,7 @@ import { AgentMCP } from './mcp/agent-mcp';
 import { IssueboardMCP } from './mcp/issueboard-mcp';
 import { buildPBLSystemPrompt } from './pbl-system-prompt';
 import type { PBLMode } from './types';
+import type { ThinkingConfig } from '@/lib/types/provider';
 
 export interface GeneratePBLConfig {
   projectTopic: string;
@@ -43,6 +44,7 @@ export async function generatePBLContent(
   config: GeneratePBLConfig,
   model: LanguageModel,
   callbacks?: GeneratePBLCallbacks,
+  thinkingConfig?: ThinkingConfig,
 ): Promise<PBLProjectConfig> {
   const { languageDirective } = config;
 
@@ -302,6 +304,8 @@ export async function generatePBLContent(
       },
     },
     'pbl-generate',
+    undefined,
+    thinkingConfig,
   );
 
   // Check if mode reached idle; if not, the LLM may have stopped early
@@ -314,7 +318,7 @@ export async function generatePBLContent(
   callbacks?.onProgress?.('PBL structure generated. Running post-processing...');
 
   // Post-processing: activate first issue and generate initial questions
-  await postProcessPBL(projectConfig, model, languageDirective, callbacks);
+  await postProcessPBL(projectConfig, model, languageDirective, callbacks, thinkingConfig);
 
   callbacks?.onProgress?.('PBL project generation complete!');
 
@@ -332,6 +336,7 @@ async function postProcessPBL(
   model: LanguageModel,
   languageDirective: string,
   callbacks?: GeneratePBLCallbacks,
+  thinkingConfig?: ThinkingConfig,
 ): Promise<void> {
   const { issueboard, agents } = config;
 
@@ -385,6 +390,8 @@ Format the questions as a numbered list.`;
         prompt: context,
       },
       'pbl-post-process',
+      undefined,
+      thinkingConfig,
     );
 
     const generatedQuestions = questionResult.text;

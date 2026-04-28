@@ -16,10 +16,10 @@ import { NextRequest } from 'next/server';
 import { statelessGenerate } from '@/lib/orchestration/stateless-generate';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
-import type { ThinkingConfig } from '@/lib/types/provider';
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModel } from '@/lib/server/resolve-model';
+import type { ThinkingConfig } from '@/lib/types/provider';
 const log = createLogger('Chat API');
 
 // Allow streaming responses up to 60 seconds
@@ -117,10 +117,10 @@ export async function POST(req: NextRequest) {
       try {
         startHeartbeat();
 
-        // Default: thinking disabled for low-latency chat. Callers (e.g. eval
-        // harness) can opt in per-request by sending `thinking: { enabled: true }`
-        // in the body.
-        const thinkingConfig: ThinkingConfig = body.thinking ?? { enabled: false };
+        // Default: thinking disabled for low-latency chat. UI requests send
+        // `thinkingConfig`; eval harnesses can still opt in via `thinking`.
+        const thinkingConfig: ThinkingConfig = body.thinkingConfig ??
+          body.thinking ?? { mode: 'disabled', enabled: false };
 
         const generator = statelessGenerate(
           {

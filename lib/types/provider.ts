@@ -33,17 +33,74 @@ export type ProviderId = BuiltInProviderId | `custom-${string}`;
  */
 export type ProviderType = 'openai' | 'anthropic' | 'google';
 
+export type ThinkingControlType =
+  | 'none'
+  | 'toggle'
+  | 'toggle-budget'
+  | 'effort'
+  | 'level'
+  | 'mode'
+  | 'budget-only';
+
+export type ThinkingMode = 'default' | 'disabled' | 'enabled' | 'auto';
+export type ThinkingEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+export type ThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
+
+export type ThinkingRequestAdapter =
+  | 'none'
+  | 'openai'
+  | 'anthropic'
+  | 'google'
+  | 'qwen'
+  | 'deepseek'
+  | 'kimi'
+  | 'glm'
+  | 'siliconflow'
+  | 'doubao'
+  | 'openrouter'
+  | 'hunyuan'
+  | 'xiaomi';
+
 /**
  * Describes a model's thinking/reasoning API control capability.
  * Models without thinking support simply omit this field from capabilities.
  */
 export interface ThinkingCapability {
+  /** Which UI control should be rendered for this model. */
+  control?: ThinkingControlType;
+  /** Which provider-specific adapter maps the unified config to request params. */
+  requestAdapter?: ThinkingRequestAdapter;
+  /** Default mode when OpenMAIC does not send an explicit config. */
+  defaultMode?: ThinkingMode;
+  /** Allowed effort values for effort-based models. */
+  effortValues?: ThinkingEffort[];
+  /** Default effort for effort-based models. */
+  defaultEffort?: ThinkingEffort;
+  /** Allowed level values for level-based models. */
+  levelValues?: ThinkingLevel[];
+  /** Default level for level-based models. */
+  defaultLevel?: ThinkingLevel;
+  /** Allowed budget range for budget-based models. */
+  budgetRange?: {
+    min: number;
+    max: number;
+    step?: number;
+    allowDynamic?: boolean;
+    disableValue?: number;
+  };
+  /** Default token budget used when the user enables thinking without a value. */
+  defaultBudgetTokens?: number;
+  /** Anthropic-specific thinking transport metadata. */
+  anthropicThinking?: {
+    type: 'adaptive' | 'enabled';
+    budgetByEffort?: Partial<Record<ThinkingEffort, number>>;
+  };
   /** Can thinking be fully disabled via API? */
-  toggleable: boolean;
+  toggleable?: boolean;
   /** Can thinking budget/effort intensity be adjusted? */
-  budgetAdjustable: boolean;
+  budgetAdjustable?: boolean;
   /** Is thinking enabled by default (when no config is passed)? */
-  defaultEnabled: boolean;
+  defaultEnabled?: boolean;
 }
 
 /**
@@ -51,6 +108,12 @@ export interface ThinkingCapability {
  * The adapter maps this to provider-specific providerOptions.
  */
 export interface ThinkingConfig {
+  /** Modern mode control. Kept separate from legacy enabled for provider APIs with auto/default. */
+  mode?: ThinkingMode;
+  /** Discrete reasoning effort used by OpenAI/OpenRouter-style APIs. */
+  effort?: ThinkingEffort;
+  /** Discrete thinking level used by Gemini 3-style APIs. */
+  level?: ThinkingLevel;
   /**
    * Whether thinking should be enabled.
    * - true: enable (use model default or specified budget)
@@ -63,6 +126,8 @@ export interface ThinkingConfig {
    * Adapter maps to closest supported value per provider.
    */
   budgetTokens?: number;
+  /** Provider-specific option for APIs that can suppress reasoning text from responses. */
+  excludeReasoningOutput?: boolean;
 }
 
 /**

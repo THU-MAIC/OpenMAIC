@@ -17,7 +17,7 @@ import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 
 const log = createLogger('Scene Content API');
 
@@ -69,8 +69,13 @@ export async function POST(req: NextRequest) {
 
     const outline: SceneOutline = { ...rawOutline };
 
-    // ── Model resolution from request headers ──
-    const { model: languageModel, modelInfo, modelString } = await resolveModelFromHeaders(req);
+    // ── Model resolution from request headers/body ──
+    const {
+      model: languageModel,
+      modelInfo,
+      modelString,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body);
     outlineTitle = rawOutline?.title;
     resolvedModelString = modelString;
 
@@ -97,6 +102,8 @@ export async function POST(req: NextRequest) {
             maxOutputTokens: modelInfo?.outputWindow,
           },
           'scene-content',
+          undefined,
+          thinkingConfig,
         );
         return result.text;
       }
@@ -108,6 +115,8 @@ export async function POST(req: NextRequest) {
           maxOutputTokens: modelInfo?.outputWindow,
         },
         'scene-content',
+        undefined,
+        thinkingConfig,
       );
       return result.text;
     };
@@ -145,6 +154,7 @@ export async function POST(req: NextRequest) {
       generatedMediaMapping,
       agents,
       languageDirective,
+      thinkingConfig,
     });
 
     if (!content) {

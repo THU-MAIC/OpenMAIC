@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 const log = createLogger('Quiz Grade');
 
 interface GradeRequest {
@@ -43,8 +43,8 @@ export async function POST(req: NextRequest) {
       return apiError('INVALID_REQUEST', 400, 'points must be a positive number');
     }
 
-    // Resolve model from request headers
-    const { model: languageModel } = await resolveModelFromHeaders(req);
+    // Resolve model from request headers/body
+    const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(req, body);
 
     const isZh = language === 'zh-CN';
 
@@ -71,6 +71,8 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
         prompt: userPrompt,
       },
       'quiz-grade',
+      undefined,
+      thinkingConfig,
     );
 
     // Parse the LLM response as JSON

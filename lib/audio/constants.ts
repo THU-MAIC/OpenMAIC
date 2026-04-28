@@ -36,6 +36,12 @@ import type {
   ASRProviderId,
   ASRProviderConfig,
 } from './types';
+import {
+  VOXCPM_AUTO_VOICE,
+  VOXCPM_AUTO_VOICE_ID,
+  VOXCPM_TTS_PROVIDER_ID,
+  VOXCPM_VLLM_MODEL_ID,
+} from './voxcpm';
 
 /**
  * Default supported languages for custom OpenAI-compatible ASR providers.
@@ -290,7 +296,7 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
         description: 'glmVoiceLuodo',
       },
     ],
-    supportedFormats: ['wav'],
+    supportedFormats: ['mp3', 'wav'],
     speedRange: { min: 0.5, max: 2.0, default: 1.0 },
   },
 
@@ -737,6 +743,23 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     },
   },
 
+  'voxcpm-tts': {
+    id: VOXCPM_TTS_PROVIDER_ID,
+    name: 'VoxCPM2',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://127.0.0.1:8000',
+    icon: '/logos/voxcpm-icon.png',
+    models: [{ id: VOXCPM_VLLM_MODEL_ID, name: 'VoxCPM2' }],
+    defaultModelId: VOXCPM_VLLM_MODEL_ID,
+    voices: [VOXCPM_AUTO_VOICE],
+    supportedFormats: ['mp3', 'wav'],
+    speedRange: {
+      min: 0.5,
+      max: 2.0,
+      default: 1.0,
+    },
+  },
+
   'doubao-tts': {
     id: 'doubao-tts',
     name: '豆包 TTS 2.0（火山引擎）',
@@ -1130,6 +1153,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'azure-tts': 'zh-CN-XiaoxiaoNeural',
   'glm-tts': 'tongtong',
   'qwen-tts': 'Cherry',
+  'voxcpm-tts': VOXCPM_AUTO_VOICE_ID,
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
@@ -1141,6 +1165,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'azure-tts': '',
   'glm-tts': 'glm-tts',
   'qwen-tts': 'qwen3-tts-flash',
+  'voxcpm-tts': VOXCPM_VLLM_MODEL_ID,
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',

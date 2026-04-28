@@ -34,6 +34,8 @@ import type {
   ModelConfig,
   ThinkingConfig,
 } from '@/lib/types/provider';
+import { applyModelMetadata, getCatalogThinkingCapability } from './model-metadata';
+import { getThinkingMode, pickThinkingBudget } from './thinking-config';
 import { createLogger } from '@/lib/logger';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
 // which is server-only, and this file is also used on the client via
@@ -137,171 +139,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
             toggleable: true,
             budgetAdjustable: true,
             defaultEnabled: false,
-          },
-        },
-      },
-      {
-        id: 'gpt-5.2',
-        name: 'GPT-5.2',
-        contextWindow: 400000,
-        outputWindow: 128000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: true,
-            defaultEnabled: false,
-          },
-        },
-      },
-      {
-        id: 'gpt-5.1',
-        name: 'GPT-5.1',
-        contextWindow: 400000,
-        outputWindow: 128000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: true,
-            defaultEnabled: false,
-          },
-        },
-      },
-      {
-        id: 'gpt-5',
-        name: 'GPT-5',
-        contextWindow: 400000,
-        outputWindow: 128000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'gpt-5-mini',
-        name: 'GPT-5-mini',
-        contextWindow: 128000,
-        outputWindow: 4096,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'gpt-5-nano',
-        name: 'GPT-5-nano',
-        contextWindow: 128000,
-        outputWindow: 4096,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'o4-mini',
-        name: 'o4-mini',
-        contextWindow: 200000,
-        outputWindow: 100000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'o3',
-        name: 'o3',
-        contextWindow: 200000,
-        outputWindow: 100000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'o3-mini',
-        name: 'o3-mini',
-        contextWindow: 200000,
-        outputWindow: 100000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'gpt-4o',
-        name: 'GPT-4o',
-        contextWindow: 128000,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'gpt-4o-mini',
-        name: 'GPT-4o-mini',
-        contextWindow: 128000,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'gpt-4-turbo',
-        name: 'GPT-4-turbo',
-        contextWindow: 128000,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'o1',
-        name: 'o1',
-        contextWindow: 200000,
-        outputWindow: 100000,
-        capabilities: {
-          streaming: true,
-          tools: false,
-          vision: false,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
           },
         },
       },
@@ -569,35 +406,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         outputWindow: 32000,
         capabilities: { streaming: true, tools: true, vision: true },
       },
-      // GLM-4.5 Series - Cost-effective models
-      {
-        id: 'glm-4.5-air',
-        name: 'GLM-4.5-Air',
-        contextWindow: 128000,
-        outputWindow: 96000,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'glm-4.5-airx',
-        name: 'GLM-4.5-AirX',
-        contextWindow: 128000,
-        outputWindow: 96000,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'glm-4.5-flash',
-        name: 'GLM-4.5-Flash',
-        contextWindow: 128000,
-        outputWindow: 96000,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'glm-4-long',
-        name: 'GLM-4-Long',
-        contextWindow: 1000000,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
     ],
   },
 
@@ -755,7 +563,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           vision: false,
           thinking: {
             toggleable: true,
-            budgetAdjustable: false,
+            budgetAdjustable: true,
             defaultEnabled: true,
           },
         },
@@ -771,39 +579,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           vision: false,
           thinking: {
             toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'deepseek-chat',
-        name: 'DeepSeek-Chat',
-        contextWindow: 1048576,
-        outputWindow: 393216,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
-            defaultEnabled: false,
-          },
-        },
-      },
-      {
-        id: 'deepseek-reasoner',
-        name: 'DeepSeek-Reasoner',
-        contextWindow: 1048576,
-        outputWindow: 393216,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: true,
-            budgetAdjustable: false,
+            budgetAdjustable: true,
             defaultEnabled: true,
           },
         },
@@ -872,41 +648,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           },
         },
       },
-      {
-        id: 'kimi-k2-turbo-preview',
-        name: 'Kimi K2 Turbo Preview',
-        contextWindow: 256000,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'kimi-k2-0905-preview',
-        name: 'Kimi K2 0905 Preview',
-        contextWindow: 256000,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'moonshot-v1-128k',
-        name: 'Moonshot V1 128K',
-        contextWindow: 128000,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'moonshot-v1-32k',
-        name: 'Moonshot V1 32K',
-        contextWindow: 32000,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'moonshot-v1-8k',
-        name: 'Moonshot V1 8K',
-        contextWindow: 8000,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
     ],
   },
 
@@ -923,50 +664,8 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/minimax.svg',
     models: [
       {
-        id: 'MiniMax-M2.7-highspeed',
-        name: 'MiniMax M2.7 Highspeed',
-        contextWindow: 204800,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
         id: 'MiniMax-M2.7',
         name: 'MiniMax M2.7',
-        contextWindow: 204800,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'MiniMax-M2.5-highspeed',
-        name: 'MiniMax M2.5 Highspeed',
-        contextWindow: 204800,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'MiniMax-M2.5',
-        name: 'MiniMax M2.5',
-        contextWindow: 204800,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'MiniMax-M2.1-highspeed',
-        name: 'MiniMax M2.1 Highspeed',
-        contextWindow: 204800,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'MiniMax-M2.1',
-        name: 'MiniMax M2.1',
-        contextWindow: 204800,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'MiniMax-M2',
-        name: 'MiniMax M2',
         contextWindow: 204800,
         outputWindow: 8192,
         capabilities: { streaming: true, tools: true, vision: false },
@@ -1004,13 +703,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         outputWindow: 8192,
         capabilities: { streaming: true, tools: true, vision: false },
       },
-      {
-        id: 'deepseek-ai/DeepSeek-V3',
-        name: 'DeepSeek-V3',
-        contextWindow: 128000,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
       // Qwen Series
       {
         id: 'Qwen/Qwen3-VL-32B-Instruct',
@@ -1018,35 +710,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         contextWindow: 256000,
         outputWindow: 32768,
         capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'Qwen/Qwen2.5-72B-Instruct',
-        name: 'Qwen2.5-72B-Instruct',
-        contextWindow: 128000,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'Qwen/Qwen2.5-7B-Instruct',
-        name: 'Qwen2.5-7B-Instruct',
-        contextWindow: 128000,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'Qwen/Qwen2.5-Coder-7B-Instruct',
-        name: 'Qwen2.5-Coder-7B-Instruct',
-        contextWindow: 128000,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      // MiniMax Series
-      {
-        id: 'MiniMaxAI/MiniMax-M2',
-        name: 'MiniMax-M2',
-        contextWindow: 204800,
-        outputWindow: 131072,
-        capabilities: { streaming: true, tools: true, vision: false },
       },
       // Kimi Series
       {
@@ -1186,29 +849,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         },
       },
       {
-        id: 'grok-4.20-beta-0309-reasoning',
-        name: 'Grok 4.20 Reasoning',
-        contextWindow: 2000000,
-        outputWindow: 131072,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'grok-4.20-beta-0309-non-reasoning',
-        name: 'Grok 4.20',
-        contextWindow: 2000000,
-        outputWindow: 131072,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
         id: 'grok-4-1-fast-reasoning',
         name: 'Grok 4.1 Fast Reasoning',
         contextWindow: 2000000,
@@ -1232,53 +872,9 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         capabilities: { streaming: true, tools: true, vision: true },
       },
       {
-        id: 'grok-4-fast-reasoning',
-        name: 'Grok 4 Fast Reasoning',
-        contextWindow: 2000000,
-        outputWindow: 131072,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
-        id: 'grok-4-fast-non-reasoning',
-        name: 'Grok 4 Fast',
-        contextWindow: 2000000,
-        outputWindow: 131072,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
         id: 'grok-code-fast-1',
         name: 'Grok Code Fast',
         contextWindow: 256000,
-        outputWindow: 32768,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'grok-4-0709',
-        name: 'Grok 4',
-        contextWindow: 256000,
-        outputWindow: 32768,
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'grok-3',
-        name: 'Grok 3',
-        contextWindow: 131072,
-        outputWindow: 32768,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'grok-3-mini',
-        name: 'Grok 3 Mini',
-        contextWindow: 131072,
         outputWindow: 32768,
         capabilities: { streaming: true, tools: true, vision: false },
       },
@@ -1306,36 +902,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         contextWindow: 256000,
         outputWindow: 64000,
         capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'tencent/Hy3-preview',
-        name: 'Tencent Hy3 Preview (repository ID)',
-        contextWindow: 256000,
-        outputWindow: 64000,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'hunyuan-2.0-instruct-20251111',
-        name: 'Hunyuan 2.0 Instruct',
-        contextWindow: 256000,
-        outputWindow: 64000,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'hunyuan-2.0-thinking-20251109',
-        name: 'Hunyuan 2.0 Thinking',
-        contextWindow: 256000,
-        outputWindow: 64000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: false,
-          thinking: {
-            toggleable: false,
-            budgetAdjustable: false,
-            defaultEnabled: true,
-          },
-        },
       },
     ],
   },
@@ -1406,50 +972,17 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         capabilities: { streaming: true, tools: true, vision: true },
       },
       {
-        id: 'llama3.2',
-        name: 'Llama 3.2 3B',
-        contextWindow: 131072,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
         id: 'deepseek-r1',
         name: 'DeepSeek R1',
         contextWindow: 131072,
         outputWindow: 8192,
         capabilities: { streaming: true, tools: false, vision: false },
       },
-      {
-        id: 'qwen2.5:32b',
-        name: 'Qwen 2.5 32B',
-        contextWindow: 131072,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'qwen2.5',
-        name: 'Qwen 2.5 7B',
-        contextWindow: 131072,
-        outputWindow: 8192,
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'phi4',
-        name: 'Phi-4 14B',
-        contextWindow: 16384,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: false, vision: false },
-      },
-      {
-        id: 'mistral',
-        name: 'Mistral 7B',
-        contextWindow: 32768,
-        outputWindow: 4096,
-        capabilities: { streaming: true, tools: false, vision: false },
-      },
     ],
   },
 };
+
+applyModelMetadata(PROVIDERS);
 
 /**
  * Get provider config (from built-in or unified config in localStorage)
@@ -1495,45 +1028,108 @@ export interface ModelWithInfo {
   modelInfo: ModelInfo | null;
 }
 
-/**
- * Return vendor-specific body params to inject for OpenAI-compatible providers.
- * Called from the custom fetch wrapper inside getModel().
- */
 function getCompatThinkingBodyParams(
   providerId: ProviderId,
+  modelId: string,
   config: ThinkingConfig,
 ): Record<string, unknown> | undefined {
-  if (config.enabled === false) {
-    switch (providerId) {
-      // Kimi / DeepSeek / GLM / Xiaomi use { thinking: { type: "disabled" } }
-      case 'kimi':
-      case 'deepseek':
-      case 'glm':
-      case 'xiaomi':
+  const capability = getCatalogThinkingCapability(providerId, modelId);
+  if (!capability || capability.control === 'none') return undefined;
+
+  const mode = getThinkingMode(config);
+  const budget = pickThinkingBudget(capability, config);
+
+  switch (capability.requestAdapter) {
+    case 'kimi':
+    case 'glm':
+    case 'xiaomi':
+      if (mode === 'disabled') return { thinking: { type: 'disabled' } };
+      if (mode === 'enabled') return { thinking: { type: 'enabled' } };
+      return undefined;
+
+    case 'deepseek': {
+      if (mode === 'disabled' || config.effort === 'none') {
         return { thinking: { type: 'disabled' } };
-      // Qwen / SiliconFlow use { enable_thinking: false }
-      case 'qwen':
-      case 'siliconflow':
-        return { enable_thinking: false };
-      default:
-        return undefined;
+      }
+
+      const effort = config.effort === 'max' || config.effort === 'xhigh' ? 'max' : 'high';
+      return {
+        thinking: { type: 'enabled' },
+        reasoning_effort: effort,
+      };
     }
-  }
-  if (config.enabled === true) {
-    switch (providerId) {
-      case 'kimi':
-      case 'deepseek':
-      case 'glm':
-      case 'xiaomi':
-        return { thinking: { type: 'enabled' } };
-      case 'qwen':
-      case 'siliconflow':
-        return { enable_thinking: true };
-      default:
-        return undefined;
+
+    case 'qwen': {
+      if (mode === 'disabled') return { enable_thinking: false };
+      const body: Record<string, unknown> = {};
+      if (mode === 'enabled') body.enable_thinking = true;
+      if (budget !== undefined) body.thinking_budget = budget;
+      return Object.keys(body).length > 0 ? body : undefined;
     }
+
+    case 'siliconflow': {
+      const body: Record<string, unknown> = {};
+      if (capability.control === 'toggle-budget') {
+        if (mode === 'disabled') body.enable_thinking = false;
+        if (mode === 'enabled') body.enable_thinking = true;
+      }
+      if (budget !== undefined) body.thinking_budget = budget;
+      return Object.keys(body).length > 0 ? body : undefined;
+    }
+
+    case 'doubao': {
+      if (capability.control === 'effort') {
+        const effort =
+          mode === 'disabled'
+            ? 'minimal'
+            : config.effort && capability.effortValues?.includes(config.effort)
+              ? config.effort
+              : mode === 'enabled'
+                ? capability.defaultEffort
+                : undefined;
+        return effort ? { reasoning_effort: effort } : undefined;
+      }
+      if (mode === 'auto') return { thinking: { type: 'auto' } };
+      if (mode === 'disabled') return { thinking: { type: 'disabled' } };
+      if (mode === 'enabled') return { thinking: { type: 'enabled' } };
+      return undefined;
+    }
+
+    case 'openrouter': {
+      const reasoning: Record<string, unknown> = {};
+      if (mode === 'disabled') reasoning.enabled = false;
+      if (mode === 'enabled') reasoning.enabled = true;
+      if (config.effort) reasoning.effort = config.effort;
+      if (budget !== undefined) reasoning.max_tokens = budget;
+      if (typeof config.excludeReasoningOutput === 'boolean') {
+        reasoning.exclude = config.excludeReasoningOutput;
+      }
+      return Object.keys(reasoning).length > 0 ? { reasoning } : undefined;
+    }
+
+    case 'hunyuan': {
+      let reasoningEffort: 'no_think' | 'low' | 'high' | undefined;
+      if (mode === 'disabled' || config.effort === 'none') {
+        reasoningEffort = 'no_think';
+      } else if (config.effort === 'high' || config.effort === 'max' || config.effort === 'xhigh') {
+        reasoningEffort = 'high';
+      } else if (
+        config.effort === 'low' ||
+        config.effort === 'medium' ||
+        config.effort === 'minimal'
+      ) {
+        reasoningEffort = 'low';
+      } else if (mode === 'enabled') {
+        reasoningEffort = capability.defaultEffort === 'high' ? 'high' : 'low';
+      }
+      return reasoningEffort
+        ? { chat_template_kwargs: { reasoning_effort: reasoningEffort } }
+        : undefined;
+    }
+
+    default:
+      return undefined;
   }
-  return undefined;
 }
 
 function normalizeMiniMaxAnthropicBaseUrl(
@@ -1623,7 +1219,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
             | undefined;
           const thinking = thinkingCtx?.getStore?.() as ThinkingConfig | undefined;
           if (thinking && init?.body && typeof init.body === 'string') {
-            const extra = getCompatThinkingBodyParams(providerId, thinking);
+            const extra = getCompatThinkingBodyParams(providerId, config.modelId, thinking);
             if (extra) {
               try {
                 const body = JSON.parse(init.body);
@@ -1660,15 +1256,25 @@ export function getModel(config: ModelConfig): ModelWithInfo {
         baseURL: effectiveBaseUrl,
       };
       if (config.proxy) {
-        // Dynamic require to avoid bundling undici on the client side
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
-        const { ProxyAgent, fetch: undiciFetch } = require('undici');
-        const agent = new ProxyAgent(config.proxy);
-        googleOptions.fetch = ((input: RequestInfo | URL, init?: RequestInit) =>
-          undiciFetch(input as string, {
+        const proxy = config.proxy;
+        let agent: unknown;
+        googleOptions.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const { ProxyAgent, fetch: undiciFetch } = (await import(
+            /* webpackIgnore: true */ 'undici'
+          )) as {
+            ProxyAgent: new (proxyUrl: string) => unknown;
+            fetch: (
+              input: string | URL | Request,
+              init?: Record<string, unknown>,
+            ) => Promise<unknown>;
+          };
+          agent ??= new ProxyAgent(proxy);
+          const response = await undiciFetch(input, {
             ...(init as Record<string, unknown>),
             dispatcher: agent,
-          }).then((r: unknown) => r as Response)) as typeof fetch;
+          });
+          return response as Response;
+        }) as typeof fetch;
       }
       const google = createGoogleGenerativeAI(googleOptions);
       model = google.chat(config.modelId);

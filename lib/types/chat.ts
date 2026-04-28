@@ -287,6 +287,8 @@ export interface StatelessChatRequest {
    * `{ enabled: true }` when `EVAL_ENABLE_THINKING=1`.
    */
   thinking?: ThinkingConfig;
+  /** UI-selected per-model thinking config. Takes precedence over `thinking`. */
+  thinkingConfig?: ThinkingConfig;
 }
 
 /**

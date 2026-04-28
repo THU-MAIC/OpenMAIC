@@ -62,6 +62,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_AZURE: 'azure-tts',
   TTS_GLM: 'glm-tts',
   TTS_QWEN: 'qwen-tts',
+  TTS_VOXCPM: 'voxcpm-tts',
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
@@ -211,7 +212,9 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
       keylessProviders: new Set(['ollama']),
     }),
-    tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts),
+    tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
+      keylessProviders: new Set(['voxcpm-tts']),
+    }),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr),
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
     image: loadEnvSection(IMAGE_ENV_MAP, yamlData.image),

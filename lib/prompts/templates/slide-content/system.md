@@ -101,72 +101,17 @@ You are an educational content designer. Generate well-structured slide componen
 
 ---
 
-### ImageElement
+{{#if imageElementEnabled}}
+{{snippet:slide-image-instructions}}
+{{/if}}
 
-```json
-{
-  "id": "image_001",
-  "type": "image",
-  "left": 100,
-  "top": 150,
-  "width": 400,
-  "height": 300,
-  "src": "img_1",
-  "fixedRatio": true
-}
-```
+{{#if generatedImageEnabled}}
+{{snippet:slide-generated-image-instructions}}
+{{/if}}
 
-**Required Fields**: `id`, `type`, `left`, `top`, `width`, `height`, `src` (image ID like "img_1"), `fixedRatio` (always true)
-
-**Image Sizing Rules (注意保持原图比例)**:
-
-- `src` MUST be an image ID from the assigned images list (e.g., "img_1"). Do NOT use URLs or invented IDs
-- If no suitable image exists, do NOT create image elements — use text and shapes only
-- **When dimensions are provided** (e.g., "**img_1**: 尺寸: 884×424 (宽高比2.08)"):
-  - Choose a width based on layout needs (typically 300-500px)
-  - Calculate: `height = width / 宽高比`
-  - Example: 宽高比 2.08, width 400 → height = 400 / 2.08 ≈ 192
-- **When dimensions are NOT provided**: Use 4:3 default (width:height ≈ 1.33)
-- Ensure the image stays within canvas margins (50px from each edge)
-
-#### AI-Generated Images (gen*img*\*)
-
-If the scene outline includes `mediaGenerations`, you may also use generated image placeholders:
-
-- `src` can be a generated image ID like `"gen_img_1"`, `"gen_img_2"` etc.
-- These will be replaced with actual generated images after slide creation
-- Use the same dimension rules as regular images
-- Default aspect ratio for generated images: 16:9 (width:height = 16:9)
-- For generated images, calculate: `height = width / 1.778` (16:9 ratio) unless a different ratio is specified
-
----
-
-### VideoElement
-
-```json
-{
-  "id": "video_001",
-  "type": "video",
-  "left": 100,
-  "top": 150,
-  "width": 500,
-  "height": 281,
-  "src": "gen_vid_1",
-  "autoplay": false
-}
-```
-
-**Required Fields**: `id`, `type`, `left`, `top`, `width`, `height`, `src` (generated video ID like "gen_vid_1"), `autoplay` (boolean)
-
-**Video Sizing Rules**:
-
-- `src` MUST be a generated video ID from the `mediaGenerations` list (e.g., "gen_vid_1")
-- Default aspect ratio: 16:9 → `height = width / 1.778`
-- Typical video width: 400-600px (prominent on slide)
-- Position video as a focal element — usually centered or in the main content area
-- Leave space for a title and optional caption text
-
----
+{{#if generatedVideoEnabled}}
+{{snippet:slide-video-instructions}}
+{{/if}}
 
 ### ShapeElement
 
@@ -948,32 +893,42 @@ Before outputting JSON, verify:
 
 **🔴 P0 — Critical (must pass 100%)**:
 
-1. ✓ All text heights are from the lookup table (NOT estimated values like 70, 80, 90)
-2. ✓ All text elements pass width calculation: `char_count ≤ (width - 20) / font_size`
-3. ✓ Aligned elements have matching center points (< 2px difference)
-4. ✓ All elements are within canvas margins (50px from each edge)
-5. ✓ Image `src` ONLY uses image IDs from the assigned images list (e.g., "img_1", "img_2") or generated IDs (e.g., "gen_img_1")
-   - Video `src` ONLY uses generated video IDs (e.g., "gen_vid_1")
-   - Do NOT invent image/video IDs or URLs not listed in the available media
-   - If no suitable image exists, do NOT create image elements — use text and shapes only
-   - Any image/video ID not in the list will be automatically removed by the system
-6. ✓ Image aspect ratio preserved: `height = width / aspect_ratio` (use ratio from image metadata)
-7. ✓ LatexElement does NOT include `path`, `viewBox`, `strokeWidth`, or `fixedRatio` (system auto-generates these)
-8. ✓ LatexElement width is appropriate for the formula category (standalone fractions: 30-80, NOT 200+; inline equations: 200-400). Check the LaTeX width guide table above.
-9. ✓ Multi-step derivation LaTeX elements: widths are proportional to content length (longer formulas MUST have larger width). Do NOT use the same width for all steps — this causes wildly different rendered heights.
-10. ✓ No LaTeX syntax in TextElement content: scan all text `content` fields for `\frac`, `\lim`, `\int`, `\sum`, `\sqrt`, `\alpha`, `^{`, `_{` etc. Any math expression must be a separate LatexElement.
-11. ✓ LineElement `width` is stroke thickness (2-6), NOT line length. Check: no LineElement has `width` > 6. If width equals the distance between start and end, it is WRONG — you confused stroke thickness with line span.
-12. ✓ **Slide text is concise and impersonal**: Every text element uses keywords, short phrases, or bullet points — no conversational sentences, no lecture-script-style paragraphs. No teacher name or identity appears on any slide (no "Teacher X's tips/wishes/comments"). If a text reads like spoken language or a personal message, rewrite it as a neutral bullet point.
+- ✓ [text-height] All text heights are from the lookup table (NOT estimated values like 70, 80, 90)
+- ✓ [text-width] All text elements pass width calculation: `char_count ≤ (width - 20) / font_size`
+- ✓ [alignment] Aligned elements have matching center points (< 2px difference)
+- ✓ [margins] All elements are within canvas margins (50px from each edge)
+{{#if imageElementEnabled}}
+- ✓ [src-image-id] Source image `src` values only use image IDs from the assigned media list (for example, "img_1", "img_2")
+  - Do not invent image IDs or URLs not listed in the available media
+  - If no suitable image exists, do not create image elements; use text and shapes only
+- ✓ [src-image-ratio] Source image aspect ratio is preserved: `height = width / aspect_ratio` (use ratio from image metadata)
+{{/if}}
+{{#if generatedImageEnabled}}
+- ✓ [gen-image-id] Generated image `src` values only use generated image IDs from the assigned media list (for example, "gen_img_1")
+- ✓ [gen-image-ratio] Generated image aspect ratio is preserved, usually 16:9 unless a different ratio is listed
+{{/if}}
+{{#if generatedVideoEnabled}}
+- ✓ [video-id] Video `src` values only use generated video IDs from the assigned media list (for example, "gen_vid_1")
+  - Do not invent video IDs or URLs not listed in the available media
+{{/if}}
+- ✓ [latex-fields] LatexElement does NOT include `path`, `viewBox`, `strokeWidth`, or `fixedRatio` (system auto-generates these)
+- ✓ [latex-width] LatexElement width is appropriate for the formula category (standalone fractions: 30-80, NOT 200+; inline equations: 200-400). Check the LaTeX width guide table above.
+- ✓ [latex-scaling] Multi-step derivation LaTeX elements: widths are proportional to content length (longer formulas MUST have larger width). Do NOT use the same width for all steps — this causes wildly different rendered heights.
+- ✓ [no-latex-in-text] No LaTeX syntax in TextElement content: scan all text `content` fields for `\frac`, `\lim`, `\int`, `\sum`, `\sqrt`, `\alpha`, `^{`, `_{` etc. Any math expression must be a separate LatexElement.
+- ✓ [line-stroke] LineElement `width` is stroke thickness (2-6), NOT line length. Check: no LineElement has `width` > 6. If width equals the distance between start and end, it is WRONG — you confused stroke thickness with line span.
+- ✓ [concise-text] **Slide text is concise and impersonal**: Every text element uses keywords, short phrases, or bullet points — no conversational sentences, no lecture-script-style paragraphs. No teacher name or identity appears on any slide (no "Teacher X's tips/wishes/comments"). If a text reads like spoken language or a personal message, rewrite it as a neutral bullet point.
 
-**🟡 P1 — Serious (strongly recommended)**: 13. ✓ **Text-Background pairs**: For each text with a background shape:
+**🟡 P1 — Serious (strongly recommended)**:
+
+- ✓ [text-bg-pair] **Text-Background pairs**: For each text with a background shape:
 
 - text.width < shape.width (with padding)
 - text.height < shape.height (with padding)
 - text is centered: `text.left = shape.left + (shape.width - text.width) / 2`
 - text is centered: `text.top = shape.top + (shape.height - text.height) / 2`
 
-14. ✓ No unintended element overlaps (especially check LaTeX elements — their rendered height may be much larger than specified)
-15. ✓ Image placed near related text (25-35px gap)
+- ✓ [no-overlap] No unintended element overlaps (especially check LaTeX elements — their rendered height may be much larger than specified)
+- ✓ [image-proximity] Image placed near related text (25-35px gap)
 
 ---
 

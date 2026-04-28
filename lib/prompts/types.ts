@@ -35,6 +35,12 @@ export type SnippetId =
   | 'json-output-rules'
   | 'element-types'
   | 'action-types'
+  | 'image-instructions'
+  | 'video-instructions'
+  | 'media-safety-guidelines'
+  | 'slide-image-instructions'
+  | 'slide-generated-image-instructions'
+  | 'slide-video-instructions'
   | 'speech-guidelines'
   | 'whiteboard-reference';
 

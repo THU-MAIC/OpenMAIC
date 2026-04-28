@@ -38,6 +38,7 @@
 
 ## 🗞️ News
 
+- **2026-04-26** — [v0.2.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1) Integrated [VoxCPM2](https://github.com/OpenBMB/VoxCPM) TTS with voice cloning and on-the-fly auto-generated voices; added per-model thinking config; added end-of-course completion page with persistent quiz state; added latest released models including DeepSeek-V4 / GPT-5.5 / GPT-Image-2 / Xiaomi MiMo / Hy3. See [changelog](CHANGELOG.md).
 - **2026-04-20** — **v0.2.0 released!** Deep Interactive Mode — 3D visualization, simulations, games, mind maps, and online programming for hands-on learning. See [features](#-features) for details.
 - **2026-04-14** — [v0.1.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.1) Automatic language inference, ACCESS_CODE authentication, classroom ZIP export/import, custom TTS/ASR providers, Ollama support, and more. See [changelog](CHANGELOG.md).
 - **2026-03-26** — [v0.1.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.1.0) Discussion TTS, immersive mode, keyboard shortcuts, whiteboard enhancements, new providers, and more. See [changelog](CHANGELOG.md).
@@ -216,6 +217,38 @@ docker compose up --build
 [MinerU](https://github.com/opendatalab/MinerU) provides enhanced parsing for complex tables, formulas, and OCR. You can use the [MinerU official API](https://mineru.net/) or [self-host your own instance](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/).
 
 Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
+
+### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) is an open-source TTS model from OpenBMB with voice cloning. OpenMAIC ships an adapter; run VoxCPM on your own hardware and OpenMAIC will talk to it.
+
+**1. Run a VoxCPM backend.** Three deployment styles, all behind the same OpenMAIC adapter. You toggle which one in Settings.
+
+| Backend | Endpoint | When to use |
+| --- | --- | --- |
+| **vLLM-Omni** | `/v1/audio/speech` | OpenAI-compatible speech endpoint, ideal for GPU servers |
+| **Python API** | `/tts/upload` | Official VoxCPM Python runtime via FastAPI |
+| **Nano-vLLM** | `/generate` | Lightweight Nano-vLLM FastAPI deployment |
+
+See the [VoxCPM repo](https://github.com/OpenBMB/VoxCPM) for backend setup.
+
+**2. Point OpenMAIC at it.** Open Settings → **Text-to-Speech** → **VoxCPM2**, pick the backend, and paste your Base URL. The Request URL preview confirms OpenMAIC will hit the right endpoint.
+
+<img src="assets/voxcpm/voxcpm-connection.png" width="85%" alt="VoxCPM2 connection settings: backend selector, Base URL, model" />
+
+Or pre-configure it via env var (no API key required):
+
+```env
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+**3. Manage voices.** Three voice modes, all under **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices**.
+
+<img src="assets/voxcpm/voxcpm-voice-manager.png" width="85%" alt="VoxCPM2 VoxCPM Voices section with Auto, Prompt and Clone modes" />
+
+- **Auto Voice** (default): OpenMAIC generates a voice prompt from each agent's persona at synthesis time. No setup required.
+- **Prompt voice**: describe the voice in natural language, e.g. *"warm female teacher voice, calm and encouraging, mid-pitch"*.
+- **Clone voice**: upload a short reference audio clip or record one in the browser. The clip is stored in IndexedDB and sent to your VoxCPM backend on each synthesis.
 
 ---
 
