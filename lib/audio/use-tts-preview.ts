@@ -10,10 +10,12 @@ import {
 export interface TTSPreviewOptions {
   text: string;
   providerId: string;
+  modelId?: string;
   voice: string;
   speed: number;
   apiKey?: string;
   baseUrl?: string;
+  providerOptions?: unknown;
 }
 
 /**
@@ -95,11 +97,13 @@ export function useTTSPreview() {
           text: options.text,
           audioId: 'preview',
           ttsProviderId: options.providerId,
+          ttsModelId: options.modelId,
           ttsVoice: options.voice,
           ttsSpeed: options.speed,
         };
         if (options.apiKey?.trim()) body.ttsApiKey = options.apiKey;
         if (options.baseUrl?.trim()) body.ttsBaseUrl = options.baseUrl;
+        if (options.providerOptions) body.ttsProviderOptions = options.providerOptions;
 
         const res = await fetch('/api/generate/tts', {
           method: 'POST',

@@ -38,7 +38,7 @@ Only send supported content fields:
 - optional `enableWebSearch` (boolean) — include web search context in outline generation
 - optional `enableImageGeneration` (boolean) — allow image generation metadata in outlines
 - optional `enableVideoGeneration` (boolean) — allow video generation metadata in outlines
-- optional `enableTTS` (boolean) — reserved for future server-side TTS generation
+- optional `enableTTS` (boolean) — enable server-side TTS audio generation for speech actions
 - optional `agentMode` (`"default"` | `"generate"`) — controls agent profile strategy:
   - `"default"` (or omitted): uses built-in default agents
   - `"generate"`: uses LLM to generate custom agent profiles tailored to the course content
@@ -57,7 +57,7 @@ Before sending optional feature flags, query `GET {url}/api/health` and check th
     "webSearch": true,
     "imageGeneration": false,
     "videoGeneration": false,
-    "tts": false
+    "tts": true
   }
 }
 ```

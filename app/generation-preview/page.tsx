@@ -11,6 +11,8 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   loadImageMapping,
@@ -36,6 +38,7 @@ function GenerationPreviewContent() {
   const { t } = useI18n();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
 
   const [session, setSession] = useState<GenerationSessionState | null>(null);
   const [sessionLoaded, setSessionLoaded] = useState(false);
@@ -100,7 +103,6 @@ function GenerationPreviewContent() {
       'x-api-key': modelConfig.apiKey,
       'x-base-url': modelConfig.baseUrl,
       'x-provider-type': modelConfig.providerType || '',
-      'x-requires-api-key': modelConfig.requiresApiKey ? 'true' : 'false',
       // Image generation provider
       'x-image-provider': settings.imageProviderId || '',
       'x-image-model': settings.imageModelId || '',
@@ -115,6 +117,11 @@ function GenerationPreviewContent() {
       'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
       'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
     };
+  };
+
+  const withThinkingConfig = <T extends Record<string, unknown>>(body: T) => {
+    const { thinkingConfig } = getCurrentModelConfig();
+    return thinkingConfig ? { ...body, thinkingConfig } : body;
   };
 
   // Auto-start generation when session is loaded
@@ -277,15 +284,11 @@ function GenerationPreviewContent() {
         // Truncation warnings
         const warnings: string[] = [];
         if ((parseResult.data.text as string).length > MAX_PDF_CONTENT_CHARS) {
-          warnings.push(
-            t('generation.textTruncated').replace('{n}', String(MAX_PDF_CONTENT_CHARS)),
-          );
+          warnings.push(t('generation.textTruncated', { n: MAX_PDF_CONTENT_CHARS }));
         }
         if (images.length > MAX_VISION_IMAGES) {
           warnings.push(
-            t('generation.imageTruncated')
-              .replace('{total}', String(images.length))
-              .replace('{max}', String(MAX_VISION_IMAGES)),
+            t('generation.imageTruncated', { total: images.length, max: MAX_VISION_IMAGES }),
           );
         }
         if (warnings.length > 0) {
@@ -308,11 +311,14 @@ function GenerationPreviewContent() {
           wsSettings.webSearchProvidersConfig?.[wsSettings.webSearchProviderId]?.apiKey;
         const res = await fetch('/api/web-search', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            query: currentSession.requirements.requirement,
-            apiKey: wsApiKey || undefined,
-          }),
+          headers: getApiHeaders(),
+          body: JSON.stringify(
+            withThinkingConfig({
+              query: currentSession.requirements.requirement,
+              pdfText: currentSession.pdfText || undefined,
+              apiKey: wsApiKey || undefined,
+            }),
+          ),
           signal,
         });
 
@@ -352,113 +358,21 @@ function GenerationPreviewContent() {
         imageMapping = currentSession.imageMapping;
       }
 
-      // ── Agent generation (before outlines so persona can influence structure) ──
-      const settings = useSettingsStore.getState();
-      let agents: Array<{
-        id: string;
-        name: string;
-        role: string;
-        persona?: string;
-      }> = [];
-
-      // Create stage client-side (needed for agent generation stageId)
+      // Create stage client-side
       const stageId = nanoid(10);
       const stage: Stage = {
         id: stageId,
         name: extractTopicFromRequirement(currentSession.requirements.requirement),
         description: '',
-        language: currentSession.requirements.language || 'zh-CN',
         style: 'professional',
         createdAt: Date.now(),
         updatedAt: Date.now(),
+        interactiveMode: !!currentSession.requirements.interactiveMode,
       };
 
-      if (settings.agentMode === 'auto') {
-        const agentStepIdx = activeSteps.findIndex((s) => s.id === 'agent-generation');
-        if (agentStepIdx >= 0) setCurrentStepIndex(agentStepIdx);
-
-        try {
-          const allAvatars = [
-            '/avatars/assist.png',
-            '/avatars/assist-2.png',
-            '/avatars/clown.png',
-            '/avatars/clown-2.png',
-            '/avatars/curious.png',
-            '/avatars/curious-2.png',
-            '/avatars/note-taker.png',
-            '/avatars/note-taker-2.png',
-            '/avatars/teacher.png',
-            '/avatars/teacher-2.png',
-            '/avatars/thinker.png',
-            '/avatars/thinker-2.png',
-          ];
-
-          // No outlines yet — agent generation uses only stage name + description
-          const agentResp = await fetch('/api/generate/agent-profiles', {
-            method: 'POST',
-            headers: getApiHeaders(),
-            body: JSON.stringify({
-              stageInfo: { name: stage.name, description: stage.description },
-              language: currentSession.requirements.language || 'zh-CN',
-              availableAvatars: allAvatars,
-            }),
-            signal,
-          });
-
-          if (!agentResp.ok) throw new Error('Agent generation failed');
-          const agentData = await agentResp.json();
-          if (!agentData.success) throw new Error(agentData.error || 'Agent generation failed');
-
-          // Save to IndexedDB and registry
-          const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-          const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
-          settings.setSelectedAgentIds(savedIds);
-
-          // Show card-reveal modal, continue generation once all cards are revealed
-          setGeneratedAgents(agentData.agents);
-          setShowAgentReveal(true);
-          await new Promise<void>((resolve) => {
-            agentRevealResolveRef.current = resolve;
-          });
-
-          agents = savedIds
-            .map((id) => useAgentRegistry.getState().getAgent(id))
-            .filter(Boolean)
-            .map((a) => ({
-              id: a!.id,
-              name: a!.name,
-              role: a!.role,
-              persona: a!.persona,
-            }));
-        } catch (err: unknown) {
-          log.warn('[Generation] Agent generation failed, falling back to presets:', err);
-          const registry = useAgentRegistry.getState();
-          agents = settings.selectedAgentIds
-            .map((id) => registry.getAgent(id))
-            .filter(Boolean)
-            .map((a) => ({
-              id: a!.id,
-              name: a!.name,
-              role: a!.role,
-              persona: a!.persona,
-            }));
-        }
-      } else {
-        // Preset mode — use selected agents (include persona)
-        const registry = useAgentRegistry.getState();
-        agents = settings.selectedAgentIds
-          .map((id) => registry.getAgent(id))
-          .filter(Boolean)
-          .map((a) => ({
-            id: a!.id,
-            name: a!.name,
-            role: a!.role,
-            persona: a!.persona,
-          }));
-      }
-
-      // ── Generate outlines (with agent personas for teacher context) ──
+      // ── Generate outlines first (infers languageDirective) ──
       let outlines = currentSession.sceneOutlines;
+      let languageDirective: string | undefined;
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
       setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
@@ -466,20 +380,25 @@ function GenerationPreviewContent() {
         log.debug('=== Generating outlines (SSE) ===');
         setStreamingOutlines([]);
 
-        outlines = await new Promise<SceneOutline[]>((resolve, reject) => {
+        const outlineResult = await new Promise<{
+          outlines: SceneOutline[];
+          languageDirective: string;
+        }>((resolve, reject) => {
           const collected: SceneOutline[] = [];
+          let directive: string | undefined;
 
           fetch('/api/generate/scene-outlines-stream', {
             method: 'POST',
             headers: getApiHeaders(),
-            body: JSON.stringify({
-              requirements: currentSession.requirements,
-              pdfText: currentSession.pdfText,
-              pdfImages: currentSession.pdfImages,
-              imageMapping,
-              researchContext: currentSession.researchContext,
-              agents,
-            }),
+            body: JSON.stringify(
+              withThinkingConfig({
+                requirements: currentSession.requirements,
+                pdfText: currentSession.pdfText,
+                pdfImages: currentSession.pdfImages,
+                imageMapping,
+                researchContext: currentSession.researchContext,
+              }),
+            ),
             signal,
           })
             .then((res) => {
@@ -509,7 +428,9 @@ function GenerationPreviewContent() {
                       if (!line.startsWith('data: ')) continue;
                       try {
                         const evt = JSON.parse(line.slice(6));
-                        if (evt.type === 'outline') {
+                        if (evt.type === 'languageDirective') {
+                          directive = evt.data;
+                        } else if (evt.type === 'outline') {
                           collected.push(evt.data);
                           setStreamingOutlines([...collected]);
                         } else if (evt.type === 'retry') {
@@ -517,7 +438,13 @@ function GenerationPreviewContent() {
                           setStreamingOutlines([]);
                           setStatusMessage(t('generation.outlineRetrying'));
                         } else if (evt.type === 'done') {
-                          resolve(evt.outlines || collected);
+                          directive = evt.languageDirective || directive;
+                          resolve({
+                            outlines: evt.outlines || collected,
+                            languageDirective:
+                              directive ||
+                              'Teach in the language that matches the user requirement.',
+                          });
                           return;
                         } else if (evt.type === 'error') {
                           reject(new Error(evt.error));
@@ -530,7 +457,11 @@ function GenerationPreviewContent() {
                   }
                   if (done) {
                     if (collected.length > 0) {
-                      resolve(collected);
+                      resolve({
+                        outlines: collected,
+                        languageDirective:
+                          directive || 'Teach in the language that matches the user requirement.',
+                      });
                     } else {
                       reject(new Error(t('generation.outlineEmptyResponse')));
                     }
@@ -544,7 +475,17 @@ function GenerationPreviewContent() {
             .catch(reject);
         });
 
-        const updatedSession = { ...currentSession, sceneOutlines: outlines };
+        outlines = outlineResult.outlines;
+        languageDirective = outlineResult.languageDirective;
+
+        // Store languageDirective on the stage
+        stage.languageDirective = languageDirective;
+
+        const updatedSession = {
+          ...currentSession,
+          sceneOutlines: outlines,
+          languageDirective,
+        };
         setSession(updatedSession);
         sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
 
@@ -557,6 +498,168 @@ function GenerationPreviewContent() {
 
         // Brief pause to let user see the final outline state
         await new Promise((resolve) => setTimeout(resolve, 800));
+      }
+
+      // ── Agent generation (after outlines — uses languageDirective + outlines) ──
+      const settings = useSettingsStore.getState();
+      let agents: Array<{
+        id: string;
+        name: string;
+        role: string;
+        persona?: string;
+      }> = [];
+
+      if (settings.agentMode === 'auto') {
+        const agentStepIdx = activeSteps.findIndex((s) => s.id === 'agent-generation');
+        if (agentStepIdx >= 0) setCurrentStepIndex(agentStepIdx);
+
+        try {
+          const allAvatars = [
+            {
+              path: '/avatars/teacher.png',
+              desc: 'Male teacher with glasses, holding a book, green background',
+            },
+            {
+              path: '/avatars/teacher-2.png',
+              desc: 'Female teacher with long dark hair, blue traditional outfit, gentle expression',
+            },
+            {
+              path: '/avatars/assist.png',
+              desc: 'Young female assistant with glasses, pink background, friendly smile',
+            },
+            {
+              path: '/avatars/assist-2.png',
+              desc: 'Young female in orange top and purple overalls, cheerful and approachable',
+            },
+            {
+              path: '/avatars/clown.png',
+              desc: 'Energetic girl with glasses pointing up, green shirt, lively and fun',
+            },
+            {
+              path: '/avatars/clown-2.png',
+              desc: 'Playful girl with curly hair doing rock gesture, blue shirt, humorous vibe',
+            },
+            {
+              path: '/avatars/curious.png',
+              desc: 'Surprised boy with glasses, hand on cheek, curious expression',
+            },
+            {
+              path: '/avatars/curious-2.png',
+              desc: 'Boy with backpack holding a book and question mark bubble, inquisitive',
+            },
+            {
+              path: '/avatars/note-taker.png',
+              desc: 'Studious boy with glasses, blue shirt, calm and organized',
+            },
+            {
+              path: '/avatars/note-taker-2.png',
+              desc: 'Active boy with yellow backpack waving, blue outfit, enthusiastic learner',
+            },
+            {
+              path: '/avatars/thinker.png',
+              desc: 'Thoughtful girl with hand on chin, purple background, contemplative',
+            },
+            {
+              path: '/avatars/thinker-2.png',
+              desc: 'Girl reading a book intently, long dark hair, intellectual and focused',
+            },
+          ];
+
+          const getAvailableVoicesForGeneration = () => {
+            const providers = getAvailableProvidersWithVoices(
+              settings.ttsProvidersConfig,
+              voxcpmProfiles,
+            );
+            return providers.flatMap((p) =>
+              p.voices.map((v) => ({
+                providerId: p.providerId,
+                voiceId: v.id,
+                voiceName: v.name,
+              })),
+            );
+          };
+
+          const agentResp = await fetch('/api/generate/agent-profiles', {
+            method: 'POST',
+            headers: getApiHeaders(),
+            body: JSON.stringify(
+              withThinkingConfig({
+                stageInfo: { name: stage.name, description: stage.description },
+                sceneOutlines: outlines.map((o) => ({
+                  title: o.title,
+                  description: o.description,
+                })),
+                languageDirective,
+                availableAvatars: allAvatars.map((a) => a.path),
+                avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
+                availableVoices: getAvailableVoicesForGeneration(),
+              }),
+            ),
+            signal,
+          });
+
+          if (!agentResp.ok) throw new Error('Agent generation failed');
+          const agentData = await agentResp.json();
+          if (!agentData.success) throw new Error(agentData.error || 'Agent generation failed');
+
+          // Save to IndexedDB and registry
+          const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
+          const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
+          settings.setSelectedAgentIds(savedIds);
+          stage.agentIds = savedIds;
+
+          // Show card-reveal modal, continue generation once all cards are revealed
+          setGeneratedAgents(agentData.agents);
+          setShowAgentReveal(true);
+          await new Promise<void>((resolve) => {
+            agentRevealResolveRef.current = resolve;
+          });
+
+          agents = savedIds
+            .map((id) => useAgentRegistry.getState().getAgent(id))
+            .filter(Boolean)
+            .map((a) => ({
+              id: a!.id,
+              name: a!.name,
+              role: a!.role,
+              persona: a!.persona,
+            }));
+        } catch (err: unknown) {
+          log.warn('[Generation] Agent generation failed, falling back to presets:', err);
+          const registry = useAgentRegistry.getState();
+          const fallbackIds = settings.selectedAgentIds.filter((id) => {
+            const a = registry.getAgent(id);
+            return a && !a.isGenerated;
+          });
+          agents = fallbackIds
+            .map((id) => registry.getAgent(id))
+            .filter(Boolean)
+            .map((a) => ({
+              id: a!.id,
+              name: a!.name,
+              role: a!.role,
+              persona: a!.persona,
+            }));
+          stage.agentIds = fallbackIds;
+        }
+      } else {
+        // Preset mode — use selected agents (include persona)
+        // Filter out stale generated agent IDs that may linger in settings
+        const registry = useAgentRegistry.getState();
+        const presetAgentIds = settings.selectedAgentIds.filter((id) => {
+          const a = registry.getAgent(id);
+          return a && !a.isGenerated;
+        });
+        agents = presetAgentIds
+          .map((id) => registry.getAgent(id))
+          .filter(Boolean)
+          .map((a) => ({
+            id: a!.id,
+            name: a!.name,
+            role: a!.role,
+            persona: a!.persona,
+          }));
+        stage.agentIds = presetAgentIds;
       }
 
       // Move to scene generation step
@@ -578,7 +681,6 @@ function GenerationPreviewContent() {
       const stageInfo = {
         name: stage.name,
         description: stage.description,
-        language: stage.language,
         style: stage.style,
       };
 
@@ -596,15 +698,18 @@ function GenerationPreviewContent() {
       const contentResp = await fetch('/api/generate/scene-content', {
         method: 'POST',
         headers: getApiHeaders(),
-        body: JSON.stringify({
-          outline: firstOutline,
-          allOutlines: outlines,
-          pdfImages: currentSession.pdfImages,
-          imageMapping,
-          stageInfo,
-          stageId: stage.id,
-          agents,
-        }),
+        body: JSON.stringify(
+          withThinkingConfig({
+            outline: firstOutline,
+            allOutlines: outlines,
+            pdfImages: currentSession.pdfImages,
+            imageMapping,
+            stageInfo,
+            stageId: stage.id,
+            agents,
+            languageDirective,
+          }),
+        ),
         signal,
       });
 
@@ -625,15 +730,18 @@ function GenerationPreviewContent() {
       const actionsResp = await fetch('/api/generate/scene-actions', {
         method: 'POST',
         headers: getApiHeaders(),
-        body: JSON.stringify({
-          outline: contentData.effectiveOutline || firstOutline,
-          allOutlines: outlines,
-          content: contentData.content,
-          stageId: stage.id,
-          agents,
-          previousSpeeches: [],
-          userProfile,
-        }),
+        body: JSON.stringify(
+          withThinkingConfig({
+            outline: contentData.effectiveOutline || firstOutline,
+            allOutlines: outlines,
+            content: contentData.content,
+            stageId: stage.id,
+            agents,
+            previousSpeeches: [],
+            userProfile,
+            languageDirective,
+          }),
+        ),
         signal,
       });
 
@@ -650,6 +758,16 @@ function GenerationPreviewContent() {
       // Generate TTS for first scene (part of actions step — blocking)
       if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
         const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+        const providerOptions =
+          settings.ttsProviderId === 'voxcpm-tts'
+            ? {
+                ...(ttsProviderConfig?.providerOptions || {}),
+                ...(await getVoxCPMProviderOptions(settings.ttsVoice, {
+                  role: 'teacher',
+                  language: languageDirective,
+                })),
+              }
+            : undefined;
         const speechActions = (data.scene.actions || []).filter(
           (a: { type: string; text?: string }) => a.type === 'speech' && a.text,
         );
@@ -666,10 +784,16 @@ function GenerationPreviewContent() {
                 text: action.text,
                 audioId,
                 ttsProviderId: settings.ttsProviderId,
+                ttsModelId: ttsProviderConfig?.modelId,
                 ttsVoice: settings.ttsVoice,
                 ttsSpeed: settings.ttsSpeed,
                 ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-                ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
+                ttsBaseUrl:
+                  ttsProviderConfig?.serverBaseUrl ||
+                  ttsProviderConfig?.baseUrl ||
+                  ttsProviderConfig?.customDefaultBaseUrl ||
+                  undefined,
+                ttsProviderOptions: providerOptions,
               }),
               signal,
             });
@@ -718,6 +842,7 @@ function GenerationPreviewContent() {
           pdfImages: currentSession.pdfImages,
           agents,
           userProfile,
+          languageDirective,
         }),
       );
 
@@ -730,6 +855,7 @@ function GenerationPreviewContent() {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
+      sessionStorage.removeItem('generationSession');
       setError(err instanceof Error ? err.message : String(err));
     }
   };

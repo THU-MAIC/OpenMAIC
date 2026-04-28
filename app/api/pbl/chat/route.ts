@@ -10,7 +10,7 @@ import { callLLM } from '@/lib/ai/llm';
 import type { PBLAgent, PBLIssue } from '@/lib/pbl/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 const log = createLogger('PBL Chat');
 
 interface PBLChatRequest {
@@ -23,16 +23,20 @@ interface PBLChatRequest {
 }
 
 export async function POST(req: NextRequest) {
+  let agentName: string | undefined;
+  let resolvedAgentType: string | undefined;
   try {
     const body = (await req.json()) as PBLChatRequest;
     const { message, agent, currentIssue, recentMessages, userRole, agentType } = body;
+    agentName = agent?.name;
+    resolvedAgentType = agentType;
 
     if (!message || !agent) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Message and agent are required');
     }
 
-    // Get model config from headers
-    const { model } = resolveModelFromHeaders(req);
+    // Get model config from request headers/body
+    const { model, thinkingConfig } = await resolveModelFromRequest(req, body);
 
     // Build context for the agent, differentiating question vs judge
     let issueContext = '';
@@ -64,11 +68,16 @@ export async function POST(req: NextRequest) {
         prompt: message,
       },
       'pbl-chat',
+      undefined,
+      thinkingConfig,
     );
 
     return apiSuccess({ message: result.text, agentName: agent.name });
   } catch (error) {
-    log.error('Error:', error);
+    log.error(
+      `PBL chat failed [agent="${agentName ?? 'unknown'}", type=${resolvedAgentType ?? 'question'}]:`,
+      error,
+    );
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
   }
 }

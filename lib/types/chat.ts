@@ -6,6 +6,7 @@
  */
 
 import type { UIMessage } from 'ai';
+import type { ThinkingConfig } from './provider';
 
 // Session Types
 export type SessionType = 'qa' | 'discussion' | 'lecture';
@@ -217,7 +218,7 @@ export interface LectureNoteEntry {
 // ==================== Stateless Multi-Agent API Types ====================
 
 import type { Stage, Scene, StageMode } from '@/lib/types/stage';
-import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/director-prompt';
+import type { AgentTurnSummary, WhiteboardActionRecord } from '@/lib/orchestration/types';
 
 /**
  * Accumulated director state passed between per-agent requests.
@@ -280,7 +281,14 @@ export interface StatelessChatRequest {
   baseUrl?: string;
   model?: string;
   providerType?: string;
-  requiresApiKey?: boolean;
+  /**
+   * Opt-in: enable provider-side thinking for this request. Default is
+   * `{ enabled: false }` (low-latency chat). Eval harness sets this to
+   * `{ enabled: true }` when `EVAL_ENABLE_THINKING=1`.
+   */
+  thinking?: ThinkingConfig;
+  /** UI-selected per-model thinking config. Takes precedence over `thinking`. */
+  thinkingConfig?: ThinkingConfig;
 }
 
 /**

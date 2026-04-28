@@ -2,6 +2,7 @@
 import type { Slide } from '@/lib/types/slides';
 import type { Action } from '@/lib/types/action';
 import type { PBLProjectConfig } from '@/lib/pbl/types';
+import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
 
 export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
 
@@ -19,10 +20,33 @@ export interface Stage {
   createdAt: number;
   updatedAt: number;
   // Stage metadata
-  language?: string;
+  languageDirective?: string;
   style?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];
+  // Agent IDs selected when this classroom was created
+  agentIds?: string[];
+  /**
+   * Server-generated agent configurations.
+   * Embedded in persisted classroom JSON so clients can hydrate
+   * the agent registry without relying on IndexedDB pre-population.
+   * Only present for API-generated classrooms.
+   */
+  generatedAgentConfigs?: Array<{
+    id: string;
+    name: string;
+    role: string;
+    persona: string;
+    avatar: string;
+    color: string;
+    priority: number;
+  }>;
+  /**
+   * True when this classroom was generated with Interactive Mode enabled
+   * (the INTERACTIVE_OUTLINES prompt branch).
+   * Absent on legacy classrooms, imports, and regular-mode generations.
+   */
+  interactiveMode?: boolean;
 }
 
 /**
@@ -103,6 +127,10 @@ export interface InteractiveContent {
   url: string; // URL of the interactive page
   // Optional: embedded HTML content
   html?: string;
+  // Ultra Mode widget fields
+  widgetType?: WidgetType;
+  widgetConfig?: WidgetConfig;
+  teacherActions?: TeacherAction[];
 }
 
 /**

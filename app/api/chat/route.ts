@@ -14,11 +14,12 @@
 
 import { NextRequest } from 'next/server';
 import { statelessGenerate } from '@/lib/orchestration/stateless-generate';
+import { isProviderKeyRequired } from '@/lib/ai/providers';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
-import type { ThinkingConfig } from '@/lib/types/provider';
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModel } from '@/lib/server/resolve-model';
+import type { ThinkingConfig } from '@/lib/types/provider';
 const log = createLogger('Chat API');
 
 // Allow streaming responses up to 60 seconds
@@ -42,9 +43,13 @@ export const maxDuration = 60;
  */
 export async function POST(req: NextRequest) {
   const encoder = new TextEncoder();
+  let chatModel: string | undefined;
+  let chatMessageCount: number | undefined;
 
   try {
     const body: StatelessChatRequest = await req.json();
+    chatModel = body.model;
+    chatMessageCount = body.messages?.length;
 
     // Validate required fields
     if (!body.messages || !Array.isArray(body.messages)) {
@@ -59,15 +64,18 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
     }
 
-    const { model: languageModel } = resolveModel({
+    const {
+      model: languageModel,
+      apiKey: resolvedApiKey,
+      providerId,
+    } = await resolveModel({
       modelString: body.model,
       apiKey: body.apiKey,
       baseUrl: body.baseUrl,
       providerType: body.providerType,
-      requiresApiKey: body.requiresApiKey,
     });
 
-    if (!body.baseUrl && !body.apiKey && body.requiresApiKey !== false) {
+    if (isProviderKeyRequired(providerId) && !resolvedApiKey) {
       return apiError('MISSING_API_KEY', 401, 'API Key is required');
     }
 
@@ -109,14 +117,19 @@ export async function POST(req: NextRequest) {
       try {
         startHeartbeat();
 
+        // Default: thinking disabled for low-latency chat. UI requests send
+        // `thinkingConfig`; eval harnesses can still opt in via `thinking`.
+        const thinkingConfig: ThinkingConfig = body.thinkingConfig ??
+          body.thinking ?? { mode: 'disabled', enabled: false };
+
         const generator = statelessGenerate(
           {
             ...body,
-            apiKey: body.apiKey,
+            apiKey: resolvedApiKey,
           },
           signal,
           languageModel,
-          { enabled: false } satisfies ThinkingConfig,
+          thinkingConfig,
         );
 
         for await (const event of generator) {
@@ -145,7 +158,10 @@ export async function POST(req: NextRequest) {
           return;
         }
 
-        log.error('Stream error:', error);
+        log.error(
+          `Chat stream error [model=${body.model ?? 'unknown'}, agents=${body.config?.agentIds?.length ?? 0}, messages=${body.messages?.length ?? 0}]:`,
+          error,
+        );
 
         // Try to send error event
         try {
@@ -171,7 +187,10 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    log.error('Error:', error);
+    log.error(
+      `Chat request failed [model=${chatModel ?? 'unknown'}, messages=${chatMessageCount ?? 0}]:`,
+      error,
+    );
     return apiError(
       'INTERNAL_ERROR',
       500,

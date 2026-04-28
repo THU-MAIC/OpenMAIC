@@ -11,6 +11,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import type { EditingModel } from '@/lib/types/settings';
 import type { ProviderId } from '@/lib/ai/providers';
 import { cn } from '@/lib/utils';
+import { createVerifyModelRequest } from './utils';
 
 interface ModelEditDialogProps {
   open: boolean;
@@ -24,6 +25,7 @@ interface ModelEditDialogProps {
   baseUrl?: string;
   providerType?: string;
   requiresApiKey?: boolean;
+  isServerConfigured?: boolean;
 }
 
 export function ModelEditDialog({
@@ -38,6 +40,7 @@ export function ModelEditDialog({
   baseUrl,
   providerType,
   requiresApiKey,
+  isServerConfigured,
 }: ModelEditDialogProps) {
   const { t } = useI18n();
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
@@ -59,9 +62,7 @@ export function ModelEditDialog({
   };
 
   const handleTestModel = useCallback(async () => {
-    if (!editingModel || !apiKey) {
-      setTestStatus('error');
-      setTestMessage(t('settings.apiKeyRequired') || 'API Key is required');
+    if (!editingModel) {
       return;
     }
 
@@ -72,13 +73,16 @@ export function ModelEditDialog({
       const response = await fetch('/api/verify-model', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey,
-          baseUrl,
-          model: `${providerId}:${editingModel.model.id}`,
-          providerType,
-          requiresApiKey,
-        }),
+        body: JSON.stringify(
+          createVerifyModelRequest({
+            providerId,
+            modelId: editingModel.model.id,
+            apiKey,
+            baseUrl,
+            providerType,
+            requiresApiKey,
+          }),
+        ),
       });
 
       const data = await response.json();
@@ -305,7 +309,11 @@ export function ModelEditDialog({
                 variant="outline"
                 size="sm"
                 onClick={handleTestModel}
-                disabled={!editingModel.model.id || testStatus === 'testing'}
+                disabled={
+                  !editingModel.model.id ||
+                  testStatus === 'testing' ||
+                  (requiresApiKey && !apiKey && !isServerConfigured)
+                }
                 className={cn(
                   testStatus === 'success' && 'border-green-600 text-green-600 hover:bg-green-50',
                   testStatus === 'error' && 'border-red-600 text-red-600 hover:bg-red-50',

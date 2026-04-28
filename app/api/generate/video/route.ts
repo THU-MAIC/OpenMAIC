@@ -42,7 +42,7 @@ export async function POST(request: NextRequest) {
     const clientModel = request.headers.get('x-video-model') || undefined;
 
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-      const ssrfError = validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
@@ -87,7 +87,10 @@ export async function POST(request: NextRequest) {
       log.warn(`Video blocked by content safety filter: ${message}`);
       return apiError('CONTENT_SENSITIVE', 400, message);
     }
-    log.error('Video generation error:', error);
+    log.error(
+      `Video generation failed [provider=${request.headers.get('x-video-provider') ?? 'kling'}, model=${request.headers.get('x-video-model') ?? 'default'}]:`,
+      error,
+    );
     return apiError('INTERNAL_ERROR', 500, message);
   }
 }

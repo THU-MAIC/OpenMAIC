@@ -17,13 +17,15 @@ import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 
 const log = createLogger('Scene Content API');
 
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
+  let outlineTitle: string | undefined;
+  let resolvedModelString: string | undefined;
   try {
     const body = await req.json();
     const {
@@ -31,9 +33,10 @@ export async function POST(req: NextRequest) {
       allOutlines,
       pdfImages,
       imageMapping,
-      stageInfo,
+      stageInfo: _stageInfo,
       stageId,
       agents,
+      languageDirective,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -42,11 +45,11 @@ export async function POST(req: NextRequest) {
       stageInfo: {
         name: string;
         description?: string;
-        language?: string;
         style?: string;
       };
       stageId: string;
       agents?: AgentInfo[];
+      languageDirective?: string;
     };
 
     // Validate required fields
@@ -64,14 +67,17 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
-    // Ensure outline has language from stageInfo (fallback for older outlines)
-    const outline: SceneOutline = {
-      ...rawOutline,
-      language: rawOutline.language || (stageInfo?.language as 'zh-CN' | 'en-US') || 'zh-CN',
-    };
+    const outline: SceneOutline = { ...rawOutline };
 
-    // ── Model resolution from request headers ──
-    const { model: languageModel, modelInfo, modelString } = resolveModelFromHeaders(req);
+    // ── Model resolution from request headers/body ──
+    const {
+      model: languageModel,
+      modelInfo,
+      modelString,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body);
+    outlineTitle = rawOutline?.title;
+    resolvedModelString = modelString;
 
     // Detect vision capability
     const hasVision = !!modelInfo?.capabilities?.vision;
@@ -96,6 +102,8 @@ export async function POST(req: NextRequest) {
             maxOutputTokens: modelInfo?.outputWindow,
           },
           'scene-content',
+          undefined,
+          thinkingConfig,
         );
         return result.text;
       }
@@ -107,6 +115,8 @@ export async function POST(req: NextRequest) {
           maxOutputTokens: modelInfo?.outputWindow,
         },
         'scene-content',
+        undefined,
+        thinkingConfig,
       );
       return result.text;
     };
@@ -136,16 +146,16 @@ export async function POST(req: NextRequest) {
       `Generating content: "${effectiveOutline.title}" (${effectiveOutline.type}) [model=${modelString}]`,
     );
 
-    const content = await generateSceneContent(
-      effectiveOutline,
-      aiCall,
+    const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping,
-      effectiveOutline.type === 'pbl' ? languageModel : undefined,
-      hasVision,
+      languageModel: effectiveOutline.type === 'pbl' ? languageModel : undefined,
+      visionEnabled: hasVision,
       generatedMediaMapping,
       agents,
-    );
+      languageDirective,
+      thinkingConfig,
+    });
 
     if (!content) {
       log.error(`Failed to generate content for: "${effectiveOutline.title}"`);
@@ -161,7 +171,10 @@ export async function POST(req: NextRequest) {
 
     return apiSuccess({ content, effectiveOutline });
   } catch (error) {
-    log.error('Scene content generation error:', error);
+    log.error(
+      `Scene content generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
+      error,
+    );
     return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
   }
 }

@@ -9,7 +9,7 @@ import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 const log = createLogger('Quiz Grade');
 
 interface GradeRequest {
@@ -26,16 +26,25 @@ interface GradeResponse {
 }
 
 export async function POST(req: NextRequest) {
+  let questionSnippet: string | undefined;
+  let resolvedPoints: number | undefined;
   try {
     const body = (await req.json()) as GradeRequest;
     const { question, userAnswer, points, commentPrompt, language } = body;
+    questionSnippet = question?.substring(0, 60);
+    resolvedPoints = points;
 
     if (!question || !userAnswer) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'question and userAnswer are required');
     }
 
-    // Resolve model from request headers
-    const { model: languageModel } = resolveModelFromHeaders(req);
+    // Validate points is a positive finite number
+    if (!points || !Number.isFinite(points) || points <= 0) {
+      return apiError('INVALID_REQUEST', 400, 'points must be a positive number');
+    }
+
+    // Resolve model from request headers/body
+    const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(req, body);
 
     const isZh = language === 'zh-CN';
 
@@ -62,6 +71,8 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
         prompt: userPrompt,
       },
       'quiz-grade',
+      undefined,
+      thinkingConfig,
     );
 
     // Parse the LLM response as JSON
@@ -89,7 +100,10 @@ ${commentPrompt ? `Grading guidance: ${commentPrompt}\n` : ''}Student answer: ${
 
     return apiSuccess({ ...gradeResult });
   } catch (error) {
-    log.error('Error:', error);
+    log.error(
+      `Quiz grading failed [question="${questionSnippet ?? 'unknown'}...", points=${resolvedPoints ?? 'unknown'}]:`,
+      error,
+    );
     return apiError('INTERNAL_ERROR', 500, 'Failed to grade answer');
   }
 }

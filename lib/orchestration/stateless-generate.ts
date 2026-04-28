@@ -21,7 +21,7 @@
 import type { LanguageModel } from 'ai';
 import type { StatelessChatRequest, StatelessEvent, ParsedAction } from '@/lib/types/chat';
 import type { ThinkingConfig } from '@/lib/types/provider';
-import type { WhiteboardActionRecord } from './director-prompt';
+import type { WhiteboardActionRecord } from './types';
 import { createOrchestrationGraph, buildInitialState } from './director-graph';
 import { parse as parsePartialJson, Allow } from 'partial-json';
 import { jsonrepair } from 'jsonrepair';
@@ -213,12 +213,12 @@ export function parseStructuredChunk(chunk: string, state: ParserState): ParseRe
       const remaining = content.slice(state.lastPartialTextLength);
       if (remaining) {
         result.textChunks.push(remaining);
+        // Only push ordered entry when there is actual content to emit
+        result.ordered.push({
+          type: 'text',
+          index: result.textChunks.length - 1,
+        });
       }
-      // Use per-call array index for consistency with emitItem fix
-      result.ordered.push({
-        type: 'text',
-        index: result.textChunks.length - 1,
-      });
       textSegmentIndex++;
       state.lastPartialTextLength = 0;
       continue;

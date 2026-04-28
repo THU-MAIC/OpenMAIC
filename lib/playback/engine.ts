@@ -305,13 +305,30 @@ export class PlaybackEngine {
     this.callbacks.onDiscussionEnd?.();
 
     // Restore lecture state
-    if (this.savedSceneIndex !== null && this.savedActionIndex !== null) {
-      this.sceneIndex = this.savedSceneIndex;
-      this.actionIndex = this.savedActionIndex;
-      this.savedSceneIndex = null;
-      this.savedActionIndex = null;
+    this.restoreSavedLectureState();
+
+    this.setMode('idle');
+  }
+
+  /**
+   * Exit live discussion mode after a request failure without treating it as a
+   * normal discussion end. The chat session stays retryable; this only restores
+   * the playback engine to a coherent non-live state.
+   */
+  handleDiscussionError(): void {
+    const hasSavedLectureState = this.savedSceneIndex !== null && this.savedActionIndex !== null;
+    const isLiveTopic =
+      this.mode === 'live' || (this.mode === 'paused' && this.currentTopicState === 'pending');
+
+    if (!isLiveTopic && !hasSavedLectureState) {
+      return;
     }
 
+    this.actionEngine.clearEffects();
+    useCanvasStore.getState().setWhiteboardOpen(false);
+    this.currentTopicState = 'closed';
+    this.currentTrigger = null;
+    this.restoreSavedLectureState();
     this.setMode('idle');
   }
 
@@ -372,6 +389,15 @@ export class PlaybackEngine {
     if (this.mode === mode) return;
     this.mode = mode;
     this.callbacks.onModeChange?.(mode);
+  }
+
+  private restoreSavedLectureState(): void {
+    if (this.savedSceneIndex !== null && this.savedActionIndex !== null) {
+      this.sceneIndex = this.savedSceneIndex;
+      this.actionIndex = this.savedActionIndex;
+    }
+    this.savedSceneIndex = null;
+    this.savedActionIndex = null;
   }
 
   /**
@@ -500,8 +526,10 @@ export class PlaybackEngine {
             ? { dimOpacity: action.dimOpacity }
             : { color: action.color }),
         } as Effect);
-        // Don't block — continue immediately
-        this.processNext();
+        // Don't block — continue immediately (use queueMicrotask to avoid
+        // stack overflow from deep synchronous recursion when many consecutive
+        // spotlight/laser actions appear in sequence)
+        queueMicrotask(() => this.processNext());
         break;
       }
 
@@ -550,8 +578,12 @@ export class PlaybackEngine {
       case 'wb_draw_table':
       case 'wb_clear':
       case 'wb_delete':
-      case 'wb_close': {
-        // Synchronous whiteboard actions — await completion, then continue
+      case 'wb_close':
+      case 'widget_highlight':
+      case 'widget_setState':
+      case 'widget_annotation':
+      case 'widget_reveal': {
+        // Synchronous actions — await completion, then continue
         await this.actionEngine.execute(action);
         if (this.mode === 'playing') {
           this.processNext();
@@ -633,7 +665,9 @@ export class PlaybackEngine {
       // No usable voice configured — detect text language so the browser
       // auto-selects an appropriate voice.
       const cjkRatio =
-        (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / chunkText.length;
+        chunkText.length > 0
+          ? (chunkText.match(/[\u4e00-\u9fff\u3400-\u4dbf]/g) || []).length / chunkText.length
+          : 0;
       utterance.lang = cjkRatio > CJK_LANG_THRESHOLD ? 'zh-CN' : 'en-US';
     }
 

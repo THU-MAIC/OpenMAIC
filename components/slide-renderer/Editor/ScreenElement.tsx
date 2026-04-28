@@ -11,6 +11,7 @@ import { BaseChartElement } from '../components/element/ChartElement/BaseChartEl
 import { BaseLatexElement } from '../components/element/LatexElement/BaseLatexElement';
 import { BaseTableElement } from '../components/element/TableElement/BaseTableElement';
 import { BaseVideoElement } from '../components/element/VideoElement/BaseVideoElement';
+import { BaseCodeElement } from '../components/element/CodeElement/BaseCodeElement';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import type { SceneContent } from '@/lib/types/stage';
 
@@ -32,6 +33,7 @@ export function ScreenElement({ elementInfo, elementIndex, animate }: ScreenElem
       [ElementTypes.LATEX]: BaseLatexElement,
       [ElementTypes.TABLE]: BaseTableElement,
       [ElementTypes.VIDEO]: BaseVideoElement,
+      [ElementTypes.CODE]: BaseCodeElement,
       // TODO: Add other element types
       // [ElementTypes.AUDIO]: BaseAudioElement,
     };

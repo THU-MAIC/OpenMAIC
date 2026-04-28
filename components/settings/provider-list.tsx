@@ -5,6 +5,7 @@ import { Box, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderId, ProviderConfig } from '@/lib/ai/providers';
+import { MONO_LOGO_PROVIDERS } from '@/lib/ai/providers';
 
 interface ProviderWithServerInfo extends ProviderConfig {
   isServerConfigured?: boolean;
@@ -53,7 +54,10 @@ export function ProviderList({
               <img
                 src={provider.icon}
                 alt={getProviderDisplayName(provider)}
-                className="w-5 h-5 rounded"
+                className={cn(
+                  'w-5 h-5 rounded',
+                  MONO_LOGO_PROVIDERS.has(provider.id) && 'dark:invert',
+                )}
                 onError={(e) => {
                   (e.target as HTMLImageElement).style.display = 'none';
                 }}

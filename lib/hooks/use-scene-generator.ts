@@ -8,9 +8,9 @@ import { db } from '@/lib/utils/database';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
-import type { Action, SpeechAction } from '@/lib/types/action';
-import type { TTSProviderId } from '@/lib/audio/types';
+import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
 
@@ -42,7 +42,6 @@ function getApiHeaders(): HeadersInit {
     'x-api-key': config.apiKey || '',
     'x-base-url': config.baseUrl || '',
     'x-provider-type': config.providerType || '',
-    'x-requires-api-key': String(config.requiresApiKey ?? false),
     // Image generation provider
     'x-image-provider': settings.imageProviderId || '',
     'x-image-model': settings.imageModelId || '',
@@ -57,6 +56,11 @@ function getApiHeaders(): HeadersInit {
     'x-image-generation-enabled': String(settings.imageGenerationEnabled ?? false),
     'x-video-generation-enabled': String(settings.videoGenerationEnabled ?? false),
   };
+}
+
+function withThinkingConfig<T extends Record<string, unknown>>(body: T): T {
+  const { thinkingConfig } = getCurrentModelConfig();
+  return thinkingConfig ? ({ ...body, thinkingConfig } as T) : body;
 }
 
 /** Call POST /api/generate/scene-content (step 1) */
@@ -74,13 +78,14 @@ async function fetchSceneContent(
       style?: string;
     };
     agents?: AgentInfo[];
+    languageDirective?: string;
   },
   signal?: AbortSignal,
 ): Promise<SceneContentResult> {
   const response = await fetch('/api/generate/scene-content', {
     method: 'POST',
     headers: getApiHeaders(),
-    body: JSON.stringify(params),
+    body: JSON.stringify(withThinkingConfig(params)),
     signal,
   });
 
@@ -102,13 +107,14 @@ async function fetchSceneActions(
     agents?: AgentInfo[];
     previousSpeeches?: string[];
     userProfile?: string;
+    languageDirective?: string;
   },
   signal?: AbortSignal,
 ): Promise<SceneActionsResult> {
   const response = await fetch('/api/generate/scene-actions', {
     method: 'POST',
     headers: getApiHeaders(),
-    body: JSON.stringify(params),
+    body: JSON.stringify(withThinkingConfig(params)),
     signal,
   });
 
@@ -124,12 +130,20 @@ async function fetchSceneActions(
 export async function generateAndStoreTTS(
   audioId: string,
   text: string,
+  language?: string,
   signal?: AbortSignal,
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   if (settings.ttsProviderId === 'browser-native-tts') return;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+  const providerOptions =
+    settings.ttsProviderId === 'voxcpm-tts'
+      ? {
+          ...(ttsProviderConfig?.providerOptions || {}),
+          ...(await getVoxCPMProviderOptions(settings.ttsVoice, { role: 'teacher', language })),
+        }
+      : undefined;
   const response = await fetch('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -137,10 +151,16 @@ export async function generateAndStoreTTS(
       text,
       audioId,
       ttsProviderId: settings.ttsProviderId,
+      ttsModelId: ttsProviderConfig?.modelId,
       ttsVoice: settings.ttsVoice,
       ttsSpeed: settings.ttsSpeed,
       ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-      ttsBaseUrl: ttsProviderConfig?.baseUrl || undefined,
+      ttsBaseUrl:
+        ttsProviderConfig?.serverBaseUrl ||
+        ttsProviderConfig?.baseUrl ||
+        ttsProviderConfig?.customDefaultBaseUrl ||
+        undefined,
+      ttsProviderOptions: providerOptions,
     }),
     signal,
   });
@@ -173,6 +193,7 @@ export async function generateAndStoreTTS(
 /** Generate TTS for all speech actions in a scene. Returns result. */
 async function generateTTSForScene(
   scene: Scene,
+  language?: string,
   signal?: AbortSignal,
 ): Promise<{ success: boolean; failedCount: number; error?: string }> {
   const providerId = useSettingsStore.getState().ttsProviderId;
@@ -185,17 +206,24 @@ async function generateTTSForScene(
   let failedCount = 0;
   let lastError: string | undefined;
 
+  // Use scene order to make audio IDs unique across scenes
+  // This prevents audio collision when action IDs are sequential (e.g., action_1, action_2)
+  const sceneOrder = scene.order;
+
   for (const action of speechActions) {
-    const audioId = `tts_${action.id}`;
+    // Include scene order in audioId to prevent collision across scenes
+    const audioId = `tts_s${sceneOrder}_${action.id}`;
     action.audioId = audioId;
     try {
-      await generateAndStoreTTS(audioId, action.text, signal);
+      await generateAndStoreTTS(audioId, action.text, language, signal);
     } catch (error) {
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
       log.warn('TTS generation failed:', {
         providerId,
         actionId: action.id,
+        sceneOrder,
+        audioId,
         textLength: action.text.length,
         error: lastError,
       });
@@ -227,6 +255,7 @@ export interface GenerationParams {
   };
   agents?: AgentInfo[];
   userProfile?: string;
+  languageDirective?: string;
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
@@ -320,6 +349,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               imageMapping: params.imageMapping,
               stageInfo: params.stageInfo,
               agents: params.agents,
+              languageDirective: params.languageDirective,
             },
             signal,
           );
@@ -353,6 +383,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               agents: params.agents,
               previousSpeeches,
               userProfile: params.userProfile,
+              languageDirective: params.languageDirective,
             },
             signal,
           );
@@ -363,7 +394,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
             // TTS generation — failure means the whole scene fails
             if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
-              const ttsResult = await generateTTSForScene(scene, signal);
+              const ttsResult = await generateTTSForScene(
+                scene,
+                params.languageDirective || params.stageInfo.language,
+                signal,
+              );
               if (!ttsResult.success) {
                 if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
                   pausedByFailureOrAbort = true;
@@ -488,6 +523,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             imageMapping: params.imageMapping,
             stageInfo: params.stageInfo,
             agents: params.agents,
+            languageDirective: params.languageDirective,
           },
           signal,
         );
@@ -515,6 +551,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             agents: params.agents,
             previousSpeeches,
             userProfile: params.userProfile,
+            languageDirective: params.languageDirective,
           },
           signal,
         );
@@ -527,7 +564,11 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         // Step 3: TTS
         const settings = useSettingsStore.getState();
         if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
-          const ttsResult = await generateTTSForScene(actionsResult.scene, signal);
+          const ttsResult = await generateTTSForScene(
+            actionsResult.scene,
+            params.languageDirective || params.stageInfo.language,
+            signal,
+          );
           if (!ttsResult.success) {
             store.getState().addFailedOutline(outline);
             return;

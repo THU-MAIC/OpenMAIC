@@ -11,12 +11,14 @@ import {
   Globe,
   AlertCircle,
   RefreshCw,
+  Trophy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
+import { ThumbnailInteractive } from '@/components/slide-renderer/components/ThumbnailInteractive';
 import { useStageStore, useCanvasStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { SceneType, SlideContent } from '@/lib/types/stage';
+import type { SceneType, SlideContent, InteractiveContent } from '@/lib/types/stage';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
 
 interface SceneSidebarProps {
@@ -24,6 +26,7 @@ interface SceneSidebarProps {
   readonly onCollapseChange: (collapsed: boolean) => void;
   readonly onSceneSelect?: (sceneId: string) => void;
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
+  readonly isCourseComplete?: boolean;
 }
 
 const DEFAULT_WIDTH = 220;
@@ -35,6 +38,7 @@ export function SceneSidebar({
   onCollapseChange,
   onSceneSelect,
   onRetryOutline,
+  isCourseComplete,
 }: SceneSidebarProps) {
   const { t } = useI18n();
   const router = useRouter();
@@ -137,16 +141,22 @@ export function SceneSidebar({
         </div>
 
         {/* Scenes List */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-2 scrollbar-hide pt-1">
+        <div
+          data-testid="scene-list"
+          className="flex-1 overflow-y-auto overflow-x-hidden p-2 space-y-2 scrollbar-hide pt-1"
+        >
           {scenes.map((scene, index) => {
             const isActive = currentSceneId === scene.id;
             const Icon = getSceneTypeIcon(scene.type);
             const isSlide = scene.type === 'slide';
+            const isInteractive = scene.type === 'interactive';
             const slideContent = isSlide ? (scene.content as SlideContent) : null;
+            const interactiveContent = isInteractive ? (scene.content as InteractiveContent) : null;
 
             return (
               <div
                 key={scene.id}
+                data-testid="scene-item"
                 onClick={() => {
                   if (onSceneSelect) {
                     onSceneSelect(scene.id);
@@ -175,6 +185,7 @@ export function SceneSidebar({
                       {index + 1}
                     </span>
                     <span
+                      data-testid="scene-title"
                       className={cn(
                         'text-xs font-bold truncate transition-colors',
                         isActive
@@ -232,6 +243,12 @@ export function SceneSidebar({
                           ))}
                         </div>
                       </div>
+                    ) : scene.type === 'interactive' && interactiveContent?.html ? (
+                      /* Interactive: live iframe preview */
+                      <ThumbnailInteractive
+                        content={interactiveContent}
+                        size={Math.max(100, sidebarWidth - 28)}
+                      />
                     ) : scene.type === 'interactive' ? (
                       /* Interactive: browser window with chrome + content */
                       <div className="w-full h-full bg-gradient-to-br from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/20 p-1.5 flex flex-col">
@@ -435,6 +452,99 @@ export function SceneSidebar({
                     {!isFailed && !isPaused && (
                       <div className="absolute inset-0 -translate-x-full animate-[shimmer_2s_infinite] bg-gradient-to-r from-transparent via-white/40 dark:via-white/10 to-transparent" />
                     )}
+                  </div>
+                </div>
+              );
+            })()}
+
+          {/* Course-complete placeholder (shown when outline is exhausted) */}
+          {isCourseComplete &&
+            generatingOutlines.length === 0 &&
+            (() => {
+              const isActive = currentSceneId === PENDING_SCENE_ID;
+              return (
+                <div
+                  key="course-complete-slot"
+                  onClick={() => {
+                    if (onSceneSelect) {
+                      onSceneSelect(PENDING_SCENE_ID);
+                    } else {
+                      setCurrentSceneId(PENDING_SCENE_ID);
+                    }
+                  }}
+                  className={cn(
+                    'group relative rounded-lg flex flex-col gap-1 p-1.5 transition-all duration-200 cursor-pointer hover:bg-amber-50/60 dark:hover:bg-amber-900/10',
+                    !isActive && 'opacity-80',
+                    isActive &&
+                      'bg-amber-50 dark:bg-amber-900/20 ring-1 ring-amber-200 dark:ring-amber-700 opacity-100',
+                  )}
+                >
+                  <div className="flex justify-between items-center px-2 pt-0.5">
+                    <div className="flex items-center gap-2 max-w-full">
+                      <span
+                        className={cn(
+                          'text-[10px] font-black w-4 h-4 rounded-full flex items-center justify-center shrink-0',
+                          isActive
+                            ? 'bg-amber-500 dark:bg-amber-400 text-white shadow-sm shadow-amber-500/30'
+                            : 'bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400',
+                        )}
+                      >
+                        {scenes.length + 1}
+                      </span>
+                      <span
+                        className={cn(
+                          'text-xs font-bold truncate transition-colors',
+                          isActive
+                            ? 'text-amber-700 dark:text-amber-300'
+                            : 'text-amber-600 dark:text-amber-400',
+                        )}
+                      >
+                        {t('stage.courseComplete')}
+                      </span>
+                    </div>
+                  </div>
+                  <div
+                    className={cn(
+                      'relative aspect-video w-full rounded overflow-hidden ring-1 flex items-center justify-center transition-all',
+                      'bg-amber-50/80 dark:bg-amber-950/20',
+                      isActive
+                        ? 'ring-amber-300 dark:ring-amber-700'
+                        : 'ring-amber-100 dark:ring-amber-900/40',
+                    )}
+                  >
+                    {/* soft radial glow */}
+                    <div
+                      className="absolute inset-0"
+                      style={{
+                        background:
+                          'radial-gradient(circle at 50% 55%, rgba(251, 191, 36, 0.14), transparent 65%)',
+                      }}
+                    />
+                    {/* sparkles (subtle) */}
+                    <svg
+                      viewBox="0 0 20 20"
+                      className="absolute top-1 right-1.5 w-1.5 h-1.5 text-amber-300/70 dark:text-amber-400/60"
+                      aria-hidden
+                    >
+                      <path
+                        d="M10 1 L12 8 L19 10 L12 12 L10 19 L8 12 L1 10 L8 8 Z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                    <svg
+                      viewBox="0 0 20 20"
+                      className="absolute bottom-1 left-1.5 w-1 h-1 text-amber-300/60 dark:text-amber-400/50"
+                      aria-hidden
+                    >
+                      <path
+                        d="M10 1 L12 8 L19 10 L12 12 L10 19 L8 12 L1 10 L8 8 Z"
+                        fill="currentColor"
+                      />
+                    </svg>
+                    <Trophy
+                      className="relative w-8 h-8 text-amber-500 dark:text-amber-400"
+                      strokeWidth={1.6}
+                    />
                   </div>
                 </div>
               );

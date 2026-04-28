@@ -148,6 +148,7 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { experimental_transcribe as transcribe } from 'ai';
 import type { ASRModelConfig } from './types';
+import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
 
 /**
@@ -164,13 +165,10 @@ export async function transcribeAudio(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
 ): Promise<ASRTranscriptionResult> {
-  const provider = ASR_PROVIDERS[config.providerId];
-  if (!provider) {
-    throw new Error(`Unknown ASR provider: ${config.providerId}`);
-  }
+  const provider = ASR_PROVIDERS[config.providerId as keyof typeof ASR_PROVIDERS];
 
-  // Validate API key if required
-  if (provider.requiresApiKey && !config.apiKey) {
+  // Validate API key if required (only for built-in providers with known config)
+  if (provider?.requiresApiKey && !config.apiKey) {
     throw new Error(`API key required for ASR provider: ${config.providerId}`);
   }
 
@@ -185,6 +183,9 @@ export async function transcribeAudio(
       return await transcribeQwenASR(config, audioBuffer);
 
     default:
+      if (isCustomASRProvider(config.providerId)) {
+        return await transcribeOpenAIWhisper(config, audioBuffer);
+      }
       throw new Error(`Unsupported ASR provider: ${config.providerId}`);
   }
 }
@@ -214,7 +215,7 @@ async function transcribeOpenAIWhisper(
 
   try {
     const result = await transcribe({
-      model: openai.transcription('gpt-4o-mini-transcribe'),
+      model: openai.transcription(config.modelId || 'gpt-4o-mini-transcribe'),
       audio: audioData,
       providerOptions: {
         openai: {
@@ -256,7 +257,7 @@ async function transcribeQwenASR(
 
   // Build request body
   const requestBody: Record<string, unknown> = {
-    model: 'qwen3-asr-flash',
+    model: config.modelId || 'qwen3-asr-flash',
     input: {
       messages: [
         {
@@ -343,8 +344,12 @@ export async function getCurrentASRConfig(): Promise<ASRModelConfig> {
 
   return {
     providerId: asrProviderId,
+    modelId:
+      providerConfig?.modelId ||
+      ASR_PROVIDERS[asrProviderId as keyof typeof ASR_PROVIDERS]?.defaultModelId ||
+      '',
     apiKey: providerConfig?.apiKey,
-    baseUrl: providerConfig?.baseUrl,
+    baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
     language: asrLanguage,
   };
 }

@@ -44,9 +44,11 @@ export interface StageRecord {
   description?: string;
   createdAt: number; // timestamp
   updatedAt: number; // timestamp
-  language?: string;
+  languageDirective?: string;
   style?: string;
   currentSceneId?: string;
+  agentIds?: string[]; // Agent IDs selected at creation time
+  interactiveMode?: boolean; // Interactive Mode flag; non-indexed
 }
 
 /**
@@ -166,6 +168,23 @@ export interface GeneratedAgentRecord {
   createdAt: number;
 }
 
+/**
+ * VoiceProfile table - Browser-local TTS voice profiles
+ */
+export interface VoiceProfileRecord {
+  id: string;
+  providerId: string;
+  kind: 'prompt' | 'clone';
+  name: string;
+  voicePrompt?: string;
+  promptText?: string;
+  referenceAudio?: Blob;
+  referenceAudioName?: string;
+  referenceAudioMimeType?: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
 /** Build the compound primary key for mediaFiles: `${stageId}:${elementId}` */
 export function mediaFileKey(stageId: string, elementId: string): string {
   return `${stageId}:${elementId}`;
@@ -174,7 +193,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 8;
+const _DATABASE_VERSION = 10;
 
 /**
  * MAIC Database Instance
@@ -191,6 +210,7 @@ class MAICDatabase extends Dexie {
   stageOutlines!: EntityTable<StageOutlinesRecord, 'stageId'>;
   mediaFiles!: EntityTable<MediaFileRecord, 'id'>;
   generatedAgents!: EntityTable<GeneratedAgentRecord, 'id'>;
+  voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -307,6 +327,55 @@ class MAICDatabase extends Dexie {
       stageOutlines: 'stageId',
       mediaFiles: 'id, stageId, [stageId+type]',
       generatedAgents: 'id, stageId',
+    });
+
+    // Version 9: Migrate legacy `language` field to `languageDirective`
+    // Old stages stored a BCP-47 locale code (e.g. "zh-CN"); new code expects a
+    // natural-language directive. Convert known locales and drop the old field.
+    const LOCALE_TO_DIRECTIVE: Record<string, string> = {
+      'zh-CN': 'Deliver the entire course in Chinese (Simplified, zh-CN).',
+      'en-US': 'Deliver the entire course in English (en-US).',
+      'ja-JP': 'Deliver the entire course in Japanese (ja-JP).',
+      'ru-RU': 'Deliver the entire course in Russian (ru-RU).',
+    };
+    this.version(9)
+      .stores({
+        stages: 'id, updatedAt',
+        scenes: 'id, stageId, order, [stageId+order]',
+        audioFiles: 'id, createdAt',
+        imageFiles: 'id, createdAt',
+        snapshots: '++id',
+        chatSessions: 'id, stageId, [stageId+createdAt]',
+        playbackState: 'stageId',
+        stageOutlines: 'stageId',
+        mediaFiles: 'id, stageId, [stageId+type]',
+        generatedAgents: 'id, stageId',
+      })
+      .upgrade(async (tx) => {
+        const table = tx.table('stages');
+        await table.toCollection().modify((stage: Record<string, unknown>) => {
+          const lang = stage.language as string | undefined;
+          if (lang && !stage.languageDirective) {
+            stage.languageDirective =
+              LOCALE_TO_DIRECTIVE[lang] || `Deliver the entire course in ${lang}.`;
+          }
+          delete stage.language;
+        });
+      });
+
+    // Version 10: Add browser-local voice profiles for serverless TTS voice storage.
+    this.version(10).stores({
+      stages: 'id, updatedAt',
+      scenes: 'id, stageId, order, [stageId+order]',
+      audioFiles: 'id, createdAt',
+      imageFiles: 'id, createdAt',
+      snapshots: '++id',
+      chatSessions: 'id, stageId, [stageId+createdAt]',
+      playbackState: 'stageId',
+      stageOutlines: 'stageId',
+      mediaFiles: 'id, stageId, [stageId+type]',
+      generatedAgents: 'id, stageId',
+      voiceProfiles: 'id, providerId, kind, updatedAt',
     });
   }
 }

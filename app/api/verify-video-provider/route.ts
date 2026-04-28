@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     const clientBaseUrl = request.headers.get('x-base-url') || undefined;
 
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-      const ssrfError = validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
@@ -60,7 +60,10 @@ export async function POST(request: NextRequest) {
 
     return apiSuccess({ message: result.message });
   } catch (err) {
-    log.error('Connectivity test error:', err);
+    log.error(
+      `Video provider verification failed [provider=${request.headers.get('x-video-provider') ?? 'seedance'}]:`,
+      err,
+    );
     return apiError('INTERNAL_ERROR', 500, `Connectivity test error: ${err}`);
   }
 }

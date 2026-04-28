@@ -581,7 +581,9 @@ async function buildPptxBlob(
             x: el.width / el.viewBox[0],
             y: el.height / el.viewBox[1],
           };
-          const points = formatPoints(toPoints(el.path), ratioPx2Inch, scale);
+          const rawPoints = toPoints(el.path);
+          if (!rawPoints.length) continue; // Malformed path — toPoints already logged.
+          const points = formatPoints(rawPoints, ratioPx2Inch, scale);
 
           let fillColor = formatColor(el.fill);
           if (el.gradient) {
