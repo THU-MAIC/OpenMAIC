@@ -454,6 +454,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "lemonade": "Lemonade (محلي)",
       "ollama": "Ollama (محلي)"
     },
     "providerTypes": {
@@ -601,6 +602,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (فولكينجين)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS (محلي)",
     "providerBrowserNativeTTS": "تحويل النص إلى كلام المدمج في المتصفح",
     "voxcpmBackend": "الخلفية",
     "voxcpmBaseUrlPending": "أدخل Base URL لإنشاء عنوان الطلب",
@@ -647,6 +649,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "التعرّف على الكلام المدمج في المتصفح",
     "providerQwenASR": "Qwen ASR (سحابة علي بابا بايليان)",
+    "providerLemonadeASR": "Lemonade ASR (محلي)",
     "providerUnpdf": "unpdf (مُدمج)",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU (السحابي)",
@@ -898,6 +901,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerLemonadeImage": "Lemonade Image (محلي)",
     "testImageGeneration": "اختبار توليد الصور",
     "testImageConnectivity": "اختبار الاتصال",
     "imageConnectivitySuccess": "تم الاتصال بخدمة الصور بنجاح",

@@ -454,6 +454,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "腾讯混元",
       "xiaomi": "小米 MiMo",
+      "lemonade": "Lemonade（本地）",
       "ollama": "Ollama（本地模型）"
     },
     "providerTypes": {
@@ -601,6 +602,7 @@
     "providerDoubaoTTS": "豆包 TTS 2.0（火山引擎）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS（本地）",
     "providerBrowserNativeTTS": "浏览器原生 TTS",
     "voxcpmBackend": "Backend",
     "voxcpmBaseUrlPending": "填写 Base URL 后生成",
@@ -647,6 +649,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "浏览器原生 ASR",
     "providerQwenASR": "Qwen ASR（阿里云百炼）",
+    "providerLemonadeASR": "Lemonade ASR（本地）",
     "providerUnpdf": "unpdf（内置）",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU（云端）",
@@ -898,6 +901,7 @@
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax 图像",
     "providerGrokImage": "Grok Image（xAI）",
+    "providerLemonadeImage": "Lemonade 图像（本地）",
     "testImageGeneration": "测试图像生成",
     "testImageConnectivity": "测试连接",
     "imageConnectivitySuccess": "图像服务连接成功",

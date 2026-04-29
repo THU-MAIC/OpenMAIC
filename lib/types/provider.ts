@@ -20,6 +20,7 @@ export type BuiltInProviderId =
   | 'grok'
   | 'tencent-hunyuan'
   | 'xiaomi'
+  | 'lemonade'
   | 'ollama';
 
 /**

@@ -454,6 +454,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "lemonade": "Lemonade（ローカル）",
       "ollama": "Ollama（ローカルモデル）"
     },
     "providerTypes": {
@@ -601,6 +602,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0（火山エンジン）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS（ローカル）",
     "providerBrowserNativeTTS": "ブラウザネイティブTTS",
     "voxcpmBackend": "バックエンド",
     "voxcpmBaseUrlPending": "Base URL を入力するとリクエスト URL が生成されます",
@@ -647,6 +649,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ブラウザネイティブASR",
     "providerQwenASR": "Qwen ASR（Alibaba Cloud百錬）",
+    "providerLemonadeASR": "Lemonade ASR（ローカル）",
     "providerUnpdf": "unpdf（組み込み）",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU（クラウド）",
@@ -898,6 +901,7 @@
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image（xAI）",
+    "providerLemonadeImage": "Lemonade Image（ローカル）",
     "testImageGeneration": "画像生成をテスト",
     "testImageConnectivity": "接続テスト",
     "imageConnectivitySuccess": "画像サービスへの接続に成功しました",

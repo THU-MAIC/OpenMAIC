@@ -55,6 +55,7 @@ const LLM_ENV_MAP: Record<string, string> = {
   XIAOMI: 'xiaomi',
   MIMO: 'xiaomi',
   OLLAMA: 'ollama',
+  LEMONADE: 'lemonade',
 };
 
 const TTS_ENV_MAP: Record<string, string> = {
@@ -66,11 +67,13 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
+  TTS_LEMONADE: 'lemonade-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {
   ASR_OPENAI: 'openai-whisper',
   ASR_QWEN: 'qwen-asr',
+  ASR_LEMONADE: 'lemonade-asr',
 };
 
 const PDF_ENV_MAP: Record<string, string> = {
@@ -86,6 +89,7 @@ const IMAGE_ENV_MAP: Record<string, string> = {
   IMAGE_NANO_BANANA: 'nano-banana',
   IMAGE_MINIMAX: 'minimax-image',
   IMAGE_GROK: 'grok-image',
+  IMAGE_LEMONADE: 'lemonade',
 };
 
 const VIDEO_ENV_MAP: Record<string, string> = {
@@ -210,14 +214,18 @@ const _configs: Map<string, ServerConfig> = new Map();
 function buildConfig(yamlData: YamlData): ServerConfig {
   return {
     providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
-      keylessProviders: new Set(['ollama']),
+      keylessProviders: new Set(['ollama', 'lemonade']),
     }),
     tts: loadEnvSection(TTS_ENV_MAP, yamlData.tts, {
-      keylessProviders: new Set(['voxcpm-tts']),
+      keylessProviders: new Set(['voxcpm-tts', 'lemonade-tts']),
     }),
-    asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr),
+    asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr, {
+      keylessProviders: new Set(['lemonade-asr']),
+    }),
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
-    image: loadEnvSection(IMAGE_ENV_MAP, yamlData.image),
+    image: loadEnvSection(IMAGE_ENV_MAP, yamlData.image, {
+      keylessProviders: new Set(['lemonade']),
+    }),
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
     webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
   };
