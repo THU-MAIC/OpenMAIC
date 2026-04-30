@@ -17,6 +17,7 @@ import {
   testMiniMaxVideoConnectivity,
 } from './adapters/minimax-video-adapter';
 import { generateWithGrokVideo, testGrokVideoConnectivity } from './adapters/grok-video-adapter';
+import { generateWithHappyHorse, testHappyHorseConnectivity } from './adapters/happyhorse-adapter';
 
 export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
@@ -106,6 +107,17 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     supportedDurations: [6],
     maxDuration: 6,
   },
+  happyhorse: {
+    id: 'happyhorse',
+    name: 'HappyHorse',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://dashscope.aliyuncs.com',
+    models: [{ id: 'happyhorse-1.0-t2v', name: 'HappyHorse 1.0 T2V' }],
+    supportedAspectRatios: ['16:9', '9:16', '1:1', '4:3', '3:4'],
+    supportedDurations: [5, 10, 15],
+    supportedResolutions: ['720p', '1080p'],
+    maxDuration: 15,
+  },
 };
 
 export async function testVideoConnectivity(
@@ -122,6 +134,8 @@ export async function testVideoConnectivity(
       return testMiniMaxVideoConnectivity(config);
     case 'grok-video':
       return testGrokVideoConnectivity(config);
+    case 'happyhorse':
+      return testHappyHorseConnectivity(config);
     default:
       return {
         success: false,
@@ -187,6 +201,8 @@ export async function generateVideo(
       return generateWithMiniMaxVideo(config, options);
     case 'grok-video':
       return generateWithGrokVideo(config, options);
+    case 'happyhorse':
+      return generateWithHappyHorse(config, options);
     default:
       throw new Error(`Unsupported video provider: ${config.providerId}`);
   }

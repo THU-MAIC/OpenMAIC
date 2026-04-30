@@ -920,6 +920,7 @@
     "providerSora": "Sora (OpenAI)",
     "providerMiniMaxVideo": "MiniMax Video",
     "providerGrokVideo": "Grok Video (xAI)",
+    "providerHappyHorse": "HappyHorse (Alibaba Cloud)",
     "testVideoGeneration": "Test Video Generation",
     "testVideoConnectivity": "Test Connection",
     "videoConnectivitySuccess": "Video service connected successfully",
