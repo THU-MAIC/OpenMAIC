@@ -203,11 +203,37 @@ function loadEnvSection(
 // ---------------------------------------------------------------------------
 
 const DEFAULT_FILENAME = 'server-providers.yml';
+const OPENAI_IMAGE_PROVIDER_ID = 'openai-image';
 
 /** Cache keyed by YAML filename (empty string = default file). */
 const _configs: Map<string, ServerConfig> = new Map();
 
+function applyOpenAIImageFallback(
+  imageConfig: Record<string, ServerProviderEntry>,
+  yamlImageSection: Record<string, Partial<ServerProviderEntry>> | undefined,
+): Record<string, ServerProviderEntry> {
+  if (imageConfig[OPENAI_IMAGE_PROVIDER_ID]) return imageConfig;
+
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return imageConfig;
+
+  const yamlOpenAIImage = yamlImageSection?.[OPENAI_IMAGE_PROVIDER_ID];
+  imageConfig[OPENAI_IMAGE_PROVIDER_ID] = {
+    apiKey,
+    baseUrl:
+      yamlOpenAIImage?.baseUrl || process.env.IMAGE_OPENAI_BASE_URL || process.env.OPENAI_BASE_URL,
+    models: yamlOpenAIImage?.models,
+    proxy: yamlOpenAIImage?.proxy,
+  };
+  return imageConfig;
+}
+
 function buildConfig(yamlData: YamlData): ServerConfig {
+  const image = applyOpenAIImageFallback(
+    loadEnvSection(IMAGE_ENV_MAP, yamlData.image),
+    yamlData.image,
+  );
+
   return {
     providers: loadEnvSection(LLM_ENV_MAP, yamlData.providers, {
       keylessProviders: new Set(['ollama']),
@@ -217,7 +243,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     }),
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr),
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
-    image: loadEnvSection(IMAGE_ENV_MAP, yamlData.image),
+    image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
     webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
   };
@@ -360,11 +386,12 @@ export function resolvePDFBaseUrl(providerId: string, clientBaseUrl?: string): s
 // Public API — Image Generation
 // ---------------------------------------------------------------------------
 
-export function getServerImageProviders(): Record<string, { baseUrl?: string }> {
+export function getServerImageProviders(): Record<string, { models?: string[]; baseUrl?: string }> {
   const cfg = getConfig();
-  const result: Record<string, { baseUrl?: string }> = {};
+  const result: Record<string, { models?: string[]; baseUrl?: string }> = {};
   for (const [id, entry] of Object.entries(cfg.image)) {
     result[id] = {};
+    if (entry.models && entry.models.length > 0) result[id].models = entry.models;
     if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
   }
   return result;
