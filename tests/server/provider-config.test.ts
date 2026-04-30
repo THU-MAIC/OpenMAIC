@@ -295,6 +295,20 @@ pdf:
   });
 
   describe('image and video provider metadata', () => {
+    it('uses standard OpenAI env vars for OpenAI image generation fallback', async () => {
+      vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
+      vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.example.com/v1');
+      const { getServerImageProviders, resolveImageApiKey, resolveImageBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      const providers = getServerImageProviders();
+      expect(providers['openai-image']).toEqual({
+        baseUrl: 'https://proxy.example.com/v1',
+      });
+      expect(resolveImageApiKey('openai-image')).toBe('sk-openai');
+      expect(resolveImageBaseUrl('openai-image')).toBe('https://proxy.example.com/v1');
+    });
+
     it('maps IMAGE_OPENAI and exposes image baseUrl', async () => {
       vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-openai-image');
       vi.stubEnv('IMAGE_OPENAI_BASE_URL', 'https://proxy.example.com/v1');
