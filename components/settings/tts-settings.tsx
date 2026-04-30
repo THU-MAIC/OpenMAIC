@@ -93,6 +93,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const requiresApiKey = isCustom
     ? !!providerConfig?.requiresApiKey
     : !!ttsProvider?.requiresApiKey;
+  const isKeylessLocalProvider = !isCustom && !requiresApiKey && !!ttsProvider?.defaultBaseUrl;
 
   // When testing a non-active provider, use that provider's default voice
   // instead of the active provider's voice (which may be incompatible).
@@ -192,6 +193,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
     switch (selectedProviderId) {
       case 'openai-tts':
       case 'glm-tts':
+      case 'lemonade-tts':
         return '/audio/speech';
       case 'azure-tts':
         return '/cognitiveservices/v1';
@@ -225,7 +227,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
       )}
 
       {/* API Key & Base URL */}
-      {(requiresApiKey || isServerConfigured || isCustom || isVoxCPM) &&
+      {(requiresApiKey || isServerConfigured || isCustom || isVoxCPM || isKeylessLocalProvider) &&
         (isVoxCPM ? (
           <div className="rounded-lg border border-border/60 bg-background px-3 py-2.5">
             <div className="flex flex-col gap-2 md:flex-row md:items-end">

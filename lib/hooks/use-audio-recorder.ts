@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
+import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioRecorder');
@@ -41,13 +42,14 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
 
       try {
         const formData = new FormData();
-        formData.append('audio', audioBlob, 'recording.webm');
 
         // Get current ASR configuration from settings store
         // Note: This requires importing useSettingsStore in browser context
         if (typeof window !== 'undefined') {
           const { useSettingsStore } = await import('@/lib/store/settings');
           const { asrProviderId, asrLanguage, asrProvidersConfig } = useSettingsStore.getState();
+          const uploadAudio = await normalizeASRUploadAudio(asrProviderId, audioBlob);
+          formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
 
           formData.append('providerId', asrProviderId);
           formData.append(
@@ -68,6 +70,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           if (effectiveBaseUrl) {
             formData.append('baseUrl', effectiveBaseUrl);
           }
+        } else {
+          formData.append('audio', audioBlob, 'recording.webm');
         }
 
         const response = await fetch('/api/transcription', {

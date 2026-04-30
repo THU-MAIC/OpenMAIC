@@ -6,7 +6,7 @@
  * - Anthropic Claude (native)
  * - Google Gemini (native)
  * - MiniMax (Anthropic-compatible, recommended by official)
- * - OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, SiliconFlow, Doubao, Tencent, Xiaomi, etc.)
+ * - OpenAI-compatible providers (DeepSeek, Qwen, Kimi, GLM, SiliconFlow, Doubao, Tencent, Xiaomi, Lemonade, etc.)
  *
  * Sources:
  * - https://platform.openai.com/docs/models
@@ -977,6 +977,32 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         contextWindow: 131072,
         outputWindow: 8192,
         capabilities: { streaming: true, tools: false, vision: false },
+      },
+    ],
+  },
+
+  lemonade: {
+    id: 'lemonade',
+    name: 'Lemonade',
+    type: 'openai',
+    defaultBaseUrl: 'http://localhost:13305/v1',
+    requiresApiKey: false,
+    icon: '/logos/lemonade.svg',
+    models: [
+      {
+        id: 'Qwen3-0.6B-GGUF',
+        name: 'Qwen3 0.6B GGUF',
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'Llama-3.2-1B-Instruct-Hybrid',
+        name: 'Llama 3.2 1B Instruct Hybrid',
+        capabilities: { streaming: true, tools: true, vision: false },
+      },
+      {
+        id: 'Qwen2.5-VL-7B-Instruct',
+        name: 'Qwen2.5 VL 7B Instruct',
+        capabilities: { streaming: true, tools: true, vision: true },
       },
     ],
   },

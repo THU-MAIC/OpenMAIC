@@ -943,6 +943,23 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['browser'], // Browser native audio
     speedRange: { min: 0.1, max: 10.0, default: 1.0 },
   },
+
+  'lemonade-tts': {
+    id: 'lemonade-tts',
+    name: 'Lemonade TTS',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:13305/v1',
+    icon: '/logos/lemonade.svg',
+    models: [{ id: 'kokoro', name: 'Kokoro' }],
+    defaultModelId: 'kokoro',
+    voices: [
+      { id: 'default', name: 'Default', language: 'auto', gender: 'neutral' },
+      { id: 'af_bella', name: 'Bella', language: 'en', gender: 'female' },
+      { id: 'am_adam', name: 'Adam', language: 'en', gender: 'male' },
+    ],
+    supportedFormats: ['wav'],
+    speedRange: { min: 0.25, max: 4.0, default: 1.0 },
+  },
 };
 
 /**
@@ -1142,6 +1159,18 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     ],
     supportedFormats: ['webm'], // MediaRecorder format
   },
+
+  'lemonade-asr': {
+    id: 'lemonade-asr',
+    name: 'Lemonade ASR',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:13305/v1',
+    icon: '/logos/lemonade.svg',
+    models: [{ id: 'whisper', name: 'Whisper' }],
+    defaultModelId: 'whisper',
+    supportedLanguages: CUSTOM_ASR_DEFAULT_LANGUAGES,
+    supportedFormats: ['wav'],
+  },
 };
 
 /**
@@ -1157,6 +1186,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
+  'lemonade-tts': 'default',
   'browser-native-tts': 'default',
 };
 
@@ -1169,6 +1199,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
+  'lemonade-tts': 'kokoro',
   'browser-native-tts': '',
 };
 

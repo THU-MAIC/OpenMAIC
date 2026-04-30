@@ -454,6 +454,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "lemonade": "Lemonade (Локальный)",
       "ollama": "Ollama (Локальный)"
     },
     "providerTypes": {
@@ -601,6 +602,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS (Локальный)",
     "providerBrowserNativeTTS": "Встроенный TTS браузера",
     "voxcpmBackend": "Бэкенд",
     "voxcpmBaseUrlPending": "Введите Base URL, чтобы сформировать URL запроса",
@@ -647,6 +649,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Встроенный ASR браузера",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerLemonadeASR": "Lemonade ASR (Локальный)",
     "providerUnpdf": "unpdf (встроенный)",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU (Облако)",
@@ -898,6 +901,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerLemonadeImage": "Lemonade Image (Локальный)",
     "testImageGeneration": "Тест генерации изображений",
     "testImageConnectivity": "Тест подключения",
     "imageConnectivitySuccess": "Подключение к сервису изображений успешно",

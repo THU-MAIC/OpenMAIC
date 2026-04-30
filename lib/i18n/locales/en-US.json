@@ -454,6 +454,7 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
+      "lemonade": "Lemonade (Local)",
       "ollama": "Ollama (Local)"
     },
     "providerTypes": {
@@ -601,6 +602,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS (Local)",
     "providerBrowserNativeTTS": "Browser Native TTS",
     "voxcpmBackend": "Backend",
     "voxcpmBaseUrlPending": "Enter a Base URL to generate the request URL",
@@ -647,6 +649,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Browser Native ASR",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerLemonadeASR": "Lemonade ASR (Local)",
     "providerUnpdf": "unpdf (Built-in)",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU (Cloud)",
@@ -898,6 +901,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerLemonadeImage": "Lemonade Image (Local)",
     "testImageGeneration": "Test Image Generation",
     "testImageConnectivity": "Test Connection",
     "imageConnectivitySuccess": "Image service connected successfully",
