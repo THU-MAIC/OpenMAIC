@@ -312,7 +312,7 @@ export function agentsToParticipants(
 
   // Always add user participant — use profile store when available
   const userProfile = useUserProfileStore.getState();
-  const userName = userProfile.nickname || t?.('common.you') || 'You';
+  const userName = userProfile.nickname || t?.('profile.defaultNickname') || 'You';
   const userAvatar = userProfile.avatar || USER_AVATAR;
 
   participants.push({
@@ -413,11 +413,11 @@ export async function saveGeneratedAgents(
       updatedAt: new Date(record.createdAt),
       ...(voiceConfig
         ? {
-            voiceConfig: {
-              providerId: voiceConfig.providerId as TTSProviderId,
-              voiceId: voiceConfig.voiceId,
-            },
-          }
+          voiceConfig: {
+            providerId: voiceConfig.providerId as TTSProviderId,
+            voiceId: voiceConfig.voiceId,
+          },
+        }
         : {}),
     });
   }
