@@ -87,6 +87,7 @@ export type BuiltInTTSProviderId =
   | 'doubao-tts'
   | 'elevenlabs-tts'
   | 'minimax-tts'
+  | 'xiaomi-tts'
   | 'browser-native-tts';
 
 export type TTSProviderId = BuiltInTTSProviderId | `custom-tts-${string}`;
