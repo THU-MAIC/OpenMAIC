@@ -66,6 +66,7 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_DOUBAO: 'doubao-tts',
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
+  TTS_XIAOMI: 'xiaomi-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {
