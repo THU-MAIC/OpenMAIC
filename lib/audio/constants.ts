@@ -1237,5 +1237,20 @@ export function getASRSupportedLanguages(
   providerId: ASRProviderId,
   customProviders?: Record<string, ASRProviderConfig>,
 ): string[] {
-  return getASRProvider(providerId, customProviders)?.supportedLanguages || [];
+  const provider = getASRProvider(providerId, customProviders);
+  return provider?.supportedLanguages ?? [];
 }
+
+/**
+ * Voice language mapping for Traditional Chinese variants
+ *
+ * zh-TW: Traditional Chinese (Taiwan) - uses Mandarin
+ * zh-HK: Traditional Chinese (Hong Kong) - uses Cantonese
+ *
+ * This mapping helps select appropriate TTS voices based on content language.
+ * Users can override this in agent settings.
+ */
+export const VOICE_LANGUAGE_MAP: Record<string, { language: string; variant: 'mandarin' | 'cantonese' }> = {
+  'zh-TW': { language: 'zh-TW', variant: 'mandarin' },
+  'zh-HK': { language: 'zh-HK', variant: 'cantonese' },
+};
