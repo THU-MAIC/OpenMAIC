@@ -29,6 +29,16 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
     lang = 'zh-CN',
   } = options;
 
+  const langMapping: Record<string, string> = {
+    'zh-TW': 'zh-TW',
+    'zh-HK': 'zh-HK',
+    'zh-Hant': 'zh-TW',
+    'zh-Hant-TW': 'zh-TW',
+    'zh-Hant-HK': 'zh-HK',
+    'yue': 'zh-HK',
+    'yue-HK': 'zh-HK',
+  };
+
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [availableVoices, setAvailableVoices] = useState<SpeechSynthesisVoice[]>([]);
