@@ -4,7 +4,7 @@
  * Completely free, no API key required
  */
 
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 
 // Note: Window.SpeechSynthesis declaration is already in the global scope
 
@@ -29,15 +29,18 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
     lang = 'zh-CN',
   } = options;
 
-  const langMapping: Record<string, string> = {
-    'zh-TW': 'zh-TW',
-    'zh-HK': 'zh-HK',
-    'zh-Hant': 'zh-TW',
-    'zh-Hant-TW': 'zh-TW',
-    'zh-Hant-HK': 'zh-HK',
-    'yue': 'zh-HK',
-    'yue-HK': 'zh-HK',
-  };
+  const langMapping = useMemo(
+    (): Record<string, string> => ({
+      'zh-TW': 'zh-TW',
+      'zh-HK': 'zh-HK',
+      'zh-Hant': 'zh-TW',
+      'zh-Hant-TW': 'zh-TW',
+      'zh-Hant-HK': 'zh-HK',
+      'yue': 'zh-HK',
+      'yue-HK': 'zh-HK',
+    }),
+    [],
+  );
 
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
@@ -83,7 +86,7 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
       utterance.rate = rate;
       utterance.pitch = pitch;
       utterance.volume = volume;
-      utterance.lang = lang;
+      utterance.lang = langMapping[lang] || lang;
 
       // Set voice if specified
       if (voiceURI) {
@@ -124,7 +127,7 @@ export function useBrowserTTS(options: UseBrowserTTSOptions = {}) {
       utteranceRef.current = utterance;
       window.speechSynthesis.speak(utterance);
     },
-    [rate, pitch, volume, lang, availableVoices, onStart, onEnd, onError],
+    [rate, pitch, volume, lang, langMapping, availableVoices, onStart, onEnd, onError],
   );
 
   const pause = useCallback(() => {
