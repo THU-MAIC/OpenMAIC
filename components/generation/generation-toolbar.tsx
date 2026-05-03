@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Brain, Check, Paperclip, FileText, X, Globe2, Search } from 'lucide-react';
+import { Bot, Brain, Check, Paperclip, FileText, X, Globe2, Globe, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -41,7 +41,11 @@ const MAX_PDF_SIZE_MB = 50;
 const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
+export type CourseLanguage = 'zh-CN' | 'zh-TW' | 'en-US';
+
 export interface GenerationToolbarProps {
+  language: CourseLanguage;
+  onLanguageChange: (lang: CourseLanguage) => void;
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
@@ -53,6 +57,8 @@ export interface GenerationToolbarProps {
 
 // ─── Component ───────────────────────────────────────────────
 export function GenerationToolbar({
+  language,
+  onLanguageChange,
   webSearch,
   onWebSearchChange,
   onSettingsOpen,
@@ -385,6 +391,28 @@ export function GenerationToolbar({
             <TooltipContent>{t('toolbar.webSearchNoProvider')}</TooltipContent>
           </Tooltip>
         )}
+
+        {/* ── Separator ── */}
+        <div className="w-px h-4 bg-border/60 mx-1" />
+
+        {/* ── Language pill ── */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              onClick={() => {
+                const languages: CourseLanguage[] = ['zh-CN', 'zh-TW', 'en-US'];
+                const currentIndex = languages.indexOf(language);
+                const nextIndex = (currentIndex + 1) % languages.length;
+                onLanguageChange(languages[nextIndex]);
+              }}
+              className={pillMuted}
+            >
+              <Globe className="size-3.5" />
+              <span>{language === 'zh-CN' ? '中文' : language === 'zh-TW' ? '繁中' : 'EN'}</span>
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>{t('toolbar.languageHint')}</TooltipContent>
+        </Tooltip>
 
         {/* ── Separator ── */}
         <div className="w-px h-4 bg-border/60 mx-1" />
