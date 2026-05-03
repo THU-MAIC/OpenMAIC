@@ -119,7 +119,9 @@
     "configTooltip": "點擊設定課堂角色",
     "voiceLabel": "聲線",
     "voiceLoading": "載入中...",
-    "voiceAutoAssign": "聲線將自動分配"
+    "voiceAutoAssign": "聲線將自動分配",
+    "noMatchingVoices": "No matching voices",
+    "searchVoice": "Search voices"
   },
   "proactiveCard": {
     "discussion": "討論",
@@ -141,7 +143,8 @@
     "confirmSwitchMessage": "目前主題正在進行中，切換頁面將結束目前主題。確定要切換嗎？",
     "generatingNextPage": "場景正在生成，請稍候...",
     "fullscreen": "全螢幕",
-    "exitFullscreen": "離開全螢幕"
+    "exitFullscreen": "離開全螢幕",
+    "courseComplete": "Course complete"
   },
   "whiteboard": {
     "title": "互動白板",
@@ -236,7 +239,6 @@
       "mentionHint": "使用 @question 提問，@judge 提交評審",
       "placeholder": "輸入訊息...",
       "send": "傳送",
-      "welcomeMessage": "你好！我是本任務的提問助手，目前任務：「{{title}}」\n\n為了幫助你開展工作，我準備了一些引導問題：\n\n{{questions}}\n\n隨時可以 @question 向我提問！",
       "issueCompleteMessage": "任務「{{completed}}」已完成！進入下一個任務：「{{next}}」",
       "allCompleteMessage": "🎉 所有任務都已完成！專案做得很棒！"
     },
@@ -288,7 +290,11 @@
     "delete": "刪除",
     "rename": "重新命名",
     "renamePlaceholder": "輸入課堂名稱",
-    "renameFailed": "重新命名失敗"
+    "renameFailed": "重新命名失敗",
+    "clearSearch": "Clear",
+    "searchAriaLabel": "Search courses",
+    "searchEmpty": "No courses match your search",
+    "searchPlaceholder": "Search courses..."
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",
@@ -429,7 +435,11 @@
       "glm": "GLM",
       "siliconflow": "矽基流動",
       "doubao": "豆包",
-      "ollama": "Ollama（本機模型）"
+      "ollama": "Ollama（本機模型）",
+      "grok": "Grok",
+      "openrouter": "OpenRouter",
+      "tencent-hunyuan": "Tencent Hunyuan",
+      "xiaomi": "Xiaomi MiMo"
     },
     "providerTypes": {
       "openai": "OpenAI 協定",
@@ -487,8 +497,7 @@
     "voiceIdPlaceholder": "聲線 ID（如 alloy）",
     "voiceNamePlaceholder": "顯示名稱",
     "addVoice": "新增",
-    "modelNamePlaceholder": "顯示名稱",
-    "addModel": "新增",
+    "modelNamePlaceholder": "選填",
     "defaultModelHint": "API 請求中的模型名（如 kokoro、tts-1）",
     "noVoicesAdded": "暫無聲線，請在下方新增以支援 Agent 選擇不同聲線。",
     "noModelsAdded": "暫無模型，請在下方新增以支援模型選擇。",
@@ -514,7 +523,6 @@
     "modelId": "模型ID",
     "modelIdPlaceholder": "例如：gpt-4o",
     "modelName": "顯示名稱",
-    "modelNamePlaceholder": "選填",
     "modelCapabilities": "能力",
     "advancedSettings": "進階設定",
     "contextWindowLabel": "上下文視窗",
@@ -867,7 +875,77 @@
     "webSearchApiKeyHint": "從 tavily.com 取得 API Key，用於網路搜尋",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "已設定服務端 Tavily API Key",
-    "optional": "選填"
+    "optional": "選填",
+    "asrNotSupported": "Browser does not support Speech Recognition API",
+    "asrResultPlaceholder": "Recognition result will be displayed after recording",
+    "baseUrlRegion": {
+      "china": "China",
+      "international": "International"
+    },
+    "browserTTSNoVoices": "Current browser has no available TTS voices",
+    "browserTTSNotSupported": "Browser does not support Speech Synthesis API",
+    "fetchVoices": "Fetch Voice List",
+    "fetchVoicesFailed": "Failed to fetch voices",
+    "fetchingVoices": "Fetching...",
+    "microphoneAccessDenied": "Microphone access denied",
+    "microphoneAccessFailed": "Failed to access microphone",
+    "mineruCloudApiKeyPlaceholder": "Enter MinerU Cloud API Key",
+    "providerMinerUCloud": "MinerU (Cloud)",
+    "providerOpenAIImage": "OpenAI Image",
+    "providerVoxCPMTTS": "VoxCPM2",
+    "recording": "Recording...",
+    "startRecording": "Start Recording",
+    "stopRecording": "Stop Recording",
+    "transcribing": "Transcribing...",
+    "transcriptionResult": "Transcription Result",
+    "ttsTestTextDefault": "Hello, this is a test speech.",
+    "ttsTestTextPlaceholder": "Enter text to convert",
+    "useThisProvider": "Use This Provider",
+    "voiceApiKeyRequired": "API Key required",
+    "voiceBaseUrlRequired": "Base URL required",
+    "voicesFetched": "Voices fetched",
+    "voxcpmAddClone": "Add Clone",
+    "voxcpmAddVoice": "Add Voice",
+    "voxcpmAutoVoice": "Auto Voice",
+    "voxcpmAutoVoiceDescription": "Use the agent persona as the voice prompt",
+    "voxcpmAutoVoiceNoPreview": "Auto Voice is generated from agent context and cannot be previewed directly",
+    "voxcpmAutoVoicePrivacyNote": "Auto Voice sends the agent persona to your configured VoxCPM backend as the voice prompt.",
+    "voxcpmBackend": "Backend",
+    "voxcpmBaseUrlPending": "Enter a Base URL to generate the request URL",
+    "voxcpmBaseUrlRequired": "Enter a VoxCPM Base URL first",
+    "voxcpmClone": "Clone",
+    "voxcpmCloneCount": "Clone {{count}}",
+    "voxcpmCloneSaveFailed": "Failed to save cloned voice",
+    "voxcpmCloneSaveOnly": "Saved only for this backend",
+    "voxcpmCloneSaved": "VoxCPM cloned voice saved",
+    "voxcpmCloneUnsupported": "Current backend does not support cloning",
+    "voxcpmCloneUnsupportedDetail": "Current backend does not support cloning",
+    "voxcpmCloneVoiceNamePlaceholder": "Cloned voice name",
+    "voxcpmDeleteVoice": "Delete voice",
+    "voxcpmNoCustomVoices": "No custom voices yet",
+    "voxcpmPreviewFailed": "Preview failed",
+    "voxcpmPreviewVoice": "Preview voice",
+    "voxcpmPromptCount": "Prompt {{count}}",
+    "voxcpmPromptPlaceholder": "Example: clear, natural teacher voice with moderate pace",
+    "voxcpmRecord": "Record",
+    "voxcpmRecordedVoiceName": "Recorded Voice",
+    "voxcpmRecordingFailed": "Recording conversion failed",
+    "voxcpmRecordingStartFailed": "Unable to start recording",
+    "voxcpmRecordingUnsupported": "This browser does not support recording",
+    "voxcpmReferenceAudioInvalid": "Invalid reference audio",
+    "voxcpmReferenceAudioLimitHint": "Reference audio must be 10 MB / 60 seconds or smaller and is converted to WAV before saving.",
+    "voxcpmReferenceTextPlaceholder": "Reference audio transcript, optional",
+    "voxcpmStopPreview": "Stop preview",
+    "voxcpmUnavailable": "Unavailable",
+    "voxcpmUploadReferenceAudio": "Upload reference audio",
+    "voxcpmVoiceCount": "{{count}} voices",
+    "voxcpmVoiceDescriptionPlaceholder": "Voice description, optional",
+    "voxcpmVoiceNamePlaceholder": "Voice name",
+    "voxcpmVoicePool": "Voice Pool",
+    "voxcpmVoiceSaveFailed": "Failed to save voice",
+    "voxcpmVoiceSaved": "VoxCPM voice saved",
+    "voxcpmVoicesDescription": "Saved in this browser and added to the shared Agent Bar voice pool.",
+    "voxcpmVoicesTitle": "VoxCPM Voices"
   },
   "profile": {
     "title": "個人資料",
@@ -899,5 +977,20 @@
     "title": "請輸入課堂碼",
     "placeholder": "課堂碼",
     "error": "課堂碼錯誤，請重試。"
+  },
+  "classroomComplete": {
+    "encouragement": {
+      "high": "Outstanding — you nailed it.",
+      "low": "A good start — review and try again.",
+      "mid": "Solid work — keep it up."
+    },
+    "quizScoreLabel": "{{correct}} / {{total}} correct",
+    "title": "Course complete",
+    "trailLabels": {
+      "interactive": "interactives",
+      "pbl": "projects",
+      "quiz": "quizzes",
+      "slide": "pages"
+    }
   }
 }
