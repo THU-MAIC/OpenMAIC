@@ -99,6 +99,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
+  BOCHA: 'bocha',
 };
 
 // ---------------------------------------------------------------------------
@@ -411,7 +412,7 @@ export function resolveVideoBaseUrl(
 }
 
 // ---------------------------------------------------------------------------
-// Public API — Web Search (Tavily)
+// Public API — Web Search
 // ---------------------------------------------------------------------------
 
 /** Returns server-configured web search providers (no apiKeys exposed) */
@@ -425,10 +426,39 @@ export function getServerWebSearchProviders(): Record<string, { baseUrl?: string
   return result;
 }
 
-/** Resolve Tavily API key: client key > server key > TAVILY_API_KEY env > empty */
-export function resolveWebSearchApiKey(clientKey?: string): string {
-  if (clientKey) return clientKey;
-  const serverKey = getConfig().webSearch.tavily?.apiKey;
+/**
+ * Resolve web search API key.
+ *
+ * Backward-compatible call shapes:
+ * - resolveWebSearchApiKey(clientKey) -> Tavily key resolution
+ * - resolveWebSearchApiKey(providerId, clientKey) -> provider-specific resolution
+ */
+export function resolveWebSearchApiKey(clientKey?: string): string;
+export function resolveWebSearchApiKey(providerId: string, clientKey?: string): string;
+export function resolveWebSearchApiKey(providerIdOrClientKey?: string, clientKey?: string): string {
+  const hasProviderId = arguments.length >= 2;
+  const providerId = hasProviderId ? providerIdOrClientKey || 'tavily' : 'tavily';
+  const effectiveClientKey = hasProviderId ? clientKey : providerIdOrClientKey;
+
+  if (effectiveClientKey) return effectiveClientKey;
+  const serverKey = getConfig().webSearch[providerId]?.apiKey;
   if (serverKey) return serverKey;
-  return process.env.TAVILY_API_KEY || '';
+  return '';
+}
+
+export function resolveWebSearchBaseUrl(
+  providerId: string,
+  clientBaseUrl?: string,
+): string | undefined {
+  if (clientBaseUrl) return clientBaseUrl;
+  return getConfig().webSearch[providerId]?.baseUrl;
+}
+
+export function resolveServerWebSearchProviderId(preferredProviderId?: string): string | undefined {
+  const webSearch = getConfig().webSearch;
+  if (preferredProviderId && webSearch[preferredProviderId]?.apiKey) {
+    return preferredProviderId;
+  }
+  if (webSearch.tavily?.apiKey) return 'tavily';
+  return Object.keys(webSearch)[0];
 }
