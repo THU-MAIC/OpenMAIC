@@ -13,6 +13,15 @@ import { GradientDefs } from './GradientDefs';
 import { PatternDefs } from './PatternDefs';
 import { ProsemirrorEditor } from '../ProsemirrorEditor';
 
+function getViewBoxDims(viewBox: [number, number] | string | undefined): [number, number] {
+  if (Array.isArray(viewBox)) return viewBox;
+  if (typeof viewBox === 'string') {
+    const parts = viewBox.trim().split(/\s+/).map(Number);
+    return parts.length >= 4 ? [parts[2], parts[3]] : parts.length >= 2 ? [parts[0], parts[1]] : [0, 0];
+  }
+  return [0, 0];
+}
+
 export { BaseShapeElement } from './BaseShapeElement';
 
 export interface ShapeElementProps {
@@ -144,9 +153,12 @@ export function ShapeElement({ elementInfo, selectElement }: ShapeElementProps) 
               )}
             </defs>
             <g
-              transform={`scale(${elementInfo.width / elementInfo.viewBox[0]}, ${
-                elementInfo.height / elementInfo.viewBox[1]
-              }) translate(0,0) matrix(1,0,0,1,0,0)`}
+              transform={(() => {
+                const [vbW, vbH] = getViewBoxDims(elementInfo.viewBox);
+                const sx = vbW > 0 ? elementInfo.width / vbW : 1;
+                const sy = vbH > 0 ? elementInfo.height / vbH : 1;
+                return `scale(${sx}, ${sy}) translate(0,0) matrix(1,0,0,1,0,0)`;
+              })()}
             >
               <path
                 className="shape-path pointer-events-auto"
