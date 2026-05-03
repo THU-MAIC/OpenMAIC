@@ -27,8 +27,27 @@ export default function ClassroomDetailPage() {
   const generationStartedRef = useRef(false);
 
   const { generateRemaining, retrySingleOutline, stop } = useSceneGenerator({
-    onComplete: () => {
+    onComplete: async () => {
       log.info('[Classroom] All scenes generated');
+      // Update server-side storage with all generated scenes
+      const state = useStageStore.getState();
+      if (state.stage && state.scenes.length > 0) {
+        try {
+          const resp = await fetch('/api/classroom', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              stage: state.stage,
+              scenes: state.scenes,
+            }),
+          });
+          if (resp.ok) {
+            log.info('[Classroom] Updated server-side storage with all scenes');
+          }
+        } catch (err) {
+          log.warn('[Classroom] Failed to update server-side storage:', err);
+        }
+      }
     },
   });
 
