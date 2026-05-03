@@ -13,6 +13,14 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     name: 'Tavily',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.tavily.com',
+    endpointPath: '/search',
+  },
+  bocha: {
+    id: 'bocha',
+    name: 'Bocha',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.bocha.cn',
+    endpointPath: '/v1/web-search',
   },
 };
 

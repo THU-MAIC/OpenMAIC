@@ -48,6 +48,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_SORA',
   'VIDEO_MINIMAX',
   'VIDEO_GROK',
+  'BOCHA',
 ];
 
 function clearProviderEnv() {
@@ -57,6 +58,8 @@ function clearProviderEnv() {
     delete process.env[`${prefix}_MODELS`];
   }
   delete process.env.TAVILY_API_KEY;
+  delete process.env.BOCHA_API_KEY;
+  delete process.env.BOCHA_BASE_URL;
 }
 
 vi.mock('fs', async (importOriginal) => {
@@ -255,6 +258,31 @@ providers:
       vi.stubEnv('TAVILY_API_KEY', 'tvly-bare-env');
       const { resolveWebSearchApiKey } = await import('@/lib/server/provider-config');
       expect(resolveWebSearchApiKey()).toBe('tvly-bare-env');
+    });
+
+    it('resolves Bocha API key and base URL from env vars', async () => {
+      vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
+      vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('bocha', undefined)).toBe('bocha-env-key');
+      expect(resolveWebSearchBaseUrl('bocha')).toBe('https://proxy.example.com/bocha');
+      expect(getServerWebSearchProviders().bocha).toEqual({
+        baseUrl: 'https://proxy.example.com/bocha',
+      });
+    });
+
+    it('uses client key and base URL before Bocha server config', async () => {
+      vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
+      vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
+      const { resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('bocha', 'bocha-client-key')).toBe('bocha-client-key');
+      expect(resolveWebSearchBaseUrl('bocha', 'https://client.example.com')).toBe(
+        'https://client.example.com',
+      );
     });
   });
 

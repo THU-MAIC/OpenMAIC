@@ -2,13 +2,13 @@
  * Web Search API
  *
  * POST /api/web-search
- * Simple JSON request/response using Tavily search.
+ * Simple JSON request/response using the configured web search provider.
  */
 
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
-import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
-import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
+import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
+import { resolveWebSearchApiKey, resolveWebSearchBaseUrl } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
@@ -17,6 +17,8 @@ import {
 } from '@/lib/server/search-query-builder';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
+import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import type { WebSearchProviderId } from '@/lib/web-search/types';
 
 const log = createLogger('WebSearch');
 
@@ -27,11 +29,15 @@ export async function POST(req: NextRequest) {
     const {
       query: requestQuery,
       pdfText,
+      providerId: requestProviderId,
       apiKey: clientApiKey,
+      baseUrl: clientBaseUrl,
     } = body as {
       query?: string;
       pdfText?: string;
+      providerId?: WebSearchProviderId;
       apiKey?: string;
+      baseUrl?: string;
     };
     query = requestQuery;
 
@@ -39,14 +45,18 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'query is required');
     }
 
-    const apiKey = resolveWebSearchApiKey(clientApiKey);
+    const providerId: WebSearchProviderId =
+      requestProviderId && WEB_SEARCH_PROVIDERS[requestProviderId] ? requestProviderId : 'tavily';
+    const provider = WEB_SEARCH_PROVIDERS[providerId];
+    const apiKey = resolveWebSearchApiKey(providerId, clientApiKey);
     if (!apiKey) {
       return apiError(
         'MISSING_API_KEY',
         400,
-        'Tavily API key is not configured. Set it in Settings → Web Search or set TAVILY_API_KEY env var.',
+        `${provider.name} API key is not configured. Set it in Settings → Web Search or configure ${providerId === 'bocha' ? 'BOCHA_API_KEY' : 'TAVILY_API_KEY'} on the server.`,
       );
     }
+    const baseUrl = resolveWebSearchBaseUrl(providerId, clientBaseUrl);
 
     // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
     const boundedPdfText = pdfText?.slice(0, SEARCH_QUERY_REWRITE_EXCERPT_LENGTH);
@@ -83,7 +93,7 @@ export async function POST(req: NextRequest) {
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    const result = await searchWithTavily({ query: searchQuery.query, apiKey });
+    const result = await searchWeb({ providerId, query: searchQuery.query, apiKey, baseUrl });
     const context = formatSearchResultsAsContext(result);
 
     return apiSuccess({
