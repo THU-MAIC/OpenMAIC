@@ -63,6 +63,35 @@ If no `accessCode` in config, ask the user how they want to use OpenMAIC:
 If the user chooses hosted mode, load [references/hosted-mode.md](references/hosted-mode.md) and skip phases 1–4.
 If the user chooses local mode, proceed to phase 1 as usual.
 
+### Hosted Mode API Reference
+
+When using hosted mode with open.maic.chat, the following API endpoints are available:
+
+- **Health Check**: `GET https://open.maic.chat/api/health`
+- **Generate Classroom**: `POST https://open.maic.chat/api/generate-classroom`  
+- **Poll Job Status**: `GET https://open.maic.chat/api/generate-classroom/{jobId}`
+
+**Required Headers**: `Authorization: Bearer <your-access-code>`
+
+**Generate Request Body**:
+```json
+{
+  "requirement": "Your classroom description"
+}
+```
+
+**Success Response**:
+```json
+{
+  "success": true,
+  "jobId": "unique-job-id",
+  "status": "queued",
+  "pollUrl": "https://open.maic.chat/api/generate-classroom/unique-job-id"
+}
+```
+
+Refer to [references/generate-flow.md](references/generate-flow.md) for complete polling and error handling procedures.
+
 ### 1. Clone Or Reuse Existing Repo
 
 Load [references/clone.md](references/clone.md).
