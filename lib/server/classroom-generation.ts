@@ -16,11 +16,7 @@ import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
-import {
-  resolveServerWebSearchProviderId,
-  resolveWebSearchApiKey,
-  resolveWebSearchBaseUrl,
-} from '@/lib/server/provider-config';
+import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
@@ -41,6 +37,8 @@ export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
   enableWebSearch?: boolean;
+  webSearchProviderId?: WebSearchProviderId;
+  webSearchApiKey?: string;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
@@ -239,9 +237,8 @@ export async function generateClassroom(
   // Web search (optional, graceful degradation)
   let researchContext: string | undefined;
   if (input.enableWebSearch) {
-    const providerId = resolveServerWebSearchProviderId() as WebSearchProviderId | undefined;
-    const webSearchKey = providerId ? resolveWebSearchApiKey(providerId, undefined) : '';
-    if (providerId && webSearchKey) {
+    const webSearchConfig = resolveClassroomWebSearchConfig(input);
+    if (webSearchConfig) {
       try {
         const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
 
@@ -253,10 +250,10 @@ export async function generateClassroom(
         });
 
         const searchResult = await searchWeb({
-          providerId,
+          providerId: webSearchConfig.providerId,
           query: searchQuery.query,
-          apiKey: webSearchKey,
-          baseUrl: resolveWebSearchBaseUrl(providerId),
+          apiKey: webSearchConfig.apiKey,
+          baseUrl: webSearchConfig.baseUrl,
         });
         researchContext = formatSearchResultsAsContext(searchResult);
         if (researchContext) {

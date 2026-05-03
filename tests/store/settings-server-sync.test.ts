@@ -627,6 +627,78 @@ describe('fetchServerProviders — ASR stale selection', () => {
   });
 });
 
+describe('fetchServerProviders — Web Search provider sync', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    return useSettingsStore;
+  }
+
+  it('marks Bocha as server-configured and stores serverBaseUrl', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      webSearch: {
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().webSearchProvidersConfig.bocha).toMatchObject({
+      isServerConfigured: true,
+      serverBaseUrl: 'https://api.bocha.cn',
+    });
+  });
+
+  it('falls back to Bocha when selected Tavily loses server config and has no client key', async () => {
+    const store = await getStore();
+
+    mockServerResponse({
+      webSearch: {
+        tavily: { baseUrl: 'https://api.tavily.com' },
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+    await store.getState().fetchServerProviders();
+    store.getState().setWebSearchProvider('tavily');
+
+    mockServerResponse({
+      webSearch: {
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().webSearchProviderId).toBe('bocha');
+  });
+
+  it('keeps Bocha selected when it is still server-configured', async () => {
+    const store = await getStore();
+
+    mockServerResponse({
+      webSearch: {
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+    await store.getState().fetchServerProviders();
+    store.getState().setWebSearchProvider('bocha');
+
+    mockServerResponse({
+      webSearch: {
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().webSearchProviderId).toBe('bocha');
+  });
+});
+
 describe('fetchServerProviders — PDF stale selection', () => {
   beforeEach(() => {
     vi.resetModules();

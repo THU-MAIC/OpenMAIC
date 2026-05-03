@@ -454,7 +454,9 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
-      "ollama": "Ollama（ローカルモデル）"
+      "ollama": "Ollama（ローカルモデル）",
+      "tavily": "Tavily",
+      "bocha": "Bocha"
     },
     "providerTypes": {
       "openai": "OpenAIプロトコル",

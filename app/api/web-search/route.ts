@@ -8,7 +8,7 @@
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
-import { resolveWebSearchApiKey, resolveWebSearchBaseUrl } from '@/lib/server/provider-config';
+import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
@@ -19,6 +19,7 @@ import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
+import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
 
 const log = createLogger('WebSearch');
 
@@ -56,7 +57,13 @@ export async function POST(req: NextRequest) {
         `${provider.name} API key is not configured. Set it in Settings → Web Search or configure ${providerId === 'bocha' ? 'BOCHA_API_KEY' : 'TAVILY_API_KEY'} on the server.`,
       );
     }
-    const baseUrl = resolveWebSearchBaseUrl(providerId, clientBaseUrl);
+    let baseUrl: string | undefined;
+    try {
+      baseUrl = resolveWebSearchRouteBaseUrl(providerId, clientBaseUrl);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Invalid web search base URL';
+      return apiError('INVALID_REQUEST', 400, message);
+    }
 
     // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
     const boundedPdfText = pdfText?.slice(0, SEARCH_QUERY_REWRITE_EXCERPT_LENGTH);

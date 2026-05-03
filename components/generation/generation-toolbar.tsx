@@ -17,7 +17,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import type { ProviderId } from '@/lib/ai/providers';
 import type {
@@ -304,7 +304,11 @@ export function GenerationToolbar({
               <button className={webSearch ? pillActive : pillMuted}>
                 <Globe2 className={cn('size-3.5', webSearch && 'animate-pulse')} />
                 {webSearch && (
-                  <span>{WEB_SEARCH_PROVIDERS[webSearchProviderId]?.name || 'Search'}</span>
+                  <span>
+                    {WEB_SEARCH_PROVIDERS[webSearchProviderId]
+                      ? getWebSearchProviderDisplayName(webSearchProviderId, t)
+                      : 'Search'}
+                  </span>
                 )}
               </button>
             </PopoverTrigger>
@@ -357,7 +361,7 @@ export function GenerationToolbar({
                           <div
                             className={cn('flex items-center gap-1.5', !available && 'opacity-50')}
                           >
-                            {provider.name}
+                            {getWebSearchProviderDisplayName(provider.id, t)}
                             {cfg?.isServerConfigured && (
                               <span className="text-[9px] px-1 py-0 rounded border text-muted-foreground">
                                 {t('settings.serverConfigured')}
