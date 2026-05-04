@@ -439,7 +439,9 @@
       "grok": "Grok",
       "openrouter": "OpenRouter",
       "tencent-hunyuan": "騰訊混元",
-      "xiaomi": "小米 MiMo"
+      "xiaomi": "小米 MiMo",
+      "tavily": "Tavily",
+      "bocha": "Bocha"
     },
     "providerTypes": {
       "openai": "OpenAI 協定",
