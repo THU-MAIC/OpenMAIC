@@ -164,9 +164,8 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         speed: ttsSpeed,
         apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
         baseUrl:
-          ttsProvidersConfig[selectedProviderId]?.serverBaseUrl ||
           ttsProvidersConfig[selectedProviderId]?.baseUrl ||
-          providerConfig?.customDefaultBaseUrl ||
+          (!isServerConfigured ? providerConfig?.customDefaultBaseUrl : '') ||
           '',
         providerOptions,
       });

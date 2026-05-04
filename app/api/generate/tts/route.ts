@@ -20,6 +20,11 @@ const log = createLogger('TTS API');
 
 export const maxDuration = 30;
 
+function normalizeBaseUrl(baseUrl: string | undefined): string | undefined {
+  const trimmed = baseUrl?.trim();
+  return trimmed ? trimmed.replace(/\/+$/, '') : undefined;
+}
+
 export async function POST(req: NextRequest) {
   let ttsProviderId: string | undefined;
   let ttsVoice: string | undefined;
@@ -69,20 +74,24 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const clientBaseUrl = ttsBaseUrl || undefined;
-    if (clientBaseUrl) {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+    const clientApiKey = ttsApiKey?.trim() ? ttsApiKey : undefined;
+    const requestedBaseUrl = normalizeBaseUrl(ttsBaseUrl);
+    const serverBaseUrl = normalizeBaseUrl(resolveTTSBaseUrl(ttsProviderId));
+    const useClientBaseUrl =
+      !!requestedBaseUrl &&
+      (!!clientApiKey || normalizeBaseUrl(requestedBaseUrl) !== normalizeBaseUrl(serverBaseUrl));
+
+    if (useClientBaseUrl) {
+      const ssrfError = await validateUrlForSSRF(requestedBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
     }
 
-    const apiKey = clientBaseUrl
-      ? ttsApiKey || ''
-      : resolveTTSApiKey(ttsProviderId, ttsApiKey || undefined);
-    const baseUrl = clientBaseUrl
-      ? clientBaseUrl
-      : resolveTTSBaseUrl(ttsProviderId, ttsBaseUrl || undefined);
+    const apiKey = useClientBaseUrl
+      ? clientApiKey || ''
+      : resolveTTSApiKey(ttsProviderId, clientApiKey);
+    const baseUrl = useClientBaseUrl ? requestedBaseUrl : serverBaseUrl || requestedBaseUrl;
 
     // Build TTS config
     const config = {

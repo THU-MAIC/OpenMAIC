@@ -924,36 +924,49 @@ async function generatePBLSceneContent(
   }
 }
 
+function stripTrailingCodeFence(html: string): string {
+  return html.replace(/\s*```\s*$/g, '').trim();
+}
+
 /**
  * Extract HTML document from AI response.
  * Tries to find <!DOCTYPE html>...</html> first, then falls back to code block extraction.
  */
-function extractHtml(response: string): string | null {
+export function extractHtml(response: string): string | null {
   // Strategy 1: Find complete HTML document
-  const doctypeStart = response.indexOf('<!DOCTYPE html>');
-  const htmlTagStart = response.indexOf('<html');
-  const start = doctypeStart !== -1 ? doctypeStart : htmlTagStart;
+  const htmlStartMatch = /<!doctype\s+html>|<html\b/i.exec(response);
+  const start = htmlStartMatch?.index ?? -1;
 
   if (start !== -1) {
-    const htmlEnd = response.lastIndexOf('</html>');
-    if (htmlEnd !== -1) {
+    const htmlEnd = response.toLowerCase().lastIndexOf('</html>');
+    if (htmlEnd >= start) {
       return response.substring(start, htmlEnd + 7);
     }
+    return stripTrailingCodeFence(response.substring(start));
   }
 
   // Strategy 2: Extract from code block
   const codeBlockMatch = response.match(/```(?:html)?\s*([\s\S]*?)```/);
   if (codeBlockMatch) {
-    const content = codeBlockMatch[1].trim();
+    const content = stripTrailingCodeFence(codeBlockMatch[1]);
     if (content.includes('<html') || content.includes('<!DOCTYPE')) {
       return content;
     }
   }
 
-  // Strategy 3: If response itself looks like HTML
+  // Strategy 3: Extract from an unterminated HTML code block
+  const unterminatedCodeBlockMatch = response.match(/```(?:html)?\s*([\s\S]*)$/);
+  if (unterminatedCodeBlockMatch) {
+    const content = stripTrailingCodeFence(unterminatedCodeBlockMatch[1]);
+    if (/<html\b/i.test(content) || /<!doctype\s+html>/i.test(content)) {
+      return content;
+    }
+  }
+
+  // Strategy 4: If response itself looks like HTML
   const trimmed = response.trim();
-  if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
-    return trimmed;
+  if (/^<!doctype/i.test(trimmed) || /^<html\b/i.test(trimmed)) {
+    return stripTrailingCodeFence(trimmed);
   }
 
   log.error('Could not extract HTML from response');

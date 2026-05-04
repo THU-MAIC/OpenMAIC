@@ -10,7 +10,11 @@
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
 
-import { generateSceneContent, generateSceneActions } from '@/lib/generation/scene-generator';
+import {
+  extractHtml,
+  generateSceneContent,
+  generateSceneActions,
+} from '@/lib/generation/scene-generator';
 import { buildSceneFromOutline } from '@/lib/generation/scene-builder';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type {
@@ -288,5 +292,19 @@ describe('scene-generator language directive threading (issue #472)', () => {
       const config = spy.mock.calls[0][0];
       expect(config.languageDirective).toBe(DIRECTIVE);
     });
+  });
+});
+
+describe('interactive HTML extraction', () => {
+  it('accepts an unterminated HTML code block when the model response is truncated', () => {
+    const html = extractHtml(`\`\`\`html
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><title>Codex 命令全景图</title></head>
+<body><main>visible widget</main>`);
+
+    expect(html).toContain('<!DOCTYPE html>');
+    expect(html).toContain('visible widget');
+    expect(html).not.toContain('```');
   });
 });
