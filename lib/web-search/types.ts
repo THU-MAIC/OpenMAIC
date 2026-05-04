@@ -5,7 +5,7 @@
 /**
  * Web Search Provider IDs
  */
-export type WebSearchProviderId = 'tavily';
+export type WebSearchProviderId = 'tavily' | 'bocha';
 
 /**
  * Web Search Provider Configuration
@@ -15,5 +15,6 @@ export interface WebSearchProviderConfig {
   name: string;
   requiresApiKey: boolean;
   defaultBaseUrl?: string;
+  endpointPath: string;
   icon?: string;
 }

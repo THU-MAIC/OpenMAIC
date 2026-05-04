@@ -454,7 +454,9 @@
       "grok": "Grok",
       "tencent-hunyuan": "腾讯混元",
       "xiaomi": "小米 MiMo",
-      "ollama": "Ollama（本地模型）"
+      "ollama": "Ollama（本地模型）",
+      "tavily": "Tavily",
+      "bocha": "博查"
     },
     "providerTypes": {
       "openai": "OpenAI 协议",
@@ -954,12 +956,12 @@
     "clearCacheSuccess": "缓存已清空，页面即将刷新",
     "clearCacheFailed": "清空缓存失败，请重试",
     "webSearchSettings": "网络搜索",
-    "webSearchApiKey": "Tavily API Key",
-    "webSearchApiKeyPlaceholder": "输入你的 Tavily API Key",
+    "webSearchApiKey": "搜索 API Key",
+    "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",
     "webSearchApiKeyPlaceholderServer": "已配置服务端密钥，可选填覆盖",
-    "webSearchApiKeyHint": "从 tavily.com 获取 API Key，用于网络搜索",
+    "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
     "webSearchBaseUrl": "Base URL",
-    "webSearchServerConfigured": "服务端已配置 Tavily API Key",
+    "webSearchServerConfigured": "服务端已配置搜索 API Key",
     "optional": "可选"
   },
   "profile": {

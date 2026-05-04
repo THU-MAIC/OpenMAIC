@@ -454,7 +454,9 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
-      "ollama": "Ollama (Local)"
+      "ollama": "Ollama (Local)",
+      "tavily": "Tavily",
+      "bocha": "Bocha"
     },
     "providerTypes": {
       "openai": "OpenAI Protocol",
@@ -954,12 +956,12 @@
     "clearCacheSuccess": "Cache cleared, page will refresh shortly",
     "clearCacheFailed": "Failed to clear cache, please try again",
     "webSearchSettings": "Web Search",
-    "webSearchApiKey": "Tavily API Key",
-    "webSearchApiKeyPlaceholder": "Enter your Tavily API Key",
+    "webSearchApiKey": "Search API Key",
+    "webSearchApiKeyPlaceholder": "Enter your search API key",
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
-    "webSearchApiKeyHint": "Get an API key from tavily.com for web search",
+    "webSearchApiKeyHint": "Get an API key from the selected search provider",
     "webSearchBaseUrl": "Base URL",
-    "webSearchServerConfigured": "Server-side Tavily API key is configured",
+    "webSearchServerConfigured": "Server-side search API key is configured",
     "optional": "Optional"
   },
   "profile": {

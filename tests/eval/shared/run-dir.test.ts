@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { existsSync, rmSync, mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, sep } from 'path';
 import { createRunDir } from '@/eval/shared/run-dir';
 
 describe('createRunDir', () => {
@@ -29,10 +29,11 @@ describe('createRunDir', () => {
 
   it('timestamp segment has no colons or dots', () => {
     const runDir = createRunDir(tempRoot, 'x');
-    const segments = runDir.split('/');
+    const segments = runDir.split(sep);
     const timestamp = segments[segments.length - 1];
-    expect(timestamp).not.toContain(':');
-    expect(timestamp).not.toContain('.');
+    const timestampWithoutDrive = timestamp.replace(/^[A-Za-z]:/, '');
+    expect(timestampWithoutDrive).not.toContain(':');
+    expect(timestampWithoutDrive).not.toContain('.');
     expect(timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}$/);
   });
 });

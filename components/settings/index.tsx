@@ -53,7 +53,7 @@ import { ASRSettings } from './asr-settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { WebSearchSettings } from './web-search-settings';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { GeneralSettings } from './general-settings';
 import { ModelEditDialog } from './model-edit-dialog';
@@ -607,7 +607,9 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             ) : (
               <Box className="h-8 w-8 text-muted-foreground" />
             )}
-            <h2 className="text-lg font-semibold">{wsProvider.name}</h2>
+            <h2 className="text-lg font-semibold">
+              {getWebSearchProviderDisplayName(wsProvider.id, t)}
+            </h2>
           </>
         );
       }
@@ -864,7 +866,10 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
           {activeSection === 'web-search' && (
             <>
               <ProviderListColumn
-                providers={Object.values(WEB_SEARCH_PROVIDERS)}
+                providers={Object.values(WEB_SEARCH_PROVIDERS).map((provider) => ({
+                  ...provider,
+                  name: getWebSearchProviderDisplayName(provider.id, t),
+                }))}
                 configs={webSearchProvidersConfig}
                 selectedId={selectedWebSearchProviderId}
                 onSelect={setSelectedWebSearchProviderId}

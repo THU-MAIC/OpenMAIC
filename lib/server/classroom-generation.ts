@@ -16,10 +16,11 @@ import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
-import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
+import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
-import { searchWithTavily, formatSearchResultsAsContext } from '@/lib/web-search/tavily';
+import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
+import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
@@ -36,6 +37,8 @@ export interface GenerateClassroomInput {
   requirement: string;
   pdfContent?: { text: string; images: string[] };
   enableWebSearch?: boolean;
+  webSearchProviderId?: WebSearchProviderId;
+  webSearchApiKey?: string;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
@@ -234,8 +237,8 @@ export async function generateClassroom(
   // Web search (optional, graceful degradation)
   let researchContext: string | undefined;
   if (input.enableWebSearch) {
-    const tavilyKey = resolveWebSearchApiKey();
-    if (tavilyKey) {
+    const webSearchConfig = resolveClassroomWebSearchConfig(input);
+    if (webSearchConfig) {
       try {
         const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
 
@@ -246,9 +249,11 @@ export async function generateClassroom(
           finalQueryLength: searchQuery.finalQueryLength,
         });
 
-        const searchResult = await searchWithTavily({
+        const searchResult = await searchWeb({
+          providerId: webSearchConfig.providerId,
           query: searchQuery.query,
-          apiKey: tavilyKey,
+          apiKey: webSearchConfig.apiKey,
+          baseUrl: webSearchConfig.baseUrl,
         });
         researchContext = formatSearchResultsAsContext(searchResult);
         if (researchContext) {
@@ -258,7 +263,7 @@ export async function generateClassroom(
         log.warn('Web search failed, continuing without search context:', e);
       }
     } else {
-      log.warn('enableWebSearch is true but no Tavily API key configured, skipping web search');
+      log.warn('enableWebSearch is true but no web search API key configured, skipping web search');
     }
   }
 
