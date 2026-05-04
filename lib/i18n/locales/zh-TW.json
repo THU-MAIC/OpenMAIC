@@ -1,10 +1,13 @@
 {
   "common": {
     "confirm": "確定",
-    "loading": "載入中..."
+    "loading": "載入中...",
+    "you": "你",
+    "cancel": "取消"
   },
   "home": {
-    "slogan": "多智能體互動課室中的生成式學習"
+    "slogan": "多智能體互動課室中的生成式學習",
+    "greetingWithName": "嗨，{{name}}"
   },
   "toolbar": {
     "pdfUpload": "上傳 PDF",
@@ -29,7 +32,10 @@
     "interactiveModeLabel": "互動模式",
     "off": "關",
     "on": "開",
-    "thinkingBudget": "思考預算"
+    "thinkingBudget": "思考預算",
+    "pdfParser": "解析器",
+    "thinking": "思考",
+    "ttsPreviewing": "播放中..."
   },
   "export": {
     "pptx": "匯出 PPTX",
@@ -61,8 +67,10 @@
     },
     "badge": {
       "discussion": "討論",
-      "lecture": "授課"
-    }
+      "lecture": "授課",
+      "qa": "Q&A"
+    },
+    "unknown": "未知"
   },
   "actions": {
     "names": {
@@ -75,14 +83,20 @@
       "wb_draw_line": "白板線條",
       "wb_delete": "刪除元素",
       "wb_close": "關閉白板",
-      "discussion": "課堂討論"
+      "discussion": "課堂討論",
+      "wb_draw_latex": "白板公式",
+      "wb_draw_table": "白板表格",
+      "wb_clear": "清空白板"
     },
     "status": {
       "inputAvailable": "執行中",
       "outputError": "錯誤",
       "outputDenied": "已拒絕",
       "running": "執行中",
-      "error": "錯誤"
+      "error": "錯誤",
+      "inputStreaming": "等待中",
+      "outputAvailable": "已完成",
+      "result": "已完成"
     }
   },
   "agentBar": {
@@ -115,7 +129,8 @@
     "generatingNextPage": "場景正在生成，請稍候...",
     "fullscreen": "全螢幕",
     "exitFullscreen": "離開全螢幕",
-    "courseComplete": "課程完成"
+    "courseComplete": "課程完成",
+    "generating": "生成中..."
   },
   "whiteboard": {
     "title": "互動白板",
@@ -129,7 +144,10 @@
     "restore": "恢復",
     "noHistory": "暫無歷史紀錄",
     "restored": "已恢復白板內容",
-    "elementCount": "{{count}} 個元素"
+    "elementCount": "{{count}} 個元素",
+    "clear": "清空白板",
+    "minimize": "最小化白板",
+    "clearSuccess": "白板已清空"
   },
   "quiz": {
     "title": "課堂小測",
@@ -150,7 +168,15 @@
     "answering": "答題中",
     "aiGradingWait": "請稍候，正在分析你的答案",
     "quizReport": "答題報告",
-    "retry": "重新答題"
+    "retry": "重新答題",
+    "totalPrefix": "共",
+    "pointsSuffix": "分",
+    "charCount": "字",
+    "yourAnswer": "你的回答：",
+    "notAnswered": "未作答",
+    "analysis": "解析：",
+    "submitAnswers": "提交答案",
+    "aiGrading": "AI 正在批改中..."
   },
   "roundtable": {
     "teacher": "教師",
@@ -168,7 +194,10 @@
     "voiceInputDisabled": "語音輸入已停用",
     "textInput": "文字輸入",
     "stopRecording": "停止錄音",
-    "startRecording": "開始錄音"
+    "startRecording": "開始錄音",
+    "you": "你",
+    "thinking": "思考中",
+    "speed": "倍速"
   },
   "pbl": {
     "legacyFormat": "此PBL場景使用舊格式，請重新生成課程",
@@ -180,13 +209,15 @@
     "workspace": {
       "restart": "重新開始",
       "confirmRestart": "確定重設進度？",
-      "confirm": "確定"
+      "confirm": "確定",
+      "cancel": "取消"
     },
     "issueboard": {
       "title": "任務看板",
       "noIssues": "暫無任務",
       "statusActive": "進行中",
-      "statusPending": "待處理"
+      "statusPending": "待處理",
+      "statusDone": "已完成"
     },
     "chat": {
       "title": "專案討論",
@@ -221,7 +252,8 @@
           "example": "@judge 我已經完成了，請檢查",
           "desc": "評審助手會評估你的工作並給予回饋：",
           "complete": "自動進入下一個任務",
-          "revision": "依據回饋改進"
+          "revision": "依據回饋改進",
+          "title": "提交作品"
         }
       },
       "step3": {
@@ -245,7 +277,10 @@
     "clearSearch": "清除",
     "searchAriaLabel": "搜尋課程",
     "searchEmpty": "沒有符合的課程",
-    "searchPlaceholder": "搜尋課程..."
+    "searchPlaceholder": "搜尋課程...",
+    "today": "今天",
+    "yesterday": "昨天",
+    "daysAgo": "天前"
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",
@@ -292,7 +327,9 @@
     "outlineGenerateFailed": "大綱生成失敗，請稍後重試",
     "webSearching": "網路搜尋",
     "webSearchingDesc": "正在搜尋網路取得最新資料",
-    "webSearchFailed": "網路搜尋失敗"
+    "webSearchFailed": "網路搜尋失敗",
+    "generationComplete": "生成完成！",
+    "retryingScene": "正在重新生成..."
   },
   "settings": {
     "title": "設定",
@@ -303,7 +340,8 @@
     "themeDesc": "選擇主題模式（淺色/深色/跟隨系統）",
     "themeOptions": {
       "light": "淺色",
-      "system": "跟隨系統"
+      "system": "跟隨系統",
+      "dark": "深色"
     },
     "apiKey": "API密鑰",
     "apiKeyDesc": "設定你的API密鑰",
@@ -315,7 +353,10 @@
     "modelPlaceholder": "輸入或選擇模型名稱",
     "ttsModelDesc": "設定TTS模型",
     "ttsModelPlaceholder": "輸入或選擇TTS模型名稱",
-    "ttsModelOptions": {},
+    "ttsModelOptions": {
+      "openaiTts": "OpenAI TTS",
+      "azureTts": "Azure TTS"
+    },
     "modelSelectedViaVoice": "模型隨聲線選擇自動確定",
     "testConnection": "測試連線",
     "testConnectionDesc": "測試目前API設定是否可用",
@@ -346,11 +387,13 @@
       "default-3": "活潑同學",
       "default-4": "好奇寶寶",
       "default-5": "記錄員",
-      "default-6": "深思同學"
+      "default-6": "深思同學",
+      "default-2": "AI助教"
     },
     "agentRoles": {
       "teacher": "教師",
-      "student": "學生"
+      "student": "學生",
+      "assistant": "助教"
     },
     "agentDescriptions": {
       "default-1": "主講教師，清晰有條理地講解知識",
@@ -368,7 +411,18 @@
       "qwen": "通義千問",
       "siliconflow": "矽基流動",
       "ollama": "Ollama（本機模型）",
-      "tencent-hunyuan": "騰訊混元"
+      "tencent-hunyuan": "騰訊混元",
+      "openai": "OpenAI",
+      "anthropic": "Claude",
+      "google": "Gemini",
+      "deepseek": "DeepSeek",
+      "kimi": "Kimi",
+      "minimax": "MiniMax",
+      "glm": "GLM",
+      "doubao": "豆包",
+      "openrouter": "OpenRouter",
+      "grok": "Grok",
+      "xiaomi": "小米 MiMo"
     },
     "providerTypes": {
       "openai": "OpenAI 協定",
@@ -396,7 +450,8 @@
     "connectionFailed": "連線失敗",
     "capabilities": {
       "vision": "視覺",
-      "streaming": "串流"
+      "streaming": "串流",
+      "tools": "工具"
     },
     "outputWindow": "輸出",
     "addProviderButton": "新增",
@@ -741,7 +796,142 @@
     "voxcpmVoiceSaveFailed": "儲存聲音失敗",
     "voxcpmVoiceSaved": "VoxCPM 聲音已儲存",
     "voxcpmVoicesDescription": "儲存在目前瀏覽器，進入統一音色池後可在人工智能代理聲音池使用",
-    "voxcpmVoicesTitle": "VoxCPM 聲音"
+    "voxcpmVoicesTitle": "VoxCPM 聲音",
+    "ttsModel": "TTS模型",
+    "availableModels": "可用模型",
+    "directAnswer": "直接回答",
+    "mcp": "MCP",
+    "apiHost": "Base URL",
+    "models": "模型",
+    "contextWindow": "上下文",
+    "contextShort": "上下文",
+    "providerNamePlaceholder": "例如：我的OpenAI代理",
+    "providerApiMode": "API 模式",
+    "modelId": "模型ID",
+    "modelIdPlaceholder": "例如：gpt-4o",
+    "modelCapabilities": "能力",
+    "contextWindowPlaceholder": "例如 128000",
+    "outputWindowPlaceholder": "例如 4096",
+    "cancelEdit": "取消",
+    "activeModel": "使用模型",
+    "ttsBaseUrl": "Base URL",
+    "doubaoAppId": "App ID",
+    "doubaoAccessKey": "Access Key",
+    "asrBaseUrl": "Base URL",
+    "providerOpenAITTS": "OpenAI TTS (gpt-4o-mini-tts)",
+    "providerAzureTTS": "Azure TTS",
+    "providerGLMTTS": "GLM TTS",
+    "providerVoxCPMTTS": "VoxCPM2",
+    "providerDoubaoTTS": "豆包 TTS 2.0（火山引擎）",
+    "providerElevenLabsTTS": "ElevenLabs TTS",
+    "providerMiniMaxTTS": "MiniMax TTS",
+    "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
+    "providerMinerU": "MinerU",
+    "voiceBaseUrlRequired": "需要 Base URL",
+    "voiceAlloy": "中性、平衡",
+    "voiceEcho": "男性、清晰",
+    "voiceNova": "女性、明亮",
+    "voiceOnyx": "男性、深沉",
+    "voiceShimmer": "女性、柔和",
+    "lang_zh": "中文",
+    "lang_en": "English",
+    "lang_ja": "日本語",
+    "lang_ko": "한국어",
+    "lang_es": "Español",
+    "lang_fr": "Français",
+    "lang_de": "Deutsch",
+    "lang_ru": "Русский",
+    "lang_ar": "العربية",
+    "lang_pt": "Português",
+    "lang_it": "Italiano",
+    "lang_af": "Afrikaans",
+    "lang_hy": "Հայերեն",
+    "lang_az": "Azərbaycan",
+    "lang_be": "Беларуская",
+    "lang_bs": "Bosanski",
+    "lang_bg": "Български",
+    "lang_ca": "Català",
+    "lang_hr": "Hrvatski",
+    "lang_cs": "Čeština",
+    "lang_da": "Dansk",
+    "lang_nl": "Nederlands",
+    "lang_et": "Eesti",
+    "lang_fi": "Suomi",
+    "lang_gl": "Galego",
+    "lang_el": "Ελληνικά",
+    "lang_he": "עברית",
+    "lang_hi": "हिन्दी",
+    "lang_hu": "Magyar",
+    "lang_is": "Íslenska",
+    "lang_id": "Bahasa Indonesia",
+    "lang_kn": "ಕನ್ನಡ",
+    "lang_kk": "Қазақша",
+    "lang_lv": "Latviešu",
+    "lang_lt": "Lietuvių",
+    "lang_mk": "Македонски",
+    "lang_ms": "Bahasa Melayu",
+    "lang_mr": "मराठी",
+    "lang_mi": "Te Reo Māori",
+    "lang_ne": "नेपाली",
+    "lang_no": "Norsk",
+    "lang_fa": "فارسی",
+    "lang_pl": "Polski",
+    "lang_ro": "Română",
+    "lang_sr": "Српски",
+    "lang_sk": "Slovenčina",
+    "lang_sl": "Slovenščina",
+    "lang_sw": "Kiswahili",
+    "lang_sv": "Svenska",
+    "lang_tl": "Tagalog",
+    "lang_fil": "Filipino",
+    "lang_ta": "தமிழ்",
+    "lang_th": "ไทย",
+    "lang_tr": "Türkçe",
+    "lang_uk": "Українська",
+    "lang_ur": "اردو",
+    "lang_vi": "Tiếng Việt",
+    "lang_cy": "Cymraeg",
+    "lang_en-US": "English (United States)",
+    "lang_en-GB": "English (United Kingdom)",
+    "lang_en-AU": "English (Australia)",
+    "lang_en-CA": "English (Canada)",
+    "lang_en-IN": "English (India)",
+    "lang_en-NZ": "English (New Zealand)",
+    "lang_en-ZA": "English (South Africa)",
+    "lang_ja-JP": "日本語（日本）",
+    "lang_ko-KR": "한국어（대한민국）",
+    "lang_de-DE": "Deutsch (Deutschland)",
+    "lang_fr-FR": "Français (France)",
+    "lang_es-ES": "Español (España)",
+    "lang_es-MX": "Español (México)",
+    "lang_es-AR": "Español (Argentina)",
+    "lang_es-CO": "Español (Colombia)",
+    "lang_it-IT": "Italiano (Italia)",
+    "lang_pt-BR": "Português (Brasil)",
+    "lang_pt-PT": "Português (Portugal)",
+    "lang_ru-RU": "Русский (Россия)",
+    "lang_nl-NL": "Nederlands (Nederland)",
+    "lang_pl-PL": "Polski (Polska)",
+    "lang_cs-CZ": "Čeština (Česko)",
+    "lang_da-DK": "Dansk (Danmark)",
+    "lang_fi-FI": "Suomi (Suomi)",
+    "lang_sv-SE": "Svenska (Sverige)",
+    "lang_no-NO": "Norsk (Norge)",
+    "lang_tr-TR": "Türkçe (Türkiye)",
+    "lang_el-GR": "Ελληνικά (Ελλάδα)",
+    "lang_sk-SK": "Slovenčina (Slovensko)",
+    "pdfSettings": "PDF 解析",
+    "pdfProvider": "PDF 解析器",
+    "pdfApiKey": "API Key",
+    "pdfBaseUrl": "Base URL",
+    "mineruWarning": "注意",
+    "providerNanoBanana": "Nano Banana（Gemini）",
+    "providerGrokImage": "Grok Image（xAI）",
+    "providerVeo": "Veo（Google）",
+    "providerSora": "Sora（OpenAI）",
+    "providerGrokVideo": "Grok Video（xAI）",
+    "webSearchApiKey": "Tavily API Key",
+    "webSearchBaseUrl": "Base URL"
   },
   "profile": {
     "title": "個人資料",
@@ -766,7 +956,8 @@
     "provider": "服務商",
     "voice": "聲線",
     "speed": "語速",
-    "language": "語言"
+    "language": "語言",
+    "model": "模型"
   },
   "accessCode": {
     "title": "請輸入課堂碼",
