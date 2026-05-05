@@ -356,6 +356,7 @@ const getDefaultAudioConfig = () => ({
     'doubao-tts': { apiKey: '', baseUrl: '', enabled: false },
     'elevenlabs-tts': { apiKey: '', baseUrl: '', enabled: false },
     'minimax-tts': { apiKey: '', baseUrl: '', modelId: 'speech-2.8-hd', enabled: false },
+    'xiaomi-tts': { apiKey: '', baseUrl: '', modelId: 'mimo-v2.5-tts', enabled: false },
     'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
   } as Record<
     TTSProviderId,

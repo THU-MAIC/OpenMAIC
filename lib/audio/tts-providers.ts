@@ -164,6 +164,9 @@ export async function generateTTS(
     case 'elevenlabs-tts':
       return await generateElevenLabsTTS(config, text);
 
+    case 'xiaomi-tts':
+      return await generateXiaomiTTS(config, text);
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -876,4 +879,62 @@ function escapeXml(text: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+/**
+ * Xiaomi MiMo TTS implementation (chat completions with audio modality)
+ *
+ * Uses the OpenAI-compatible chat completions API with modalities=["text","audio"].
+ * Requires an assistant message in the conversation.
+ */
+async function generateXiaomiTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = config.baseUrl || TTS_PROVIDERS['xiaomi-tts'].defaultBaseUrl;
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json; charset=utf-8',
+    },
+    body: JSON.stringify({
+      model: config.modelId || 'mimo-v2.5-tts',
+      messages: [{ role: 'assistant', content: text }],
+      audio: {
+        voice: config.voice || 'mimo_default',
+        format: 'mp3',
+      },
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    let errorMessage = `Xiaomi TTS API error: ${errorText}`;
+    try {
+      const errorJson = JSON.parse(errorText);
+      if (errorJson.error?.message) {
+        errorMessage = `Xiaomi TTS API error: ${errorJson.error.message}`;
+      }
+    } catch {
+      // Use raw text
+    }
+    throw new Error(errorMessage);
+  }
+
+  const data = await response.json();
+  const audioData = data?.choices?.[0]?.message?.audio?.data;
+
+  if (!audioData || typeof audioData !== 'string') {
+    throw new Error(
+      `Xiaomi TTS error: No audio data in response. Response keys: ${JSON.stringify(Object.keys(data))}`,
+    );
+  }
+
+  const audio = new Uint8Array(Buffer.from(audioData, 'base64'));
+  return {
+    audio,
+    format: 'mp3',
+  };
 }

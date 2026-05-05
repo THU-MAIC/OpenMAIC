@@ -928,6 +928,33 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     speedRange: { min: 0.7, max: 1.2, default: 1.0 },
   },
 
+  'xiaomi-tts': {
+    id: 'xiaomi-tts',
+    name: 'Xiaomi MiMo TTS',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://token-plan-cn.xiaomimimo.com/v1',
+    models: [
+      { id: 'mimo-v2.5-tts', name: 'MiMo V2.5 TTS' },
+      { id: 'mimo-v2.5-tts-voiceclone', name: 'MiMo V2.5 TTS VoiceClone' },
+      { id: 'mimo-v2.5-tts-voicedesign', name: 'MiMo V2.5 TTS VoiceDesign' },
+      { id: 'mimo-v2-tts', name: 'MiMo V2 TTS' },
+    ],
+    defaultModelId: 'mimo-v2.5-tts',
+    voices: [
+      { id: 'mimo_default', name: 'MiMo Default', language: 'zh-CN', gender: 'neutral', description: 'MiMo 默认语音' },
+      { id: '冰糖', name: '冰糖', language: 'zh-CN', gender: 'female', description: '甜美女声' },
+      { id: '茉莉', name: '茉莉', language: 'zh-CN', gender: 'female', description: '温柔女声' },
+      { id: '苏打', name: '苏打', language: 'zh-CN', gender: 'male', description: '清爽男声' },
+      { id: '白桦', name: '白桦', language: 'zh-CN', gender: 'male', description: '沉稳男声' },
+      { id: 'Mia', name: 'Mia', language: 'en-US', gender: 'female', description: 'English Female' },
+      { id: 'Chloe', name: 'Chloe', language: 'en-US', gender: 'female', description: 'English Female' },
+      { id: 'Milo', name: 'Milo', language: 'en-US', gender: 'male', description: 'English Male' },
+      { id: 'Dean', name: 'Dean', language: 'en-US', gender: 'male', description: 'English Male' },
+    ],
+    supportedFormats: ['mp3'],
+    speedRange: { min: 0.5, max: 2.0, default: 1.0 },
+  },
+
   'browser-native-tts': {
     id: 'browser-native-tts',
     name: '浏览器原生 (Web Speech API)',
@@ -1157,6 +1184,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
+  'xiaomi-tts': 'mimo_default',
   'browser-native-tts': 'default',
 };
 
@@ -1169,6 +1197,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
+  'xiaomi-tts': 'mimo-v2.5-tts',
   'browser-native-tts': '',
 };
 
