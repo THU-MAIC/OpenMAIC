@@ -485,7 +485,9 @@
       "xiaomi": "小米 MiMo",
       "lemonade": "Lemonade（本機）",
       "tavily": "Tavily",
-      "bocha": "Bocha"
+      "bocha": "Bocha",
+      "brave": "Brave Search",
+      "baidu": "Baidu"
     },
     "providerTypes": {
       "openai": "OpenAI 協定",
@@ -922,7 +924,16 @@
     "webSearchApiKey": "Tavily API Key",
     "webSearchApiKeyPlaceholder": "輸入你的 Tavily API Key",
     "webSearchApiKeyPlaceholderServer": "已設定服務端密鑰，選填覆蓋",
-    "webSearchApiKeyHint": "從 tavily.com 取得 API Key，用於網路搜尋",
+    "webSearchApiKeyHint": "從所選搜尋服務商取得 API Key，用於網路搜尋",
+    "webSearchNoApiKeyNeeded": "此搜尋提供方不需要 API Key。",
+    "baiduSubSources": "百度搜尋來源",
+    "baiduSubSourcesDescription": "請至少選擇一個百度資料來源。",
+    "baiduSubSourceWeb": "網頁搜尋",
+    "baiduSubSourceWebDescription": "使用百度 AI 搜尋取得一般網頁結果。",
+    "baiduSubSourceBaike": "百度百科",
+    "baiduSubSourceBaikeDescription": "使用百度百科取得詞條摘要。",
+    "baiduSubSourceScholar": "百度學術",
+    "baiduSubSourceScholarDescription": "使用百度學術取得論文結果。",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "已設定服務端 Tavily API Key",
     "optional": "選填",

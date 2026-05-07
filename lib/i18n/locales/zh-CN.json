@@ -500,7 +500,9 @@
       "lemonade": "Lemonade（本地）",
       "ollama": "Ollama（本地模型）",
       "tavily": "Tavily",
-      "bocha": "博查"
+      "bocha": "博查",
+      "brave": "Brave Search",
+      "baidu": "百度"
     },
     "providerTypes": {
       "openai": "OpenAI 协议",
@@ -1008,6 +1010,15 @@
     "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",
     "webSearchApiKeyPlaceholderServer": "已配置服务端密钥，可选填覆盖",
     "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
+    "webSearchNoApiKeyNeeded": "此搜索提供方无需 API Key。",
+    "baiduSubSources": "百度搜索源",
+    "baiduSubSourcesDescription": "选择至少一个百度数据源参与搜索。",
+    "baiduSubSourceWeb": "网页搜索",
+    "baiduSubSourceWebDescription": "使用百度 AI 搜索获取通用网页结果。",
+    "baiduSubSourceBaike": "百度百科",
+    "baiduSubSourceBaikeDescription": "使用百度百科获取词条摘要。",
+    "baiduSubSourceScholar": "百度学术",
+    "baiduSubSourceScholarDescription": "使用百度学术获取论文结果。",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "服务端已配置搜索 API Key",
     "optional": "可选"

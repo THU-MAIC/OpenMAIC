@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
+import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
-import type { WebSearchProviderId } from '@/lib/web-search/types';
+import { BAIDU_SUB_SOURCES, WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { Eye, EyeOff } from 'lucide-react';
 
 interface WebSearchSettingsProps {
@@ -19,9 +20,12 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
 
   const webSearchProvidersConfig = useSettingsStore((state) => state.webSearchProvidersConfig);
   const setWebSearchProviderConfig = useSettingsStore((state) => state.setWebSearchProviderConfig);
+  const baiduSubSources = useSettingsStore((state) => state.baiduSubSources);
+  const setBaiduSubSources = useSettingsStore((state) => state.setBaiduSubSources);
 
   const provider = WEB_SEARCH_PROVIDERS[selectedProviderId];
   const isServerConfigured = !!webSearchProvidersConfig[selectedProviderId]?.isServerConfigured;
+  const showCredentialFields = provider.requiresApiKey || isServerConfigured;
 
   const buildRequestUrl = (baseUrl: string) => {
     const trimmed = baseUrl.replace(/\/$/, '');
@@ -46,8 +50,14 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
         </div>
       )}
 
+      {!provider.requiresApiKey && !isServerConfigured && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30 p-3 text-sm text-emerald-700 dark:text-emerald-300">
+          {t('settings.webSearchNoApiKeyNeeded')}
+        </div>
+      )}
+
       {/* API Key + Base URL Configuration */}
-      {(provider.requiresApiKey || isServerConfigured) && (
+      {showCredentialFields && (
         <>
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
@@ -117,6 +127,43 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
             );
           })()}
         </>
+      )}
+
+      {selectedProviderId === 'baidu' && (
+        <div className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-sm">{t('settings.baiduSubSources')}</Label>
+            <p className="text-xs text-muted-foreground">
+              {t('settings.baiduSubSourcesDescription')}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            {(
+              Object.entries(BAIDU_SUB_SOURCES) as Array<
+                [keyof BaiduSubSources, (typeof BAIDU_SUB_SOURCES)[keyof typeof BAIDU_SUB_SOURCES]]
+              >
+            ).map(([key, meta]) => {
+              const enabled = baiduSubSources[key];
+              return (
+                <div
+                  key={key}
+                  className="flex items-center justify-between gap-4 rounded-md border px-3 py-2"
+                >
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="text-sm font-medium">{t(meta.labelKey)}</div>
+                    <div className="text-xs text-muted-foreground">{t(meta.descriptionKey)}</div>
+                  </div>
+                  <Switch
+                    checked={enabled}
+                    onCheckedChange={(checked) => setBaiduSubSources({ [key]: checked })}
+                    aria-label={t(meta.labelKey)}
+                  />
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
     </div>
   );

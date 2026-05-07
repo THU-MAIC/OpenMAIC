@@ -697,6 +697,30 @@ describe('fetchServerProviders — Web Search provider sync', () => {
 
     expect(store.getState().webSearchProviderId).toBe('bocha');
   });
+
+  it('stores Baidu sub-source toggles and prevents disabling every source', async () => {
+    const store = await getStore();
+
+    expect(store.getState().baiduSubSources).toEqual({
+      webSearch: true,
+      baike: true,
+      scholar: true,
+    });
+
+    store.getState().setBaiduSubSources({ webSearch: false, scholar: false });
+    expect(store.getState().baiduSubSources).toEqual({
+      webSearch: false,
+      baike: true,
+      scholar: false,
+    });
+
+    store.getState().setBaiduSubSources({ baike: false });
+    expect(store.getState().baiduSubSources).toEqual({
+      webSearch: false,
+      baike: true,
+      scholar: false,
+    });
+  });
 });
 
 describe('fetchServerProviders — PDF stale selection', () => {

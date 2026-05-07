@@ -2,7 +2,7 @@
  * Web Search Provider Constants
  */
 
-import type { WebSearchProviderId, WebSearchProviderConfig } from './types';
+import type { BaiduSubSources, WebSearchProviderId, WebSearchProviderConfig } from './types';
 
 /**
  * Web Search Provider Registry
@@ -23,6 +23,40 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     defaultBaseUrl: 'https://api.bocha.cn',
     endpointPath: '/v1/web-search',
     icon: '/logos/bocha.png',
+  },
+  brave: {
+    id: 'brave',
+    name: 'Brave Search',
+    requiresApiKey: false,
+    defaultBaseUrl: 'https://search.brave.com',
+    endpointPath: '/search',
+    icon: '/logos/brave.png',
+  },
+  baidu: {
+    id: 'baidu',
+    name: 'Baidu',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://qianfan.baidubce.com',
+    endpointPath: '/v2/ai_search/web_search',
+    icon: '/logos/baidu.png',
+  },
+};
+
+export const BAIDU_SUB_SOURCES: Record<
+  keyof BaiduSubSources,
+  { labelKey: string; descriptionKey: string }
+> = {
+  webSearch: {
+    labelKey: 'settings.baiduSubSourceWeb',
+    descriptionKey: 'settings.baiduSubSourceWebDescription',
+  },
+  baike: {
+    labelKey: 'settings.baiduSubSourceBaike',
+    descriptionKey: 'settings.baiduSubSourceBaikeDescription',
+  },
+  scholar: {
+    labelKey: 'settings.baiduSubSourceScholar',
+    descriptionKey: 'settings.baiduSubSourceScholarDescription',
   },
 };
 

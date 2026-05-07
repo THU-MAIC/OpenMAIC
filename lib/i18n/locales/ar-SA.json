@@ -500,7 +500,9 @@
       "lemonade": "Lemonade (محلي)",
       "ollama": "Ollama (محلي)",
       "tavily": "Tavily",
-      "bocha": "Bocha"
+      "bocha": "Bocha",
+      "brave": "Brave Search",
+      "baidu": "Baidu"
     },
     "providerTypes": {
       "openai": "بروتوكول OpenAI",
@@ -1008,6 +1010,15 @@
     "webSearchApiKeyPlaceholder": "أدخل مفتاح API للبحث",
     "webSearchApiKeyPlaceholderServer": "تم تكوين مفتاح الخادم، يمكنك التجاوز اختياريًا",
     "webSearchApiKeyHint": "احصل على مفتاح API من مزود البحث المحدد",
+    "webSearchNoApiKeyNeeded": "لا يتطلب هذا المزود مفتاح API.",
+    "baiduSubSources": "مصادر بحث Baidu",
+    "baiduSubSourcesDescription": "اختر مصدر Baidu واحدًا على الأقل.",
+    "baiduSubSourceWeb": "بحث الويب",
+    "baiduSubSourceWebDescription": "نتائج ويب عامة من Baidu AI Search.",
+    "baiduSubSourceBaike": "Baidu Baike",
+    "baiduSubSourceBaikeDescription": "مقالات موسوعية من Baidu Baike.",
+    "baiduSubSourceScholar": "Baidu Scholar",
+    "baiduSubSourceScholarDescription": "أبحاث أكاديمية من Baidu Scholar.",
     "webSearchBaseUrl": "العنوان الأساسي",
     "webSearchServerConfigured": "تم تكوين مفتاح API للبحث على الخادم",
     "optional": "اختياري"

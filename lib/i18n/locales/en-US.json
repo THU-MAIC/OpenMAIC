@@ -500,7 +500,9 @@
       "lemonade": "Lemonade (Local)",
       "ollama": "Ollama (Local)",
       "tavily": "Tavily",
-      "bocha": "Bocha"
+      "bocha": "Bocha",
+      "brave": "Brave Search",
+      "baidu": "Baidu"
     },
     "providerTypes": {
       "openai": "OpenAI Protocol",
@@ -1008,6 +1010,15 @@
     "webSearchApiKeyPlaceholder": "Enter your search API key",
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
     "webSearchApiKeyHint": "Get an API key from the selected search provider",
+    "webSearchNoApiKeyNeeded": "This provider does not require an API key.",
+    "baiduSubSources": "Baidu Search Sources",
+    "baiduSubSourcesDescription": "Choose at least one Baidu source to query.",
+    "baiduSubSourceWeb": "Web Search",
+    "baiduSubSourceWebDescription": "General web pages from Baidu AI Search.",
+    "baiduSubSourceBaike": "Baidu Baike",
+    "baiduSubSourceBaikeDescription": "Encyclopedia entries from Baidu Baike.",
+    "baiduSubSourceScholar": "Baidu Scholar",
+    "baiduSubSourceScholarDescription": "Academic papers from Baidu Scholar.",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Server-side search API key is configured",
     "optional": "Optional"

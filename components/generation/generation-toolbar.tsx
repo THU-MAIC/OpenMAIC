@@ -76,14 +76,19 @@ export function GenerationToolbar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Check if the selected web search provider has a valid config (API key or server-configured)
+  // Check web search availability. Keyless providers such as Brave should keep
+  // the toolbar reachable even when the current API-key provider is not ready.
   const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
   const webSearchConfig = webSearchProvidersConfig[webSearchProviderId];
-  const webSearchAvailable = webSearchProvider
+  const selectedWebSearchAvailable = webSearchProvider
     ? !webSearchProvider.requiresApiKey ||
       !!webSearchConfig?.apiKey ||
       !!webSearchConfig?.isServerConfigured
     : false;
+  const webSearchAvailable = Object.values(WEB_SEARCH_PROVIDERS).some((provider) => {
+    const cfg = webSearchProvidersConfig[provider.id];
+    return !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
+  });
 
   // Configured LLM providers (only those with valid credentials + models + endpoint)
   const configuredProviders = providersConfig
@@ -315,12 +320,16 @@ export function GenerationToolbar({
             <PopoverContent align="start" className="w-64 p-3 space-y-3">
               {/* Toggle */}
               <button
-                onClick={() => onWebSearchChange(!webSearch)}
+                onClick={() => {
+                  if (!selectedWebSearchAvailable) return;
+                  onWebSearchChange(!webSearch);
+                }}
                 className={cn(
                   'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
                   webSearch
                     ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
                     : 'border-border hover:bg-muted/50',
+                  !selectedWebSearchAvailable && 'opacity-60',
                 )}
               >
                 <Globe2

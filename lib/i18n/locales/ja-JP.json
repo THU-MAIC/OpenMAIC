@@ -500,7 +500,9 @@
       "lemonade": "Lemonade（ローカル）",
       "ollama": "Ollama（ローカルモデル）",
       "tavily": "Tavily",
-      "bocha": "Bocha"
+      "bocha": "Bocha",
+      "brave": "Brave Search",
+      "baidu": "Baidu"
     },
     "providerTypes": {
       "openai": "OpenAIプロトコル",
@@ -1008,6 +1010,15 @@
     "webSearchApiKeyPlaceholder": "検索APIキーを入力",
     "webSearchApiKeyPlaceholderServer": "サーバーキー設定済み、任意で上書き",
     "webSearchApiKeyHint": "選択した検索プロバイダーからAPIキーを取得してください",
+    "webSearchNoApiKeyNeeded": "このプロバイダーはAPIキー不要です。",
+    "baiduSubSources": "Baidu検索ソース",
+    "baiduSubSourcesDescription": "少なくとも1つのBaiduソースを選択してください。",
+    "baiduSubSourceWeb": "Web検索",
+    "baiduSubSourceWebDescription": "Baidu AI Searchの一般Web検索結果。",
+    "baiduSubSourceBaike": "Baidu Baike",
+    "baiduSubSourceBaikeDescription": "Baidu Baikeの百科事典エントリ。",
+    "baiduSubSourceScholar": "Baidu Scholar",
+    "baiduSubSourceScholarDescription": "Baidu Scholarの学術論文。",
     "webSearchBaseUrl": "ベースURL",
     "webSearchServerConfigured": "サーバー側で検索APIキーが設定済みです",
     "optional": "任意"
