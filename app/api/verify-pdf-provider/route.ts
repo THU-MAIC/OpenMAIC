@@ -41,10 +41,7 @@ export async function POST(req: NextRequest) {
         return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
       }
 
-      const cloudBase = (
-        clientCloudBase ||
-        serverCloudBase
-      ).replace(/\/+$/, '');
+      const cloudBase = (clientCloudBase || serverCloudBase).replace(/\/+$/, '');
 
       // Probe the batch endpoint with an empty body to verify auth
       const response = await fetch(`${cloudBase}/extract-results/batch/test-connection`, {
