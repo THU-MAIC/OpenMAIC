@@ -23,7 +23,7 @@ export async function searchWeb(params: {
     case 'bocha':
       return searchWithBocha({ query, apiKey, maxResults, baseUrl });
     case 'brave':
-      return searchWithBrave({ query, maxResults, baseUrl });
+      return searchWithBrave({ query, apiKey: apiKey || undefined, maxResults, baseUrl });
     case 'tavily':
       return searchWithTavily({ query, apiKey, maxResults, baseUrl });
     default: {

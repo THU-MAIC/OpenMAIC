@@ -1010,7 +1010,7 @@
     "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",
     "webSearchApiKeyPlaceholderServer": "已配置服务端密钥，可选填覆盖",
     "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
-    "webSearchNoApiKeyNeeded": "此搜索提供方无需 API Key。",
+    "webSearchApiKeyOptional": "API Key 为可选项。未填写时将通过公开页面抓取获取结果。",
     "baiduSubSources": "百度搜索源",
     "baiduSubSourcesDescription": "选择至少一个百度数据源参与搜索。",
     "baiduSubSourceWeb": "网页搜索",

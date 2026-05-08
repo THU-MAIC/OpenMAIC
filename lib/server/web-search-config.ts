@@ -16,7 +16,11 @@ const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
     'https://api.bochaai.com/v1',
     'https://api.bochaai.com/v1/web-search',
   ],
-  brave: ['https://search.brave.com', 'https://search.brave.com/search'],
+  brave: [
+    'https://search.brave.com',
+    'https://search.brave.com/search',
+    'https://api.search.brave.com',
+  ],
   baidu: ['https://qianfan.baidubce.com'],
 };
 
@@ -80,9 +84,7 @@ export function resolveClassroomWebSearchConfig(input: {
   if (!providerId) return undefined;
 
   const provider = WEB_SEARCH_PROVIDERS[providerId];
-  const apiKey = provider.requiresApiKey
-    ? resolveWebSearchApiKey(providerId, input.webSearchApiKey)
-    : '';
+  const apiKey = resolveWebSearchApiKey(providerId, input.webSearchApiKey);
   if (provider.requiresApiKey && !apiKey) return undefined;
 
   return {

@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
     const providerId: WebSearchProviderId =
       requestProviderId && WEB_SEARCH_PROVIDERS[requestProviderId] ? requestProviderId : 'tavily';
     const provider = WEB_SEARCH_PROVIDERS[providerId];
-    const apiKey = provider.requiresApiKey ? resolveWebSearchApiKey(providerId, clientApiKey) : '';
+    const apiKey = resolveWebSearchApiKey(providerId, clientApiKey);
     if (provider.requiresApiKey && !apiKey) {
       return apiError(
         'MISSING_API_KEY',
@@ -132,7 +132,7 @@ function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
     case 'bocha':
       return 'BOCHA_API_KEY';
     case 'brave':
-      return 'no API key';
+      return 'BRAVE_API_KEY';
     case 'tavily':
     default:
       return 'TAVILY_API_KEY';

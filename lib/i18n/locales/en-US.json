@@ -1010,7 +1010,7 @@
     "webSearchApiKeyPlaceholder": "Enter your search API key",
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
     "webSearchApiKeyHint": "Get an API key from the selected search provider",
-    "webSearchNoApiKeyNeeded": "This provider does not require an API key.",
+    "webSearchApiKeyOptional": "API key is optional. Without one, public page scraping will be used as a fallback.",
     "baiduSubSources": "Baidu Search Sources",
     "baiduSubSourcesDescription": "Choose at least one Baidu source to query.",
     "baiduSubSourceWeb": "Web Search",

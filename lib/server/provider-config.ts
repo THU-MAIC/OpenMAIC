@@ -105,6 +105,7 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
   BOCHA: 'bocha',
+  BRAVE: 'brave',
   BAIDU: 'baidu',
 };
 

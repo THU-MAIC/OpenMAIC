@@ -925,7 +925,7 @@
     "webSearchApiKeyPlaceholder": "輸入你的 Tavily API Key",
     "webSearchApiKeyPlaceholderServer": "已設定服務端密鑰，選填覆蓋",
     "webSearchApiKeyHint": "從所選搜尋服務商取得 API Key，用於網路搜尋",
-    "webSearchNoApiKeyNeeded": "此搜尋提供方不需要 API Key。",
+    "webSearchApiKeyOptional": "API Key 為可選項。未填寫時將透過公開頁面抓取獲取結果。",
     "baiduSubSources": "百度搜尋來源",
     "baiduSubSourcesDescription": "請至少選擇一個百度資料來源。",
     "baiduSubSourceWeb": "網頁搜尋",

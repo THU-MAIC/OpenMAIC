@@ -1010,7 +1010,7 @@
     "webSearchApiKeyPlaceholder": "Введите API-ключ поиска",
     "webSearchApiKeyPlaceholderServer": "Серверный ключ настроен, можно ввести свой",
     "webSearchApiKeyHint": "Получите API-ключ у выбранного поискового провайдера",
-    "webSearchNoApiKeyNeeded": "Для этого провайдера API-ключ не требуется.",
+    "webSearchApiKeyOptional": "API-ключ необязателен. Без него будет использоваться парсинг публичной страницы.",
     "baiduSubSources": "Источники поиска Baidu",
     "baiduSubSourcesDescription": "Выберите хотя бы один источник Baidu.",
     "baiduSubSourceWeb": "Веб-поиск",

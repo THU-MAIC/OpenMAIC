@@ -1010,7 +1010,7 @@
     "webSearchApiKeyPlaceholder": "أدخل مفتاح API للبحث",
     "webSearchApiKeyPlaceholderServer": "تم تكوين مفتاح الخادم، يمكنك التجاوز اختياريًا",
     "webSearchApiKeyHint": "احصل على مفتاح API من مزود البحث المحدد",
-    "webSearchNoApiKeyNeeded": "لا يتطلب هذا المزود مفتاح API.",
+    "webSearchApiKeyOptional": "مفتاح API اختياري. بدونه، سيتم استخدام استخراج الصفحة العامة كبديل.",
     "baiduSubSources": "مصادر بحث Baidu",
     "baiduSubSourcesDescription": "اختر مصدر Baidu واحدًا على الأقل.",
     "baiduSubSourceWeb": "بحث الويب",

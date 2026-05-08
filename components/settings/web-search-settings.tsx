@@ -25,7 +25,7 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
 
   const provider = WEB_SEARCH_PROVIDERS[selectedProviderId];
   const isServerConfigured = !!webSearchProvidersConfig[selectedProviderId]?.isServerConfigured;
-  const showCredentialFields = provider.requiresApiKey || isServerConfigured;
+  const showCredentialFields = true;
 
   const buildRequestUrl = (baseUrl: string) => {
     const trimmed = baseUrl.replace(/\/$/, '');
@@ -51,8 +51,8 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
       )}
 
       {!provider.requiresApiKey && !isServerConfigured && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950/30 p-3 text-sm text-emerald-700 dark:text-emerald-300">
-          {t('settings.webSearchNoApiKeyNeeded')}
+        <div className="rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/30 p-3 text-sm text-amber-700 dark:text-amber-300">
+          {t('settings.webSearchApiKeyOptional')}
         </div>
       )}
 
@@ -71,7 +71,11 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
                   autoCorrect="off"
                   spellCheck={false}
                   placeholder={
-                    isServerConfigured ? t('settings.optionalOverride') : t('settings.enterApiKey')
+                    isServerConfigured
+                      ? t('settings.optionalOverride')
+                      : !provider.requiresApiKey
+                        ? t('settings.optionalOverride')
+                        : t('settings.enterApiKey')
                   }
                   value={webSearchProvidersConfig[selectedProviderId]?.apiKey || ''}
                   onChange={(e) =>

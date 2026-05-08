@@ -1010,7 +1010,7 @@
     "webSearchApiKeyPlaceholder": "検索APIキーを入力",
     "webSearchApiKeyPlaceholderServer": "サーバーキー設定済み、任意で上書き",
     "webSearchApiKeyHint": "選択した検索プロバイダーからAPIキーを取得してください",
-    "webSearchNoApiKeyNeeded": "このプロバイダーはAPIキー不要です。",
+    "webSearchApiKeyOptional": "APIキーは任意です。未設定の場合、公開ページのスクレイピングが使用されます。",
     "baiduSubSources": "Baidu検索ソース",
     "baiduSubSourcesDescription": "少なくとも1つのBaiduソースを選択してください。",
     "baiduSubSourceWeb": "Web検索",
