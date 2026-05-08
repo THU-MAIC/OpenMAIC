@@ -1,6 +1,10 @@
 import { NextRequest } from 'next/server';
 import { transcribeAudio } from '@/lib/audio/asr-providers';
-import { resolveASRApiKey, resolveASRBaseUrl } from '@/lib/server/provider-config';
+import {
+  canUseServerApiKeyForBaseUrl,
+  resolveASRApiKey,
+  resolveASRBaseUrl,
+} from '@/lib/server/provider-config';
 import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -38,16 +42,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const serverBaseUrl = resolveASRBaseUrl(effectiveProviderId);
+    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
+
     const config = {
       providerId: effectiveProviderId,
       modelId: modelId || undefined,
       language: language || 'auto',
-      apiKey: clientBaseUrl
-        ? apiKey || ''
-        : resolveASRApiKey(effectiveProviderId, apiKey || undefined),
-      baseUrl: clientBaseUrl
-        ? clientBaseUrl
-        : resolveASRBaseUrl(effectiveProviderId, baseUrl || undefined),
+      apiKey: canUseServerApiKey
+        ? resolveASRApiKey(effectiveProviderId, apiKey || undefined)
+        : apiKey || '',
+      baseUrl: clientBaseUrl || serverBaseUrl,
     };
 
     // Transcribe using the provider system

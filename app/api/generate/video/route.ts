@@ -18,7 +18,11 @@
 
 import { NextRequest } from 'next/server';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
-import { resolveVideoApiKey, resolveVideoBaseUrl } from '@/lib/server/provider-config';
+import {
+  canUseServerApiKeyForBaseUrl,
+  resolveVideoApiKey,
+  resolveVideoBaseUrl,
+} from '@/lib/server/provider-config';
 import type { VideoProviderId, VideoGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -48,9 +52,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const apiKey = clientBaseUrl
-      ? clientApiKey || ''
-      : resolveVideoApiKey(providerId, clientApiKey);
+    const serverBaseUrl = resolveVideoBaseUrl(providerId);
+    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
+    const apiKey = canUseServerApiKey
+      ? resolveVideoApiKey(providerId, clientApiKey)
+      : clientApiKey || '';
     if (!apiKey) {
       return apiError(
         'MISSING_API_KEY',
@@ -59,7 +65,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl = clientBaseUrl ? clientBaseUrl : resolveVideoBaseUrl(providerId, clientBaseUrl);
+    const baseUrl = clientBaseUrl || serverBaseUrl;
 
     // Normalize options against provider capabilities
     const options = normalizeVideoOptions(providerId, body);

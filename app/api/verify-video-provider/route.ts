@@ -16,7 +16,11 @@
 
 import { NextRequest } from 'next/server';
 import { testVideoConnectivity } from '@/lib/media/video-providers';
-import { resolveVideoApiKey, resolveVideoBaseUrl } from '@/lib/server/provider-config';
+import {
+  canUseServerApiKeyForBaseUrl,
+  resolveVideoApiKey,
+  resolveVideoBaseUrl,
+} from '@/lib/server/provider-config';
 import type { VideoProviderId } from '@/lib/media/types';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
@@ -38,10 +42,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const apiKey = clientBaseUrl
-      ? clientApiKey || ''
-      : resolveVideoApiKey(providerId, clientApiKey);
-    const baseUrl = clientBaseUrl ? clientBaseUrl : resolveVideoBaseUrl(providerId, clientBaseUrl);
+    const serverBaseUrl = resolveVideoBaseUrl(providerId);
+    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
+    const apiKey = canUseServerApiKey
+      ? resolveVideoApiKey(providerId, clientApiKey)
+      : clientApiKey || '';
+    const baseUrl = clientBaseUrl || serverBaseUrl;
 
     if (!apiKey) {
       return apiError('MISSING_API_KEY', 400, 'No API key configured');
