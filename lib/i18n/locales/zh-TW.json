@@ -841,6 +841,7 @@
     "providerSora": "Sora（OpenAI）",
     "providerMiniMaxVideo": "MiniMax 影片",
     "providerGrokVideo": "Grok Video（xAI）",
+    "providerHappyHorse": "HappyHorse（阿里雲百煉）",
     "testVideoGeneration": "測試影片生成",
     "testVideoConnectivity": "測試連線",
     "videoConnectivitySuccess": "影片服務連線成功",
