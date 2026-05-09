@@ -188,7 +188,12 @@ export function replaceMediaPlaceholders(scenes: Scene[], mediaMap: Record<strin
     if (!canvas?.elements) continue;
 
     for (const el of canvas.elements) {
-      if (el.type === 'video' && typeof el.mediaRef === 'string' && mediaMap[el.mediaRef]) {
+      if (
+        el.type === 'video' &&
+        typeof el.mediaRef === 'string' &&
+        mediaMap[el.mediaRef] &&
+        (!el.src || isMediaPlaceholder(el.src))
+      ) {
         el.src = mediaMap[el.mediaRef];
         continue;
       }

@@ -418,13 +418,6 @@ export async function generateClassroom(
     try {
       const mediaMap = await generateMediaForClassroom(outlines, stageId, options.baseUrl);
       replaceMediaPlaceholders(scenes, mediaMap);
-      for (const [mediaRef, url] of Object.entries(mediaMap)) {
-        const entry = stage.videoManifest?.[mediaRef];
-        if (entry) {
-          entry.status = 'done';
-          entry.url = url;
-        }
-      }
       log.info(`Media generation complete: ${Object.keys(mediaMap).length} files`);
     } catch (err) {
       log.warn('Media generation phase failed, continuing:', err);

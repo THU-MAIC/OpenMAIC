@@ -16,7 +16,6 @@ export function buildVideoManifestFromOutlines(outlines: SceneOutline[]): VideoM
         type: 'video',
         prompt: request.prompt,
         aspectRatio: request.aspectRatio,
-        status: 'pending',
       };
     }
   }

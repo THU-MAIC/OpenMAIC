@@ -45,7 +45,6 @@ describe('video manifest', () => {
         type: 'video',
         prompt: 'A short animation of the motion concept',
         aspectRatio: '16:9',
-        status: 'pending',
       },
     });
   });

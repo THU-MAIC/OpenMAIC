@@ -369,11 +369,6 @@ function isGeneratedImageId(value: string): boolean {
   return /^gen_(img|vid)_[\w-]+$/i.test(value);
 }
 
-function isGeneratedVideoId(value: string): boolean {
-  if (!value) return false;
-  return /^gen_vid_[\w-]+$/i.test(value);
-}
-
 /**
  * Resolve image ID references in src field to actual base64 URLs
  *
@@ -452,7 +447,6 @@ function normalizeGeneratedVideoRefs(
   const validRefs = generatedVideoEntries
     .filter((mg) => mg.type === 'video')
     .map((mg) => mg.elementId);
-  if (validRefs.length === 0) return elements;
 
   const validRefSet = new Set(validRefs);
   const onlyRef = validRefs.length === 1 ? validRefs[0] : undefined;
@@ -464,9 +458,16 @@ function normalizeGeneratedVideoRefs(
       const videoEl = { ...el } as Record<string, unknown>;
       const mediaRef = typeof videoEl.mediaRef === 'string' ? videoEl.mediaRef : undefined;
       const src = typeof videoEl.src === 'string' ? videoEl.src : undefined;
+      const hasGeneratedSrc = !!src && isGeneratedImageId(src);
+      const hasDirectSrc = !!src && !hasGeneratedSrc;
+
+      if (hasDirectSrc) {
+        if (mediaRef) delete videoEl.mediaRef;
+        return videoEl as typeof el;
+      }
 
       if (mediaRef && validRefSet.has(mediaRef)) {
-        if (src && isGeneratedVideoId(src)) delete videoEl.src;
+        if (hasGeneratedSrc) delete videoEl.src;
         return videoEl as typeof el;
       }
 
@@ -476,14 +477,14 @@ function normalizeGeneratedVideoRefs(
         return videoEl as typeof el;
       }
 
-      if ((mediaRef || (src && isGeneratedVideoId(src))) && onlyRef) {
+      if ((mediaRef || hasGeneratedSrc) && onlyRef) {
         log.warn(`Correcting generated video reference "${mediaRef || src}" to "${onlyRef}"`);
         videoEl.mediaRef = onlyRef;
-        if (src && isGeneratedVideoId(src)) delete videoEl.src;
+        if (hasGeneratedSrc) delete videoEl.src;
         return videoEl as typeof el;
       }
 
-      if (mediaRef || (src && isGeneratedVideoId(src))) {
+      if (mediaRef || hasGeneratedSrc) {
         log.warn(`Invalid generated video reference "${mediaRef || src}", removing element`);
         return null;
       }
