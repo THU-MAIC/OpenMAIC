@@ -955,7 +955,8 @@ async function buildPptxBlob(
         let resolvedSrc = el.src;
         const mediaRef = el.type === 'video' ? el.mediaRef : undefined;
         const mediaLookupKey =
-          mediaRef || (typeof el.src === 'string' && isMediaPlaceholder(el.src) ? el.src : undefined);
+          mediaRef ||
+          (typeof el.src === 'string' && isMediaPlaceholder(el.src) ? el.src : undefined);
         if (mediaLookupKey) {
           const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
           if (task?.status === 'done' && task.objectUrl) {

@@ -712,7 +712,9 @@ async function generateSlideContent(
       mediaParts.push(`AI-Generated Images (use these IDs as image element src):\n${genImgDescs}`);
     }
     if (genVidDescs) {
-      mediaParts.push(`AI-Generated Videos (use these IDs as video element mediaRef):\n${genVidDescs}`);
+      mediaParts.push(
+        `AI-Generated Videos (use these IDs as video element mediaRef):\n${genVidDescs}`,
+      );
     }
 
     if (mediaParts.length > 0) {
@@ -800,7 +802,10 @@ async function generateSlideContent(
   );
   log.debug(`After image resolution: ${resolvedElements.length} elements`);
 
-  const videoNormalizedElements = normalizeGeneratedVideoRefs(resolvedElements, outline.mediaGenerations);
+  const videoNormalizedElements = normalizeGeneratedVideoRefs(
+    resolvedElements,
+    outline.mediaGenerations,
+  );
   log.debug(`After video reference normalization: ${videoNormalizedElements.length} elements`);
 
   // Process elements, assign unique IDs

@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { buildVideoManifestFromOutlines, getVideoMediaRefForElement } from '@/lib/media/video-manifest';
+import {
+  buildVideoManifestFromOutlines,
+  getVideoMediaRefForElement,
+} from '@/lib/media/video-manifest';
 import type { SceneOutline } from '@/lib/types/generation';
 
 describe('video manifest', () => {
