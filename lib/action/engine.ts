@@ -229,9 +229,9 @@ export class ActionEngine {
   // ==================== Synchronous — Video ====================
 
   private async executePlayVideo(action: PlayVideoAction): Promise<void> {
-    // Resolve the video element's src to a media placeholder ID (e.g. gen_vid_1).
+    // Resolve the video element to a generated media reference.
     // action.elementId is the slide element ID (e.g. video_abc123), but the media
-    // store is keyed by placeholder IDs, so we need to bridge the two.
+    // store is keyed by generated media refs, so we need to bridge the two.
     const placeholderId = this.resolveMediaPlaceholderId(action.elementId);
 
     if (placeholderId) {
@@ -291,8 +291,8 @@ export class ActionEngine {
   // ==================== Helpers — Media Resolution ====================
 
   /**
-   * Look up a video/image element's src in the current stage's scenes.
-   * Returns the src if it's a media placeholder ID (gen_vid_*, gen_img_*), null otherwise.
+   * Look up a video/image element's generated media reference in the current stage's scenes.
+   * Returns mediaRef first, then legacy src if it's a media placeholder ID.
    */
   private resolveMediaPlaceholderId(elementId: string): string | null {
     const { scenes, currentSceneId } = this.stageStore.getState();
@@ -309,12 +309,15 @@ export class ActionEngine {
       if (!scene || scene.type !== 'slide') continue;
       const elements = (
         scene.content as {
-          canvas?: { elements?: Array<{ id: string; src?: string }> };
+          canvas?: { elements?: Array<{ id: string; src?: string; mediaRef?: string }> };
         }
       )?.canvas?.elements;
       if (!Array.isArray(elements)) continue;
       const el = elements.find((e: { id: string }) => e.id === elementId);
-      if (el && 'src' in el && typeof el.src === 'string' && isMediaPlaceholder(el.src)) {
+      if (el && typeof el.mediaRef === 'string') {
+        return el.mediaRef;
+      }
+      if (el && typeof el.src === 'string' && isMediaPlaceholder(el.src)) {
         return el.src;
       }
     }

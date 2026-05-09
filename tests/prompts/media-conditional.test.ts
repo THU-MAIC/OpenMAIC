@@ -131,7 +131,8 @@ describe('slide-content media prompt conditions', () => {
     const text = combined(buildSlidePrompt({ generatedVideoEnabled: true }));
 
     expect(text).toContain('VideoElement');
-    expect(text).toContain('gen_vid_1');
+    expect(text).toContain('mediaRef');
+    expect(text).not.toContain('"src": "gen_vid_1"');
     expect(text).not.toContain('ImageElement');
     expect(text).not.toContain('gen_img_');
     expect(text).not.toContain('{{');

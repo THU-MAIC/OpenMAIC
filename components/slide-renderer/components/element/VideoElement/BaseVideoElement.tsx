@@ -8,6 +8,7 @@ import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-g
 import { useSettingsStore } from '@/lib/store/settings';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
+import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
 import { RotateCcw, Film, ShieldAlert, VideoOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
@@ -32,22 +33,26 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
 
   // Only subscribe to media store when inside a classroom (stageId provided via context).
   const stageId = useMediaStageId();
-  const isPlaceholder = isMediaPlaceholder(elementInfo.src);
+  const mediaRef = getVideoMediaRefForElement(elementInfo);
+  const concreteSrc =
+    elementInfo.src && !isMediaPlaceholder(elementInfo.src) ? elementInfo.src : undefined;
+  const isPlaceholder = !!mediaRef;
   const task = useMediaGenerationStore((s) => {
-    if (!isPlaceholder) return undefined;
-    const t = s.tasks[elementInfo.src];
+    if (!mediaRef) return undefined;
+    const t = s.tasks[mediaRef];
     if (t && t.stageId !== stageId) return undefined;
     return t;
   });
   const videoGenerationEnabled = useSettingsStore((s) => s.videoGenerationEnabled);
-  const resolvedSrc = task?.status === 'done' && task.objectUrl ? task.objectUrl : elementInfo.src;
-  const showDisabled = isPlaceholder && !task && !videoGenerationEnabled;
+  const resolvedSrc = task?.status === 'done' && task.objectUrl ? task.objectUrl : concreteSrc;
+  const showDisabled = isPlaceholder && !concreteSrc && !task && !videoGenerationEnabled;
   const showSkeleton =
     isPlaceholder &&
+    !concreteSrc &&
     !showDisabled &&
     (!task || task.status === 'pending' || task.status === 'generating');
-  const showError = isPlaceholder && task?.status === 'failed';
-  const isReady = !isPlaceholder || task?.status === 'done';
+  const showError = isPlaceholder && !concreteSrc && task?.status === 'failed';
+  const isReady = !!resolvedSrc;
 
   // Ensure video is paused on mount — prevents browser autoplay from user gesture context
   useEffect(() => {
@@ -149,7 +154,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  retryMediaTask(elementInfo.src);
+                  if (mediaRef) retryMediaTask(mediaRef);
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
                 className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/40 rounded hover:bg-red-200 dark:hover:bg-red-900/60 transition-colors"
@@ -159,8 +164,7 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
               </button>
             )}
           </div>
-        ) : (isReady && resolvedSrc && !isPlaceholder) ||
-          (isPlaceholder && task?.status === 'done') ? (
+        ) : isReady && resolvedSrc ? (
           <video
             ref={videoRef}
             className="w-full h-full"

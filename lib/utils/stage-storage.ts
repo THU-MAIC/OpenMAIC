@@ -50,6 +50,7 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
       style: data.stage.style,
       currentSceneId: data.currentSceneId || undefined,
       agentIds: data.stage.agentIds,
+      videoManifest: data.stage.videoManifest,
       interactiveMode: data.stage.interactiveMode,
     });
 

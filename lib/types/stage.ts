@@ -10,6 +10,18 @@ export type StageMode = 'autonomous' | 'playback';
 
 export type Whiteboard = Omit<Slide, 'theme' | 'turningMode' | 'sectionTag' | 'type'>;
 
+export interface VideoManifestEntry {
+  type: 'video';
+  prompt: string;
+  aspectRatio?: string;
+  status: 'pending' | 'generating' | 'done' | 'failed';
+  url?: string;
+  poster?: string;
+  error?: string;
+}
+
+export type VideoManifest = Record<string, VideoManifestEntry>;
+
 /**
  * Stage - Represents the entire classroom/course
  */
@@ -24,6 +36,8 @@ export interface Stage {
   style?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];
+  // Generated videos keyed by the mediaRef used by PPTVideoElement.
+  videoManifest?: VideoManifest;
   // Agent IDs selected when this classroom was created
   agentIds?: string[];
   /**

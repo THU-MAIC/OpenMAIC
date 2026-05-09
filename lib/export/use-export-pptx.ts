@@ -951,16 +951,21 @@ async function buildPptxBlob(
 
       // ── VIDEO / AUDIO ──
       else if (el.type === 'video' || el.type === 'audio') {
-        // Resolve placeholder src → blob URL from media generation store
+        // Resolve generated video mediaRef or legacy placeholder src → blob URL.
         let resolvedSrc = el.src;
-        if (isMediaPlaceholder(el.src)) {
-          const task = useMediaGenerationStore.getState().tasks[el.src];
+        const mediaRef = el.type === 'video' ? el.mediaRef : undefined;
+        const mediaLookupKey =
+          mediaRef || (typeof el.src === 'string' && isMediaPlaceholder(el.src) ? el.src : undefined);
+        if (mediaLookupKey) {
+          const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
           if (task?.status === 'done' && task.objectUrl) {
             resolvedSrc = task.objectUrl;
-          } else {
+          } else if (!resolvedSrc || isMediaPlaceholder(resolvedSrc)) {
             continue; // Media not ready, skip
           }
         }
+
+        if (!resolvedSrc) continue;
 
         // Fetch blob and convert to base64 for embedding in PPTX
         // (blob: URLs and remote URLs won't work in offline PPTX)
@@ -995,8 +1000,8 @@ async function buildPptxBlob(
 
             // 1. Try poster from element or media generation store
             let posterUrl = 'poster' in el && el.poster ? el.poster : undefined;
-            if (!posterUrl && isMediaPlaceholder(el.src)) {
-              const task = useMediaGenerationStore.getState().tasks[el.src];
+            if (!posterUrl && mediaLookupKey) {
+              const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
               if (task?.poster) posterUrl = task.poster;
             }
             if (posterUrl) {

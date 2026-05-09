@@ -631,7 +631,8 @@ export interface PPTLatexElement extends PPTBaseElement {
  */
 export interface PPTVideoElement extends PPTBaseElement {
   type: 'video';
-  src: string;
+  src?: string;
+  mediaRef?: string;
   autoplay: boolean;
   poster?: string;
   ext?: string;

@@ -369,6 +369,11 @@ function isGeneratedImageId(value: string): boolean {
   return /^gen_(img|vid)_[\w-]+$/i.test(value);
 }
 
+function isGeneratedVideoId(value: string): boolean {
+  if (!value) return false;
+  return /^gen_vid_[\w-]+$/i.test(value);
+}
+
 /**
  * Resolve image ID references in src field to actual base64 URLs
  *
@@ -418,7 +423,8 @@ function resolveImageIds(
       }
 
       if (el.type === 'video') {
-        if (!('src' in el)) {
+        const mediaRef = (el as Record<string, unknown>).mediaRef;
+        if (!('src' in el) && typeof mediaRef !== 'string') {
           log.warn(`Video element missing src, removing element`);
           return null;
         }
@@ -432,6 +438,54 @@ function resolveImageIds(
           log.debug(`Keeping generated video placeholder: ${src}`);
           return el;
         }
+      }
+
+      return el;
+    })
+    .filter((el): el is NonNullable<typeof el> => el !== null);
+}
+
+function normalizeGeneratedVideoRefs(
+  elements: GeneratedSlideData['elements'],
+  generatedVideoEntries: SceneOutline['mediaGenerations'] = [],
+): GeneratedSlideData['elements'] {
+  const validRefs = generatedVideoEntries
+    .filter((mg) => mg.type === 'video')
+    .map((mg) => mg.elementId);
+  if (validRefs.length === 0) return elements;
+
+  const validRefSet = new Set(validRefs);
+  const onlyRef = validRefs.length === 1 ? validRefs[0] : undefined;
+
+  return elements
+    .map((el) => {
+      if (el.type !== 'video') return el;
+
+      const videoEl = { ...el } as Record<string, unknown>;
+      const mediaRef = typeof videoEl.mediaRef === 'string' ? videoEl.mediaRef : undefined;
+      const src = typeof videoEl.src === 'string' ? videoEl.src : undefined;
+
+      if (mediaRef && validRefSet.has(mediaRef)) {
+        if (src && isGeneratedVideoId(src)) delete videoEl.src;
+        return videoEl as typeof el;
+      }
+
+      if (src && validRefSet.has(src)) {
+        videoEl.mediaRef = src;
+        delete videoEl.src;
+        return videoEl as typeof el;
+      }
+
+      if ((mediaRef || (src && isGeneratedVideoId(src))) && onlyRef) {
+        log.warn(`Correcting generated video reference "${mediaRef || src}" to "${onlyRef}"`);
+        videoEl.mediaRef = onlyRef;
+        if (src && isGeneratedVideoId(src)) delete videoEl.src;
+        return videoEl as typeof el;
+      }
+
+      if (mediaRef || (src && isGeneratedVideoId(src))) {
+        log.warn(`Invalid generated video reference "${mediaRef || src}", removing element`);
+        return null;
       }
 
       return el;
@@ -658,7 +712,7 @@ async function generateSlideContent(
       mediaParts.push(`AI-Generated Images (use these IDs as image element src):\n${genImgDescs}`);
     }
     if (genVidDescs) {
-      mediaParts.push(`AI-Generated Videos (use these IDs as video element src):\n${genVidDescs}`);
+      mediaParts.push(`AI-Generated Videos (use these IDs as video element mediaRef):\n${genVidDescs}`);
     }
 
     if (mediaParts.length > 0) {
@@ -746,8 +800,11 @@ async function generateSlideContent(
   );
   log.debug(`After image resolution: ${resolvedElements.length} elements`);
 
+  const videoNormalizedElements = normalizeGeneratedVideoRefs(resolvedElements, outline.mediaGenerations);
+  log.debug(`After video reference normalization: ${videoNormalizedElements.length} elements`);
+
   // Process elements, assign unique IDs
-  const processedElements: PPTElement[] = resolvedElements.map((el) => ({
+  const processedElements: PPTElement[] = videoNormalizedElements.map((el) => ({
     ...el,
     id: `${el.type}_${nanoid(8)}`,
     rotate: 0,

@@ -27,6 +27,7 @@ import {
   replaceMediaPlaceholders,
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
+import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
@@ -326,6 +327,7 @@ export async function generateClassroom(
     name: outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
     languageDirective,
+    videoManifest: buildVideoManifestFromOutlines(outlines),
     style: 'interactive',
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -416,6 +418,13 @@ export async function generateClassroom(
     try {
       const mediaMap = await generateMediaForClassroom(outlines, stageId, options.baseUrl);
       replaceMediaPlaceholders(scenes, mediaMap);
+      for (const [mediaRef, url] of Object.entries(mediaMap)) {
+        const entry = stage.videoManifest?.[mediaRef];
+        if (entry) {
+          entry.status = 'done';
+          entry.url = url;
+        }
+      }
       log.info(`Media generation complete: ${Object.keys(mediaMap).length} files`);
     } catch (err) {
       log.warn('Media generation phase failed, continuing:', err);

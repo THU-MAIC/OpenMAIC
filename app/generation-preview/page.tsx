@@ -23,6 +23,7 @@ import {
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { db } from '@/lib/utils/database';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
 import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
@@ -673,6 +674,7 @@ function GenerationPreviewContent() {
 
       // Store stage and outlines
       const store = useStageStore.getState();
+      stage.videoManifest = buildVideoManifestFromOutlines(outlines);
       store.setStage(stage);
       store.setOutlines(outlines);
 

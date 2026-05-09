@@ -908,8 +908,8 @@ Before outputting JSON, verify:
 - ✓ [gen-image-ratio] Generated image aspect ratio is preserved, usually 16:9 unless a different ratio is listed
 {{/if}}
 {{#if generatedVideoEnabled}}
-- ✓ [video-id] Video `src` values only use generated video IDs from the assigned media list (for example, "gen_vid_1")
-  - Do not invent video IDs or URLs not listed in the available media
+- ✓ [video-media-ref] Video `mediaRef` values only use generated video media refs from the assigned media list
+  - Do not invent video refs or URLs not listed in the available media
 {{/if}}
 - ✓ [latex-fields] LatexElement does NOT include `path`, `viewBox`, `strokeWidth`, or `fixedRatio` (system auto-generates these)
 - ✓ [latex-width] LatexElement width is appropriate for the formula category (standalone fractions: 30-80, NOT 200+; inline equations: 200-400). Check the LaTeX width guide table above.
