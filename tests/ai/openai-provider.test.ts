@@ -16,7 +16,7 @@ import type { ProviderId } from '@/lib/types/provider';
 async function captureInjectedRequestBody(
   providerId: ProviderId,
   modelId: string,
-  thinkingConfig: Record<string, unknown>,
+  thinkingConfig?: Record<string, unknown>,
 ) {
   const originalFetch = globalThis.fetch;
   const globalRecord = globalThis as Record<string, unknown>;
@@ -145,6 +145,12 @@ describe('OpenAI provider defaults', () => {
       { mode: 'enabled', effort: 'high' },
       { chat_template_kwargs: { reasoning_effort: 'high' } },
     ],
+    [
+      'lemonade',
+      'Qwen3.5-4B-GGUF',
+      { mode: 'enabled', budgetTokens: 4096 },
+      { chat_template_kwargs: { enable_thinking: true, thinking_budget: 4096 } },
+    ],
   ] as const)(
     'injects %s thinking params into the OpenAI-compatible request body',
     async (providerId, modelId, thinkingConfig, expected) => {
@@ -152,4 +158,81 @@ describe('OpenAI provider defaults', () => {
       expect(body).toMatchObject(expected);
     },
   );
+
+  it('disables Lemonade thinking by default for recognized local reasoning models', async () => {
+    const body = await captureInjectedRequestBody('lemonade', 'Qwen3.5-4B-GGUF');
+
+    expect(body).toMatchObject({
+      chat_template_kwargs: { enable_thinking: false },
+    });
+  });
+
+  it('recognizes manually added Lemonade reasoning model IDs', async () => {
+    const body = await captureInjectedRequestBody('lemonade', 'custom-gpt-oss-20b-q4');
+
+    expect(body).toMatchObject({
+      chat_template_kwargs: { enable_thinking: false },
+    });
+  });
+
+  it('disables Lemonade thinking by default for non-catalog local models too', async () => {
+    const body = await captureInjectedRequestBody('lemonade', 'Gemma-4-26B-A4B-it-GGUF');
+
+    expect(body).toMatchObject({
+      chat_template_kwargs: { enable_thinking: false },
+    });
+  });
+
+  it('strips unsupported Lemonade stream_options while preserving thinking overrides', async () => {
+    const originalFetch = globalThis.fetch;
+    const globalRecord = globalThis as Record<string, unknown>;
+    const originalThinkingContext = globalRecord.__thinkingContext;
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => {
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+      globalRecord.__thinkingContext = {
+        getStore: () => ({ mode: 'disabled' }),
+      };
+
+      getModel({
+        providerId: 'lemonade',
+        modelId: 'Gemma-4-26B-A4B-it-GGUF',
+        apiKey: '',
+      });
+
+      const lastCall = openAiMock.createOpenAI.mock.calls.at(-1);
+      const options = lastCall?.[0] as { fetch?: typeof fetch } | undefined;
+
+      await options?.fetch?.('https://example.test/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'Gemma-4-26B-A4B-it-GGUF',
+          messages: [{ role: 'user', content: 'hi' }],
+          stream: true,
+          stream_options: { include_usage: true },
+        }),
+      });
+
+      const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+      const body = JSON.parse(init.body as string);
+
+      expect(body.stream_options).toBeUndefined();
+      expect(body).toMatchObject({
+        chat_template_kwargs: { enable_thinking: false },
+      });
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalThinkingContext === undefined) {
+        delete globalRecord.__thinkingContext;
+      } else {
+        globalRecord.__thinkingContext = originalThinkingContext;
+      }
+    }
+  });
 });

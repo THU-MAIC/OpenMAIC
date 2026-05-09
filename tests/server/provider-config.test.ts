@@ -48,6 +48,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_SORA',
   'VIDEO_MINIMAX',
   'VIDEO_GROK',
+  'BOCHA',
 ];
 
 function clearProviderEnv() {
@@ -57,6 +58,8 @@ function clearProviderEnv() {
     delete process.env[`${prefix}_MODELS`];
   }
   delete process.env.TAVILY_API_KEY;
+  delete process.env.BOCHA_API_KEY;
+  delete process.env.BOCHA_BASE_URL;
 }
 
 vi.mock('fs', async (importOriginal) => {
@@ -256,6 +259,31 @@ providers:
       const { resolveWebSearchApiKey } = await import('@/lib/server/provider-config');
       expect(resolveWebSearchApiKey()).toBe('tvly-bare-env');
     });
+
+    it('resolves Bocha API key and base URL from env vars', async () => {
+      vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
+      vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('bocha', undefined)).toBe('bocha-env-key');
+      expect(resolveWebSearchBaseUrl('bocha')).toBe('https://proxy.example.com/bocha');
+      expect(getServerWebSearchProviders().bocha).toEqual({
+        baseUrl: 'https://proxy.example.com/bocha',
+      });
+    });
+
+    it('uses client key and base URL before Bocha server config', async () => {
+      vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
+      vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
+      const { resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('bocha', 'bocha-client-key')).toBe('bocha-client-key');
+      expect(resolveWebSearchBaseUrl('bocha', 'https://client.example.com')).toBe(
+        'https://client.example.com',
+      );
+    });
   });
 
   describe('baseUrl-only providers (e.g. mineru)', () => {
@@ -295,6 +323,20 @@ pdf:
   });
 
   describe('image and video provider metadata', () => {
+    it('uses standard OpenAI env vars for OpenAI image generation fallback', async () => {
+      vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
+      vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.example.com/v1');
+      const { getServerImageProviders, resolveImageApiKey, resolveImageBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      const providers = getServerImageProviders();
+      expect(providers['openai-image']).toEqual({
+        baseUrl: 'https://proxy.example.com/v1',
+      });
+      expect(resolveImageApiKey('openai-image')).toBe('sk-openai');
+      expect(resolveImageBaseUrl('openai-image')).toBe('https://proxy.example.com/v1');
+    });
+
     it('maps IMAGE_OPENAI and exposes image baseUrl', async () => {
       vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-openai-image');
       vi.stubEnv('IMAGE_OPENAI_BASE_URL', 'https://proxy.example.com/v1');

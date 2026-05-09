@@ -454,7 +454,10 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
-      "ollama": "Ollama（ローカルモデル）"
+      "lemonade": "Lemonade（ローカル）",
+      "ollama": "Ollama（ローカルモデル）",
+      "tavily": "Tavily",
+      "bocha": "Bocha"
     },
     "providerTypes": {
       "openai": "OpenAIプロトコル",
@@ -601,6 +604,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0（火山エンジン）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS（ローカル）",
     "providerBrowserNativeTTS": "ブラウザネイティブTTS",
     "voxcpmBackend": "バックエンド",
     "voxcpmBaseUrlPending": "Base URL を入力するとリクエスト URL が生成されます",
@@ -647,6 +651,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "ブラウザネイティブASR",
     "providerQwenASR": "Qwen ASR（Alibaba Cloud百錬）",
+    "providerLemonadeASR": "Lemonade ASR（ローカル）",
     "providerUnpdf": "unpdf（組み込み）",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU（クラウド）",
@@ -898,6 +903,7 @@
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image（xAI）",
+    "providerLemonadeImage": "Lemonade Image（ローカル）",
     "testImageGeneration": "画像生成をテスト",
     "testImageConnectivity": "接続テスト",
     "imageConnectivitySuccess": "画像サービスへの接続に成功しました",
@@ -955,12 +961,12 @@
     "clearCacheSuccess": "キャッシュをクリアしました。まもなくページが更新されます",
     "clearCacheFailed": "キャッシュのクリアに失敗しました。もう一度お試しください",
     "webSearchSettings": "ウェブ検索",
-    "webSearchApiKey": "Tavily APIキー",
-    "webSearchApiKeyPlaceholder": "Tavily APIキーを入力",
+    "webSearchApiKey": "検索APIキー",
+    "webSearchApiKeyPlaceholder": "検索APIキーを入力",
     "webSearchApiKeyPlaceholderServer": "サーバーキー設定済み、任意で上書き",
-    "webSearchApiKeyHint": "ウェブ検索用のAPIキーをtavily.comで取得してください",
+    "webSearchApiKeyHint": "選択した検索プロバイダーからAPIキーを取得してください",
     "webSearchBaseUrl": "ベースURL",
-    "webSearchServerConfigured": "サーバー側でTavily APIキーが設定済みです",
+    "webSearchServerConfigured": "サーバー側で検索APIキーが設定済みです",
     "optional": "任意"
   },
   "profile": {

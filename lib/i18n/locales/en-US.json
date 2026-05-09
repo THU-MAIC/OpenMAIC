@@ -454,7 +454,10 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
-      "ollama": "Ollama (Local)"
+      "lemonade": "Lemonade (Local)",
+      "ollama": "Ollama (Local)",
+      "tavily": "Tavily",
+      "bocha": "Bocha"
     },
     "providerTypes": {
       "openai": "OpenAI Protocol",
@@ -601,6 +604,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS (Local)",
     "providerBrowserNativeTTS": "Browser Native TTS",
     "voxcpmBackend": "Backend",
     "voxcpmBaseUrlPending": "Enter a Base URL to generate the request URL",
@@ -647,6 +651,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Browser Native ASR",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerLemonadeASR": "Lemonade ASR (Local)",
     "providerUnpdf": "unpdf (Built-in)",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU (Cloud)",
@@ -898,6 +903,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerLemonadeImage": "Lemonade Image (Local)",
     "testImageGeneration": "Test Image Generation",
     "testImageConnectivity": "Test Connection",
     "imageConnectivitySuccess": "Image service connected successfully",
@@ -955,12 +961,12 @@
     "clearCacheSuccess": "Cache cleared, page will refresh shortly",
     "clearCacheFailed": "Failed to clear cache, please try again",
     "webSearchSettings": "Web Search",
-    "webSearchApiKey": "Tavily API Key",
-    "webSearchApiKeyPlaceholder": "Enter your Tavily API Key",
+    "webSearchApiKey": "Search API Key",
+    "webSearchApiKeyPlaceholder": "Enter your search API key",
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
-    "webSearchApiKeyHint": "Get an API key from tavily.com for web search",
+    "webSearchApiKeyHint": "Get an API key from the selected search provider",
     "webSearchBaseUrl": "Base URL",
-    "webSearchServerConfigured": "Server-side Tavily API key is configured",
+    "webSearchServerConfigured": "Server-side search API key is configured",
     "optional": "Optional"
   },
   "profile": {

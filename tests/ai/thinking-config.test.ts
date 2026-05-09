@@ -152,6 +152,21 @@ describe('thinking config normalization', () => {
     expect(thinking?.effortValues).toEqual(['none', 'low', 'high']);
   });
 
+  it('normalizes Lemonade reasoning models as disabled-by-default token budgets', () => {
+    const thinking = getThinking('lemonade', 'Qwen3.5-4B-GGUF');
+
+    expect(supportsConfigurableThinking(thinking)).toBe(true);
+    expect(thinking?.requestAdapter).toBe('lemonade');
+    expect(getDefaultThinkingConfig(thinking)).toEqual({
+      mode: 'disabled',
+      budgetTokens: undefined,
+    });
+    expect(normalizeThinkingConfig(thinking, { mode: 'enabled', budgetTokens: 4096 })).toEqual({
+      mode: 'enabled',
+      budgetTokens: 4096,
+    });
+  });
+
   it('normalizes Doubao Seed 2.0 thinking as reasoning effort levels', () => {
     const thinking = getThinking('doubao', 'doubao-seed-2-0-pro-260215');
 

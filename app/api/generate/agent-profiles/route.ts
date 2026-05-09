@@ -23,7 +23,12 @@ interface RequestBody {
   languageDirective: string;
   availableAvatars: string[];
   avatarDescriptions?: Array<{ path: string; desc: string }>;
-  availableVoices?: Array<{ providerId: string; voiceId: string; voiceName: string }>;
+  availableVoices?: Array<{
+    providerId: string;
+    voiceId: string;
+    voiceName: string;
+    voiceLanguage?: string;
+  }>;
 }
 
 function stripCodeFences(text: string): string {
@@ -89,12 +94,14 @@ export async function POST(req: NextRequest) {
             availableVoices.map((v) => ({
               id: `${v.providerId}::${v.voiceId}`,
               name: v.voiceName,
+              language: v.voiceLanguage || 'unknown',
             })),
           )
         : '';
 
     const voicePrompt = voiceListStr
       ? `- Each agent should be assigned a voice that matches their persona from this list: ${voiceListStr}
+  - Prefer a voice whose language matches the course language directive
   - Pick a voice that suits the agent's personality and role (e.g. authoritative voice for teacher, lively voice for energetic student)
   - Try to use different voices for each agent`
       : '';
@@ -139,19 +146,21 @@ Return a JSON object with this exact structure:
 
     log.info(`Generating agent profiles for "${stageInfo.name}" [model=${modelString}]`);
 
-    const result = await callLLM(
-      {
-        model: languageModel,
-        system: systemPrompt,
-        prompt: userPrompt,
-      },
-      'agent-profiles',
-      undefined,
-      thinkingConfig,
-    );
+    const rawResult = (
+      await callLLM(
+        {
+          model: languageModel,
+          system: systemPrompt,
+          prompt: userPrompt,
+        },
+        'agent-profiles',
+        undefined,
+        thinkingConfig,
+      )
+    ).text;
 
     // ── Parse LLM response ──
-    const rawText = stripCodeFences(result.text);
+    const rawText = stripCodeFences(rawResult);
     let parsed: {
       agents: Array<{
         name: string;

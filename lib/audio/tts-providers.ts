@@ -164,6 +164,9 @@ export async function generateTTS(
     case 'elevenlabs-tts':
       return await generateElevenLabsTTS(config, text);
 
+    case 'lemonade-tts':
+      return await generateLemonadeTTS(config, text);
+
     case 'browser-native-tts':
       throw new Error(
         'Browser Native TTS must be handled client-side using Web Speech API. This provider cannot be used on the server.',
@@ -212,6 +215,47 @@ async function generateOpenAITTS(
   return {
     audio: new Uint8Array(arrayBuffer),
     format,
+  };
+}
+
+/**
+ * Lemonade TTS implementation (OpenAI-compatible /v1/audio/speech).
+ */
+async function generateLemonadeTTS(
+  config: TTSModelConfig,
+  text: string,
+): Promise<TTSGenerationResult> {
+  const baseUrl = (config.baseUrl || TTS_PROVIDERS['lemonade-tts'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+  const modelId = config.modelId || TTS_PROVIDERS['lemonade-tts'].defaultModelId;
+  const voice = config.voice || 'af_heart';
+
+  const response = await fetch(`${baseUrl}/audio/speech`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json; charset=utf-8',
+      ...getBackendAuthHeaders(config.apiKey),
+    },
+    body: JSON.stringify({
+      model: modelId,
+      input: text,
+      voice,
+      speed: config.speed || 1.0,
+      response_format: config.format || 'wav',
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Lemonade TTS API error: ${await readTTSApiError(response)}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const contentType = response.headers.get('content-type') || '';
+  return {
+    audio: new Uint8Array(arrayBuffer),
+    format: getAudioResponseFormat(contentType),
   };
 }
 

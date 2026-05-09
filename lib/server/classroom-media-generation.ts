@@ -95,11 +95,11 @@ export async function generateMediaForClassroom(
       try {
         const providerId = imageProviderIds[0] as ImageProviderId;
         const apiKey = resolveImageApiKey(providerId);
-        if (!apiKey) {
+        const providerConfig = IMAGE_PROVIDERS[providerId];
+        if (providerConfig?.requiresApiKey && !apiKey) {
           log.warn(`No API key for image provider "${providerId}", skipping ${req.elementId}`);
           continue;
         }
-        const providerConfig = IMAGE_PROVIDERS[providerId];
         const model = providerConfig?.models?.[0]?.id;
 
         const result = await generateImage(
@@ -221,16 +221,14 @@ export async function generateTTSForClassroom(
 
   const providerId = ttsProviderIds[0] as TTSProviderId;
   const apiKey = resolveTTSApiKey(providerId);
-  if (!apiKey) {
+  const ttsProvider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
+  if (ttsProvider?.requiresApiKey && !apiKey) {
     log.warn(`No API key for TTS provider "${providerId}", skipping TTS generation`);
     return;
   }
-  const ttsBaseUrl =
-    resolveTTSBaseUrl(providerId) ||
-    TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS]?.defaultBaseUrl;
+  const ttsBaseUrl = resolveTTSBaseUrl(providerId) || ttsProvider?.defaultBaseUrl;
   const voice = DEFAULT_TTS_VOICES[providerId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
-  const format =
-    TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS]?.supportedFormats?.[0] || 'mp3';
+  const format = ttsProvider?.supportedFormats?.[0] || 'mp3';
   if (providerId === VOXCPM_TTS_PROVIDER_ID && voice === VOXCPM_AUTO_VOICE_ID) {
     log.warn('VoxCPM Auto Voice requires agent context; skipping server-side TTS generation');
     return;

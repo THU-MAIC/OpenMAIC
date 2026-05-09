@@ -454,7 +454,10 @@
       "grok": "Grok",
       "tencent-hunyuan": "Tencent Hunyuan",
       "xiaomi": "Xiaomi MiMo",
-      "ollama": "Ollama (Локальный)"
+      "lemonade": "Lemonade (Локальный)",
+      "ollama": "Ollama (Локальный)",
+      "tavily": "Tavily",
+      "bocha": "Bocha"
     },
     "providerTypes": {
       "openai": "Протокол OpenAI",
@@ -601,6 +604,7 @@
     "providerDoubaoTTS": "Doubao TTS 2.0 (Volcengine)",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS (Локальный)",
     "providerBrowserNativeTTS": "Встроенный TTS браузера",
     "voxcpmBackend": "Бэкенд",
     "voxcpmBaseUrlPending": "Введите Base URL, чтобы сформировать URL запроса",
@@ -647,6 +651,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "Встроенный ASR браузера",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
+    "providerLemonadeASR": "Lemonade ASR (Локальный)",
     "providerUnpdf": "unpdf (встроенный)",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU (Облако)",
@@ -898,6 +903,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerLemonadeImage": "Lemonade Image (Локальный)",
     "testImageGeneration": "Тест генерации изображений",
     "testImageConnectivity": "Тест подключения",
     "imageConnectivitySuccess": "Подключение к сервису изображений успешно",
@@ -955,12 +961,12 @@
     "clearCacheSuccess": "Кэш очищен, страница скоро обновится",
     "clearCacheFailed": "Не удалось очистить кэш, попробуйте снова",
     "webSearchSettings": "Веб-поиск",
-    "webSearchApiKey": "Tavily API-ключ",
-    "webSearchApiKeyPlaceholder": "Введите ваш Tavily API-ключ",
+    "webSearchApiKey": "API-ключ поиска",
+    "webSearchApiKeyPlaceholder": "Введите API-ключ поиска",
     "webSearchApiKeyPlaceholderServer": "Серверный ключ настроен, можно ввести свой",
-    "webSearchApiKeyHint": "Получите API-ключ на tavily.com для веб-поиска",
+    "webSearchApiKeyHint": "Получите API-ключ у выбранного поискового провайдера",
     "webSearchBaseUrl": "Base URL",
-    "webSearchServerConfigured": "Серверный Tavily API-ключ настроен",
+    "webSearchServerConfigured": "Серверный API-ключ поиска настроен",
     "optional": "Необязательно"
   },
   "profile": {

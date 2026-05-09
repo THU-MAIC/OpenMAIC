@@ -182,12 +182,110 @@ export async function transcribeAudio(
     case 'qwen-asr':
       return await transcribeQwenASR(config, audioBuffer);
 
+    case 'lemonade-asr':
+      return await transcribeLemonadeASR(config, audioBuffer);
+
     default:
       if (isCustomASRProvider(config.providerId)) {
         return await transcribeOpenAIWhisper(config, audioBuffer);
       }
       throw new Error(`Unsupported ASR provider: ${config.providerId}`);
   }
+}
+
+/**
+ * Lemonade ASR implementation (OpenAI-compatible multipart transcription).
+ *
+ * Lemonade currently supports WAV input and JSON response format.
+ */
+async function transcribeLemonadeASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const baseUrl = (config.baseUrl || ASR_PROVIDERS['lemonade-asr'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+
+  const audioBlob = await toAudioBlob(audioBuffer);
+  if (!(await isWavAudio(audioBlob))) {
+    throw new Error(
+      'Lemonade ASR currently supports WAV input only. Recordings should be converted to WAV before upload.',
+    );
+  }
+
+  const formData = new FormData();
+  formData.set('file', audioBlob, 'audio.wav');
+  formData.set('model', config.modelId || ASR_PROVIDERS['lemonade-asr'].defaultModelId);
+  formData.set('response_format', 'json');
+  if (config.language && config.language !== 'auto') {
+    formData.set('language', config.language);
+  }
+
+  const response = await fetch(`${baseUrl}/audio/transcriptions`, {
+    method: 'POST',
+    headers: getOptionalBearerAuthHeaders(config.apiKey),
+    body: formData,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => response.statusText);
+    if (errorText.includes('audio is empty') || errorText.includes('too short')) {
+      return { text: '' };
+    }
+    throw new Error(`Lemonade ASR API error: ${errorText || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return { text: typeof data.text === 'string' ? data.text : '' };
+}
+
+async function toAudioBlob(audioBuffer: Buffer | Blob): Promise<Blob> {
+  if (audioBuffer instanceof Blob) {
+    return audioBuffer;
+  }
+  if (audioBuffer instanceof Buffer) {
+    const arrayBuffer = audioBuffer.buffer.slice(
+      audioBuffer.byteOffset,
+      audioBuffer.byteOffset + audioBuffer.byteLength,
+    ) as ArrayBuffer;
+    return new Blob([arrayBuffer], { type: detectWavBuffer(audioBuffer) ? 'audio/wav' : '' });
+  }
+  throw new Error('Invalid audio buffer type');
+}
+
+async function isWavAudio(blob: Blob): Promise<boolean> {
+  if (blob.type.includes('audio/wav') || blob.type.includes('audio/x-wav')) {
+    return true;
+  }
+
+  if (blob instanceof File && /\.wav$/i.test(blob.name)) {
+    return true;
+  }
+
+  const header = await blob.slice(0, 12).arrayBuffer();
+  return detectWavBytes(new Uint8Array(header));
+}
+
+function detectWavBuffer(buffer: Buffer): boolean {
+  return (
+    buffer.byteLength >= 12 &&
+    buffer.toString('ascii', 0, 4) === 'RIFF' &&
+    buffer.toString('ascii', 8, 12) === 'WAVE'
+  );
+}
+
+function detectWavBytes(bytes: Uint8Array): boolean {
+  return (
+    bytes.byteLength >= 12 &&
+    String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' &&
+    String.fromCharCode(...bytes.slice(8, 12)) === 'WAVE'
+  );
+}
+
+function getOptionalBearerAuthHeaders(apiKey?: string): Record<string, string> {
+  const key = apiKey?.trim();
+  return key ? { Authorization: `Bearer ${key}` } : {};
 }
 
 /**

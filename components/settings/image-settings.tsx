@@ -60,6 +60,7 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
     [currentConfig?.customModels],
   );
   const isServerConfigured = !!currentConfig?.isServerConfigured;
+  const requiresApiKey = currentProvider?.requiresApiKey ?? true;
 
   const handleApiKeyChange = (apiKey: string) => {
     setImageProviderConfig(selectedProviderId, { apiKey });
@@ -179,7 +180,9 @@ export function ImageSettings({ selectedProviderId }: ImageSettingsProps) {
             variant="outline"
             size="sm"
             onClick={handleTest}
-            disabled={testLoading || (!currentConfig?.apiKey && !isServerConfigured)}
+            disabled={
+              testLoading || (requiresApiKey && !currentConfig?.apiKey && !isServerConfigured)
+            }
             className="gap-1.5"
           >
             {testLoading ? (

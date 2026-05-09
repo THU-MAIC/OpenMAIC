@@ -163,6 +163,12 @@ const hunyuanHy3Effort: ThinkingCapability = {
   defaultEnabled: false,
 };
 
+const lemonadeToggleBudget = toggleBudgetCapability(
+  'lemonade',
+  { min: 0, max: 81920, step: 1024, disableValue: 0 },
+  false,
+);
+
 const qwenBudgetEnabled = toggleBudgetCapability(
   'qwen',
   { min: 0, max: 81920, step: 1024, disableValue: 0 },
@@ -328,13 +334,25 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
 
   [getModelMetadataKey('xiaomi', 'mimo-v2.5-pro')]: toggleCapability('xiaomi'),
   [getModelMetadataKey('xiaomi', 'mimo-v2.5')]: toggleCapability('xiaomi'),
+
+  [getModelMetadataKey('lemonade', 'Qwen3-4B-GGUF')]: lemonadeToggleBudget,
+  [getModelMetadataKey('lemonade', 'Qwen3.5-4B-GGUF')]: lemonadeToggleBudget,
+  [getModelMetadataKey('lemonade', 'gpt-oss-20b')]: lemonadeToggleBudget,
+  [getModelMetadataKey('lemonade', 'GPT-OSS-20B-GGUF')]: lemonadeToggleBudget,
 };
 
 export function getCatalogThinkingCapability(
   providerId: string,
   modelId: string,
 ): ThinkingCapability | undefined {
-  return THINKING_CAPABILITIES[getModelMetadataKey(providerId, modelId)];
+  const exact = THINKING_CAPABILITIES[getModelMetadataKey(providerId, modelId)];
+  if (exact) return exact;
+
+  if (providerId === 'lemonade') {
+    return lemonadeToggleBudget;
+  }
+
+  return undefined;
 }
 
 export function applyModelMetadata(providers: Record<ProviderId, ProviderConfig>): void {

@@ -284,13 +284,16 @@ export async function POST(req: NextRequest) {
 
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
             try {
-              const result = streamLLM(streamParams, 'scene-outlines-stream', thinkingConfig);
-
               let fullText = '';
               parsedOutlines = [];
               languageDirective = null;
+              const textStream = streamLLM(
+                streamParams,
+                'scene-outlines-stream',
+                thinkingConfig,
+              ).textStream;
 
-              for await (const chunk of result.textStream) {
+              for await (const chunk of textStream) {
                 fullText += chunk;
 
                 // Try to extract language directive early
@@ -332,6 +335,9 @@ export async function POST(req: NextRequest) {
               lastError = fullText.trim()
                 ? 'LLM response could not be parsed into outlines'
                 : 'LLM returned empty response';
+              log.warn(
+                `Outlines attempt ${attempt} diagnostics: textLen=${fullText.length}, outlines=${parsedOutlines.length}, languageDirective=${languageDirective ? 'yes' : 'no'}, preview=${JSON.stringify(fullText.slice(0, 240))}`,
+              );
 
               if (attempt <= MAX_STREAM_RETRIES) {
                 log.warn(
@@ -347,6 +353,9 @@ export async function POST(req: NextRequest) {
               }
             } catch (error) {
               lastError = error instanceof Error ? error.message : String(error);
+              log.warn(
+                `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
+              );
 
               if (attempt <= MAX_STREAM_RETRIES) {
                 log.warn(

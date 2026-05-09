@@ -75,7 +75,7 @@ export function ModelSelector({
       ([, config]) =>
         (config.requiresApiKey
           ? config.apiKey || config.isServerConfigured
-          : config.isServerConfigured || config.baseUrl) &&
+          : config.isServerConfigured || config.baseUrl || config.defaultBaseUrl) &&
         config.models.length >= 1 &&
         (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
     )

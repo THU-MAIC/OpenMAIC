@@ -7,10 +7,16 @@
 
 import { proxyFetch } from '@/lib/server/proxy-fetch';
 import type { WebSearchResult, WebSearchSource } from '@/lib/types/web-search';
+export { formatSearchResultsAsContext } from './format';
 
-const TAVILY_API_URL = 'https://api.tavily.com/search';
+const TAVILY_DEFAULT_BASE_URL = 'https://api.tavily.com';
 
 const TAVILY_MAX_QUERY_LENGTH = 400;
+
+function buildTavilySearchUrl(baseUrl?: string): string {
+  const trimmed = (baseUrl || TAVILY_DEFAULT_BASE_URL).replace(/\/$/, '');
+  return trimmed.endsWith('/search') ? trimmed : `${trimmed}/search`;
+}
 
 /**
  * Search the web using Tavily REST API and return structured results.
@@ -19,13 +25,14 @@ export async function searchWithTavily(params: {
   query: string;
   apiKey: string;
   maxResults?: number;
+  baseUrl?: string;
 }): Promise<WebSearchResult> {
-  const { query, apiKey, maxResults = 5 } = params;
+  const { query, apiKey, maxResults = 5, baseUrl } = params;
 
   // Tavily rejects queries over 400 characters with a 400 error
   const truncatedQuery = query.slice(0, TAVILY_MAX_QUERY_LENGTH);
 
-  const res = await proxyFetch(TAVILY_API_URL, {
+  const res = await proxyFetch(buildTavilySearchUrl(baseUrl), {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -69,29 +76,4 @@ export async function searchWithTavily(params: {
     query: data.query,
     responseTime: data.response_time,
   };
-}
-
-/**
- * Format search results into a markdown context block for LLM prompts.
- */
-export function formatSearchResultsAsContext(result: WebSearchResult): string {
-  if (!result.answer && result.sources.length === 0) {
-    return '';
-  }
-
-  const lines: string[] = [];
-
-  if (result.answer) {
-    lines.push(result.answer);
-    lines.push('');
-  }
-
-  if (result.sources.length > 0) {
-    lines.push('Sources:');
-    for (const src of result.sources) {
-      lines.push(`- [${src.title}](${src.url}): ${src.content.slice(0, 200)}`);
-    }
-  }
-
-  return lines.join('\n');
 }

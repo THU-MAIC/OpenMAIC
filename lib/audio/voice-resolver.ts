@@ -130,6 +130,13 @@ export function getAvailableProvidersWithVoices(
     const providerConfig = ttsProvidersConfig[providerId];
     const hasApiKey = providerConfig?.apiKey && providerConfig.apiKey.trim().length > 0;
     const isServerConfigured = providerConfig?.isServerConfigured === true;
+    const isKeylessLocalProvider =
+      !config.requiresApiKey &&
+      !!(
+        providerConfig?.serverBaseUrl?.trim() ||
+        providerConfig?.baseUrl?.trim() ||
+        config.defaultBaseUrl
+      );
     const isLocalVoxCPM =
       providerId === VOXCPM_TTS_PROVIDER_ID &&
       !!(providerConfig?.serverBaseUrl?.trim() || providerConfig?.baseUrl?.trim());
@@ -141,7 +148,7 @@ export function getAvailableProvidersWithVoices(
           })
         : [];
 
-    if (hasApiKey || isServerConfigured || isLocalVoxCPM) {
+    if (hasApiKey || isServerConfigured || isLocalVoxCPM || isKeylessLocalProvider) {
       const allVoices = [
         ...config.voices.map((v) => ({
           id: v.id,

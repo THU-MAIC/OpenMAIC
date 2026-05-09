@@ -454,7 +454,10 @@
       "grok": "Grok",
       "tencent-hunyuan": "腾讯混元",
       "xiaomi": "小米 MiMo",
-      "ollama": "Ollama（本地模型）"
+      "lemonade": "Lemonade（本地）",
+      "ollama": "Ollama（本地模型）",
+      "tavily": "Tavily",
+      "bocha": "博查"
     },
     "providerTypes": {
       "openai": "OpenAI 协议",
@@ -601,6 +604,7 @@
     "providerDoubaoTTS": "豆包 TTS 2.0（火山引擎）",
     "providerElevenLabsTTS": "ElevenLabs TTS",
     "providerMiniMaxTTS": "MiniMax TTS",
+    "providerLemonadeTTS": "Lemonade TTS（本地）",
     "providerBrowserNativeTTS": "浏览器原生 TTS",
     "voxcpmBackend": "Backend",
     "voxcpmBaseUrlPending": "填写 Base URL 后生成",
@@ -647,6 +651,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "浏览器原生 ASR",
     "providerQwenASR": "Qwen ASR（阿里云百炼）",
+    "providerLemonadeASR": "Lemonade ASR（本地）",
     "providerUnpdf": "unpdf（内置）",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU（云端）",
@@ -898,6 +903,7 @@
     "providerNanoBanana": "Nano Banana（Gemini）",
     "providerMiniMaxImage": "MiniMax 图像",
     "providerGrokImage": "Grok Image（xAI）",
+    "providerLemonadeImage": "Lemonade 图像（本地）",
     "testImageGeneration": "测试图像生成",
     "testImageConnectivity": "测试连接",
     "imageConnectivitySuccess": "图像服务连接成功",
@@ -955,12 +961,12 @@
     "clearCacheSuccess": "缓存已清空，页面即将刷新",
     "clearCacheFailed": "清空缓存失败，请重试",
     "webSearchSettings": "网络搜索",
-    "webSearchApiKey": "Tavily API Key",
-    "webSearchApiKeyPlaceholder": "输入你的 Tavily API Key",
+    "webSearchApiKey": "搜索 API Key",
+    "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",
     "webSearchApiKeyPlaceholderServer": "已配置服务端密钥，可选填覆盖",
-    "webSearchApiKeyHint": "从 tavily.com 获取 API Key，用于网络搜索",
+    "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
     "webSearchBaseUrl": "Base URL",
-    "webSearchServerConfigured": "服务端已配置 Tavily API Key",
+    "webSearchServerConfigured": "服务端已配置搜索 API Key",
     "optional": "可选"
   },
   "profile": {

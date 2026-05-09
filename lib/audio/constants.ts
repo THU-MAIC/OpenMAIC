@@ -943,6 +943,86 @@ export const TTS_PROVIDERS: Record<BuiltInTTSProviderId, TTSProviderConfig> = {
     supportedFormats: ['browser'], // Browser native audio
     speedRange: { min: 0.1, max: 10.0, default: 1.0 },
   },
+
+  'lemonade-tts': {
+    id: 'lemonade-tts',
+    name: 'Lemonade TTS',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:13305/v1',
+    icon: '/logos/lemonade.svg',
+    models: [{ id: 'kokoro-v1', name: 'Kokoro v1' }],
+    defaultModelId: 'kokoro-v1',
+    voices: [
+      // American English — female
+      { id: 'af_alloy', name: 'Alloy', language: 'en-US', gender: 'female' },
+      { id: 'af_aoede', name: 'Aoede', language: 'en-US', gender: 'female' },
+      { id: 'af_bella', name: 'Bella', language: 'en-US', gender: 'female' },
+      { id: 'af_heart', name: 'Heart', language: 'en-US', gender: 'female' },
+      { id: 'af_jessica', name: 'Jessica', language: 'en-US', gender: 'female' },
+      { id: 'af_kore', name: 'Kore', language: 'en-US', gender: 'female' },
+      { id: 'af_nicole', name: 'Nicole', language: 'en-US', gender: 'female' },
+      { id: 'af_nova', name: 'Nova', language: 'en-US', gender: 'female' },
+      { id: 'af_river', name: 'River', language: 'en-US', gender: 'female' },
+      { id: 'af_sarah', name: 'Sarah', language: 'en-US', gender: 'female' },
+      { id: 'af_sky', name: 'Sky', language: 'en-US', gender: 'female' },
+      // American English — male
+      { id: 'am_adam', name: 'Adam', language: 'en-US', gender: 'male' },
+      { id: 'am_echo', name: 'Echo', language: 'en-US', gender: 'male' },
+      { id: 'am_eric', name: 'Eric', language: 'en-US', gender: 'male' },
+      { id: 'am_fenrir', name: 'Fenrir', language: 'en-US', gender: 'male' },
+      { id: 'am_liam', name: 'Liam', language: 'en-US', gender: 'male' },
+      { id: 'am_michael', name: 'Michael', language: 'en-US', gender: 'male' },
+      { id: 'am_onyx', name: 'Onyx', language: 'en-US', gender: 'male' },
+      { id: 'am_puck', name: 'Puck', language: 'en-US', gender: 'male' },
+      // British English — female
+      { id: 'bf_alice', name: 'Alice', language: 'en-GB', gender: 'female' },
+      { id: 'bf_emma', name: 'Emma', language: 'en-GB', gender: 'female' },
+      { id: 'bf_isabella', name: 'Isabella', language: 'en-GB', gender: 'female' },
+      { id: 'bf_lily', name: 'Lily', language: 'en-GB', gender: 'female' },
+      // British English — male
+      { id: 'bm_daniel', name: 'Daniel', language: 'en-GB', gender: 'male' },
+      { id: 'bm_fable', name: 'Fable', language: 'en-GB', gender: 'male' },
+      { id: 'bm_george', name: 'George', language: 'en-GB', gender: 'male' },
+      { id: 'bm_lewis', name: 'Lewis', language: 'en-GB', gender: 'male' },
+      // Mandarin Chinese — female
+      { id: 'zf_xiaobei', name: '晓贝', language: 'zh-CN', gender: 'female' },
+      { id: 'zf_xiaoni', name: '晓妮', language: 'zh-CN', gender: 'female' },
+      { id: 'zf_xiaoxiao', name: '晓晓', language: 'zh-CN', gender: 'female' },
+      { id: 'zf_xiaoyi', name: '晓伊', language: 'zh-CN', gender: 'female' },
+      // Mandarin Chinese — male
+      { id: 'zm_yunjian', name: '云健', language: 'zh-CN', gender: 'male' },
+      { id: 'zm_yunxi', name: '云希', language: 'zh-CN', gender: 'male' },
+      { id: 'zm_yunxia', name: '云夏', language: 'zh-CN', gender: 'male' },
+      { id: 'zm_yunyang', name: '云扬', language: 'zh-CN', gender: 'male' },
+      // Japanese — female
+      { id: 'jf_alpha', name: 'Alpha', language: 'ja-JP', gender: 'female' },
+      { id: 'jf_gongitsune', name: 'Gongitsune', language: 'ja-JP', gender: 'female' },
+      { id: 'jf_nezumi', name: 'Nezumi', language: 'ja-JP', gender: 'female' },
+      { id: 'jf_tebukuro', name: 'Tebukuro', language: 'ja-JP', gender: 'female' },
+      // Japanese — male
+      { id: 'jm_kumo', name: 'Kumo', language: 'ja-JP', gender: 'male' },
+      // Spanish
+      { id: 'ef_dora', name: 'Dora', language: 'es-ES', gender: 'female' },
+      { id: 'em_alex', name: 'Alex', language: 'es-ES', gender: 'male' },
+      { id: 'em_santa', name: 'Santa', language: 'es-ES', gender: 'male' },
+      // French
+      { id: 'ff_siwis', name: 'Siwis', language: 'fr-FR', gender: 'female' },
+      // Hindi
+      { id: 'hf_alpha', name: 'Alpha', language: 'hi-IN', gender: 'female' },
+      { id: 'hf_beta', name: 'Beta', language: 'hi-IN', gender: 'female' },
+      { id: 'hm_omega', name: 'Omega', language: 'hi-IN', gender: 'male' },
+      { id: 'hm_psi', name: 'Psi', language: 'hi-IN', gender: 'male' },
+      // Italian
+      { id: 'if_sara', name: 'Sara', language: 'it-IT', gender: 'female' },
+      { id: 'im_nicola', name: 'Nicola', language: 'it-IT', gender: 'male' },
+      // Brazilian Portuguese
+      { id: 'pf_dora', name: 'Dora', language: 'pt-BR', gender: 'female' },
+      { id: 'pm_alex', name: 'Alex', language: 'pt-BR', gender: 'male' },
+      { id: 'pm_santa', name: 'Santa', language: 'pt-BR', gender: 'male' },
+    ],
+    supportedFormats: ['wav'],
+    speedRange: { min: 0.25, max: 4.0, default: 1.0 },
+  },
 };
 
 /**
@@ -1142,6 +1222,25 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     ],
     supportedFormats: ['webm'], // MediaRecorder format
   },
+
+  'lemonade-asr': {
+    id: 'lemonade-asr',
+    name: 'Lemonade ASR',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:13305/v1',
+    icon: '/logos/lemonade.svg',
+    models: [
+      { id: 'Whisper-Base', name: 'Whisper Base' },
+      { id: 'Whisper-Large-v3', name: 'Whisper Large v3' },
+      { id: 'Whisper-Large-v3-Turbo', name: 'Whisper Large v3 Turbo' },
+      { id: 'Whisper-Medium', name: 'Whisper Medium' },
+      { id: 'Whisper-Small', name: 'Whisper Small' },
+      { id: 'Whisper-Tiny', name: 'Whisper Tiny' },
+    ],
+    defaultModelId: 'Whisper-Base',
+    supportedLanguages: CUSTOM_ASR_DEFAULT_LANGUAGES,
+    supportedFormats: ['wav'],
+  },
 };
 
 /**
@@ -1157,6 +1256,7 @@ export const DEFAULT_TTS_VOICES: Record<BuiltInTTSProviderId, string> = {
   'doubao-tts': 'zh_female_vv_uranus_bigtts',
   'elevenlabs-tts': 'EXAVITQu4vr4xnSDxMaL',
   'minimax-tts': 'female-yujie',
+  'lemonade-tts': 'af_heart',
   'browser-native-tts': 'default',
 };
 
@@ -1169,6 +1269,7 @@ export const DEFAULT_TTS_MODELS: Record<BuiltInTTSProviderId, string> = {
   'doubao-tts': '',
   'elevenlabs-tts': 'eleven_multilingual_v2',
   'minimax-tts': 'speech-2.8-hd',
+  'lemonade-tts': 'kokoro-v1',
   'browser-native-tts': '',
 };
 

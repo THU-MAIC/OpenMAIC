@@ -28,6 +28,7 @@ import azureVoicesData from '@/lib/audio/azure.json';
 import { createLogger } from '@/lib/logger';
 import { getVoxCPMVoiceOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { normalizeVoxCPMBackend, voxCPMBackendSupportsReferenceAudio } from '@/lib/audio/voxcpm';
+import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 
 const log = createLogger('AudioSettings');
 
@@ -44,6 +45,7 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'doubao-tts': t('settings.providerDoubaoTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
+    'lemonade-tts': t('settings.providerLemonadeTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
   };
   return names[providerId];
@@ -54,6 +56,7 @@ function getASRProviderName(providerId: ASRProviderId, t: (key: string) => strin
     'openai-whisper': t('settings.providerOpenAIWhisper'),
     'browser-native': t('settings.providerBrowserNative'),
     'qwen-asr': t('settings.providerQwenASR'),
+    'lemonade-asr': t('settings.providerLemonadeASR'),
   };
   return names[providerId];
 }
@@ -329,26 +332,27 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
           mediaRecorder.onstop = async () => {
             stream.getTracks().forEach((track) => track.stop());
 
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            const formData = new FormData();
-            formData.append('audio', audioBlob, 'recording.webm');
-            formData.append('providerId', asrProviderId);
-            formData.append('language', asrLanguage);
-
-            // Only append non-empty values
-            const apiKeyValue = asrProvidersConfig[asrProviderId]?.apiKey;
-            if (apiKeyValue && apiKeyValue.trim()) {
-              formData.append('apiKey', apiKeyValue);
-            }
-            const baseUrlValue =
-              asrProvidersConfig[asrProviderId]?.baseUrl ||
-              asrProvidersConfig[asrProviderId]?.customDefaultBaseUrl ||
-              '';
-            if (baseUrlValue && baseUrlValue.trim()) {
-              formData.append('baseUrl', baseUrlValue);
-            }
-
             try {
+              const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+              const uploadAudio = await normalizeASRUploadAudio(asrProviderId, audioBlob);
+              const formData = new FormData();
+              formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
+              formData.append('providerId', asrProviderId);
+              formData.append('language', asrLanguage);
+
+              // Only append non-empty values
+              const apiKeyValue = asrProvidersConfig[asrProviderId]?.apiKey;
+              if (apiKeyValue && apiKeyValue.trim()) {
+                formData.append('apiKey', apiKeyValue);
+              }
+              const baseUrlValue =
+                asrProvidersConfig[asrProviderId]?.baseUrl ||
+                asrProvidersConfig[asrProviderId]?.customDefaultBaseUrl ||
+                '';
+              if (baseUrlValue && baseUrlValue.trim()) {
+                formData.append('baseUrl', baseUrlValue);
+              }
+
               const response = await fetch('/api/transcription', {
                 method: 'POST',
                 body: formData,

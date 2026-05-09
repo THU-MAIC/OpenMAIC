@@ -16,8 +16,12 @@ export interface ResolvedModel extends ModelWithInfo {
   modelString: string;
   /** Resolved provider ID (e.g. "openai", "ollama") */
   providerId: string;
+  /** Resolved model ID (e.g. "gpt-4o-mini") */
+  modelId: string;
   /** Effective API key after server-side fallback resolution */
   apiKey: string;
+  /** Effective base URL after server/client resolution */
+  baseUrl?: string;
   /** Optional per-request thinking configuration from the client. */
   thinkingConfig?: ThinkingConfig;
 }
@@ -67,7 +71,9 @@ export async function resolveModel(params: {
     modelInfo,
     modelString,
     providerId,
+    modelId,
     apiKey,
+    baseUrl,
     thinkingConfig: params.thinkingConfig,
   };
 }

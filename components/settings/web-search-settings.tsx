@@ -23,6 +23,13 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
   const provider = WEB_SEARCH_PROVIDERS[selectedProviderId];
   const isServerConfigured = !!webSearchProvidersConfig[selectedProviderId]?.isServerConfigured;
 
+  const buildRequestUrl = (baseUrl: string) => {
+    const trimmed = baseUrl.replace(/\/$/, '');
+    if (!provider.endpointPath) return trimmed;
+    if (trimmed.endsWith(provider.endpointPath)) return trimmed;
+    return `${trimmed}${provider.endpointPath}`;
+  };
+
   // Reset showApiKey when provider changes (derived state pattern)
   const [prevSelectedProviderId, setPrevSelectedProviderId] = useState(selectedProviderId);
   if (selectedProviderId !== prevSelectedProviderId) {
@@ -83,7 +90,7 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                placeholder={provider.defaultBaseUrl || 'https://api.tavily.com'}
+                placeholder={provider.defaultBaseUrl || ''}
                 value={webSearchProvidersConfig[selectedProviderId]?.baseUrl || ''}
                 onChange={(e) =>
                   setWebSearchProviderConfig(selectedProviderId, {
@@ -102,7 +109,7 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
               provider.defaultBaseUrl ||
               '';
             if (!effectiveBaseUrl) return null;
-            const fullUrl = effectiveBaseUrl + '/search';
+            const fullUrl = buildRequestUrl(effectiveBaseUrl);
             return (
               <p className="text-xs text-muted-foreground break-all">
                 {t('settings.requestUrl')}: {fullUrl}

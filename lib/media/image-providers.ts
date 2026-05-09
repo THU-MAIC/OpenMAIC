@@ -21,6 +21,10 @@ import {
   testMiniMaxImageConnectivity,
 } from './adapters/minimax-image-adapter';
 import { generateWithGrokImage, testGrokImageConnectivity } from './adapters/grok-image-adapter';
+import {
+  generateWithLemonadeImage,
+  testLemonadeImageConnectivity,
+} from './adapters/lemonade-image-adapter';
 
 export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   seedream: {
@@ -116,6 +120,19 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
   },
+  lemonade: {
+    id: 'lemonade',
+    name: 'Lemonade',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:13305/v1',
+    icon: '/logos/lemonade.svg',
+    models: [
+      { id: 'Qwen-Image-GGUF', name: 'Qwen Image GGUF' },
+      { id: 'sd-cpp', name: 'Stable Diffusion (sd-cpp)' },
+    ],
+    supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
+    maxResolution: { width: 1024, height: 1024 },
+  },
 };
 
 export async function testImageConnectivity(
@@ -134,6 +151,8 @@ export async function testImageConnectivity(
       return testMiniMaxImageConnectivity(config);
     case 'grok-image':
       return testGrokImageConnectivity(config);
+    case 'lemonade':
+      return testLemonadeImageConnectivity(config);
     default:
       return {
         success: false,
@@ -159,6 +178,8 @@ export async function generateImage(
       return generateWithMiniMaxImage(config, options);
     case 'grok-image':
       return generateWithGrokImage(config, options);
+    case 'lemonade':
+      return generateWithLemonadeImage(config, options);
     default:
       throw new Error(`Unsupported image provider: ${config.providerId}`);
   }
