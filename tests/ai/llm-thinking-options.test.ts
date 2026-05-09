@@ -116,6 +116,35 @@ describe('LLM thinking provider options', () => {
     });
   });
 
+  it('attributes Amazon Bedrock SDK usage to the Bedrock provider', async () => {
+    aiMock.generateText.mockResolvedValueOnce({
+      text: 'ok',
+      params: undefined,
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    await callLLM(
+      {
+        model: {
+          provider: 'amazon-bedrock',
+          modelId: 'us.anthropic.claude-sonnet-5',
+        },
+        prompt: 'hi',
+      } as Parameters<typeof callLLM>[0],
+      'test',
+    );
+
+    await vi.waitFor(() => {
+      expect(usageMock.recordUsage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          providerId: 'bedrock',
+          modelId: 'us.anthropic.claude-sonnet-5',
+          modelString: 'bedrock:us.anthropic.claude-sonnet-5',
+        }),
+      );
+    });
+  });
+
   it('sends Claude Haiku 4.5 thinking budget without effort', async () => {
     await callLLM(
       {
