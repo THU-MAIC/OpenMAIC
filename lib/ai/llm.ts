@@ -237,18 +237,35 @@ export interface LLMRetryOptions {
 const DEFAULT_VALIDATE = (text: string) => text.trim().length > 0;
 
 /**
+ * Merge a caller-supplied AbortSignal into params.abortSignal.
+ *
+ * If the caller already populated `params.abortSignal`, we respect it and
+ * leave `params` untouched — overriding silently would be surprising and
+ * would break call sites that wire their own controller (e.g. tests).
+ */
+function withSignal<T extends Record<string, unknown>>(params: T, signal?: AbortSignal): T {
+  if (!signal) return params;
+  if ((params as { abortSignal?: AbortSignal }).abortSignal) return params;
+  return { ...params, abortSignal: signal };
+}
+
+/**
  * Unified wrapper around `generateText`.
  *
  * @param params - Same parameters as AI SDK's `generateText`
  * @param source - A short label for log grouping (e.g. 'scene-stream', 'pbl-chat')
  * @param retryOptions - Optional retry-on-validation-failure settings
  * @param thinking - Optional per-call thinking config (overrides global LLM_THINKING_DISABLED)
+ * @param signal - Optional AbortSignal forwarded to AI SDK as `abortSignal`.
+ *   Routes pass `request.signal` so client disconnects cancel the upstream
+ *   provider call. Ignored when `params.abortSignal` is already set.
  */
 export async function callLLM<T extends GenerateTextParams>(
   params: T,
   source: string,
   retryOptions?: LLMRetryOptions,
   thinking?: ThinkingConfig,
+  signal?: AbortSignal,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): Promise<GenerateTextResult<any, any>> {
   const maxAttempts = (retryOptions?.retries ?? 0) + 1;
@@ -262,7 +279,7 @@ export async function callLLM<T extends GenerateTextParams>(
     try {
       // Resolve effective thinking config: per-call > global env > undefined
       const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-      const injectedParams = injectProviderOptions(params, effectiveThinking);
+      const injectedParams = withSignal(injectProviderOptions(params, effectiveThinking), signal);
 
       // Wrap in thinkingContext so the custom fetch wrapper in providers.ts
       // can read the config and inject vendor-specific body params for
@@ -304,16 +321,20 @@ export async function callLLM<T extends GenerateTextParams>(
  * @param params - Same parameters as AI SDK's `streamText`
  * @param source - A short label for log grouping
  * @param thinking - Optional per-call thinking config (overrides global LLM_THINKING_DISABLED)
+ * @param signal - Optional AbortSignal forwarded to AI SDK as `abortSignal`.
+ *   Routes pass `request.signal` so client disconnects cancel the upstream
+ *   provider call. Ignored when `params.abortSignal` is already set.
  */
 export function streamLLM<T extends StreamTextParams>(
   params: T,
   source: string,
   thinking?: ThinkingConfig,
+  signal?: AbortSignal,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
 ): StreamTextResult<any, any> {
   // Resolve effective thinking config and wrap in thinkingContext
   const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-  const injectedParams = injectProviderOptions(params, effectiveThinking);
+  const injectedParams = withSignal(injectProviderOptions(params, effectiveThinking), signal);
   const result = thinkingContext.run(effectiveThinking, () => streamText(injectedParams));
 
   return result;

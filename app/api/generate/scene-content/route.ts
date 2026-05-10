@@ -104,6 +104,7 @@ export async function POST(req: NextRequest) {
           'scene-content',
           undefined,
           thinkingConfig,
+          req.signal,
         );
         return result.text;
       }
@@ -117,6 +118,7 @@ export async function POST(req: NextRequest) {
         'scene-content',
         undefined,
         thinkingConfig,
+        req.signal,
       );
       return result.text;
     };

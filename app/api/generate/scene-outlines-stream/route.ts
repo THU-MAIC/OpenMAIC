@@ -291,6 +291,7 @@ export async function POST(req: NextRequest) {
                 streamParams,
                 'scene-outlines-stream',
                 thinkingConfig,
+                req.signal,
               ).textStream;
 
               for await (const chunk of textStream) {
