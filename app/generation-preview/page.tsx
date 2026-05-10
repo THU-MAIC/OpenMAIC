@@ -3,7 +3,17 @@
 import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot } from 'lucide-react';
+import {
+  CheckCircle2,
+  Sparkles,
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  Bot,
+  Square,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { runStopGeneration } from './stop-generation';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -879,6 +889,21 @@ function GenerationPreviewContent() {
     router.push('/');
   };
 
+  const handleStopGeneration = () => {
+    runStopGeneration({
+      abortControllerRef,
+      clearSession: () => sessionStorage.removeItem('generationSession'),
+      toast: (msg) => toast.success(msg),
+      pushHome: () => router.push('/'),
+      t,
+    });
+  };
+
+  // Show the stop pill while generation is actively running — not on the
+  // session-not-found / loading shells, and not after `error` is set
+  // (that view already offers explicit recovery).
+  const isGenerationActive = sessionLoaded && !!session && !error && !isComplete;
+
   // Still loading session from sessionStorage
   if (!sessionLoaded) {
     return (
@@ -939,6 +964,26 @@ function GenerationPreviewContent() {
           {t('generation.backToHome')}
         </Button>
       </motion.div>
+
+      {/* Stop generation pill — only while generation is running */}
+      {isGenerationActive && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-4 right-4 z-20"
+        >
+          <button
+            type="button"
+            onClick={handleStopGeneration}
+            title={t('stage.stopGeneration')}
+            aria-label={t('stage.stopGeneration')}
+            className="flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 border border-red-100 dark:border-red-900/40 transition-colors"
+          >
+            <Square className="w-3 h-3 fill-current" />
+            <span>{t('stage.stopGeneration')}</span>
+          </button>
+        </motion.div>
+      )}
 
       <div className="z-10 w-full max-w-lg space-y-8 flex flex-col items-center">
         <motion.div
