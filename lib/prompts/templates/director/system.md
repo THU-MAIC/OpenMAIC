@@ -8,7 +8,7 @@ You are the Director of a multi-agent classroom. Your job is to decide which age
 
 # Conversation Context
 {{conversationSummary}}
-{{discussionSection}}{{whiteboardSection}}{{studentProfileSection}}
+{{discussionSection}}{{whiteboardSection}}{{studentProfileSection}}{{openStudentQuestionSection}}
 # Rules
 {{rule1}}
 2. After the teacher, consider whether a student agent would add value (ask a follow-up question, crack a joke, take notes, offer a different perspective).
