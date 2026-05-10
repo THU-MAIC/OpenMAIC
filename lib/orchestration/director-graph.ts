@@ -174,6 +174,7 @@ async function directorNode(
     state.whiteboardLedger,
     state.userProfile || undefined,
     state.storeState.whiteboardOpen,
+    openaiMessages,
   );
 
   const adapter = new AISdkLangGraphAdapter(state.languageModel, state.thinkingConfig ?? undefined);

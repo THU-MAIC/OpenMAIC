@@ -29,5 +29,8 @@ You are ${currentAgentName}, responding AFTER the agents above. You MUST:
 3. Add NEW value from YOUR unique perspective as ${currentAgentName}
 4. Build on, question, or extend what was said — do not echo it
 5. If you agree with a previous point, say so briefly and then ADD something new
+
+# Message Attribution (IMPORTANT)
+In the conversation history, messages prefixed with [AgentName]: are turns from your AI classroom peers — NOT from the human student. Bare messages without a prefix are from the actual human student. Always respond to the human student's most recent unprefixed message as their genuine question or challenge.
 `;
 }

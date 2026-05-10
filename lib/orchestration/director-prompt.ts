@@ -9,6 +9,8 @@ import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { createLogger } from '@/lib/logger';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import type { WhiteboardActionRecord, AgentTurnSummary } from './types';
+import { extractLastHumanMessage } from './summarizers/conversation-summary';
+import type { OpenAIMessage } from './summarizers/conversation-summary';
 
 const log = createLogger('DirectorPrompt');
 
@@ -30,6 +32,7 @@ export function buildDirectorPrompt(
   whiteboardLedger?: WhiteboardActionRecord[],
   userProfile?: { nickname?: string; bio?: string },
   whiteboardOpen?: boolean,
+  openAIMessages?: OpenAIMessage[],
 ): string {
   const agentList = agents
     .map((a) => `- id: "${a.id}", name: "${a.name}", role: ${a.role}, priority: ${a.priority}`)
@@ -67,6 +70,8 @@ ${userProfile.bio ? `Background: ${userProfile.bio}` : ''}
 `
       : '';
 
+  const openStudentQuestionSection = buildOpenStudentQuestionSection(openAIMessages);
+
   const vars = {
     agentList,
     respondedList,
@@ -74,6 +79,7 @@ ${userProfile.bio ? `Background: ${userProfile.bio}` : ''}
     discussionSection,
     whiteboardSection: buildWhiteboardStateForDirector(whiteboardLedger),
     studentProfileSection,
+    openStudentQuestionSection,
     rule1,
     turnCountPlusOne: turnCount + 1,
     whiteboardOpenText: whiteboardOpen
@@ -204,6 +210,27 @@ function buildWhiteboardStateForDirector(ledger?: WhiteboardActionRecord[]): str
 # Whiteboard State
 Elements on whiteboard: ${elementCount}
 Contributors: ${contributors.length > 0 ? contributors.join(', ') : 'none'}${crowdedWarning}
+`;
+}
+
+/**
+ * Build a section that surfaces the most recent genuine human student message
+ * to the director. Without this, the director cannot distinguish an unresolved
+ * student challenge from a closed agent exchange — causing premature END (issue #511).
+ *
+ * Returns empty string when no human message is present (e.g. discussion mode
+ * where agents initiate without user input).
+ */
+function buildOpenStudentQuestionSection(messages?: OpenAIMessage[]): string {
+  if (!messages || messages.length === 0) return '';
+  const lastHuman = extractLastHumanMessage(messages);
+  if (!lastHuman) return '';
+  return `
+# Open Student Question (MUST address before ending)
+The human student most recently said:
+"${lastHuman}"
+
+If this question or challenge has NOT been fully addressed by the agents above, route to the appropriate agent to respond. Do NOT emit END while a substantive student question remains unresolved.
 `;
 }
 
