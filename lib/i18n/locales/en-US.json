@@ -144,7 +144,8 @@
     "generatingNextPage": "Scene is being generated, please wait...",
     "courseComplete": "Course complete",
     "fullscreen": "Fullscreen",
-    "exitFullscreen": "Exit Fullscreen"
+    "exitFullscreen": "Exit Fullscreen",
+    "stopGeneration": "Stop generation"
   },
   "classroomComplete": {
     "title": "Course complete",
@@ -340,6 +341,7 @@
     "speechFailed": "Speech generation failed",
     "retryScene": "Retry",
     "retryingScene": "Regenerating...",
+    "stopGenerationToast": "Generation stopped",
     "backToHome": "Back to Home",
     "sessionNotFound": "Session Not Found",
     "sessionNotFoundDesc": "Please fill in course requirements to start the generation process.",

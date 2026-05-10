@@ -43,8 +43,14 @@ import { VisuallyHidden } from 'radix-ui';
  */
 export function Stage({
   onRetryOutline,
+  onStopGeneration,
 }: {
   onRetryOutline?: (outlineId: string) => Promise<void>;
+  /**
+   * Aborts the active scene generation pipeline. Wired from
+   * `useSceneGenerator().stop` in the page-level component.
+   */
+  onStopGeneration?: () => void;
 }) {
   const { t } = useI18n();
   const {
@@ -57,6 +63,22 @@ export function Stage({
     outlines,
   } = useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
+  const generationStatus = useStageStore.use.generationStatus();
+  const isGenerating = generationStatus === 'generating';
+
+  const handleStopGeneration = useCallback(() => {
+    if (!onStopGeneration) return;
+    onStopGeneration();
+    // Sonner is already used elsewhere in the codebase for transient feedback.
+    // Lazy-import keeps this side effect off the SSR / non-classroom paths.
+    import('sonner')
+      .then(({ toast }) => {
+        toast.success(t('generation.stopGenerationToast'));
+      })
+      .catch(() => {
+        // Ignore — toast is best-effort feedback. Stop already fired.
+      });
+  }, [onStopGeneration, t]);
 
   const currentScene = getCurrentScene();
 
@@ -962,6 +984,7 @@ export function Stage({
         onCollapseChange={setSidebarCollapsed}
         onSceneSelect={gatedSceneSwitch}
         onRetryOutline={onRetryOutline}
+        onStopGeneration={isGenerating && onStopGeneration ? handleStopGeneration : undefined}
         isCourseComplete={isCourseComplete}
       />
 
@@ -974,6 +997,7 @@ export function Stage({
               currentScene?.title ||
               (isCourseComplete && isPendingScene ? t('stage.courseComplete') : '')
             }
+            onStopGeneration={isGenerating && onStopGeneration ? handleStopGeneration : undefined}
           />
         )}
 

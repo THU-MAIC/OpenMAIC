@@ -144,7 +144,8 @@
     "generatingNextPage": "場景正在生成，請稍候...",
     "fullscreen": "全螢幕",
     "exitFullscreen": "離開全螢幕",
-    "courseComplete": "課程完成"
+    "courseComplete": "課程完成",
+    "stopGeneration": "停止生成"
   },
   "whiteboard": {
     "title": "互動白板",
@@ -325,6 +326,7 @@
     "speechFailed": "語音合成失敗",
     "retryScene": "重試生成",
     "retryingScene": "正在重新生成...",
+    "stopGenerationToast": "已停止生成",
     "backToHome": "返回首頁",
     "sessionNotFound": "未找到生成會話",
     "sessionNotFoundDesc": "請先填寫課程需求開始生成流程。",

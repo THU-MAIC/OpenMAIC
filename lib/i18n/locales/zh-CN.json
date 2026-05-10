@@ -144,7 +144,8 @@
     "generatingNextPage": "场景正在生成，请稍候...",
     "courseComplete": "课程完成",
     "fullscreen": "全屏",
-    "exitFullscreen": "退出全屏"
+    "exitFullscreen": "退出全屏",
+    "stopGeneration": "停止生成"
   },
   "classroomComplete": {
     "title": "课程完成",
@@ -340,6 +341,7 @@
     "speechFailed": "语音合成失败",
     "retryScene": "重试生成",
     "retryingScene": "正在重新生成...",
+    "stopGenerationToast": "已停止生成",
     "backToHome": "返回首页",
     "sessionNotFound": "未找到生成会话",
     "sessionNotFoundDesc": "请先填写课程需求开始生成流程。",

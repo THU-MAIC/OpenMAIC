@@ -11,6 +11,7 @@ import {
   FileDown,
   Package,
   Archive,
+  Square,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
@@ -26,9 +27,15 @@ import { useExportClassroom } from '@/lib/export/use-export-classroom';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
+  /**
+   * If provided, a stop button is shown next to the title to abort the
+   * in-flight scene generation pipeline. Caller should pass `undefined`
+   * when there is no active generation so the button stays hidden.
+   */
+  readonly onStopGeneration?: () => void;
 }
 
-export function Header({ currentSceneTitle }: HeaderProps) {
+export function Header({ currentSceneTitle, onStopGeneration }: HeaderProps) {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
@@ -95,6 +102,18 @@ export function Header({ currentSceneTitle }: HeaderProps) {
               {currentSceneTitle || t('common.loading')}
             </h1>
           </div>
+          {onStopGeneration && (
+            <button
+              type="button"
+              onClick={onStopGeneration}
+              title={t('stage.stopGeneration')}
+              aria-label={t('stage.stopGeneration')}
+              className="shrink-0 flex items-center gap-1.5 px-3 h-8 rounded-full text-xs font-medium bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 border border-red-100 dark:border-red-900/40 transition-colors"
+            >
+              <Square className="w-3 h-3 fill-current" />
+              <span>{t('stage.stopGeneration')}</span>
+            </button>
+          )}
         </div>
 
         <div className="flex items-center gap-4 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm shrink-0">

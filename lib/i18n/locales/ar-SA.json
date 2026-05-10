@@ -144,7 +144,8 @@
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
     "courseComplete": "اكتملت الدورة",
     "fullscreen": "ملء الشاشة",
-    "exitFullscreen": "الخروج من ملء الشاشة"
+    "exitFullscreen": "الخروج من ملء الشاشة",
+    "stopGeneration": "إيقاف التوليد"
   },
   "classroomComplete": {
     "title": "اكتملت الدورة",
@@ -340,6 +341,7 @@
     "speechFailed": "فشل توليد الكلام",
     "retryScene": "إعادة المحاولة",
     "retryingScene": "جارٍ إعادة التوليد...",
+    "stopGenerationToast": "تم إيقاف التوليد",
     "backToHome": "العودة للرئيسية",
     "sessionNotFound": "الجلسة غير موجودة",
     "sessionNotFoundDesc": "يرجى ملء متطلبات المقرر لبدء عملية التوليد.",

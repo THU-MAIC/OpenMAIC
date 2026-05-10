@@ -12,6 +12,7 @@ import {
   AlertCircle,
   RefreshCw,
   Trophy,
+  Square,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
@@ -26,6 +27,12 @@ interface SceneSidebarProps {
   readonly onCollapseChange: (collapsed: boolean) => void;
   readonly onSceneSelect?: (sceneId: string) => void;
   readonly onRetryOutline?: (outlineId: string) => Promise<void>;
+  /**
+   * If provided, a stop button is rendered alongside the generating
+   * placeholder so the user can abort scene generation in progress.
+   * Caller passes `undefined` when generation is not active.
+   */
+  readonly onStopGeneration?: () => void;
   readonly isCourseComplete?: boolean;
 }
 
@@ -38,6 +45,7 @@ export function SceneSidebar({
   onCollapseChange,
   onSceneSelect,
   onRetryOutline,
+  onStopGeneration,
   isCourseComplete,
 }: SceneSidebarProps) {
   const { t } = useI18n();
@@ -446,6 +454,21 @@ export function SceneSidebar({
                           <span className="text-[9px] font-medium text-gray-400 dark:text-gray-500 mt-0.5">
                             {isPaused ? t('stage.paused') : t('stage.generating')}
                           </span>
+                          {!isPaused && onStopGeneration && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onStopGeneration();
+                              }}
+                              title={t('stage.stopGeneration')}
+                              aria-label={t('stage.stopGeneration')}
+                              className="mt-1 inline-flex items-center gap-1 px-2 h-5 rounded-full text-[9px] font-medium bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/30 dark:text-red-300 dark:hover:bg-red-900/50 border border-red-100 dark:border-red-900/40 transition-colors"
+                            >
+                              <Square className="w-2 h-2 fill-current" />
+                              <span>{t('stage.stopGeneration')}</span>
+                            </button>
+                          )}
                         </>
                       )}
                     </div>

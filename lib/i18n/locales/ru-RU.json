@@ -144,7 +144,8 @@
     "generatingNextPage": "Сцена генерируется, пожалуйста подождите...",
     "courseComplete": "Курс завершён",
     "fullscreen": "Полный экран",
-    "exitFullscreen": "Свернуть"
+    "exitFullscreen": "Свернуть",
+    "stopGeneration": "Остановить генерацию"
   },
   "classroomComplete": {
     "title": "Курс завершён",
@@ -340,6 +341,7 @@
     "speechFailed": "Ошибка генерации речи",
     "retryScene": "Повторить",
     "retryingScene": "Перегенерация...",
+    "stopGenerationToast": "Генерация остановлена",
     "backToHome": "На главную",
     "sessionNotFound": "Сессия не найдена",
     "sessionNotFoundDesc": "Пожалуйста, заполните требования к курсу, чтобы начать генерацию.",

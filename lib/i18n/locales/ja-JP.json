@@ -144,7 +144,8 @@
     "generatingNextPage": "シーンを生成中です。お待ちください...",
     "courseComplete": "コース完了",
     "fullscreen": "全画面表示",
-    "exitFullscreen": "全画面表示を終了"
+    "exitFullscreen": "全画面表示を終了",
+    "stopGeneration": "生成を停止"
   },
   "classroomComplete": {
     "title": "コース完了",
@@ -340,6 +341,7 @@
     "speechFailed": "音声の生成に失敗しました",
     "retryScene": "やり直す",
     "retryingScene": "再生成中...",
+    "stopGenerationToast": "生成を停止しました",
     "backToHome": "ホームに戻る",
     "sessionNotFound": "セッションが見つかりません",
     "sessionNotFoundDesc": "コースの要件を入力して生成プロセスを開始してください。",
