@@ -1020,12 +1020,13 @@ async function buildPptxBlob(
                   log.warn(`Failed to fetch poster (HTTP ${posterResp.status}), skipping`);
                 } else {
                   const posterBlob = await posterResp.blob();
-                coverBase64 = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result as string);
-                  reader.onerror = reject;
-                  reader.readAsDataURL(posterBlob);
-                });
+                  coverBase64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(posterBlob);
+                  });
+                }
               } catch {
                 // Poster fetch failed, fall through to video frame capture
               }
