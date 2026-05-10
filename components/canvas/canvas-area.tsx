@@ -21,6 +21,11 @@ interface CanvasAreaProps extends CanvasToolbarProps {
   readonly isCourseComplete?: boolean;
   readonly isGenerationFailed?: boolean;
   readonly onRetryGeneration?: () => void;
+  /**
+   * When true, the retry button is disabled to prevent double-click
+   * concurrency. Defense-in-depth on top of the hook-level guard.
+   */
+  readonly isRetryingGeneration?: boolean;
 }
 
 export function CanvasArea({
@@ -48,6 +53,7 @@ export function CanvasArea({
   isCourseComplete,
   isGenerationFailed,
   onRetryGeneration,
+  isRetryingGeneration,
 }: CanvasAreaProps) {
   const { t } = useI18n();
   const showControls = mode === 'playback' && !whiteboardOpen;
@@ -164,9 +170,12 @@ export function CanvasArea({
                     {onRetryGeneration && (
                       <button
                         onClick={onRetryGeneration}
-                        className="mt-1 px-4 py-1.5 text-xs font-medium rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95"
+                        disabled={isRetryingGeneration}
+                        className="mt-1 px-4 py-1.5 text-xs font-medium rounded-full bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed disabled:active:scale-100"
                       >
-                        {t('generation.retryScene')}
+                        {isRetryingGeneration
+                          ? t('generation.retryingScene')
+                          : t('generation.retryScene')}
                       </button>
                     )}
                   </div>

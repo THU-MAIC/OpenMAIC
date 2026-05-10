@@ -258,6 +258,24 @@ export interface GenerationParams {
   languageDirective?: string;
 }
 
+/**
+ * Returns true when the given outline is already being (re)generated.
+ *
+ * Used by `retrySingleOutline` to short-circuit duplicate retry clicks:
+ * the UI watches the same `generatingOutlines` list to render the
+ * spinner, so any outline present here has an in-flight content/actions
+ * pipeline. Re-entering would spawn parallel LLM calls and race to
+ * write the scene.
+ *
+ * Exported for unit testing; not part of the public hook API.
+ */
+export function isOutlineRetryInFlight(
+  state: { generatingOutlines: { id: string }[] },
+  outlineId: string,
+): boolean {
+  return state.generatingOutlines.some((o) => o.id === outlineId);
+}
+
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
   const abortRef = useRef(false);
   const generatingRef = useRef(false);
@@ -475,6 +493,17 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const outline = state.failedOutlines.find((o) => o.id === outlineId);
       const params = lastParamsRef.current;
       if (!outline || !state.stage || !params) return;
+
+      // Bug #3: in-flight retry guard. Without this, rapid clicks on the
+      // retry button (or a stale UI that doesn't disable itself fast
+      // enough) launched parallel content+actions+TTS pipelines for the
+      // same outline, racing to write the scene and burning tokens.
+      // `generatingOutlines` is the same list the spinner watches, so
+      // its presence is the canonical "already retrying" signal.
+      if (isOutlineRetryInFlight(state, outlineId)) {
+        log.warn('Retry skipped: outline already in flight', { outlineId });
+        return;
+      }
 
       const removeGeneratingOutline = () => {
         const current = store.getState().generatingOutlines;

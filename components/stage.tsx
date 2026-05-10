@@ -120,6 +120,12 @@ export function Stage({
   const [chatIsStreaming, setChatIsStreaming] = useState(false);
   const [chatSessionType, setChatSessionType] = useState<string | null>(null);
 
+  // Bug #3 defense-in-depth: track which outline is currently being retried
+  // by the canvas-area "Retry" button. The hook itself guards against
+  // concurrent retries, but disabling the button prevents the
+  // user-visible flicker between click and the next render.
+  const [retryingPendingOutlineId, setRetryingPendingOutlineId] = useState<string | null>(null);
+
   // Topic pending state: session is soft-paused, bubble stays visible, waiting for user input
   const [isTopicPending, setIsTopicPending] = useState(false);
 
@@ -1042,8 +1048,20 @@ export function Stage({
             }
             onRetryGeneration={
               onRetryOutline && generatingOutlines[0]
-                ? () => onRetryOutline(generatingOutlines[0].id)
+                ? async () => {
+                    const target = generatingOutlines[0];
+                    if (!target || retryingPendingOutlineId === target.id) return;
+                    setRetryingPendingOutlineId(target.id);
+                    try {
+                      await onRetryOutline(target.id);
+                    } finally {
+                      setRetryingPendingOutlineId((prev) => (prev === target.id ? null : prev));
+                    }
+                  }
                 : undefined
+            }
+            isRetryingGeneration={
+              !!generatingOutlines[0] && retryingPendingOutlineId === generatingOutlines[0].id
             }
           />
         </div>
