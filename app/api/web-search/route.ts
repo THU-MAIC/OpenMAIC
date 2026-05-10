@@ -84,6 +84,7 @@ export async function POST(req: NextRequest) {
           'web-search-query-rewrite',
           undefined,
           thinkingConfig,
+          req.signal,
         );
         return result.text;
       };

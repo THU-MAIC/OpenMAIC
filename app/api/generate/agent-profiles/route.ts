@@ -156,6 +156,7 @@ Return a JSON object with this exact structure:
         'agent-profiles',
         undefined,
         thinkingConfig,
+        req.signal,
       )
     ).text;
 
