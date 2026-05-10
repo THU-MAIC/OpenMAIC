@@ -484,7 +484,9 @@ async function buildPptxBlob(
           try {
             const resp = await fetch(resolvedSrc);
             if (!resp.ok) {
-              log.warn(`Failed to fetch image (HTTP ${resp.status}), skipping element: ${resolvedSrc}`);
+              log.warn(
+                `Failed to fetch image (HTTP ${resp.status}), skipping element: ${resolvedSrc}`,
+              );
               continue;
             }
             const blob = await resp.blob();
@@ -977,7 +979,9 @@ async function buildPptxBlob(
         try {
           const resp = await fetch(resolvedSrc);
           if (!resp.ok) {
-            log.warn(`Failed to fetch media (HTTP ${resp.status}), skipping element: ${resolvedSrc}`);
+            log.warn(
+              `Failed to fetch media (HTTP ${resp.status}), skipping element: ${resolvedSrc}`,
+            );
             continue;
           }
           const blob = await resp.blob();
