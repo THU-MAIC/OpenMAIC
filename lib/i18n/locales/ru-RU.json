@@ -144,7 +144,9 @@
     "generatingNextPage": "Сцена генерируется, пожалуйста подождите...",
     "courseComplete": "Курс завершён",
     "fullscreen": "Полный экран",
-    "exitFullscreen": "Свернуть"
+    "exitFullscreen": "Свернуть",
+    "editCourse": "Редактировать курс",
+    "doneEditing": "Завершить редактирование"
   },
   "classroomComplete": {
     "title": "Курс завершён",

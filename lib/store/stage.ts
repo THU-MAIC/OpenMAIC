@@ -4,6 +4,7 @@ import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
+import { useCanvasStore } from '@/lib/store/canvas';
 
 const log = createLogger('StageStore');
 
@@ -189,7 +190,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     debouncedSave();
   },
 
-  setMode: (mode) => set({ mode }),
+  setMode: (mode) => {
+    const previousMode = get().mode;
+    set({ mode });
+
+    if (previousMode === 'edit' && mode !== 'edit') {
+      useCanvasStore.getState().resetCanvasState();
+    }
+  },
 
   setToolbarState: (toolbarState) => set({ toolbarState }),
 

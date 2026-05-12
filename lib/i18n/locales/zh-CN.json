@@ -144,7 +144,9 @@
     "generatingNextPage": "场景正在生成，请稍候...",
     "courseComplete": "课程完成",
     "fullscreen": "全屏",
-    "exitFullscreen": "退出全屏"
+    "exitFullscreen": "退出全屏",
+    "editCourse": "编辑课程",
+    "doneEditing": "完成编辑"
   },
   "classroomComplete": {
     "title": "课程完成",

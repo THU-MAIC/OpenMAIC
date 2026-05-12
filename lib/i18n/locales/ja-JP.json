@@ -144,7 +144,9 @@
     "generatingNextPage": "シーンを生成中です。お待ちください...",
     "courseComplete": "コース完了",
     "fullscreen": "全画面表示",
-    "exitFullscreen": "全画面表示を終了"
+    "exitFullscreen": "全画面表示を終了",
+    "editCourse": "コースを編集",
+    "doneEditing": "編集を完了"
   },
   "classroomComplete": {
     "title": "コース完了",

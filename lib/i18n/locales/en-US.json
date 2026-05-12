@@ -144,7 +144,9 @@
     "generatingNextPage": "Scene is being generated, please wait...",
     "courseComplete": "Course complete",
     "fullscreen": "Fullscreen",
-    "exitFullscreen": "Exit Fullscreen"
+    "exitFullscreen": "Exit Fullscreen",
+    "editCourse": "Edit course",
+    "doneEditing": "Done editing"
   },
   "classroomComplete": {
     "title": "Course complete",

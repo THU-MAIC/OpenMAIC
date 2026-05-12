@@ -144,7 +144,9 @@
     "generatingNextPage": "場景正在生成，請稍候...",
     "fullscreen": "全螢幕",
     "exitFullscreen": "離開全螢幕",
-    "courseComplete": "課程完成"
+    "courseComplete": "課程完成",
+    "editCourse": "編輯課程",
+    "doneEditing": "完成編輯"
   },
   "whiteboard": {
     "title": "互動白板",

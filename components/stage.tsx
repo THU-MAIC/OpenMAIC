@@ -49,6 +49,7 @@ export function Stage({
   const { t } = useI18n();
   const {
     mode,
+    setMode,
     getCurrentScene,
     scenes,
     currentSceneId,
@@ -259,6 +260,19 @@ export function Stage({
     await chatAreaRef.current?.endActiveSession();
     doSessionCleanup();
   }, [doSessionCleanup]);
+
+  // Auto-exit edit mode whenever the current scene becomes uneditable
+  // (pending generation, no scenes, currently generating). Without this guard,
+  // a follow-up sub-PR's Pro toggle could strand the user in an empty edit shell.
+  useEffect(() => {
+    if (mode !== 'edit') return;
+    const isPending = currentSceneId === PENDING_SCENE_ID;
+    const stillEditable =
+      !isPending && scenes.length > 0 && generatingOutlines.length === 0 && !!currentScene;
+    if (!stillEditable) {
+      setMode('playback');
+    }
+  }, [mode, currentSceneId, scenes.length, generatingOutlines.length, currentScene, setMode]);
 
   const clearPresentationIdleTimer = useCallback(() => {
     if (presentationIdleTimerRef.current) {
