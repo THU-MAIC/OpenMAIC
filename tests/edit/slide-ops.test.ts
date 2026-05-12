@@ -74,7 +74,14 @@ describe('applySlideEditOperation', () => {
       textElement({ id: 'subtitle', content: '<p>Subtitle</p>' }),
     ]);
     original.canvas.animations = [
-      { id: 'anim-1', elId: 'subtitle', effect: 'fade', type: 'in', duration: 600, trigger: 'click' },
+      {
+        id: 'anim-1',
+        elId: 'subtitle',
+        effect: 'fade',
+        type: 'in',
+        duration: 600,
+        trigger: 'click',
+      },
     ];
 
     const updated = applySlideEditOperation(original, {

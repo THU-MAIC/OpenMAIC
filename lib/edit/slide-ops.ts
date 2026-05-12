@@ -174,7 +174,9 @@ function applyOperationToContent(
         return;
       case 'element.deleteMany': {
         const elementIds = new Set(operation.elementIds);
-        draft.canvas.elements = draft.canvas.elements.filter((element) => !elementIds.has(element.id));
+        draft.canvas.elements = draft.canvas.elements.filter(
+          (element) => !elementIds.has(element.id),
+        );
         if (draft.canvas.animations) {
           draft.canvas.animations = draft.canvas.animations.filter(
             (animation) => !elementIds.has(animation.elId),

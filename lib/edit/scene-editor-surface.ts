@@ -84,10 +84,7 @@ export interface SurfaceHistory {
   redo: () => void;
 }
 
-export interface SurfaceState<
-  TContent extends SceneContent = SceneContent,
-  TSelection = unknown,
-> {
+export interface SurfaceState<TContent extends SceneContent = SceneContent, TSelection = unknown> {
   content: TContent;
   selection: TSelection;
   /** True when the surface considers selection non-empty (drives floating bar). */
