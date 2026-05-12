@@ -100,7 +100,9 @@ export function useExportClassroom() {
         title: scene.title,
         order: scene.order,
         content: scene.content,
-        actions: scene.actions ? actionsToManifest(scene.actions, audioIdToPath) : undefined,
+        actions: scene.actions
+          ? actionsToManifest(scene.actions, audioIdToPath, agentIdToIndex)
+          : undefined,
         whiteboards: scene.whiteboards,
         ...(scene.multiAgent?.enabled
           ? {
