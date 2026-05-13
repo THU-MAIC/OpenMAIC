@@ -271,6 +271,30 @@ describe('element.add', () => {
   });
 });
 
+describe('slide.update contract', () => {
+  test('rejects element / animation collections at runtime even via type cast', () => {
+    const original = slideContent();
+    expect(() =>
+      applySlideEditOperation(original, {
+        type: 'slide.update',
+        // `as never` defeats the SlideMetaPatch type narrowing — the runtime
+        // guard is the second line of defense for misuse from JS callers or
+        // anywhere a cast slips through.
+        patch: { elements: [] } as never,
+      }),
+    ).toThrow(/dedicated/);
+  });
+
+  test('applies meta-only patches (theme/background) successfully', () => {
+    const original = slideContent();
+    const updated = applySlideEditOperation(original, {
+      type: 'slide.update',
+      patch: { background: { type: 'solid', color: '#000000' } },
+    });
+    expect(updated.canvas.background).toEqual({ type: 'solid', color: '#000000' });
+  });
+});
+
 describe('element.duplicate contract', () => {
   test('uses the default offset {x:20, y:20} when no offset is given', () => {
     const original = slideContent([textElement({ id: 'a', left: 100, top: 50 })]);
@@ -306,6 +330,24 @@ describe('element.duplicate contract', () => {
         idMap: { a: 'b' },
       }),
     ).toThrow(/collide/);
+  });
+
+  test('deep-clones nested fields so the duplicate cannot leak mutations to the source', () => {
+    // A line element carries a mutable tuple (start). A shallow spread would
+    // share the same array between source and duplicate; a subsequent op
+    // that mutates the duplicate's start in place would silently mutate the
+    // source too. After the deep clone the two are independent.
+    const original = slideContent([lineElement({ id: 'l1', start: [0, 0], end: [10, 10] })]);
+    const updated = applySlideEditOperation(original, {
+      type: 'element.duplicate',
+      elementIds: ['l1'],
+      idMap: { l1: 'l1-copy' },
+    });
+    const source = updated.canvas.elements[0] as PPTLineElement;
+    const dup = updated.canvas.elements[1] as PPTLineElement;
+    expect(source.start).not.toBe(dup.start);
+    expect(source.end).not.toBe(dup.end);
+    expect(source.points).not.toBe(dup.points);
   });
 });
 

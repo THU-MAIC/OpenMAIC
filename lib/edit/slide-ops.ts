@@ -154,9 +154,19 @@ function applyOperationToContent(
 ): SlideContent {
   return produce(content, (draft) => {
     switch (operation.type) {
-      case 'slide.update':
+      case 'slide.update': {
+        // Type-level narrowing via SlideMetaPatch already forbids elements /
+        // animations, but a runtime guard closes the `as any` escape hatch
+        // at call sites. Those collections must go through their dedicated
+        // ops so undo/redo / serialization stays single-source.
+        if ('elements' in operation.patch || 'animations' in operation.patch) {
+          throw new Error(
+            'slide.update: use dedicated element / animation ops to mutate those collections',
+          );
+        }
         Object.assign(draft.canvas, operation.patch);
         return;
+      }
       case 'element.add': {
         if (draft.canvas.elements.some((el) => el.id === operation.element.id)) {
           throw new Error(`element.add: id "${operation.element.id}" already exists`);
@@ -240,11 +250,14 @@ function applyOperationToContent(
         const duplicatedElements = draft.canvas.elements
           .filter((element) => elementIds.has(element.id))
           .map((element) => {
-            // Un-proxy via current() — structuredClone can't clone immer
-            // drafts. immer will freeze the resulting object as part of
-            // produce, so a shallow spread is enough; nested refs are
-            // shared with the source until something rewrites them.
-            const source = current(element) as PPTElement;
+            // Deep clone via current() + structuredClone so the duplicate
+            // doesn't share nested references (start/end tuples, outline,
+            // points, etc) with the source. immer's COW would handle most
+            // mutations safely, but future ops that operate on nested
+            // arrays in-place (sort/reverse/splice) would silently leak —
+            // keep the kernel's invariants independent of which mutation
+            // shape future op consumers pick.
+            const source = structuredClone(current(element)) as PPTElement;
             return {
               ...source,
               id: operation.idMap[source.id],
