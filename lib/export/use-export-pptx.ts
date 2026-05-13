@@ -483,6 +483,12 @@ async function buildPptxBlob(
         if (!isBase64Image(resolvedSrc)) {
           try {
             const resp = await fetch(resolvedSrc);
+            if (!resp.ok) {
+              log.warn(
+                `Failed to fetch image (HTTP ${resp.status}), skipping element: ${resolvedSrc}`,
+              );
+              continue;
+            }
             const blob = await resp.blob();
             resolvedSrc = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
@@ -972,6 +978,12 @@ async function buildPptxBlob(
         // (blob: URLs and remote URLs won't work in offline PPTX)
         try {
           const resp = await fetch(resolvedSrc);
+          if (!resp.ok) {
+            log.warn(
+              `Failed to fetch media (HTTP ${resp.status}), skipping element: ${resolvedSrc}`,
+            );
+            continue;
+          }
           const blob = await resp.blob();
           const base64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -1008,13 +1020,17 @@ async function buildPptxBlob(
             if (posterUrl) {
               try {
                 const posterResp = await fetch(posterUrl);
-                const posterBlob = await posterResp.blob();
-                coverBase64 = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result as string);
-                  reader.onerror = reject;
-                  reader.readAsDataURL(posterBlob);
-                });
+                if (!posterResp.ok) {
+                  log.warn(`Failed to fetch poster (HTTP ${posterResp.status}), skipping`);
+                } else {
+                  const posterBlob = await posterResp.blob();
+                  coverBase64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(posterBlob);
+                  });
+                }
               } catch {
                 // Poster fetch failed, fall through to video frame capture
               }

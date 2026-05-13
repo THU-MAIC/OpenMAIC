@@ -990,21 +990,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/lemonade.svg',
     models: [
       {
-        id: 'Qwen3.5-4B-GGUF',
-        name: 'Qwen3.5 4B GGUF',
-        capabilities: { streaming: true, tools: true, vision: true },
-      },
-      {
-        id: 'Qwen3-4B-GGUF',
-        name: 'Qwen3 4B GGUF',
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
-        id: 'gpt-oss-20b',
-        name: 'GPT-OSS 20B',
-        capabilities: { streaming: true, tools: true, vision: false },
-      },
-      {
         id: 'Gemma-4-26B-A4B-it-GGUF',
         name: 'Gemma 4 26B A4B IT GGUF',
         capabilities: { streaming: true, tools: true, vision: false },
