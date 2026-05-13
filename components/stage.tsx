@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useStageStore } from '@/lib/store';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
+import { isCurrentSceneEditable } from '@/lib/edit/stage-mode';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -49,6 +50,7 @@ export function Stage({
   const { t } = useI18n();
   const {
     mode,
+    setMode,
     getCurrentScene,
     scenes,
     currentSceneId,
@@ -259,6 +261,22 @@ export function Stage({
     await chatAreaRef.current?.endActiveSession();
     doSessionCleanup();
   }, [doSessionCleanup]);
+
+  // Auto-exit edit mode whenever the current scene becomes uneditable
+  // (pending generation, no scenes, currently generating). Predicate lives in
+  // lib/edit/stage-mode so it can be unit-tested without rendering Stage.
+  useEffect(() => {
+    if (mode !== 'edit') return;
+    const editable = isCurrentSceneEditable({
+      currentSceneId,
+      sceneCount: scenes.length,
+      generatingOutlineCount: generatingOutlines.length,
+      hasCurrentScene: !!currentScene,
+    });
+    if (!editable) {
+      setMode('playback');
+    }
+  }, [mode, currentSceneId, scenes.length, generatingOutlines.length, currentScene, setMode]);
 
   const clearPresentationIdleTimer = useCallback(() => {
     if (presentationIdleTimerRef.current) {

@@ -6,7 +6,7 @@ import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widget
 
 export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
 
-export type StageMode = 'autonomous' | 'playback';
+export type StageMode = 'autonomous' | 'playback' | 'edit';
 
 export type Whiteboard = Omit<Slide, 'theme' | 'turningMode' | 'sectionTag' | 'type'>;
 
