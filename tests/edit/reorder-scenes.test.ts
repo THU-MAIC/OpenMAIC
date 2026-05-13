@@ -74,4 +74,19 @@ describe('reorderScene', () => {
 
     expect(scenes.map((s) => ({ id: s.id, order: s.order }))).toEqual(snapshot);
   });
+
+  test('returns null in both directions for a single-element list', () => {
+    const scenes = [makeScene('a', 1)];
+
+    expect(reorderScene(scenes, 'a', 'up')).toBeNull();
+    expect(reorderScene(scenes, 'a', 'down')).toBeNull();
+  });
+
+  test('returns a new array reference (never the input)', () => {
+    const scenes = [makeScene('a', 1), makeScene('b', 2)];
+
+    const reordered = reorderScene(scenes, 'a', 'down');
+
+    expect(reordered).not.toBe(scenes);
+  });
 });
