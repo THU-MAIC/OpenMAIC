@@ -54,6 +54,12 @@ export interface ManifestScene {
 
 export type ManifestAction = Omit<Action, 'audioId'> & {
   audioRef?: string;
+  /**
+   * Portable discussion-agent reference.
+   * New exports use the agent's index in manifest.agents instead of runtime IDs.
+   * Legacy ZIPs may still carry discussion.agentId directly.
+   */
+  agentIndex?: number;
 };
 
 export interface MediaIndexEntry {

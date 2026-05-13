@@ -7,6 +7,7 @@ import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot } fr
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { OutlinesEditor } from '@/components/generation/outlines-editor';
 import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -33,12 +34,19 @@ import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types'
 import { StepVisualizer } from './components/visualizers';
 
 const log = createLogger('GenerationPreview');
+const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
 
 function GenerationPreviewContent() {
   const router = useRouter();
   const { t } = useI18n();
   const hasStartedRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const outlineReviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const outlineReviewResolveRef = useRef<((outlines: SceneOutline[]) => void) | null>(null);
+  // Sticky flag: true once the user signals review intent (either by clicking the
+  // streaming card mid-stream, or by restoring a session that was already in review).
+  // Combined with `reviewOutlineEnabled` to decide whether the post-stream timer fires.
+  const outlineReviewIntentRef = useRef(false);
   const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
 
   const [session, setSession] = useState<GenerationSessionState | null>(null);
@@ -48,11 +56,13 @@ function GenerationPreviewContent() {
   const [isComplete] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   const [streamingOutlines, setStreamingOutlines] = useState<SceneOutline[] | null>(null);
+  const [isOutlineStreaming, setIsOutlineStreaming] = useState(false);
   const [truncationWarnings, setTruncationWarnings] = useState<string[]>([]);
   const [webSearchSources, setWebSearchSources] = useState<Array<{ title: string; url: string }>>(
     [],
   );
   const [showAgentReveal, setShowAgentReveal] = useState(false);
+  const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
       id: string;
@@ -65,9 +75,56 @@ function GenerationPreviewContent() {
     }>
   >([]);
   const agentRevealResolveRef = useRef<(() => void) | null>(null);
+  const reviewOutlineEnabled = useSettingsStore((s) => s.reviewOutlineEnabled);
+  const setReviewOutlineEnabled = useSettingsStore((s) => s.setReviewOutlineEnabled);
 
   // Compute active steps based on session state
   const activeSteps = getActiveSteps(session);
+  const isOutlineReady = session?.previewPhase === 'outline-ready';
+  const isReviewingOutlines = session?.previewPhase === 'review';
+
+  const persistSession = (nextSession: GenerationSessionState) => {
+    setSession(nextSession);
+    sessionStorage.setItem('generationSession', JSON.stringify(nextSession));
+  };
+
+  const clearOutlineReviewTimer = () => {
+    if (outlineReviewTimerRef.current) {
+      clearTimeout(outlineReviewTimerRef.current);
+      outlineReviewTimerRef.current = null;
+    }
+  };
+
+  const waitForOutlineReviewChoice = (
+    outlines: SceneOutline[],
+    shouldReview: boolean,
+    signal: AbortSignal,
+  ): Promise<SceneOutline[]> =>
+    new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'));
+        return;
+      }
+      outlineReviewResolveRef.current = resolve;
+      // Reject on abort so navigating away (`goBackToHome`) or unmounting
+      // settles this promise instead of leaking the awaiting startGeneration
+      // closure. The catch at the bottom of startGeneration already swallows
+      // AbortError silently.
+      const onAbort = () => {
+        clearOutlineReviewTimer();
+        outlineReviewResolveRef.current = null;
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+      if (!shouldReview) {
+        outlineReviewTimerRef.current = setTimeout(() => {
+          outlineReviewTimerRef.current = null;
+          outlineReviewResolveRef.current = null;
+          signal.removeEventListener('abort', onAbort);
+          resolve(outlines);
+        }, OUTLINE_REVIEW_AUTO_CONTINUE_MS);
+      }
+    });
 
   // Load session from sessionStorage
   useEffect(() => {
@@ -77,6 +134,15 @@ function GenerationPreviewContent() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved) as GenerationSessionState;
+        if (!parsed.previewPhase) {
+          parsed.previewPhase = parsed.sceneOutlines?.length ? 'outline-ready' : 'preparing';
+        }
+        // Restore review intent: a saved 'review' phase without outlines means the user
+        // had opened the editor mid-stream before the refresh — preserve that intent so
+        // the post-stream auto-continue timer doesn't fire after SSE restart.
+        if (parsed.previewPhase === 'review' && !parsed.sceneOutlines?.length) {
+          outlineReviewIntentRef.current = true;
+        }
         setSession(parsed);
       } catch (e) {
         log.error('Failed to parse generation session:', e);
@@ -89,6 +155,7 @@ function GenerationPreviewContent() {
   useEffect(() => {
     return () => {
       abortControllerRef.current?.abort();
+      clearOutlineReviewTimer();
     };
   }, []);
 
@@ -127,7 +194,17 @@ function GenerationPreviewContent() {
 
   // Auto-start generation when session is loaded
   useEffect(() => {
-    if (session && !hasStartedRef.current) {
+    if (!session || hasStartedRef.current) return;
+    const needsOutlines = !session.sceneOutlines || session.sceneOutlines.length === 0;
+    const phase = session.previewPhase;
+    const shouldAutoStart =
+      !phase ||
+      phase === 'preparing' ||
+      phase === 'generating-content' ||
+      // Refresh during early-review: editor is shown but outlines weren't persisted,
+      // so kick off SSE again — the editor will receive streaming outlines.
+      (phase === 'review' && needsOutlines);
+    if (shouldAutoStart) {
       hasStartedRef.current = true;
       startGeneration();
     }
@@ -135,8 +212,9 @@ function GenerationPreviewContent() {
   }, [session]);
 
   // Main generation flow
-  const startGeneration = async () => {
-    if (!session) return;
+  const startGeneration = async (sessionOverride?: GenerationSessionState) => {
+    const generationSession = sessionOverride ?? session;
+    if (!generationSession) return;
 
     // Create AbortController for this generation run
     abortControllerRef.current?.abort();
@@ -145,7 +223,7 @@ function GenerationPreviewContent() {
     const signal = controller.signal;
 
     // Use a local mutable copy so we can update it after PDF parsing
-    let currentSession = session;
+    let currentSession = generationSession;
 
     setError(null);
     setCurrentStepIndex(0);
@@ -375,13 +453,14 @@ function GenerationPreviewContent() {
 
       // ── Generate outlines first (infers languageDirective) ──
       let outlines = currentSession.sceneOutlines;
-      let languageDirective: string | undefined;
+      let languageDirective = currentSession.languageDirective;
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
       setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
       if (!outlines || outlines.length === 0) {
         log.debug('=== Generating outlines (SSE) ===');
         setStreamingOutlines([]);
+        setIsOutlineStreaming(true);
 
         const outlineResult = await new Promise<{
           outlines: SceneOutline[];
@@ -480,27 +559,53 @@ function GenerationPreviewContent() {
 
         outlines = outlineResult.outlines;
         languageDirective = outlineResult.languageDirective;
+        setIsOutlineStreaming(false);
 
-        // Store languageDirective on the stage
-        stage.languageDirective = languageDirective;
-
-        const updatedSession = {
+        // Mid-stream review intent (sticky ref) overrides the auto-continue timer.
+        const userOpenedReviewEarly = outlineReviewIntentRef.current;
+        const shouldReviewOutlines =
+          useSettingsStore.getState().reviewOutlineEnabled || userOpenedReviewEarly;
+        const updatedSession: GenerationSessionState = {
           ...currentSession,
           sceneOutlines: outlines,
           languageDirective,
+          previewPhase: shouldReviewOutlines ? 'review' : 'outline-ready',
         };
-        setSession(updatedSession);
-        sessionStorage.setItem('generationSession', JSON.stringify(updatedSession));
+        persistSession(updatedSession);
+        currentSession = updatedSession;
+        setStreamingOutlines(outlines);
 
-        // Outline generation succeeded — clear homepage draft cache
+        setStatusMessage(shouldReviewOutlines ? '' : t('generation.reviewOutlineAutoContinue'));
+        setIsConfirmingOutlines(false);
+        outlines = await waitForOutlineReviewChoice(outlines, shouldReviewOutlines, signal);
+        clearOutlineReviewTimer();
+        currentSession = {
+          ...currentSession,
+          sceneOutlines: outlines,
+          previewPhase: 'generating-content',
+        };
+        persistSession(currentSession);
+
+        // User has committed to course generation (either by confirming the
+        // outline review or by letting the auto-continue timer fire). Now it's
+        // safe to wipe the homepage draft cache; before this point, "back to
+        // requirements" must restore the user's original input.
         try {
           localStorage.removeItem('requirementDraft');
         } catch {
           /* ignore */
         }
+      }
 
-        // Brief pause to let user see the final outline state
-        await new Promise((resolve) => setTimeout(resolve, 800));
+      // Move to next step
+      setStatusMessage('');
+      if (!outlines || outlines.length === 0) {
+        throw new Error(t('generation.outlineEmptyResponse'));
+      }
+
+      // Store languageDirective on the stage
+      if (languageDirective) {
+        stage.languageDirective = languageDirective;
       }
 
       // ── Agent generation (after outlines — uses languageDirective + outlines) ──
@@ -855,6 +960,7 @@ function GenerationPreviewContent() {
       await store.saveToStorage();
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
+      setIsOutlineStreaming(false);
       // AbortError is expected when navigating away — don't show as error
       if (err instanceof DOMException && err.name === 'AbortError') {
         log.info('[GenerationPreview] Generation aborted');
@@ -875,8 +981,120 @@ function GenerationPreviewContent() {
 
   const goBackToHome = () => {
     abortControllerRef.current?.abort();
+    clearOutlineReviewTimer();
+    outlineReviewIntentRef.current = false;
     sessionStorage.removeItem('generationSession');
     router.push('/');
+  };
+
+  // Triggered when the user clicks the streaming outline card mid-stream.
+  // SSE keeps running; only the surface morph + intent flag change.
+  const handleExpandStreamingOutline = () => {
+    if (!session) return;
+    clearOutlineReviewTimer();
+    setStatusMessage('');
+    outlineReviewIntentRef.current = true;
+    persistSession({
+      ...session,
+      previewPhase: 'review',
+    });
+  };
+
+  // Inverse of expand. Mid-stream: shrink back to the streaming preview card so
+  // the user can keep watching while SSE fills in the rest. Post-stream: shrink
+  // back to the small card too, then re-arm the 2.5s auto-continue timer — same
+  // pacing as the no-review path so the user has a beat to see the card before
+  // the page advances. Jumping straight to content gen feels too abrupt.
+  const handleCollapseEditor = () => {
+    if (!session) return;
+    if (isOutlineStreaming) {
+      // Intentionally drop the review-intent flag: collapsing mid-stream is the
+      // user saying "actually, never mind". When SSE finishes, the no-early-open
+      // path runs and the standard `reviewOutlineEnabled` / auto-continue rules
+      // decide what happens next. There is no parked promise to settle yet —
+      // the promise is created only after SSE completes (see line 583).
+      outlineReviewIntentRef.current = false;
+      persistSession({ ...session, previewPhase: 'preparing' });
+      setStatusMessage('');
+      return;
+    }
+    const collapsedOutlines = session.sceneOutlines ?? streamingOutlines;
+    if (!collapsedOutlines || collapsedOutlines.length === 0) return;
+    outlineReviewIntentRef.current = false;
+    persistSession({
+      ...session,
+      sceneOutlines: collapsedOutlines,
+      previewPhase: 'outline-ready',
+    });
+    setStatusMessage(t('generation.reviewOutlineAutoContinue'));
+
+    // Re-arm the auto-continue timer. The SSE-completion flow is parked inside
+    // `waitForOutlineReviewChoice` (because `shouldReview` was true when the
+    // user opened the editor) — fire its resolve via a fresh timeout to match
+    // the no-review path's pacing.
+    clearOutlineReviewTimer();
+    outlineReviewTimerRef.current = setTimeout(() => {
+      outlineReviewTimerRef.current = null;
+      const resolve = outlineReviewResolveRef.current;
+      outlineReviewResolveRef.current = null;
+      if (resolve) {
+        resolve(collapsedOutlines);
+        return;
+      }
+      // No parked promise (e.g. session was restored from a refresh into
+      // 'review' state). Drive the transition ourselves.
+      const confirmedSession: GenerationSessionState = {
+        ...session,
+        sceneOutlines: collapsedOutlines,
+        previewPhase: 'generating-content',
+      };
+      persistSession(confirmedSession);
+      hasStartedRef.current = true;
+      void startGeneration(confirmedSession);
+    }, OUTLINE_REVIEW_AUTO_CONTINUE_MS);
+  };
+
+  const handleOutlinesChange = (outlines: SceneOutline[]) => {
+    if (!session) return;
+    // Streaming SSE owns `streamingOutlines` while it's running; ignore editor
+    // changes until the stream completes (the editor is read-only in that state
+    // anyway, but guard defensively against any racy event).
+    if (isOutlineStreaming) return;
+    persistSession({
+      ...session,
+      sceneOutlines: outlines,
+      previewPhase: 'review',
+    });
+  };
+
+  const handleConfirmOutlines = () => {
+    const finalOutlines = session?.sceneOutlines ?? streamingOutlines;
+    if (!finalOutlines || finalOutlines.length === 0) return;
+    setIsConfirmingOutlines(true);
+    clearOutlineReviewTimer();
+    outlineReviewIntentRef.current = false;
+
+    if (outlineReviewResolveRef.current) {
+      const resolve = outlineReviewResolveRef.current;
+      outlineReviewResolveRef.current = null;
+      resolve(finalOutlines);
+      return;
+    }
+
+    // Fallback: no parked promise (session restored mid-review). The button's
+    // loading state was set above to give the click immediate feedback, but the
+    // editor is about to unmount anyway as we drive the next phase ourselves.
+    // Reset the flag so the state doesn't linger if `startGeneration` later
+    // re-renders the editor for any reason.
+    setIsConfirmingOutlines(false);
+    const confirmedSession: GenerationSessionState = {
+      ...(session as GenerationSessionState),
+      sceneOutlines: finalOutlines,
+      previewPhase: 'generating-content',
+    };
+    persistSession(confirmedSession);
+    hasStartedRef.current = true;
+    void startGeneration(confirmedSession);
   };
 
   // Still loading session from sessionStorage
@@ -913,6 +1131,84 @@ function GenerationPreviewContent() {
     activeSteps.length > 0
       ? activeSteps[Math.min(currentStepIndex, activeSteps.length - 1)]
       : ALL_STEPS[0];
+
+  if (isReviewingOutlines) {
+    const outlineStepIndex = Math.max(
+      0,
+      activeSteps.findIndex((step) => step.id === 'outline'),
+    );
+    // Editor source-of-truth: prefer the persisted final list; fall back to the
+    // live streaming buffer so the editor can render mid-stream after expansion.
+    const editorOutlines = session.sceneOutlines ?? streamingOutlines ?? [];
+
+    return (
+      <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 relative overflow-hidden">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="absolute top-4 left-4 z-20"
+        >
+          <Button variant="ghost" size="sm" onClick={goBackToHome} disabled={isConfirmingOutlines}>
+            <ArrowLeft className="size-4 mr-2" />
+            {t('generation.backToHome')}
+          </Button>
+        </motion.div>
+
+        <div className="z-10 w-full max-w-3xl pt-16 pb-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-6"
+          >
+            <div className="flex justify-center gap-2">
+              {activeSteps.map((step, idx) => (
+                <div
+                  key={step.id}
+                  className={cn(
+                    'h-1.5 rounded-full transition-all duration-500',
+                    idx < outlineStepIndex
+                      ? 'w-1.5 bg-blue-500/30'
+                      : idx === outlineStepIndex
+                        ? 'w-8 bg-blue-500'
+                        : 'w-1.5 bg-muted/50',
+                  )}
+                />
+              ))}
+            </div>
+
+            <div className="max-w-2xl space-y-2 text-center mx-auto">
+              <h2 className="text-2xl font-bold tracking-tight">
+                {t('generation.reviewOutlineTitle')}
+              </h2>
+              <p className="text-muted-foreground text-sm md:text-base">
+                {isOutlineStreaming
+                  ? t('generation.reviewOutlineStreamingDesc')
+                  : t('generation.reviewOutlineDesc')}
+              </p>
+            </div>
+
+            {error && (
+              <div className="mx-auto max-w-2xl rounded-md border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300">
+                {error}
+              </div>
+            )}
+
+            <OutlinesEditor
+              outlines={editorOutlines}
+              onChange={handleOutlinesChange}
+              onConfirm={handleConfirmOutlines}
+              onBack={goBackToHome}
+              alwaysReview={reviewOutlineEnabled}
+              onAlwaysReviewChange={setReviewOutlineEnabled}
+              isLoading={isConfirmingOutlines}
+              isStreaming={isOutlineStreaming}
+              onCollapse={handleCollapseEditor}
+            />
+          </motion.div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center justify-center p-4 relative overflow-hidden text-center">
@@ -999,8 +1295,11 @@ function GenerationPreviewContent() {
                     >
                       <StepVisualizer
                         stepId={activeStep.id}
-                        outlines={streamingOutlines}
+                        outlines={session.sceneOutlines ?? streamingOutlines}
                         webSearchSources={webSearchSources}
+                        onExpandOutline={
+                          activeStep.id === 'outline' ? handleExpandStreamingOutline : undefined
+                        }
                       />
                     </motion.div>
                   )}
@@ -1108,7 +1407,7 @@ function GenerationPreviewContent() {
                   {t('generation.goBackAndRetry')}
                 </Button>
               </motion.div>
-            ) : !isComplete ? (
+            ) : isOutlineReady ? null : !isComplete ? (
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}

@@ -38,7 +38,7 @@ export function ThumbnailSlide({
   if (!visible) {
     return (
       <div
-        className="thumbnail-slide bg-white overflow-hidden select-none"
+        className="thumbnail-slide bg-white overflow-hidden select-none pointer-events-none"
         style={{
           width: `${size}px`,
           height: `${size * viewportRatio}px`,
@@ -53,7 +53,7 @@ export function ThumbnailSlide({
 
   return (
     <div
-      className="thumbnail-slide bg-white overflow-hidden select-none"
+      className="thumbnail-slide bg-white overflow-hidden select-none pointer-events-none"
       style={{
         width: `${size}px`,
         height: `${size * viewportRatio}px`,

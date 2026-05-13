@@ -19,6 +19,10 @@ export interface BaseVideoElementProps {
   elementInfo: PPTVideoElement;
 }
 
+function isLegacySequentialVideoRef(value: string | undefined): boolean {
+  return !!value && /^gen_vid_\d+$/i.test(value);
+}
+
 /**
  * Base video element component for read-only/presentation display.
  * Controlled exclusively by the canvas store via the play_video action.
@@ -41,7 +45,17 @@ export function BaseVideoElement({ elementInfo }: BaseVideoElementProps) {
     if (!mediaRef) return undefined;
     const t = s.tasks[mediaRef];
     if (t && t.stageId !== stageId) return undefined;
-    return t;
+    if (t) return t;
+
+    const sameStageVideoTasks = Object.values(s.tasks).filter(
+      (candidate) =>
+        candidate.type === 'video' && candidate.stageId === stageId && candidate.status === 'done',
+    );
+    if (isLegacySequentialVideoRef(mediaRef) && sameStageVideoTasks.length === 1) {
+      return sameStageVideoTasks[0];
+    }
+
+    return undefined;
   });
   const videoGenerationEnabled = useSettingsStore((s) => s.videoGenerationEnabled);
   const resolvedSrc = task?.status === 'done' && task.objectUrl ? task.objectUrl : concreteSrc;

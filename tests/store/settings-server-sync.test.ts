@@ -1049,3 +1049,48 @@ describe('settings merge migration — custom provider baseUrl', () => {
     expect(state.providersConfig.openai.defaultBaseUrl).toBe('https://persisted-openai.example/v1');
   });
 });
+
+describe('settings store — outline review preference', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    return useSettingsStore;
+  }
+
+  it('defaults reviewOutlineEnabled to false', async () => {
+    const store = await getStore();
+
+    expect(store.getState().reviewOutlineEnabled).toBe(false);
+  });
+
+  it('toggles reviewOutlineEnabled', async () => {
+    const store = await getStore();
+
+    store.getState().setReviewOutlineEnabled(true);
+
+    expect(store.getState().reviewOutlineEnabled).toBe(true);
+  });
+
+  it('rehydrates older persisted settings without the outline flag to false', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        state: {
+          providerId: 'openai',
+          modelId: 'gpt-4o',
+          autoConfigApplied: true,
+        },
+        version: 2,
+      }),
+    );
+
+    const store = await getStore();
+
+    expect(store.getState().reviewOutlineEnabled).toBe(false);
+  });
+});

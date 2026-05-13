@@ -46,6 +46,7 @@ import {
   deleteStageData,
   renameStage,
   getFirstSlideByStages,
+  revokeThumbnailSlideMediaUrls,
 } from '@/lib/utils/stage-storage';
 import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
 import type { Slide } from '@/lib/types/slides';
@@ -126,14 +127,19 @@ function HomePage() {
   }, []);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // Restore requirement draft from cache (derived state pattern — no effect needed)
-  const [prevCachedRequirement, setPrevCachedRequirement] = useState(cachedRequirement);
-  if (cachedRequirement !== prevCachedRequirement) {
-    setPrevCachedRequirement(cachedRequirement);
-    if (cachedRequirement) {
-      setForm((prev) => ({ ...prev, requirement: cachedRequirement }));
-    }
-  }
+  // Restore requirement draft from localStorage on mount. The previous derived-state
+  // pattern initialised `prev` from the cached value itself, so on the first client
+  // render the comparison was always equal and the restore never fired. Use an effect
+  // so the cache is hydrated into the form once we know the live requirement is empty.
+  const draftRestoredRef = useRef(false);
+  /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
+  useEffect(() => {
+    if (draftRestoredRef.current) return;
+    if (!cachedRequirement) return;
+    draftRestoredRef.current = true;
+    setForm((prev) => (prev.requirement ? prev : { ...prev, requirement: cachedRequirement }));
+  }, [cachedRequirement]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -146,6 +152,14 @@ function HomePage() {
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const thumbnailsRef = useRef<Record<string, Slide>>({});
+
+  const replaceThumbnails = (slides: Record<string, Slide>) => {
+    const previous = thumbnailsRef.current;
+    thumbnailsRef.current = slides;
+    setThumbnails(slides);
+    window.setTimeout(() => revokeThumbnailSlideMediaUrls(previous), 0);
+  };
 
   // Close dropdowns when clicking outside
   useEffect(() => {
@@ -166,7 +180,9 @@ function HomePage() {
       // Load first slide thumbnails
       if (list.length > 0) {
         const slides = await getFirstSlideByStages(list.map((c) => c.id));
-        setThumbnails(slides);
+        replaceThumbnails(slides);
+      } else {
+        replaceThumbnails({});
       }
     } catch (err) {
       log.error('Failed to load classrooms:', err);
@@ -188,6 +204,11 @@ function HomePage() {
 
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Store hydration on mount
     loadClassrooms();
+
+    return () => {
+      revokeThumbnailSlideMediaUrls(thumbnailsRef.current);
+      thumbnailsRef.current = {};
+    };
   }, []);
 
   const handleDelete = (id: string, e: React.MouseEvent) => {

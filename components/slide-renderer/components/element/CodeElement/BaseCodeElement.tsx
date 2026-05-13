@@ -315,7 +315,6 @@ function CodeLineRow({
 
   return (
     <motion.div
-      layout="position"
       initial={isNewLine ? { opacity: 0, height: 0 } : false}
       animate={{
         opacity: 1,
@@ -366,32 +365,108 @@ function CodeLineRow({
 
 export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) {
   const { language, lines, fileName, showLineNumbers = true, fontSize = 14 } = elementInfo;
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const codeBodyRef = useRef<HTMLDivElement>(null);
 
-  // Prevent wheel events from bubbling to the whiteboard zoom handler
-  // when the code body has scrollable content in the wheel direction.
+  // Drag-to-scroll inside the code body, plus wheel containment. Whiteboard
+  // pan/zoom is bypassed via two mechanisms:
+  //   1. `setPointerCapture` on pointerdown redirects later pointer events to
+  //      the body, so whiteboard's React `onPointerDown` never sees the drag.
+  //   2. The native wheel listener stops propagation so the whiteboard's
+  //      native `addEventListener('wheel', ...)` never fires while the cursor
+  //      is over the code body. Outside the body (header / border) is handled
+  //      by the wrapper-level wheel listener below.
   useEffect(() => {
     const el = codeBodyRef.current;
     if (!el) return;
 
-    const handleWheel = (e: WheelEvent) => {
-      const { scrollTop, scrollHeight, clientHeight } = el;
-      const canScroll = scrollHeight > clientHeight;
-      if (!canScroll) return; // nothing to scroll — let whiteboard zoom
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startScrollLeft = 0;
+    let startScrollTop = 0;
+    let activePointer: number | null = null;
 
-      const atTop = scrollTop <= 0;
-      const atBottom = scrollTop + clientHeight >= scrollHeight - 1;
-      const scrollingUp = e.deltaY < 0;
-      const scrollingDown = e.deltaY > 0;
+    const endDrag = () => {
+      if (activePointer !== null && el.hasPointerCapture(activePointer)) {
+        el.releasePointerCapture(activePointer);
+      }
+      dragging = false;
+      activePointer = null;
+      el.style.cursor = 'grab';
+    };
 
-      // At scroll limits, let the event propagate for whiteboard zoom
-      if ((atTop && scrollingUp) || (atBottom && scrollingDown)) return;
+    const onPointerDown = (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      activePointer = e.pointerId;
+      startX = e.clientX;
+      startY = e.clientY;
+      startScrollLeft = el.scrollLeft;
+      startScrollTop = el.scrollTop;
+      el.setPointerCapture(e.pointerId);
+      el.style.cursor = 'grabbing';
+    };
 
+    const onPointerMove = (e: PointerEvent) => {
+      if (!dragging || e.pointerId !== activePointer) return;
+      el.scrollLeft = startScrollLeft - (e.clientX - startX);
+      el.scrollTop = startScrollTop - (e.clientY - startY);
+    };
+
+    const onPointerEnd = (e: PointerEvent) => {
+      if (e.pointerId !== activePointer) return;
+      endDrag();
+    };
+
+    const onLostCapture = () => {
+      endDrag();
+    };
+
+    const onWheel = (e: WheelEvent) => {
       e.stopPropagation();
     };
 
-    el.addEventListener('wheel', handleWheel, { passive: true });
-    return () => el.removeEventListener('wheel', handleWheel);
+    el.style.cursor = 'grab';
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', onPointerEnd);
+    el.addEventListener('pointercancel', onPointerEnd);
+    el.addEventListener('lostpointercapture', onLostCapture);
+    el.addEventListener('wheel', onWheel, { passive: true });
+    return () => {
+      endDrag();
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointermove', onPointerMove);
+      el.removeEventListener('pointerup', onPointerEnd);
+      el.removeEventListener('pointercancel', onPointerEnd);
+      el.removeEventListener('lostpointercapture', onLostCapture);
+      el.removeEventListener('wheel', onWheel);
+    };
+  }, []);
+
+  // Wheel events that land on the code element's header / border still need
+  // native propagation stopped — synthetic React `onWheel` would not, because
+  // whiteboard's wheel handler is registered with native `addEventListener`.
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const stopWheelOutsideBody = (e: WheelEvent) => {
+      const body = codeBodyRef.current;
+      if (body && body.contains(e.target as Node)) return;
+      e.stopPropagation();
+    };
+
+    el.addEventListener('wheel', stopWheelOutsideBody);
+    return () => el.removeEventListener('wheel', stopWheelOutsideBody);
+  }, []);
+
+  // Block whiteboard pan from triggering when the user clicks the header /
+  // border. Whiteboard's pan is a React `onPointerDown`, so synthetic
+  // stopPropagation suffices — native listeners are not needed here.
+  const stopPointer = useCallback((e: React.SyntheticEvent) => {
+    e.stopPropagation();
   }, []);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -493,6 +568,7 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
 
   return (
     <div
+      ref={wrapperRef}
       className="base-element-code absolute"
       style={{
         top: `${elementInfo.top}px`,
@@ -500,6 +576,8 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
         width: `${elementInfo.width}px`,
         height: `${elementInfo.height}px`,
       }}
+      onPointerDown={stopPointer}
+      onClick={stopPointer}
     >
       <div
         className="rotate-wrapper w-full h-full"
@@ -572,26 +650,31 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
             style={{
               background: '#fafbfc',
               color: '#24292e',
+              userSelect: 'none',
+              WebkitUserSelect: 'none',
+              touchAction: 'none',
             }}
           >
-            <AnimatePresence initial={false} mode="popLayout">
-              {lineHtmlMap.map((lineData, index) => {
-                const line = lines[index];
-                if (!line) return null;
-                return (
-                  <CodeLineRow
-                    key={line.id}
-                    line={line}
-                    lineNumber={index + 1}
-                    highlightedHtml={lineData.html}
-                    showLineNumbers={showLineNumbers}
-                    animState={animStates.get(line.id)}
-                    animate={!!animate}
-                    typingDelay={typingDelays.get(line.id) ?? 0}
-                  />
-                );
-              })}
-            </AnimatePresence>
+            <div style={{ minWidth: 'max-content' }}>
+              <AnimatePresence initial={false} mode="popLayout">
+                {lineHtmlMap.map((lineData, index) => {
+                  const line = lines[index];
+                  if (!line) return null;
+                  return (
+                    <CodeLineRow
+                      key={line.id}
+                      line={line}
+                      lineNumber={index + 1}
+                      highlightedHtml={lineData.html}
+                      showLineNumbers={showLineNumbers}
+                      animState={animStates.get(line.id)}
+                      animate={!!animate}
+                      typingDelay={typingDelays.get(line.id) ?? 0}
+                    />
+                  );
+                })}
+              </AnimatePresence>
+            </div>
           </div>
         </div>
       </div>

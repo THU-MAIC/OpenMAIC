@@ -83,6 +83,16 @@ export function useImportClassroom(onSuccess?: () => void) {
 
         // Agent ID mapping: index → new ID
         const newAgentIds: string[] = (manifest.agents ?? []).map(() => nanoid());
+        const studentAgentIndex =
+          manifest.agents?.findIndex((agent) => agent.role === 'student') ?? -1;
+        const nonTeacherAgentIndex =
+          manifest.agents?.findIndex((agent) => agent.role !== 'teacher') ?? -1;
+        const fallbackDiscussionAgentIndex =
+          studentAgentIndex >= 0
+            ? studentAgentIndex
+            : nonTeacherAgentIndex >= 0
+              ? nonTeacherAgentIndex
+              : undefined;
 
         // Audio ref → new ID mapping
         const audioRefToNewId: Record<string, string> = {};
@@ -189,7 +199,10 @@ export function useImportClassroom(onSuccess?: () => void) {
           const newSceneId = nanoid();
 
           const actions = mScene.actions
-            ? rewriteAudioRefsToIds(mScene.actions, audioRefToNewId)
+            ? rewriteAudioRefsToIds(mScene.actions, audioRefToNewId, {
+                agentIds: newAgentIds,
+                fallbackDiscussionAgentIndex,
+              })
             : undefined;
 
           let multiAgent = undefined;

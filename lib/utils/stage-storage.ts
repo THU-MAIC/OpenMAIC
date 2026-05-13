@@ -175,15 +175,70 @@ export async function listStages(): Promise<StageListItem[]> {
   }
 }
 
+type ThumbnailMediaElement = {
+  type: string;
+  src?: string;
+  mediaRef?: string;
+  poster?: string;
+};
+
+type ThumbnailSlide = import('../types/slides').Slide;
+
+function isGeneratedMediaRef(value: unknown): value is string {
+  return typeof value === 'string' && /^gen_(img|vid)_[\w-]+$/i.test(value);
+}
+
+function isLegacySequentialVideoRef(value: unknown): value is string {
+  return typeof value === 'string' && /^gen_vid_\d+$/i.test(value);
+}
+
+function getThumbnailMediaRef(element: ThumbnailMediaElement): string | undefined {
+  if (element.type === 'image' && isGeneratedMediaRef(element.src)) {
+    return element.src;
+  }
+  if (element.type === 'video') {
+    if (isGeneratedMediaRef(element.mediaRef)) return element.mediaRef;
+    if (isGeneratedMediaRef(element.src)) return element.src;
+  }
+  return undefined;
+}
+
+function getMediaRecordElementId(recordId: string): string {
+  return recordId.includes(':') ? recordId.split(':').slice(1).join(':') : recordId;
+}
+
+function blobWithType(blob: Blob, mimeType: string): Blob {
+  return blob.type ? blob : new Blob([blob], { type: mimeType });
+}
+
+function revokeObjectUrl(url: string | undefined) {
+  if (url?.startsWith('blob:')) {
+    URL.revokeObjectURL(url);
+  }
+}
+
+export function revokeThumbnailSlideMediaUrls(slides: Record<string, ThumbnailSlide>) {
+  for (const slide of Object.values(slides)) {
+    for (const element of slide.elements as ThumbnailMediaElement[]) {
+      if (element.type === 'image' || element.type === 'video') {
+        revokeObjectUrl(element.src);
+      }
+      if (element.type === 'video') {
+        revokeObjectUrl(element.poster);
+      }
+    }
+  }
+}
+
 /**
  * Get first slide scene's canvas data for each stage (for thumbnail preview).
- * Also resolves gen_img_* placeholders from mediaFiles so thumbnails show real images.
- * Returns a map of stageId -> Slide (canvas data with resolved images)
+ * Also resolves generated image/video refs from mediaFiles so thumbnails show real media.
+ * Returns a map of stageId -> Slide (canvas data with resolved media)
  */
 export async function getFirstSlideByStages(
   stageIds: string[],
-): Promise<Record<string, import('../types/slides').Slide>> {
-  const result: Record<string, import('../types/slides').Slide> = {};
+): Promise<Record<string, ThumbnailSlide>> {
+  const result: Record<string, ThumbnailSlide> = {};
   try {
     await Promise.all(
       stageIds.map(async (stageId) => {
@@ -192,27 +247,48 @@ export async function getFirstSlideByStages(
         if (firstSlide && firstSlide.content.type === 'slide') {
           const slide = structuredClone(firstSlide.content.canvas);
 
-          // Resolve gen_img_* placeholders from mediaFiles
-          const placeholderEls = slide.elements.filter(
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            (el: any) => el.type === 'image' && /^gen_(img|vid)_[\w-]+$/i.test(el.src as string),
+          const mediaElements = slide.elements.filter((el) =>
+            getThumbnailMediaRef(el as ThumbnailMediaElement),
           );
-          if (placeholderEls.length > 0) {
+          if (mediaElements.length > 0) {
             const mediaRecords = await db.mediaFiles.where('stageId').equals(stageId).toArray();
-            const mediaMap = new Map(
-              mediaRecords.map((r) => {
-                // Key format: stageId:elementId → extract elementId
-                const elementId = r.id.includes(':') ? r.id.split(':').slice(1).join(':') : r.id;
-                return [elementId, r.blob] as const;
-              }),
+            const videoRecords = mediaRecords.filter(
+              (record) => !record.error && record.type === 'video',
             );
-            for (const el of placeholderEls as Array<{ src: string }>) {
-              const blob = mediaMap.get(el.src);
-              if (blob) {
-                el.src = URL.createObjectURL(blob);
-              } else {
-                // Clear unresolved placeholder so BaseImageElement won't subscribe
-                // to the global media store (which may have stale data from another course)
+            const mediaMap = new Map(
+              mediaRecords.map((record) => [getMediaRecordElementId(record.id), record] as const),
+            );
+
+            for (const el of mediaElements as ThumbnailMediaElement[]) {
+              const mediaRef = getThumbnailMediaRef(el);
+              const exactRecord = mediaRef ? mediaMap.get(mediaRef) : undefined;
+              const usableExactRecord = exactRecord && !exactRecord.error ? exactRecord : undefined;
+              const legacyRecord =
+                !exactRecord &&
+                el.type === 'video' &&
+                isLegacySequentialVideoRef(mediaRef) &&
+                videoRecords.length === 1
+                  ? videoRecords[0]
+                  : undefined;
+              const record = usableExactRecord ?? legacyRecord;
+
+              if (!mediaRef || !record) {
+                if (el.type === 'image') {
+                  // Clear unresolved placeholder so BaseImageElement won't subscribe
+                  // to the global media store (which may have stale data from another course)
+                  el.src = '';
+                }
+                continue;
+              }
+
+              if (el.type === 'image' && record.type === 'image') {
+                el.src = URL.createObjectURL(blobWithType(record.blob, record.mimeType));
+              } else if (el.type === 'video' && record.type === 'video') {
+                el.src = URL.createObjectURL(blobWithType(record.blob, record.mimeType));
+                if (record.poster) {
+                  el.poster = URL.createObjectURL(blobWithType(record.poster, 'image/jpeg'));
+                }
+              } else if (el.type === 'image') {
                 el.src = '';
               }
             }
