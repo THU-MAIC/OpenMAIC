@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useStageStore } from '@/lib/store';
 import { PENDING_SCENE_ID } from '@/lib/store/stage';
+import { isCurrentSceneEditable } from '@/lib/edit/stage-mode';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -262,14 +263,17 @@ export function Stage({
   }, [doSessionCleanup]);
 
   // Auto-exit edit mode whenever the current scene becomes uneditable
-  // (pending generation, no scenes, currently generating). Without this guard,
-  // a follow-up sub-PR's Pro toggle could strand the user in an empty edit shell.
+  // (pending generation, no scenes, currently generating). Predicate lives in
+  // lib/edit/stage-mode so it can be unit-tested without rendering Stage.
   useEffect(() => {
     if (mode !== 'edit') return;
-    const isPending = currentSceneId === PENDING_SCENE_ID;
-    const stillEditable =
-      !isPending && scenes.length > 0 && generatingOutlines.length === 0 && !!currentScene;
-    if (!stillEditable) {
+    const editable = isCurrentSceneEditable({
+      currentSceneId,
+      sceneCount: scenes.length,
+      generatingOutlineCount: generatingOutlines.length,
+      hasCurrentScene: !!currentScene,
+    });
+    if (!editable) {
       setMode('playback');
     }
   }, [mode, currentSceneId, scenes.length, generatingOutlines.length, currentScene, setMode]);

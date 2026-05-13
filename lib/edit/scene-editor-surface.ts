@@ -129,5 +129,7 @@ export interface SceneEditorRegistry {
   register: <TContent extends SceneContent, TSelection>(
     surface: SceneEditorSurface<TContent, TSelection>,
   ) => void;
+  /** Remove a registration. Mainly for HMR cleanup and tests. */
+  unregister: (sceneType: SceneType) => void;
   resolve: (sceneType: SceneType) => SceneEditorSurface | undefined;
 }
