@@ -1019,6 +1019,7 @@
     "baiduSubSourceBaikeDescription": "Encyclopedia entries from Baidu Baike.",
     "baiduSubSourceScholar": "Baidu Scholar",
     "baiduSubSourceScholarDescription": "Academic papers from Baidu Scholar.",
+    "viewDocs": "API Docs",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Server-side search API key is configured",
     "optional": "Optional"

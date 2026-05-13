@@ -43,7 +43,7 @@ function buildScholarUrl(query: string, baseUrl?: string): string {
   const url = new URL(buildQianfanUrl(BAIDU_SCHOLAR_PATH, baseUrl));
   url.searchParams.set('wd', query);
   url.searchParams.set('pageNum', '0');
-  url.searchParams.set('enable_abstract', 'true');
+  url.searchParams.set('enable_ai_abstract', 'true');
   return url.toString();
 }
 
@@ -150,15 +150,20 @@ async function fetchScholar(
     }
 
     const data = (await res.json()) as BaiduScholarResponse;
-    if (data.code && data.code !== 0) return [];
+    if (data.code && data.code !== '0') return [];
 
-    return (data.results || [])
+    return (data.data || [])
       .filter((paper) => paper.url)
       .slice(0, maxResults)
       .map((paper, index) => ({
         title: paper.title || paper.url || '',
         url: paper.url || '',
-        content: [paper.abstract, paper.publishYear ? `(${paper.publishYear})` : '', paper.keyword]
+        content: [
+          paper.abstract,
+          paper.aiAbstract,
+          paper.publishYear ? `(${paper.publishYear})` : '',
+          paper.keyword,
+        ]
           .filter(Boolean)
           .join(' '),
         score: Number((0.85 - index * 0.05).toFixed(2)),
@@ -233,13 +238,19 @@ interface BaiduBaikeResponse {
 interface BaiduScholarPaper {
   title?: string;
   abstract?: string;
+  aiAbstract?: string;
   url?: string;
-  publishYear?: string;
+  publishYear?: number;
   keyword?: string;
+  doi?: string;
+  paperId?: string;
+  publishInfo?: { journalName?: string };
 }
 
 interface BaiduScholarResponse {
-  code?: number;
+  code?: string;
   message?: string;
-  results?: BaiduScholarPaper[];
+  requestId?: string;
+  hasMore?: boolean;
+  data?: BaiduScholarPaper[];
 }

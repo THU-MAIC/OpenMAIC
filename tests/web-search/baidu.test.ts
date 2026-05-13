@@ -39,13 +39,14 @@ describe('searchWithBaidu', () => {
     proxyFetchMock.mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          code: 0,
-          results: [
+          code: '0',
+          data: [
             {
               title: 'OpenMAIC paper',
               abstract: 'Scholar abstract',
+              aiAbstract: 'Scholar AI abstract',
               url: 'https://xueshu.baidu.com/usercenter/paper/show?paperid=1',
-              publishYear: '2026',
+              publishYear: 2026,
               keyword: 'AI education',
             },
           ],
@@ -67,12 +68,15 @@ describe('searchWithBaidu', () => {
     expect(proxyFetchMock).toHaveBeenCalledTimes(2);
     expect(proxyFetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
       'https://appbuilder.baidu.com/v2/baike/lemma/get_content?search_type=lemmaTitle&search_key=OpenMAIC',
-      'https://qianfan.baidubce.com/v2/tools/baidu_scholar/search?wd=OpenMAIC&pageNum=0&enable_abstract=true',
+      'https://qianfan.baidubce.com/v2/tools/baidu_scholar/search?wd=OpenMAIC&pageNum=0&enable_ai_abstract=true',
     ]);
     expect(result.sources.map((source) => source.title)).toEqual([
       'OpenMAIC - Baidu Baike',
       'OpenMAIC paper',
     ]);
+    expect(result.sources[1]?.content).toBe(
+      'Scholar abstract Scholar AI abstract (2026) AI education',
+    );
   });
 
   it('defaults Baidu sub-sources to all enabled when omitted', async () => {
@@ -94,7 +98,7 @@ describe('searchWithBaidu', () => {
         );
       }
       return Promise.resolve(
-        new Response(JSON.stringify({ code: 0, results: [] }), {
+        new Response(JSON.stringify({ code: '0', data: [] }), {
           status: 200,
           headers: { 'content-type': 'application/json' },
         }),
@@ -106,7 +110,7 @@ describe('searchWithBaidu', () => {
     expect(proxyFetchMock.mock.calls.map((call) => String(call[0]))).toEqual([
       'https://qianfan.baidubce.com/v2/ai_search/web_search',
       'https://appbuilder.baidu.com/v2/baike/lemma/get_content?search_type=lemmaTitle&search_key=OpenMAIC',
-      'https://qianfan.baidubce.com/v2/tools/baidu_scholar/search?wd=OpenMAIC&pageNum=0&enable_abstract=true',
+      'https://qianfan.baidubce.com/v2/tools/baidu_scholar/search?wd=OpenMAIC&pageNum=0&enable_ai_abstract=true',
     ]);
   });
 });

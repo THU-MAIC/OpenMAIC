@@ -1019,6 +1019,7 @@
     "baiduSubSourceBaikeDescription": "Энциклопедические статьи из Baidu Baike.",
     "baiduSubSourceScholar": "Baidu Scholar",
     "baiduSubSourceScholarDescription": "Научные публикации из Baidu Scholar.",
+    "viewDocs": "API документация",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Серверный API-ключ поиска настроен",
     "optional": "Необязательно"

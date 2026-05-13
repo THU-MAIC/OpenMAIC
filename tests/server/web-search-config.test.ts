@@ -8,6 +8,8 @@ describe('server web search config', () => {
     delete process.env.TAVILY_BASE_URL;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
+    delete process.env.BRAVE_API_KEY;
+    delete process.env.BRAVE_BASE_URL;
     delete process.env.BAIDU_API_KEY;
     delete process.env.BAIDU_BASE_URL;
   });

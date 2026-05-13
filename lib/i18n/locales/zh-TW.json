@@ -934,6 +934,7 @@
     "baiduSubSourceBaikeDescription": "使用百度百科取得詞條摘要。",
     "baiduSubSourceScholar": "百度學術",
     "baiduSubSourceScholarDescription": "使用百度學術取得論文結果。",
+    "viewDocs": "API 文檔",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "已設定服務端 Tavily API Key",
     "optional": "選填",

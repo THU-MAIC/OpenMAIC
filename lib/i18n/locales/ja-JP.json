@@ -1019,6 +1019,7 @@
     "baiduSubSourceBaikeDescription": "Baidu Baikeの百科事典エントリ。",
     "baiduSubSourceScholar": "Baidu Scholar",
     "baiduSubSourceScholarDescription": "Baidu Scholarの学術論文。",
+    "viewDocs": "APIドキュメント",
     "webSearchBaseUrl": "ベースURL",
     "webSearchServerConfigured": "サーバー側で検索APIキーが設定済みです",
     "optional": "任意"
