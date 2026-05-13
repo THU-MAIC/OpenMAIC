@@ -164,16 +164,6 @@
       "quiz": "Тест",
       "interactive": "Интерактив",
       "pbl": "PBL"
-    },
-    "sidebar": {
-      "pages": "Страницы",
-      "addSlide": "Добавить слайд",
-      "newSlide": "Новый слайд",
-      "expand": "Развернуть боковую панель",
-      "collapse": "Свернуть боковую панель",
-      "moveUp": "Поднять",
-      "moveDown": "Опустить",
-      "delete": "Удалить"
     }
   },
   "classroomComplete": {

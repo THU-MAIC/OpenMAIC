@@ -1,10 +1,11 @@
 'use client';
 
-import { PanelLeft, PanelLeftClose, Redo2, Undo2 } from 'lucide-react';
+import { Redo2, Undo2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { cn } from '@/lib/utils';
 import type {
   EditorCommand,
   InsertPaletteItem,
@@ -13,55 +14,46 @@ import type {
 
 interface CommandBarProps {
   readonly title: string;
-  readonly history: SurfaceHistory;
-  readonly insertItems: readonly InsertPaletteItem[];
-  readonly commands: readonly EditorCommand[];
-  readonly sidebarCollapsed?: boolean;
-  readonly onToggleSidebar?: () => void;
+  readonly history?: SurfaceHistory;
+  readonly insertItems?: readonly InsertPaletteItem[];
+  readonly commands?: readonly EditorCommand[];
 }
 
 /**
- * Top toolbar — Pitch-inspired: title on the left, insert primitives in the
- * center as labeled icon buttons, global commands (undo/redo + view toggles)
- * on the right. Borderless; relies on bottom hairline for separation.
+ * Top bar of the Pro mode chrome. Undo/redo + title on the left, insert
+ * primitives in the center, surface commands on the right. History /
+ * insertItems / commands are all optional so the bar renders cleanly when
+ * no surface is registered for the current scene type. Exiting Pro mode
+ * is handled by the global Pro toggle in the playback Header (which stays
+ * mounted above this bar), not by a dedicated button here.
  */
-export function CommandBar({
-  title,
-  history,
-  insertItems,
-  commands,
-  sidebarCollapsed,
-  onToggleSidebar,
-}: CommandBarProps) {
+export function CommandBar({ title, history, insertItems, commands }: CommandBarProps) {
   const { t } = useI18n();
 
   return (
     <header className="flex h-14 shrink-0 items-center gap-3 border-b border-zinc-200/60 px-5 dark:border-zinc-800/60">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        {onToggleSidebar && (
-          <IconButton
-            title={sidebarCollapsed ? t('edit.sidebar.expand') : t('edit.sidebar.collapse')}
-            onClick={onToggleSidebar}
-          >
-            {sidebarCollapsed ? (
-              <PanelLeft className="h-4 w-4" />
-            ) : (
-              <PanelLeftClose className="h-4 w-4" />
-            )}
-          </IconButton>
+        {history && (
+          <>
+            <IconButton title={t('edit.undo')} disabled={!history.canUndo} onClick={history.undo}>
+              <Undo2 className="h-4 w-4" />
+            </IconButton>
+            <IconButton title={t('edit.redo')} disabled={!history.canRedo} onClick={history.redo}>
+              <Redo2 className="h-4 w-4" />
+            </IconButton>
+          </>
         )}
-        <IconButton title={t('edit.undo')} disabled={!history.canUndo} onClick={history.undo}>
-          <Undo2 className="h-4 w-4" />
-        </IconButton>
-        <IconButton title={t('edit.redo')} disabled={!history.canRedo} onClick={history.redo}>
-          <Redo2 className="h-4 w-4" />
-        </IconButton>
-        <span className="ml-2 truncate text-sm font-medium text-zinc-700 dark:text-zinc-300">
+        <span
+          className={cn(
+            'truncate text-sm font-medium text-zinc-700 dark:text-zinc-300',
+            history && 'ml-2',
+          )}
+        >
           {title}
         </span>
       </div>
 
-      {insertItems.length > 0 && (
+      {insertItems && insertItems.length > 0 && (
         <div className="flex shrink-0 items-center gap-1">
           {insertItems.map((item) => (
             <InsertButton key={item.id} item={item} />
@@ -69,18 +61,20 @@ export function CommandBar({
         </div>
       )}
 
-      <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
-        {commands.map((command) => (
-          <IconButton
-            key={command.id}
-            title={command.tooltip ?? command.label}
-            disabled={command.disabled}
-            onClick={command.onInvoke}
-          >
-            {command.icon ?? <span className="px-1 text-xs">{command.label}</span>}
-          </IconButton>
-        ))}
-      </div>
+      {commands && commands.length > 0 && (
+        <div className="flex min-w-0 flex-1 items-center justify-end gap-1">
+          {commands.map((command) => (
+            <IconButton
+              key={command.id}
+              title={command.tooltip ?? command.label}
+              disabled={command.disabled}
+              onClick={command.onInvoke}
+            >
+              {command.icon ?? <span className="px-1 text-xs">{command.label}</span>}
+            </IconButton>
+          ))}
+        </div>
+      )}
     </header>
   );
 }

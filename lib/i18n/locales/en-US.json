@@ -164,16 +164,6 @@
       "quiz": "Quiz",
       "interactive": "Interactive",
       "pbl": "PBL"
-    },
-    "sidebar": {
-      "pages": "Pages",
-      "addSlide": "Add slide",
-      "newSlide": "New slide",
-      "expand": "Expand sidebar",
-      "collapse": "Collapse sidebar",
-      "moveUp": "Move up",
-      "moveDown": "Move down",
-      "delete": "Delete"
     }
   },
   "classroomComplete": {

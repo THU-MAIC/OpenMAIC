@@ -164,16 +164,6 @@
       "quiz": "測驗",
       "interactive": "互動",
       "pbl": "PBL"
-    },
-    "sidebar": {
-      "pages": "頁面",
-      "addSlide": "新增投影片",
-      "newSlide": "新投影片",
-      "expand": "展開側欄",
-      "collapse": "摺疊側欄",
-      "moveUp": "上移",
-      "moveDown": "下移",
-      "delete": "刪除"
     }
   },
   "whiteboard": {

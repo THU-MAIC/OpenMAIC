@@ -164,16 +164,6 @@
       "quiz": "测验",
       "interactive": "互动",
       "pbl": "PBL"
-    },
-    "sidebar": {
-      "pages": "页面",
-      "addSlide": "新建幻灯片",
-      "newSlide": "未命名幻灯片",
-      "expand": "展开侧栏",
-      "collapse": "折叠侧栏",
-      "moveUp": "上移",
-      "moveDown": "下移",
-      "delete": "删除"
     }
   },
   "classroomComplete": {
