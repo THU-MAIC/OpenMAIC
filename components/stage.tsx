@@ -10,6 +10,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { SceneSidebar } from './stage/scene-sidebar';
 import { Header } from './header';
 import { CanvasArea } from '@/components/canvas/canvas-area';
+import { EditModeSidebar } from '@/components/edit/EditModeSidebar';
 import { Roundtable } from '@/components/roundtable';
 import { PlaybackEngine, computePlaybackView } from '@/lib/playback';
 import type { EngineMode, TriggerEvent, Effect } from '@/lib/playback';
@@ -34,6 +35,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { AlertTriangle } from 'lucide-react';
 import { VisuallyHidden } from 'radix-ui';
+import { AnimatePresence, motion } from 'motion/react';
 
 /**
  * Stage Component
@@ -262,21 +264,43 @@ export function Stage({
     doSessionCleanup();
   }, [doSessionCleanup]);
 
+  // Single source of truth for "is the current scene editable?" — feeds both
+  // the Pro toggle's disabled state in the Header and the auto-exit effect
+  // below. Using one predicate keeps the header and auto-exit in lock-step so
+  // we never offer a click that would immediately auto-exit.
+  const isEditable = isCurrentSceneEditable({
+    currentSceneId,
+    sceneCount: scenes.length,
+    generatingOutlineCount: generatingOutlines.length,
+    hasCurrentScene: !!currentScene,
+  });
+
+  // Toggle Pro (edit) mode. Entering edit mode tears down any live
+  // session so the user enters a quiet canvas.
+  const handleToggleEditMode = useCallback(async () => {
+    if (mode === 'edit') {
+      setMode('playback');
+      return;
+    }
+    await chatAreaRef.current?.endActiveSession();
+    if (discussionAbortRef.current) {
+      discussionAbortRef.current.abort();
+      discussionAbortRef.current = null;
+    }
+    engineRef.current?.stop();
+    discussionTTS.cleanup();
+    resetSceneState();
+    setMode('edit');
+  }, [discussionTTS, mode, resetSceneState, setMode]);
+
   // Auto-exit edit mode whenever the current scene becomes uneditable
   // (pending generation, no scenes, currently generating). Predicate lives in
   // lib/edit/stage-mode so it can be unit-tested without rendering Stage.
   useEffect(() => {
-    if (mode !== 'edit') return;
-    const editable = isCurrentSceneEditable({
-      currentSceneId,
-      sceneCount: scenes.length,
-      generatingOutlineCount: generatingOutlines.length,
-      hasCurrentScene: !!currentScene,
-    });
-    if (!editable) {
+    if (mode === 'edit' && !isEditable) {
       setMode('playback');
     }
-  }, [mode, currentSceneId, scenes.length, generatingOutlines.length, currentScene, setMode]);
+  }, [mode, isEditable, setMode]);
 
   const clearPresentationIdleTimer = useCallback(() => {
     if (presentationIdleTimerRef.current) {
@@ -974,14 +998,24 @@ export function Stage({
         isPresenting && !controlsVisible && 'cursor-none',
       )}
     >
-      {/* Scene Sidebar */}
-      <SceneSidebar
-        collapsed={sidebarCollapsed}
-        onCollapseChange={setSidebarCollapsed}
-        onSceneSelect={gatedSceneSwitch}
-        onRetryOutline={onRetryOutline}
-        isCourseComplete={isCourseComplete}
-      />
+      {/* Scene Sidebar — playback uses the full SceneSidebar (with completion
+          page entry, retry-failed-outline UI, etc); edit (Pro) mode swaps to a
+          purpose-built EditModeSidebar with add/delete/reorder. */}
+      {mode === 'edit' ? (
+        <EditModeSidebar
+          collapsed={sidebarCollapsed}
+          onCollapseChange={setSidebarCollapsed}
+          onSceneSelect={gatedSceneSwitch}
+        />
+      ) : (
+        <SceneSidebar
+          collapsed={sidebarCollapsed}
+          onCollapseChange={setSidebarCollapsed}
+          onSceneSelect={gatedSceneSwitch}
+          onRetryOutline={onRetryOutline}
+          isCourseComplete={isCourseComplete}
+        />
+      )}
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col overflow-hidden min-w-0 relative">
@@ -992,6 +1026,9 @@ export function Stage({
               currentScene?.title ||
               (isCourseComplete && isPendingScene ? t('stage.courseComplete') : '')
             }
+            mode={mode}
+            canEdit={isEditable}
+            onToggleEditMode={handleToggleEditMode}
           />
         )}
 
@@ -1028,7 +1065,9 @@ export function Stage({
               (chatIsStreaming && (chatSessionType === 'qa' || chatSessionType === 'discussion'))
             }
             onStopDiscussion={handleStopDiscussion}
-            hideToolbar={mode === 'playback' || (isPresenting && !controlsVisible)}
+            hideToolbar={
+              mode === 'playback' || mode === 'edit' || (isPresenting && !controlsVisible)
+            }
             isPendingScene={isPendingScene}
             isCourseComplete={isCourseComplete}
             isGenerationFailed={
@@ -1184,60 +1223,73 @@ export function Stage({
         )}
       </div>
 
-      {/* Chat Area */}
-      <ChatArea
-        ref={chatAreaRef}
-        width={chatAreaWidth}
-        onWidthChange={setChatAreaWidth}
-        collapsed={chatAreaCollapsed}
-        onCollapseChange={setChatAreaCollapsed}
-        activeBubbleId={activeBubbleId}
-        onActiveBubble={(id) => setActiveBubbleId(id)}
-        currentSceneId={currentSceneId}
-        onLiveSpeech={(text, agentId) => {
-          // Capture epoch at call time — discard if scene has changed since
-          const epoch = sceneEpochRef.current;
-          // Use queueMicrotask to let any pending scene-switch reset settle first
-          queueMicrotask(() => {
-            if (sceneEpochRef.current !== epoch) return; // stale — scene changed
-            setLiveSpeech(text);
-            if (agentId !== undefined) {
-              setSpeakingAgentId(agentId);
-            }
-            if (text !== null || agentId) {
-              setChatIsStreaming(true);
-              setChatSessionType(chatAreaRef.current?.getActiveSessionType?.() ?? null);
-              setIsTopicPending(false);
-            } else if (text === null && agentId === null) {
-              setChatIsStreaming(false);
-              // Don't clear chatSessionType here — it's needed by the stop
-              // button when director cues user (cue_user → done → liveSpeech null).
-              // It gets properly cleared in doSessionCleanup and scene change.
-            }
-          });
-        }}
-        onSpeechProgress={(ratio) => {
-          const epoch = sceneEpochRef.current;
-          queueMicrotask(() => {
-            if (sceneEpochRef.current !== epoch) return;
-            setSpeechProgress(ratio);
-          });
-        }}
-        onThinking={(state) => {
-          const epoch = sceneEpochRef.current;
-          queueMicrotask(() => {
-            if (sceneEpochRef.current !== epoch) return;
-            setThinkingState(state);
-          });
-        }}
-        onCueUser={(_fromAgentId, _prompt) => {
-          setIsCueUser(true);
-        }}
-        onLiveSessionError={handleLiveSessionError}
-        onStopSession={doSessionCleanup}
-        onSegmentSealed={discussionTTS.handleSegmentSealed}
-        shouldHoldAfterReveal={discussionTTS.shouldHold}
-      />
+      {/* Chat Area — slides out in edit (Pro) mode for full-canvas editing. */}
+      <AnimatePresence initial={false}>
+        {mode !== 'edit' && (
+          <motion.div
+            key="chat-area"
+            initial={{ x: '100%', opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: '100%', opacity: 0 }}
+            transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
+            className="flex shrink-0"
+          >
+            <ChatArea
+              ref={chatAreaRef}
+              width={chatAreaWidth}
+              onWidthChange={setChatAreaWidth}
+              collapsed={chatAreaCollapsed}
+              onCollapseChange={setChatAreaCollapsed}
+              activeBubbleId={activeBubbleId}
+              onActiveBubble={(id) => setActiveBubbleId(id)}
+              currentSceneId={currentSceneId}
+              onLiveSpeech={(text, agentId) => {
+                // Capture epoch at call time — discard if scene has changed since
+                const epoch = sceneEpochRef.current;
+                // Use queueMicrotask to let any pending scene-switch reset settle first
+                queueMicrotask(() => {
+                  if (sceneEpochRef.current !== epoch) return; // stale — scene changed
+                  setLiveSpeech(text);
+                  if (agentId !== undefined) {
+                    setSpeakingAgentId(agentId);
+                  }
+                  if (text !== null || agentId) {
+                    setChatIsStreaming(true);
+                    setChatSessionType(chatAreaRef.current?.getActiveSessionType?.() ?? null);
+                    setIsTopicPending(false);
+                  } else if (text === null && agentId === null) {
+                    setChatIsStreaming(false);
+                    // Don't clear chatSessionType here — it's needed by the stop
+                    // button when director cues user (cue_user → done → liveSpeech null).
+                    // It gets properly cleared in doSessionCleanup and scene change.
+                  }
+                });
+              }}
+              onSpeechProgress={(ratio) => {
+                const epoch = sceneEpochRef.current;
+                queueMicrotask(() => {
+                  if (sceneEpochRef.current !== epoch) return;
+                  setSpeechProgress(ratio);
+                });
+              }}
+              onThinking={(state) => {
+                const epoch = sceneEpochRef.current;
+                queueMicrotask(() => {
+                  if (sceneEpochRef.current !== epoch) return;
+                  setThinkingState(state);
+                });
+              }}
+              onCueUser={(_fromAgentId, _prompt) => {
+                setIsCueUser(true);
+              }}
+              onLiveSessionError={handleLiveSessionError}
+              onStopSession={doSessionCleanup}
+              onSegmentSealed={discussionTTS.handleSegmentSealed}
+              shouldHoldAfterReveal={discussionTTS.shouldHold}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Scene switch confirmation dialog */}
       <AlertDialog

@@ -12,6 +12,7 @@ import {
   Package,
   Archive,
 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { LanguageSwitcher } from './language-switcher';
@@ -23,12 +24,16 @@ import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
+import type { StageMode } from '@/lib/types/stage';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
+  readonly mode?: StageMode;
+  readonly canEdit?: boolean;
+  readonly onToggleEditMode?: () => void;
 }
 
-export function Header({ currentSceneTitle }: HeaderProps) {
+export function Header({ currentSceneTitle, mode, canEdit, onToggleEditMode }: HeaderProps) {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
@@ -97,11 +102,9 @@ export function Header({ currentSceneTitle }: HeaderProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-4 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm shrink-0">
+        <div className="flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm shrink-0">
           {/* Language Selector */}
           <LanguageSwitcher onOpen={() => setThemeOpen(false)} />
-
-          <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
 
           {/* Theme Selector */}
           <div className="relative" ref={themeRef}>
@@ -163,8 +166,6 @@ export function Header({ currentSceneTitle }: HeaderProps) {
             )}
           </div>
 
-          <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
-
           {/* Settings Button */}
           <div className="relative">
             <button
@@ -175,6 +176,44 @@ export function Header({ currentSceneTitle }: HeaderProps) {
             </button>
           </div>
         </div>
+
+        {/* Pro Mode (edit) toggle — caps label + switch. Surfaces only the
+            two i18n strings already shipped in stage.editCourse/doneEditing
+            from #561; consumer code lives behind the optional onToggleEditMode
+            prop so embedders without an edit affordance render the same header. */}
+        {onToggleEditMode && (
+          <label
+            className={cn(
+              'shrink-0 inline-flex items-center gap-2.5 h-9 px-3 rounded-full transition-colors duration-200',
+              'bg-white/60 dark:bg-gray-800/60 backdrop-blur-md border shadow-sm',
+              mode === 'edit'
+                ? 'border-violet-500/60 dark:border-violet-400/60'
+                : 'border-gray-100/50 dark:border-gray-700/50',
+              !canEdit && mode !== 'edit'
+                ? 'opacity-60 cursor-not-allowed'
+                : 'cursor-pointer hover:border-violet-400/60 dark:hover:border-violet-500/50',
+            )}
+            title={mode === 'edit' ? t('stage.doneEditing') : t('stage.editCourse')}
+          >
+            <span
+              className={cn(
+                'text-[11px] font-bold uppercase tracking-[0.14em] tabular-nums select-none transition-colors duration-200',
+                mode === 'edit'
+                  ? 'text-violet-600 dark:text-violet-300'
+                  : 'text-gray-500 dark:text-gray-400',
+              )}
+            >
+              {t('edit.proMode')}
+            </span>
+            <Switch
+              checked={mode === 'edit'}
+              onCheckedChange={onToggleEditMode}
+              disabled={!canEdit && mode !== 'edit'}
+              aria-label={mode === 'edit' ? t('stage.doneEditing') : t('stage.editCourse')}
+              className="data-[state=checked]:bg-violet-600 dark:data-[state=checked]:bg-violet-500"
+            />
+          </label>
+        )}
 
         {/* Export Dropdown */}
         <div className="relative" ref={exportRef}>

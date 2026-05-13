@@ -114,7 +114,12 @@ export function CanvasArea({
           {currentScene && !whiteboardOpen && (
             <div className="absolute inset-0">
               <SceneProvider>
-                <SceneRenderer scene={currentScene} mode={mode} />
+                <SceneRenderer
+                  scene={currentScene}
+                  mode={mode}
+                  sidebarCollapsed={sidebarCollapsed}
+                  onToggleSidebar={onToggleSidebar}
+                />
               </SceneProvider>
             </div>
           )}
