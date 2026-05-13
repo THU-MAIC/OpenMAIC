@@ -148,6 +148,29 @@
     "editCourse": "Редактировать курс",
     "doneEditing": "Завершить редактирование"
   },
+  "edit": {
+    "proMode": "Pro",
+    "undo": "Отменить",
+    "redo": "Повторить",
+    "title": "Редактирование · {{type}}",
+    "unsupportedScene": "{{type}} пока нельзя редактировать",
+    "sceneType": {
+      "slide": "Слайд",
+      "quiz": "Тест",
+      "interactive": "Интерактив",
+      "pbl": "PBL"
+    },
+    "sidebar": {
+      "pages": "Страницы",
+      "addSlide": "Добавить слайд",
+      "newSlide": "Новый слайд",
+      "expand": "Развернуть боковую панель",
+      "collapse": "Свернуть боковую панель",
+      "moveUp": "Поднять",
+      "moveDown": "Опустить",
+      "delete": "Удалить"
+    }
+  },
   "classroomComplete": {
     "title": "Курс завершён",
     "trailLabels": {

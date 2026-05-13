@@ -148,6 +148,29 @@
     "editCourse": "編輯課程",
     "doneEditing": "完成編輯"
   },
+  "edit": {
+    "proMode": "專業模式",
+    "undo": "復原",
+    "redo": "重做",
+    "title": "編輯 · {{type}}",
+    "unsupportedScene": "{{type}}暫不支援編輯",
+    "sceneType": {
+      "slide": "投影片",
+      "quiz": "測驗",
+      "interactive": "互動",
+      "pbl": "PBL"
+    },
+    "sidebar": {
+      "pages": "頁面",
+      "addSlide": "新增投影片",
+      "newSlide": "新投影片",
+      "expand": "展開側欄",
+      "collapse": "摺疊側欄",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "delete": "刪除"
+    }
+  },
   "whiteboard": {
     "title": "互動白板",
     "open": "開啟白板",

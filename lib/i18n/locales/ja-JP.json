@@ -148,6 +148,29 @@
     "editCourse": "コースを編集",
     "doneEditing": "編集を完了"
   },
+  "edit": {
+    "proMode": "プロモード",
+    "undo": "元に戻す",
+    "redo": "やり直し",
+    "title": "編集 · {{type}}",
+    "unsupportedScene": "{{type}}はまだ編集できません",
+    "sceneType": {
+      "slide": "スライド",
+      "quiz": "クイズ",
+      "interactive": "インタラクティブ",
+      "pbl": "PBL"
+    },
+    "sidebar": {
+      "pages": "ページ",
+      "addSlide": "スライドを追加",
+      "newSlide": "新しいスライド",
+      "expand": "サイドバーを展開",
+      "collapse": "サイドバーを折りたたむ",
+      "moveUp": "上に移動",
+      "moveDown": "下に移動",
+      "delete": "削除"
+    }
+  },
   "classroomComplete": {
     "title": "コース完了",
     "trailLabels": {

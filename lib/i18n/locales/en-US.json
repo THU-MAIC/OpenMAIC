@@ -148,6 +148,29 @@
     "editCourse": "Edit course",
     "doneEditing": "Done editing"
   },
+  "edit": {
+    "proMode": "Pro",
+    "undo": "Undo",
+    "redo": "Redo",
+    "title": "Editing · {{type}}",
+    "unsupportedScene": "{{type}} is not editable yet",
+    "sceneType": {
+      "slide": "Slide",
+      "quiz": "Quiz",
+      "interactive": "Interactive",
+      "pbl": "PBL"
+    },
+    "sidebar": {
+      "pages": "Pages",
+      "addSlide": "Add slide",
+      "newSlide": "New slide",
+      "expand": "Expand sidebar",
+      "collapse": "Collapse sidebar",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "delete": "Delete"
+    }
+  },
   "classroomComplete": {
     "title": "Course complete",
     "trailLabels": {

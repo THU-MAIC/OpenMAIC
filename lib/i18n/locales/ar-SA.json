@@ -148,6 +148,29 @@
     "editCourse": "تحرير الدورة",
     "doneEditing": "إنهاء التحرير"
   },
+  "edit": {
+    "proMode": "احترافي",
+    "undo": "تراجع",
+    "redo": "إعادة",
+    "title": "تحرير · {{type}}",
+    "unsupportedScene": "{{type}} غير قابل للتحرير بعد",
+    "sceneType": {
+      "slide": "شريحة",
+      "quiz": "اختبار",
+      "interactive": "تفاعلي",
+      "pbl": "PBL"
+    },
+    "sidebar": {
+      "pages": "الصفحات",
+      "addSlide": "إضافة شريحة",
+      "newSlide": "شريحة جديدة",
+      "expand": "توسيع الشريط الجانبي",
+      "collapse": "طي الشريط الجانبي",
+      "moveUp": "نقل لأعلى",
+      "moveDown": "نقل لأسفل",
+      "delete": "حذف"
+    }
+  },
   "classroomComplete": {
     "title": "اكتملت الدورة",
     "trailLabels": {
