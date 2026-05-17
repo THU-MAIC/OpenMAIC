@@ -90,17 +90,25 @@ export interface LLMProviderCfgLike {
 }
 
 /**
- * Canonical "this LLM provider is usable" predicate: it has valid credentials
- * (client key, server config, or doesn't require a key), at least one model,
- * and a resolvable endpoint. Single source of truth shared by the generation
- * toolbar selector and the landing-page generate gate (#580).
+ * Canonical "this LLM provider is usable" predicate — single source of truth
+ * shared by the generation toolbar selector and the landing-page generate
+ * gate (#580). Deliberately consistent with {@link isProviderUsable} so the
+ * gate/toolbar can never claim a provider is usable when the server-sync
+ * reconcile would not actually select it:
+ *
+ * - server-configured ⇒ usable;
+ * - keyless provider (ollama/lemonade) ⇒ usable ONLY once the user sets an
+ *   explicit baseUrl — the registry `defaultBaseUrl` alone is not user intent;
+ * - key-requiring provider ⇒ needs a client key AND a resolvable endpoint.
+ *
+ * Always also requires ≥1 model.
  */
 export function isLLMProviderConfigured(config: LLMProviderCfgLike): boolean {
-  return (
-    (!config.requiresApiKey || !!config.apiKey || !!config.isServerConfigured) &&
-    config.models.length >= 1 &&
-    (!!config.baseUrl || !!config.defaultBaseUrl || !!config.serverBaseUrl)
-  );
+  if (config.models.length < 1) return false;
+  if (config.isServerConfigured) return true;
+  if (config.requiresApiKey === false) return !!config.baseUrl;
+  if (!config.apiKey) return false;
+  return !!(config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl);
 }
 
 /**

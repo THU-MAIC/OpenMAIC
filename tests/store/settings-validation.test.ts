@@ -204,4 +204,50 @@ describe('hasUsableLLMProvider', () => {
     expect(hasUsableLLMProvider(undefined)).toBe(false);
     expect(hasUsableLLMProvider(null)).toBe(false);
   });
+
+  it('treats a keyless provider with only a registry defaultBaseUrl as NOT configured', () => {
+    // ollama/lemonade ship requiresApiKey:false + a defaultBaseUrl but an
+    // empty user baseUrl by default — must NOT count as usable, otherwise
+    // the page gate is true while reconcile never selects it (#580 keyless).
+    expect(
+      hasUsableLLMProvider({
+        ollama: {
+          requiresApiKey: false,
+          apiKey: '',
+          baseUrl: '',
+          models: [{ id: 'llama3.3' }],
+          defaultBaseUrl: 'http://localhost:11434/v1',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('treats a keyless provider as configured once the user sets an explicit baseUrl', () => {
+    expect(
+      hasUsableLLMProvider({
+        ollama: {
+          requiresApiKey: false,
+          apiKey: '',
+          baseUrl: 'http://my-ollama:11434/v1',
+          models: [{ id: 'llama3.3' }],
+          defaultBaseUrl: 'http://localhost:11434/v1',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('treats a keyless provider as configured when server-configured', () => {
+    expect(
+      hasUsableLLMProvider({
+        ollama: {
+          requiresApiKey: false,
+          apiKey: '',
+          baseUrl: '',
+          isServerConfigured: true,
+          models: [{ id: 'llama3.3' }],
+          serverBaseUrl: 'http://srv/v1',
+        },
+      }),
+    ).toBe(true);
+  });
 });
