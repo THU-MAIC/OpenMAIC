@@ -180,15 +180,6 @@
         "actionDismiss": "حسناً"
       }
     },
-    "geometry": {
-      "label": "الموضع والحجم",
-      "tooltip": "الموضع والحجم",
-      "x": "X",
-      "y": "Y",
-      "width": "العرض",
-      "height": "الارتفاع",
-      "rotate": "التدوير"
-    },
     "text": {
       "label": "نص",
       "font": "الخط",

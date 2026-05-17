@@ -180,15 +180,6 @@
         "actionDismiss": "Got it"
       }
     },
-    "geometry": {
-      "label": "Position & size",
-      "tooltip": "Position & size",
-      "x": "X",
-      "y": "Y",
-      "width": "Width",
-      "height": "Height",
-      "rotate": "Rotation"
-    },
     "text": {
       "label": "Text",
       "font": "Font",

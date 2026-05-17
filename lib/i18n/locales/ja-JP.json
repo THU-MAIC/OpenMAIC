@@ -180,15 +180,6 @@
         "actionDismiss": "了解"
       }
     },
-    "geometry": {
-      "label": "位置とサイズ",
-      "tooltip": "位置とサイズ",
-      "x": "X",
-      "y": "Y",
-      "width": "幅",
-      "height": "高さ",
-      "rotate": "回転"
-    },
     "text": {
       "label": "テキスト",
       "font": "フォント",

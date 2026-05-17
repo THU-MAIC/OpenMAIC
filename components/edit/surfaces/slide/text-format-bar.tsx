@@ -1,7 +1,5 @@
 'use client';
 
-// i18n keys (edit.text.*) and font-name labels are added in Task 6; they render as raw keys until then.
-
 import { useCallback } from 'react';
 import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, List } from 'lucide-react';
 import type { TextAttrs } from '@/lib/prosemirror/utils';

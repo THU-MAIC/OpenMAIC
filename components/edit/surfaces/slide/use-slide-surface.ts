@@ -59,7 +59,7 @@ export function buildFloatingActions(
 ): FloatingAction[] {
   if (!textTarget) return [];
   // NOTE: The bar is surfaced via FloatingToolbar's popover slot (one button → popover → bar),
-  // not always-inline. This is an ergonomics tradeoff to be addressed in Task 8 polish.
+  // not always-inline. This is a popover-vs-inline ergonomics tradeoff deferred for future polish.
   return [
     {
       id: 'text-format',

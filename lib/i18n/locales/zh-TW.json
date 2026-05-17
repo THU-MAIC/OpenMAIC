@@ -180,15 +180,6 @@
         "actionDismiss": "知道了"
       }
     },
-    "geometry": {
-      "label": "位置與尺寸",
-      "tooltip": "位置與尺寸",
-      "x": "X",
-      "y": "Y",
-      "width": "寬",
-      "height": "高",
-      "rotate": "旋轉"
-    },
     "text": {
       "label": "文字",
       "font": "字型",
