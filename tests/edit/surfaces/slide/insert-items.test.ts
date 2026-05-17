@@ -7,7 +7,7 @@ import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit
 
 describe('slide insert palette', () => {
   beforeEach(() => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal store-state stub for unit test
+    /* eslint-disable @typescript-eslint/no-explicit-any */
     useSlideEditSession.setState({
       history: {
         past: [],
@@ -15,6 +15,7 @@ describe('slide insert palette', () => {
         future: [],
       },
     } as any);
+    /* eslint-enable @typescript-eslint/no-explicit-any */
   });
 
   afterEach(() => {

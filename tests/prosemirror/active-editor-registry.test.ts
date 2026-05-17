@@ -1,10 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
+import type { Transaction } from 'prosemirror-state';
 import {
   registerActiveTextEditor,
   runActiveTextCommand,
   hasActiveTextEditor,
 } from '@/lib/prosemirror/active-editor-registry';
 import { shouldPushAttrs } from '@/lib/prosemirror/selection-sync';
+
+/** Minimal transaction stub — only the three boolean fields shouldPushAttrs reads. */
+const tx = (p: { selectionSet?: boolean; docChanged?: boolean; storedMarksSet?: boolean }) =>
+  p as unknown as Transaction;
 
 describe('active text editor registry', () => {
   it('routes a command to the registered element and clears on unregister', () => {
@@ -21,21 +26,17 @@ describe('active text editor registry', () => {
 
 describe('selection sync gate', () => {
   it('pushes on selection move, doc change, or stored-marks change', () => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal transaction stub for unit test
     expect(
-      shouldPushAttrs({ selectionSet: true, docChanged: false, storedMarksSet: false } as any),
+      shouldPushAttrs(tx({ selectionSet: true, docChanged: false, storedMarksSet: false })),
     ).toBe(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal transaction stub for unit test
     expect(
-      shouldPushAttrs({ selectionSet: false, docChanged: true, storedMarksSet: false } as any),
+      shouldPushAttrs(tx({ selectionSet: false, docChanged: true, storedMarksSet: false })),
     ).toBe(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal transaction stub for unit test
     expect(
-      shouldPushAttrs({ selectionSet: false, docChanged: false, storedMarksSet: true } as any),
+      shouldPushAttrs(tx({ selectionSet: false, docChanged: false, storedMarksSet: true })),
     ).toBe(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal transaction stub for unit test
     expect(
-      shouldPushAttrs({ selectionSet: false, docChanged: false, storedMarksSet: false } as any),
+      shouldPushAttrs(tx({ selectionSet: false, docChanged: false, storedMarksSet: false })),
     ).toBe(false);
   });
 });
