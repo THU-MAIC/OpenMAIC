@@ -25,7 +25,6 @@ import { createLogger } from '@/lib/logger';
 import {
   validateProvider,
   resolveSelectedModel,
-  isProviderUsable,
   isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
 
@@ -344,6 +343,35 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
   });
   return config;
 };
+
+/**
+ * Single shared LLM selection resolver (#580). Given a providers config and
+ * the current (providerId, modelId), return the resolved selection that
+ * upholds the invariant for ANY config mutation — clearing/adding a key,
+ * editing models, deleting a provider, import, reset:
+ *
+ * - keep the current provider if it is still usable;
+ * - else fall back to the first usable provider;
+ * - else State A (empty selection).
+ *
+ * Then resolve a concrete model for the chosen provider. Used by both
+ * setProviderConfig (single edit) and setProvidersConfig (bulk) so the two
+ * paths can never diverge — the per-call-site asymmetry #580 set out to kill.
+ */
+function resolveLLMSelection(
+  config: ProvidersConfig,
+  currentProviderId: ProviderId,
+  currentModelId: string,
+): { providerId: ProviderId; modelId: string } {
+  const isUsable = (id: ProviderId) => !!config[id] && isLLMProviderConfigured(config[id]);
+  const providerId = isUsable(currentProviderId)
+    ? currentProviderId
+    : ((Object.keys(config) as ProviderId[]).find(isUsable) ?? ('' as ProviderId));
+  const modelId = providerId
+    ? resolveSelectedModel(currentModelId, config[providerId]?.models ?? [])
+    : '';
+  return { providerId, modelId };
+}
 
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
@@ -804,59 +832,47 @@ export const useSettingsStore = create<SettingsState>()(
 
         setProviderConfig: (providerId, config) =>
           set((state) => {
-            const mergedProvider = {
-              ...state.providersConfig[providerId],
-              ...config,
-            };
             const providersConfig = {
               ...state.providersConfig,
-              [providerId]: mergedProvider,
+              [providerId]: {
+                ...state.providersConfig[providerId],
+                ...config,
+              },
             };
-            const base = {
+            // Re-resolve through the shared resolver (#580): a single config
+            // edit can make the active provider usable (adopt + pick a model),
+            // make it INVALID — e.g. the user clears its API key — (fall back
+            // to another usable provider or State A), or change its model list
+            // (re-pick the model). All handled atomically here, never leaving
+            // an invalid/stale (provider, model) selected.
+            const { providerId: nextProvider, modelId: nextModel } = resolveLLMSelection(
+              providersConfig,
+              state.providerId,
+              state.modelId,
+            );
+            return {
               providersConfig,
               thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, providersConfig),
+              ...(nextProvider !== state.providerId && { providerId: nextProvider }),
+              ...(nextModel !== state.modelId && { modelId: nextModel }),
             };
-            // Atomic invariant (#580): if this edit makes the provider usable
-            // and it is the active LLM provider (or nothing is selected yet),
-            // resolve a concrete model in the same update — never leave a
-            // usable provider with an empty/stale model. When nothing is
-            // selected, this also adopts `providerId` (the first-load
-            // API-key path) so state A → state B happens atomically.
-            const isActiveOrUnset = state.providerId === providerId || !state.providerId;
-            if (isActiveOrUnset && isProviderUsable(mergedProvider)) {
-              const modelId = resolveSelectedModel(
-                state.modelId,
-                mergedProvider.models ?? [],
-              );
-              if (modelId) {
-                return { ...base, providerId, modelId };
-              }
-            }
-            return base;
           }),
 
         setProvidersConfig: (config) =>
           set((state) => {
-            // Re-resolve the selection at the source (#580): any bulk config
-            // change — deleting a provider/model, import, reset — must keep
-            // "usable provider ⇒ concrete model" and never leave the deleted/
-            // invalid provider selected. Keep the current provider if it is
-            // still usable, else fall back to the first usable one, else go
-            // cleanly to State A (empty selection).
-            const isUsable = (id: ProviderId) =>
-              !!config[id] && isLLMProviderConfigured(config[id]);
-            const validProvider = isUsable(state.providerId)
-              ? state.providerId
-              : ((Object.keys(config) as ProviderId[]).find(isUsable) ??
-                ('' as ProviderId));
-            const validModel = validProvider
-              ? resolveSelectedModel(state.modelId, config[validProvider]?.models ?? [])
-              : '';
+            // Bulk config replace (delete provider/model, import, reset): same
+            // shared resolver as setProviderConfig so the two paths can never
+            // diverge — never leave the deleted/invalid provider selected.
+            const { providerId: nextProvider, modelId: nextModel } = resolveLLMSelection(
+              config,
+              state.providerId,
+              state.modelId,
+            );
             return {
               providersConfig: config,
               thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, config),
-              ...(validProvider !== state.providerId && { providerId: validProvider }),
-              ...(validModel !== state.modelId && { modelId: validModel }),
+              ...(nextProvider !== state.providerId && { providerId: nextProvider }),
+              ...(nextModel !== state.modelId && { modelId: nextModel }),
             };
           }),
 

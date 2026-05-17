@@ -1240,6 +1240,85 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
     expect(store.getState().modelId).toBe('');
   });
 
+  it('clearing the selected provider API key (it becomes invalid) drops the stale selection', async () => {
+    const store = await getStore();
+    const base = store.getState().providersConfig;
+
+    const stripped = Object.fromEntries(
+      Object.entries(base).map(([id, c]) => [
+        id,
+        { ...c, apiKey: '', isServerConfigured: false },
+      ]),
+    ) as typeof base;
+    const withCustom = {
+      ...stripped,
+      'custom-tencent': {
+        ...base.openai,
+        apiKey: 'sk-t',
+        baseUrl: 'https://tencent.example/v1',
+        models: [{ id: 'hy3-preview', name: 'Hy3' }],
+        name: 'Tencent',
+        requiresApiKey: true,
+      },
+    } as typeof base;
+
+    store.setState({
+      providersConfig: withCustom,
+      providerId: 'custom-tencent',
+      modelId: 'hy3-preview',
+    });
+
+    // The realistic case: user clears the selected provider's key in Settings
+    // → it becomes invalid. The selection must NOT stay on it.
+    store.getState().setProviderConfig('custom-tencent', { apiKey: '' });
+
+    expect(store.getState().providerId).not.toBe('custom-tencent');
+    expect(store.getState().providerId).toBe('');
+    expect(store.getState().modelId).toBe('');
+  });
+
+  it('clearing a non-selected provider key keeps the still-usable current selection', async () => {
+    const store = await getStore();
+    const base = store.getState().providersConfig;
+
+    const stripped = Object.fromEntries(
+      Object.entries(base).map(([id, c]) => [
+        id,
+        { ...c, apiKey: '', isServerConfigured: false },
+      ]),
+    ) as typeof base;
+    const withTwo = {
+      ...stripped,
+      'custom-a': {
+        ...base.openai,
+        apiKey: 'sk-a',
+        baseUrl: 'https://a.example/v1',
+        models: [{ id: 'a-1', name: 'A1' }],
+        name: 'A',
+        requiresApiKey: true,
+      },
+      'custom-b': {
+        ...base.openai,
+        apiKey: 'sk-b',
+        baseUrl: 'https://b.example/v1',
+        models: [{ id: 'b-1', name: 'B1' }],
+        name: 'B',
+        requiresApiKey: true,
+      },
+    } as typeof base;
+
+    store.setState({
+      providersConfig: withTwo,
+      providerId: 'custom-a',
+      modelId: 'a-1',
+    });
+
+    store.getState().setProviderConfig('custom-b', { apiKey: '' });
+
+    expect(store.getState().providerId).toBe('custom-a');
+    expect(store.getState().modelId).toBe('a-1');
+  });
+
   it('deleting a non-selected provider keeps the still-usable current selection', async () => {
     const store = await getStore();
     const base = store.getState().providersConfig;
