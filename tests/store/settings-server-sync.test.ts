@@ -1047,6 +1047,129 @@ describe('fetchServerProviders — LLM cross-provider fallback', () => {
   });
 });
 
+describe('usable provider ⇒ concrete model invariant (#580)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    return useSettingsStore;
+  }
+
+  it('server sync: LLM provider usable via client API key resolves a concrete model (not empty)', async () => {
+    const store = await getStore();
+
+    // First sync establishes autoConfigApplied; server offers nothing.
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    // Illegal state #580 targets: a usable provider (client key) with empty model.
+    store.setState({
+      providerId: 'openai',
+      modelId: '',
+      providersConfig: {
+        ...store.getState().providersConfig,
+        openai: { ...store.getState().providersConfig.openai, apiKey: 'sk-client' },
+      },
+    });
+
+    // Server still offers nothing — openai is usable ONLY via the client key.
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).not.toBe('');
+    expect(store.getState().modelId).toBe('gpt-4o');
+  });
+
+  it('first load: server-restricted model list is preferred over the built-in first model', async () => {
+    const store = await getStore();
+
+    // First ever sync, nothing selected, server restricts openai to a model
+    // that is NOT the built-in first ('gpt-4o').
+    mockServerResponse({ providers: { openai: { models: ['gpt-4o-mini'] } } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).toBe('gpt-4o-mini');
+  });
+
+  it('first load: server-configured LLM provider auto-selects provider and a concrete model', async () => {
+    const store = await getStore();
+
+    mockServerResponse({ providers: { anthropic: { models: ['claude-sonnet-4-6'] } } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('anthropic');
+    expect(store.getState().modelId).toBe('claude-sonnet-4-6');
+  });
+
+  it('API-key entry resolves a concrete model atomically (no waiting for next server sync)', async () => {
+    const store = await getStore();
+
+    // openai is the active provider but not yet usable (no key) and has no
+    // model selected — the illegal interim state #580 must not persist.
+    store.setState({ providerId: 'openai', modelId: '' });
+
+    store.getState().setProviderConfig('openai', {
+      apiKey: 'sk-client',
+      baseUrl: '',
+      requiresApiKey: true,
+    });
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).toBe('gpt-4o');
+  });
+
+  it('configuring a non-active provider does not hijack the current selection', async () => {
+    const store = await getStore();
+
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+    store.setState({
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      providersConfig: {
+        ...store.getState().providersConfig,
+        anthropic: { ...store.getState().providersConfig.anthropic, apiKey: 'sk-a' },
+      },
+    });
+
+    store.getState().setProviderConfig('openai', {
+      apiKey: 'sk-o',
+      baseUrl: '',
+      requiresApiKey: true,
+    });
+
+    expect(store.getState().providerId).toBe('anthropic');
+    expect(store.getState().modelId).toBe('claude-sonnet-4-6');
+  });
+
+  it('switching image provider resolves the new provider model (not a stale one)', async () => {
+    const store = await getStore();
+
+    // Start on seedream with a stale/foreign model id selected.
+    store.setState({ imageProviderId: 'seedream', imageModelId: 'stale-model' });
+    store.getState().setImageProvider('qwen-image');
+
+    expect(store.getState().imageProviderId).toBe('qwen-image');
+    expect(store.getState().imageModelId).toBe('qwen-image-max');
+  });
+
+  it('switching video provider resolves the new provider model (not a stale one)', async () => {
+    const store = await getStore();
+
+    // Default state is seedance/doubao-seedance…; switch to kling.
+    store.getState().setVideoProvider('kling');
+
+    expect(store.getState().videoProviderId).toBe('kling');
+    expect(store.getState().videoModelId).toBe('kling-v2-6');
+  });
+});
+
 describe('settings merge migration — custom provider baseUrl', () => {
   beforeEach(() => {
     vi.resetModules();

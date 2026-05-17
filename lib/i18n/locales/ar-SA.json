@@ -611,7 +611,6 @@
     "step3StartUsing": "بعد الحفظ، سيستخدم النظام النموذج المحدد",
     "activeModel": "النموذج النشط",
     "activeModelDescription": "اختر النموذج لمحادثات الذكاء الاصطناعي وتوليد المحتوى",
-    "selectModel": "اختر النموذج",
     "searchModels": "البحث في النماذج",
     "noModelsFound": "لم يتم العثور على نماذج مطابقة",
     "noConfiguredProviders": "لا يوجد مزوّدون مُكوّنون",

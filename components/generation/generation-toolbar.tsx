@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { isLLMProviderConfigured } from '@/lib/store/settings-validation';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web-search/constants';
@@ -93,12 +94,7 @@ export function GenerationToolbar({
   // Configured LLM providers (only those with valid credentials + models + endpoint)
   const configuredProviders = providersConfig
     ? Object.entries(providersConfig)
-        .filter(
-          ([, config]) =>
-            (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
-            config.models.length >= 1 &&
-            (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
-        )
+        .filter(([, config]) => isLLMProviderConfigured(config))
         .map(([id, config]) => ({
           id: id as ProviderId,
           name: config.name,
@@ -714,7 +710,10 @@ function ModelSettingsPopover({
   const currentProviderName =
     currentProvider?.name ?? currentProviderConfig?.name ?? currentProviderId;
   const currentProviderIcon = currentProvider?.icon ?? currentProviderConfig?.icon;
-  const currentModelLabel = currentModel?.name || currentModelId || t('settings.selectModel');
+  // Under the #580 invariant this popover only renders when a usable provider
+  // exists, which guarantees a concrete model — so the label is always
+  // provider / model (no "Select Model" fallback state).
+  const currentModelLabel = currentModel?.name || currentModelId;
   const currentThinkingValue = getThinkingDisplayValue(
     currentModel?.capabilities?.thinking,
     thinkingConfig,
@@ -762,9 +761,7 @@ function ModelSettingsPopover({
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent>
-          {currentModelId
-            ? `${currentProviderConfig?.name || currentProviderId} / ${currentModelId}`
-            : t('settings.selectModel')}
+          {`${currentProviderConfig?.name || currentProviderId} / ${currentModelId}`}
         </TooltipContent>
       </Tooltip>
 

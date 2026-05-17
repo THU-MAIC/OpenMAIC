@@ -53,3 +53,58 @@ export function validateModel(
   if (availableModels.some((m) => m.id === currentModelId)) return currentModelId;
   return availableModels[0]?.id ?? '';
 }
+
+/**
+ * Resolve the model selection for a usable provider.
+ *
+ * Enforces the invariant "usable provider ⇒ a concrete model is selected":
+ * keeps the current model if still valid, otherwise falls back to the first
+ * available model. Unlike {@link validateModel} it has no empty-input
+ * short-circuit, so it returns '' ONLY when the model list is empty (i.e. the
+ * provider is not usable). Use this for model *selection resolution*; use
+ * validateModel only for pure validation.
+ */
+export function resolveSelectedModel(
+  currentModelId: string,
+  availableModels: Array<{ id: string }>,
+): string {
+  if (availableModels.some((m) => m.id === currentModelId)) return currentModelId;
+  return availableModels[0]?.id ?? '';
+}
+
+export interface LLMProviderCfgLike {
+  requiresApiKey?: boolean;
+  apiKey?: string;
+  isServerConfigured?: boolean;
+  models: Array<{ id: string }>;
+  baseUrl?: string;
+  defaultBaseUrl?: string;
+  serverBaseUrl?: string;
+}
+
+/**
+ * Canonical "this LLM provider is usable" predicate: it has valid credentials
+ * (client key, server config, or doesn't require a key), at least one model,
+ * and a resolvable endpoint. Single source of truth shared by the generation
+ * toolbar selector and the landing-page generate gate (#580).
+ */
+export function isLLMProviderConfigured(config: LLMProviderCfgLike): boolean {
+  return (
+    (!config.requiresApiKey || !!config.apiKey || !!config.isServerConfigured) &&
+    config.models.length >= 1 &&
+    (!!config.baseUrl || !!config.defaultBaseUrl || !!config.serverBaseUrl)
+  );
+}
+
+/**
+ * Whether at least one LLM provider is usable — i.e. the app is in state B
+ * (≥1 usable provider) rather than state A (must configure a provider). Under
+ * the #580 invariant this is exactly the condition under which a concrete
+ * model is guaranteed to be selected.
+ */
+export function hasUsableLLMProvider(
+  providersConfig: Record<string, LLMProviderCfgLike> | undefined | null,
+): boolean {
+  if (!providersConfig) return false;
+  return Object.values(providersConfig).some(isLLMProviderConfigured);
+}

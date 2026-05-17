@@ -611,7 +611,6 @@
     "step3StartUsing": "保存後、選択したモデルが使用されます",
     "activeModel": "使用中のモデル",
     "activeModelDescription": "AI会話とコンテンツ生成に使用するモデルを選択",
-    "selectModel": "モデルを選択",
     "searchModels": "モデルを検索",
     "noModelsFound": "一致するモデルが見つかりません",
     "noConfiguredProviders": "設定済みのプロバイダーがありません",

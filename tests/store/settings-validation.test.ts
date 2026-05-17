@@ -3,6 +3,8 @@ import {
   isProviderUsable,
   validateProvider,
   validateModel,
+  resolveSelectedModel,
+  hasUsableLLMProvider,
   type ProviderCfgLike,
 } from '@/lib/store/settings-validation';
 
@@ -138,5 +140,68 @@ describe('validateModel', () => {
 
   it('returns current id unchanged when it is empty', () => {
     expect(validateModel('', [{ id: 'gpt-4o' }])).toBe('');
+  });
+});
+
+describe('resolveSelectedModel', () => {
+  it('keeps model when still in available list', () => {
+    expect(resolveSelectedModel('gpt-4o', [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }])).toBe(
+      'gpt-4o',
+    );
+  });
+
+  it('falls back to first model when current is not in list', () => {
+    expect(resolveSelectedModel('gpt-4-turbo', [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }])).toBe(
+      'gpt-4o',
+    );
+  });
+
+  it('falls back to first model when current is empty (the invariant: usable provider ⇒ concrete model)', () => {
+    expect(resolveSelectedModel('', [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }])).toBe('gpt-4o');
+  });
+
+  it('returns empty string only when the model list is empty', () => {
+    expect(resolveSelectedModel('gpt-4o', [])).toBe('');
+    expect(resolveSelectedModel('', [])).toBe('');
+  });
+
+  it('never yields empty when the provider has at least one model', () => {
+    for (const current of ['', 'unknown', 'glm-4']) {
+      expect(resolveSelectedModel(current, [{ id: 'glm-4' }])).not.toBe('');
+    }
+  });
+});
+
+describe('hasUsableLLMProvider', () => {
+  const ok = { apiKey: 'sk-x', models: [{ id: 'm1' }], defaultBaseUrl: 'https://x' };
+
+  it('returns true when a provider has credentials, ≥1 model, and an endpoint', () => {
+    expect(hasUsableLLMProvider({ openai: ok })).toBe(true);
+  });
+
+  it('returns true for a server-configured provider without a client key', () => {
+    expect(
+      hasUsableLLMProvider({
+        openai: { isServerConfigured: true, models: [{ id: 'm1' }], serverBaseUrl: 'https://s' },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false when the only provider has no models', () => {
+    expect(hasUsableLLMProvider({ openai: { ...ok, models: [] } })).toBe(false);
+  });
+
+  it('returns false when the only provider lacks credentials and requires a key', () => {
+    expect(
+      hasUsableLLMProvider({
+        openai: { requiresApiKey: true, apiKey: '', models: [{ id: 'm1' }], defaultBaseUrl: 'x' },
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false for an empty or nullish config', () => {
+    expect(hasUsableLLMProvider({})).toBe(false);
+    expect(hasUsableLLMProvider(undefined)).toBe(false);
+    expect(hasUsableLLMProvider(null)).toBe(false);
   });
 });

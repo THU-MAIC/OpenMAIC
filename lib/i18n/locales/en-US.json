@@ -611,7 +611,6 @@
     "step3StartUsing": "After saving, the system will use your selected model",
     "activeModel": "Active Model",
     "activeModelDescription": "Select the model for AI conversations and content generation",
-    "selectModel": "Select Model",
     "searchModels": "Search models",
     "noModelsFound": "No matching models found",
     "noConfiguredProviders": "No configured providers",

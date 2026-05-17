@@ -22,7 +22,11 @@ import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { createLogger } from '@/lib/logger';
-import { validateProvider, validateModel } from '@/lib/store/settings-validation';
+import {
+  validateProvider,
+  resolveSelectedModel,
+  isProviderUsable,
+} from '@/lib/store/settings-validation';
 
 const log = createLogger('Settings');
 
@@ -799,17 +803,33 @@ export const useSettingsStore = create<SettingsState>()(
 
         setProviderConfig: (providerId, config) =>
           set((state) => {
+            const mergedProvider = {
+              ...state.providersConfig[providerId],
+              ...config,
+            };
             const providersConfig = {
               ...state.providersConfig,
-              [providerId]: {
-                ...state.providersConfig[providerId],
-                ...config,
-              },
+              [providerId]: mergedProvider,
             };
-            return {
+            const base = {
               providersConfig,
               thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, providersConfig),
             };
+            // Atomic invariant (#580): if this edit makes the provider usable
+            // and it is the active LLM provider (or nothing is selected yet),
+            // resolve a concrete model in the same update — never leave a
+            // usable provider with an empty/stale model.
+            const isActiveOrUnset = state.providerId === providerId || !state.providerId;
+            if (isActiveOrUnset && isProviderUsable(mergedProvider)) {
+              const modelId = resolveSelectedModel(
+                state.modelId,
+                mergedProvider.models ?? [],
+              );
+              if (modelId) {
+                return { ...base, providerId, modelId };
+              }
+            }
+            return base;
           }),
 
         setProvidersConfig: (config) =>
@@ -915,13 +935,13 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Image Generation actions
         setImageProvider: (providerId) =>
-          set(() => {
-            const models = IMAGE_PROVIDERS[providerId]?.models || [];
-            return {
-              imageProviderId: providerId,
-              imageModelId: models[0]?.id || '',
-            };
-          }),
+          set((state) => ({
+            imageProviderId: providerId,
+            imageModelId: resolveSelectedModel(
+              state.imageModelId,
+              IMAGE_PROVIDERS[providerId]?.models ?? [],
+            ),
+          })),
         setImageModelId: (modelId) => set({ imageModelId: modelId }),
 
         setImageProviderConfig: (providerId, config) =>
@@ -936,7 +956,14 @@ export const useSettingsStore = create<SettingsState>()(
           })),
 
         // Video Generation actions
-        setVideoProvider: (providerId) => set({ videoProviderId: providerId }),
+        setVideoProvider: (providerId) =>
+          set((state) => ({
+            videoProviderId: providerId,
+            videoModelId: resolveSelectedModel(
+              state.videoModelId,
+              VIDEO_PROVIDERS[providerId]?.models ?? [],
+            ),
+          })),
         setVideoModelId: (modelId) => set({ videoModelId: modelId }),
 
         setVideoProviderConfig: (providerId, config) =>
@@ -1271,7 +1298,7 @@ export const useSettingsStore = create<SettingsState>()(
               const videoFallback = buildFallback<VideoProviderId>(newVideoConfig);
               const webSearchFallback = buildFallback<WebSearchProviderId>(newWebSearchConfig);
 
-              const validLLMProvider = validateProvider(
+              let validLLMProvider = validateProvider(
                 state.providerId,
                 newProvidersConfig,
                 llmFallback,
@@ -1311,46 +1338,38 @@ export const useSettingsStore = create<SettingsState>()(
                 'tavily' as WebSearchProviderId,
               );
 
-              // Auto-recover: when provider is empty but server has available ones
-              let recoveredImageModel = '';
+              // Auto-recover: when the selected provider is empty/unusable but
+              // a usable one exists, adopt the first usable fallback. Applied
+              // symmetrically to LLM/image/video so that "usable provider ⇒ a
+              // concrete model is selected" holds for every modality (#580).
+              if (!validLLMProvider && llmFallback.length > 0) {
+                validLLMProvider = llmFallback[0];
+              }
               if (!validImageProvider && imageFallback.length > 0) {
                 validImageProvider = imageFallback[0];
-                const models = IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models;
-                if (models?.length) recoveredImageModel = models[0].id;
               }
-              let recoveredVideoModel = '';
               if (!validVideoProvider && videoFallback.length > 0) {
                 validVideoProvider = videoFallback[0];
-                const models = VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models;
-                if (models?.length) recoveredVideoModel = models[0].id;
               }
 
+              // Resolve the model in the same place the provider is resolved.
+              // resolveSelectedModel never yields '' when the provider has ≥1
+              // model, so a usable provider can never settle with an empty model.
               const llmModels = validLLMProvider
                 ? (newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [])
                 : [];
               const validLLMModel = validLLMProvider
-                ? validateModel(state.modelId, llmModels) ||
-                  (newProvidersConfig[validLLMProvider as ProviderId]?.isServerConfigured
-                    ? llmModels[0]?.id
-                    : '') ||
-                  ''
+                ? resolveSelectedModel(state.modelId, llmModels)
                 : '';
               const imageModels =
                 IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [];
               const validImageModel = validImageProvider
-                ? recoveredImageModel ||
-                  validateModel(state.imageModelId, imageModels) ||
-                  // validateModel('', ...) returns '' — fallback to first model when modelId is empty
-                  imageModels[0]?.id ||
-                  ''
+                ? resolveSelectedModel(state.imageModelId, imageModels)
                 : '';
               const videoModels =
                 VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [];
               const validVideoModel = validVideoProvider
-                ? recoveredVideoModel ||
-                  validateModel(state.videoModelId, videoModels) ||
-                  videoModels[0]?.id ||
-                  ''
+                ? resolveSelectedModel(state.videoModelId, videoModels)
                 : '';
 
               const validTTSVoice =
@@ -1433,25 +1452,10 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
-              // LLM auto-select: only on true first load (no provider selected yet)
-              let autoProviderId: ProviderId | undefined;
-              let autoModelId: string | undefined;
-              if (!state.providerId && !state.modelId) {
-                for (const [pid, cfg] of Object.entries(newProvidersConfig)) {
-                  if (cfg.isServerConfigured) {
-                    // Prefer server-restricted models, fall back to built-in list
-                    const serverModels = cfg.serverModels;
-                    const modelId = serverModels?.length
-                      ? serverModels[0]
-                      : PROVIDERS[pid as ProviderId]?.models[0]?.id;
-                    if (modelId) {
-                      autoProviderId = pid as ProviderId;
-                      autoModelId = modelId;
-                      break;
-                    }
-                  }
-                }
-              }
+              // (LLM first-load auto-select removed: the symmetric provider
+              // recovery + resolveSelectedModel above now resolve LLM provider
+              // and model atomically at the source, covering server-configured
+              // AND client-API-key providers — see #580.)
 
               return {
                 providersConfig: newProvidersConfig,
@@ -1517,8 +1521,6 @@ export const useSettingsStore = create<SettingsState>()(
                 ...(autoVideoEnabled !== undefined && {
                   videoGenerationEnabled: autoVideoEnabled,
                 }),
-                ...(autoProviderId && { providerId: autoProviderId }),
-                ...(autoModelId && { modelId: autoModelId }),
               };
             });
           } catch (e) {
