@@ -7,7 +7,7 @@ type ElementPatch = Partial<PPTElement>;
 type ElementPropName = string;
 
 // Cap undo history so long editing sessions don't grow memory unbounded.
-const MAX_HISTORY = 50;
+export const MAX_HISTORY = 50;
 
 export type SlideElementAlignCommand =
   | 'top'

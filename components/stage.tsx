@@ -12,6 +12,12 @@ import { Header } from './header';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { CanvasArea } from '@/components/canvas/canvas-area';
 import { EditShell } from '@/components/edit/EditShell';
+import { useEditModeLock } from '@/components/edit/use-edit-mode-lock';
+import { MultiTabEditConflictPrompt } from '@/components/edit/MultiTabEditConflictPrompt';
+// Side-effect: registers the slide SceneEditorSurface so EditShell can
+// resolve it the moment Pro mode is entered (the shell never imports
+// surfaces directly).
+import '@/components/edit/surfaces/slide';
 import { Roundtable } from '@/components/roundtable';
 import { PlaybackEngine, computePlaybackView } from '@/lib/playback';
 import type { EngineMode, TriggerEvent, Effect } from '@/lib/playback';
@@ -59,6 +65,7 @@ export function Stage({
     setCurrentSceneId,
     generatingOutlines,
     outlines,
+    stage,
   } = useStageStore();
   const failedOutlines = useStageStore.use.failedOutlines();
 
@@ -275,6 +282,11 @@ export function Stage({
     hasCurrentScene: !!currentScene,
   });
 
+  // Cross-tab edit lock (#571). Course identity is the stage id; degrades
+  // to single-tab when absent. Wired here because entry must be refused
+  // BEFORE the live session is torn down.
+  const editLock = useEditModeLock(stage?.id);
+
   // Toggle Pro (edit) mode. Entering edit mode tears down any live
   // session so the user enters a quiet canvas.
   const handleToggleEditMode = useCallback(async () => {
@@ -282,6 +294,9 @@ export function Stage({
       setMode('playback');
       return;
     }
+    // Refuse entry (and surface the conflict prompt) when another tab
+    // already holds this course's edit lock — before any teardown.
+    if (!editLock.acquire()) return;
     await chatAreaRef.current?.endActiveSession();
     if (discussionAbortRef.current) {
       discussionAbortRef.current.abort();
@@ -291,7 +306,7 @@ export function Stage({
     discussionTTS.cleanup();
     resetSceneState();
     setMode('edit');
-  }, [discussionTTS, mode, resetSceneState, setMode]);
+  }, [discussionTTS, editLock, mode, resetSceneState, setMode]);
 
   // Auto-exit edit mode whenever the current scene becomes uneditable
   // (pending generation, no scenes, currently generating). Predicate lives in
@@ -301,6 +316,14 @@ export function Stage({
       setMode('playback');
     }
   }, [mode, isEditable, setMode]);
+
+  // Release the cross-tab lock whenever we are not in edit mode. Covers
+  // manual exit, the auto-exit above, and scene-becomes-uneditable; the
+  // hook also self-releases on unmount / tab close.
+  const releaseEditLock = editLock.release;
+  useEffect(() => {
+    if (mode !== 'edit') releaseEditLock();
+  }, [mode, releaseEditLock]);
 
   const clearPresentationIdleTimer = useCallback(() => {
     if (presentationIdleTimerRef.current) {
@@ -1079,6 +1102,10 @@ export function Stage({
               }
             />
           )}
+          <MultiTabEditConflictPrompt
+            open={editLock.conflictOpen}
+            onDismiss={editLock.dismissConflict}
+          />
         </div>
 
         {/* Roundtable Area */}

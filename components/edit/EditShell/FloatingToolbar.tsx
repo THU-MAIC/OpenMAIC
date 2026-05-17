@@ -63,9 +63,18 @@ function ActionButton({ action }: { readonly action: FloatingAction }) {
 
   if (!action.popoverContent) return triggerWithTooltip;
 
+  // Chain both triggers' asChild Slots directly onto the real <button>.
+  // Wrapping PopoverTrigger around <Tooltip> (a provider, not a DOM node)
+  // dropped the popover trigger handler, so the popover never opened —
+  // this is the first popoverContent consumer to exercise that path.
   return (
     <Popover>
-      <PopoverTrigger asChild>{triggerWithTooltip}</PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>{button}</PopoverTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{action.tooltip ?? action.label}</TooltipContent>
+      </Tooltip>
       <PopoverContent side="bottom" align="center" className="w-72 p-3">
         {action.popoverContent()}
       </PopoverContent>

@@ -179,6 +179,15 @@
         "body": "编辑模式同一时间只允许一个标签页持有，避免变更冲突。请先关闭其他标签页（或等待对方会话超时），再在此进入编辑模式。",
         "actionDismiss": "知道了"
       }
+    },
+    "geometry": {
+      "label": "位置与尺寸",
+      "tooltip": "位置与尺寸",
+      "x": "X",
+      "y": "Y",
+      "width": "宽",
+      "height": "高",
+      "rotate": "旋转"
     }
   },
   "classroomComplete": {
