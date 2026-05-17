@@ -376,6 +376,7 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
           case 'bold':
           case 'em':
           case 'underline':
+          // bulletList: undefined value → execCommand defaults to the standard bullet (item.value || '')
           case 'bulletList':
           case 'fontname':
           case 'fontsize':
@@ -401,6 +402,10 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
               },
             });
             break;
+          default: {
+            const _exhaustive: never = payload.command;
+            void _exhaustive;
+          }
         }
       },
       [execCommand, elementId],
@@ -411,7 +416,7 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
     // renderer is byte-unchanged on the playback/uncontrolled path (PR1-shaped).
     useEffect(() => {
       if (!editable) return;
-      const off = registerActiveTextEditor(elementId, (payload) => runCommand(payload));
+      const off = registerActiveTextEditor(elementId, runCommand);
       return off;
     }, [editable, elementId, runCommand]);
 
