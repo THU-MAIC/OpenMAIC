@@ -1,8 +1,8 @@
 import { NextRequest } from 'next/server';
-import { generateText } from 'ai';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { callLLM } from '@/lib/ai/llm';
 const log = createLogger('Verify Model');
 
 export async function POST(req: NextRequest) {
@@ -34,11 +34,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Send a minimal test message
-    const { text } = await generateText({
-      model: languageModel,
-      prompt: 'Say "OK" if you can hear me.',
-    });
+    // Send a minimal test message. Use the unified wrapper so compatible
+    // providers can receive provider-specific request options.
+    const { text } = await callLLM(
+      {
+        model: languageModel,
+        prompt: 'Say "OK" if you can hear me.',
+        maxOutputTokens: 64,
+      },
+      'verify-model',
+      undefined,
+      { mode: 'disabled', enabled: false },
+    );
 
     return apiSuccess({
       message: 'Connection successful',

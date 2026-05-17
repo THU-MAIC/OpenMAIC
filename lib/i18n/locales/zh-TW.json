@@ -942,7 +942,11 @@
     "asrResultPlaceholder": "錄音完成後將顯示辨識結果",
     "baseUrlRegion": {
       "china": "中國",
-      "international": "國際"
+      "international": "國際",
+      "xiaomiPayg": "按量付費",
+      "xiaomiTokenPlanCN": "Token Plan 中國",
+      "xiaomiTokenPlanSGP": "Token Plan 新加坡",
+      "xiaomiTokenPlanEU": "Token Plan 歐洲"
     },
     "browserTTSNoVoices": "目前瀏覽器沒有可用的 TTS 聲音",
     "browserTTSNotSupported": "瀏覽器不支援語音合成 API",
