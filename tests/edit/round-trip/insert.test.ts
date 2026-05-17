@@ -13,13 +13,12 @@ import {
 } from './fixtures';
 
 /**
- * Round-trip gate: inserted elements (text + image) survive the export
- * pipeline. Mirrors the helper pattern established in text-content.test.ts
- * and image-data-url.test.ts.
+ * Round-trip gate: tests element.add on default text and image elements.
  *
- * Default content for createDefaultTextElement is '<p>New text</p>' (from
- * lib/edit/slide-edit-elements.ts), so the needle asserted below is the
- * literal inner text "New text".
+ * (a) Text element: verifies default content survives PPTX export.
+ * (b) Image element with remote URL: verifies that the export pipeline
+ *     does NOT crash when network-fetched images cannot be embedded (CI has no network);
+ *     the real image round-trip (data-URL) is covered by image-data-url.test.ts.
  */
 async function exportSlideContent(content: SlideContent, scene: Scene): Promise<Blob> {
   return buildPptxBlob(
@@ -43,8 +42,9 @@ describe('round-trip: element.add inserts (PR2 gate)', () => {
   it('(a) inserted default text element — default content survives export', async () => {
     const { scene, content } = makeSlideFixture();
 
-    // createDefaultTextElement sets content to '<p>New text</p>'; the inner
-    // text "New text" must appear in the exported slide XML.
+    // (a) Tests that createDefaultTextElement's default content ('<p>New text</p>')
+    // survives the PPTX export pipeline — verifies element.add and export don't
+    // lose or corrupt the text element's content.
     const DEFAULT_TEXT_NEEDLE = 'New text';
 
     const after = applySlideEditOperation(content, {
@@ -68,11 +68,17 @@ describe('round-trip: element.add inserts (PR2 gate)', () => {
 
     const blob = await exportSlideContent(after, scene);
 
+    // (b) Tests that element.add on a remote-URL image does NOT crash or corrupt
+    // export. The remote URL cannot be fetched in CI (no network), so the exporter
+    // logs "Failed to convert image to base64, skipping element" and omits the image.
+    // This case gates that export pipeline is resilient; the REAL image round-trip
+    // (data-URL, the PR2 local-upload path) is covered by image-data-url.test.ts
+    // and is deliberately not duplicated here.
+
     // Basic size guard — a valid PPTX is always several KB at minimum.
     expect(blob.size).toBeGreaterThan(0);
 
-    // The slide XML entry must be present and non-empty; mirrors
-    // image-data-url.test.ts assertion style for the image-present check.
+    // The slide XML entry must be present and non-empty.
     const slideXml = await readPptxEntry(blob, 'ppt/slides/slide1.xml');
     expect(slideXml.length).toBeGreaterThan(0);
   });
