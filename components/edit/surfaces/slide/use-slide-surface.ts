@@ -3,6 +3,7 @@
 import { produce } from 'immer';
 import { Image as ImageIcon, Type } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ConnectedTextFormatBar } from './text-format-bar';
 import {
   clearPersistedSlideHistory,
   loadPersistedSlideHistory,
@@ -53,11 +54,20 @@ export function buildInsertItems(t: (k: string) => string): InsertPaletteItem[] 
 }
 
 export function buildFloatingActions(
-  _t: (k: string) => string,
+  t: (k: string) => string,
   textTarget: PPTTextElement | undefined,
 ): FloatingAction[] {
   if (!textTarget) return [];
-  return []; // text formatting actions added in Task 5
+  // NOTE: The bar is surfaced via FloatingToolbar's popover slot (one button → popover → bar),
+  // not always-inline. This is an ergonomics tradeoff to be addressed in Task 8 polish.
+  return [
+    {
+      id: 'text-format',
+      label: t('edit.text.label'),
+      tooltip: t('edit.text.label'),
+      popoverContent: () => React.createElement(ConnectedTextFormatBar, { elementId: textTarget.id }),
+    },
+  ];
 }
 
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
