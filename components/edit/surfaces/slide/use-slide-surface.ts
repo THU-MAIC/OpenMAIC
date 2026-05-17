@@ -1,25 +1,56 @@
 'use client';
 
 import { produce } from 'immer';
-import { Move } from 'lucide-react';
+import { Image as ImageIcon, Move, Type } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   clearPersistedSlideHistory,
   loadPersistedSlideHistory,
 } from '@/lib/edit/slide-history-persistence';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
-import type { FloatingAction, SurfaceState } from '@/lib/edit/scene-editor-surface';
+import type { FloatingAction, InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { createDefaultSlide } from '@/lib/edit/slide-edit-elements';
+import { createElementId } from '@/lib/edit/element-id';
+import {
+  createDefaultImageElement,
+  createDefaultSlide,
+  createDefaultTextElement,
+} from '@/lib/edit/slide-edit-elements';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
 import type { PPTElement } from '@/lib/types/slides';
 import type { SlideContent } from '@/lib/types/stage';
 import { GeometryPopover } from './GeometryPopover';
+import { ImagePicker } from './ImagePicker';
 import { useSlideEditSession } from './slide-edit-session';
 
 export interface SlideSelection {
   readonly activeElementIds: readonly string[];
+}
+
+export function buildInsertItems(t: (k: string) => string): InsertPaletteItem[] {
+  const addElement = (element: PPTElement) =>
+    useSlideEditSession.getState().applyOp({ type: 'element.add', element });
+  return [
+    {
+      id: 'insert-text',
+      label: t('edit.insert.textBox'),
+      tooltip: t('edit.insert.textBox'),
+      icon: React.createElement(Type, { className: 'h-4 w-4' }),
+      onInvoke: () => addElement(createDefaultTextElement(createElementId('text'))),
+    },
+    {
+      id: 'insert-image',
+      label: t('edit.insert.image'),
+      tooltip: t('edit.insert.image'),
+      icon: React.createElement(ImageIcon, { className: 'h-4 w-4' }),
+      onInvoke: () => {},
+      popoverContent: () =>
+        React.createElement(ImagePicker, {
+          onPick: (src: string) => addElement(createDefaultImageElement(createElementId('image'), src)),
+        }),
+    },
+  ];
 }
 
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
@@ -89,7 +120,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
       undo: () => useSlideEditSession.getState().undo(),
       redo: () => useSlideEditSession.getState().redo(),
     },
-    insertItems: [],
+    insertItems: buildInsertItems(t),
     floatingActions: [geometryAction],
     commands: [],
     hints: [],
