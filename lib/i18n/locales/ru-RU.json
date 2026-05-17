@@ -188,6 +188,29 @@
       "width": "Ширина",
       "height": "Высота",
       "rotate": "Поворот"
+    },
+    "text": {
+      "label": "Текст",
+      "font": "Шрифт",
+      "fontDefault": "По умолчанию",
+      "sizeUp": "Увеличить размер",
+      "sizeDown": "Уменьшить размер",
+      "bold": "Полужирный",
+      "italic": "Курсив",
+      "underline": "Подчёркнутый",
+      "color": "Цвет текста",
+      "alignLeft": "По левому краю",
+      "alignCenter": "По центру",
+      "alignRight": "По правому краю",
+      "bullet": "Маркированный список"
+    },
+    "insert": {
+      "textBox": "Текстовое поле",
+      "image": "Изображение",
+      "imageDrop": "Перетащите изображение или нажмите, чтобы выбрать файл",
+      "imageOr": "или вставьте URL изображения",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "Вставить"
     }
   },
   "classroomComplete": {

@@ -188,6 +188,29 @@
       "width": "宽",
       "height": "高",
       "rotate": "旋转"
+    },
+    "text": {
+      "label": "文本",
+      "font": "字体",
+      "fontDefault": "默认",
+      "sizeUp": "增大字号",
+      "sizeDown": "减小字号",
+      "bold": "加粗",
+      "italic": "斜体",
+      "underline": "下划线",
+      "color": "文字颜色",
+      "alignLeft": "左对齐",
+      "alignCenter": "居中对齐",
+      "alignRight": "右对齐",
+      "bullet": "项目符号"
+    },
+    "insert": {
+      "textBox": "文本框",
+      "image": "图片",
+      "imageDrop": "拖入图片或点击选择文件",
+      "imageOr": "或粘贴图片 URL",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "插入"
     }
   },
   "classroomComplete": {

@@ -188,6 +188,29 @@
       "width": "寬",
       "height": "高",
       "rotate": "旋轉"
+    },
+    "text": {
+      "label": "文字",
+      "font": "字型",
+      "fontDefault": "預設",
+      "sizeUp": "放大字級",
+      "sizeDown": "縮小字級",
+      "bold": "粗體",
+      "italic": "斜體",
+      "underline": "底線",
+      "color": "文字色彩",
+      "alignLeft": "靠左對齊",
+      "alignCenter": "置中對齊",
+      "alignRight": "靠右對齊",
+      "bullet": "項目符號"
+    },
+    "insert": {
+      "textBox": "文字方塊",
+      "image": "圖片",
+      "imageDrop": "拖曳圖片或點按選擇檔案",
+      "imageOr": "或貼上圖片網址",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "插入"
     }
   },
   "whiteboard": {

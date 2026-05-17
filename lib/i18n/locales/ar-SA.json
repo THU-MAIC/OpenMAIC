@@ -188,6 +188,29 @@
       "width": "العرض",
       "height": "الارتفاع",
       "rotate": "التدوير"
+    },
+    "text": {
+      "label": "نص",
+      "font": "الخط",
+      "fontDefault": "افتراضي",
+      "sizeUp": "تكبير الحجم",
+      "sizeDown": "تصغير الحجم",
+      "bold": "غامق",
+      "italic": "مائل",
+      "underline": "تسطير",
+      "color": "لون النص",
+      "alignLeft": "محاذاة لليسار",
+      "alignCenter": "توسيط",
+      "alignRight": "محاذاة لليمين",
+      "bullet": "قائمة نقطية"
+    },
+    "insert": {
+      "textBox": "مربع نص",
+      "image": "صورة",
+      "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
+      "imageOr": "أو الصق رابط صورة",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "إدراج"
     }
   },
   "classroomComplete": {

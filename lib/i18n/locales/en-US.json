@@ -188,6 +188,29 @@
       "width": "Width",
       "height": "Height",
       "rotate": "Rotation"
+    },
+    "text": {
+      "label": "Text",
+      "font": "Font",
+      "fontDefault": "Default",
+      "sizeUp": "Increase size",
+      "sizeDown": "Decrease size",
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "color": "Text color",
+      "alignLeft": "Align left",
+      "alignCenter": "Align center",
+      "alignRight": "Align right",
+      "bullet": "Bulleted list"
+    },
+    "insert": {
+      "textBox": "Text box",
+      "image": "Image",
+      "imageDrop": "Drop an image or click to choose a file",
+      "imageOr": "or paste an image URL",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "Insert"
     }
   },
   "classroomComplete": {

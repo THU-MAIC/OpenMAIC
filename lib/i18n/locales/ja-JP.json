@@ -188,6 +188,29 @@
       "width": "幅",
       "height": "高さ",
       "rotate": "回転"
+    },
+    "text": {
+      "label": "テキスト",
+      "font": "フォント",
+      "fontDefault": "デフォルト",
+      "sizeUp": "文字を大きく",
+      "sizeDown": "文字を小さく",
+      "bold": "太字",
+      "italic": "斜体",
+      "underline": "下線",
+      "color": "文字色",
+      "alignLeft": "左揃え",
+      "alignCenter": "中央揃え",
+      "alignRight": "右揃え",
+      "bullet": "箇条書き"
+    },
+    "insert": {
+      "textBox": "テキストボックス",
+      "image": "画像",
+      "imageDrop": "画像をドロップまたはクリックして選択",
+      "imageOr": "または画像 URL を貼り付け",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "挿入"
     }
   },
   "classroomComplete": {
