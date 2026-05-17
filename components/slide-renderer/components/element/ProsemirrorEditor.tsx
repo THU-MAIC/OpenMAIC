@@ -25,6 +25,10 @@ import { indentCommand, textIndentCommand } from '@/lib/prosemirror/commands/set
 import { toggleList } from '@/lib/prosemirror/commands/toggleList';
 import { setListStyle } from '@/lib/prosemirror/commands/setListStyle';
 import { replaceText } from '@/lib/prosemirror/commands/replaceText';
+import {
+  registerActiveTextEditor,
+  type TextCommandPayload,
+} from '@/lib/prosemirror/active-editor-registry';
 import type { TextFormatPainterKeys } from '@/lib/types/edit';
 import { KEYS } from '@/configs/hotkey';
 import { toast } from 'sonner';
@@ -359,6 +363,57 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
       },
       [handleElementId, elementId, richTextAttrs, handleInput, handleClick],
     );
+
+    // Additive bridge: map a surface-driven TextCommandPayload onto the SAME
+    // existing RichTextAction switch (execCommand). This reuses the renderer's
+    // existing ProseMirror command implementations verbatim — no new schema,
+    // no behavior change. `target: elementId` routes to THIS element exactly
+    // like the existing targeted-command semantics already in execCommand.
+    const runCommand = useCallback(
+      (payload: TextCommandPayload) => {
+        if (!editorView.current) return;
+        switch (payload.command) {
+          case 'bold':
+          case 'em':
+          case 'underline':
+          case 'bulletList':
+          case 'fontname':
+          case 'fontsize':
+            execCommand({
+              target: elementId,
+              action: { command: payload.command, value: payload.value },
+            });
+            break;
+          case 'forecolor':
+            execCommand({
+              target: elementId,
+              action: { command: 'color', value: payload.value },
+            });
+            break;
+          case 'align-left':
+          case 'align-center':
+          case 'align-right':
+            execCommand({
+              target: elementId,
+              action: {
+                command: 'align',
+                value: payload.command.replace('align-', ''),
+              },
+            });
+            break;
+        }
+      },
+      [execCommand, elementId],
+    );
+
+    // Register the runner only while this element is editable. Playback uses
+    // editable=false → this effect early-returns → nothing registers, so the
+    // renderer is byte-unchanged on the playback/uncontrolled path (PR1-shaped).
+    useEffect(() => {
+      if (!editable) return;
+      const off = registerActiveTextEditor(elementId, (payload) => runCommand(payload));
+      return off;
+    }, [editable, elementId, runCommand]);
 
     // Handle mouseup for format painter
     const handleMouseup = useCallback(() => {
