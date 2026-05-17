@@ -26,7 +26,11 @@ export function ImagePicker({ onPick }: ImagePickerProps) {
   async function handleFiles(files: FileList | null) {
     const file = files?.[0];
     if (!file || !file.type.startsWith('image/')) return;
-    onPick(await fileToDataUrl(file));
+    try {
+      onPick(await fileToDataUrl(file));
+    } catch (err) {
+      console.error('ImagePicker: failed to read image file', err);
+    }
   }
 
   return (

@@ -44,7 +44,7 @@ export function buildInsertItems(t: (k: string) => string): InsertPaletteItem[] 
       label: t('edit.insert.image'),
       tooltip: t('edit.insert.image'),
       icon: React.createElement(ImageIcon, { className: 'h-4 w-4' }),
-      onInvoke: () => {},
+      onInvoke: () => {}, // popover-only: CommandBar's InsertButton ignores onInvoke when popoverContent is set
       popoverContent: () =>
         React.createElement(ImagePicker, {
           onPick: (src: string) => addElement(createDefaultImageElement(createElementId('image'), src)),

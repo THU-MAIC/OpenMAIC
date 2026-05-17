@@ -1,10 +1,14 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { buildInsertItems } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 
 describe('slide insert palette', () => {
   beforeEach(() => {
     useSlideEditSession.setState({ history: { past: [], present: { type: 'slide', canvas: { id: 's', elements: [] } } as any, future: [] } } as any);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it('exposes a text-box and an image insert item', () => {
