@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { buildInsertItems } from '@/components/edit/surfaces/slide/use-slide-surface';
+import { buildInsertItems, buildFloatingActions } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 
 describe('slide insert palette', () => {
@@ -24,5 +24,10 @@ describe('slide insert palette', () => {
     expect(spy).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'element.add', element: expect.objectContaining({ type: 'text' }) }),
     );
+  });
+
+  it('no longer contributes a geometry floating action', () => {
+    const actions = buildFloatingActions((k) => k, undefined);
+    expect(actions.find((a) => a.id === 'geometry')).toBeUndefined();
   });
 });

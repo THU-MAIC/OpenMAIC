@@ -1,7 +1,7 @@
 'use client';
 
 import { produce } from 'immer';
-import { Image as ImageIcon, Move, Type } from 'lucide-react';
+import { Image as ImageIcon, Type } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   clearPersistedSlideHistory,
@@ -18,9 +18,8 @@ import {
 } from '@/lib/edit/slide-edit-elements';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement, PPTTextElement } from '@/lib/types/slides';
 import type { SlideContent } from '@/lib/types/stage';
-import { GeometryPopover } from './GeometryPopover';
 import { ImagePicker } from './ImagePicker';
 import { useSlideEditSession } from './slide-edit-session';
 
@@ -53,6 +52,14 @@ export function buildInsertItems(t: (k: string) => string): InsertPaletteItem[] 
   ];
 }
 
+export function buildFloatingActions(
+  _t: (k: string) => string,
+  textTarget: PPTTextElement | undefined,
+): FloatingAction[] {
+  if (!textTarget) return [];
+  return []; // text formatting actions added in Task 5
+}
+
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
 
 function currentSlideContent(sceneId: string): SlideContent | null {
@@ -62,9 +69,7 @@ function currentSlideContent(sceneId: string): SlideContent | null {
 
 /**
  * The slide surface's `useSurfaceState`. Pure read over the shared
- * session store + the renderer's selection store; the only PR1 editing
- * affordance is the geometry numeric popover (canvas drag-resize is the
- * primary path and flows through the scene-context bridge).
+ * session store + the renderer's selection store.
  */
 export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelection> {
   const { t } = useI18n();
@@ -77,38 +82,10 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
     (sessionSceneId ? currentSlideContent(sessionSceneId) : null) ??
     EMPTY_SLIDE;
 
-  const selectedId = activeElementIds.length === 1 ? activeElementIds[0] : null;
-  const selectedEl = selectedId
-    ? (content.canvas.elements.find((el) => el.id === selectedId) ?? null)
-    : null;
-
-  // Lines model geometry as start/end/points and omit height/rotate
-  // (PPTLineElement = Omit<PPTBaseElement,'height'|'rotate'>); the x/y/w/h
-  // /rotate panel would write meaningless props onto them, so it's only
-  // offered for box-geometry elements.
-  const geomTarget = selectedEl && selectedEl.type !== 'line' ? selectedEl : null;
-
-  // No hand-written memo: the React Compiler auto-memoizes, and a manual
-  // useMemo with `t` in the closure trips its "could not preserve" rule.
-  const geometryAction: FloatingAction = {
-    id: 'geometry',
-    label: t('edit.geometry.label'),
-    tooltip: t('edit.geometry.tooltip'),
-    icon: React.createElement(Move, { className: 'h-4 w-4' }),
-    disabled: !geomTarget,
-    popoverContent: geomTarget
-      ? () =>
-          React.createElement(GeometryPopover, {
-            element: geomTarget,
-            onPatch: (patch: Partial<PPTElement>) =>
-              useSlideEditSession.getState().applyOp({
-                type: 'element.update',
-                elementId: geomTarget.id,
-                patch,
-              }),
-          })
-      : undefined,
-  };
+  const onlyEl = activeElementIds.length === 1
+    ? (content.canvas.elements.find((el) => el.id === activeElementIds[0]) ?? undefined)
+    : undefined;
+  const textTarget = onlyEl && onlyEl.type === 'text' ? (onlyEl as PPTTextElement) : undefined;
 
   return {
     content,
@@ -121,7 +98,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
       redo: () => useSlideEditSession.getState().redo(),
     },
     insertItems: buildInsertItems(t),
-    floatingActions: [geometryAction],
+    floatingActions: buildFloatingActions(t, textTarget),
     commands: [],
     hints: [],
   };
