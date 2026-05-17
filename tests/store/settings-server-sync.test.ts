@@ -1199,6 +1199,90 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
 
     expect(store.getState().videoModelId).toBe('doubao-seedance-1-5-pro-251215');
   });
+
+  it('deleting the selected provider (bulk setProvidersConfig) does not keep an invalid selection', async () => {
+    const store = await getStore();
+    const base = store.getState().providersConfig;
+
+    // Built-ins require a key and have none → unusable. A custom provider is
+    // the only usable one and is the active selection.
+    const stripped = Object.fromEntries(
+      Object.entries(base).map(([id, c]) => [
+        id,
+        { ...c, apiKey: '', isServerConfigured: false },
+      ]),
+    ) as typeof base;
+    const withCustom = {
+      ...stripped,
+      'custom-tencent': {
+        ...base.openai,
+        apiKey: 'sk-t',
+        baseUrl: 'https://tencent.example/v1',
+        models: [{ id: 'hy3-preview', name: 'Hy3' }],
+        name: 'Tencent',
+        requiresApiKey: true,
+      },
+    } as typeof base;
+
+    store.setState({
+      providersConfig: withCustom,
+      providerId: 'custom-tencent',
+      modelId: 'hy3-preview',
+    });
+
+    // Delete it via the real delete path (the bulk config setter).
+    store.getState().setProvidersConfig(stripped);
+
+    // No usable provider remains ⇒ State A. Selection must NOT point at the
+    // deleted provider, nor at an unusable built-in (e.g. openai + a model).
+    expect(store.getState().providerId).not.toBe('custom-tencent');
+    expect(store.getState().providerId).toBe('');
+    expect(store.getState().modelId).toBe('');
+  });
+
+  it('deleting a non-selected provider keeps the still-usable current selection', async () => {
+    const store = await getStore();
+    const base = store.getState().providersConfig;
+
+    const stripped = Object.fromEntries(
+      Object.entries(base).map(([id, c]) => [
+        id,
+        { ...c, apiKey: '', isServerConfigured: false },
+      ]),
+    ) as typeof base;
+    const withTwoCustom = {
+      ...stripped,
+      'custom-a': {
+        ...base.openai,
+        apiKey: 'sk-a',
+        baseUrl: 'https://a.example/v1',
+        models: [{ id: 'a-1', name: 'A1' }],
+        name: 'A',
+        requiresApiKey: true,
+      },
+      'custom-b': {
+        ...base.openai,
+        apiKey: 'sk-b',
+        baseUrl: 'https://b.example/v1',
+        models: [{ id: 'b-1', name: 'B1' }],
+        name: 'B',
+        requiresApiKey: true,
+      },
+    } as typeof base;
+
+    store.setState({
+      providersConfig: withTwoCustom,
+      providerId: 'custom-a',
+      modelId: 'a-1',
+    });
+
+    const withoutB = { ...withTwoCustom };
+    delete (withoutB as Record<string, unknown>)['custom-b'];
+    store.getState().setProvidersConfig(withoutB as typeof base);
+
+    expect(store.getState().providerId).toBe('custom-a');
+    expect(store.getState().modelId).toBe('a-1');
+  });
 });
 
 describe('settings merge migration — custom provider baseUrl', () => {

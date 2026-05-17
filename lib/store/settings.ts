@@ -26,6 +26,7 @@ import {
   validateProvider,
   resolveSelectedModel,
   isProviderUsable,
+  isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
 
 const log = createLogger('Settings');
@@ -835,10 +836,29 @@ export const useSettingsStore = create<SettingsState>()(
           }),
 
         setProvidersConfig: (config) =>
-          set((state) => ({
-            providersConfig: config,
-            thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, config),
-          })),
+          set((state) => {
+            // Re-resolve the selection at the source (#580): any bulk config
+            // change — deleting a provider/model, import, reset — must keep
+            // "usable provider ⇒ concrete model" and never leave the deleted/
+            // invalid provider selected. Keep the current provider if it is
+            // still usable, else fall back to the first usable one, else go
+            // cleanly to State A (empty selection).
+            const isUsable = (id: ProviderId) =>
+              !!config[id] && isLLMProviderConfigured(config[id]);
+            const validProvider = isUsable(state.providerId)
+              ? state.providerId
+              : ((Object.keys(config) as ProviderId[]).find(isUsable) ??
+                ('' as ProviderId));
+            const validModel = validProvider
+              ? resolveSelectedModel(state.modelId, config[validProvider]?.models ?? [])
+              : '';
+            return {
+              providersConfig: config,
+              thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, config),
+              ...(validProvider !== state.providerId && { providerId: validProvider }),
+              ...(validModel !== state.modelId && { modelId: validModel }),
+            };
+          }),
 
         setTtsModel: (model) => set({ ttsModel: model }),
 
