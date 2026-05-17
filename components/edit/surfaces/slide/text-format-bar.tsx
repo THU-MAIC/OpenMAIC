@@ -1,7 +1,9 @@
 'use client';
 
-import React from 'react';
-import { Bold, Italic, Underline } from 'lucide-react';
+// i18n keys (edit.text.*) and font-name labels are added in Task 6; they render as raw keys until then.
+
+import { useCallback } from 'react';
+import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, List } from 'lucide-react';
 import type { TextAttrs } from '@/lib/prosemirror/utils';
 import { runActiveTextCommand, type TextCommandPayload } from '@/lib/prosemirror/active-editor-registry';
 import { useCanvasStore } from '@/lib/store/canvas';
@@ -20,24 +22,50 @@ interface ToggleButtonProps {
   readonly children: React.ReactNode;
 }
 
-function ToggleButton({ label, active, payload, run, children }: ToggleButtonProps) {
+// preventDefault on mousedown keeps ProseMirror focused/selected so the command applies to the
+// live selection (the <select>/<input type=color> intentionally omit this — they need native focus).
+function BarButton({
+  label,
+  onClick,
+  className,
+  children,
+}: {
+  readonly label: string;
+  readonly onClick: () => void;
+  readonly className?: string;
+  readonly children: React.ReactNode;
+}) {
   return (
     <button
       type="button"
       aria-label={label}
-      aria-pressed={active}
       onMouseDown={(e) => e.preventDefault()}
-      onClick={() => run(payload)}
-      className={`flex h-8 w-8 items-center justify-center rounded-md text-sm ${active ? 'bg-zinc-200 dark:bg-zinc-700' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+      onClick={onClick}
+      className={className}
     >
       {children}
     </button>
   );
 }
 
+function ToggleButton({ label, active, payload, run, children }: ToggleButtonProps) {
+  return (
+    <BarButton
+      label={label}
+      onClick={() => run(payload)}
+      className={`flex h-8 w-8 items-center justify-center rounded-md text-sm ${active ? 'bg-zinc-200 dark:bg-zinc-700' : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'}`}
+    >
+      {children}
+    </BarButton>
+  );
+}
+
 export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
   const { t } = useI18n();
-  const run = (payload: TextCommandPayload) => runActiveTextCommand(elementId, payload);
+  const run = useCallback(
+    (payload: TextCommandPayload) => runActiveTextCommand(elementId, payload),
+    [elementId],
+  );
 
   return (
     <div className="flex items-center gap-1">
@@ -53,23 +81,21 @@ export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
         <option value="SimHei">黑体</option>
       </select>
       <div className="flex items-center rounded-md border border-zinc-200 dark:border-zinc-700">
-        <button
-          type="button"
-          aria-label={t('edit.text.sizeDown')}
-          className="px-2 text-sm"
+        <BarButton
+          label={t('edit.text.sizeDown')}
           onClick={() => run({ command: 'fontsize', value: stepFontSize(attrs.fontsize, -2) })}
+          className="px-2 text-sm"
         >
           −
-        </button>
+        </BarButton>
         <span className="min-w-8 text-center text-xs">{parseInt(attrs.fontsize, 10) || 16}</span>
-        <button
-          type="button"
-          aria-label={t('edit.text.sizeUp')}
-          className="px-2 text-sm"
+        <BarButton
+          label={t('edit.text.sizeUp')}
           onClick={() => run({ command: 'fontsize', value: stepFontSize(attrs.fontsize, 2) })}
+          className="px-2 text-sm"
         >
           +
-        </button>
+        </BarButton>
       </div>
       <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
       <ToggleButton label={t('edit.text.bold')} active={attrs.bold} payload={{ command: 'bold' }} run={run}>
@@ -97,16 +123,16 @@ export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
       </label>
       <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
       <ToggleButton label={t('edit.text.alignLeft')} active={attrs.align === 'left'} payload={{ command: 'align-left' }} run={run}>
-        ≣
+        <AlignLeft className="h-4 w-4" />
       </ToggleButton>
       <ToggleButton label={t('edit.text.alignCenter')} active={attrs.align === 'center'} payload={{ command: 'align-center' }} run={run}>
-        ≡
+        <AlignCenter className="h-4 w-4" />
       </ToggleButton>
       <ToggleButton label={t('edit.text.alignRight')} active={attrs.align === 'right'} payload={{ command: 'align-right' }} run={run}>
-        ≢
+        <AlignRight className="h-4 w-4" />
       </ToggleButton>
       <ToggleButton label={t('edit.text.bullet')} active={attrs.bulletList} payload={{ command: 'bulletList' }} run={run}>
-        •
+        <List className="h-4 w-4" />
       </ToggleButton>
     </div>
   );
@@ -118,7 +144,7 @@ export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
  */
 export function ConnectedTextFormatBar({ elementId }: { readonly elementId: string }) {
   const attrs = useCanvasStore.use.richTextAttrs();
-  return React.createElement(TextFormatBar, { elementId, attrs });
+  return <TextFormatBar elementId={elementId} attrs={attrs} />;
 }
 
 export function stepFontSize(current: string, delta: number): string {
