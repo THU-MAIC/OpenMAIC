@@ -164,6 +164,21 @@
       "quiz": "測驗",
       "interactive": "互動",
       "pbl": "PBL"
+    },
+    "history": {
+      "restore": {
+        "title": "還原未儲存的變更？",
+        "body": "上次編輯在儲存前結束。可以還原那次的變更，或捨棄後重新開始。",
+        "actionRestore": "還原",
+        "actionDiscard": "捨棄"
+      }
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "另一個分頁正在編輯此課程",
+        "body": "編輯模式同一時間只允許一個分頁持有，以避免變更衝突。請先關閉其他分頁（或等待對方工作階段逾時），再於此處進入編輯模式。",
+        "actionDismiss": "知道了"
+      }
     }
   },
   "whiteboard": {

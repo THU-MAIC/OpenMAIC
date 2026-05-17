@@ -9,6 +9,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SceneSidebar } from './stage/scene-sidebar';
 import { Header } from './header';
+import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { CanvasArea } from '@/components/canvas/canvas-area';
 import { EditShell } from '@/components/edit/EditShell';
 import { Roundtable } from '@/components/roundtable';
@@ -1021,7 +1022,7 @@ export function Stage({
             }
             mode={mode}
             canEdit={isEditable}
-            onToggleEditMode={handleToggleEditMode}
+            onToggleEditMode={isMaicEditorEnabled() ? handleToggleEditMode : undefined}
           />
         )}
 

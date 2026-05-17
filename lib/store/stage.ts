@@ -5,6 +5,7 @@ import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { migrateScene } from '@/lib/edit/slide-schema';
 
 const log = createLogger('StageStore');
 
@@ -124,10 +125,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   setScenes: (scenes) => {
-    set({ scenes });
+    // Funnel through migrateScene so any incoming slide content lacking
+    // a schemaVersion (API / snapshot / legacy) is normalized once at
+    // the store boundary.
+    const migrated = scenes.map(migrateScene);
+    set({ scenes: migrated });
     // Auto-select first scene if no current scene
-    if (!get().currentSceneId && scenes.length > 0) {
-      set({ currentSceneId: scenes[0].id });
+    if (!get().currentSceneId && migrated.length > 0) {
+      set({ currentSceneId: migrated[0].id });
     }
     debouncedSave();
   },
@@ -141,7 +146,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       );
       return;
     }
-    const scenes = [...get().scenes, scene];
+    const scenes = [...get().scenes, migrateScene(scene)];
     // Remove the matching outline from generatingOutlines (match by order)
     const generatingOutlines = get().generatingOutlines.filter((o) => o.order !== scene.order);
     // Auto-switch from pending page to the newly generated scene

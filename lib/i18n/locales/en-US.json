@@ -164,6 +164,21 @@
       "quiz": "Quiz",
       "interactive": "Interactive",
       "pbl": "PBL"
+    },
+    "history": {
+      "restore": {
+        "title": "Restore unsaved changes?",
+        "body": "Your last edit session ended before you saved. Restore those changes, or discard them and start fresh.",
+        "actionRestore": "Restore",
+        "actionDiscard": "Discard"
+      }
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "Another tab is editing this course",
+        "body": "Editing is locked to a single tab to avoid conflicting changes. Close the other tab (or wait for its session to time out) before entering edit mode here.",
+        "actionDismiss": "Got it"
+      }
     }
   },
   "classroomComplete": {

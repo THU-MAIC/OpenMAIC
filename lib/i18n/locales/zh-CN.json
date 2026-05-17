@@ -164,6 +164,21 @@
       "quiz": "测验",
       "interactive": "互动",
       "pbl": "PBL"
+    },
+    "history": {
+      "restore": {
+        "title": "恢复未保存的更改？",
+        "body": "上次编辑在保存前结束。可以恢复那次的更改，或丢弃后从头开始。",
+        "actionRestore": "恢复",
+        "actionDiscard": "丢弃"
+      }
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "另一个标签页正在编辑此课程",
+        "body": "编辑模式同一时间只允许一个标签页持有，避免变更冲突。请先关闭其他标签页（或等待对方会话超时），再在此进入编辑模式。",
+        "actionDismiss": "知道了"
+      }
     }
   },
   "classroomComplete": {
