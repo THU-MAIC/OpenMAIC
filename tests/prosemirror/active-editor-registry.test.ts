@@ -4,6 +4,7 @@ import {
   runActiveTextCommand,
   hasActiveTextEditor,
 } from '@/lib/prosemirror/active-editor-registry';
+import { shouldPushAttrs } from '@/lib/prosemirror/selection-sync';
 
 describe('active text editor registry', () => {
   it('routes a command to the registered element and clears on unregister', () => {
@@ -15,5 +16,14 @@ describe('active text editor registry', () => {
     off();
     expect(hasActiveTextEditor('el-1')).toBe(false);
     runActiveTextCommand('el-1', { command: 'bold' }); // no throw when absent
+  });
+});
+
+describe('selection sync gate', () => {
+  it('pushes on selection move, doc change, or stored-marks change', () => {
+    expect(shouldPushAttrs({ selectionSet: true, docChanged: false, storedMarksSet: false } as any)).toBe(true);
+    expect(shouldPushAttrs({ selectionSet: false, docChanged: true, storedMarksSet: false } as any)).toBe(true);
+    expect(shouldPushAttrs({ selectionSet: false, docChanged: false, storedMarksSet: true } as any)).toBe(true);
+    expect(shouldPushAttrs({ selectionSet: false, docChanged: false, storedMarksSet: false } as any)).toBe(false);
   });
 });

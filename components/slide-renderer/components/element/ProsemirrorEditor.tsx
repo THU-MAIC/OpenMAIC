@@ -29,6 +29,7 @@ import {
   registerActiveTextEditor,
   type TextCommandPayload,
 } from '@/lib/prosemirror/active-editor-registry';
+import { shouldPushAttrs } from '@/lib/prosemirror/selection-sync';
 import type { TextFormatPainterKeys } from '@/lib/types/edit';
 import { KEYS } from '@/configs/hotkey';
 import { toast } from 'sonner';
@@ -72,6 +73,9 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
   ) => {
     const editorViewRef = useRef<HTMLDivElement>(null);
     const editorView = useRef<EditorView | null>(null);
+    // Mutable refs so the single-init dispatchTransaction always reads fresh values
+    const editableRef = useRef(editable);
+    const pushTextAttrsRef = useRef<((view: EditorView) => void) | null>(null);
 
     const handleElementId = useCanvasStore.use.handleElementId();
     const textFormatPainter = useCanvasStore.use.textFormatPainter();
@@ -137,6 +141,17 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
       ),
       [defaultColor, defaultFontName, setRichtextAttrs],
     );
+
+    // Stable attrs push used by the selection-sync dispatchTransaction guard
+    const pushTextAttrs = useCallback(
+      (view: EditorView) => {
+        setRichtextAttrs(getTextAttrs(view, { color: defaultColor, fontname: defaultFontName }));
+      },
+      [defaultColor, defaultFontName, setRichtextAttrs],
+    );
+    // Keep mutable refs current on every render so the once-init dispatchTransaction reads fresh values
+    editableRef.current = editable;
+    pushTextAttrsRef.current = pushTextAttrs;
 
     // Handle keydown
     const handleKeydown = useCallback(
@@ -455,6 +470,16 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
           mouseup: handleMouseup,
         },
         editable: () => editable,
+        dispatchTransaction(this: EditorView, tr) {
+          // Apply the transaction (replicates ProseMirror's default dispatch)
+          const newState = this.state.apply(tr);
+          this.updateState(newState);
+          // Additive: push toolbar attrs on selection/doc/marks change — editable only.
+          // Playback path (editable=false) is never reached → byte-unchanged.
+          if (editableRef.current && shouldPushAttrs(tr)) {
+            pushTextAttrsRef.current?.(this);
+          }
+        },
       });
 
       if (autoFocus) {
