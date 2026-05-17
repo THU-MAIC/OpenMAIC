@@ -6,13 +6,34 @@ import jaJP from '@/lib/i18n/locales/ja-JP.json';
 import ruRU from '@/lib/i18n/locales/ru-RU.json';
 import arSA from '@/lib/i18n/locales/ar-SA.json';
 
-const locales = { 'en-US': enUS, 'zh-CN': zhCN, 'zh-TW': zhTW, 'ja-JP': jaJP, 'ru-RU': ruRU, 'ar-SA': arSA };
+const locales = {
+  'en-US': enUS,
+  'zh-CN': zhCN,
+  'zh-TW': zhTW,
+  'ja-JP': jaJP,
+  'ru-RU': ruRU,
+  'ar-SA': arSA,
+};
 const KEYS = [
-  'edit.text.label','edit.text.font','edit.text.fontDefault','edit.text.sizeUp','edit.text.sizeDown',
-  'edit.text.bold','edit.text.italic','edit.text.underline','edit.text.color',
-  'edit.text.alignLeft','edit.text.alignCenter','edit.text.alignRight','edit.text.bullet',
-  'edit.insert.textBox','edit.insert.image','edit.insert.imageDrop','edit.insert.imageOr',
-  'edit.insert.imageUrlPlaceholder','edit.insert.imageInsert',
+  'edit.text.label',
+  'edit.text.font',
+  'edit.text.fontDefault',
+  'edit.text.sizeUp',
+  'edit.text.sizeDown',
+  'edit.text.bold',
+  'edit.text.italic',
+  'edit.text.underline',
+  'edit.text.color',
+  'edit.text.alignLeft',
+  'edit.text.alignCenter',
+  'edit.text.alignRight',
+  'edit.text.bullet',
+  'edit.insert.textBox',
+  'edit.insert.image',
+  'edit.insert.imageDrop',
+  'edit.insert.imageOr',
+  'edit.insert.imageUrlPlaceholder',
+  'edit.insert.imageInsert',
 ];
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- locale JSON traversal
 const get = (o: any, k: string) => k.split('.').reduce((a, p) => a?.[p], o);

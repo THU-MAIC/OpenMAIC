@@ -9,7 +9,11 @@ import {
   loadPersistedSlideHistory,
 } from '@/lib/edit/slide-history-persistence';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
-import type { FloatingAction, InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
+import type {
+  FloatingAction,
+  InsertPaletteItem,
+  SurfaceState,
+} from '@/lib/edit/scene-editor-surface';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createElementId } from '@/lib/edit/element-id';
 import {
@@ -47,7 +51,8 @@ export function buildInsertItems(t: (k: string) => string): InsertPaletteItem[] 
       onInvoke: () => {}, // popover-only: CommandBar's InsertButton ignores onInvoke when popoverContent is set
       popoverContent: () =>
         React.createElement(ImagePicker, {
-          onPick: (src: string) => addElement(createDefaultImageElement(createElementId('image'), src)),
+          onPick: (src: string) =>
+            addElement(createDefaultImageElement(createElementId('image'), src)),
         }),
     },
   ];
@@ -65,7 +70,8 @@ export function buildFloatingActions(
       id: 'text-format',
       label: t('edit.text.label'),
       tooltip: t('edit.text.label'),
-      popoverContent: () => React.createElement(ConnectedTextFormatBar, { elementId: textTarget.id }),
+      popoverContent: () =>
+        React.createElement(ConnectedTextFormatBar, { elementId: textTarget.id }),
     },
   ];
 }
@@ -92,9 +98,10 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
     (sessionSceneId ? currentSlideContent(sessionSceneId) : null) ??
     EMPTY_SLIDE;
 
-  const onlyEl = activeElementIds.length === 1
-    ? (content.canvas.elements.find((el) => el.id === activeElementIds[0]) ?? undefined)
-    : undefined;
+  const onlyEl =
+    activeElementIds.length === 1
+      ? (content.canvas.elements.find((el) => el.id === activeElementIds[0]) ?? undefined)
+      : undefined;
   const textTarget = onlyEl && onlyEl.type === 'text' ? onlyEl : undefined;
 
   return {

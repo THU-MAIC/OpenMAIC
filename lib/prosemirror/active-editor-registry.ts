@@ -8,9 +8,15 @@
  */
 export interface TextCommandPayload {
   command:
-    | 'bold' | 'em' | 'underline'
-    | 'fontname' | 'fontsize' | 'forecolor'
-    | 'align-left' | 'align-center' | 'align-right'
+    | 'bold'
+    | 'em'
+    | 'underline'
+    | 'fontname'
+    | 'fontsize'
+    | 'forecolor'
+    | 'align-left'
+    | 'align-center'
+    | 'align-right'
     | 'bulletList';
   value?: string;
 }

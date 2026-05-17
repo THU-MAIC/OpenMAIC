@@ -3,7 +3,10 @@
 import { useCallback } from 'react';
 import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, List } from 'lucide-react';
 import type { TextAttrs } from '@/lib/prosemirror/utils';
-import { runActiveTextCommand, type TextCommandPayload } from '@/lib/prosemirror/active-editor-registry';
+import {
+  runActiveTextCommand,
+  type TextCommandPayload,
+} from '@/lib/prosemirror/active-editor-registry';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
@@ -96,20 +99,38 @@ export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
         </BarButton>
       </div>
       <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <ToggleButton label={t('edit.text.bold')} active={attrs.bold} payload={{ command: 'bold' }} run={run}>
+      <ToggleButton
+        label={t('edit.text.bold')}
+        active={attrs.bold}
+        payload={{ command: 'bold' }}
+        run={run}
+      >
         <Bold className="h-4 w-4" />
       </ToggleButton>
-      <ToggleButton label={t('edit.text.italic')} active={attrs.em} payload={{ command: 'em' }} run={run}>
+      <ToggleButton
+        label={t('edit.text.italic')}
+        active={attrs.em}
+        payload={{ command: 'em' }}
+        run={run}
+      >
         <Italic className="h-4 w-4" />
       </ToggleButton>
-      <ToggleButton label={t('edit.text.underline')} active={attrs.underline} payload={{ command: 'underline' }} run={run}>
+      <ToggleButton
+        label={t('edit.text.underline')}
+        active={attrs.underline}
+        payload={{ command: 'underline' }}
+        run={run}
+      >
         <Underline className="h-4 w-4" />
       </ToggleButton>
       <label
         aria-label={t('edit.text.color')}
         className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-md hover:bg-zinc-100 dark:hover:bg-zinc-800"
       >
-        <span className="text-sm font-semibold" style={{ borderBottom: `3px solid ${attrs.color}` }}>
+        <span
+          className="text-sm font-semibold"
+          style={{ borderBottom: `3px solid ${attrs.color}` }}
+        >
           A
         </span>
         <input
@@ -120,16 +141,36 @@ export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
         />
       </label>
       <div className="mx-1 h-5 w-px bg-zinc-200 dark:bg-zinc-700" />
-      <ToggleButton label={t('edit.text.alignLeft')} active={attrs.align === 'left'} payload={{ command: 'align-left' }} run={run}>
+      <ToggleButton
+        label={t('edit.text.alignLeft')}
+        active={attrs.align === 'left'}
+        payload={{ command: 'align-left' }}
+        run={run}
+      >
         <AlignLeft className="h-4 w-4" />
       </ToggleButton>
-      <ToggleButton label={t('edit.text.alignCenter')} active={attrs.align === 'center'} payload={{ command: 'align-center' }} run={run}>
+      <ToggleButton
+        label={t('edit.text.alignCenter')}
+        active={attrs.align === 'center'}
+        payload={{ command: 'align-center' }}
+        run={run}
+      >
         <AlignCenter className="h-4 w-4" />
       </ToggleButton>
-      <ToggleButton label={t('edit.text.alignRight')} active={attrs.align === 'right'} payload={{ command: 'align-right' }} run={run}>
+      <ToggleButton
+        label={t('edit.text.alignRight')}
+        active={attrs.align === 'right'}
+        payload={{ command: 'align-right' }}
+        run={run}
+      >
         <AlignRight className="h-4 w-4" />
       </ToggleButton>
-      <ToggleButton label={t('edit.text.bullet')} active={attrs.bulletList} payload={{ command: 'bulletList' }} run={run}>
+      <ToggleButton
+        label={t('edit.text.bullet')}
+        active={attrs.bulletList}
+        payload={{ command: 'bulletList' }}
+        run={run}
+      >
         <List className="h-4 w-4" />
       </ToggleButton>
     </div>

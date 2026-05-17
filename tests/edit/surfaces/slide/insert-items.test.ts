@@ -1,11 +1,20 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { buildInsertItems, buildFloatingActions } from '@/components/edit/surfaces/slide/use-slide-surface';
+import {
+  buildInsertItems,
+  buildFloatingActions,
+} from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
 
 describe('slide insert palette', () => {
   beforeEach(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal store-state stub for unit test
-    useSlideEditSession.setState({ history: { past: [], present: { type: 'slide', canvas: { id: 's', elements: [] } } as any, future: [] } } as any);
+    useSlideEditSession.setState({
+      history: {
+        past: [],
+        present: { type: 'slide', canvas: { id: 's', elements: [] } } as any,
+        future: [],
+      },
+    } as any);
   });
 
   afterEach(() => {
@@ -23,7 +32,10 @@ describe('slide insert palette', () => {
     const spy = vi.spyOn(useSlideEditSession.getState(), 'applyOp');
     buildInsertItems((k) => k)[0].onInvoke();
     expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ type: 'element.add', element: expect.objectContaining({ type: 'text' }) }),
+      expect.objectContaining({
+        type: 'element.add',
+        element: expect.objectContaining({ type: 'text' }),
+      }),
     );
   });
 

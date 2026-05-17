@@ -2,7 +2,10 @@ import JSZip from 'jszip';
 import { describe, expect, it } from 'vitest';
 import { buildPptxBlob } from '@/lib/export/use-export-pptx';
 import { applySlideEditOperation } from '@/lib/edit/slide-ops';
-import { createDefaultImageElement, createDefaultTextElement } from '@/lib/edit/slide-edit-elements';
+import {
+  createDefaultImageElement,
+  createDefaultTextElement,
+} from '@/lib/edit/slide-edit-elements';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import {
   makeSlideFixture,
