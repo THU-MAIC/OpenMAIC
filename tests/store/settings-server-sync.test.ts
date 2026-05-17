@@ -1168,6 +1168,37 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
     expect(store.getState().videoProviderId).toBe('kling');
     expect(store.getState().videoModelId).toBe('kling-v2-6');
   });
+
+  it('deleting the selected custom image model resolves back to a valid model', async () => {
+    const store = await getStore();
+
+    store.getState().setImageProvider('seedream');
+    store.getState().setImageProviderConfig('seedream', {
+      customModels: [{ id: 'my-custom-image', name: 'Custom' }],
+    });
+    store.getState().setImageModelId('my-custom-image');
+    expect(store.getState().imageModelId).toBe('my-custom-image');
+
+    // Delete the selected custom model — selection must not stay stale.
+    store.getState().setImageProviderConfig('seedream', { customModels: [] });
+
+    expect(store.getState().imageModelId).toBe('doubao-seedream-5-0-260128');
+  });
+
+  it('deleting the selected custom video model resolves back to a valid model', async () => {
+    const store = await getStore();
+
+    store.getState().setVideoProvider('seedance');
+    store.getState().setVideoProviderConfig('seedance', {
+      customModels: [{ id: 'my-custom-video', name: 'Custom' }],
+    });
+    store.getState().setVideoModelId('my-custom-video');
+    expect(store.getState().videoModelId).toBe('my-custom-video');
+
+    store.getState().setVideoProviderConfig('seedance', { customModels: [] });
+
+    expect(store.getState().videoModelId).toBe('doubao-seedance-1-5-pro-251215');
+  });
 });
 
 describe('settings merge migration — custom provider baseUrl', () => {

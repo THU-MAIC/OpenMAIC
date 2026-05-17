@@ -818,7 +818,9 @@ export const useSettingsStore = create<SettingsState>()(
             // Atomic invariant (#580): if this edit makes the provider usable
             // and it is the active LLM provider (or nothing is selected yet),
             // resolve a concrete model in the same update — never leave a
-            // usable provider with an empty/stale model.
+            // usable provider with an empty/stale model. When nothing is
+            // selected, this also adopts `providerId` (the first-load
+            // API-key path) so state A → state B happens atomically.
             const isActiveOrUnset = state.providerId === providerId || !state.providerId;
             if (isActiveOrUnset && isProviderUsable(mergedProvider)) {
               const modelId = resolveSelectedModel(
@@ -945,15 +947,31 @@ export const useSettingsStore = create<SettingsState>()(
         setImageModelId: (modelId) => set({ imageModelId: modelId }),
 
         setImageProviderConfig: (providerId, config) =>
-          set((state) => ({
-            imageProvidersConfig: {
+          set((state) => {
+            const mergedProvider = {
+              ...state.imageProvidersConfig[providerId],
+              ...config,
+            };
+            const imageProvidersConfig = {
               ...state.imageProvidersConfig,
-              [providerId]: {
-                ...state.imageProvidersConfig[providerId],
-                ...config,
-              },
-            },
-          })),
+              [providerId]: mergedProvider,
+            };
+            const base = { imageProvidersConfig };
+            // Atomic invariant (#580): a config edit on the active image
+            // provider (e.g. deleting the selected custom model) must not
+            // leave imageModelId pointing at a model that no longer exists.
+            if (state.imageProviderId === providerId) {
+              const models = [
+                ...(IMAGE_PROVIDERS[providerId]?.models ?? []),
+                ...(mergedProvider.customModels ?? []),
+              ];
+              const imageModelId = resolveSelectedModel(state.imageModelId, models);
+              if (imageModelId) {
+                return { ...base, imageModelId };
+              }
+            }
+            return base;
+          }),
 
         // Video Generation actions
         setVideoProvider: (providerId) =>
@@ -967,15 +985,30 @@ export const useSettingsStore = create<SettingsState>()(
         setVideoModelId: (modelId) => set({ videoModelId: modelId }),
 
         setVideoProviderConfig: (providerId, config) =>
-          set((state) => ({
-            videoProvidersConfig: {
+          set((state) => {
+            const mergedProvider = {
+              ...state.videoProvidersConfig[providerId],
+              ...config,
+            };
+            const videoProvidersConfig = {
               ...state.videoProvidersConfig,
-              [providerId]: {
-                ...state.videoProvidersConfig[providerId],
-                ...config,
-              },
-            },
-          })),
+              [providerId]: mergedProvider,
+            };
+            const base = { videoProvidersConfig };
+            // Atomic invariant (#580): symmetric with image — a config edit on
+            // the active video provider must not leave videoModelId stale.
+            if (state.videoProviderId === providerId) {
+              const models = [
+                ...(VIDEO_PROVIDERS[providerId]?.models ?? []),
+                ...(mergedProvider.customModels ?? []),
+              ];
+              const videoModelId = resolveSelectedModel(state.videoModelId, models);
+              if (videoModelId) {
+                return { ...base, videoModelId };
+              }
+            }
+            return base;
+          }),
 
         // Media generation toggle actions
         setImageGenerationEnabled: (enabled) => {

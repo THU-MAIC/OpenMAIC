@@ -12,7 +12,14 @@ export type ProviderCfgLike = {
   baseUrl?: string;
 };
 
-/** Check whether a provider has a usable path (server config or client key/baseUrl). */
+/**
+ * Check whether a provider has a usable *credential path* (server config or
+ * client key/baseUrl). This is the store-level notion and deliberately does
+ * NOT require ≥1 model — the UX-level "usable" predicate
+ * ({@link isLLMProviderConfigured}) additionally requires a model, so a
+ * pathological zero-model provider is classified State A at the UI boundary
+ * even though the store may keep it selected with an empty model (#580).
+ */
 export function isProviderUsable(cfg: ProviderCfgLike | undefined): boolean {
   if (!cfg) return false;
   if (cfg.isServerConfigured) return true;
