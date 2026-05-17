@@ -21,9 +21,13 @@ describe('active text editor registry', () => {
 
 describe('selection sync gate', () => {
   it('pushes on selection move, doc change, or stored-marks change', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal transaction stub for unit test
     expect(shouldPushAttrs({ selectionSet: true, docChanged: false, storedMarksSet: false } as any)).toBe(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal transaction stub for unit test
     expect(shouldPushAttrs({ selectionSet: false, docChanged: true, storedMarksSet: false } as any)).toBe(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal transaction stub for unit test
     expect(shouldPushAttrs({ selectionSet: false, docChanged: false, storedMarksSet: true } as any)).toBe(true);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal transaction stub for unit test
     expect(shouldPushAttrs({ selectionSet: false, docChanged: false, storedMarksSet: false } as any)).toBe(false);
   });
 });
