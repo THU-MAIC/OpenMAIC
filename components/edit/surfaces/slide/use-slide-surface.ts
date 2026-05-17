@@ -85,7 +85,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
   const onlyEl = activeElementIds.length === 1
     ? (content.canvas.elements.find((el) => el.id === activeElementIds[0]) ?? undefined)
     : undefined;
-  const textTarget = onlyEl && onlyEl.type === 'text' ? (onlyEl as PPTTextElement) : undefined;
+  const textTarget = onlyEl && onlyEl.type === 'text' ? onlyEl : undefined;
 
   return {
     content,
