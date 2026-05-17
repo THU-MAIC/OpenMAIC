@@ -1325,11 +1325,15 @@ export const useSettingsStore = create<SettingsState>()(
                 if (models?.length) recoveredVideoModel = models[0].id;
               }
 
+              const llmModels = validLLMProvider
+                ? (newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [])
+                : [];
               const validLLMModel = validLLMProvider
-                ? validateModel(
-                    state.modelId,
-                    newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [],
-                  )
+                ? validateModel(state.modelId, llmModels) ||
+                  (newProvidersConfig[validLLMProvider as ProviderId]?.isServerConfigured
+                    ? llmModels[0]?.id
+                    : '') ||
+                  ''
                 : '';
               const imageModels =
                 IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [];

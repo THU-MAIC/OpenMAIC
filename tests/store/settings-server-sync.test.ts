@@ -41,6 +41,18 @@ vi.mock('@/lib/ai/providers', () => ({
         { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
       ],
     },
+    deepseek: {
+      id: 'deepseek',
+      name: 'DeepSeek',
+      type: 'openai',
+      defaultBaseUrl: 'https://api.deepseek.com/v1',
+      requiresApiKey: true,
+      icon: '/logos/deepseek.svg',
+      models: [
+        { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+        { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
+      ],
+    },
   },
 }));
 
@@ -504,6 +516,23 @@ describe('fetchServerProviders — provider availability sync', () => {
     // gpt-4o is still available — selection should be preserved
     expect(store.getState().providerId).toBe('openai');
     expect(store.getState().modelId).toBe('gpt-4o');
+  });
+
+  it('selects the server LLM model when provider fallback replaces the default provider', async () => {
+    const store = await getStore();
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).toBe('');
+
+    mockServerResponse({
+      providers: {
+        deepseek: { models: ['deepseek-chat'] },
+      },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('deepseek');
+    expect(store.getState().modelId).toBe('deepseek-chat');
   });
 
   // ---- Error handling ----

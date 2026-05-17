@@ -1241,7 +1241,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       // callLLM / streamLLM at call time.
       if (config.providerId !== 'openai') {
         const providerId = config.providerId;
-        openaiOptions.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+        const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
           // Read thinking config from globalThis (set by thinking-context.ts)
           const thinkingCtx = (globalThis as Record<string, unknown>).__thinkingContext as
             | { getStore?: () => unknown }
@@ -1306,6 +1306,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
           return response;
         };
+        openaiOptions.fetch = compatFetch as typeof globalThis.fetch;
       }
 
       const openai = createOpenAI(openaiOptions);
