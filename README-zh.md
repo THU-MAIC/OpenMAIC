@@ -165,6 +165,16 @@ VIDEO_MINIMAX_API_KEY=...
 VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
 ```
 
+小米 MiMo Token Plan 快速示例：
+
+```env
+MIMO_API_KEY=tp-...
+MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+DEFAULT_MODEL=xiaomi:mimo-v2.5-pro
+```
+
+新加坡或欧洲 Token Plan 集群可分别使用 `https://token-plan-sgp.xiaomimimo.com/v1`、`https://token-plan-ams.xiaomimimo.com/v1`。
+
 智谱 GLM 快速示例：
 
 ```env

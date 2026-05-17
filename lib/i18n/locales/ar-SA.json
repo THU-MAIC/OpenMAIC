@@ -526,7 +526,11 @@
     "apiHost": "العنوان الأساسي",
     "baseUrlRegion": {
       "china": "الصين",
-      "international": "دولي"
+      "international": "دولي",
+      "xiaomiPayg": "الدفع حسب الاستخدام",
+      "xiaomiTokenPlanCN": "Token Plan الصين",
+      "xiaomiTokenPlanSGP": "Token Plan سنغافورة",
+      "xiaomiTokenPlanEU": "Token Plan أوروبا"
     },
     "requestUrl": "عنوان الطلب",
     "models": "النماذج",

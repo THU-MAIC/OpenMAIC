@@ -165,6 +165,16 @@ VIDEO_MINIMAX_API_KEY=...
 VIDEO_MINIMAX_BASE_URL=https://api.minimaxi.com
 ```
 
+Xiaomi MiMo Token Plan quick example:
+
+```env
+MIMO_API_KEY=tp-...
+MIMO_BASE_URL=https://token-plan-cn.xiaomimimo.com/v1
+DEFAULT_MODEL=xiaomi:mimo-v2.5-pro
+```
+
+Use `https://token-plan-sgp.xiaomimimo.com/v1` or `https://token-plan-ams.xiaomimimo.com/v1` for the Singapore or Europe Token Plan clusters.
+
 GLM (Zhipu) quick examples:
 
 ```env

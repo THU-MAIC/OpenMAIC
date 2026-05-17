@@ -526,7 +526,11 @@
     "apiHost": "Base URL",
     "baseUrlRegion": {
       "china": "Китай",
-      "international": "Международный"
+      "international": "Международный",
+      "xiaomiPayg": "Оплата по факту",
+      "xiaomiTokenPlanCN": "Token Plan Китай",
+      "xiaomiTokenPlanSGP": "Token Plan Сингапур",
+      "xiaomiTokenPlanEU": "Token Plan Европа"
     },
     "requestUrl": "URL запроса",
     "models": "Модели",
