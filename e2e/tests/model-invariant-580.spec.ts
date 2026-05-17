@@ -50,20 +50,20 @@ test.describe('#580 model-selection invariant', () => {
         body: serverProvidersBody({}),
       }),
     );
-    await page.addInitScript((settings) => {
-      localStorage.setItem('settings-storage', settings);
-    }, createSettingsStorage({
-      modelId: '',
-      providerId: 'openai',
-      providersConfig: { openai: { apiKey: '' } },
-      autoConfigApplied: true,
-    }));
+    await page.addInitScript(
+      (settings) => {
+        localStorage.setItem('settings-storage', settings);
+      },
+      createSettingsStorage({
+        modelId: '',
+        providerId: 'openai',
+        providersConfig: { openai: { apiKey: '' } },
+        autoConfigApplied: true,
+      }),
+    );
 
     const home = new HomePage(page);
-    await Promise.all([
-      page.waitForResponse('**/api/server-providers'),
-      home.goto(),
-    ]);
+    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
     await expect(home.textarea).toBeVisible();
 
     // Single affordance is the toolbar "Set up model" CTA.
@@ -78,7 +78,12 @@ test.describe('#580 model-selection invariant', () => {
     await expect(page.locator('[data-sonner-toast]')).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
 
-    await page.screenshot({ path: `${SCREENSHOT_DIR}/580-state-a-no-provider.png`, fullPage: true, animations: 'disabled', caret: 'hide' });
+    await page.screenshot({
+      path: `${SCREENSHOT_DIR}/580-state-a-no-provider.png`,
+      fullPage: true,
+      animations: 'disabled',
+      caret: 'hide',
+    });
   });
 
   test('State B: server-configured provider → concrete model auto-selected, generation enabled', async ({
@@ -91,20 +96,20 @@ test.describe('#580 model-selection invariant', () => {
         body: serverProvidersBody({ openai: { models: ['gpt-4o', 'gpt-4o-mini'] } }),
       }),
     );
-    await page.addInitScript((settings) => {
-      localStorage.setItem('settings-storage', settings);
-    }, createSettingsStorage({
-      modelId: '',
-      providerId: 'openai',
-      providersConfig: { openai: { apiKey: '' } },
-      autoConfigApplied: true,
-    }));
+    await page.addInitScript(
+      (settings) => {
+        localStorage.setItem('settings-storage', settings);
+      },
+      createSettingsStorage({
+        modelId: '',
+        providerId: 'openai',
+        providersConfig: { openai: { apiKey: '' } },
+        autoConfigApplied: true,
+      }),
+    );
 
     const home = new HomePage(page);
-    await Promise.all([
-      page.waitForResponse('**/api/server-providers'),
-      home.goto(),
-    ]);
+    await Promise.all([page.waitForResponse('**/api/server-providers'), home.goto()]);
     await expect(home.textarea).toBeVisible();
 
     // Reconcile resolves (openai, '' → first server model 'gpt-4o'); the

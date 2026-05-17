@@ -1207,10 +1207,7 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
     // Built-ins require a key and have none → unusable. A custom provider is
     // the only usable one and is the active selection.
     const stripped = Object.fromEntries(
-      Object.entries(base).map(([id, c]) => [
-        id,
-        { ...c, apiKey: '', isServerConfigured: false },
-      ]),
+      Object.entries(base).map(([id, c]) => [id, { ...c, apiKey: '', isServerConfigured: false }]),
     ) as typeof base;
     const withCustom = {
       ...stripped,
@@ -1245,10 +1242,7 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
     const base = store.getState().providersConfig;
 
     const stripped = Object.fromEntries(
-      Object.entries(base).map(([id, c]) => [
-        id,
-        { ...c, apiKey: '', isServerConfigured: false },
-      ]),
+      Object.entries(base).map(([id, c]) => [id, { ...c, apiKey: '', isServerConfigured: false }]),
     ) as typeof base;
     const withCustom = {
       ...stripped,
@@ -1282,10 +1276,7 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
     const base = store.getState().providersConfig;
 
     const stripped = Object.fromEntries(
-      Object.entries(base).map(([id, c]) => [
-        id,
-        { ...c, apiKey: '', isServerConfigured: false },
-      ]),
+      Object.entries(base).map(([id, c]) => [id, { ...c, apiKey: '', isServerConfigured: false }]),
     ) as typeof base;
     const withTwo = {
       ...stripped,
@@ -1324,10 +1315,7 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
     const base = store.getState().providersConfig;
 
     const stripped = Object.fromEntries(
-      Object.entries(base).map(([id, c]) => [
-        id,
-        { ...c, apiKey: '', isServerConfigured: false },
-      ]),
+      Object.entries(base).map(([id, c]) => [id, { ...c, apiKey: '', isServerConfigured: false }]),
     ) as typeof base;
     const withTwoCustom = {
       ...stripped,
