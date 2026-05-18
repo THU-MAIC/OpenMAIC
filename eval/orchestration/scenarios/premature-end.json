@@ -1,0 +1,20 @@
+[
+  {
+    "case_id": "premature_end_unresolved_3d_symmetry",
+    "category": "premature-end",
+    "description": "Student asks whether a 3D structure can be axisymmetric; no agent has answered. Director must NOT emit END.",
+    "input": {
+      "agents": [
+        { "id": "teacher-wang", "name": "Wang Laoshi", "role": "teacher", "priority": 9 },
+        { "id": "student-ming", "name": "Xiao Ming", "role": "student", "priority": 5 },
+        { "id": "student-li", "name": "Li Hua", "role": "student", "priority": 4 }
+      ],
+      "conversationSummary": "[Agent] Today we study axial symmetry. The Tiananmen gate tower is a classic example — its facade looks identical on the left and right.\n[Agent] Yes, very symmetric! I can see how both sides mirror each other.\n[Student (Human)] Wait — the gate tower is a 3D structure, not a flat shape. Can a 3D object really be called axisymmetric? I thought symmetry only applies to 2D shapes.",
+      "agentResponses": [],
+      "turnCount": 2
+    },
+    "expected": {
+      "shouldEnd": false
+    }
+  }
+]

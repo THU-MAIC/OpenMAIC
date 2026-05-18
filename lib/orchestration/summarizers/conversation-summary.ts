@@ -1,7 +1,5 @@
 // ==================== Conversation Summary ====================
 
-import type { StatelessChatRequest } from '@/lib/types/chat';
-
 /**
  * OpenAI message format (used by director)
  */
@@ -68,35 +66,4 @@ export function summarizeConversation(
   });
 
   return lines.join('\n');
-}
-
-/**
- * Extract the most recent genuine human student message from the original
- * pre-conversion message list.
- *
- * Uses msg.metadata.originalRole === 'user' as the source-of-truth discriminator,
- * set by use-chat-sessions.ts on every human message. This is reliable regardless
- * of what display prefixes message-converter.ts applies to the content.
- *
- * Used by the director to surface unaddressed student questions explicitly,
- * preventing premature END when a substantive human challenge has not yet
- * been resolved (issue #511).
- *
- * @param messages - Original pre-conversion messages (StatelessChatRequest['messages'])
- * @returns The message text, or null if no human message exists.
- */
-export function extractLastHumanMessage(messages: StatelessChatRequest['messages']): string | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const msg = messages[i];
-    if (msg.metadata?.originalRole !== 'user') continue;
-
-    const text = (msg.parts ?? [])
-      .filter((p) => (p as Record<string, unknown>).type === 'text')
-      .map((p) => (p as Record<string, unknown>).text as string)
-      .join('\n')
-      .trim();
-
-    return text || null;
-  }
-  return null;
 }
