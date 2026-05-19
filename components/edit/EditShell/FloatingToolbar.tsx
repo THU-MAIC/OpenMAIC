@@ -77,8 +77,22 @@ function ActionButton({ action }: { readonly action: FloatingAction }) {
       </Tooltip>
       {/* w-auto: let the action's own content size the popover (the text
           property bar is a wide single row); max-w-[92vw] keeps it on-screen
-          and Radix handles edge collision. Avoids the fixed-w-72 clip. */}
-      <PopoverContent side="bottom" align="center" className="w-auto max-w-[92vw] p-2">
+          and Radix handles edge collision. Avoids the fixed-w-72 clip.
+
+          onOpenAutoFocus prevented: opening the bar must NOT pull focus off
+          the canvas selection (commands apply to the live selection).
+          onFocusOutside prevented: format commands refocus the editor
+          (execCommand → editorView.focus()); without this the bar would
+          dismiss after every single click. Escape and pointer-down truly
+          outside still close it (defaults untouched), so it behaves like a
+          contextual bar that stays up across consecutive formatting steps. */}
+      <PopoverContent
+        side="bottom"
+        align="center"
+        className="w-auto max-w-[92vw] p-2"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+        onFocusOutside={(e) => e.preventDefault()}
+      >
         {action.popoverContent()}
       </PopoverContent>
     </Popover>
