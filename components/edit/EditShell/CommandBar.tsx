@@ -103,9 +103,18 @@ function InsertButton({ item }: { readonly item: InsertPaletteItem }) {
 
   if (!item.popoverContent) return triggerWithTooltip;
 
+  // Chain both triggers' asChild Slots directly onto the real <button>.
+  // Wrapping PopoverTrigger around <Tooltip> (a provider, not a DOM node)
+  // dropped the popover trigger handler, so the popover never opened —
+  // mirrors the PR1 fix in FloatingToolbar's ActionButton.
   return (
     <Popover>
-      <PopoverTrigger asChild>{triggerWithTooltip}</PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <PopoverTrigger asChild>{button}</PopoverTrigger>
+        </TooltipTrigger>
+        {item.tooltip && <TooltipContent>{item.tooltip}</TooltipContent>}
+      </Tooltip>
       <PopoverContent side="bottom" align="center" className="w-80 p-3">
         {item.popoverContent()}
       </PopoverContent>
