@@ -69,12 +69,15 @@ export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
   );
 
   return (
-    <div className="flex items-center gap-1">
+    // w-max + [&>*]:shrink-0 → the row keeps its natural width and no control
+    // gets squished; the popover (w-auto) sizes to this. Single clean line,
+    // no overflow/clip.
+    <div className="flex w-max items-center gap-1 [&>*]:shrink-0">
       <select
         aria-label={t('edit.text.font')}
         value={attrs.fontname}
         onChange={(e) => run({ command: 'fontname', value: e.target.value })}
-        className="h-8 rounded-md border border-zinc-200 bg-transparent px-2 text-xs dark:border-zinc-700"
+        className="h-8 w-24 rounded-md border border-zinc-200 bg-transparent px-2 text-xs dark:border-zinc-700"
       >
         <option value="">{t('edit.text.fontDefault')}</option>
         <option value="Inter">Inter</option>

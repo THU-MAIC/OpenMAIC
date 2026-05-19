@@ -75,7 +75,10 @@ function ActionButton({ action }: { readonly action: FloatingAction }) {
         </TooltipTrigger>
         <TooltipContent>{action.tooltip ?? action.label}</TooltipContent>
       </Tooltip>
-      <PopoverContent side="bottom" align="center" className="w-72 p-3">
+      {/* w-auto: let the action's own content size the popover (the text
+          property bar is a wide single row); max-w-[92vw] keeps it on-screen
+          and Radix handles edge collision. Avoids the fixed-w-72 clip. */}
+      <PopoverContent side="bottom" align="center" className="w-auto max-w-[92vw] p-2">
         {action.popoverContent()}
       </PopoverContent>
     </Popover>
