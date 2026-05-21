@@ -2,12 +2,8 @@
 
 import { produce } from 'immer';
 import { Image as ImageIcon, Type } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { ConnectedTextFormatBar } from './text-format-bar';
-import {
-  clearPersistedSlideHistory,
-  loadPersistedSlideHistory,
-} from '@/lib/edit/slide-history-persistence';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type {
   FloatingAction,
@@ -123,12 +119,6 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
 
 interface SlideCanvasController {
   readonly controller: SceneDataController;
-  readonly restorePrompt: {
-    readonly open: boolean;
-    readonly onRestore: () => void;
-    readonly onDiscard: () => void;
-    readonly onOpenChange: (open: boolean) => void;
-  };
   /**
    * Spread onto the canvas wrapper. Tracks whether a pointer gesture is in
    * flight so a renderer commit can be classified as a real user edit vs
@@ -142,17 +132,19 @@ interface SlideCanvasController {
 }
 
 /**
- * Owns the edit-entry lifecycle for the slide canvas: seeds the session
- * from the live scene (without clobbering persisted history), drives the
- * #571 history-restore prompt, and exposes the scene-context controller
- * that funnels the unmodified renderer's commits into the op history.
+ * Owns the edit-entry lifecycle for the slide canvas: seeds the in-memory
+ * undo history from the live scene and exposes the scene-context
+ * controller. The controller's writes flow through `slide-edit-session`
+ * which auto-saves them to the canonical `useStageStore` (no staging, no
+ * "restore unsaved" UX — the stage store is the source of truth).
  */
 export function useSlideCanvasController(): SlideCanvasController {
   const sceneId = useStageStore((s) => {
     const scene = s.scenes.find((x) => x.id === s.currentSceneId) ?? null;
     return scene && scene.type === 'slide' ? scene.id : '';
   });
-  // Re-render (and thus re-feed SceneProvider) whenever staged history moves.
+  // Re-render (and thus re-feed SceneProvider's getSnapshot) on every
+  // history move (apply / commit / undo / redo).
   useSlideEditSession((s) => s.history);
 
   // True only while a pointer gesture is in flight. The renderer commits a
@@ -180,14 +172,6 @@ export function useSlideCanvasController(): SlideCanvasController {
     [],
   );
 
-  // `pendingRestore` is decided once in `seed()` (before any renderer
-  // mount write), so a within-session normalization commit can't trigger
-  // the prompt. `resolvedSceneId` is the scene the user already answered
-  // for; deriving `open` keeps the prompt React-Compiler clean.
-  const pendingRestore = useSlideEditSession((s) => s.pendingRestore);
-  const [resolvedSceneId, setResolvedSceneId] = useState<string | null>(null);
-  const restoreOpen = !!sceneId && resolvedSceneId !== sceneId && pendingRestore;
-
   useEffect(() => {
     if (!sceneId) return;
     const content = currentSlideContent(sceneId);
@@ -198,34 +182,16 @@ export function useSlideCanvasController(): SlideCanvasController {
 
   useEffect(() => () => useSlideEditSession.getState().end(), []);
 
-  const onRestore = useCallback(() => {
-    const persisted = loadPersistedSlideHistory(sceneId);
-    if (persisted) useSlideEditSession.getState().restore(sceneId, persisted);
-    setResolvedSceneId(sceneId);
-  }, [sceneId]);
-
-  const onDiscard = useCallback(() => {
-    clearPersistedSlideHistory(sceneId);
-    setResolvedSceneId(sceneId);
-  }, [sceneId]);
-
-  const onOpenChange = useCallback(
-    (open: boolean) => {
-      if (!open) setResolvedSceneId(sceneId);
-    },
-    [sceneId],
-  );
-
   const controller = useMemo<SceneDataController>(
     () => ({
       sceneId,
       sceneType: 'slide',
-      getSnapshot: () =>
-        useSlideEditSession.getState().history?.present ??
-        currentSlideContent(sceneId) ??
-        EMPTY_SLIDE,
+      // Read from the canonical stage store; the session writes through to
+      // it on every history move so this is always the up-to-date content.
+      getSnapshot: () => currentSlideContent(sceneId) ?? EMPTY_SLIDE,
       updateSceneData: (updater) => {
-        const base = useSlideEditSession.getState().history?.present;
+        const base =
+          useSlideEditSession.getState().history?.present ?? currentSlideContent(sceneId);
         if (!base) return;
         const next = produce(base, updater as (draft: SlideContent) => void);
         useSlideEditSession.getState().commitContent(next, gestureRef.current);
@@ -236,7 +202,6 @@ export function useSlideCanvasController(): SlideCanvasController {
 
   return {
     controller,
-    restorePrompt: { open: restoreOpen, onRestore, onDiscard, onOpenChange },
     gestureProps,
   };
 }

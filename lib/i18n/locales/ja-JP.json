@@ -165,14 +165,6 @@
       "interactive": "インタラクティブ",
       "pbl": "PBL"
     },
-    "history": {
-      "restore": {
-        "title": "保存されていない変更を復元しますか？",
-        "body": "前回の編集セッションは保存される前に終了しました。変更を復元するか、破棄して新たに始めてください。",
-        "actionRestore": "復元",
-        "actionDiscard": "破棄"
-      }
-    },
     "multiTab": {
       "conflict": {
         "title": "別のタブでこのコースを編集中です",

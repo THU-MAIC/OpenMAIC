@@ -165,14 +165,6 @@
       "interactive": "互动",
       "pbl": "PBL"
     },
-    "history": {
-      "restore": {
-        "title": "恢复未保存的更改？",
-        "body": "上次编辑在保存前结束。可以恢复那次的更改，或丢弃后从头开始。",
-        "actionRestore": "恢复",
-        "actionDiscard": "丢弃"
-      }
-    },
     "multiTab": {
       "conflict": {
         "title": "另一个标签页正在编辑此课程",

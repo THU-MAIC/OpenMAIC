@@ -165,14 +165,6 @@
       "interactive": "Interactive",
       "pbl": "PBL"
     },
-    "history": {
-      "restore": {
-        "title": "Restore unsaved changes?",
-        "body": "Your last edit session ended before you saved. Restore those changes, or discard them and start fresh.",
-        "actionRestore": "Restore",
-        "actionDiscard": "Discard"
-      }
-    },
     "multiTab": {
       "conflict": {
         "title": "Another tab is editing this course",

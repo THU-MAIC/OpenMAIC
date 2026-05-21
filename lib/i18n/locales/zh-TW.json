@@ -165,14 +165,6 @@
       "interactive": "互動",
       "pbl": "PBL"
     },
-    "history": {
-      "restore": {
-        "title": "還原未儲存的變更？",
-        "body": "上次編輯在儲存前結束。可以還原那次的變更，或捨棄後重新開始。",
-        "actionRestore": "還原",
-        "actionDiscard": "捨棄"
-      }
-    },
     "multiTab": {
       "conflict": {
         "title": "另一個分頁正在編輯此課程",

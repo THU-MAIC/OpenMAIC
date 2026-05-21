@@ -1,5 +1,6 @@
 /**
- * Module-level slide-edit session.
+ * Module-level slide-edit session — pure in-memory undo/redo for the editor
+ * canvas.
  *
  * EditShell invokes a surface's `useSurfaceState()` and renders its
  * `CanvasComponent` as siblings (state hook on the shell, canvas as a child
@@ -7,21 +8,17 @@
  * store rather than component state — the same idiom the rest of the
  * renderer uses (useCanvasStore / useStageStore).
  *
- * Pure orchestration over the already-tested kernel (`slide-ops`), the
- * scene-context bridge (`scene-edit-bridge`) and the #571 persistence
- * layer. `seed` deliberately does NOT persist: it establishes the
- * in-memory baseline without clobbering any localStorage history the user
- * has not yet chosen to restore. Persistence starts on the first real
- * mutation (applyOp / commitContent) or once `restore` adopts it.
+ * Edits are written through to the canonical stage store by the canvas
+ * controller (`useSlideCanvasController` in `use-slide-surface.ts`); this
+ * store only tracks the undo/redo timeline of an in-progress editing
+ * session. It deliberately does NOT persist to localStorage: the canonical
+ * stage store is the source of truth and already auto-persists via Dexie,
+ * so there is nothing "unsaved" to recover on reload — no "restore unsaved
+ * changes" UX, by design.
  */
 
 import { create } from 'zustand';
 import { commitSlideEdit } from '@/lib/edit/scene-edit-bridge';
-import {
-  clearPersistedSlideHistory,
-  hasPersistedSlideHistory,
-  persistSlideHistory,
-} from '@/lib/edit/slide-history-persistence';
 import { migrateSlideContent } from '@/lib/edit/slide-schema';
 import {
   applySlideEditOperation,
@@ -30,31 +27,25 @@ import {
   undoSlideEditOperation,
 } from '@/lib/edit/slide-ops';
 import type { SlideEditHistory, SlideEditOperation } from '@/lib/edit/slide-ops';
+import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
 
 interface SlideEditSessionState {
   sceneId: string | null;
   history: SlideEditHistory | null;
-  /**
-   * Decided once at `seed` (before any renderer mount write): does this
-   * scene have persisted history from a *previous* session that the user
-   * should be offered to restore?
-   */
-  pendingRestore: boolean;
 
-  /** Establish a fresh in-memory baseline for a scene (does not persist). */
+  /** Establish a fresh in-memory baseline for a scene. */
   seed: (sceneId: string, content: SlideContent) => void;
-  /** Adopt a persisted history wholesale (user chose "restore"). */
-  restore: (sceneId: string, history: SlideEditHistory) => void;
   /** Apply one canonical op (numeric inspectors, future affordances). */
   applyOp: (op: SlideEditOperation) => void;
   /**
    * Fold a renderer-committed snapshot in. `isUserEdit` is the causal
-   * discriminator: a real geometry gesture commits synchronously inside a
-   * pointer interaction, whereas the renderer's ResizeObserver
-   * normalization (text auto-height) commits with no pointer gesture in
-   * flight. Non-user commits update the baseline only — no undo step, no
-   * persistence, so the restore prompt never fires from normalization.
+   * discriminator: a real gesture commits synchronously inside a pointer
+   * interaction, whereas the renderer's ResizeObserver normalization (text
+   * auto-height) commits with no pointer gesture in flight. Non-user
+   * commits update `present` only — no new undo step, and crucially do
+   * NOT reset past/future (the reflow can fire right after a user resize,
+   * and wiping the stack would silently break undo/redo).
    */
   commitContent: (next: SlideContent, isUserEdit: boolean) => void;
   undo: () => void;
@@ -64,47 +55,40 @@ interface SlideEditSessionState {
 }
 
 export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
-  const replace = (history: SlideEditHistory) => {
-    const { sceneId, history: prev } = get();
-    if (history === prev) return;
-    set({ history });
+  /**
+   * Write the new canonical content through to the stage store (auto-save).
+   * Single point of write-through so undo, redo, applyOp, user
+   * commitContent, and ResizeObserver normalization all stay in lockstep
+   * with `useStageStore`. Stage updates fire first so renderer subscribers
+   * (SceneProvider reads via `currentSlideContent`) see the new content as
+   * soon as React processes the next batch.
+   */
+  const writeThrough = (next: SlideContent) => {
+    const { sceneId } = get();
     if (!sceneId) return;
-    // `replace()` only runs for user actions (applyOp/commit/undo/redo).
-    // An empty `past` therefore means pristine: either never edited, or
-    // undone all the way back to the seeded baseline (undo replays to the
-    // original present; the non-user normalization path uses raw `set`,
-    // never `replace`). Persisting that would make a later entry fire a
-    // spurious restore prompt with nothing meaningful to restore.
-    if (history.past.length === 0) {
-      clearPersistedSlideHistory(sceneId);
-    } else {
-      persistSlideHistory(sceneId, history);
-    }
+    useStageStore.getState().updateScene(sceneId, { content: next });
+  };
+
+  const replace = (history: SlideEditHistory) => {
+    const { history: prev } = get();
+    if (history === prev) return;
+    writeThrough(history.present);
+    set({ history });
   };
 
   return {
     sceneId: null,
     history: null,
-    pendingRestore: false,
 
     seed: (sceneId, content) => {
+      // Adopt the live scene content as the in-memory baseline. We do NOT
+      // write-through here: if the user makes no edits, the stage store
+      // shouldn't receive a redundant write. Any schema migration the
+      // first user edit triggers will naturally flow back through
+      // commitContent's writeThrough.
       set({
         sceneId,
         history: createSlideEditHistory(migrateSlideContent(content)),
-        // Captured now, before the renderer mounts and writes anything.
-        pendingRestore: hasPersistedSlideHistory(sceneId),
-      });
-    },
-
-    restore: (sceneId, history) => {
-      set({
-        sceneId,
-        history: {
-          past: history.past.map(migrateSlideContent),
-          present: migrateSlideContent(history.present),
-          future: history.future.map(migrateSlideContent),
-        },
-        pendingRestore: false,
       });
     },
 
@@ -118,11 +102,11 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       const { history } = get();
       if (!history) return;
       if (!isUserEdit) {
-        // Renderer normalization (no pointer gesture, e.g. text
-        // auto-height reflow). Fold into `present` only — never a new
-        // undo step, never persisted, and crucially do NOT reset
-        // past/future: this reflow can fire right after a user resize,
-        // and wiping the stack would silently break undo/redo.
+        // ResizeObserver / auto-height normalization: don't push an undo
+        // step (the reflow can chase a user resize and wiping past/future
+        // would silently break undo), but DO write through — the auto-fit
+        // height IS the new canonical state.
+        writeThrough(next);
         set({ history: { ...history, present: next } });
         return;
       }
@@ -142,7 +126,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     },
 
     end: () => {
-      set({ sceneId: null, history: null, pendingRestore: false });
+      set({ sceneId: null, history: null });
     },
   };
 });
