@@ -15,6 +15,7 @@ const locales = {
   'ar-SA': arSA,
 };
 const KEYS = [
+  'edit.delete',
   'edit.text.label',
   'edit.text.font',
   'edit.text.fontDefault',

@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, List } from 'lucide-react';
+import { FONTS } from '@/configs/font';
 import type { TextAttrs } from '@/lib/prosemirror/utils';
 import {
   runActiveTextCommand,
@@ -73,16 +74,21 @@ export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
     // gets squished; the popover (w-auto) sizes to this. Single clean line,
     // no overflow/clip.
     <div className="flex w-max items-center gap-1 [&>*]:shrink-0">
+      {/* Fonts come from OpenMAIC's canonical FONTS registry (configs/font.ts)
+          — the web fonts the renderer actually loads, so a pick renders the
+          same on every platform. (A prior hardcoded SimSun/SimHei list was
+          Windows-only and had no visible effect on macOS.) */}
       <select
         aria-label={t('edit.text.font')}
         value={attrs.fontname}
         onChange={(e) => run({ command: 'fontname', value: e.target.value })}
-        className="h-8 w-24 rounded-md border border-zinc-200 bg-transparent px-2 text-xs dark:border-zinc-700"
+        className="h-8 w-28 rounded-md border border-zinc-200 bg-transparent px-2 text-xs dark:border-zinc-700"
       >
-        <option value="">{t('edit.text.fontDefault')}</option>
-        <option value="Inter">Inter</option>
-        <option value="SimSun">宋体</option>
-        <option value="SimHei">黑体</option>
+        {FONTS.map((f) => (
+          <option key={f.value} value={f.value}>
+            {f.value === '' ? t('edit.text.fontDefault') : f.label}
+          </option>
+        ))}
       </select>
       <div className="flex items-center rounded-md border border-zinc-200 dark:border-zinc-700">
         <BarButton

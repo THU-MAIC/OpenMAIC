@@ -61,10 +61,9 @@ describe('buildFloatingActions — text-format wiring', () => {
     expect(buildFloatingActions(t, undefined)).toEqual([]);
   });
 
-  it('returns a single text-format action when text element is selected', () => {
+  it('leads with the text-format action when a text element is selected', () => {
     const textEl = { id: 'el-42', type: 'text' } as PPTTextElement;
     const actions = buildFloatingActions(t, textEl);
-    expect(actions).toHaveLength(1);
     expect(actions[0].id).toBe('text-format');
   });
 

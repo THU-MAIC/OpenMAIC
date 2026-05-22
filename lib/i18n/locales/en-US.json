@@ -157,6 +157,7 @@
     "proMode": "Pro",
     "undo": "Undo",
     "redo": "Redo",
+    "delete": "Delete",
     "title": "Editing · {{type}}",
     "unsupportedScene": "{{type}} is not editable yet",
     "sceneType": {

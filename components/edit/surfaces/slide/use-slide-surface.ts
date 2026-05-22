@@ -1,7 +1,7 @@
 'use client';
 
 import { produce } from 'immer';
-import { Image as ImageIcon, Type } from 'lucide-react';
+import { Image as ImageIcon, Trash2, Type } from 'lucide-react';
 import React, { useEffect, useMemo, useRef } from 'react';
 import { ConnectedTextFormatBar } from './text-format-bar';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
@@ -19,7 +19,7 @@ import {
 } from '@/lib/edit/slide-edit-elements';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
-import type { PPTElement, PPTTextElement } from '@/lib/types/slides';
+import type { PPTElement } from '@/lib/types/slides';
 import type { SlideContent } from '@/lib/types/stage';
 import { ImagePicker } from './ImagePicker';
 import { useSlideEditSession } from './slide-edit-session';
@@ -56,20 +56,36 @@ export function buildInsertItems(t: (k: string) => string): InsertPaletteItem[] 
 
 export function buildFloatingActions(
   t: (k: string) => string,
-  textTarget: PPTTextElement | undefined,
+  selected: PPTElement | undefined,
 ): FloatingAction[] {
-  if (!textTarget) return [];
-  // NOTE: The bar is surfaced via FloatingToolbar's popover slot (one button → popover → bar),
-  // not always-inline. This is a popover-vs-inline ergonomics tradeoff deferred for future polish.
-  return [
-    {
+  if (!selected) return [];
+  const actions: FloatingAction[] = [];
+  if (selected.type === 'text') {
+    // The text property bar is surfaced via FloatingToolbar's popover slot
+    // (button → popover → bar), not always-inline — a popover-vs-inline
+    // ergonomics tradeoff deferred for future polish.
+    actions.push({
       id: 'text-format',
       label: t('edit.text.label'),
       tooltip: t('edit.text.label'),
-      popoverContent: () =>
-        React.createElement(ConnectedTextFormatBar, { elementId: textTarget.id }),
+      popoverContent: () => React.createElement(ConnectedTextFormatBar, { elementId: selected.id }),
+    });
+  }
+  // Delete affordance for any single selected element (text or image). The
+  // renderer's own delete lives only in a right-click menu; this is the
+  // discoverable, button-only entry (keyboard shortcuts deferred — see #560).
+  actions.push({
+    id: 'delete',
+    label: t('edit.delete'),
+    tooltip: t('edit.delete'),
+    icon: React.createElement(Trash2, { className: 'h-4 w-4' }),
+    group: 'danger',
+    onInvoke: () => {
+      useSlideEditSession.getState().applyOp({ type: 'element.delete', elementId: selected.id });
+      useCanvasStore.getState().setActiveElementIdList([]);
     },
-  ];
+  });
+  return actions;
 }
 
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
@@ -98,7 +114,6 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
     activeElementIds.length === 1
       ? (content.canvas.elements.find((el) => el.id === activeElementIds[0]) ?? undefined)
       : undefined;
-  const textTarget = onlyEl && onlyEl.type === 'text' ? onlyEl : undefined;
 
   return {
     content,
@@ -111,7 +126,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
       redo: () => useSlideEditSession.getState().redo(),
     },
     insertItems: buildInsertItems(t),
-    floatingActions: buildFloatingActions(t, textTarget),
+    floatingActions: buildFloatingActions(t, onlyEl),
     commands: [],
     hints: [],
   };

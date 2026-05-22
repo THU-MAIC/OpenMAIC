@@ -157,6 +157,7 @@
     "proMode": "プロモード",
     "undo": "元に戻す",
     "redo": "やり直し",
+    "delete": "削除",
     "title": "編集 · {{type}}",
     "unsupportedScene": "{{type}}はまだ編集できません",
     "sceneType": {

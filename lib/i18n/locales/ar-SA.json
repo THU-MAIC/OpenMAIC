@@ -157,6 +157,7 @@
     "proMode": "احترافي",
     "undo": "تراجع",
     "redo": "إعادة",
+    "delete": "حذف",
     "title": "تحرير · {{type}}",
     "unsupportedScene": "{{type}} غير قابل للتحرير بعد",
     "sceneType": {

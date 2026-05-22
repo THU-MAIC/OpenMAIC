@@ -157,6 +157,7 @@
     "proMode": "Pro",
     "undo": "Отменить",
     "redo": "Повторить",
+    "delete": "Удалить",
     "title": "Редактирование · {{type}}",
     "unsupportedScene": "{{type}} пока нельзя редактировать",
     "sceneType": {

@@ -157,6 +157,7 @@
     "proMode": "專業模式",
     "undo": "復原",
     "redo": "重做",
+    "delete": "刪除",
     "title": "編輯 · {{type}}",
     "unsupportedScene": "{{type}}暫不支援編輯",
     "sceneType": {
