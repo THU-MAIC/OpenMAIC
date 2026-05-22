@@ -5,7 +5,7 @@
 /**
  * Web Search Provider IDs
  */
-export type WebSearchProviderId = 'tavily' | 'bocha' | 'brave' | 'baidu' | 'minimax';
+export type WebSearchProviderId = 'tavily' | 'bocha' | 'brave' | 'baidu' | 'minimax' | 'searxng';
 
 /**
  * Baidu sub-source toggles

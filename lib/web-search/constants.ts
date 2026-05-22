@@ -5,6 +5,13 @@
 import type { BaiduSubSources, WebSearchProviderId, WebSearchProviderConfig } from './types';
 
 /**
+ * Default base URL for a locally hosted SearXNG instance. Shown as the
+ * placeholder in Settings since SearXNG is the one provider that always
+ * needs a user-supplied URL.
+ */
+export const SEARXNG_DEFAULT_BASE_URL = 'http://localhost:8888';
+
+/**
  * Web Search Provider Registry
  */
 export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProviderConfig> = {
@@ -47,6 +54,14 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     defaultBaseUrl: 'https://api.minimaxi.com',
     endpointPath: '/v1/coding_plan/search',
     icon: '/logos/minimax.svg',
+  },
+  searxng: {
+    id: 'searxng',
+    name: 'SearXNG',
+    requiresApiKey: false,
+    defaultBaseUrl: SEARXNG_DEFAULT_BASE_URL,
+    endpointPath: '/search',
+    icon: '/logos/searxng.svg',
   },
 };
 

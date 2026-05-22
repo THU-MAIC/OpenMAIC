@@ -127,6 +127,7 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   BRAVE: 'brave',
   BAIDU: 'baidu',
   WEB_SEARCH_MINIMAX: 'minimax',
+  SEARXNG: 'searxng',
 };
 
 // ---------------------------------------------------------------------------
@@ -308,7 +309,9 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
-    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
+    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
+      keylessProviders: new Set(['searxng']),
+    }),
     ttsDisabled: collectDisabledTTS(yamlData.tts),
   };
 }
@@ -578,7 +581,9 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (webSearch.bocha?.apiKey) return 'bocha';
   if (webSearch.baidu?.apiKey) return 'baidu';
   if (webSearch.minimax?.apiKey) return 'minimax';
-  return Object.keys(webSearch)[0];
+  // Keyless providers (brave, searxng) are not auto-selected;
+  // only return them when explicitly requested.
+  return Object.keys(webSearch).find((id) => webSearch[id]?.apiKey);
 }
 
 /**

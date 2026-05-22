@@ -32,6 +32,8 @@ const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
     'https://api.minimax.io/v1/coding_plan',
     'https://api.minimax.io/v1/coding_plan/search',
   ],
+  // SearXNG is self-hosted — any base URL is allowed.
+  searxng: [],
 };
 
 function normalizeBaseUrl(value: string): string {
@@ -60,7 +62,8 @@ export function resolveSafeClientWebSearchBaseUrl(
   }
 
   const allowed = OFFICIAL_CLIENT_BASE_URLS[providerId].map(normalizeBaseUrl);
-  if (!allowed.includes(normalized)) {
+  // Self-hosted providers (e.g. SearXNG) have no URL restrictions — allow any URL.
+  if (allowed.length > 0 && !allowed.includes(normalized)) {
     throw new Error(`Unsupported ${WEB_SEARCH_PROVIDERS[providerId].name} base URL`);
   }
   return normalized;

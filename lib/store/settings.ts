@@ -484,6 +484,12 @@ const getDefaultWebSearchConfig = () => ({
       enabled: true,
       requiresApiKey: true,
     },
+    searxng: {
+      apiKey: '',
+      baseUrl: '',
+      enabled: true,
+      requiresApiKey: false,
+    },
   } as Record<
     WebSearchProviderId,
     { apiKey: string; baseUrl: string; enabled: boolean; requiresApiKey?: boolean }
