@@ -20,9 +20,13 @@ import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
-import type { WebSearchProviderId } from '@/lib/web-search/types';
+import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { createLogger } from '@/lib/logger';
-import { validateProvider, validateModel } from '@/lib/store/settings-validation';
+import {
+  validateProvider,
+  resolveSelectedModel,
+  isLLMProviderConfigured,
+} from '@/lib/store/settings-validation';
 
 const log = createLogger('Settings');
 
@@ -117,10 +121,12 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      requiresApiKey?: boolean;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
     }
   >;
+  baiduSubSources: BaiduSubSources;
 
   // Image Generation settings
   imageProviderId: ImageProviderId;
@@ -165,6 +171,7 @@ export interface SettingsState {
       apiKey: string;
       baseUrl: string;
       enabled: boolean;
+      requiresApiKey?: boolean;
       isServerConfigured?: boolean;
       serverBaseUrl?: string;
     }
@@ -311,6 +318,7 @@ export interface SettingsState {
     providerId: WebSearchProviderId,
     config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
   ) => void;
+  setBaiduSubSources: (sources: Partial<BaiduSubSources>) => void;
 
   // Server provider actions
   fetchServerProviders: () => Promise<void>;
@@ -335,6 +343,35 @@ const getDefaultProvidersConfig = (): ProvidersConfig => {
   });
   return config;
 };
+
+/**
+ * Single shared LLM selection resolver (#580). Given a providers config and
+ * the current (providerId, modelId), return the resolved selection that
+ * upholds the invariant for ANY config mutation — clearing/adding a key,
+ * editing models, deleting a provider, import, reset:
+ *
+ * - keep the current provider if it is still usable;
+ * - else fall back to the first usable provider;
+ * - else State A (empty selection).
+ *
+ * Then resolve a concrete model for the chosen provider. Used by both
+ * setProviderConfig (single edit) and setProvidersConfig (bulk) so the two
+ * paths can never diverge — the per-call-site asymmetry #580 set out to kill.
+ */
+function resolveLLMSelection(
+  config: ProvidersConfig,
+  currentProviderId: ProviderId,
+  currentModelId: string,
+): { providerId: ProviderId; modelId: string } {
+  const isUsable = (id: ProviderId) => !!config[id] && isLLMProviderConfigured(config[id]);
+  const providerId = isUsable(currentProviderId)
+    ? currentProviderId
+    : ((Object.keys(config) as ProviderId[]).find(isUsable) ?? ('' as ProviderId));
+  const modelId = providerId
+    ? resolveSelectedModel(currentModelId, config[providerId]?.models ?? [])
+    : '';
+  return { providerId, modelId };
+}
 
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
@@ -421,9 +458,24 @@ const getDefaultVideoConfig = () => ({
 const getDefaultWebSearchConfig = () => ({
   webSearchProviderId: 'tavily' as WebSearchProviderId,
   webSearchProvidersConfig: {
-    tavily: { apiKey: '', baseUrl: '', enabled: true },
-    bocha: { apiKey: '', baseUrl: '', enabled: true },
-  } as Record<WebSearchProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+    tavily: { apiKey: '', baseUrl: '', enabled: true, requiresApiKey: true },
+    bocha: { apiKey: '', baseUrl: '', enabled: true, requiresApiKey: true },
+    brave: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.brave.defaultBaseUrl || '',
+      enabled: true,
+      requiresApiKey: false,
+    },
+    baidu: { apiKey: '', baseUrl: '', enabled: true, requiresApiKey: true },
+  } as Record<
+    WebSearchProviderId,
+    { apiKey: string; baseUrl: string; enabled: boolean; requiresApiKey?: boolean }
+  >,
+  baiduSubSources: {
+    webSearch: true,
+    baike: true,
+    scholar: true,
+  } as BaiduSubSources,
 });
 
 /**
@@ -452,6 +504,7 @@ function ensureValidProviderSelections(state: Partial<SettingsState>): void {
   if (!hasProviderId(WEB_SEARCH_PROVIDERS, state.webSearchProviderId)) {
     state.webSearchProviderId = defaultWebSearchConfig.webSearchProviderId;
   }
+  ensureBaiduSubSources(state);
 
   if (!hasProviderId(IMAGE_PROVIDERS, state.imageProviderId)) {
     state.imageProviderId = defaultImageConfig.imageProviderId;
@@ -609,8 +662,23 @@ function ensureBuiltInWebSearchProviders(state: Partial<SettingsState>): void {
     const providerId = pid as WebSearchProviderId;
     if (!state.webSearchProvidersConfig![providerId]) {
       state.webSearchProvidersConfig![providerId] = defaultConfig[providerId];
+    } else {
+      state.webSearchProvidersConfig![providerId] = {
+        ...state.webSearchProvidersConfig![providerId],
+        requiresApiKey: WEB_SEARCH_PROVIDERS[providerId].requiresApiKey,
+      };
     }
   });
+}
+
+function ensureBaiduSubSources(state: Partial<SettingsState>): void {
+  const defaults = getDefaultWebSearchConfig().baiduSubSources;
+  const current = state.baiduSubSources;
+  state.baiduSubSources = {
+    webSearch: current?.webSearch ?? defaults.webSearch,
+    baike: current?.baike ?? defaults.baike,
+    scholar: current?.scholar ?? defaults.scholar,
+  };
 }
 
 // Migrate from old localStorage format
@@ -771,17 +839,42 @@ export const useSettingsStore = create<SettingsState>()(
                 ...config,
               },
             };
+            // Re-resolve through the shared resolver (#580): a single config
+            // edit can make the active provider usable (adopt + pick a model),
+            // make it INVALID — e.g. the user clears its API key — (fall back
+            // to another usable provider or State A), or change its model list
+            // (re-pick the model). All handled atomically here, never leaving
+            // an invalid/stale (provider, model) selected.
+            const { providerId: nextProvider, modelId: nextModel } = resolveLLMSelection(
+              providersConfig,
+              state.providerId,
+              state.modelId,
+            );
             return {
               providersConfig,
               thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, providersConfig),
+              ...(nextProvider !== state.providerId && { providerId: nextProvider }),
+              ...(nextModel !== state.modelId && { modelId: nextModel }),
             };
           }),
 
         setProvidersConfig: (config) =>
-          set((state) => ({
-            providersConfig: config,
-            thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, config),
-          })),
+          set((state) => {
+            // Bulk config replace (delete provider/model, import, reset): same
+            // shared resolver as setProviderConfig so the two paths can never
+            // diverge — never leave the deleted/invalid provider selected.
+            const { providerId: nextProvider, modelId: nextModel } = resolveLLMSelection(
+              config,
+              state.providerId,
+              state.modelId,
+            );
+            return {
+              providersConfig: config,
+              thinkingConfigs: pruneThinkingConfigs(state.thinkingConfigs, config),
+              ...(nextProvider !== state.providerId && { providerId: nextProvider }),
+              ...(nextModel !== state.modelId && { modelId: nextModel }),
+            };
+          }),
 
         setTtsModel: (model) => set({ ttsModel: model }),
 
@@ -880,40 +973,78 @@ export const useSettingsStore = create<SettingsState>()(
 
         // Image Generation actions
         setImageProvider: (providerId) =>
-          set(() => {
-            const models = IMAGE_PROVIDERS[providerId]?.models || [];
-            return {
-              imageProviderId: providerId,
-              imageModelId: models[0]?.id || '',
-            };
-          }),
+          set((state) => ({
+            imageProviderId: providerId,
+            imageModelId: resolveSelectedModel(
+              state.imageModelId,
+              IMAGE_PROVIDERS[providerId]?.models ?? [],
+            ),
+          })),
         setImageModelId: (modelId) => set({ imageModelId: modelId }),
 
         setImageProviderConfig: (providerId, config) =>
-          set((state) => ({
-            imageProvidersConfig: {
+          set((state) => {
+            const mergedProvider = {
+              ...state.imageProvidersConfig[providerId],
+              ...config,
+            };
+            const imageProvidersConfig = {
               ...state.imageProvidersConfig,
-              [providerId]: {
-                ...state.imageProvidersConfig[providerId],
-                ...config,
-              },
-            },
-          })),
+              [providerId]: mergedProvider,
+            };
+            const base = { imageProvidersConfig };
+            // Atomic invariant (#580): a config edit on the active image
+            // provider (e.g. deleting the selected custom model) must not
+            // leave imageModelId pointing at a model that no longer exists.
+            if (state.imageProviderId === providerId) {
+              const models = [
+                ...(IMAGE_PROVIDERS[providerId]?.models ?? []),
+                ...(mergedProvider.customModels ?? []),
+              ];
+              const imageModelId = resolveSelectedModel(state.imageModelId, models);
+              if (imageModelId) {
+                return { ...base, imageModelId };
+              }
+            }
+            return base;
+          }),
 
         // Video Generation actions
-        setVideoProvider: (providerId) => set({ videoProviderId: providerId }),
+        setVideoProvider: (providerId) =>
+          set((state) => ({
+            videoProviderId: providerId,
+            videoModelId: resolveSelectedModel(
+              state.videoModelId,
+              VIDEO_PROVIDERS[providerId]?.models ?? [],
+            ),
+          })),
         setVideoModelId: (modelId) => set({ videoModelId: modelId }),
 
         setVideoProviderConfig: (providerId, config) =>
-          set((state) => ({
-            videoProvidersConfig: {
+          set((state) => {
+            const mergedProvider = {
+              ...state.videoProvidersConfig[providerId],
+              ...config,
+            };
+            const videoProvidersConfig = {
               ...state.videoProvidersConfig,
-              [providerId]: {
-                ...state.videoProvidersConfig[providerId],
-                ...config,
-              },
-            },
-          })),
+              [providerId]: mergedProvider,
+            };
+            const base = { videoProvidersConfig };
+            // Atomic invariant (#580): symmetric with image — a config edit on
+            // the active video provider must not leave videoModelId stale.
+            if (state.videoProviderId === providerId) {
+              const models = [
+                ...(VIDEO_PROVIDERS[providerId]?.models ?? []),
+                ...(mergedProvider.customModels ?? []),
+              ];
+              const videoModelId = resolveSelectedModel(state.videoModelId, models);
+              if (videoModelId) {
+                return { ...base, videoModelId };
+              }
+            }
+            return base;
+          }),
 
         // Media generation toggle actions
         setImageGenerationEnabled: (enabled) => {
@@ -1013,6 +1144,17 @@ export const useSettingsStore = create<SettingsState>()(
               },
             },
           })),
+        setBaiduSubSources: (sources) =>
+          set((state) => {
+            const next = {
+              ...state.baiduSubSources,
+              ...sources,
+            };
+            if (!next.webSearch && !next.baike && !next.scholar) {
+              return state;
+            }
+            return { baiduSubSources: next };
+          }),
 
         // Fetch server-configured providers and merge into local state
         fetchServerProviders: async () => {
@@ -1225,7 +1367,7 @@ export const useSettingsStore = create<SettingsState>()(
               const videoFallback = buildFallback<VideoProviderId>(newVideoConfig);
               const webSearchFallback = buildFallback<WebSearchProviderId>(newWebSearchConfig);
 
-              const validLLMProvider = validateProvider(
+              let validLLMProvider = validateProvider(
                 state.providerId,
                 newProvidersConfig,
                 llmFallback,
@@ -1265,42 +1407,38 @@ export const useSettingsStore = create<SettingsState>()(
                 'tavily' as WebSearchProviderId,
               );
 
-              // Auto-recover: when provider is empty but server has available ones
-              let recoveredImageModel = '';
+              // Auto-recover: when the selected provider is empty/unusable but
+              // a usable one exists, adopt the first usable fallback. Applied
+              // symmetrically to LLM/image/video so that "usable provider ⇒ a
+              // concrete model is selected" holds for every modality (#580).
+              if (!validLLMProvider && llmFallback.length > 0) {
+                validLLMProvider = llmFallback[0];
+              }
               if (!validImageProvider && imageFallback.length > 0) {
                 validImageProvider = imageFallback[0];
-                const models = IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models;
-                if (models?.length) recoveredImageModel = models[0].id;
               }
-              let recoveredVideoModel = '';
               if (!validVideoProvider && videoFallback.length > 0) {
                 validVideoProvider = videoFallback[0];
-                const models = VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models;
-                if (models?.length) recoveredVideoModel = models[0].id;
               }
 
+              // Resolve the model in the same place the provider is resolved.
+              // resolveSelectedModel never yields '' when the provider has ≥1
+              // model, so a usable provider can never settle with an empty model.
+              const llmModels = validLLMProvider
+                ? (newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [])
+                : [];
               const validLLMModel = validLLMProvider
-                ? validateModel(
-                    state.modelId,
-                    newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [],
-                  )
+                ? resolveSelectedModel(state.modelId, llmModels)
                 : '';
               const imageModels =
                 IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [];
               const validImageModel = validImageProvider
-                ? recoveredImageModel ||
-                  validateModel(state.imageModelId, imageModels) ||
-                  // validateModel('', ...) returns '' — fallback to first model when modelId is empty
-                  imageModels[0]?.id ||
-                  ''
+                ? resolveSelectedModel(state.imageModelId, imageModels)
                 : '';
               const videoModels =
                 VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [];
               const validVideoModel = validVideoProvider
-                ? recoveredVideoModel ||
-                  validateModel(state.videoModelId, videoModels) ||
-                  videoModels[0]?.id ||
-                  ''
+                ? resolveSelectedModel(state.videoModelId, videoModels)
                 : '';
 
               const validTTSVoice =
@@ -1383,25 +1521,10 @@ export const useSettingsStore = create<SettingsState>()(
                 }
               }
 
-              // LLM auto-select: only on true first load (no provider selected yet)
-              let autoProviderId: ProviderId | undefined;
-              let autoModelId: string | undefined;
-              if (!state.providerId && !state.modelId) {
-                for (const [pid, cfg] of Object.entries(newProvidersConfig)) {
-                  if (cfg.isServerConfigured) {
-                    // Prefer server-restricted models, fall back to built-in list
-                    const serverModels = cfg.serverModels;
-                    const modelId = serverModels?.length
-                      ? serverModels[0]
-                      : PROVIDERS[pid as ProviderId]?.models[0]?.id;
-                    if (modelId) {
-                      autoProviderId = pid as ProviderId;
-                      autoModelId = modelId;
-                      break;
-                    }
-                  }
-                }
-              }
+              // (LLM first-load auto-select removed: the symmetric provider
+              // recovery + resolveSelectedModel above now resolve LLM provider
+              // and model atomically at the source, covering server-configured
+              // AND client-API-key providers — see #580.)
 
               return {
                 providersConfig: newProvidersConfig,
@@ -1467,8 +1590,6 @@ export const useSettingsStore = create<SettingsState>()(
                 ...(autoVideoEnabled !== undefined && {
                   videoGenerationEnabled: autoVideoEnabled,
                 }),
-                ...(autoProviderId && { providerId: autoProviderId }),
-                ...(autoModelId && { modelId: autoModelId }),
               };
             });
           } catch (e) {
@@ -1620,12 +1741,26 @@ export const useSettingsStore = create<SettingsState>()(
               apiKey: oldApiKey,
               baseUrl: '',
               enabled: true,
+              requiresApiKey: true,
               isServerConfigured: oldIsServerConfigured,
             },
             bocha: {
               apiKey: '',
               baseUrl: '',
               enabled: true,
+              requiresApiKey: true,
+            },
+            brave: {
+              apiKey: '',
+              baseUrl: WEB_SEARCH_PROVIDERS.brave.defaultBaseUrl || '',
+              enabled: true,
+              requiresApiKey: false,
+            },
+            baidu: {
+              apiKey: '',
+              baseUrl: '',
+              enabled: true,
+              requiresApiKey: true,
             },
           } as SettingsState['webSearchProvidersConfig'];
           delete stateRecord.webSearchApiKey;

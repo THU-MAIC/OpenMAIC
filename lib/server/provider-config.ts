@@ -105,6 +105,8 @@ const VIDEO_ENV_MAP: Record<string, string> = {
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
   BOCHA: 'bocha',
+  BRAVE: 'brave',
+  BAIDU: 'baidu',
 };
 
 // ---------------------------------------------------------------------------
@@ -496,5 +498,7 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
     return preferredProviderId;
   }
   if (webSearch.tavily?.apiKey) return 'tavily';
+  if (webSearch.bocha?.apiKey) return 'bocha';
+  if (webSearch.baidu?.apiKey) return 'baidu';
   return Object.keys(webSearch)[0];
 }

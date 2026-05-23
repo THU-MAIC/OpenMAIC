@@ -500,7 +500,9 @@
       "lemonade": "Lemonade (محلي)",
       "ollama": "Ollama (محلي)",
       "tavily": "Tavily",
-      "bocha": "Bocha"
+      "bocha": "Bocha",
+      "brave": "Brave Search",
+      "baidu": "Baidu"
     },
     "providerTypes": {
       "openai": "بروتوكول OpenAI",
@@ -524,7 +526,11 @@
     "apiHost": "العنوان الأساسي",
     "baseUrlRegion": {
       "china": "الصين",
-      "international": "دولي"
+      "international": "دولي",
+      "xiaomiPayg": "الدفع حسب الاستخدام",
+      "xiaomiTokenPlanCN": "Token Plan الصين",
+      "xiaomiTokenPlanSGP": "Token Plan سنغافورة",
+      "xiaomiTokenPlanEU": "Token Plan أوروبا"
     },
     "requestUrl": "عنوان الطلب",
     "models": "النماذج",
@@ -605,7 +611,6 @@
     "step3StartUsing": "بعد الحفظ، سيستخدم النظام النموذج المحدد",
     "activeModel": "النموذج النشط",
     "activeModelDescription": "اختر النموذج لمحادثات الذكاء الاصطناعي وتوليد المحتوى",
-    "selectModel": "اختر النموذج",
     "searchModels": "البحث في النماذج",
     "noModelsFound": "لم يتم العثور على نماذج مطابقة",
     "noConfiguredProviders": "لا يوجد مزوّدون مُكوّنون",
@@ -1008,6 +1013,16 @@
     "webSearchApiKeyPlaceholder": "أدخل مفتاح API للبحث",
     "webSearchApiKeyPlaceholderServer": "تم تكوين مفتاح الخادم، يمكنك التجاوز اختياريًا",
     "webSearchApiKeyHint": "احصل على مفتاح API من مزود البحث المحدد",
+    "webSearchApiKeyOptional": "مفتاح API اختياري. بدونه، سيتم استخدام استخراج الصفحة العامة كبديل.",
+    "baiduSubSources": "مصادر بحث Baidu",
+    "baiduSubSourcesDescription": "اختر مصدر Baidu واحدًا على الأقل.",
+    "baiduSubSourceWeb": "بحث الويب",
+    "baiduSubSourceWebDescription": "نتائج ويب عامة من Baidu AI Search.",
+    "baiduSubSourceBaike": "Baidu Baike",
+    "baiduSubSourceBaikeDescription": "مقالات موسوعية من Baidu Baike.",
+    "baiduSubSourceScholar": "Baidu Scholar",
+    "baiduSubSourceScholarDescription": "أبحاث أكاديمية من Baidu Scholar.",
+    "viewDocs": "مستندات API",
     "webSearchBaseUrl": "العنوان الأساسي",
     "webSearchServerConfigured": "تم تكوين مفتاح API للبحث على الخادم",
     "optional": "اختياري"

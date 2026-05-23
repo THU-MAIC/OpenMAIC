@@ -500,7 +500,9 @@
       "lemonade": "Lemonade (Local)",
       "ollama": "Ollama (Local)",
       "tavily": "Tavily",
-      "bocha": "Bocha"
+      "bocha": "Bocha",
+      "brave": "Brave Search",
+      "baidu": "Baidu"
     },
     "providerTypes": {
       "openai": "OpenAI Protocol",
@@ -524,7 +526,11 @@
     "apiHost": "Base URL",
     "baseUrlRegion": {
       "china": "China",
-      "international": "International"
+      "international": "International",
+      "xiaomiPayg": "Pay-as-you-go",
+      "xiaomiTokenPlanCN": "Token Plan CN",
+      "xiaomiTokenPlanSGP": "Token Plan SG",
+      "xiaomiTokenPlanEU": "Token Plan EU"
     },
     "requestUrl": "Request URL",
     "models": "Models",
@@ -605,7 +611,6 @@
     "step3StartUsing": "After saving, the system will use your selected model",
     "activeModel": "Active Model",
     "activeModelDescription": "Select the model for AI conversations and content generation",
-    "selectModel": "Select Model",
     "searchModels": "Search models",
     "noModelsFound": "No matching models found",
     "noConfiguredProviders": "No configured providers",
@@ -1008,6 +1013,16 @@
     "webSearchApiKeyPlaceholder": "Enter your search API key",
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
     "webSearchApiKeyHint": "Get an API key from the selected search provider",
+    "webSearchApiKeyOptional": "API key is optional. Without one, public page scraping will be used as a fallback.",
+    "baiduSubSources": "Baidu Search Sources",
+    "baiduSubSourcesDescription": "Choose at least one Baidu source to query.",
+    "baiduSubSourceWeb": "Web Search",
+    "baiduSubSourceWebDescription": "General web pages from Baidu AI Search.",
+    "baiduSubSourceBaike": "Baidu Baike",
+    "baiduSubSourceBaikeDescription": "Encyclopedia entries from Baidu Baike.",
+    "baiduSubSourceScholar": "Baidu Scholar",
+    "baiduSubSourceScholarDescription": "Academic papers from Baidu Scholar.",
+    "viewDocs": "API Docs",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Server-side search API key is configured",
     "optional": "Optional"

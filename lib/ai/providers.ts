@@ -21,6 +21,8 @@
  * - https://siliconflow.cn/models
  * - https://siliconflow.cn/pricing
  * - https://www.volcengine.com/docs/82379/1330310
+ * - https://platform.xiaomimimo.com/static/docs/pricing.md
+ * - https://platform.xiaomimimo.com/static/docs/tokenplan/quick-access.md
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
@@ -244,6 +246,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     icon: '/logos/gemini.svg',
     models: [
+      {
+        id: 'gemini-3.5-flash',
+        name: 'Gemini 3.5 Flash',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
       {
         id: 'gemini-3.1-pro-preview',
         name: 'Gemini 3.1 Pro Preview',
@@ -911,12 +929,44 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     name: 'Xiaomi MiMo',
     type: 'openai',
     defaultBaseUrl: 'https://api.xiaomimimo.com/v1',
+    // Token Plan endpoints use the same OpenAI-compatible path with regional hosts.
+    alternateBaseUrls: [
+      { label: 'settings.baseUrlRegion.xiaomiPayg', url: 'https://api.xiaomimimo.com/v1' },
+      {
+        label: 'settings.baseUrlRegion.xiaomiTokenPlanCN',
+        url: 'https://token-plan-cn.xiaomimimo.com/v1',
+      },
+      {
+        label: 'settings.baseUrlRegion.xiaomiTokenPlanSGP',
+        url: 'https://token-plan-sgp.xiaomimimo.com/v1',
+      },
+      {
+        label: 'settings.baseUrlRegion.xiaomiTokenPlanEU',
+        url: 'https://token-plan-ams.xiaomimimo.com/v1',
+      },
+    ],
     requiresApiKey: true,
     icon: '/logos/xiaomi.svg',
     models: [
       {
         id: 'mimo-v2.5-pro',
         name: 'MiMo V2.5 Pro',
+        contextWindow: 1048576,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'mimo-v2-pro',
+        name: 'MiMo V2 Pro',
         contextWindow: 1048576,
         outputWindow: 131072,
         capabilities: {
@@ -939,6 +989,38 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           streaming: true,
           tools: true,
           vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'mimo-v2-omni',
+        name: 'MiMo V2 Omni',
+        contextWindow: 262144,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'mimo-v2-flash',
+        name: 'MiMo V2 Flash',
+        contextWindow: 262144,
+        outputWindow: 65536,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
           thinking: {
             toggleable: true,
             budgetAdjustable: false,
@@ -1241,7 +1323,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       // callLLM / streamLLM at call time.
       if (config.providerId !== 'openai') {
         const providerId = config.providerId;
-        openaiOptions.fetch = async (url: RequestInfo | URL, init?: RequestInit) => {
+        const compatFetch = async (url: RequestInfo | URL, init?: RequestInit) => {
           // Read thinking config from globalThis (set by thinking-context.ts)
           const thinkingCtx = (globalThis as Record<string, unknown>).__thinkingContext as
             | { getStore?: () => unknown }
@@ -1306,6 +1388,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
 
           return response;
         };
+        openaiOptions.fetch = compatFetch as typeof globalThis.fetch;
       }
 
       const openai = createOpenAI(openaiOptions);

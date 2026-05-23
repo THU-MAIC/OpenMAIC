@@ -398,6 +398,7 @@ function GenerationPreviewContent() {
               providerId: wsProviderId,
               apiKey: wsConfig?.apiKey || undefined,
               baseUrl: wsConfig?.baseUrl || undefined,
+              baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
             }),
           ),
           signal,

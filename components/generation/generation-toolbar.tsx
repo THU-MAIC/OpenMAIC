@@ -15,6 +15,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
+import { isLLMProviderConfigured } from '@/lib/store/settings-validation';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web-search/constants';
@@ -76,24 +77,24 @@ export function GenerationToolbar({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Check if the selected web search provider has a valid config (API key or server-configured)
+  // Check web search availability. Keyless providers such as Brave should keep
+  // the toolbar reachable even when the current API-key provider is not ready.
   const webSearchProvider = WEB_SEARCH_PROVIDERS[webSearchProviderId];
   const webSearchConfig = webSearchProvidersConfig[webSearchProviderId];
-  const webSearchAvailable = webSearchProvider
+  const selectedWebSearchAvailable = webSearchProvider
     ? !webSearchProvider.requiresApiKey ||
       !!webSearchConfig?.apiKey ||
       !!webSearchConfig?.isServerConfigured
     : false;
+  const webSearchAvailable = Object.values(WEB_SEARCH_PROVIDERS).some((provider) => {
+    const cfg = webSearchProvidersConfig[provider.id];
+    return !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
+  });
 
   // Configured LLM providers (only those with valid credentials + models + endpoint)
   const configuredProviders = providersConfig
     ? Object.entries(providersConfig)
-        .filter(
-          ([, config]) =>
-            (!config.requiresApiKey || config.apiKey || config.isServerConfigured) &&
-            config.models.length >= 1 &&
-            (config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl),
-        )
+        .filter(([, config]) => isLLMProviderConfigured(config))
         .map(([id, config]) => ({
           id: id as ProviderId,
           name: config.name,
@@ -315,12 +316,16 @@ export function GenerationToolbar({
             <PopoverContent align="start" className="w-64 p-3 space-y-3">
               {/* Toggle */}
               <button
-                onClick={() => onWebSearchChange(!webSearch)}
+                onClick={() => {
+                  if (!selectedWebSearchAvailable) return;
+                  onWebSearchChange(!webSearch);
+                }}
                 className={cn(
                   'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
                   webSearch
                     ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
                     : 'border-border hover:bg-muted/50',
+                  !selectedWebSearchAvailable && 'opacity-60',
                 )}
               >
                 <Globe2
@@ -705,7 +710,10 @@ function ModelSettingsPopover({
   const currentProviderName =
     currentProvider?.name ?? currentProviderConfig?.name ?? currentProviderId;
   const currentProviderIcon = currentProvider?.icon ?? currentProviderConfig?.icon;
-  const currentModelLabel = currentModel?.name || currentModelId || t('settings.selectModel');
+  // Under the #580 invariant this popover only renders when a usable provider
+  // exists, which guarantees a concrete model — so the label is always
+  // provider / model (no "Select Model" fallback state).
+  const currentModelLabel = currentModel?.name || currentModelId;
   const currentThinkingValue = getThinkingDisplayValue(
     currentModel?.capabilities?.thinking,
     thinkingConfig,
@@ -753,9 +761,7 @@ function ModelSettingsPopover({
           </PopoverTrigger>
         </TooltipTrigger>
         <TooltipContent>
-          {currentModelId
-            ? `${currentProviderConfig?.name || currentProviderId} / ${currentModelId}`
-            : t('settings.selectModel')}
+          {`${currentProviderConfig?.name || currentProviderId} / ${currentModelId}`}
         </TooltipContent>
       </Tooltip>
 

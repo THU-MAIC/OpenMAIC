@@ -500,7 +500,9 @@
       "lemonade": "Lemonade（本地）",
       "ollama": "Ollama（本地模型）",
       "tavily": "Tavily",
-      "bocha": "博查"
+      "bocha": "博查",
+      "brave": "Brave Search",
+      "baidu": "百度"
     },
     "providerTypes": {
       "openai": "OpenAI 协议",
@@ -524,7 +526,11 @@
     "apiHost": "Base URL",
     "baseUrlRegion": {
       "china": "国内站",
-      "international": "国际站"
+      "international": "国际站",
+      "xiaomiPayg": "按量付费",
+      "xiaomiTokenPlanCN": "Token Plan 中国",
+      "xiaomiTokenPlanSGP": "Token Plan 新加坡",
+      "xiaomiTokenPlanEU": "Token Plan 欧洲"
     },
     "requestUrl": "请求地址",
     "models": "模型",
@@ -605,7 +611,6 @@
     "step3StartUsing": "保存设置后，系统将使用您选择的模型",
     "activeModel": "使用模型",
     "activeModelDescription": "选择当前用于 AI 对话和内容生成的模型",
-    "selectModel": "选择模型",
     "searchModels": "搜索模型",
     "noModelsFound": "未找到匹配的模型",
     "noConfiguredProviders": "暂无已配置的提供方",
@@ -1008,6 +1013,16 @@
     "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",
     "webSearchApiKeyPlaceholderServer": "已配置服务端密钥，可选填覆盖",
     "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
+    "webSearchApiKeyOptional": "API Key 为可选项。未填写时将通过公开页面抓取获取结果。",
+    "baiduSubSources": "百度搜索源",
+    "baiduSubSourcesDescription": "选择至少一个百度数据源参与搜索。",
+    "baiduSubSourceWeb": "网页搜索",
+    "baiduSubSourceWebDescription": "使用百度 AI 搜索获取通用网页结果。",
+    "baiduSubSourceBaike": "百度百科",
+    "baiduSubSourceBaikeDescription": "使用百度百科获取词条摘要。",
+    "baiduSubSourceScholar": "百度学术",
+    "baiduSubSourceScholarDescription": "使用百度学术获取论文结果。",
+    "viewDocs": "API 文档",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "服务端已配置搜索 API Key",
     "optional": "可选"

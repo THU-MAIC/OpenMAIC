@@ -18,7 +18,7 @@ import {
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import type { AICallFn } from '@/lib/generation/pipeline-types';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
-import type { WebSearchProviderId } from '@/lib/web-search/types';
+import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
 
 const log = createLogger('WebSearch');
@@ -33,12 +33,14 @@ export async function POST(req: NextRequest) {
       providerId: requestProviderId,
       apiKey: clientApiKey,
       baseUrl: clientBaseUrl,
+      baiduSubSources,
     } = body as {
       query?: string;
       pdfText?: string;
       providerId?: WebSearchProviderId;
       apiKey?: string;
       baseUrl?: string;
+      baiduSubSources?: BaiduSubSources;
     };
     query = requestQuery;
 
@@ -50,11 +52,11 @@ export async function POST(req: NextRequest) {
       requestProviderId && WEB_SEARCH_PROVIDERS[requestProviderId] ? requestProviderId : 'tavily';
     const provider = WEB_SEARCH_PROVIDERS[providerId];
     const apiKey = resolveWebSearchApiKey(providerId, clientApiKey);
-    if (!apiKey) {
+    if (provider.requiresApiKey && !apiKey) {
       return apiError(
         'MISSING_API_KEY',
         400,
-        `${provider.name} API key is not configured. Set it in Settings → Web Search or configure ${providerId === 'bocha' ? 'BOCHA_API_KEY' : 'TAVILY_API_KEY'} on the server.`,
+        `${provider.name} API key is not configured. Set it in Settings -> Web Search or configure ${getWebSearchEnvKey(providerId)} on the server.`,
       );
     }
     let baseUrl: string | undefined;
@@ -100,7 +102,13 @@ export async function POST(req: NextRequest) {
       finalQueryLength: searchQuery.finalQueryLength,
     });
 
-    const result = await searchWeb({ providerId, query: searchQuery.query, apiKey, baseUrl });
+    const result = await searchWeb({
+      providerId,
+      query: searchQuery.query,
+      apiKey,
+      baseUrl,
+      ...(providerId === 'baidu' && baiduSubSources ? { baiduSubSources } : {}),
+    });
     const context = formatSearchResultsAsContext(result);
 
     return apiSuccess({
@@ -114,5 +122,19 @@ export async function POST(req: NextRequest) {
     log.error(`Web search failed [query="${query?.substring(0, 60) ?? 'unknown'}"]:`, err);
     const message = err instanceof Error ? err.message : 'Web search failed';
     return apiError('INTERNAL_ERROR', 500, message);
+  }
+}
+
+function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
+  switch (providerId) {
+    case 'baidu':
+      return 'BAIDU_API_KEY';
+    case 'bocha':
+      return 'BOCHA_API_KEY';
+    case 'brave':
+      return 'BRAVE_API_KEY';
+    case 'tavily':
+    default:
+      return 'TAVILY_API_KEY';
   }
 }

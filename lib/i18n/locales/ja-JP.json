@@ -500,7 +500,9 @@
       "lemonade": "Lemonade（ローカル）",
       "ollama": "Ollama（ローカルモデル）",
       "tavily": "Tavily",
-      "bocha": "Bocha"
+      "bocha": "Bocha",
+      "brave": "Brave Search",
+      "baidu": "Baidu"
     },
     "providerTypes": {
       "openai": "OpenAIプロトコル",
@@ -524,7 +526,11 @@
     "apiHost": "ベースURL",
     "baseUrlRegion": {
       "china": "中国",
-      "international": "国際"
+      "international": "国際",
+      "xiaomiPayg": "従量課金",
+      "xiaomiTokenPlanCN": "Token Plan 中国",
+      "xiaomiTokenPlanSGP": "Token Plan シンガポール",
+      "xiaomiTokenPlanEU": "Token Plan 欧州"
     },
     "requestUrl": "リクエストURL",
     "models": "モデル",
@@ -605,7 +611,6 @@
     "step3StartUsing": "保存後、選択したモデルが使用されます",
     "activeModel": "使用中のモデル",
     "activeModelDescription": "AI会話とコンテンツ生成に使用するモデルを選択",
-    "selectModel": "モデルを選択",
     "searchModels": "モデルを検索",
     "noModelsFound": "一致するモデルが見つかりません",
     "noConfiguredProviders": "設定済みのプロバイダーがありません",
@@ -1008,6 +1013,16 @@
     "webSearchApiKeyPlaceholder": "検索APIキーを入力",
     "webSearchApiKeyPlaceholderServer": "サーバーキー設定済み、任意で上書き",
     "webSearchApiKeyHint": "選択した検索プロバイダーからAPIキーを取得してください",
+    "webSearchApiKeyOptional": "APIキーは任意です。未設定の場合、公開ページのスクレイピングが使用されます。",
+    "baiduSubSources": "Baidu検索ソース",
+    "baiduSubSourcesDescription": "少なくとも1つのBaiduソースを選択してください。",
+    "baiduSubSourceWeb": "Web検索",
+    "baiduSubSourceWebDescription": "Baidu AI Searchの一般Web検索結果。",
+    "baiduSubSourceBaike": "Baidu Baike",
+    "baiduSubSourceBaikeDescription": "Baidu Baikeの百科事典エントリ。",
+    "baiduSubSourceScholar": "Baidu Scholar",
+    "baiduSubSourceScholarDescription": "Baidu Scholarの学術論文。",
+    "viewDocs": "APIドキュメント",
     "webSearchBaseUrl": "ベースURL",
     "webSearchServerConfigured": "サーバー側で検索APIキーが設定済みです",
     "optional": "任意"
