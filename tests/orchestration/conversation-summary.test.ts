@@ -136,4 +136,3 @@ describe('summarizeConversation — maxMessages slicing', () => {
     expect(lines).toHaveLength(1);
   });
 });
-
