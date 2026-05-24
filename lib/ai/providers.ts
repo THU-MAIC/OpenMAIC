@@ -587,6 +587,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         },
       },
       {
+        id: 'deepseek-v4-pro[1m]',
+        name: 'DeepSeek V4 Pro (1M)',
+        contextWindow: 1048576,
+        outputWindow: 393216,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
         id: 'deepseek-v4-flash',
         name: 'DeepSeek V4 Flash',
         contextWindow: 1048576,
