@@ -134,8 +134,7 @@ export function getAvailableProvidersWithVoices(
       !config.requiresApiKey &&
       !!(
         providerConfig?.serverBaseUrl?.trim() ||
-        providerConfig?.baseUrl?.trim() ||
-        config.defaultBaseUrl
+        providerConfig?.baseUrl?.trim()
       );
     const isLocalVoxCPM =
       providerId === VOXCPM_TTS_PROVIDER_ID &&
