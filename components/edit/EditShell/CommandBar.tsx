@@ -85,7 +85,11 @@ function InsertButton({ item }: { readonly item: InsertPaletteItem }) {
       type="button"
       disabled={item.disabled}
       onClick={item.popoverContent ? undefined : item.onInvoke}
-      className="group flex h-9 items-center gap-1.5 rounded-xl px-3 text-zinc-600 transition-colors hover:bg-zinc-100 hover:text-zinc-900 disabled:pointer-events-none disabled:opacity-40 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+      className={`group flex h-9 items-center gap-1.5 rounded-xl px-3 transition-colors disabled:pointer-events-none disabled:opacity-40 ${
+        item.active
+          ? 'bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300'
+          : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
+      }`}
     >
       <span className="flex h-4 w-4 items-center justify-center [&>svg]:h-4 [&>svg]:w-4">
         {item.icon}

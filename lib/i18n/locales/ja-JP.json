@@ -179,6 +179,7 @@
       "fontDefault": "デフォルト",
       "sizeUp": "文字を大きく",
       "sizeDown": "文字を小さく",
+      "fontSize": "フォントサイズ",
       "bold": "太字",
       "italic": "斜体",
       "underline": "下線",

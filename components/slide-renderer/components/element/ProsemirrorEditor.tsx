@@ -32,7 +32,6 @@ import {
 import { shouldPushAttrs } from '@/lib/prosemirror/selection-sync';
 import type { TextFormatPainterKeys } from '@/lib/types/edit';
 import { KEYS } from '@/configs/hotkey';
-import { toast } from 'sonner';
 
 export interface ProsemirrorEditorProps {
   elementId: string;
@@ -184,10 +183,6 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
             });
             autoSelectAll(editorView.current);
             addMark(editorView.current, mark);
-
-            if (item.value && !document.fonts.check(`16px ${item.value}`)) {
-              toast.warning('Font is loading, please wait...');
-            }
           } else if (item.command === 'fontsize' && item.value) {
             const mark = editorView.current.state.schema.marks.fontsize.create({
               fontsize: item.value,

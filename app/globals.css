@@ -132,10 +132,76 @@
   body {
     @apply bg-background text-foreground;
   }
+  /* Radix Select / Popover wrap with `react-remove-scroll`, which adds a
+     compensation `padding-right` to <body> when they open. Our <html>
+     already reserves the scrollbar gutter (above), so that compensation
+     creates a visible layout shift on every dropdown open. Scope the
+     override to editor mode — the SlideCanvas sets `data-maic-editor` on
+     the body while mounted — so Radix's compensation still works on the
+     rest of the app (modals, sheets, etc. on non-editor pages). */
+  body[data-maic-editor='true'] {
+    padding-right: 0 !important;
+  }
 }
 /* ProseMirror Editor Styles */
 .prosemirror-editor {
   cursor: text;
+}
+
+/* The slide editor draws a text element's frame via the renderer's Operate
+   layer. The focused contenteditable must not also paint a UA focus ring on
+   top of it (the base `* { @apply outline-ring/50 }` rule gives every focused
+   element an outline). `.prosemirror-editor` is an editor-only class —
+   playback's BaseTextElement never carries it, so playback is unaffected. */
+.prosemirror-editor :focus,
+.prosemirror-editor :focus-visible {
+  outline: none;
+}
+
+/* Tailwind's preflight resets `list-style: none` and `padding: 0` on
+   `<ul>`/`<ol>`. The text element's `bulletList` / `orderedList` commands
+   genuinely wrap content in `<ul><li>` / `<ol><li>`, but without those
+   resets undone no marker would be visible. `!important` defeats any
+   layered preflight specificity we'd otherwise have to chase. Dual
+   selector covers both the playback wrapper (`.editable-element-text`,
+   present in edit mode too) and the editor wrapper (`.prosemirror-editor`)
+   in case the markup ever nests differently. */
+.editable-element-text ul,
+.prosemirror-editor ul {
+  list-style: disc outside !important;
+  padding-inline-start: 1.5rem !important;
+}
+.editable-element-text ol,
+.prosemirror-editor ol {
+  list-style: decimal outside !important;
+  padding-inline-start: 1.5rem !important;
+}
+.editable-element-text li,
+.prosemirror-editor li {
+  display: list-item !important;
+}
+
+/* Compact react-colorful for the slide editor's color popover. Defaults are
+   a 200×200 square with a thick separator — we squeeze it tight + round it
+   so the popover feels intentional, not stock. */
+.color-picker .react-colorful {
+  width: 100%;
+  height: auto;
+}
+.color-picker .react-colorful__saturation {
+  height: 128px;
+  border-radius: 6px;
+  border-bottom: none;
+}
+.color-picker .react-colorful__hue {
+  height: 10px;
+  margin-top: 10px;
+  border-radius: 999px;
+}
+.color-picker .react-colorful__pointer {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
 }
 
 .prosemirror-editor.format-painter {

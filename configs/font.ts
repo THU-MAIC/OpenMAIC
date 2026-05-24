@@ -1,31 +1,39 @@
-export const FONTS = [
-  { label: '默认字体', value: '' },
-  { label: '思源黑体', value: 'SourceHanSans' },
-  { label: '思源宋体', value: 'SourceHanSerif' },
-  { label: '文鼎PL楷体', value: 'WenDingPLKaiTi' },
-  { label: '文鼎PL宋体', value: 'WenDingPLSongTi' },
-  { label: '朱雀仿宋', value: 'ZhuqueFangSong' },
-  { label: '霞鹜文楷', value: 'LXGWWenKai' },
-  { label: '阿里巴巴普惠体', value: 'AlibabaPuHuiTi' },
-  { label: 'MiSans', value: 'MiSans' },
-  { label: '得意黑', value: 'DeYiHei' },
-  { label: '仓耳小丸子', value: 'CangerXiaowanzi' },
-  { label: '优设标题黑', value: 'YousheTitleBlack' },
-  { label: '峰广明锐体', value: 'FengguangMingrui' },
-  { label: '摄图摩登小方体', value: 'ShetuModernSquare' },
-  { label: '站酷快乐体', value: 'ZcoolHappy' },
-  { label: '字制区喜脉体', value: 'ZizhiQuXiMai' },
-  { label: '素材集市康康体', value: 'SucaiJishiKangkang' },
-  { label: '素材集市酷方体', value: 'SucaiJishiCoolSquare' },
-  { label: '途牛类圆体', value: 'TuniuRounded' },
-  { label: '锐字真言体', value: 'RuiziZhenyan' },
-  { label: 'Source Serif 4', value: 'SourceSerif4' },
-  { label: 'JetBrains Mono', value: 'JetBrainsMono' },
-  { label: 'Literata', value: 'Literata' },
+/**
+ * Fonts offered in the slide editor's text-format picker.
+ *
+ * Every entry is a real web font: Inter via `next/font` (`app/layout.tsx`),
+ * the rest via `@fontsource` packages loaded in `app/editor-fonts.ts`.
+ * `@fontsource` `unicode-range`-subsets the CJK faces, so they download lazily
+ * per glyph range — a picked font actually renders.
+ *
+ * Adding a font: install its `@fontsource` package, import the weight CSS in
+ * `app/editor-fonts.ts`, then add an entry here whose `value` matches the
+ * package's `@font-face` family name.
+ */
+export interface FontEntry {
+  /** Display name; rendered as the fallback when `labelKey` is absent. */
+  readonly label: string;
+  /** CSS font-family value; "" means the element's own default (no override). */
+  readonly value: string;
+  /** Optional i18n key — preferred over `label` when present. */
+  readonly labelKey?: string;
+}
+
+export const FONTS: readonly FontEntry[] = [
+  { labelKey: 'edit.text.fontDefault', label: 'Default', value: '' },
+  // Chinese
+  { label: '思源黑体', value: 'Noto Sans SC' },
+  { label: '思源宋体', value: 'Noto Serif SC' },
+  { label: '霞鹜文楷', value: 'LXGW WenKai' },
+  { label: '站酷快乐体', value: 'ZCOOL KuaiLe' },
+  // Latin
   { label: 'Inter', value: 'Inter' },
   { label: 'Roboto', value: 'Roboto' },
-  { label: 'Open Sans', value: 'OpenSans' },
+  { label: 'Open Sans', value: 'Open Sans' },
   { label: 'Montserrat', value: 'Montserrat' },
-  { label: 'Source Sans Pro', value: 'SourceSansPro' },
+  { label: 'Source Sans 3', value: 'Source Sans 3' },
   { label: 'Merriweather', value: 'Merriweather' },
+  { label: 'Literata', value: 'Literata' },
+  { label: 'Source Serif 4', value: 'Source Serif 4' },
+  { label: 'JetBrains Mono', value: 'JetBrains Mono' },
 ];

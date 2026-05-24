@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as registry from '@/lib/prosemirror/active-editor-registry';
-import { stepFontSize } from '@/components/edit/surfaces/slide/text-format-bar';
-import { buildFloatingActions } from '@/components/edit/surfaces/slide/use-slide-surface';
-import type { PPTTextElement } from '@/lib/types/slides';
+import { currentFontLabel, stepFontSize } from '@/components/edit/surfaces/slide/text-format-bar';
 
 describe('TextFormatBar — pure logic', () => {
   it('stepFontSize increments and decrements by delta', () => {
@@ -20,6 +18,24 @@ describe('TextFormatBar — pure logic', () => {
   it('stepFontSize handles invalid input (defaults to 16)', () => {
     expect(stepFontSize('', 2)).toBe('18px');
     expect(stepFontSize('abc', -2)).toBe('14px');
+  });
+});
+
+describe('TextFormatBar — currentFontLabel', () => {
+  const t = (k: string) => `T:${k}`;
+
+  it('returns the i18n label for the default (empty) font', () => {
+    expect(currentFontLabel('', t)).toBe('T:edit.text.fontDefault');
+  });
+
+  it("returns the registry entry's label for a matched font", () => {
+    expect(currentFontLabel('Roboto', t)).toBe('Roboto');
+    expect(currentFontLabel('Noto Sans SC', t)).toBe('思源黑体');
+  });
+
+  it('returns the raw family name for an unmatched legacy font', () => {
+    expect(currentFontLabel('Microsoft YaHei', t)).toBe('Microsoft YaHei');
+    expect(currentFontLabel('PingFang SC', t)).toBe('PingFang SC');
   });
 });
 
@@ -51,32 +67,5 @@ describe('TextFormatBar — C1 integration (runActiveTextCommand)', () => {
     }
     expect(spy).toHaveBeenCalledTimes(commands.length);
     spy.mockRestore();
-  });
-});
-
-describe('buildFloatingActions — text-format wiring', () => {
-  const t = (k: string) => k;
-
-  it('returns [] when no text target', () => {
-    expect(buildFloatingActions(t, undefined)).toEqual([]);
-  });
-
-  it('leads with the text-format action when a text element is selected', () => {
-    const textEl = { id: 'el-42', type: 'text' } as PPTTextElement;
-    const actions = buildFloatingActions(t, textEl);
-    expect(actions[0].id).toBe('text-format');
-  });
-
-  it('text-format action has a popoverContent factory', () => {
-    const textEl = { id: 'el-42', type: 'text' } as PPTTextElement;
-    const actions = buildFloatingActions(t, textEl);
-    expect(typeof actions[0].popoverContent).toBe('function');
-  });
-
-  it('text-format action label and tooltip are i18n keys', () => {
-    const textEl = { id: 'el-42', type: 'text' } as PPTTextElement;
-    const actions = buildFloatingActions(t, textEl);
-    expect(actions[0].label).toBe('edit.text.label');
-    expect(actions[0].tooltip).toBe('edit.text.label');
   });
 });

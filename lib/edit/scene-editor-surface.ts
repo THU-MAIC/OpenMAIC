@@ -36,6 +36,12 @@ export interface InsertPaletteItem extends UiAffordance {
    * "choose a shape" or "choose an image source".
    */
   popoverContent?: () => ReactNode;
+  /**
+   * Whether the item is in an "armed" state — e.g. the surface is waiting for
+   * a canvas gesture to complete an insert. CommandBar renders this with the
+   * active/toggle style. Defaults to false.
+   */
+  active?: boolean;
 }
 
 /**
