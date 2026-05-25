@@ -235,6 +235,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   // Store actions
   const setProviderConfig = useSettingsStore((state) => state.setProviderConfig);
   const setProvidersConfig = useSettingsStore((state) => state.setProvidersConfig);
+  const setModel = useSettingsStore((state) => state.setModel);
   const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
   const setASRProvider = useSettingsStore((state) => state.setASRProvider);
 
@@ -452,6 +453,12 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
       newModels[modelIndex] = model;
     }
     setProviderConfig(pid, { models: newModels });
+    // #542: Explicitly select the model so the global (providerId, modelId)
+    // pair stays consistent even when the provider has no API key yet.
+    // setProviderConfig's resolveLLMSelection handles provider switching,
+    // but a fresh provider with models but no credentials is State A;
+    // explicitly selecting the model here keeps the intent unambiguous.
+    setModel(pid, model.id);
     setShowModelDialog(false);
     setEditingModel(null);
   };
