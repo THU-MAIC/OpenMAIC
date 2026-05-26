@@ -136,3 +136,20 @@ describe('summarizeConversation — maxMessages slicing', () => {
     expect(lines).toHaveLength(1);
   });
 });
+
+describe('summarizeConversation — edge cases', () => {
+  test('content starting with [bracket-colon] pattern has leading prefix stripped', () => {
+    // SENDER_PREFIX_RE /^\[[^\]]+\]:\s*/ strips any [Name]: prefix, not just [You]:.
+    // Pin the "strip" contract so a future regex change is a deliberate decision.
+    const out = summarizeConversation([{ role: 'user', content: '[FYI]: my answer is correct' }]);
+    expect(out).toContain('my answer is correct');
+    expect(out).not.toContain('[FYI]:');
+  });
+
+  test('system role message is labelled [System] (defensive branch)', () => {
+    // Exercises the else branch — system messages do not appear in the director
+    // path in practice, but the branch should remain covered.
+    const out = summarizeConversation([{ role: 'system', content: 'System context' }]);
+    expect(out).toContain('[System]');
+  });
+});

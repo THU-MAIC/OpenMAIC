@@ -28,6 +28,10 @@ const SENDER_PREFIX_RE = /^\[[^\]]+\]:\s*/;
  * (e.g. "[You]: Can a 3D object be axisymmetric?"). This prefix is stripped from
  * the summary output for readability — it is NOT used for discrimination.
  *
+ * Caller contract: the `'system'` role branch is defensive-only — `convertMessagesToOpenAI`
+ * filters to `role:'user'` and `role:'assistant'` before this function is called in the
+ * director path, so system messages do not appear here in practice.
+ *
  * @param messages - OpenAI-format messages from the director path
  * @param maxMessages - Maximum number of recent messages to include (default 10)
  * @param maxContentLength - Maximum content length per message (default 200)

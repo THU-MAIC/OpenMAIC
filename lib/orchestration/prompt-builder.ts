@@ -76,6 +76,20 @@ const MUTUAL_EXCLUSION_NOTE = `- IMPORTANT — Whiteboard / Canvas mutual exclus
 
 // ==================== Private helpers ====================
 
+/**
+ * Documents the role:"user" encoding that message-converter.ts applies to peer agent turns.
+ * Without this note the agent LLM cannot distinguish a peer's turn from the human student's
+ * turn — both arrive as role:"user".
+ */
+function buildConversationEncodingNote(): string {
+  return `
+# Conversation History Encoding
+In the message history you receive, turns from other AI classroom agents appear as \`role:"user"\` messages with a \`[AgentName]:\` prefix followed by a JSON array — e.g., \`[Assistant]: [{"type":"text","content":"..."}]\`. These are AI peer contributions, not the human student.
+
+The human student's turns also appear as \`role:"user"\` but carry the localised word for "You" as prefix (e.g., \`[You]:\` in English, \`[你]:\` in Chinese) followed by plain natural-language text, never a JSON array.
+`;
+}
+
 function buildStudentProfileSection(userProfile?: { nickname?: string; bio?: string }): string {
   if (!userProfile?.nickname && !userProfile?.bio) return '';
   return `\n# Student Profile
@@ -143,6 +157,7 @@ export function buildStructuredPrompt(
     roleGuideline: ROLE_GUIDELINES[agentConfig.role] || ROLE_GUIDELINES.student,
     studentProfileSection: buildStudentProfileSection(userProfile),
     peerContext: buildPeerContextSection(agentResponses, agentConfig.name),
+    conversationEncodingNote: buildConversationEncodingNote(),
     languageConstraint: buildLanguageConstraint(storeState.stage?.languageDirective),
     formatExample: hasSlideActions ? FORMAT_EXAMPLE_SLIDE : FORMAT_EXAMPLE_WB,
     orderingPrinciples: hasSlideActions ? ORDERING_SLIDE : ORDERING_WB,

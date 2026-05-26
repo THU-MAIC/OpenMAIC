@@ -189,6 +189,11 @@ describe('optional sections toggle on / off correctly', () => {
     const out = buildStructuredPrompt(baseAgent, stateNoLang);
     expect(out).not.toContain('# Language (CRITICAL)');
   });
+
+  test('conversation encoding note is present in every agent prompt', () => {
+    const out = buildStructuredPrompt(baseAgent, slideState);
+    expect(out).toContain('Conversation History Encoding');
+  });
 });
 
 describe('director routing contract', () => {
