@@ -1,20 +1,20 @@
 {
 	"compilerOptions": {
 		"allowSyntheticDefaultImports": true,
-		"declaration": true,
-		"declarationDir": "./out/defs",
+		"declaration": false,
+		"declarationDir": null,
 		"lib": [
 			"dom",
 			"es2020"
 		],
-		"module": "es2020",
-		"moduleResolution": "node",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
 		"noImplicitAny": false,
-		"outDir": "./out",
+		"outDir": "./dist",
 		"sourceMap": true,
 		"strict": true,
 		"strictNullChecks": false, // NOTE: very necessary!
-		"target": "es2016"
+		"target": "ES2020",
 	},
 	"display": "Recommended",
 	"$schema": "https://json.schemastore.org/tsconfig",
