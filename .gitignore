@@ -75,6 +75,7 @@ next-env.d.ts
 eval/whiteboard-layout/results/
 eval/outline-language/results/
 eval/orchestration/results/
+eval/orchestration/results-answering/
 
 # e2e screenshot artifacts
 e2e/screenshots/
