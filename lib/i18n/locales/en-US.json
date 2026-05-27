@@ -70,6 +70,10 @@
     "unknown": "Unknown",
     "stopDiscussion": "Stop Discussion",
     "endQA": "End Q&A",
+    "error": {
+      "emptyAgentResponses": "Agents returned empty responses; discussion stopped. Try again or check your model settings.",
+      "streamInterrupted": "Stream ended unexpectedly; discussion didn't complete. Please try again."
+    },
     "tabs": {
       "lecture": "Notes",
       "chat": "Chat"
@@ -449,8 +453,6 @@
     "multiAgentMode": "Multi-Agent Mode",
     "agentsCollaborating": "Collaborative Discussion",
     "agentsCollaboratingCount": "{{count}} agents selected for collaborative discussion",
-    "maxTurns": "Max Discussion Turns",
-    "maxTurnsDesc": "The maximum number of discussion turns between agents (each agent completes actions and reply counts as one turn)",
     "priority": "Priority",
     "actions": "Actions",
     "actionCount": "{{count}} actions",

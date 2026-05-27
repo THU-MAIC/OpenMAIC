@@ -192,7 +192,6 @@ export interface SettingsState {
 
   // Agent settings
   selectedAgentIds: string[];
-  maxTurns: string;
   agentMode: 'preset' | 'auto';
   autoAgentCount: number;
 
@@ -216,7 +215,6 @@ export interface SettingsState {
   setAutoPlayLecture: (autoPlay: boolean) => void;
   setPlaybackSpeed: (speed: PlaybackSpeed) => void;
   setSelectedAgentIds: (ids: string[]) => void;
-  setMaxTurns: (turns: string) => void;
   setAgentMode: (mode: 'preset' | 'auto') => void;
   setAutoAgentCount: (count: number) => void;
 
@@ -694,7 +692,6 @@ const migrateFromOldStorage = () => {
   const oldProvidersConfig = localStorage.getItem('providersConfig');
   const oldTtsModel = localStorage.getItem('ttsModel');
   const oldSelectedAgents = localStorage.getItem('selectedAgentIds');
-  const oldMaxTurns = localStorage.getItem('maxTurns');
 
   if (!oldLlmModel && !oldProvidersConfig) return null; // No old data
 
@@ -736,9 +733,6 @@ const migrateFromOldStorage = () => {
     }
   }
 
-  let maxTurns = '10';
-  if (oldMaxTurns) maxTurns = oldMaxTurns;
-
   return {
     providerId,
     modelId,
@@ -746,7 +740,6 @@ const migrateFromOldStorage = () => {
     providersConfig,
     ttsModel,
     selectedAgentIds,
-    maxTurns,
   };
 };
 
@@ -774,7 +767,6 @@ export const useSettingsStore = create<SettingsState>()(
         providersConfig: initialProvidersConfig,
         ttsModel: migratedData?.ttsModel || 'openai-tts',
         selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
-        maxTurns: migratedData?.maxTurns?.toString() || '10',
         agentMode: 'auto' as const,
         autoAgentCount: 3,
 
@@ -888,7 +880,6 @@ export const useSettingsStore = create<SettingsState>()(
 
         setSelectedAgentIds: (ids) => set({ selectedAgentIds: ids }),
 
-        setMaxTurns: (turns) => set({ maxTurns: turns }),
         setAgentMode: (mode) => set({ agentMode: mode }),
         setAutoAgentCount: (count) => set({ autoAgentCount: count }),
 

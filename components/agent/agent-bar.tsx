@@ -20,9 +20,6 @@ import {
   Volume2,
   VolumeX,
   Loader2,
-  MessageSquare,
-  Minus,
-  Plus,
   Search,
 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -615,8 +612,6 @@ export function AgentBar() {
   const { listAgents } = useAgentRegistry();
   const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
   const setSelectedAgentIds = useSettingsStore((s) => s.setSelectedAgentIds);
-  const maxTurns = useSettingsStore((s) => s.maxTurns);
-  const setMaxTurns = useSettingsStore((s) => s.setMaxTurns);
   const agentMode = useSettingsStore((s) => s.agentMode);
   const setAgentMode = useSettingsStore((s) => s.setAgentMode);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
@@ -937,57 +932,6 @@ export function AgentBar() {
                   </div>
                 </div>
               )}
-
-              {/* Max turns — compact stepper */}
-              <div className="flex items-center gap-1.5 px-2 py-1 mt-1 border-t border-border/30">
-                <MessageSquare className="size-3 text-muted-foreground/40 shrink-0" />
-                <span className="text-[11px] text-muted-foreground/50 flex-1">
-                  {t('settings.maxTurns')}
-                </span>
-                <div className="flex items-center rounded-full bg-muted/50 h-5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const v = Math.max(1, parseInt(maxTurns || '1') - 1);
-                      setMaxTurns(String(v));
-                    }}
-                    className="size-5 flex items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors rounded-full hover:bg-muted"
-                  >
-                    <Minus className="size-2.5" />
-                  </button>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    value={maxTurns}
-                    onChange={(e) => {
-                      const raw = e.target.value.replace(/\D/g, '');
-                      if (!raw) {
-                        setMaxTurns('');
-                        return;
-                      }
-                      const v = Math.min(20, Math.max(1, parseInt(raw)));
-                      setMaxTurns(String(v));
-                    }}
-                    onBlur={() => {
-                      if (!maxTurns || parseInt(maxTurns) < 1) setMaxTurns('1');
-                    }}
-                    onClick={(e) => e.stopPropagation()}
-                    className="w-5 h-5 text-[11px] font-medium tabular-nums text-center bg-transparent outline-none border-none"
-                  />
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      const v = Math.min(20, parseInt(maxTurns || '1') + 1);
-                      setMaxTurns(String(v));
-                    }}
-                    className="size-5 flex items-center justify-center text-muted-foreground/60 hover:text-foreground transition-colors rounded-full hover:bg-muted"
-                  >
-                    <Plus className="size-2.5" />
-                  </button>
-                </div>
-              </div>
             </div>
           </motion.div>
         )}

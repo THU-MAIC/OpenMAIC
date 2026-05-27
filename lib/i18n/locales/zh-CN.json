@@ -70,6 +70,10 @@
     "unknown": "未知",
     "stopDiscussion": "结束讨论",
     "endQA": "结束问答",
+    "error": {
+      "emptyAgentResponses": "智能体连续无响应,讨论已停止。请重新尝试或检查模型配置。",
+      "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
+    },
     "tabs": {
       "lecture": "笔记",
       "chat": "对话"
@@ -449,8 +453,6 @@
     "multiAgentMode": "多智能体模式",
     "agentsCollaborating": "协作讨论",
     "agentsCollaboratingCount": "已选择 {{count}} 个智能体协作讨论",
-    "maxTurns": "最大讨论轮数",
-    "maxTurnsDesc": "智能体之间最多讨论多少轮（每个智能体完成动作并回复算一轮）",
     "priority": "优先级",
     "actions": "动作",
     "actionCount": "{{count}} 个动作",

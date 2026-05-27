@@ -70,6 +70,10 @@
     "unknown": "未知",
     "stopDiscussion": "結束討論",
     "endQA": "結束問答",
+    "error": {
+      "emptyAgentResponses": "智能體連續無回應,討論已停止。請重新嘗試或檢查模型設定。",
+      "streamInterrupted": "資料串流意外中斷,討論未能完成。請重新嘗試。"
+    },
     "tabs": {
       "lecture": "筆記",
       "chat": "對話"
@@ -434,8 +438,6 @@
     "multiAgentMode": "多智能體模式",
     "agentsCollaborating": "協作討論",
     "agentsCollaboratingCount": "已選擇 {{count}} 個智能體協作討論",
-    "maxTurns": "最大討論回合數",
-    "maxTurnsDesc": "智能體之間最多討論多少回合（每個智能體完成動作並回覆算一回合）",
     "priority": "優先順序",
     "actions": "動作",
     "actionCount": "{{count}} 個動作",

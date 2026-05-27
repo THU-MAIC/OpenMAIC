@@ -70,6 +70,10 @@
     "unknown": "Desconhecido",
     "stopDiscussion": "Encerrar Discussão",
     "endQA": "Encerrar Perguntas",
+    "error": {
+      "emptyAgentResponses": "Os agentes retornaram respostas vazias; a discussão foi interrompida. Tente novamente ou verifique as configurações do modelo.",
+      "streamInterrupted": "O fluxo de dados terminou inesperadamente; a discussão não foi concluída. Por favor, tente novamente."
+    },
     "tabs": {
       "lecture": "Anotações",
       "chat": "Conversa"
@@ -449,8 +453,6 @@
     "multiAgentMode": "Modo Multi-Agente",
     "agentsCollaborating": "Discussão Colaborativa",
     "agentsCollaboratingCount": "{{count}} agentes selecionados para discussão colaborativa",
-    "maxTurns": "Máx. Turnos de Discussão",
-    "maxTurnsDesc": "Número máximo de turnos de discussão entre os agentes (cada agente completar ações e responder conta como um turno)",
     "priority": "Prioridade",
     "actions": "Ações",
     "actionCount": "{{count}} ações",

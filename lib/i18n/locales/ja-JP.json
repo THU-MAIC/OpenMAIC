@@ -70,6 +70,10 @@
     "unknown": "不明",
     "stopDiscussion": "ディスカッションを終了",
     "endQA": "Q&Aを終了",
+    "error": {
+      "emptyAgentResponses": "エージェントが空の応答を返したため、ディスカッションを停止しました。再試行するかモデル設定をご確認ください。",
+      "streamInterrupted": "ストリームが予期せず終了し、ディスカッションが完了しませんでした。再度お試しください。"
+    },
     "tabs": {
       "lecture": "ノート",
       "chat": "チャット"
@@ -449,8 +453,6 @@
     "multiAgentMode": "マルチエージェントモード",
     "agentsCollaborating": "協調ディスカッション",
     "agentsCollaboratingCount": "{{count}}体のエージェントが協調ディスカッションに参加中",
-    "maxTurns": "最大ディスカッションターン数",
-    "maxTurnsDesc": "エージェント間のディスカッションの最大ターン数（各エージェントのアクションと返答で1ターン）",
     "priority": "優先度",
     "actions": "アクション",
     "actionCount": "{{count}} アクション",
