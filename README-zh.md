@@ -468,7 +468,7 @@ OpenMAIC/
 
 ## 💼 商业合作
 
-本项目基于 AGPL-3.0 协议开源。商业授权合作请联系：**thu_maic@tsinghua.edu.cn**
+本项目基于 AGPL-3.0 协议开源。商业授权合作请联系：**thu_maic@mail.tsinghua.edu.cn**
 
 ---
 

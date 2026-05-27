@@ -468,7 +468,7 @@ OpenMAIC/
 
 ## 💼 Commercial Licensing
 
-This project is licensed under AGPL-3.0. For commercial licensing inquiries, please contact: **thu_maic@tsinghua.edu.cn**
+This project is licensed under AGPL-3.0. For commercial licensing inquiries, please contact: **thu_maic@mail.tsinghua.edu.cn**
 
 ---
 
