@@ -29,7 +29,14 @@ import type {
   WbDrawTableAction,
   WbDeleteAction,
   WbDrawLineAction,
+  WbDrawCodeAction,
+  WbEditCodeAction,
+  WidgetHighlightAction,
+  WidgetSetStateAction,
+  WidgetAnnotationAction,
+  WidgetRevealAction,
 } from '@/lib/types/action';
+import type { CodeLine } from '@/lib/types/slides';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
 
@@ -49,21 +56,49 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Convert raw code string to CodeLine array with unique IDs */
+function codeToLines(code: string): CodeLine[] {
+  return code.split('\n').map((content, i) => ({
+    id: `L${i + 1}`,
+    content,
+  }));
+}
+
+let lineIdCounter = 0;
+/** Generate unique line IDs for newly inserted lines */
+function generateLineIds(count: number): string[] {
+  return Array.from({ length: count }, () => `L_${++lineIdCounter}_${Date.now().toString(36)}`);
+}
+
 // ==================== ActionEngine ====================
 
 /** Default duration (ms) before fire-and-forget effects auto-clear */
 const EFFECT_AUTO_CLEAR_MS = 5000;
+
+/** Callback for sending messages to widget iframe */
+export type WidgetMessageCallback = (type: string, payload: Record<string, unknown>) => void;
 
 export class ActionEngine {
   private stageStore: StageStore;
   private stageAPI: ReturnType<typeof createStageAPI>;
   private audioPlayer: AudioPlayer | null;
   private effectTimer: ReturnType<typeof setTimeout> | null = null;
+  private widgetMessageCallback: WidgetMessageCallback | null = null;
 
-  constructor(stageStore: StageStore, audioPlayer?: AudioPlayer) {
+  constructor(
+    stageStore: StageStore,
+    audioPlayer?: AudioPlayer | null,
+    widgetMessageCallback?: WidgetMessageCallback | null,
+  ) {
     this.stageStore = stageStore;
     this.stageAPI = createStageAPI(stageStore);
     this.audioPlayer = audioPlayer ?? null;
+    this.widgetMessageCallback = widgetMessageCallback ?? null;
+  }
+
+  /** Set callback for sending messages to widget iframe */
+  setWidgetMessageCallback(callback: WidgetMessageCallback | null): void {
+    this.widgetMessageCallback = callback;
   }
 
   /** Clean up timers when the engine is no longer needed */
@@ -114,6 +149,10 @@ export class ActionEngine {
         return this.executeWbDrawTable(action);
       case 'wb_draw_line':
         return this.executeWbDrawLine(action as WbDrawLineAction);
+      case 'wb_draw_code':
+        return this.executeWbDrawCode(action as WbDrawCodeAction);
+      case 'wb_edit_code':
+        return this.executeWbEditCode(action as WbEditCodeAction);
       case 'wb_clear':
         return this.executeWbClear();
       case 'wb_delete':
@@ -123,6 +162,16 @@ export class ActionEngine {
       case 'discussion':
         // Discussion lifecycle is managed externally via engine callbacks
         return;
+
+      // Widget actions — post message to iframe
+      case 'widget_highlight':
+        return this.executeWidgetHighlight(action as WidgetHighlightAction);
+      case 'widget_setState':
+        return this.executeWidgetSetState(action as WidgetSetStateAction);
+      case 'widget_annotation':
+        return this.executeWidgetAnnotation(action as WidgetAnnotationAction);
+      case 'widget_reveal':
+        return this.executeWidgetReveal(action as WidgetRevealAction);
     }
   }
 
@@ -180,9 +229,9 @@ export class ActionEngine {
   // ==================== Synchronous — Video ====================
 
   private async executePlayVideo(action: PlayVideoAction): Promise<void> {
-    // Resolve the video element's src to a media placeholder ID (e.g. gen_vid_1).
+    // Resolve the video element to a generated media reference.
     // action.elementId is the slide element ID (e.g. video_abc123), but the media
-    // store is keyed by placeholder IDs, so we need to bridge the two.
+    // store is keyed by generated media refs, so we need to bridge the two.
     const placeholderId = this.resolveMediaPlaceholderId(action.elementId);
 
     if (placeholderId) {
@@ -242,8 +291,8 @@ export class ActionEngine {
   // ==================== Helpers — Media Resolution ====================
 
   /**
-   * Look up a video/image element's src in the current stage's scenes.
-   * Returns the src if it's a media placeholder ID (gen_vid_*, gen_img_*), null otherwise.
+   * Look up a video/image element's generated media reference in the current stage's scenes.
+   * Returns mediaRef first, then legacy src if it's a media placeholder ID.
    */
   private resolveMediaPlaceholderId(elementId: string): string | null {
     const { scenes, currentSceneId } = this.stageStore.getState();
@@ -260,12 +309,15 @@ export class ActionEngine {
       if (!scene || scene.type !== 'slide') continue;
       const elements = (
         scene.content as {
-          canvas?: { elements?: Array<{ id: string; src?: string }> };
+          canvas?: { elements?: Array<{ id: string; src?: string; mediaRef?: string }> };
         }
       )?.canvas?.elements;
       if (!Array.isArray(elements)) continue;
       const el = elements.find((e: { id: string }) => e.id === elementId);
-      if (el && 'src' in el && typeof el.src === 'string' && isMediaPlaceholder(el.src)) {
+      if (el && typeof el.mediaRef === 'string') {
+        return el.mediaRef;
+      }
+      if (el && typeof el.src === 'string' && isMediaPlaceholder(el.src)) {
         return el.src;
       }
     }
@@ -496,6 +548,98 @@ export class ActionEngine {
     await delay(800);
   }
 
+  private async executeWbDrawCode(action: WbDrawCodeAction): Promise<void> {
+    const wb = this.stageAPI.whiteboard.get();
+    if (!wb.success || !wb.data) return;
+
+    const lines = codeToLines(action.code);
+
+    this.stageAPI.whiteboard.addElement(
+      {
+        id: action.elementId || '',
+        type: 'code',
+        language: action.language,
+        lines,
+        fileName: action.fileName,
+        showLineNumbers: true,
+        fontSize: 14,
+        left: action.x,
+        top: action.y,
+        width: action.width ?? 500,
+        height: action.height ?? 300,
+        rotate: 0,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      } as any,
+      wb.data.id,
+    );
+
+    // Wait for typing animation: base 800ms + 50ms per line, capped at 3s
+    const animMs = Math.min(800 + lines.length * 50, 3000);
+    await delay(animMs);
+  }
+
+  private async executeWbEditCode(action: WbEditCodeAction): Promise<void> {
+    const wb = this.stageAPI.whiteboard.get();
+    if (!wb.success || !wb.data) return;
+
+    const elementResult = this.stageAPI.whiteboard.getElement(action.elementId, wb.data.id);
+    if (!elementResult.success || !elementResult.data) return;
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const element = elementResult.data as any;
+    if (element.type !== 'code') return;
+
+    let lines: CodeLine[] = [...element.lines];
+    const newContentLines = action.content ? action.content.split('\n') : [];
+    const newLineIds = generateLineIds(newContentLines.length);
+
+    switch (action.operation) {
+      case 'insert_after': {
+        const idx = lines.findIndex((l) => l.id === action.lineId);
+        if (idx === -1) return;
+        const newLines = newContentLines.map((content, i) => ({ id: newLineIds[i], content }));
+        lines.splice(idx + 1, 0, ...newLines);
+        break;
+      }
+      case 'insert_before': {
+        const idx = lines.findIndex((l) => l.id === action.lineId);
+        if (idx === -1) return;
+        const newLines = newContentLines.map((content, i) => ({ id: newLineIds[i], content }));
+        lines.splice(idx, 0, ...newLines);
+        break;
+      }
+      case 'delete_lines': {
+        if (!action.lineIds?.length) return;
+        const deleteSet = new Set(action.lineIds);
+        lines = lines.filter((l) => !deleteSet.has(l.id));
+        break;
+      }
+      case 'replace_lines': {
+        if (!action.lineIds?.length) return;
+        const replaceIds = action.lineIds;
+        const firstIdx = lines.findIndex((l) => l.id === replaceIds[0]);
+        if (firstIdx === -1) return;
+        const deleteSet = new Set(replaceIds);
+        lines = lines.filter((l) => !deleteSet.has(l.id));
+        const newLines = newContentLines.map((content, i) => ({
+          id: i < replaceIds.length ? replaceIds[i] : newLineIds[i],
+          content,
+        }));
+        lines.splice(firstIdx, 0, ...newLines);
+        break;
+      }
+    }
+
+    this.stageAPI.whiteboard.updateElement(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      { ...element, lines } as any,
+      wb.data.id,
+    );
+
+    // Wait for edit animation
+    await delay(600);
+  }
+
   private async executeWbDelete(action: WbDeleteAction): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
@@ -530,5 +674,46 @@ export class ActionEngine {
     useCanvasStore.getState().setWhiteboardOpen(false);
     // Wait for close animation (500ms ease-out tween)
     await delay(700);
+  }
+
+  // ==================== Widget Actions ====================
+
+  /** Send message to widget iframe */
+  private sendWidgetMessage(type: string, payload: Record<string, unknown>): void {
+    if (this.widgetMessageCallback) {
+      this.widgetMessageCallback(type, payload);
+    } else {
+      log.warn(`Widget message callback not set, cannot send: ${type}`);
+    }
+  }
+
+  /** Execute widget highlight action (quick visual change) */
+  private async executeWidgetHighlight(action: WidgetHighlightAction): Promise<void> {
+    this.sendWidgetMessage('HIGHLIGHT_ELEMENT', {
+      target: action.target,
+    });
+    // Quick delay for visual effect
+    await delay(300);
+  }
+
+  /** Execute widget setState action */
+  private async executeWidgetSetState(action: WidgetSetStateAction): Promise<void> {
+    this.sendWidgetMessage('SET_WIDGET_STATE', { state: action.state });
+    // Quick delay for state change to propagate
+    await delay(300);
+  }
+
+  /** Execute widget annotation action */
+  private async executeWidgetAnnotation(action: WidgetAnnotationAction): Promise<void> {
+    this.sendWidgetMessage('ANNOTATE_ELEMENT', {
+      target: action.target,
+    });
+    await delay(300);
+  }
+
+  /** Execute widget reveal action */
+  private async executeWidgetReveal(action: WidgetRevealAction): Promise<void> {
+    this.sendWidgetMessage('REVEAL_ELEMENT', { target: action.target });
+    await delay(300);
   }
 }

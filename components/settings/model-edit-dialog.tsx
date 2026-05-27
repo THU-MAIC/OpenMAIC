@@ -11,6 +11,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import type { EditingModel } from '@/lib/types/settings';
 import type { ProviderId } from '@/lib/ai/providers';
 import { cn } from '@/lib/utils';
+import { createVerifyModelRequest } from './utils';
 
 interface ModelEditDialogProps {
   open: boolean;
@@ -72,13 +73,16 @@ export function ModelEditDialog({
       const response = await fetch('/api/verify-model', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey,
-          baseUrl,
-          model: `${providerId}:${editingModel.model.id}`,
-          providerType,
-          requiresApiKey,
-        }),
+        body: JSON.stringify(
+          createVerifyModelRequest({
+            providerId,
+            modelId: editingModel.model.id,
+            apiKey,
+            baseUrl,
+            providerType,
+            requiresApiKey,
+          }),
+        ),
       });
 
       const data = await response.json();

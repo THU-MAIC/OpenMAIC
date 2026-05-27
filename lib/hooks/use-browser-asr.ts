@@ -145,6 +145,17 @@ export function useBrowserASR(options: UseBrowserASROptions = {}) {
     }
   }, []);
 
+  // Clean up SpeechRecognition on unmount to prevent memory leaks
+  // and release the microphone
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+        recognitionRef.current = null;
+      }
+    };
+  }, []);
+
   return {
     isSupported,
     isListening,

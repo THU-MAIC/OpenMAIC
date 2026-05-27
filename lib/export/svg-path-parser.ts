@@ -1,5 +1,8 @@
 import { SVGPathData } from 'svg-pathdata';
 import arcToBezier from 'svg-arc-to-cubic-bezier';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('SvgPathParser');
 
 const typeMap = {
   1: 'Z',
@@ -32,9 +35,20 @@ export type SvgPath = ReturnType<typeof parseSvgPath>;
 /**
  * 解析SVG路径，并将圆弧（A）类型的路径转为三次贝塞尔（C）类型的路径
  * @param d SVG path d属性
+ *
+ * Returns an empty array if the path is malformed (e.g. unrecognised commands).
+ * Mirrors the defensive behaviour of {@link getSvgPathRange}: a single bad path
+ * (often produced by upstream LLM hallucinations) shouldn't take down the whole
+ * PPTX export.
  */
 export const toPoints = (d: string) => {
-  const pathData = new SVGPathData(d);
+  let pathData: SVGPathData;
+  try {
+    pathData = new SVGPathData(d);
+  } catch (err) {
+    log.warn(`Failed to parse SVG path "${d}":`, err);
+    return [];
+  }
 
   const points = [];
   for (const item of pathData.commands) {

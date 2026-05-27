@@ -1,0 +1,197 @@
+{
+  "id": "finance-tax-architecture",
+  "name": "企业财务 — 三层架构税务筹划",
+  "description": "qa模式，多agent讨论，表格+公式+形状混合白板",
+  "tags": ["finance", "qa", "multi-agent", "zh-CN", "table", "latex"],
+  "initialStoreState": {
+    "stage": {
+      "id": "eval-finance-tax",
+      "name": "企业财务战略",
+      "createdAt": 1700000000,
+      "updatedAt": 1700000000,
+      "languageDirective": "zh-CN"
+    },
+    "scenes": [
+      {
+        "id": "sc-fin-1",
+        "stageId": "eval-finance-tax",
+        "type": "slide",
+        "title": "企业架构与税务优化",
+        "order": 0,
+        "content": {
+          "type": "slide",
+          "canvas": {
+            "id": "slide-0",
+            "viewportSize": 1000,
+            "viewportRatio": 0.5625,
+            "theme": {
+              "backgroundColor": "#ffffff",
+              "themeColors": ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"],
+              "fontColor": "#333333",
+              "fontName": "Microsoft YaHei"
+            },
+            "elements": [
+              {
+                "type": "text",
+                "id": "title-3",
+                "content": "<p style=\"font-size: 28px;\">家族公司+持股公司+业务子公司 三层架构</p>",
+                "left": 60,
+                "top": 40,
+                "width": 880,
+                "height": 70,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "shape",
+                "id": "box-1",
+                "viewBox": [1000, 1000],
+                "path": "M 0 0 L 1000 0 L 1000 1000 L 0 1000 Z",
+                "left": 60,
+                "top": 130,
+                "width": 280,
+                "height": 120,
+                "rotate": 0,
+                "fill": "#E3F2FD",
+                "fixedRatio": false
+              },
+              {
+                "type": "text",
+                "id": "label-1",
+                "content": "<p style=\"font-size: 20px;\">家族公司</p>",
+                "left": 100,
+                "top": 170,
+                "width": 200,
+                "height": 40,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "shape",
+                "id": "box-2",
+                "viewBox": [1000, 1000],
+                "path": "M 0 0 L 1000 0 L 1000 1000 L 0 1000 Z",
+                "left": 360,
+                "top": 130,
+                "width": 280,
+                "height": 120,
+                "rotate": 0,
+                "fill": "#FFF3E0",
+                "fixedRatio": false
+              },
+              {
+                "type": "text",
+                "id": "label-2",
+                "content": "<p style=\"font-size: 20px;\">持股公司</p>",
+                "left": 400,
+                "top": 170,
+                "width": 200,
+                "height": 40,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "shape",
+                "id": "box-3",
+                "viewBox": [1000, 1000],
+                "path": "M 0 0 L 1000 0 L 1000 1000 L 0 1000 Z",
+                "left": 660,
+                "top": 130,
+                "width": 280,
+                "height": 120,
+                "rotate": 0,
+                "fill": "#E8F5E9",
+                "fixedRatio": false
+              },
+              {
+                "type": "text",
+                "id": "label-3",
+                "content": "<p style=\"font-size: 20px;\">业务子公司</p>",
+                "left": 700,
+                "top": 170,
+                "width": 200,
+                "height": 40,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "currentSceneId": "sc-fin-1"
+  },
+  "config": {
+    "agentIds": ["gen-teacher-01", "gen-assistant-01"],
+    "sessionType": "qa",
+    "agentConfigs": [
+      {
+        "id": "gen-teacher-01",
+        "name": "林教授",
+        "role": "teacher",
+        "persona": "严谨认真的林教授，善于用白板辅助讲解。",
+        "avatar": "👨‍🏫",
+        "color": "#4A90D9",
+        "allowedActions": [
+          "wb_open",
+          "wb_close",
+          "wb_clear",
+          "wb_delete",
+          "wb_draw_text",
+          "wb_draw_shape",
+          "wb_draw_chart",
+          "wb_draw_latex",
+          "wb_draw_table",
+          "wb_draw_line",
+          "spotlight",
+          "laser"
+        ],
+        "priority": 10
+      },
+      {
+        "id": "gen-assistant-01",
+        "name": "小雅",
+        "role": "assistant",
+        "persona": "热情活泼的小雅，负责补充老师遗漏的要点。",
+        "avatar": "🧑‍💼",
+        "color": "#E8913A",
+        "allowedActions": [
+          "wb_open",
+          "wb_close",
+          "wb_clear",
+          "wb_delete",
+          "wb_draw_text",
+          "wb_draw_shape",
+          "wb_draw_chart",
+          "wb_draw_latex",
+          "wb_draw_table",
+          "wb_draw_line"
+        ],
+        "priority": 7
+      }
+    ]
+  },
+  "turns": [
+    {
+      "userMessage": "工资和分红在税务上有什么区别？"
+    },
+    {
+      "userMessage": "发奖金也是工资薪金吧，分红是分红",
+      "checkpoint": true
+    },
+    {
+      "userMessage": "那家族公司到底怎么省税的"
+    },
+    {
+      "userMessage": "确实心疼",
+      "checkpoint": true
+    },
+    {
+      "userMessage": "搞明白了，那IPO有什么影响"
+    }
+  ]
+}

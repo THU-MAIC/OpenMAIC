@@ -483,6 +483,12 @@ async function buildPptxBlob(
         if (!isBase64Image(resolvedSrc)) {
           try {
             const resp = await fetch(resolvedSrc);
+            if (!resp.ok) {
+              log.warn(
+                `Failed to fetch image (HTTP ${resp.status}), skipping element: ${resolvedSrc}`,
+              );
+              continue;
+            }
             const blob = await resp.blob();
             resolvedSrc = await new Promise<string>((resolve, reject) => {
               const reader = new FileReader();
@@ -581,7 +587,9 @@ async function buildPptxBlob(
             x: el.width / el.viewBox[0],
             y: el.height / el.viewBox[1],
           };
-          const points = formatPoints(toPoints(el.path), ratioPx2Inch, scale);
+          const rawPoints = toPoints(el.path);
+          if (!rawPoints.length) continue; // Malformed path — toPoints already logged.
+          const points = formatPoints(rawPoints, ratioPx2Inch, scale);
 
           let fillColor = formatColor(el.fill);
           if (el.gradient) {
@@ -949,21 +957,33 @@ async function buildPptxBlob(
 
       // ── VIDEO / AUDIO ──
       else if (el.type === 'video' || el.type === 'audio') {
-        // Resolve placeholder src → blob URL from media generation store
+        // Resolve generated video mediaRef or legacy placeholder src → blob URL.
         let resolvedSrc = el.src;
-        if (isMediaPlaceholder(el.src)) {
-          const task = useMediaGenerationStore.getState().tasks[el.src];
+        const mediaRef = el.type === 'video' ? el.mediaRef : undefined;
+        const mediaLookupKey =
+          mediaRef ||
+          (typeof el.src === 'string' && isMediaPlaceholder(el.src) ? el.src : undefined);
+        if (mediaLookupKey) {
+          const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
           if (task?.status === 'done' && task.objectUrl) {
             resolvedSrc = task.objectUrl;
-          } else {
+          } else if (!resolvedSrc || isMediaPlaceholder(resolvedSrc)) {
             continue; // Media not ready, skip
           }
         }
+
+        if (!resolvedSrc) continue;
 
         // Fetch blob and convert to base64 for embedding in PPTX
         // (blob: URLs and remote URLs won't work in offline PPTX)
         try {
           const resp = await fetch(resolvedSrc);
+          if (!resp.ok) {
+            log.warn(
+              `Failed to fetch media (HTTP ${resp.status}), skipping element: ${resolvedSrc}`,
+            );
+            continue;
+          }
           const blob = await resp.blob();
           const base64 = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
@@ -993,20 +1013,24 @@ async function buildPptxBlob(
 
             // 1. Try poster from element or media generation store
             let posterUrl = 'poster' in el && el.poster ? el.poster : undefined;
-            if (!posterUrl && isMediaPlaceholder(el.src)) {
-              const task = useMediaGenerationStore.getState().tasks[el.src];
+            if (!posterUrl && mediaLookupKey) {
+              const task = useMediaGenerationStore.getState().tasks[mediaLookupKey];
               if (task?.poster) posterUrl = task.poster;
             }
             if (posterUrl) {
               try {
                 const posterResp = await fetch(posterUrl);
-                const posterBlob = await posterResp.blob();
-                coverBase64 = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader();
-                  reader.onloadend = () => resolve(reader.result as string);
-                  reader.onerror = reject;
-                  reader.readAsDataURL(posterBlob);
-                });
+                if (!posterResp.ok) {
+                  log.warn(`Failed to fetch poster (HTTP ${posterResp.status}), skipping`);
+                } else {
+                  const posterBlob = await posterResp.blob();
+                  coverBase64 = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(posterBlob);
+                  });
+                }
               } catch {
                 // Poster fetch failed, fall through to video frame capture
               }

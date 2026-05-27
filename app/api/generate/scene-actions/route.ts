@@ -25,7 +25,7 @@ import type {
 import type { SpeechAction } from '@/lib/types/action';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 
 const log = createLogger('Scene Actions API');
 
@@ -44,6 +44,7 @@ export async function POST(req: NextRequest) {
       agents,
       previousSpeeches: incomingPreviousSpeeches,
       userProfile,
+      languageDirective,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -56,6 +57,7 @@ export async function POST(req: NextRequest) {
       agents?: AgentInfo[];
       previousSpeeches?: string[];
       userProfile?: string;
+      languageDirective?: string;
     };
 
     // Validate required fields
@@ -76,8 +78,13 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
 
-    // ── Model resolution from request headers ──
-    const { model: languageModel, modelInfo, modelString } = await resolveModelFromHeaders(req);
+    // ── Model resolution from request headers/body ──
+    const {
+      model: languageModel,
+      modelInfo,
+      modelString,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body);
     outlineTitle = outline?.title;
     resolvedModelString = modelString;
 
@@ -104,6 +111,8 @@ export async function POST(req: NextRequest) {
             maxOutputTokens: modelInfo?.outputWindow,
           },
           'scene-actions',
+          undefined,
+          thinkingConfig,
         );
         return result.text;
       }
@@ -115,6 +124,8 @@ export async function POST(req: NextRequest) {
           maxOutputTokens: modelInfo?.outputWindow,
         },
         'scene-actions',
+        undefined,
+        thinkingConfig,
       );
       return result.text;
     };
@@ -132,7 +143,12 @@ export async function POST(req: NextRequest) {
     // ── Generate actions ──
     log.info(`Generating actions: "${outline.title}" (${outline.type}) [model=${modelString}]`);
 
-    const actions = await generateSceneActions(outline, content, aiCall, ctx, agents, userProfile);
+    const actions = await generateSceneActions(outline, content, aiCall, {
+      ctx,
+      agents,
+      userProfile,
+      languageDirective,
+    });
 
     log.info(`Generated ${actions.length} actions for: "${outline.title}"`);
 

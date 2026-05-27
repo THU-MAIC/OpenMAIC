@@ -1,0 +1,312 @@
+[
+  {
+    "case_id": "zh_pure_general",
+    "category": "zh_pure_humanities",
+    "requirement": "请讲解欧洲文艺复兴时期的音乐发展历程",
+    "ground_truth": "Teaching language: Chinese. Music and history terminology should use standard Chinese translations."
+  },
+  {
+    "case_id": "zh_pure_k12",
+    "category": "zh_pure_k12_education",
+    "requirement": "帮我制作一节小学三年级语文课",
+    "ground_truth": "Teaching language: Chinese. Use age-appropriate Chinese for primary school students."
+  },
+  {
+    "case_id": "zh_tech_pygame",
+    "category": "zh_with_english_tech_term",
+    "requirement": "用pygame做一个入门小游戏教程",
+    "ground_truth": "Teaching language: Chinese. Programming terms like pygame, Python should be kept in English."
+  },
+  {
+    "case_id": "zh_tech_comfyui",
+    "category": "zh_with_english_product_name",
+    "requirement": "ComfyUI零基础入门教程",
+    "ground_truth": "Teaching language: Chinese. Product names like ComfyUI should be kept in English. Technical terms kept in English with Chinese explanation."
+  },
+  {
+    "case_id": "zh_tech_alevel",
+    "category": "zh_with_english_exam_system",
+    "requirement": "设计一门A-Level化学课程，要求通俗易懂，适合基础薄弱的学生",
+    "ground_truth": "Teaching language: Chinese. \"A-Level\" should be kept in English. Chemistry terms should use standard Chinese translations with English originals where helpful."
+  },
+  {
+    "case_id": "en_pure_science",
+    "category": "en_pure_short",
+    "requirement": "Teach me about photosynthesis in plants",
+    "ground_truth": "Teaching language: English. Biology terms like photosynthesis should use standard English terminology."
+  },
+  {
+    "case_id": "en_pure_tech",
+    "category": "en_pure_tech",
+    "requirement": "Help me learn Grafana Alloy from scratch",
+    "ground_truth": "Teaching language: English. Technical terms like Grafana, Alloy should be kept as-is."
+  },
+  {
+    "case_id": "en_pure_academic",
+    "category": "en_pure_academic",
+    "requirement": "Cover CAIE 9701 Chemistry Chapter 1 and include past paper practice questions",
+    "ground_truth": "Teaching language: English. CAIE chemistry terminology in English. Past paper references in English."
+  },
+  {
+    "case_id": "zh_learn_en",
+    "category": "zh_user_learning_english",
+    "requirement": "帮我复习人教版初二下册英语第三单元的单词",
+    "ground_truth": "Teaching language: Chinese. This is a Chinese student memorizing English vocabulary. Course taught in Chinese with English words and translations progressively introduced."
+  },
+  {
+    "case_id": "en_learn_chinese",
+    "category": "en_user_learning_chinese",
+    "requirement": "I'd like to start learning Mandarin Chinese conversation basics",
+    "ground_truth": "Teaching language: English. This is an English speaker learning Mandarin Chinese. Teach in English, introduce Chinese characters/pinyin progressively."
+  },
+  {
+    "case_id": "en_learn_german",
+    "category": "en_user_learning_german",
+    "requirement": "Teach me beginner German at A1 level",
+    "ground_truth": "Teaching language: English. This is a beginner learning German. Teach in English, introduce German vocabulary and grammar progressively."
+  },
+  {
+    "case_id": "zh_baby_learn_en",
+    "category": "zh_young_child_learning_english",
+    "requirement": "我家孩子5岁，想教他认识简单的英语单词",
+    "ground_truth": "Teaching language: Chinese. This is a 5-year-old Chinese child learning English reading. Must teach in Chinese with simple English words introduced gradually."
+  },
+  {
+    "case_id": "zh_set_en",
+    "category": "zh_requirement_but_en_locale",
+    "requirement": "讲解电压、电流、电阻和功率之间的基本关系",
+    "ground_truth": "Teaching language: Chinese (requirement is in Chinese). Physics terms should use standard Chinese translations. The en-US locale setting should be ignored."
+  },
+  {
+    "case_id": "zh_set_en2",
+    "category": "zh_requirement_but_en_locale_tech",
+    "requirement": "如何从零训练一个小型AI模型",
+    "ground_truth": "Teaching language: Chinese (requirement is in Chinese). AI/ML terms can be kept in English or shown bilingually."
+  },
+  {
+    "case_id": "foreign_in_cn",
+    "category": "foreigner_learning_chinese_culture",
+    "requirement": "作为外国人，我想了解在中国日常购物的流程",
+    "ground_truth": "Teaching language: Chinese. The user is a foreigner learning Chinese shopping culture. Content should be in Chinese, potentially with simpler language or pinyin for key phrases."
+  },
+  {
+    "case_id": "spanish",
+    "category": "spanish_requirement",
+    "requirement": "Quiero aprender los fundamentos del ensayo de jarras, con explicaciones técnicas y didácticas, incluyendo ilustraciones del proceso",
+    "ground_truth": "Teaching language: Spanish. The requirement is in Spanish, so the course should be in Spanish. Technical terms related to jar testing should use Spanish translations."
+  },
+  {
+    "case_id": "german_kid",
+    "category": "german_child_requirement",
+    "requirement": "Ich bin 8 Jahre alt. Kannst du mir erklären, wie ein Elektromotor funktioniert?",
+    "ground_truth": "Teaching language: German. The user is an 8-year-old asking about electric motors. Use simple, child-friendly German."
+  },
+  {
+    "case_id": "arabic",
+    "category": "arabic_user_learning_english",
+    "requirement": "أريد تعلم اللغة الإنجليزية، مستواي حاليا A2 وأحتاج تحسين مهاراتي",
+    "ground_truth": "Teaching language: Arabic. This is an Arabic speaker at A2 level wanting to learn English. Teach primarily in Arabic, introducing English progressively."
+  },
+  {
+    "case_id": "zh_advanced_en_learner",
+    "category": "zh_advanced_english_learner",
+    "requirement": "我已过专八，想把英语口语提升到接近母语水平。目前的问题是表达时总用简单词汇，不够地道。",
+    "ground_truth": "Teaching language: English. The user is an advanced Chinese English learner (TEM-8) who can fully understand English but lacks native-level spoken fluency and complexity. Course should be in English, encouraging use of more sophisticated and precise expressions instead of defaulting to simple phrasing."
+  },
+  {
+    "case_id": "zh_translate_en_pdf",
+    "category": "zh_requirement_english_pdf",
+    "requirement": "请将这篇英文论文翻译为中文，并撰写一份内容摘要",
+    "ground_truth": "Teaching language: Chinese. The source document is an English academic paper (SPE/petroleum engineering). Teach in Chinese, with English technical terms preserved on first mention alongside Chinese translations, to help the student understand and summarize the paper.",
+    "pdfTextSample": "SPE-230629-MS\nPhysics-Based Interpretation of RFS-DSS for Far-Field Monitoring of\nFracture Conductivity\nQueendarlyn A. Nwabueze and Smith Leggett, Bob L. Herd Department of Petroleum Engineering, Texa"
+  },
+  {
+    "case_id": "zh_esl_teacher_en_article",
+    "category": "zh_teacher_english_article",
+    "requirement": "我是一名ESL教师，需要用这篇英文文章设计一节课，重点教授词汇、篇章结构和概括技巧",
+    "ground_truth": "Teaching language: Chinese. This is a Chinese ESL teacher preparing a lesson using an English article. Course should be taught in Chinese, with the English article content used as learning material. English vocabulary, sentence structures, and summary skills should be explicitly taught.",
+    "pdfTextSample": "Before You Read\nU7A-p.94\n7A\nA. Discussion. Look at the information and captions, paying attention to the \nwords in bold. Then answer the questions below.\n1. What kind of animals were dinosaurs? When d"
+  },
+  {
+    "case_id": "zh_cpp_chinese_pdf",
+    "category": "zh_requirement_chinese_pdf",
+    "requirement": "请根据上传的教学大纲，生成第五周的C++编程课程内容",
+    "ground_truth": "Teaching language: Chinese. Both the requirement and the PDF syllabus are in Chinese. C++ programming terms should be kept in English. Teach in Chinese following the uploaded syllabus.",
+    "pdfTextSample": "第5 周：复杂一点的判断\n学习主题: 多分支与逻辑运算符\n知识要点:\n多分支结构: else-if 语句\n逻辑运算符: 与(&&)、或(||)、非(!)\n运算符的优先级\n多区间判断问题(如成绩等级划分)\n学习意义: 掌握处理复杂、多条件组合的判断场景，让程序能够应对更丰富的现实问题。"
+  },
+  {
+    "case_id": "ja_learn_en",
+    "category": "language_learning",
+    "requirement": "英語のリスニング力を上げたい、TOEICのスコアも上げたい",
+    "ground_truth": "Teaching language: Japanese. This is a Japanese speaker wanting to improve English listening and TOEIC score. Teach in Japanese, introduce English listening materials and vocabulary progressively."
+  },
+  {
+    "case_id": "ko_learn_en",
+    "category": "language_learning",
+    "requirement": "영어 회화를 배우고 싶어요, 기초부터 시작하고 싶습니다",
+    "ground_truth": "Teaching language: Korean. This is a Korean speaker wanting to learn English conversation from basics. Teach in Korean, introduce English phrases and dialogue progressively."
+  },
+  {
+    "case_id": "en_learn_ja",
+    "category": "language_learning",
+    "requirement": "I want to learn basic Japanese for my trip to Tokyo next month",
+    "ground_truth": "Teaching language: English. This is an English speaker learning basic Japanese for travel. Teach in English, introduce hiragana, katakana, and useful travel phrases progressively."
+  },
+  {
+    "case_id": "ja_learn_zh",
+    "category": "language_learning",
+    "requirement": "中国語を勉強したいです、ビジネス中国語を身につけたい",
+    "ground_truth": "Teaching language: Japanese. This is a Japanese speaker learning business Chinese. Teach in Japanese, introduce Chinese characters, pinyin, and business expressions progressively. Non-Chinese/English language axis."
+  },
+  {
+    "case_id": "multi_target",
+    "category": "language_learning_multi",
+    "requirement": "I want to learn both Spanish and French at the same time, starting from scratch",
+    "ground_truth": "Teaching language: English. The learner wants to study two Romance languages simultaneously. Teach in English, introduce Spanish and French vocabulary/grammar in parallel, highlighting similarities and differences."
+  },
+  {
+    "case_id": "ja_immersive_en",
+    "category": "immersive_learning",
+    "requirement": "TOEIC 900点目指して、全部英語で英語を学びたい。日本語は使わないでください。",
+    "ground_truth": "Teaching language: English. This is an advanced Japanese English learner explicitly requesting full English immersion. Course should be entirely in English with no Japanese."
+  },
+  {
+    "case_id": "zh_immersive_fr",
+    "category": "immersive_learning",
+    "requirement": "我法语B2水平了，想用法语直接学习法国文学，不要用中文",
+    "ground_truth": "Teaching language: French. This is an advanced Chinese French learner at B2 level requesting immersive French instruction for French literature. Course should be entirely in French."
+  },
+  {
+    "case_id": "zh_explicit_en",
+    "category": "explicit_language_instruction",
+    "requirement": "请用英文给我讲解量子力学的基本原理",
+    "ground_truth": "Teaching language: English. The user explicitly requests English instruction despite writing in Chinese. Course should be in English covering quantum mechanics fundamentals."
+  },
+  {
+    "case_id": "en_explicit_zh",
+    "category": "explicit_language_instruction",
+    "requirement": "Explain machine learning concepts in Chinese please, I want to practice reading technical Chinese",
+    "ground_truth": "Teaching language: Chinese. The user explicitly requests Chinese instruction despite writing in English. Course should be in Chinese covering machine learning concepts."
+  },
+  {
+    "case_id": "bilingual_request",
+    "category": "bilingual_teaching",
+    "requirement": "用中英双语教我机器学习，中文解释概念，英文给出术语和代码",
+    "ground_truth": "Teaching language: Bilingual Chinese-English. The user explicitly requests bilingual instruction. Concepts explained in Chinese, technical terms and code in English."
+  },
+  {
+    "case_id": "code_switch_zh_en",
+    "category": "code_switching",
+    "requirement": "帮我学习how to use Docker来deploy一个web app",
+    "ground_truth": "Teaching language: Chinese. The requirement mixes Chinese and English (code-switching). Teach in Chinese with Docker/deployment technical terms kept in English."
+  },
+  {
+    "case_id": "minimal_zh",
+    "category": "minimal_ambiguous",
+    "requirement": "微积分",
+    "ground_truth": "Teaching language: Chinese. Extremely short requirement with only two Chinese characters. Teach calculus in Chinese."
+  },
+  {
+    "case_id": "pinyin_input",
+    "category": "romanized_input",
+    "requirement": "wo xiang xue python biancheng",
+    "ground_truth": "Teaching language: Chinese. The requirement is in pinyin (romanized Chinese), meaning 'I want to learn Python programming'. Teach in Chinese with Python terms in English."
+  },
+  {
+    "case_id": "teacher_fr_for_zh",
+    "category": "user_profile_teacher",
+    "requirement": "Help me prepare a beginner French lesson for my Chinese middle school students",
+    "ground_truth": "Teaching language: English. This is a teacher preparing a French lesson for Chinese middle school students. Course design in English, with lesson content considering Chinese students' perspective when introducing French."
+  },
+  {
+    "case_id": "parent_intl_school",
+    "category": "user_profile_parent",
+    "requirement": "我孩子12岁在国际学校读IB，帮他复习Biology的cell structure部分",
+    "ground_truth": "Teaching language: English. Parent writes in Chinese but the child studies IB Biology in English. Course content should be in English to match the child's learning environment."
+  },
+  {
+    "case_id": "bilingual_student",
+    "category": "user_profile_bilingual",
+    "requirement": "I'm Chinese-American, studying AP Physics C in high school, help me prepare for the exam",
+    "ground_truth": "Teaching language: English. Bilingual Chinese-American student in US high school AP Physics. Course should be in English matching the AP exam language."
+  },
+  {
+    "case_id": "zh_teacher_for_foreigners",
+    "category": "user_profile_teacher",
+    "requirement": "我是对外汉语老师，要给零基础的美国学生设计第一节中文课",
+    "ground_truth": "Teaching language: Chinese. This is a Chinese-as-a-foreign-language teacher designing a first lesson for American beginners. Course design in Chinese, but lesson content should consider English-speaking students' needs with pinyin and basic characters."
+  },
+  {
+    "case_id": "professional_business_en",
+    "category": "user_profile_professional",
+    "requirement": "下个月要去美国出差做presentation，帮我速成商务英语口语",
+    "ground_truth": "Teaching language: Chinese. A Chinese professional preparing for a business trip to the US. Teach business English presentation skills in Chinese, with English phrases and expressions for practice."
+  },
+  {
+    "case_id": "immigrant_de",
+    "category": "user_profile_immigrant",
+    "requirement": "Ich bin neu in Deutschland und muss schnell Deutsch für den Alltag lernen, mein Niveau ist A1",
+    "ground_truth": "Teaching language: German. This is a new immigrant in Germany needing everyday German at A1 level. Teach in simple, practical German for daily life situations."
+  },
+  {
+    "case_id": "heritage_zh",
+    "category": "user_profile_heritage",
+    "requirement": "I'm a Chinese-American, I can speak conversational Mandarin but can't read or write well. I want to improve my Chinese literacy.",
+    "ground_truth": "Teaching language: English. This is a heritage Chinese speaker who understands spoken Mandarin but lacks literacy. Teach in English, progressively introduce Chinese characters and reading skills building on their existing spoken knowledge."
+  },
+  {
+    "case_id": "tutor_math_bilingual",
+    "category": "user_profile_tutor",
+    "requirement": "我是数学家教，学生是ABC华裔，中文能听懂但更习惯英文思考，帮我准备高一数学内容",
+    "ground_truth": "Teaching language: Chinese. This is a Chinese math tutor whose student is an American-born Chinese who thinks in English. Course preparation in Chinese for the tutor, but math content should consider bilingual presentation to accommodate the student."
+  },
+  {
+    "case_id": "en_req_zh_pdf",
+    "category": "pdf_cross_language",
+    "requirement": "Summarize this Chinese research paper and explain the key findings",
+    "ground_truth": "Teaching language: English. The requirement is in English and the PDF is a Chinese NLP research paper. Teach in English, translating and explaining the Chinese paper's content.",
+    "pdfTextSample": "基于深度学习的自然语言处理技术研究综述\n摘要：近年来，深度学习技术在自然语言处理领域取得了显著进展。本文综述了基于Transformer架构的预训练语言模型"
+  },
+  {
+    "case_id": "en_req_en_pdf",
+    "category": "pdf_same_language",
+    "requirement": "Break down this paper chapter by chapter and create study notes",
+    "ground_truth": "Teaching language: English. Both the requirement and PDF are in English. Straightforward same-language case. Teach and summarize in English.",
+    "pdfTextSample": "Introduction to Machine Learning: A Comprehensive Survey\nAbstract: Machine learning has become a cornerstone of modern artificial intelligence. This survey covers supervised, unsupervised, and reinforcement learning paradigms"
+  },
+  {
+    "case_id": "zh_req_ja_pdf",
+    "category": "pdf_cross_language",
+    "requirement": "帮我翻译并讲解这篇日文材料的核心内容",
+    "ground_truth": "Teaching language: Chinese. The requirement is in Chinese and the PDF is in Japanese. Teach in Chinese, translating and explaining the Japanese content. Japanese terms shown with Chinese translation.",
+    "pdfTextSample": "ディープラーニングによる画像認識技術の最新動向\n概要：本稿では、畳み込みニューラルネットワーク（CNN）を中心とした画像認識技術の発展について概説する"
+  },
+  {
+    "case_id": "zh_req_fr_pdf",
+    "category": "pdf_cross_language",
+    "requirement": "请把这篇法语文献的要点整理成中文笔记",
+    "ground_truth": "Teaching language: Chinese. The requirement is in Chinese and the PDF is in French. Teach in Chinese, summarizing and translating the French paper's key points.",
+    "pdfTextSample": "L'intelligence artificielle dans l'éducation : perspectives et défis\nRésumé : Cet article examine l'impact croissant de l'intelligence artificielle sur les pratiques éducatives contemporaines"
+  },
+  {
+    "case_id": "ja_req_en_pdf",
+    "category": "pdf_cross_language",
+    "requirement": "この英語の論文を日本語で解説してください、専門用語も日本語に訳してください",
+    "ground_truth": "Teaching language: Japanese. The requirement is in Japanese and the PDF is in English. Teach in Japanese, translating and explaining the English paper. Technical terms translated to Japanese.",
+    "pdfTextSample": "Advances in Robotics and Autonomous Systems\nAbstract: This paper reviews recent developments in robotic perception, planning, and control systems with applications in manufacturing and healthcare"
+  },
+  {
+    "case_id": "en_req_multilingual_pdf",
+    "category": "pdf_multilingual",
+    "requirement": "Analyze this bilingual Chinese-English textbook and create a study guide",
+    "ground_truth": "Teaching language: English. The requirement is in English and the PDF is a bilingual Chinese-English textbook. Teach in English, leveraging both languages in the source material.",
+    "pdfTextSample": "Chapter 1: Introduction to Economics 经济学导论\n1.1 What is Economics? 什么是经济学？\nEconomics is the study of how societies allocate scarce resources.\n经济学是研究社会如何分配稀缺资源的学科。"
+  },
+  {
+    "case_id": "zh_teacher_ja_pdf",
+    "category": "pdf_teacher_perspective",
+    "requirement": "我是日语老师，用这篇日文短文给初级学生设计一节阅读课",
+    "ground_truth": "Teaching language: Chinese. This is a Chinese Japanese-language teacher using a Japanese article to design a reading lesson for beginners. Course design in Chinese, with Japanese text used as learning material. Vocabulary and grammar points explained in Chinese.",
+    "pdfTextSample": "桜の季節\n春になると、日本中で桜が咲きます。多くの人が公園でお花見をします。桜の花は美しいですが、すぐに散ってしまいます。"
+  }
+]

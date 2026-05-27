@@ -20,7 +20,7 @@ export function encodeSlideMediaRels(layout: PresSlide | SlideLayout): Array<Pro
 	// STEP 2: Lazy-load Node built-ins if needed
 	const loadNodeDeps = isNode
 		? async () => {
-			; ({ default: fs } = await import('node:fs')); ({ default: https } = await import('node:https'))
+			; ({ default: fs } = await import(/* webpackIgnore: true */ 'node:fs')); ({ default: https } = await import(/* webpackIgnore: true */ 'node:https'))
 		}
 		: async () => { }
 	// Immediately start it when we know we’re in Node

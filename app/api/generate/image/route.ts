@@ -16,7 +16,11 @@
  */
 
 import { NextRequest } from 'next/server';
-import { generateImage, aspectRatioToDimensions } from '@/lib/media/image-providers';
+import {
+  generateImage,
+  aspectRatioToDimensions,
+  IMAGE_PROVIDERS,
+} from '@/lib/media/image-providers';
 import { resolveImageApiKey, resolveImageBaseUrl } from '@/lib/server/provider-config';
 import type { ImageProviderId, ImageGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
@@ -50,7 +54,8 @@ export async function POST(request: NextRequest) {
     const apiKey = clientBaseUrl
       ? clientApiKey || ''
       : resolveImageApiKey(providerId, clientApiKey);
-    if (!apiKey) {
+    const provider = IMAGE_PROVIDERS[providerId];
+    if (provider?.requiresApiKey && !apiKey) {
       return apiError(
         'MISSING_API_KEY',
         401,

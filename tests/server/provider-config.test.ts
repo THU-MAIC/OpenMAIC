@@ -5,6 +5,63 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 // the mock scoped to what provider-config actually reads.
 let yamlOverride: string | null = null;
 
+const ENV_PREFIXES_TO_CLEAR = [
+  'OPENAI',
+  'ANTHROPIC',
+  'GOOGLE',
+  'DEEPSEEK',
+  'QWEN',
+  'KIMI',
+  'MINIMAX',
+  'GLM',
+  'SILICONFLOW',
+  'DOUBAO',
+  'OPENROUTER',
+  'GROK',
+  'TENCENT',
+  'TENCENT_HUNYUAN',
+  'XIAOMI',
+  'MIMO',
+  'HY3',
+  'OLLAMA',
+  'TTS_OPENAI',
+  'TTS_AZURE',
+  'TTS_GLM',
+  'TTS_QWEN',
+  'TTS_DOUBAO',
+  'TTS_ELEVENLABS',
+  'TTS_MINIMAX',
+  'ASR_OPENAI',
+  'ASR_QWEN',
+  'PDF_UNPDF',
+  'PDF_MINERU',
+  'PDF_MINERU_CLOUD',
+  'IMAGE_OPENAI',
+  'IMAGE_SEEDREAM',
+  'IMAGE_QWEN_IMAGE',
+  'IMAGE_NANO_BANANA',
+  'IMAGE_MINIMAX',
+  'IMAGE_GROK',
+  'VIDEO_SEEDANCE',
+  'VIDEO_KLING',
+  'VIDEO_VEO',
+  'VIDEO_SORA',
+  'VIDEO_MINIMAX',
+  'VIDEO_GROK',
+  'BOCHA',
+];
+
+function clearProviderEnv() {
+  for (const prefix of ENV_PREFIXES_TO_CLEAR) {
+    delete process.env[`${prefix}_API_KEY`];
+    delete process.env[`${prefix}_BASE_URL`];
+    delete process.env[`${prefix}_MODELS`];
+  }
+  delete process.env.TAVILY_API_KEY;
+  delete process.env.BOCHA_API_KEY;
+  delete process.env.BOCHA_BASE_URL;
+}
+
 vi.mock('fs', async (importOriginal) => {
   const actual = await importOriginal<typeof import('fs')>();
   const isYaml = (p: unknown) => typeof p === 'string' && p.endsWith('server-providers.yml');
@@ -28,6 +85,7 @@ describe('provider-config', () => {
   beforeEach(() => {
     vi.resetModules();
     vi.unstubAllEnvs();
+    clearProviderEnv();
     yamlOverride = null;
   });
 
@@ -133,6 +191,42 @@ providers:
       expect(Object.keys(providers)).toContain('anthropic');
     });
 
+    it('maps OpenRouter env prefix to provider ID', async () => {
+      vi.stubEnv('OPENROUTER_API_KEY', 'sk-openrouter');
+      vi.stubEnv('OPENROUTER_MODELS', 'deepseek/deepseek-v4-pro,deepseek/deepseek-v4-flash');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.openrouter.models).toEqual([
+        'deepseek/deepseek-v4-pro',
+        'deepseek/deepseek-v4-flash',
+      ]);
+    });
+
+    it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {
+      vi.stubEnv('TENCENT_HUNYUAN_API_KEY', 'sk-tencent');
+      vi.stubEnv('TENCENT_HUNYUAN_MODELS', 'hy3-preview,hunyuan-2.0-instruct-20251111');
+      vi.stubEnv('MIMO_API_KEY', 'sk-mimo');
+      vi.stubEnv('MIMO_MODELS', 'mimo-v2.5-pro');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers['tencent-hunyuan'].models).toEqual([
+        'hy3-preview',
+        'hunyuan-2.0-instruct-20251111',
+      ]);
+      expect(providers.xiaomi.models).toEqual(['mimo-v2.5-pro']);
+    });
+
+    it('does not treat HY3 as an env prefix', async () => {
+      vi.stubEnv('HY3_API_KEY', 'sk-hy3');
+      vi.stubEnv('HY3_MODELS', 'hy3-preview');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers['tencent-hunyuan']).toBeUndefined();
+    });
+
     it('omits providers without API key', async () => {
       vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.com/v1');
       // No OPENAI_API_KEY set
@@ -164,6 +258,31 @@ providers:
       vi.stubEnv('TAVILY_API_KEY', 'tvly-bare-env');
       const { resolveWebSearchApiKey } = await import('@/lib/server/provider-config');
       expect(resolveWebSearchApiKey()).toBe('tvly-bare-env');
+    });
+
+    it('resolves Bocha API key and base URL from env vars', async () => {
+      vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
+      vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('bocha', undefined)).toBe('bocha-env-key');
+      expect(resolveWebSearchBaseUrl('bocha')).toBe('https://proxy.example.com/bocha');
+      expect(getServerWebSearchProviders().bocha).toEqual({
+        baseUrl: 'https://proxy.example.com/bocha',
+      });
+    });
+
+    it('uses client key and base URL before Bocha server config', async () => {
+      vi.stubEnv('BOCHA_API_KEY', 'bocha-env-key');
+      vi.stubEnv('BOCHA_BASE_URL', 'https://proxy.example.com/bocha');
+      const { resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('bocha', 'bocha-client-key')).toBe('bocha-client-key');
+      expect(resolveWebSearchBaseUrl('bocha', 'https://client.example.com')).toBe(
+        'https://client.example.com',
+      );
     });
   });
 
@@ -200,6 +319,44 @@ pdf:
       const providers = getServerPDFProviders();
 
       expect(providers.mineru).toBeUndefined();
+    });
+  });
+
+  describe('image and video provider metadata', () => {
+    it('uses standard OpenAI env vars for OpenAI image generation fallback', async () => {
+      vi.stubEnv('OPENAI_API_KEY', 'sk-openai');
+      vi.stubEnv('OPENAI_BASE_URL', 'https://proxy.example.com/v1');
+      const { getServerImageProviders, resolveImageApiKey, resolveImageBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      const providers = getServerImageProviders();
+      expect(providers['openai-image']).toEqual({
+        baseUrl: 'https://proxy.example.com/v1',
+      });
+      expect(resolveImageApiKey('openai-image')).toBe('sk-openai');
+      expect(resolveImageBaseUrl('openai-image')).toBe('https://proxy.example.com/v1');
+    });
+
+    it('maps IMAGE_OPENAI and exposes image baseUrl', async () => {
+      vi.stubEnv('IMAGE_OPENAI_API_KEY', 'sk-openai-image');
+      vi.stubEnv('IMAGE_OPENAI_BASE_URL', 'https://proxy.example.com/v1');
+      const { getServerImageProviders, resolveImageBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      const providers = getServerImageProviders();
+      expect(providers['openai-image']).toEqual({ baseUrl: 'https://proxy.example.com/v1' });
+      expect(resolveImageBaseUrl('openai-image')).toBe('https://proxy.example.com/v1');
+    });
+
+    it('exposes video provider baseUrl', async () => {
+      vi.stubEnv('VIDEO_GROK_API_KEY', 'xai-secret');
+      vi.stubEnv('VIDEO_GROK_BASE_URL', 'https://proxy.example.com/video');
+      const { getServerVideoProviders, resolveVideoBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      const providers = getServerVideoProviders();
+      expect(providers['grok-video']).toEqual({ baseUrl: 'https://proxy.example.com/video' });
+      expect(resolveVideoBaseUrl('grok-video')).toBe('https://proxy.example.com/video');
     });
   });
 });

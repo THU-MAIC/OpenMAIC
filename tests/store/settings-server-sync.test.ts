@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
+import { isProviderUsable } from '@/lib/store/settings-validation';
 
 // ---------------------------------------------------------------------------
 // Mocks — must be defined before importing the store
@@ -38,6 +39,18 @@ vi.mock('@/lib/ai/providers', () => ({
       models: [
         { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6' },
         { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5' },
+      ],
+    },
+    deepseek: {
+      id: 'deepseek',
+      name: 'DeepSeek',
+      type: 'openai',
+      defaultBaseUrl: 'https://api.deepseek.com/v1',
+      requiresApiKey: true,
+      icon: '/logos/deepseek.svg',
+      models: [
+        { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
+        { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash' },
       ],
     },
   },
@@ -157,11 +170,13 @@ vi.stubGlobal('fetch', mockFetch);
 
 // Stub localStorage
 const storage = new Map<string, string>();
-vi.stubGlobal('localStorage', {
+const localStorageStub = {
   getItem: (key: string) => storage.get(key) ?? null,
   setItem: (key: string, value: string) => storage.set(key, value),
   removeItem: (key: string) => storage.delete(key),
-});
+};
+vi.stubGlobal('localStorage', localStorageStub);
+vi.stubGlobal('window', { localStorage: localStorageStub });
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -173,8 +188,8 @@ interface MockServerResponse {
   tts?: Record<string, { baseUrl?: string }>;
   asr?: Record<string, { baseUrl?: string }>;
   pdf?: Record<string, { baseUrl?: string }>;
-  image?: Record<string, Record<string, never>>;
-  video?: Record<string, Record<string, never>>;
+  image?: Record<string, { baseUrl?: string }>;
+  video?: Record<string, { baseUrl?: string }>;
   webSearch?: Record<string, { baseUrl?: string }>;
 }
 
@@ -197,6 +212,64 @@ function mockServerResponse(overrides: MockServerResponse = {}) {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+describe('settings rehydrate — built-in provider models', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    return useSettingsStore;
+  }
+
+  it('reorders persisted built-in models to registry order while preserving custom models', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        state: {
+          providerId: 'openai',
+          modelId: 'gpt-4o-mini',
+          providersConfig: {
+            openai: {
+              apiKey: '',
+              baseUrl: '',
+              models: [
+                { id: 'custom-earlier', name: 'Custom Earlier' },
+                { id: 'gpt-4-turbo', name: 'Old GPT-4 Turbo' },
+                { id: 'gpt-4o-mini', name: 'Old GPT-4o Mini' },
+                { id: 'custom-later', name: 'Custom Later' },
+                { id: 'gpt-4o', name: 'Old GPT-4o' },
+              ],
+              name: 'OpenAI',
+              type: 'openai',
+              defaultBaseUrl: 'https://api.openai.com/v1',
+              icon: '/logos/openai.svg',
+              requiresApiKey: true,
+              isBuiltIn: true,
+            },
+          },
+        },
+        version: 2,
+      }),
+    );
+
+    const store = await getStore();
+    const models = store.getState().providersConfig.openai.models;
+
+    expect(models.map((m) => m.id)).toEqual([
+      'gpt-4o',
+      'gpt-4o-mini',
+      'gpt-4-turbo',
+      'custom-earlier',
+      'custom-later',
+    ]);
+    expect(models[0].name).toBe('GPT-4o');
+    expect(models[3].name).toBe('Custom Earlier');
+  });
+});
 
 describe('fetchServerProviders — provider availability sync', () => {
   beforeEach(() => {
@@ -227,6 +300,22 @@ describe('fetchServerProviders — provider availability sync', () => {
     expect(modelIds).toEqual(['gpt-4o']);
     expect(modelIds).not.toContain('gpt-4o-mini');
     expect(modelIds).not.toContain('gpt-4-turbo');
+  });
+
+  it('preserves custom server model IDs in server order', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-5.5', 'gpt-4o'] },
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    const models = store.getState().providersConfig.openai.models;
+    expect(models.map((m) => m.id)).toEqual(['gpt-5.5', 'gpt-4o']);
+    expect(models[0].name).toBe('gpt-5.5');
+    expect(models[1].name).toBe('GPT-4o');
   });
 
   it('keeps all models when server provides no model restriction', async () => {
@@ -312,7 +401,7 @@ describe('fetchServerProviders — provider availability sync', () => {
     expect(config.apiKey).toBe('');
     expect(config.isServerConfigured).toBe(false);
     // This is the condition model-selector uses to decide if a provider is usable:
-    const isUsable = !config.requiresApiKey || !!config.apiKey || !!config.isServerConfigured;
+    const isUsable = isProviderUsable(config);
     expect(isUsable).toBe(false);
   });
 
@@ -427,6 +516,23 @@ describe('fetchServerProviders — provider availability sync', () => {
     // gpt-4o is still available — selection should be preserved
     expect(store.getState().providerId).toBe('openai');
     expect(store.getState().modelId).toBe('gpt-4o');
+  });
+
+  it('selects the server LLM model when provider fallback replaces the default provider', async () => {
+    const store = await getStore();
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).toBe('');
+
+    mockServerResponse({
+      providers: {
+        deepseek: { models: ['deepseek-chat'] },
+      },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('deepseek');
+    expect(store.getState().modelId).toBe('deepseek-chat');
   });
 
   // ---- Error handling ----
@@ -547,6 +653,102 @@ describe('fetchServerProviders — ASR stale selection', () => {
     await store.getState().fetchServerProviders();
 
     expect(store.getState().asrProviderId).toBe('openai-whisper');
+  });
+});
+
+describe('fetchServerProviders — Web Search provider sync', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    return useSettingsStore;
+  }
+
+  it('marks Bocha as server-configured and stores serverBaseUrl', async () => {
+    const store = await getStore();
+    mockServerResponse({
+      webSearch: {
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().webSearchProvidersConfig.bocha).toMatchObject({
+      isServerConfigured: true,
+      serverBaseUrl: 'https://api.bocha.cn',
+    });
+  });
+
+  it('falls back to Bocha when selected Tavily loses server config and has no client key', async () => {
+    const store = await getStore();
+
+    mockServerResponse({
+      webSearch: {
+        tavily: { baseUrl: 'https://api.tavily.com' },
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+    await store.getState().fetchServerProviders();
+    store.getState().setWebSearchProvider('tavily');
+
+    mockServerResponse({
+      webSearch: {
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().webSearchProviderId).toBe('bocha');
+  });
+
+  it('keeps Bocha selected when it is still server-configured', async () => {
+    const store = await getStore();
+
+    mockServerResponse({
+      webSearch: {
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+    await store.getState().fetchServerProviders();
+    store.getState().setWebSearchProvider('bocha');
+
+    mockServerResponse({
+      webSearch: {
+        bocha: { baseUrl: 'https://api.bocha.cn' },
+      },
+    });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().webSearchProviderId).toBe('bocha');
+  });
+
+  it('stores Baidu sub-source toggles and prevents disabling every source', async () => {
+    const store = await getStore();
+
+    expect(store.getState().baiduSubSources).toEqual({
+      webSearch: true,
+      baike: true,
+      scholar: true,
+    });
+
+    store.getState().setBaiduSubSources({ webSearch: false, scholar: false });
+    expect(store.getState().baiduSubSources).toEqual({
+      webSearch: false,
+      baike: true,
+      scholar: false,
+    });
+
+    store.getState().setBaiduSubSources({ baike: false });
+    expect(store.getState().baiduSubSources).toEqual({
+      webSearch: false,
+      baike: true,
+      scholar: false,
+    });
   });
 });
 
@@ -842,5 +1044,411 @@ describe('fetchServerProviders — LLM cross-provider fallback', () => {
 
     expect(store.getState().providerId).toBe('anthropic');
     expect(store.getState().modelId).toBe('claude-sonnet-4-6');
+  });
+});
+
+describe('usable provider ⇒ concrete model invariant (#580)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    return useSettingsStore;
+  }
+
+  it('server sync: LLM provider usable via client API key resolves a concrete model (not empty)', async () => {
+    const store = await getStore();
+
+    // First sync establishes autoConfigApplied; server offers nothing.
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    // Illegal state #580 targets: a usable provider (client key) with empty model.
+    store.setState({
+      providerId: 'openai',
+      modelId: '',
+      providersConfig: {
+        ...store.getState().providersConfig,
+        openai: { ...store.getState().providersConfig.openai, apiKey: 'sk-client' },
+      },
+    });
+
+    // Server still offers nothing — openai is usable ONLY via the client key.
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).not.toBe('');
+    expect(store.getState().modelId).toBe('gpt-4o');
+  });
+
+  it('first load: server-restricted model list is preferred over the built-in first model', async () => {
+    const store = await getStore();
+
+    // First ever sync, nothing selected, server restricts openai to a model
+    // that is NOT the built-in first ('gpt-4o').
+    mockServerResponse({ providers: { openai: { models: ['gpt-4o-mini'] } } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).toBe('gpt-4o-mini');
+  });
+
+  it('first load: server-configured LLM provider auto-selects provider and a concrete model', async () => {
+    const store = await getStore();
+
+    mockServerResponse({ providers: { anthropic: { models: ['claude-sonnet-4-6'] } } });
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().providerId).toBe('anthropic');
+    expect(store.getState().modelId).toBe('claude-sonnet-4-6');
+  });
+
+  it('API-key entry resolves a concrete model atomically (no waiting for next server sync)', async () => {
+    const store = await getStore();
+
+    // openai is the active provider but not yet usable (no key) and has no
+    // model selected — the illegal interim state #580 must not persist.
+    store.setState({ providerId: 'openai', modelId: '' });
+
+    store.getState().setProviderConfig('openai', {
+      apiKey: 'sk-client',
+      baseUrl: '',
+      requiresApiKey: true,
+    });
+
+    expect(store.getState().providerId).toBe('openai');
+    expect(store.getState().modelId).toBe('gpt-4o');
+  });
+
+  it('configuring a non-active provider does not hijack the current selection', async () => {
+    const store = await getStore();
+
+    mockServerResponse({});
+    await store.getState().fetchServerProviders();
+    store.setState({
+      providerId: 'anthropic',
+      modelId: 'claude-sonnet-4-6',
+      providersConfig: {
+        ...store.getState().providersConfig,
+        anthropic: { ...store.getState().providersConfig.anthropic, apiKey: 'sk-a' },
+      },
+    });
+
+    store.getState().setProviderConfig('openai', {
+      apiKey: 'sk-o',
+      baseUrl: '',
+      requiresApiKey: true,
+    });
+
+    expect(store.getState().providerId).toBe('anthropic');
+    expect(store.getState().modelId).toBe('claude-sonnet-4-6');
+  });
+
+  it('switching image provider resolves the new provider model (not a stale one)', async () => {
+    const store = await getStore();
+
+    // Start on seedream with a stale/foreign model id selected.
+    store.setState({ imageProviderId: 'seedream', imageModelId: 'stale-model' });
+    store.getState().setImageProvider('qwen-image');
+
+    expect(store.getState().imageProviderId).toBe('qwen-image');
+    expect(store.getState().imageModelId).toBe('qwen-image-max');
+  });
+
+  it('switching video provider resolves the new provider model (not a stale one)', async () => {
+    const store = await getStore();
+
+    // Default state is seedance/doubao-seedance…; switch to kling.
+    store.getState().setVideoProvider('kling');
+
+    expect(store.getState().videoProviderId).toBe('kling');
+    expect(store.getState().videoModelId).toBe('kling-v2-6');
+  });
+
+  it('deleting the selected custom image model resolves back to a valid model', async () => {
+    const store = await getStore();
+
+    store.getState().setImageProvider('seedream');
+    store.getState().setImageProviderConfig('seedream', {
+      customModels: [{ id: 'my-custom-image', name: 'Custom' }],
+    });
+    store.getState().setImageModelId('my-custom-image');
+    expect(store.getState().imageModelId).toBe('my-custom-image');
+
+    // Delete the selected custom model — selection must not stay stale.
+    store.getState().setImageProviderConfig('seedream', { customModels: [] });
+
+    expect(store.getState().imageModelId).toBe('doubao-seedream-5-0-260128');
+  });
+
+  it('deleting the selected custom video model resolves back to a valid model', async () => {
+    const store = await getStore();
+
+    store.getState().setVideoProvider('seedance');
+    store.getState().setVideoProviderConfig('seedance', {
+      customModels: [{ id: 'my-custom-video', name: 'Custom' }],
+    });
+    store.getState().setVideoModelId('my-custom-video');
+    expect(store.getState().videoModelId).toBe('my-custom-video');
+
+    store.getState().setVideoProviderConfig('seedance', { customModels: [] });
+
+    expect(store.getState().videoModelId).toBe('doubao-seedance-1-5-pro-251215');
+  });
+
+  it('deleting the selected provider (bulk setProvidersConfig) does not keep an invalid selection', async () => {
+    const store = await getStore();
+    const base = store.getState().providersConfig;
+
+    // Built-ins require a key and have none → unusable. A custom provider is
+    // the only usable one and is the active selection.
+    const stripped = Object.fromEntries(
+      Object.entries(base).map(([id, c]) => [id, { ...c, apiKey: '', isServerConfigured: false }]),
+    ) as typeof base;
+    const withCustom = {
+      ...stripped,
+      'custom-tencent': {
+        ...base.openai,
+        apiKey: 'sk-t',
+        baseUrl: 'https://tencent.example/v1',
+        models: [{ id: 'hy3-preview', name: 'Hy3' }],
+        name: 'Tencent',
+        requiresApiKey: true,
+      },
+    } as typeof base;
+
+    store.setState({
+      providersConfig: withCustom,
+      providerId: 'custom-tencent',
+      modelId: 'hy3-preview',
+    });
+
+    // Delete it via the real delete path (the bulk config setter).
+    store.getState().setProvidersConfig(stripped);
+
+    // No usable provider remains ⇒ State A. Selection must NOT point at the
+    // deleted provider, nor at an unusable built-in (e.g. openai + a model).
+    expect(store.getState().providerId).not.toBe('custom-tencent');
+    expect(store.getState().providerId).toBe('');
+    expect(store.getState().modelId).toBe('');
+  });
+
+  it('clearing the selected provider API key (it becomes invalid) drops the stale selection', async () => {
+    const store = await getStore();
+    const base = store.getState().providersConfig;
+
+    const stripped = Object.fromEntries(
+      Object.entries(base).map(([id, c]) => [id, { ...c, apiKey: '', isServerConfigured: false }]),
+    ) as typeof base;
+    const withCustom = {
+      ...stripped,
+      'custom-tencent': {
+        ...base.openai,
+        apiKey: 'sk-t',
+        baseUrl: 'https://tencent.example/v1',
+        models: [{ id: 'hy3-preview', name: 'Hy3' }],
+        name: 'Tencent',
+        requiresApiKey: true,
+      },
+    } as typeof base;
+
+    store.setState({
+      providersConfig: withCustom,
+      providerId: 'custom-tencent',
+      modelId: 'hy3-preview',
+    });
+
+    // The realistic case: user clears the selected provider's key in Settings
+    // → it becomes invalid. The selection must NOT stay on it.
+    store.getState().setProviderConfig('custom-tencent', { apiKey: '' });
+
+    expect(store.getState().providerId).not.toBe('custom-tencent');
+    expect(store.getState().providerId).toBe('');
+    expect(store.getState().modelId).toBe('');
+  });
+
+  it('clearing a non-selected provider key keeps the still-usable current selection', async () => {
+    const store = await getStore();
+    const base = store.getState().providersConfig;
+
+    const stripped = Object.fromEntries(
+      Object.entries(base).map(([id, c]) => [id, { ...c, apiKey: '', isServerConfigured: false }]),
+    ) as typeof base;
+    const withTwo = {
+      ...stripped,
+      'custom-a': {
+        ...base.openai,
+        apiKey: 'sk-a',
+        baseUrl: 'https://a.example/v1',
+        models: [{ id: 'a-1', name: 'A1' }],
+        name: 'A',
+        requiresApiKey: true,
+      },
+      'custom-b': {
+        ...base.openai,
+        apiKey: 'sk-b',
+        baseUrl: 'https://b.example/v1',
+        models: [{ id: 'b-1', name: 'B1' }],
+        name: 'B',
+        requiresApiKey: true,
+      },
+    } as typeof base;
+
+    store.setState({
+      providersConfig: withTwo,
+      providerId: 'custom-a',
+      modelId: 'a-1',
+    });
+
+    store.getState().setProviderConfig('custom-b', { apiKey: '' });
+
+    expect(store.getState().providerId).toBe('custom-a');
+    expect(store.getState().modelId).toBe('a-1');
+  });
+
+  it('deleting a non-selected provider keeps the still-usable current selection', async () => {
+    const store = await getStore();
+    const base = store.getState().providersConfig;
+
+    const stripped = Object.fromEntries(
+      Object.entries(base).map(([id, c]) => [id, { ...c, apiKey: '', isServerConfigured: false }]),
+    ) as typeof base;
+    const withTwoCustom = {
+      ...stripped,
+      'custom-a': {
+        ...base.openai,
+        apiKey: 'sk-a',
+        baseUrl: 'https://a.example/v1',
+        models: [{ id: 'a-1', name: 'A1' }],
+        name: 'A',
+        requiresApiKey: true,
+      },
+      'custom-b': {
+        ...base.openai,
+        apiKey: 'sk-b',
+        baseUrl: 'https://b.example/v1',
+        models: [{ id: 'b-1', name: 'B1' }],
+        name: 'B',
+        requiresApiKey: true,
+      },
+    } as typeof base;
+
+    store.setState({
+      providersConfig: withTwoCustom,
+      providerId: 'custom-a',
+      modelId: 'a-1',
+    });
+
+    const withoutB = { ...withTwoCustom };
+    delete (withoutB as Record<string, unknown>)['custom-b'];
+    store.getState().setProvidersConfig(withoutB as typeof base);
+
+    expect(store.getState().providerId).toBe('custom-a');
+    expect(store.getState().modelId).toBe('a-1');
+  });
+});
+
+describe('settings merge migration — custom provider baseUrl', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  it('promotes defaultBaseUrl into baseUrl for legacy custom providers', async () => {
+    const { promoteLegacyCustomProviderBaseUrls } = await import('@/lib/store/settings');
+    const state = {
+      providersConfig: {
+        'custom-123': {
+          apiKey: '',
+          baseUrl: '',
+          models: [{ id: 'test-model', name: 'Test Model' }],
+          name: 'Legacy Custom',
+          type: 'openai',
+          defaultBaseUrl: 'https://example.com/v1',
+          requiresApiKey: true,
+          isBuiltIn: false,
+        },
+      },
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally partial for unit test
+    promoteLegacyCustomProviderBaseUrls(state as any);
+
+    expect(state.providersConfig['custom-123'].baseUrl).toBe('https://example.com/v1');
+    expect(state.providersConfig['custom-123'].defaultBaseUrl).toBe('https://example.com/v1');
+  });
+
+  it('does not promote defaultBaseUrl for built-in providers', async () => {
+    const { promoteLegacyCustomProviderBaseUrls } = await import('@/lib/store/settings');
+    const state = {
+      providersConfig: {
+        openai: {
+          apiKey: '',
+          baseUrl: '',
+          models: [{ id: 'gpt-4o', name: 'GPT-4o' }],
+          name: 'OpenAI',
+          type: 'openai',
+          defaultBaseUrl: 'https://persisted-openai.example/v1',
+          requiresApiKey: true,
+          isBuiltIn: true,
+        },
+      },
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- intentionally partial for unit test
+    promoteLegacyCustomProviderBaseUrls(state as any);
+
+    expect(state.providersConfig.openai.baseUrl).toBe('');
+    expect(state.providersConfig.openai.defaultBaseUrl).toBe('https://persisted-openai.example/v1');
+  });
+});
+
+describe('settings store — outline review preference', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    return useSettingsStore;
+  }
+
+  it('defaults reviewOutlineEnabled to false', async () => {
+    const store = await getStore();
+
+    expect(store.getState().reviewOutlineEnabled).toBe(false);
+  });
+
+  it('toggles reviewOutlineEnabled', async () => {
+    const store = await getStore();
+
+    store.getState().setReviewOutlineEnabled(true);
+
+    expect(store.getState().reviewOutlineEnabled).toBe(true);
+  });
+
+  it('rehydrates older persisted settings without the outline flag to false', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        state: {
+          providerId: 'openai',
+          modelId: 'gpt-4o',
+          autoConfigApplied: true,
+        },
+        version: 2,
+      }),
+    );
+
+    const store = await getStore();
+
+    expect(store.getState().reviewOutlineEnabled).toBe(false);
   });
 });

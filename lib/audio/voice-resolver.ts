@@ -2,6 +2,12 @@ import type { TTSProviderId } from '@/lib/audio/types';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import { TTS_PROVIDERS } from '@/lib/audio/constants';
+import {
+  VOXCPM_TTS_PROVIDER_ID,
+  getVoxCPMProfileVoiceId,
+  normalizeVoxCPMBackend,
+  voxCPMBackendSupportsReferenceAudio,
+} from '@/lib/audio/voxcpm';
 
 export interface ResolvedVoice {
   providerId: TTSProviderId;
@@ -80,13 +86,13 @@ export function getServerVoiceList(
 export interface ModelVoiceGroup {
   modelId: string;
   modelName: string;
-  voices: Array<{ id: string; name: string }>;
+  voices: Array<{ id: string; name: string; language?: string }>;
 }
 
 export interface ProviderWithVoices {
   providerId: TTSProviderId;
   providerName: string;
-  voices: Array<{ id: string; name: string }>; // keep for backward compat
+  voices: Array<{ id: string; name: string; language?: string }>;
   modelGroups: ModelVoiceGroup[]; // voices grouped by model
 }
 
@@ -103,11 +109,15 @@ export function getAvailableProvidersWithVoices(
       apiKey?: string;
       enabled?: boolean;
       isServerConfigured?: boolean;
+      serverBaseUrl?: string;
+      baseUrl?: string;
       modelId?: string;
+      providerOptions?: Record<string, unknown>;
       customName?: string;
       customVoices?: Array<{ id: string; name: string }>;
     }
   >,
+  voxcpmProfiles: Array<{ id: string; name: string; kind?: string }> = [],
 ): ProviderWithVoices[] {
   const result: ProviderWithVoices[] = [];
 
@@ -120,9 +130,39 @@ export function getAvailableProvidersWithVoices(
     const providerConfig = ttsProvidersConfig[providerId];
     const hasApiKey = providerConfig?.apiKey && providerConfig.apiKey.trim().length > 0;
     const isServerConfigured = providerConfig?.isServerConfigured === true;
+    const isKeylessLocalProvider =
+      !config.requiresApiKey &&
+      !!(
+        providerConfig?.serverBaseUrl?.trim() ||
+        providerConfig?.baseUrl?.trim() ||
+        config.defaultBaseUrl
+      );
+    const isLocalVoxCPM =
+      providerId === VOXCPM_TTS_PROVIDER_ID &&
+      !!(providerConfig?.serverBaseUrl?.trim() || providerConfig?.baseUrl?.trim());
+    const visibleVoxCPMProfiles =
+      providerId === VOXCPM_TTS_PROVIDER_ID
+        ? voxcpmProfiles.filter((profile) => {
+            const backend = normalizeVoxCPMBackend(providerConfig?.providerOptions?.backend);
+            return profile.kind !== 'clone' || voxCPMBackendSupportsReferenceAudio(backend);
+          })
+        : [];
 
-    if (hasApiKey || isServerConfigured) {
-      const allVoices = config.voices.map((v) => ({ id: v.id, name: v.name }));
+    if (hasApiKey || isServerConfigured || isLocalVoxCPM || isKeylessLocalProvider) {
+      const allVoices = [
+        ...config.voices.map((v) => ({
+          id: v.id,
+          name: v.name,
+          language: v.language,
+        })),
+        ...(providerId === VOXCPM_TTS_PROVIDER_ID
+          ? visibleVoxCPMProfiles.map((profile) => ({
+              id: getVoxCPMProfileVoiceId(profile.id),
+              name: profile.name,
+              language: 'auto',
+            }))
+          : []),
+      ];
 
       // Build model groups
       const modelGroups: ModelVoiceGroup[] = [];
@@ -130,7 +170,16 @@ export function getAvailableProvidersWithVoices(
         for (const model of config.models) {
           const compatibleVoices = config.voices
             .filter((v) => !v.compatibleModels || v.compatibleModels.includes(model.id))
-            .map((v) => ({ id: v.id, name: v.name }));
+            .map((v) => ({ id: v.id, name: v.name, language: v.language }));
+          if (providerId === VOXCPM_TTS_PROVIDER_ID) {
+            compatibleVoices.push(
+              ...visibleVoxCPMProfiles.map((profile) => ({
+                id: getVoxCPMProfileVoiceId(profile.id),
+                name: profile.name,
+                language: 'auto',
+              })),
+            );
+          }
           modelGroups.push({
             modelId: model.id,
             modelName: model.name,

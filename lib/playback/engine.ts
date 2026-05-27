@@ -578,8 +578,12 @@ export class PlaybackEngine {
       case 'wb_draw_table':
       case 'wb_clear':
       case 'wb_delete':
-      case 'wb_close': {
-        // Synchronous whiteboard actions — await completion, then continue
+      case 'wb_close':
+      case 'widget_highlight':
+      case 'widget_setState':
+      case 'widget_annotation':
+      case 'widget_reveal': {
+        // Synchronous actions — await completion, then continue
         await this.actionEngine.execute(action);
         if (this.mode === 'playing') {
           this.processNext();

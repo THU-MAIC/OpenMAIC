@@ -1,0 +1,100 @@
+{
+  "id": "math-quadratic-inequality",
+  "name": "高中数学 — 二次函数与不等式",
+  "description": "qa模式，单agent，用户追问驱动公式推导和图表绘制",
+  "tags": ["math", "qa", "single-agent", "zh-CN", "latex"],
+  "initialStoreState": {
+    "stage": {
+      "id": "eval-math-quadratic",
+      "name": "高中数学函数",
+      "createdAt": 1700000000,
+      "updatedAt": 1700000000,
+      "languageDirective": "zh-CN"
+    },
+    "scenes": [
+      {
+        "id": "sc-math-1",
+        "stageId": "eval-math-quadratic",
+        "type": "slide",
+        "title": "二次函数与一元二次不等式",
+        "order": 0,
+        "content": {
+          "type": "slide",
+          "canvas": {
+            "id": "slide-0",
+            "viewportSize": 1000,
+            "viewportRatio": 0.5625,
+            "theme": {
+              "backgroundColor": "#ffffff",
+              "themeColors": ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"],
+              "fontColor": "#333333",
+              "fontName": "Microsoft YaHei"
+            },
+            "elements": [
+              {
+                "type": "text",
+                "id": "title-2",
+                "content": "<p style=\"font-size: 32px;\">二次函数与一元二次不等式</p>",
+                "left": 60,
+                "top": 40,
+                "width": 880,
+                "height": 70,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "text",
+                "id": "def-1",
+                "content": "<p style=\"font-size: 18px;\">一元二次不等式 ax²+bx+c>0 的解集</p>",
+                "left": 80,
+                "top": 140,
+                "width": 500,
+                "height": 50,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "text",
+                "id": "def-2",
+                "content": "<p style=\"font-size: 18px;\">与二次函数 y=ax²+bx+c 的图像关系</p>",
+                "left": 80,
+                "top": 200,
+                "width": 500,
+                "height": 50,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "currentSceneId": "sc-math-1"
+  },
+  "config": {
+    "agentIds": ["default-1"],
+    "sessionType": "qa"
+  },
+  "turns": [
+    {
+      "userMessage": "能在白板上推导一下 x²-5x+6>0 怎么解吗"
+    },
+    {
+      "userMessage": "嗯，然后呢",
+      "checkpoint": true
+    },
+    {
+      "userMessage": "那如果是小于零呢"
+    },
+    {
+      "userMessage": "画个图看看",
+      "checkpoint": true
+    },
+    {
+      "userMessage": "韦达定理也写一下"
+    }
+  ]
+}

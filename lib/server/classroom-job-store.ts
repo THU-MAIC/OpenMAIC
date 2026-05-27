@@ -26,7 +26,6 @@ export interface ClassroomGenerationJob {
   completedAt?: string;
   inputSummary: {
     requirementPreview: string;
-    language: string;
     hasPdf: boolean;
     pdfTextLength: number;
     pdfImageCount: number;
@@ -49,7 +48,6 @@ function buildInputSummary(input: GenerateClassroomInput): ClassroomGenerationJo
   return {
     requirementPreview:
       input.requirement.length > 200 ? `${input.requirement.slice(0, 197)}...` : input.requirement,
-    language: input.language || 'zh-CN',
     hasPdf: !!input.pdfContent,
     pdfTextLength: input.pdfContent?.text.length || 0,
     pdfImageCount: input.pdfContent?.images.length || 0,

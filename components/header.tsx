@@ -10,6 +10,7 @@ import {
   Download,
   FileDown,
   Package,
+  Archive,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
@@ -21,6 +22,7 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
+import { useExportClassroom } from '@/lib/export/use-export-classroom';
 
 interface HeaderProps {
   readonly currentSceneTitle: string;
@@ -35,6 +37,7 @@ export function Header({ currentSceneTitle }: HeaderProps) {
 
   // Export
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
+  const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
   const scenes = useStageStore((s) => s.scenes);
@@ -177,24 +180,24 @@ export function Header({ currentSceneTitle }: HeaderProps) {
         <div className="relative" ref={exportRef}>
           <button
             onClick={() => {
-              if (canExport && !isExporting) setExportMenuOpen(!exportMenuOpen);
+              if (canExport && !isExporting && !isExportingZip) setExportMenuOpen(!exportMenuOpen);
             }}
-            disabled={!canExport || isExporting}
+            disabled={!canExport || isExporting || isExportingZip}
             title={
               canExport
-                ? isExporting
+                ? isExporting || isExportingZip
                   ? t('export.exporting')
                   : t('export.pptx')
                 : t('share.notReady')
             }
             className={cn(
               'shrink-0 p-2 rounded-full transition-all',
-              canExport && !isExporting
+              canExport && !isExporting && !isExportingZip
                 ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
                 : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
             )}
           >
-            {isExporting ? (
+            {isExporting || isExportingZip ? (
               <Loader2 className="w-4 h-4 animate-spin" />
             ) : (
               <Download className="w-4 h-4" />
@@ -224,6 +227,22 @@ export function Header({ currentSceneTitle }: HeaderProps) {
                   <div>{t('export.resourcePack')}</div>
                   <div className="text-[11px] text-gray-400 dark:text-gray-500">
                     {t('export.resourcePackDesc')}
+                  </div>
+                </div>
+              </button>
+              <button
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  exportClassroomZip();
+                }}
+                disabled={isExportingZip}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
+              >
+                <Archive className="w-4 h-4 text-gray-400 shrink-0" />
+                <div>
+                  <div>{t('export.classroomZip')}</div>
+                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                    {t('export.classroomZipDesc')}
                   </div>
                 </div>
               </button>

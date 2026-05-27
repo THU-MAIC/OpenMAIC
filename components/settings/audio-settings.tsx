@@ -26,6 +26,9 @@ import { Volume2, Mic, MicOff, CheckCircle2, XCircle, Eye, EyeOff } from 'lucide
 import { cn } from '@/lib/utils';
 import azureVoicesData from '@/lib/audio/azure.json';
 import { createLogger } from '@/lib/logger';
+import { getVoxCPMVoiceOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { normalizeVoxCPMBackend, voxCPMBackendSupportsReferenceAudio } from '@/lib/audio/voxcpm';
+import { normalizeASRUploadAudio } from '@/lib/audio/wav-utils';
 
 const log = createLogger('AudioSettings');
 
@@ -38,9 +41,11 @@ function getTTSProviderName(providerId: TTSProviderId, t: (key: string) => strin
     'azure-tts': t('settings.providerAzureTTS'),
     'glm-tts': t('settings.providerGLMTTS'),
     'qwen-tts': t('settings.providerQwenTTS'),
+    'voxcpm-tts': t('settings.providerVoxCPMTTS'),
     'doubao-tts': t('settings.providerDoubaoTTS'),
     'elevenlabs-tts': t('settings.providerElevenLabsTTS'),
     'minimax-tts': t('settings.providerMiniMaxTTS'),
+    'lemonade-tts': t('settings.providerLemonadeTTS'),
     'browser-native-tts': t('settings.providerBrowserNativeTTS'),
   };
   return names[providerId];
@@ -51,6 +56,7 @@ function getASRProviderName(providerId: ASRProviderId, t: (key: string) => strin
     'openai-whisper': t('settings.providerOpenAIWhisper'),
     'browser-native': t('settings.providerBrowserNative'),
     'qwen-asr': t('settings.providerQwenASR'),
+    'lemonade-asr': t('settings.providerLemonadeASR'),
   };
   return names[providerId];
 }
@@ -95,6 +101,10 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
 
   // Azure voices - load from static JSON
   const azureVoices = useMemo(() => azureVoicesData.voices, []);
+  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
+  const voxcpmBackend = normalizeVoxCPMBackend(
+    ttsProvidersConfig['voxcpm-tts']?.providerOptions?.backend,
+  );
 
   // Wrapped setters that trigger onSave callback
   const handleTTSProviderChange = (providerId: TTSProviderId) => {
@@ -206,6 +216,10 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
         id: voice.ShortName,
         name: voice.LocalName,
       }));
+    } else if (ttsProviderId === 'voxcpm-tts') {
+      availableVoices = getVoxCPMVoiceOptions(voxcpmProfiles, {
+        supportsClone: voxCPMBackendSupportsReferenceAudio(voxcpmBackend),
+      });
     } else {
       // Use static voices from constants
       availableVoices = getTTSVoices(ttsProviderId);
@@ -223,7 +237,7 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
         }
       }
     }
-  }, [ttsProviderId, ttsVoice, azureVoices, setTTSVoice]);
+  }, [ttsProviderId, ttsVoice, azureVoices, voxcpmProfiles, voxcpmBackend, setTTSVoice]);
 
   // Initialize and reset ASR language when provider changes
   useEffect(() => {
@@ -318,26 +332,27 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
           mediaRecorder.onstop = async () => {
             stream.getTracks().forEach((track) => track.stop());
 
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
-            const formData = new FormData();
-            formData.append('audio', audioBlob, 'recording.webm');
-            formData.append('providerId', asrProviderId);
-            formData.append('language', asrLanguage);
-
-            // Only append non-empty values
-            const apiKeyValue = asrProvidersConfig[asrProviderId]?.apiKey;
-            if (apiKeyValue && apiKeyValue.trim()) {
-              formData.append('apiKey', apiKeyValue);
-            }
-            const baseUrlValue =
-              asrProvidersConfig[asrProviderId]?.baseUrl ||
-              asrProvidersConfig[asrProviderId]?.customDefaultBaseUrl ||
-              '';
-            if (baseUrlValue && baseUrlValue.trim()) {
-              formData.append('baseUrl', baseUrlValue);
-            }
-
             try {
+              const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+              const uploadAudio = await normalizeASRUploadAudio(asrProviderId, audioBlob);
+              const formData = new FormData();
+              formData.append('audio', uploadAudio.blob, uploadAudio.fileName);
+              formData.append('providerId', asrProviderId);
+              formData.append('language', asrLanguage);
+
+              // Only append non-empty values
+              const apiKeyValue = asrProvidersConfig[asrProviderId]?.apiKey;
+              if (apiKeyValue && apiKeyValue.trim()) {
+                formData.append('apiKey', apiKeyValue);
+              }
+              const baseUrlValue =
+                asrProvidersConfig[asrProviderId]?.baseUrl ||
+                asrProvidersConfig[asrProviderId]?.customDefaultBaseUrl ||
+                '';
+              if (baseUrlValue && baseUrlValue.trim()) {
+                formData.append('baseUrl', baseUrlValue);
+              }
+
               const response = await fetch('/api/transcription', {
                 method: 'POST',
                 body: formData,
@@ -458,36 +473,52 @@ export function AudioSettings({ onSave }: AudioSettingsProps = {}) {
           </div>
 
           {(ttsProvider.requiresApiKey ||
-            ttsProvidersConfig[ttsProviderId]?.isServerConfigured) && (
+            ttsProvidersConfig[ttsProviderId]?.isServerConfigured ||
+            ttsProviderId === 'voxcpm-tts') && (
             <>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
-                  <div className="relative">
-                    <Input
-                      type={showTTSApiKey ? 'text' : 'password'}
-                      placeholder={
-                        ttsProvidersConfig[ttsProviderId]?.isServerConfigured
-                          ? t('settings.optionalOverride')
-                          : t('settings.enterApiKey')
-                      }
-                      value={ttsProvidersConfig[ttsProviderId]?.apiKey || ''}
-                      onChange={(e) =>
-                        handleTTSProviderConfigChange(ttsProviderId, {
-                          apiKey: e.target.value,
-                        })
-                      }
-                      className="font-mono text-sm pr-10"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowTTSApiKey(!showTTSApiKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showTTSApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
+              <div
+                className={cn(
+                  'grid gap-4',
+                  ttsProvider.requiresApiKey ||
+                    ttsProvidersConfig[ttsProviderId]?.isServerConfigured
+                    ? 'grid-cols-2'
+                    : 'grid-cols-1',
+                )}
+              >
+                {(ttsProvider.requiresApiKey ||
+                  ttsProvidersConfig[ttsProviderId]?.isServerConfigured) && (
+                  <div className="space-y-2">
+                    <Label className="text-sm">{t('settings.ttsApiKey')}</Label>
+                    <div className="relative">
+                      <Input
+                        type={showTTSApiKey ? 'text' : 'password'}
+                        placeholder={
+                          ttsProvidersConfig[ttsProviderId]?.isServerConfigured
+                            ? t('settings.optionalOverride')
+                            : t('settings.enterApiKey')
+                        }
+                        value={ttsProvidersConfig[ttsProviderId]?.apiKey || ''}
+                        onChange={(e) =>
+                          handleTTSProviderConfigChange(ttsProviderId, {
+                            apiKey: e.target.value,
+                          })
+                        }
+                        className="font-mono text-sm pr-10"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowTTSApiKey(!showTTSApiKey)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showTTSApiKey ? (
+                          <EyeOff className="h-4 w-4" />
+                        ) : (
+                          <Eye className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="space-y-2">
                   <Label className="text-sm">{t('settings.ttsBaseUrl')}</Label>

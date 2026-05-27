@@ -21,7 +21,7 @@
 import type { LanguageModel } from 'ai';
 import type { StatelessChatRequest, StatelessEvent, ParsedAction } from '@/lib/types/chat';
 import type { ThinkingConfig } from '@/lib/types/provider';
-import type { WhiteboardActionRecord } from './director-prompt';
+import type { WhiteboardActionRecord } from './types';
 import { createOrchestrationGraph, buildInitialState } from './director-graph';
 import { parse as parsePartialJson, Allow } from 'partial-json';
 import { jsonrepair } from 'jsonrepair';

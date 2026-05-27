@@ -7,6 +7,7 @@
 
 import type { NextRequest } from 'next/server';
 import { getModel, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
+import type { ThinkingConfig } from '@/lib/types/provider';
 import { resolveApiKey, resolveBaseUrl, resolveProxy } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
@@ -15,8 +16,14 @@ export interface ResolvedModel extends ModelWithInfo {
   modelString: string;
   /** Resolved provider ID (e.g. "openai", "ollama") */
   providerId: string;
+  /** Resolved model ID (e.g. "gpt-4o-mini") */
+  modelId: string;
   /** Effective API key after server-side fallback resolution */
   apiKey: string;
+  /** Effective base URL after server/client resolution */
+  baseUrl?: string;
+  /** Optional per-request thinking configuration from the client. */
+  thinkingConfig?: ThinkingConfig;
 }
 
 /**
@@ -29,8 +36,9 @@ export async function resolveModel(params: {
   apiKey?: string;
   baseUrl?: string;
   providerType?: string;
+  thinkingConfig?: ThinkingConfig;
 }): Promise<ResolvedModel> {
-  const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-4o-mini';
+  const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-5.4-mini';
   const { providerId, modelId } = parseModelString(modelString);
 
   // SSRF validation applies only to client-supplied base URLs.
@@ -58,7 +66,23 @@ export async function resolveModel(params: {
     providerType: params.providerType as 'openai' | 'anthropic' | 'google' | undefined,
   });
 
-  return { model, modelInfo, modelString, providerId, apiKey };
+  return {
+    model,
+    modelInfo,
+    modelString,
+    providerId,
+    modelId,
+    apiKey,
+    baseUrl,
+    thinkingConfig: params.thinkingConfig,
+  };
+}
+
+function getThinkingConfigFromBody(body: unknown): ThinkingConfig | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const record = body as { thinkingConfig?: unknown; thinking?: unknown };
+  const config = record.thinkingConfig ?? record.thinking;
+  return config && typeof config === 'object' ? (config as ThinkingConfig) : undefined;
 }
 
 /**
@@ -75,4 +99,21 @@ export async function resolveModelFromHeaders(req: NextRequest): Promise<Resolve
     baseUrl: req.headers.get('x-base-url') || undefined,
     providerType: req.headers.get('x-provider-type') || undefined,
   });
+}
+
+/**
+ * Resolve a language model from standard request headers plus body fields.
+ *
+ * Reads model credentials from headers and per-request thinking config from
+ * the JSON body field `thinkingConfig` (or legacy/eval field `thinking`).
+ */
+export async function resolveModelFromRequest(
+  req: NextRequest,
+  body: unknown,
+): Promise<ResolvedModel> {
+  const resolved = await resolveModelFromHeaders(req);
+  return {
+    ...resolved,
+    thinkingConfig: getThinkingConfigFromBody(body) ?? resolved.thinkingConfig,
+  };
 }

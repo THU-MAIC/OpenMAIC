@@ -8,9 +8,11 @@ import {
   getAvailableProvidersWithVoices,
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
+import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
+import { useI18n } from '@/lib/hooks/use-i18n';
 
 interface DiscussionTTSOptions {
   enabled: boolean;
@@ -29,6 +31,7 @@ interface QueueItem {
 }
 
 export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: DiscussionTTSOptions) {
+  const { locale } = useI18n();
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsSpeed = useSettingsStore((s) => s.ttsSpeed);
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
@@ -37,6 +40,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   // Global lecture voice — used as fallback for teacher agent
   const globalTtsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const globalTtsVoice = useSettingsStore((s) => s.ttsVoice);
+  const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
 
   const queueRef = useRef<QueueItem[]>([]);
   const isPlayingRef = useRef(false);
@@ -86,7 +90,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
 
   const resolveVoiceForAgent = useCallback(
     (agentId: string | null): ResolvedVoice => {
-      const providers = getAvailableProvidersWithVoices(ttsProvidersConfig);
+      const providers = getAvailableProvidersWithVoices(ttsProvidersConfig, voxcpmProfiles);
       if (!agentId) {
         if (providers.length > 0) {
           return {
@@ -118,7 +122,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       const index = agentIndexMap.current.get(agentId) ?? 0;
       return resolveAgentVoice(agent, index, providers);
     },
-    [agents, ttsProvidersConfig, globalTtsProviderId, globalTtsVoice],
+    [agents, ttsProvidersConfig, voxcpmProfiles, globalTtsProviderId, globalTtsVoice],
   );
 
   const processQueue = useCallback(async () => {
@@ -148,6 +152,19 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
 
     try {
       const providerConfig = ttsProvidersConfig[item.providerId];
+      const agent = item.agentId ? agents.find((a) => a.id === item.agentId) : undefined;
+      const providerOptions =
+        item.providerId === 'voxcpm-tts'
+          ? {
+              ...(providerConfig?.providerOptions || {}),
+              ...(await getVoxCPMProviderOptions(item.voiceId, {
+                agentName: agent?.name,
+                role: agent?.role,
+                persona: agent?.persona,
+                locale,
+              })),
+            }
+          : undefined;
       const res = await fetch('/api/generate/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -163,6 +180,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
             providerConfig?.serverBaseUrl ||
             providerConfig?.baseUrl ||
             providerConfig?.customDefaultBaseUrl,
+          ttsProviderOptions: providerOptions,
         }),
         signal: controller.signal,
       });
@@ -217,7 +235,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         queueMicrotask(() => processQueueRef.current());
       }
     }
-  }, [enabled, ttsMuted, ttsVolume, ttsProvidersConfig, ttsSpeed, playbackSpeed]);
+  }, [agents, enabled, locale, ttsMuted, ttsVolume, ttsProvidersConfig, ttsSpeed, playbackSpeed]);
 
   processQueueRef.current = processQueue;
 

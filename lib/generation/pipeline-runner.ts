@@ -39,7 +39,7 @@ export async function runGenerationPipeline(
       ...session.progress,
       currentStage: 1,
       overallProgress: 5,
-      statusMessage: '正在分析需求，生成场景大纲...',
+      statusMessage: 'Analyzing requirements, generating outlines...',
     });
 
     const outlinesResult = await generateSceneOutlinesFromRequirements(
@@ -52,19 +52,26 @@ export async function runGenerationPipeline(
     if (!outlinesResult.success || !outlinesResult.data) {
       throw new Error(outlinesResult.error || 'Failed to generate scene outlines');
     }
-    session.sceneOutlines = outlinesResult.data;
-    callbacks?.onStageComplete?.(1, session.sceneOutlines);
+    const { outlines, languageDirective } = outlinesResult.data;
+    session.sceneOutlines = outlines;
+    callbacks?.onStageComplete?.(1, outlines);
 
     // Stage 2: Generate Full Scenes
     callbacks?.onProgress?.({
       ...session.progress,
       currentStage: 2,
       overallProgress: 50,
-      statusMessage: '正在生成场景内容...',
-      totalScenes: session.sceneOutlines.length,
+      statusMessage: 'Generating scene content...',
+      totalScenes: outlines.length,
     });
 
-    const scenesResult = await generateFullScenes(session.sceneOutlines, store, aiCall, callbacks);
+    const scenesResult = await generateFullScenes(
+      outlines,
+      store,
+      aiCall,
+      callbacks,
+      languageDirective,
+    );
     if (!scenesResult.success) {
       throw new Error(scenesResult.error || 'Failed to generate scenes');
     }
@@ -76,9 +83,9 @@ export async function runGenerationPipeline(
       currentStage: 2,
       overallProgress: 100,
       stageProgress: 100,
-      statusMessage: '生成完成！',
+      statusMessage: 'Generation complete!',
       scenesGenerated: scenesResult.data?.length || 0,
-      totalScenes: session.sceneOutlines.length,
+      totalScenes: session.sceneOutlines?.length || 0,
     };
 
     return { success: true, data: session };

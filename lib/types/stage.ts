@@ -2,12 +2,21 @@
 import type { Slide } from '@/lib/types/slides';
 import type { Action } from '@/lib/types/action';
 import type { PBLProjectConfig } from '@/lib/pbl/types';
+import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
 
 export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
 
 export type StageMode = 'autonomous' | 'playback';
 
 export type Whiteboard = Omit<Slide, 'theme' | 'turningMode' | 'sectionTag' | 'type'>;
+
+export interface VideoManifestEntry {
+  type: 'video';
+  prompt: string;
+  aspectRatio?: string;
+}
+
+export type VideoManifest = Record<string, VideoManifestEntry>;
 
 /**
  * Stage - Represents the entire classroom/course
@@ -19,10 +28,13 @@ export interface Stage {
   createdAt: number;
   updatedAt: number;
   // Stage metadata
-  language?: string;
+  languageDirective?: string;
   style?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];
+  // Generated video requests keyed by the mediaRef used by PPTVideoElement.
+  // Runtime media state lives in the media task store / persisted media files.
+  videoManifest?: VideoManifest;
   // Agent IDs selected when this classroom was created
   agentIds?: string[];
   /**
@@ -40,6 +52,12 @@ export interface Stage {
     color: string;
     priority: number;
   }>;
+  /**
+   * True when this classroom was generated with Interactive Mode enabled
+   * (the INTERACTIVE_OUTLINES prompt branch).
+   * Absent on legacy classrooms, imports, and regular-mode generations.
+   */
+  interactiveMode?: boolean;
 }
 
 /**
@@ -120,6 +138,10 @@ export interface InteractiveContent {
   url: string; // URL of the interactive page
   // Optional: embedded HTML content
   html?: string;
+  // Ultra Mode widget fields
+  widgetType?: WidgetType;
+  widgetConfig?: WidgetConfig;
+  teacherActions?: TeacherAction[];
 }
 
 /**

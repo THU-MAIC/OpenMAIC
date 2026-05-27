@@ -10,7 +10,7 @@ import { nanoid } from 'nanoid';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolveModelFromHeaders } from '@/lib/server/resolve-model';
+import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 
 const log = createLogger('Agent Profiles API');
@@ -20,10 +20,15 @@ export const maxDuration = 120;
 interface RequestBody {
   stageInfo: { name: string; description?: string };
   sceneOutlines?: { title: string; description?: string }[];
-  language: string;
+  languageDirective: string;
   availableAvatars: string[];
   avatarDescriptions?: Array<{ path: string; desc: string }>;
-  availableVoices?: Array<{ providerId: string; voiceId: string; voiceName: string }>;
+  availableVoices?: Array<{
+    providerId: string;
+    voiceId: string;
+    voiceName: string;
+    voiceLanguage?: string;
+  }>;
 }
 
 function stripCodeFences(text: string): string {
@@ -43,7 +48,7 @@ export async function POST(req: NextRequest) {
     const {
       stageInfo,
       sceneOutlines,
-      language,
+      languageDirective,
       availableAvatars,
       avatarDescriptions,
       availableVoices,
@@ -54,8 +59,8 @@ export async function POST(req: NextRequest) {
     if (!stageInfo?.name) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageInfo.name is required');
     }
-    if (!language) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'language is required');
+    if (!languageDirective) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'languageDirective is required');
     }
     if (!availableAvatars || availableAvatars.length === 0) {
       return apiError(
@@ -65,8 +70,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ── Model resolution from request headers ──
-    const { model: languageModel, modelString: _modelString } = await resolveModelFromHeaders(req);
+    // ── Model resolution from request headers/body ──
+    const {
+      model: languageModel,
+      modelString: _modelString,
+      thinkingConfig,
+    } = await resolveModelFromRequest(req, body);
     modelString = _modelString;
 
     // ── Build prompt ──
@@ -85,12 +94,14 @@ export async function POST(req: NextRequest) {
             availableVoices.map((v) => ({
               id: `${v.providerId}::${v.voiceId}`,
               name: v.voiceName,
+              language: v.voiceLanguage || 'unknown',
             })),
           )
         : '';
 
     const voicePrompt = voiceListStr
       ? `- Each agent should be assigned a voice that matches their persona from this list: ${voiceListStr}
+  - Prefer a voice whose language matches the course language directive
   - Pick a voice that suits the agent's personality and role (e.g. authoritative voice for teacher, lively voice for energetic student)
   - Try to use different voices for each agent`
       : '';
@@ -109,7 +120,8 @@ Requirements:
 - Exactly 1 agent must have role "teacher", the rest can be "assistant" or "student"
 - Priority values: teacher=10 (highest), assistant=7, student=4-6
 - Each agent needs: name, role, persona (2-3 sentences describing personality and teaching/learning style)
-- Names and personas must be in language: ${language}
+- Language directive for this course: ${languageDirective}
+  Agent names and personas must follow this language directive.
 - Each agent must be assigned one avatar from this list: ${JSON.stringify(avatarDescriptions && avatarDescriptions.length > 0 ? avatarDescriptions.map((a) => ({ path: a.path, description: a.desc })) : availableAvatars)}
   - Pick an avatar that visually matches the agent's personality and role
   - Try to use different avatars for each agent
@@ -134,17 +146,21 @@ Return a JSON object with this exact structure:
 
     log.info(`Generating agent profiles for "${stageInfo.name}" [model=${modelString}]`);
 
-    const result = await callLLM(
-      {
-        model: languageModel,
-        system: systemPrompt,
-        prompt: userPrompt,
-      },
-      'agent-profiles',
-    );
+    const rawResult = (
+      await callLLM(
+        {
+          model: languageModel,
+          system: systemPrompt,
+          prompt: userPrompt,
+        },
+        'agent-profiles',
+        undefined,
+        thinkingConfig,
+      )
+    ).text;
 
     // ── Parse LLM response ──
-    const rawText = stripCodeFences(result.text);
+    const rawText = stripCodeFences(rawResult);
     let parsed: {
       agents: Array<{
         name: string;

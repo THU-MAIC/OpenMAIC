@@ -34,6 +34,8 @@ const WHITEBOARD_ACTIONS = [
   'wb_draw_latex',
   'wb_draw_table',
   'wb_draw_line',
+  'wb_draw_code',
+  'wb_edit_code',
   'wb_clear',
   'wb_delete',
 ];

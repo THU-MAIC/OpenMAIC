@@ -1,0 +1,191 @@
+{
+  "id": "physics-force-decomposition",
+  "name": "初中物理 — 力的分解",
+  "description": "discussion模式，4个agent，用户短回复驱动多轮白板绘制",
+  "tags": ["physics", "discussion", "multi-agent", "zh-CN"],
+  "initialStoreState": {
+    "stage": {
+      "id": "eval-physics-forces",
+      "name": "初中物理力学",
+      "createdAt": 1700000000,
+      "updatedAt": 1700000000,
+      "languageDirective": "zh-CN"
+    },
+    "scenes": [
+      {
+        "id": "sc-phys-1",
+        "stageId": "eval-physics-forces",
+        "type": "slide",
+        "title": "力的合成与分解",
+        "order": 0,
+        "content": {
+          "type": "slide",
+          "canvas": {
+            "id": "slide-0",
+            "viewportSize": 1000,
+            "viewportRatio": 0.5625,
+            "theme": {
+              "backgroundColor": "#ffffff",
+              "themeColors": ["#5b9bd5", "#ed7d31", "#a5a5a5", "#ffc000", "#4472c4"],
+              "fontColor": "#333333",
+              "fontName": "Microsoft YaHei"
+            },
+            "elements": [
+              {
+                "type": "text",
+                "id": "title-1",
+                "content": "<p style=\"font-size: 32px;\">力的合成与分解</p>",
+                "left": 60,
+                "top": 40,
+                "width": 880,
+                "height": 70,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "shape",
+                "id": "bg-1",
+                "viewBox": [1000, 1000],
+                "path": "M 0 0 L 1000 0 L 1000 1000 L 0 1000 Z",
+                "left": 60,
+                "top": 120,
+                "width": 880,
+                "height": 3,
+                "rotate": 0,
+                "fill": "#cccccc",
+                "fixedRatio": false
+              },
+              {
+                "type": "text",
+                "id": "point-1",
+                "content": "<p style=\"font-size: 18px;\">合力与分力的关系</p>",
+                "left": 80,
+                "top": 150,
+                "width": 400,
+                "height": 50,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "text",
+                "id": "point-2",
+                "content": "<p style=\"font-size: 18px;\">平行四边形定则</p>",
+                "left": 80,
+                "top": 210,
+                "width": 400,
+                "height": 50,
+                "rotate": 0,
+                "defaultFontName": "Microsoft YaHei",
+                "defaultColor": "#333333"
+              },
+              {
+                "type": "image",
+                "id": "img-1",
+                "src": "https://placehold.co/400x300",
+                "left": 540,
+                "top": 140,
+                "width": 380,
+                "height": 280,
+                "rotate": 0,
+                "fixedRatio": true
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "currentSceneId": "sc-phys-1"
+  },
+  "config": {
+    "agentIds": ["gen-teacher-01", "gen-assistant-01", "gen-student-小明", "gen-student-小红"],
+    "sessionType": "discussion",
+    "triggerAgentId": "gen-teacher-01",
+    "agentConfigs": [
+      {
+        "id": "gen-teacher-01",
+        "name": "张老师",
+        "role": "teacher",
+        "persona": "严谨认真的张老师，善于用白板辅助讲解。",
+        "avatar": "👨‍🏫",
+        "color": "#4A90D9",
+        "allowedActions": [
+          "wb_open",
+          "wb_close",
+          "wb_clear",
+          "wb_delete",
+          "wb_draw_text",
+          "wb_draw_shape",
+          "wb_draw_chart",
+          "wb_draw_latex",
+          "wb_draw_table",
+          "wb_draw_line",
+          "spotlight",
+          "laser"
+        ],
+        "priority": 10
+      },
+      {
+        "id": "gen-assistant-01",
+        "name": "小助手",
+        "role": "assistant",
+        "persona": "热情活泼的小助手，负责补充老师遗漏的要点。",
+        "avatar": "🧑‍💼",
+        "color": "#E8913A",
+        "allowedActions": [
+          "wb_open",
+          "wb_close",
+          "wb_clear",
+          "wb_delete",
+          "wb_draw_text",
+          "wb_draw_shape",
+          "wb_draw_chart",
+          "wb_draw_latex",
+          "wb_draw_table",
+          "wb_draw_line"
+        ],
+        "priority": 7
+      },
+      {
+        "id": "gen-student-小明",
+        "name": "小明",
+        "role": "student",
+        "persona": "好奇心强的学生小明。",
+        "avatar": "🧑‍🎓",
+        "color": "#66BB6A",
+        "allowedActions": ["wb_open", "wb_draw_text", "wb_draw_latex"],
+        "priority": 3
+      },
+      {
+        "id": "gen-student-小红",
+        "name": "小红",
+        "role": "student",
+        "persona": "好奇心强的学生小红。喜欢提问",
+        "avatar": "🧑‍🎓",
+        "color": "#66BB6A",
+        "allowedActions": ["wb_open", "wb_draw_text", "wb_draw_latex"],
+        "priority": 3
+      }
+    ]
+  },
+  "turns": [
+    {
+      "userMessage": "怎么把一个力分成两个力啊？"
+    },
+    {
+      "userMessage": "嗯。",
+      "checkpoint": true
+    },
+    {
+      "userMessage": "那个平行四边形怎么画？"
+    },
+    {
+      "userMessage": "明白了。",
+      "checkpoint": true
+    },
+    {
+      "userMessage": "斜面上的物体怎么分解？"
+    }
+  ]
+}

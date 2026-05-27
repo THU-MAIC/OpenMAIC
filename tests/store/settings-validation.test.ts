@@ -3,6 +3,8 @@ import {
   isProviderUsable,
   validateProvider,
   validateModel,
+  resolveSelectedModel,
+  hasUsableLLMProvider,
   type ProviderCfgLike,
 } from '@/lib/store/settings-validation';
 
@@ -33,6 +35,28 @@ describe('isProviderUsable', () => {
 
   it('returns false for empty object', () => {
     expect(isProviderUsable({})).toBe(false);
+  });
+
+  it('returns true for keyless provider with explicit baseUrl', () => {
+    expect(isProviderUsable({ requiresApiKey: false, baseUrl: 'http://localhost:11434/v1' })).toBe(
+      true,
+    );
+  });
+
+  it('returns false for keyless provider without baseUrl', () => {
+    expect(isProviderUsable({ requiresApiKey: false })).toBe(false);
+  });
+
+  it('returns false for keyless provider with empty baseUrl', () => {
+    expect(isProviderUsable({ requiresApiKey: false, baseUrl: '' })).toBe(false);
+  });
+
+  it('returns true for keyless provider when server-configured', () => {
+    expect(isProviderUsable({ requiresApiKey: false, isServerConfigured: true })).toBe(true);
+  });
+
+  it('returns false for keyless provider with apiKey but no baseUrl', () => {
+    expect(isProviderUsable({ requiresApiKey: false, apiKey: 'some-key' })).toBe(false);
   });
 });
 
@@ -116,5 +140,114 @@ describe('validateModel', () => {
 
   it('returns current id unchanged when it is empty', () => {
     expect(validateModel('', [{ id: 'gpt-4o' }])).toBe('');
+  });
+});
+
+describe('resolveSelectedModel', () => {
+  it('keeps model when still in available list', () => {
+    expect(resolveSelectedModel('gpt-4o', [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }])).toBe(
+      'gpt-4o',
+    );
+  });
+
+  it('falls back to first model when current is not in list', () => {
+    expect(resolveSelectedModel('gpt-4-turbo', [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }])).toBe(
+      'gpt-4o',
+    );
+  });
+
+  it('falls back to first model when current is empty (the invariant: usable provider ⇒ concrete model)', () => {
+    expect(resolveSelectedModel('', [{ id: 'gpt-4o' }, { id: 'gpt-4o-mini' }])).toBe('gpt-4o');
+  });
+
+  it('returns empty string only when the model list is empty', () => {
+    expect(resolveSelectedModel('gpt-4o', [])).toBe('');
+    expect(resolveSelectedModel('', [])).toBe('');
+  });
+
+  it('never yields empty when the provider has at least one model', () => {
+    for (const current of ['', 'unknown', 'glm-4']) {
+      expect(resolveSelectedModel(current, [{ id: 'glm-4' }])).not.toBe('');
+    }
+  });
+});
+
+describe('hasUsableLLMProvider', () => {
+  const ok = { apiKey: 'sk-x', models: [{ id: 'm1' }], defaultBaseUrl: 'https://x' };
+
+  it('returns true when a provider has credentials, ≥1 model, and an endpoint', () => {
+    expect(hasUsableLLMProvider({ openai: ok })).toBe(true);
+  });
+
+  it('returns true for a server-configured provider without a client key', () => {
+    expect(
+      hasUsableLLMProvider({
+        openai: { isServerConfigured: true, models: [{ id: 'm1' }], serverBaseUrl: 'https://s' },
+      }),
+    ).toBe(true);
+  });
+
+  it('returns false when the only provider has no models', () => {
+    expect(hasUsableLLMProvider({ openai: { ...ok, models: [] } })).toBe(false);
+  });
+
+  it('returns false when the only provider lacks credentials and requires a key', () => {
+    expect(
+      hasUsableLLMProvider({
+        openai: { requiresApiKey: true, apiKey: '', models: [{ id: 'm1' }], defaultBaseUrl: 'x' },
+      }),
+    ).toBe(false);
+  });
+
+  it('returns false for an empty or nullish config', () => {
+    expect(hasUsableLLMProvider({})).toBe(false);
+    expect(hasUsableLLMProvider(undefined)).toBe(false);
+    expect(hasUsableLLMProvider(null)).toBe(false);
+  });
+
+  it('treats a keyless provider with only a registry defaultBaseUrl as NOT configured', () => {
+    // ollama/lemonade ship requiresApiKey:false + a defaultBaseUrl but an
+    // empty user baseUrl by default — must NOT count as usable, otherwise
+    // the page gate is true while reconcile never selects it (#580 keyless).
+    expect(
+      hasUsableLLMProvider({
+        ollama: {
+          requiresApiKey: false,
+          apiKey: '',
+          baseUrl: '',
+          models: [{ id: 'llama3.3' }],
+          defaultBaseUrl: 'http://localhost:11434/v1',
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it('treats a keyless provider as configured once the user sets an explicit baseUrl', () => {
+    expect(
+      hasUsableLLMProvider({
+        ollama: {
+          requiresApiKey: false,
+          apiKey: '',
+          baseUrl: 'http://my-ollama:11434/v1',
+          models: [{ id: 'llama3.3' }],
+          defaultBaseUrl: 'http://localhost:11434/v1',
+        },
+      }),
+    ).toBe(true);
+  });
+
+  it('treats a keyless provider as configured when server-configured', () => {
+    expect(
+      hasUsableLLMProvider({
+        ollama: {
+          requiresApiKey: false,
+          apiKey: '',
+          baseUrl: '',
+          isServerConfigured: true,
+          models: [{ id: 'llama3.3' }],
+          serverBaseUrl: 'http://srv/v1',
+        },
+      }),
+    ).toBe(true);
   });
 });

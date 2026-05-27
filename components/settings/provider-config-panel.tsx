@@ -34,7 +34,7 @@ import {
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderConfig } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
-import { formatContextWindow } from './utils';
+import { createVerifyModelRequest, formatContextWindow } from './utils';
 import { cn } from '@/lib/utils';
 
 interface ProviderConfigPanelProps {
@@ -125,13 +125,16 @@ export function ProviderConfigPanel({
       const response = await fetch('/api/verify-model', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey,
-          baseUrl,
-          model: `${provider.id}:${testModelId}`,
-          providerType: provider.type,
-          requiresApiKey: requiresApiKey,
-        }),
+        body: JSON.stringify(
+          createVerifyModelRequest({
+            providerId: provider.id,
+            modelId: testModelId,
+            apiKey,
+            baseUrl,
+            providerType: provider.type,
+            requiresApiKey,
+          }),
+        ),
       });
 
       const data = await response.json();
@@ -257,6 +260,31 @@ export function ProviderConfigPanel({
           onBlur={onSave}
           className="h-8"
         />
+        {provider.alternateBaseUrls && provider.alternateBaseUrls.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {provider.alternateBaseUrls.map((alt) => {
+              const active = (baseUrl || provider.defaultBaseUrl) === alt.url;
+              return (
+                <button
+                  key={alt.url}
+                  type="button"
+                  onClick={() => {
+                    handleBaseUrlChange(alt.url);
+                    onSave();
+                  }}
+                  className={cn(
+                    'px-2 py-0.5 text-xs rounded-md border transition-colors',
+                    active
+                      ? 'bg-primary text-primary-foreground border-primary'
+                      : 'bg-background text-muted-foreground border-border hover:bg-muted',
+                  )}
+                >
+                  {t(alt.label)}
+                </button>
+              );
+            })}
+          </div>
+        )}
         {(() => {
           const effectiveBaseUrl = baseUrl || provider.defaultBaseUrl || '';
           if (!effectiveBaseUrl) return null;
@@ -309,8 +337,6 @@ export function ProviderConfigPanel({
             </Button>
           </div>
         </div>
-        <p className="text-xs text-muted-foreground">{t('settings.modelsManagementDescription')}</p>
-
         <div className="space-y-1.5">
           {models.map((model, index) => {
             return (
