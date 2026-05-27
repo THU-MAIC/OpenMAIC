@@ -457,8 +457,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       controller: AbortController,
       sessionType: SessionType,
     ): Promise<void> => {
-      const settingsState = useSettingsStore.getState();
-
       // Attach full configs for generated (non-default) agents so the server can use them.
       // The server-side registry only has default agents; generated agents exist only client-side.
       const generatedConfigs = requestTemplate.config.agentIds
