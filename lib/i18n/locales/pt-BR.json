@@ -700,6 +700,7 @@
     "providerBrowserNative": "ASR Nativo do Navegador",
     "providerQwenASR": "Qwen ASR (Alibaba Cloud Bailian)",
     "providerLemonadeASR": "Lemonade ASR (Local)",
+    "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (Nativo)",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU (Nuvem)",

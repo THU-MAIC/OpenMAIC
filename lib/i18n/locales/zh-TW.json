@@ -633,6 +633,7 @@
     "providerOpenAIWhisper": "OpenAI ASR (gpt-4o-mini-transcribe)",
     "providerBrowserNative": "瀏覽器原生 ASR",
     "providerLemonadeASR": "Lemonade ASR（本機）",
+    "providerAzureASR": "Azure STT（語音轉文字）",
     "providerQwenASR": "Qwen ASR（阿里雲百煉）",
     "providerUnpdf": "unpdf（內建）",
     "providerMinerU": "MinerU",

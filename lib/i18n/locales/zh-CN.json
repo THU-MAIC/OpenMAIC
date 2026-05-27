@@ -700,6 +700,7 @@
     "providerBrowserNative": "浏览器原生 ASR",
     "providerQwenASR": "Qwen ASR（阿里云百炼）",
     "providerLemonadeASR": "Lemonade ASR（本地）",
+    "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（内置）",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU（云端）",

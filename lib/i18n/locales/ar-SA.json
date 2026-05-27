@@ -700,6 +700,7 @@
     "providerBrowserNative": "التعرّف على الكلام المدمج في المتصفح",
     "providerQwenASR": "Qwen ASR (سحابة علي بابا بايليان)",
     "providerLemonadeASR": "Lemonade ASR (محلي)",
+    "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf (مُدمج)",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU (السحابي)",

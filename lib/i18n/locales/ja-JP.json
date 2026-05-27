@@ -700,6 +700,7 @@
     "providerBrowserNative": "ブラウザネイティブASR",
     "providerQwenASR": "Qwen ASR（Alibaba Cloud百錬）",
     "providerLemonadeASR": "Lemonade ASR（ローカル）",
+    "providerAzureASR": "Azure STT",
     "providerUnpdf": "unpdf（組み込み）",
     "providerMinerU": "MinerU",
     "providerMinerUCloud": "MinerU（クラウド）",
