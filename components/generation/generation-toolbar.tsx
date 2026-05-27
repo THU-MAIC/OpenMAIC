@@ -38,15 +38,17 @@ import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
 
 // ─── Constants ───────────────────────────────────────────────
-const MAX_PDF_SIZE_MB = 50;
-const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
+const MAX_FILE_SIZE_MB = 50;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.docx'];
+const ACCEPTED_MIME_TYPES = ['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
-  // PDF
+  // Document file (PDF, TXT, DOCX)
   pdfFile: File | null;
   onPdfFileChange: (file: File | null) => void;
   onPdfError: (error: string | null) => void;
@@ -112,10 +114,13 @@ export function GenerationToolbar({
   const currentThinkingConfig =
     thinkingConfigs[getThinkingConfigKey(currentProviderId, currentModelId)];
 
-  // PDF handler
+  // Document file handler (PDF, TXT, DOCX)
   const handleFileSelect = (file: File) => {
-    if (file.type !== 'application/pdf') return;
-    if (file.size > MAX_PDF_SIZE_BYTES) {
+    const ext = file.name.toLowerCase();
+    const isAccepted = ACCEPTED_EXTENSIONS.some((e) => ext.endsWith(e)) ||
+      ACCEPTED_MIME_TYPES.includes(file.type);
+    if (!isAccepted) return;
+    if (file.size > MAX_FILE_SIZE_BYTES) {
       onPdfError(t('upload.fileTooLarge'));
       return;
     }
@@ -169,7 +174,7 @@ export function GenerationToolbar({
         {/* ── Separator ── */}
         <div className="w-px h-4 bg-border/60 mx-1" />
 
-        {/* ── PDF (parser + upload) combined Popover ── */}
+        {/* ── Document (parser + upload) combined Popover ── */}
         <Popover>
           <PopoverTrigger asChild>
             {pdfFile ? (
@@ -239,7 +244,7 @@ export function GenerationToolbar({
                 type="file"
                 ref={fileInputRef}
                 className="hidden"
-                accept=".pdf"
+                accept=".pdf,.txt,.docx,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) handleFileSelect(f);

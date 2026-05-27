@@ -11,7 +11,7 @@
   },
   "toolbar": {
     "pdfParser": "Parser",
-    "pdfUpload": "Upload PDF",
+    "pdfUpload": "Upload Document",
     "removePdf": "Remove file",
     "webSearchOn": "Enabled",
     "webSearchOff": "Click to enable",
@@ -312,17 +312,17 @@
     "searchEmpty": "No courses match your search"
   },
   "upload": {
-    "pdfSizeLimit": "Supports PDF files up to 50MB",
+    "pdfSizeLimit": "Supports document files up to 50MB (PDF/TXT/DOCX)",
     "generateFailed": "Failed to generate classroom, please try again",
     "requirementPlaceholder": "Tell me anything you want to learn, e.g.\n\"Teach me Python from scratch in 30 minutes\"\n\"Explain Fourier Transform on the whiteboard\"\n\"How to play the board game Avalon\"",
     "requirementRequired": "Please enter course requirements",
-    "fileTooLarge": "File too large. Please select a PDF file smaller than 50MB"
+    "fileTooLarge": "File too large. Please select a document file smaller than 50MB"
   },
   "generation": {
-    "analyzingPdf": "Analyzing PDF Document",
+    "analyzingPdf": "Analyzing Document",
     "analyzingPdfDesc": "Extracting document structure and content...",
-    "pdfLoadFailed": "Failed to load PDF file, please try again",
-    "pdfParseFailed": "PDF parsing failed",
+    "pdfLoadFailed": "Failed to load document file, please try again",
+    "pdfParseFailed": "Document parsing failed",
     "streamNotReadable": "Unable to read generation stream",
     "generatingOutlines": "Drafting Course Outline",
     "generatingOutlinesDesc": "Structuring the learning path...",
@@ -916,7 +916,7 @@
     "lang_fil-PH": "Filipino (Pilipinas)",
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
-    "pdfSettings": "PDF Parsing",
+    "pdfSettings": "Document Parsing",
     "pdfParsingSettings": "PDF Parsing Settings",
     "pdfDescription": "Choose PDF parsing engine with support for text extraction, image processing, and table recognition",
     "pdfProvider": "PDF Parser",

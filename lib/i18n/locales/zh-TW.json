@@ -11,7 +11,7 @@
   },
   "toolbar": {
     "pdfParser": "解析器",
-    "pdfUpload": "上傳 PDF",
+    "pdfUpload": "上傳文件",
     "removePdf": "移除檔案",
     "webSearchOn": "已開啟",
     "webSearchOff": "點擊開啟",
@@ -297,17 +297,17 @@
     "searchPlaceholder": "搜尋課程..."
   },
   "upload": {
-    "pdfSizeLimit": "支援最大50MB的PDF檔案",
+    "pdfSizeLimit": "支援最大50MB的文件檔案（PDF/TXT/DOCX）",
     "generateFailed": "生成課堂失敗，請重試",
     "requirementPlaceholder": "輸入你想學的任何內容，例如：\n「從零學 Python，30 分鐘寫出第一個程式」\n「用白板為我講解傅立葉轉換」\n「阿瓦隆桌遊怎麼玩」",
     "requirementRequired": "請輸入課程需求",
-    "fileTooLarge": "檔案過大，請選擇小於50MB的PDF檔案"
+    "fileTooLarge": "檔案過大，請選擇小於50MB的文件檔案"
   },
   "generation": {
-    "analyzingPdf": "解析 PDF 文件",
+    "analyzingPdf": "解析文件",
     "analyzingPdfDesc": "正在擷取文件結構和內容...",
-    "pdfLoadFailed": "無法載入 PDF 檔案，請重試",
-    "pdfParseFailed": "PDF 解析失敗",
+    "pdfLoadFailed": "無法載入文件檔案，請重試",
+    "pdfParseFailed": "文件解析失敗",
     "streamNotReadable": "無法讀取生成資料流",
     "generatingOutlines": "生成課程大綱",
     "generatingOutlinesDesc": "正在建構學習路徑...",
@@ -829,7 +829,7 @@
     "lang_fil-PH": "Pilipinas",
     "lang_af-ZA": "Suid-Afrika",
     "lang_uk-UA": "Україна",
-    "pdfSettings": "PDF 解析",
+    "pdfSettings": "文件解析",
     "pdfParsingSettings": "PDF 解析設定",
     "pdfDescription": "選擇 PDF 解析引擎，支援文字擷取、圖片處理和表格辨識",
     "pdfProvider": "PDF 解析器",

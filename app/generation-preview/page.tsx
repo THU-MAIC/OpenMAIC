@@ -258,12 +258,17 @@ function GenerationPreviewContent() {
         }
 
         // Wrap as a File to guarantee multipart/form-data with correct content-type
-        const pdfFile = new File([pdfBlob], currentSession.pdfFileName || 'document.pdf', {
-          type: 'application/pdf',
+        // Detect MIME type from file name to support TXT/DOCX
+        const fileName = currentSession.pdfFileName || 'document.pdf';
+        const mimeType = fileName.toLowerCase().endsWith('.txt') ? 'text/plain'
+          : fileName.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : 'application/pdf';
+        const documentFile = new File([pdfBlob], fileName, {
+          type: mimeType,
         });
 
         const parseFormData = new FormData();
-        parseFormData.append('pdf', pdfFile);
+        parseFormData.append('document', documentFile);
 
         if (currentSession.pdfProviderId) {
           parseFormData.append('providerId', currentSession.pdfProviderId);

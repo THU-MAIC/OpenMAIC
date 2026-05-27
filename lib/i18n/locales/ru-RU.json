@@ -11,7 +11,7 @@
   },
   "toolbar": {
     "pdfParser": "Парсер",
-    "pdfUpload": "Загрузить PDF",
+    "pdfUpload": "Загрузить документ",
     "removePdf": "Удалить файл",
     "webSearchOn": "Включено",
     "webSearchOff": "Нажмите для включения",
@@ -312,17 +312,17 @@
     "searchEmpty": "Курсы не найдены"
   },
   "upload": {
-    "pdfSizeLimit": "Поддержка PDF до 50 МБ",
+    "pdfSizeLimit": "Поддержка файлов документов до 50 МБ (PDF/TXT/DOCX)",
     "generateFailed": "Ошибка генерации, попробуйте снова",
     "requirementPlaceholder": "Расскажите, что вы хотите изучить, например:\n\"Научи меня Python с нуля за 30 минут\"\n\"Объясни преобразование Фурье на доске\"\n\"Как играть в настольную игру Авалон\"",
     "requirementRequired": "Пожалуйста, укажите требования к курсу",
-    "fileTooLarge": "Файл слишком большой. Выберите PDF до 50 МБ"
+    "fileTooLarge": "Файл слишком большой. Выберите документ до 50 МБ"
   },
   "generation": {
-    "analyzingPdf": "Анализ PDF-документа",
+    "analyzingPdf": "Анализ документа",
     "analyzingPdfDesc": "Извлечение структуры и содержимого документа...",
-    "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",
-    "pdfParseFailed": "Ошибка обработки PDF",
+    "pdfLoadFailed": "Не удалось загрузить файл документа, попробуйте снова",
+    "pdfParseFailed": "Не удалось разобрать документ",
     "streamNotReadable": "Не удалось прочитать поток генерации",
     "generatingOutlines": "Создание структуры курса",
     "generatingOutlinesDesc": "Формирование учебной программы...",
@@ -916,7 +916,7 @@
     "lang_fil-PH": "Filipino (Pilipinas)",
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
-    "pdfSettings": "Обработка PDF",
+    "pdfSettings": "Разбор документа",
     "pdfParsingSettings": "Настройки обработки PDF",
     "pdfDescription": "Выберите движок для обработки PDF с поддержкой извлечения текста, изображений и таблиц",
     "pdfProvider": "PDF-парсер",

@@ -1,20 +1,20 @@
 import { NextRequest } from 'next/server';
-import { parsePDF } from '@/lib/pdf/pdf-providers';
+import { parseDocument, detectDocumentType } from '@/lib/document-parser';
 import { resolvePDFApiKey, resolvePDFBaseUrl } from '@/lib/server/provider-config';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
-const log = createLogger('Parse PDF');
+const log = createLogger('Parse Document');
 
 export async function POST(req: NextRequest) {
-  let pdfFileName: string | undefined;
+  let fileName: string | undefined;
   let resolvedProviderId: string | undefined;
   try {
     const contentType = req.headers.get('content-type') || '';
     if (!contentType.includes('multipart/form-data')) {
-      log.error('Invalid Content-Type for PDF upload:', contentType);
+      log.error('Invalid Content-Type for document upload:', contentType);
       return apiError(
         'INVALID_REQUEST',
         400,
@@ -23,18 +23,30 @@ export async function POST(req: NextRequest) {
     }
 
     const formData = await req.formData();
-    const pdfFile = formData.get('pdf') as File | null;
+    const documentFile = formData.get('document') as File | null;
     const providerId = formData.get('providerId') as PDFProviderId | null;
     const apiKey = formData.get('apiKey') as string | null;
     const baseUrl = formData.get('baseUrl') as string | null;
 
-    if (!pdfFile) {
-      return apiError('MISSING_REQUIRED_FIELD', 400, 'No PDF file provided');
+    if (!documentFile) {
+      return apiError('MISSING_REQUIRED_FIELD', 400, 'No document file provided');
+    }
+
+    // Detect document type and validate
+    let docType: string;
+    try {
+      docType = detectDocumentType(documentFile);
+    } catch (typeError) {
+      return apiError(
+        'INVALID_REQUEST',
+        400,
+        `Unsupported document type: ${documentFile.name}. Supported: PDF, TXT, DOCX.`,
+      );
     }
 
     // providerId is required from the client — no server-side store to fall back to
     const effectiveProviderId = providerId || ('unpdf' as PDFProviderId);
-    pdfFileName = pdfFile?.name;
+    fileName = documentFile?.name;
     resolvedProviderId = effectiveProviderId;
 
     const clientBaseUrl = baseUrl || undefined;
@@ -53,14 +65,15 @@ export async function POST(req: NextRequest) {
       baseUrl: clientBaseUrl
         ? clientBaseUrl
         : resolvePDFBaseUrl(effectiveProviderId, baseUrl || undefined),
+      documentType: docType as 'pdf' | 'txt' | 'docx',
     };
 
-    // Convert PDF to buffer
-    const arrayBuffer = await pdfFile.arrayBuffer();
+    // Convert file to buffer
+    const arrayBuffer = await documentFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Parse PDF using the provider system
-    const result = await parsePDF(config, buffer);
+    // Parse document using the provider system
+    const result = await parseDocument(documentFile, buffer, config);
 
     // Add file metadata
     const resultWithMetadata: ParsedPdfContent = {
@@ -68,15 +81,15 @@ export async function POST(req: NextRequest) {
       metadata: {
         ...result.metadata,
         pageCount: result.metadata?.pageCount ?? 0, // Ensure pageCount is always a number
-        fileName: pdfFile.name,
-        fileSize: pdfFile.size,
+        fileName: documentFile.name,
+        fileSize: documentFile.size,
       },
     };
 
     return apiSuccess({ data: resultWithMetadata });
   } catch (error) {
     log.error(
-      `PDF parsing failed [provider=${resolvedProviderId ?? 'unknown'}, file="${pdfFileName ?? 'unknown'}"]:`,
+      `Document parsing failed [provider=${resolvedProviderId ?? 'unknown'}, file="${fileName ?? 'unknown'}"]:`,
       error,
     );
     return apiError('PARSE_FAILED', 500, error instanceof Error ? error.message : 'Unknown error');
