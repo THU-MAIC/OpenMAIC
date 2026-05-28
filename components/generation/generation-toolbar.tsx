@@ -41,7 +41,11 @@ import { MediaPopover } from '@/components/generation/media-popover';
 const MAX_FILE_SIZE_MB = 50;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 const ACCEPTED_EXTENSIONS = ['.pdf', '.txt', '.docx'];
-const ACCEPTED_MIME_TYPES = ['application/pdf', 'text/plain', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+const ACCEPTED_MIME_TYPES = [
+  'application/pdf',
+  'text/plain',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+];
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
@@ -117,8 +121,8 @@ export function GenerationToolbar({
   // Document file handler (PDF, TXT, DOCX)
   const handleFileSelect = (file: File) => {
     const ext = file.name.toLowerCase();
-    const isAccepted = ACCEPTED_EXTENSIONS.some((e) => ext.endsWith(e)) ||
-      ACCEPTED_MIME_TYPES.includes(file.type);
+    const isAccepted =
+      ACCEPTED_EXTENSIONS.some((e) => ext.endsWith(e)) || ACCEPTED_MIME_TYPES.includes(file.type);
     if (!isAccepted) return;
     if (file.size > MAX_FILE_SIZE_BYTES) {
       onPdfError(t('upload.fileTooLarge'));

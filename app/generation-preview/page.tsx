@@ -260,9 +260,11 @@ function GenerationPreviewContent() {
         // Wrap as a File to guarantee multipart/form-data with correct content-type
         // Detect MIME type from file name to support TXT/DOCX
         const fileName = currentSession.pdfFileName || 'document.pdf';
-        const mimeType = fileName.toLowerCase().endsWith('.txt') ? 'text/plain'
-          : fileName.toLowerCase().endsWith('.docx') ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-          : 'application/pdf';
+        const mimeType = fileName.toLowerCase().endsWith('.txt')
+          ? 'text/plain'
+          : fileName.toLowerCase().endsWith('.docx')
+            ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+            : 'application/pdf';
         const documentFile = new File([pdfBlob], fileName, {
           type: mimeType,
         });

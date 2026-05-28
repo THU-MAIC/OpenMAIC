@@ -29,7 +29,8 @@ export function detectDocumentType(file: File): DocumentType {
     mimeType === 'application/msword' ||
     name.endsWith('.docx') ||
     name.endsWith('.doc')
-  ) return 'docx';
+  )
+    return 'docx';
   if (mimeType === 'application/pdf' || name.endsWith('.pdf')) return 'pdf';
 
   // Fallback: try to infer from extension
