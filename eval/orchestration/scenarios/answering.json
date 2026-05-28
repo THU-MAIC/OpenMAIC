@@ -205,7 +205,7 @@
   },
   {
     "case_id": "physics_inertial_mass_escalated_frustration",
-    "description": "User asked whether m in F=ma is inertial or gravitational mass; agents drifted; user complained twice; agents still drifted onto a numeric example. Two unresolved frustrations is a strong USER-cue signal — but TEACHER re-answer is also valid.",
+    "description": "User asked whether m in F=ma is inertial or gravitational mass; agents drifted; user complained twice; agents still drifted onto a numeric example. Two unresolved frustrations: the director must re-route to the teacher to answer (a USER cue would be dead air; a peer agent would keep drifting).",
     "agents": [
       {
         "id": "default-1",
