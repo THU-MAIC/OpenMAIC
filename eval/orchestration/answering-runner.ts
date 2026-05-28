@@ -12,9 +12,11 @@
  *   - escalated frustration after multiple complaints (the recovery case)
  *
  * Per-decision classification (deterministic, no LLM judge):
- *   - USER       → ✓ valid (cue user to clarify; correct when ambiguous)
- *   - TEACHER    → ✓ valid (re-route to teacher to answer)
- *   - OTHER_AGENT → ✗ wrong (peer-agent "variety" routing — the bug)
+ *   - TEACHER    → ✓ correct (teacher answers, or asks a clarifying question
+ *                  when the user's message is too vague)
+ *   - USER       → ✗ wrong (cue_user makes no agent speak — the user faces
+ *                  dead air; the teacher should ask the clarifying question)
+ *   - OTHER_AGENT → ✗ wrong (peer-agent "variety" routing)
  *   - END        → ✗ wrong
  *
  * A/B:
@@ -105,10 +107,9 @@ function readDirectorTemplate(): string {
  * of the current template.
  */
 function withoutAnsweringRule(template: string): string {
-  const stripped = template.replace(
-    /^13\. \*\*Answering the User's Question[\s\S]*?(?=\n\n# )/m,
-    '',
-  );
+  // Match rule 13 by its number (heading text is reworded often) up to the
+  // next blank-line + section header. Decoupled from the heading wording.
+  const stripped = template.replace(/^13\. \*\*[\s\S]*?(?=\n\n# )/m, '');
   if (stripped === template) {
     throw new Error(
       'answering-runner: rule 13 not found in director template; eval baseline cannot be constructed',
@@ -205,7 +206,9 @@ function computeRates(samples: SampleResult[]): {
     rates[k] = rates[k] / total;
   }
   rates.ERROR = (samples.length - usable.length) / samples.length;
-  const correctRate = rates.USER + rates.TEACHER;
+  // Only TEACHER is correct: the teacher answers, or asks a clarifying question
+  // for vague input. USER cue is dead air (no agent speaks); peer/END are wrong.
+  const correctRate = rates.TEACHER;
   return { rates, correctRate };
 }
 
@@ -274,7 +277,7 @@ function writeReport(
   lines.push(``);
   lines.push(`## Aggregate`);
   lines.push(``);
-  lines.push(`| Variant | Mean correct rate (USER + TEACHER) |`);
+  lines.push(`| Variant | Mean correct rate (TEACHER) |`);
   lines.push(`|---|---|`);
   lines.push(`| baseline | ${pct(meanBaseline)} |`);
   lines.push(`| with_rule | ${pct(meanWithRule)} |`);
