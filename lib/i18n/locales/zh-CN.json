@@ -155,6 +155,7 @@
     "delete": "删除",
     "title": "编辑 · {{type}}",
     "unsupportedScene": "{{type}}暂不支持编辑",
+    "readOnlyBadge": "{{type}} · 仅查看",
     "sceneType": {
       "slide": "幻灯片",
       "quiz": "测验",
@@ -186,11 +187,28 @@
     },
     "insert": {
       "textBox": "文本框",
+      "expandToolbar": "展开插入工具",
+      "collapseToolbar": "收起插入工具",
       "image": "图片",
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "插入"
+    },
+    "nav": {
+      "addSlide": "新增幻灯片",
+      "duplicate": "复制",
+      "delete": "删除",
+      "deleted": "已删除",
+      "undo": "撤销",
+      "copySuffix": "（副本）",
+      "untitledSlide": "未命名幻灯片",
+      "collapse": "收起",
+      "expand": "展开",
+      "dragHandle": "拖动",
+      "deckLabel": "场景",
+      "moreActions": "更多操作",
+      "rename": "重命名"
     }
   },
   "classroomComplete": {

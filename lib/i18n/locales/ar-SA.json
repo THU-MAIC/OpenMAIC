@@ -155,6 +155,7 @@
     "delete": "حذف",
     "title": "تحرير · {{type}}",
     "unsupportedScene": "{{type}} غير قابل للتحرير بعد",
+    "readOnlyBadge": "{{type}} · للعرض فقط",
     "sceneType": {
       "slide": "شريحة",
       "quiz": "اختبار",
@@ -186,11 +187,28 @@
     },
     "insert": {
       "textBox": "مربع نص",
+      "expandToolbar": "إظهار أدوات الإدراج",
+      "collapseToolbar": "إخفاء أدوات الإدراج",
       "image": "صورة",
       "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
       "imageOr": "أو الصق رابط صورة",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "إدراج"
+    },
+    "nav": {
+      "addSlide": "إضافة شريحة",
+      "duplicate": "تكرار",
+      "delete": "حذف",
+      "deleted": "تم الحذف",
+      "undo": "تراجع",
+      "copySuffix": "(نسخة)",
+      "untitledSlide": "شريحة بدون عنوان",
+      "collapse": "طي الشريط الجانبي",
+      "expand": "توسيع الشريط الجانبي",
+      "dragHandle": "اسحب لإعادة الترتيب",
+      "deckLabel": "المشاهد",
+      "moreActions": "إجراءات إضافية",
+      "rename": "إعادة تسمية"
     }
   },
   "classroomComplete": {

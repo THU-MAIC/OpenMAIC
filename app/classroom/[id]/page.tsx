@@ -49,6 +49,11 @@ export default function ClassroomDetailPage() {
               useStageStore.setState({
                 scenes,
                 currentSceneId: scenes[0]?.id ?? null,
+                // Match `loadFromStorage` semantics: mode is transient UI
+                // state, not persisted with the stage. Reset on every
+                // classroom load so SPA navigation doesn't carry Pro
+                // mode across.
+                mode: 'playback',
               });
               log.info('Loaded from server-side storage:', classroomId);
 

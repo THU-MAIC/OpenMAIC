@@ -155,6 +155,7 @@
     "delete": "刪除",
     "title": "編輯 · {{type}}",
     "unsupportedScene": "{{type}}暫不支援編輯",
+    "readOnlyBadge": "{{type}} · 僅檢視",
     "sceneType": {
       "slide": "投影片",
       "quiz": "測驗",
@@ -186,11 +187,28 @@
     },
     "insert": {
       "textBox": "文字方塊",
+      "expandToolbar": "展開插入工具",
+      "collapseToolbar": "收起插入工具",
       "image": "圖片",
       "imageDrop": "拖曳圖片或點按選擇檔案",
       "imageOr": "或貼上圖片網址",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "插入"
+    },
+    "nav": {
+      "addSlide": "新增投影片",
+      "duplicate": "複製",
+      "delete": "刪除",
+      "deleted": "已刪除",
+      "undo": "復原",
+      "copySuffix": "（副本）",
+      "untitledSlide": "未命名投影片",
+      "collapse": "收合側欄",
+      "expand": "展開側欄",
+      "dragHandle": "拖曳重新排序",
+      "deckLabel": "場景",
+      "moreActions": "更多操作",
+      "rename": "重新命名"
     }
   },
   "whiteboard": {

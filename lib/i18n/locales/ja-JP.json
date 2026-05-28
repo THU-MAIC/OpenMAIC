@@ -155,6 +155,7 @@
     "delete": "削除",
     "title": "編集 · {{type}}",
     "unsupportedScene": "{{type}}はまだ編集できません",
+    "readOnlyBadge": "{{type}} · 表示のみ",
     "sceneType": {
       "slide": "スライド",
       "quiz": "クイズ",
@@ -186,11 +187,28 @@
     },
     "insert": {
       "textBox": "テキストボックス",
+      "expandToolbar": "挿入ツールを表示",
+      "collapseToolbar": "挿入ツールを隠す",
       "image": "画像",
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "挿入"
+    },
+    "nav": {
+      "addSlide": "スライドを追加",
+      "duplicate": "複製",
+      "delete": "削除",
+      "deleted": "削除しました",
+      "undo": "元に戻す",
+      "copySuffix": "（コピー）",
+      "untitledSlide": "無題のスライド",
+      "collapse": "サイドを折りたたむ",
+      "expand": "サイドを開く",
+      "dragHandle": "ドラッグして並べ替え",
+      "deckLabel": "シーン",
+      "moreActions": "その他の操作",
+      "rename": "名前を変更"
     }
   },
   "classroomComplete": {
