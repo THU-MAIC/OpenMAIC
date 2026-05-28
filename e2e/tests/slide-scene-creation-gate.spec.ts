@@ -20,7 +20,9 @@ test.describe('Slide editor — scene-creation gate (MVP)', () => {
     await mockApi.setupGenerationMocks();
   });
 
-  test('Pro mode rail hides insert + duplicate, keeps rename/delete', async ({ page }) => {
+  test('Pro mode rail hides insert + duplicate, keeps rename/delete', async ({
+    page,
+  }, testInfo) => {
     // Generate a classroom through the mocked pipeline.
     const home = new HomePage(page);
     await home.goto();
@@ -52,7 +54,10 @@ test.describe('Slide editor — scene-creation gate (MVP)', () => {
     await page.getByTestId('slide-nav-more').first().click();
     await expect(page.getByRole('menuitem')).toHaveCount(2);
 
-    // Visual evidence of the gated rail.
-    await rail.screenshot({ path: 'e2e-artifacts/pro-rail-gated.png' });
+    // Visual evidence of the gated rail, attached to the Playwright report.
+    await testInfo.attach('pro-rail-gated', {
+      body: await rail.screenshot(),
+      contentType: 'image/png',
+    });
   });
 });
