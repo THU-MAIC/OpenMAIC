@@ -195,6 +195,7 @@ function ThumbItemComponent({
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                   aria-label={t('edit.nav.moreActions')}
+                  data-testid="slide-nav-more"
                   className={cn(
                     'shrink-0 rounded p-0.5 text-zinc-400 transition-opacity',
                     'opacity-0 group-hover/thumb:opacity-100 data-[state=open]:opacity-100',
