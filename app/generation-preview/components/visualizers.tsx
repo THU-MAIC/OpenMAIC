@@ -318,7 +318,7 @@ function StreamingOutlineVisualizer({
               ))
             : outlines.slice(0, 4).map((outline, i) => (
                 <motion.div
-                  key={outline.id}
+                  key={`${outline.id}-${i}`}
                   layout
                   initial={{ opacity: 0, x: -10, scale: 0.96 }}
                   animate={{ opacity: 1, x: 0, scale: 1 }}
