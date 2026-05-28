@@ -11,6 +11,7 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useDeletedSceneRecycle } from '@/lib/edit/deleted-scene-recycle';
 import { createBlankSlideScene, duplicateSlideScene } from '@/lib/edit/slide-defaults';
+import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
 import { CHROME_DURATION_MS, CHROME_EASE, CHROME_EASE_CSS } from '@/lib/edit/transitions';
 import type { Scene } from '@/lib/types/stage';
 import { ThumbItem } from './ThumbItem';
@@ -441,7 +442,7 @@ export function SlideNavRail() {
                 {/* Leading zone — hover the top padding to insert
                     before the first thumb. Hits the `+ at top` use
                     case the user called out. */}
-                {scenes[0] ? (
+                {SCENE_CREATION_ENABLED && scenes[0] ? (
                   <InsertionZone
                     label={t('edit.nav.addSlide')}
                     onInsert={() => handleInsertBefore(scenes[0].id)}
@@ -458,10 +459,12 @@ export function SlideNavRail() {
                       onDuplicate={() => handleDuplicate(scene.id)}
                       onDelete={() => handleDelete(scene.id)}
                     />
-                    <InsertionZone
-                      label={t('edit.nav.addSlide')}
-                      onInsert={() => handleInsertAt(scene.id)}
-                    />
+                    {SCENE_CREATION_ENABLED && (
+                      <InsertionZone
+                        label={t('edit.nav.addSlide')}
+                        onInsert={() => handleInsertAt(scene.id)}
+                      />
+                    )}
                   </Fragment>
                 ))}
               </Reorder.Group>
