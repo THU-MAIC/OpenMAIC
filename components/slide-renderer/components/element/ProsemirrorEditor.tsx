@@ -77,6 +77,7 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
     const pushTextAttrsRef = useRef<((view: EditorView) => void) | null>(null);
 
     const handleElementId = useCanvasStore.use.handleElementId();
+    const editingElementId = useCanvasStore.use.editingElementId();
     const textFormatPainter = useCanvasStore.use.textFormatPainter();
     const richTextAttrs = useCanvasStore.use.richTextAttrs();
     const activeElementIdList = useCanvasStore.use.activeElementIdList();
@@ -514,6 +515,22 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
         emitter.off(EmitterEvents.SYNC_RICH_TEXT_ATTRS_TO_STORE, syncAttrsToStore);
       };
     }, [execCommand, syncAttrsToStore]);
+
+    // Auto-focus when the surface picks this element as the editing
+    // target. Fixes "insert a text element from the floating toolbar →
+    // have to click inside again to type" — after the insert, the slide
+    // surface's `useEditingTextElementId` mirrors the new element's id
+    // into `canvasStore.editingElementId`. This effect catches that
+    // transition and pushes focus into the freshly mounted ProseMirror
+    // view. The `hasFocus()` guard avoids re-focusing on every render
+    // for an already-active editor.
+    useEffect(() => {
+      if (!editable) return;
+      if (editingElementId !== elementId) return;
+      const view = editorView.current;
+      if (!view || view.hasFocus()) return;
+      view.focus();
+    }, [editingElementId, elementId, editable]);
 
     // Expose focus method
     useImperativeHandle(ref, () => ({

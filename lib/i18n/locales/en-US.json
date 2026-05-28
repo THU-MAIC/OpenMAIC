@@ -160,6 +160,7 @@
     "delete": "Delete",
     "title": "Editing · {{type}}",
     "unsupportedScene": "{{type}} is not editable yet",
+    "readOnlyBadge": "{{type}} · view-only",
     "sceneType": {
       "slide": "Slide",
       "quiz": "Quiz",
@@ -191,11 +192,28 @@
     },
     "insert": {
       "textBox": "Text box",
+      "expandToolbar": "Show insert tools",
+      "collapseToolbar": "Hide insert tools",
       "image": "Image",
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "Insert"
+    },
+    "nav": {
+      "addSlide": "Add slide",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "deleted": "Deleted",
+      "undo": "Undo",
+      "copySuffix": "(copy)",
+      "untitledSlide": "Untitled slide",
+      "collapse": "Collapse rail",
+      "expand": "Expand rail",
+      "dragHandle": "Drag to reorder",
+      "deckLabel": "Scenes",
+      "moreActions": "More actions",
+      "rename": "Rename"
     }
   },
   "classroomComplete": {

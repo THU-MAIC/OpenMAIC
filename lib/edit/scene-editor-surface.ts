@@ -90,13 +90,26 @@ export interface SurfaceHistory {
   redo: () => void;
 }
 
+/**
+ * **Maintenance note:** any new field added here that the chrome reads
+ * must also be added to `surfaceStateEqual` in
+ * `components/edit/EditShell/EditShell.tsx`. Surface hooks return a
+ * fresh object each render, so semantic equality is the gate that
+ * prevents an infinite publish loop — a new field outside the
+ * comparison goes silently stale in the rendered chrome.
+ */
 export interface SurfaceState<TContent extends SceneContent = SceneContent, TSelection = unknown> {
   content: TContent;
   selection: TSelection;
   /** True when the surface considers selection non-empty (drives floating bar). */
   hasSelection: boolean;
 
-  history: SurfaceHistory;
+  /**
+   * Editable surfaces expose undo/redo here. Read-only surfaces (e.g. the
+   * NOOP fallback used for unregistered scene types) omit it; the shell
+   * hides undo/redo controls when undefined.
+   */
+  history?: SurfaceHistory;
 
   insertItems: InsertPaletteItem[];
   floatingActions: FloatingAction[];

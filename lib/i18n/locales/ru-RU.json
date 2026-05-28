@@ -160,6 +160,7 @@
     "delete": "Удалить",
     "title": "Редактирование · {{type}}",
     "unsupportedScene": "{{type}} пока нельзя редактировать",
+    "readOnlyBadge": "{{type}} · только просмотр",
     "sceneType": {
       "slide": "Слайд",
       "quiz": "Тест",
@@ -191,11 +192,28 @@
     },
     "insert": {
       "textBox": "Текстовое поле",
+      "expandToolbar": "Показать инструменты вставки",
+      "collapseToolbar": "Скрыть инструменты вставки",
       "image": "Изображение",
       "imageDrop": "Перетащите изображение или нажмите, чтобы выбрать файл",
       "imageOr": "или вставьте URL изображения",
       "imageUrlPlaceholder": "https://…",
       "imageInsert": "Вставить"
+    },
+    "nav": {
+      "addSlide": "Добавить слайд",
+      "duplicate": "Дублировать",
+      "delete": "Удалить",
+      "deleted": "Удалено",
+      "undo": "Отменить",
+      "copySuffix": "(копия)",
+      "untitledSlide": "Безымянный слайд",
+      "collapse": "Свернуть панель",
+      "expand": "Развернуть панель",
+      "dragHandle": "Перетащите, чтобы переупорядочить",
+      "deckLabel": "Сцены",
+      "moreActions": "Ещё действия",
+      "rename": "Переименовать"
     }
   },
   "classroomComplete": {
