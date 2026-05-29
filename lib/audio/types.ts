@@ -16,6 +16,7 @@
  * - OpenAI Whisper (https://platform.openai.com/docs/guides/speech-to-text)
  * - Browser Native (Web Speech API, client-side only)
  * - Qwen ASR (DashScope API)
+ * - Azure STT (https://learn.microsoft.com/azure/ai-services/speech-service/fast-transcription-create)
  *
  * Future Provider Support (extensible):
  * - ElevenLabs TTS/ASR (https://elevenlabs.io/docs)
@@ -156,7 +157,8 @@ export type BuiltInASRProviderId =
   | 'openai-whisper'
   | 'browser-native'
   | 'qwen-asr'
-  | 'lemonade-asr';
+  | 'lemonade-asr'
+  | 'azure-asr';
 
 export type ASRProviderId = BuiltInASRProviderId | `custom-asr-${string}`;
 
