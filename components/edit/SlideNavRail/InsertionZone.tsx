@@ -30,6 +30,7 @@ export function InsertionZone({ label, onInsert }: InsertionZoneProps) {
         onClick={onInsert}
         aria-label={label}
         title={label}
+        data-testid="slide-nav-insert"
         className="absolute inset-0 z-10 outline-none focus-visible:opacity-100"
       >
         <span className="sr-only">{label}</span>

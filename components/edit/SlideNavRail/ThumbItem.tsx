@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { SceneThumbnailContent } from '@/components/stage/scene-thumbnail-content';
+import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
 import type { Scene } from '@/lib/types/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
@@ -194,6 +195,7 @@ function ThumbItemComponent({
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
                   aria-label={t('edit.nav.moreActions')}
+                  data-testid="slide-nav-more"
                   className={cn(
                     'shrink-0 rounded p-0.5 text-zinc-400 transition-opacity',
                     'opacity-0 group-hover/thumb:opacity-100 data-[state=open]:opacity-100',
@@ -211,9 +213,11 @@ function ThumbItemComponent({
                 onClick={(e) => e.stopPropagation()}
               >
                 <DropdownMenuItem onSelect={startRename}>{t('edit.nav.rename')}</DropdownMenuItem>
-                <DropdownMenuItem onSelect={onDuplicate}>
-                  {t('edit.nav.duplicate')}
-                </DropdownMenuItem>
+                {SCENE_CREATION_ENABLED && (
+                  <DropdownMenuItem onSelect={onDuplicate}>
+                    {t('edit.nav.duplicate')}
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem disabled={!canDelete} onSelect={onDelete} variant="destructive">
                   {t('edit.nav.delete')}
                 </DropdownMenuItem>
