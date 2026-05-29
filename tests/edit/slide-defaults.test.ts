@@ -4,7 +4,7 @@ import { CURRENT_SLIDE_CONTENT_SCHEMA_VERSION } from '@/lib/edit/slide-schema';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import type { PPTTextElement } from '@/lib/types/slides';
 
-function makeTextEl(id: string): PPTTextElement {
+function makeTextEl(id: string, groupId?: string): PPTTextElement {
   return {
     type: 'text',
     id,
@@ -17,7 +17,30 @@ function makeTextEl(id: string): PPTTextElement {
     defaultFontName: 'Inter',
     lineHeight: 1.2,
     content: '<p>x</p>',
+    ...(groupId ? { groupId } : {}),
   };
+}
+
+function makeGroupedSlideScene(): Scene {
+  return makeSlideScene({
+    content: {
+      type: 'slide',
+      schemaVersion: CURRENT_SLIDE_CONTENT_SCHEMA_VERSION,
+      canvas: {
+        id: 'slide-1',
+        viewportSize: 1000,
+        viewportRatio: 0.5625,
+        theme: {
+          backgroundColor: '#fff',
+          themeColors: ['#000'],
+          fontColor: '#000',
+          fontName: 'Inter',
+        },
+        elements: [makeTextEl('el-a', 'group-1'), makeTextEl('el-b', 'group-1')],
+        background: { type: 'solid', color: '#ffffff' },
+      },
+    },
+  });
 }
 
 function makeSlideScene(overrides: Partial<Scene> = {}): Scene {
@@ -111,6 +134,25 @@ describe('duplicateSlideScene', () => {
     const source = makeSlideScene({ title: 'Hello' });
     const dup = duplicateSlideScene(source, '', 2);
     expect(dup.title).toBe('Hello');
+  });
+
+  it('remaps grouped elements to a new shared group id', () => {
+    const source = makeGroupedSlideScene();
+    const dup = duplicateSlideScene(source, '(copy)', 2);
+    if (source.content.type !== 'slide' || dup.content.type !== 'slide') {
+      throw new Error('expected slide content');
+    }
+    const [a, b] = dup.content.canvas.elements;
+
+    // Element ids are freshly minted and distinct.
+    expect(a.id).not.toBe('el-a');
+    expect(b.id).not.toBe('el-b');
+    expect(a.id).not.toBe(b.id);
+
+    // Grouped clones share one NEW group id, not the source's dangling ref.
+    expect(a.groupId).toBeDefined();
+    expect(a.groupId).not.toBe('group-1');
+    expect(a.groupId).toBe(b.groupId);
   });
 
   it('throws when the source is not a slide scene', () => {

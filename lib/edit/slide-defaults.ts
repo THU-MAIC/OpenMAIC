@@ -1,7 +1,7 @@
 import { nanoid } from 'nanoid';
 import type { Slide, SlideTheme, PPTElement } from '@/lib/types/slides';
 import type { Scene, SlideContent } from '@/lib/types/stage';
-import { createElementId } from '@/lib/edit/element-id';
+import { createElementIdMap } from '@/lib/utils/element';
 import { CURRENT_SLIDE_CONTENT_SCHEMA_VERSION } from '@/lib/edit/slide-schema';
 
 const DEFAULT_THEME: SlideTheme = {
@@ -48,8 +48,9 @@ export function createBlankSlideScene(stageId: string, title: string, order: num
 
 /**
  * Build a duplicate of an existing slide scene. Deep-clones the slide
- * payload and reassigns every element id so React keys + downstream
- * selection state can't collide with the source slide. The new scene
+ * payload and reassigns every element id (and group id) so React keys +
+ * downstream selection state can't collide with the source slide while
+ * grouped elements keep sharing a new common group id. The new scene
  * gets a fresh scene id; caller is responsible for placing it in the
  * scenes array (via `insertSceneAfter`).
  */
@@ -58,9 +59,11 @@ export function duplicateSlideScene(source: Scene, copySuffix: string, order: nu
     throw new Error('duplicateSlideScene: source scene is not a slide');
   }
   const sourceContent = source.content as SlideContent;
+  const { elIdMap, groupIdMap } = createElementIdMap(sourceContent.canvas.elements);
   const clonedElements: PPTElement[] = sourceContent.canvas.elements.map((element) => ({
     ...element,
-    id: createElementId(element.type),
+    id: elIdMap[element.id],
+    ...(element.groupId ? { groupId: groupIdMap[element.groupId] } : {}),
   }));
 
   const clonedSlide: Slide = {

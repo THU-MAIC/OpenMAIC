@@ -43,9 +43,12 @@ interface SlideEditSessionState {
    * discriminator: a real gesture commits synchronously inside a pointer
    * interaction, whereas the renderer's ResizeObserver normalization (text
    * auto-height) commits with no pointer gesture in flight. Non-user
-   * commits update `present` only — no new undo step, and crucially do
-   * NOT reset past/future (the reflow can fire right after a user resize,
-   * and wiping the stack would silently break undo/redo).
+   * commits update `present` only — no new undo step, so `past` is left
+   * untouched (the reflow can chase a user resize and wiping the undo
+   * stack would silently break undo). `future` IS cleared, though: once
+   * `present` is replaced by the normalized content it has diverged from
+   * whatever the redo branch pointed at, so those stale entries are no
+   * longer valid continuations.
    */
   commitContent: (next: SlideContent, isUserEdit: boolean) => void;
   undo: () => void;
@@ -103,11 +106,15 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       if (!history) return;
       if (!isUserEdit) {
         // ResizeObserver / auto-height normalization: don't push an undo
-        // step (the reflow can chase a user resize and wiping past/future
-        // would silently break undo), but DO write through — the auto-fit
-        // height IS the new canonical state.
+        // step (the reflow can chase a user resize and wiping `past` would
+        // silently break undo), but DO write through — the auto-fit height
+        // IS the new canonical state. Clear `future`, though: `present` now
+        // holds the normalized content, which has diverged from whatever
+        // the redo branch pointed at, so replaying those stale entries
+        // would discard this normalization. Leaving them would let a later
+        // redo silently revert to pre-undo content (canvas/store divergence).
         writeThrough(next);
-        set({ history: { ...history, present: next } });
+        set({ history: { ...history, present: next, future: [] } });
         return;
       }
       replace(commitSlideEdit(history, next));

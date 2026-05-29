@@ -64,7 +64,19 @@ export function Stage({
       return;
     }
     if (!editLock.acquire()) return;
-    await playbackRef.current?.teardown();
+    try {
+      await playbackRef.current?.teardown();
+    } catch (err) {
+      // Teardown failed after the cross-tab lock was acquired but before we
+      // flipped into edit mode. Release the lock we just took: otherwise it
+      // stays HELD while mode stays 'playback', and the release effect (keyed
+      // on `mode`) never re-fires, stranding the lock until tab close and
+      // blocking this and every other tab from Pro mode. Stay in playback so
+      // the failure surfaces rather than half-entering edit mode.
+      editLock.release();
+      console.error('[Stage] Pro mode entry failed during teardown', err);
+      return;
+    }
     setMode('edit');
   }, [editLock, mode, setMode]);
 
