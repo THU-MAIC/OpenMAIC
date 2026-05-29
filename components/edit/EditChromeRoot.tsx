@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { EditShell } from '@/components/edit/EditShell';
 import { SlideNavRail } from '@/components/edit/SlideNavRail';
 import { HeaderControls } from '@/components/stage/header-controls';
@@ -46,6 +46,29 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
       delete document.body.dataset.maicEditor;
     };
   }, []);
+
+  // Editor-only side effects are deferred to here so flag-off
+  // classroom/playback users never pay for them at module load:
+  //   1. `editor-fonts` injects ~23 @fontsource font-face tables that
+  //      only the slide font picker needs (CSS side effect, fire-and-forget).
+  //   2. `surfaces/slide` registers the slide SceneEditorSurface into
+  //      `sceneEditorRegistry`. EditShell resolves the registry and falls
+  //      back to NOOP_SURFACE (read-only) for an unregistered type, so we
+  //      hold the EditShell render until the slide surface has registered
+  //      to avoid a NOOP/read-only flash on first paint of Pro mode.
+  const [surfaceReady, setSurfaceReady] = useState(false);
+  useEffect(() => {
+    let active = true;
+    void import('@/app/editor-fonts');
+    void import('@/components/edit/surfaces/slide').then(() => {
+      if (active) setSurfaceReady(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!surfaceReady) return null;
 
   return (
     <EditShell

@@ -13,10 +13,6 @@ import {
 import { useEditModeLock } from '@/components/edit/use-edit-mode-lock';
 import { MultiTabEditConflictPrompt } from '@/components/edit/MultiTabEditConflictPrompt';
 import { CHROME_EASE } from '@/lib/edit/transitions';
-// Side-effect: registers the slide SceneEditorSurface so EditShell can
-// resolve it the moment Pro mode is entered (the shell never imports
-// surfaces directly).
-import '@/components/edit/surfaces/slide';
 
 /**
  * Stage — top-level classroom container. Dispatches between the two
