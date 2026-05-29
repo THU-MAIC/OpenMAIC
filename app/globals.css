@@ -162,21 +162,29 @@
    `<ul>`/`<ol>`. The text element's `bulletList` / `orderedList` commands
    genuinely wrap content in `<ul><li>` / `<ol><li>`, but without those
    resets undone no marker would be visible. `!important` defeats any
-   layered preflight specificity we'd otherwise have to chase. Dual
-   selector covers both the playback wrapper (`.editable-element-text`,
-   present in edit mode too) and the editor wrapper (`.prosemirror-editor`)
-   in case the markup ever nests differently. */
-.editable-element-text ul,
+   layered preflight specificity we'd otherwise have to chase.
+
+   `.editable-element-text` is the PLAYBACK text wrapper, rendered for every
+   classroom/playback user — not just in the editor. So its rules MUST be
+   scoped to editor mode (`body[data-maic-editor='true']`, set by
+   EditChromeRoot while Pro mode is mounted) to keep flag-off playback
+   rendering byte-unchanged: the editor surface isn't GA yet, so playback
+   display of editor-authored lists is deferred. Scoping keeps list markers
+   visible while editing (the user needs to see their bullets) without
+   altering how the same wrapper renders during normal playback for all
+   users. `.prosemirror-editor` is an editor-only class already (playback's
+   BaseTextElement never carries it), so it stays unscoped. */
+body[data-maic-editor='true'] .editable-element-text ul,
 .prosemirror-editor ul {
   list-style: disc outside !important;
   padding-inline-start: 1.5rem !important;
 }
-.editable-element-text ol,
+body[data-maic-editor='true'] .editable-element-text ol,
 .prosemirror-editor ol {
   list-style: decimal outside !important;
   padding-inline-start: 1.5rem !important;
 }
-.editable-element-text li,
+body[data-maic-editor='true'] .editable-element-text li,
 .prosemirror-editor li {
   display: list-item !important;
 }
