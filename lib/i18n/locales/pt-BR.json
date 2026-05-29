@@ -139,6 +139,69 @@
     "startListening": "Entrada por voz",
     "stopListening": "Parar gravação"
   },
+  "edit": {
+    "proMode": "Pro",
+    "undo": "Desfazer",
+    "redo": "Refazer",
+    "delete": "Excluir",
+    "title": "Editando · {{type}}",
+    "unsupportedScene": "{{type}} ainda não pode ser editada",
+    "readOnlyBadge": "{{type}} · somente visualização",
+    "sceneType": {
+      "slide": "Slide",
+      "quiz": "Questionário",
+      "interactive": "Interativa",
+      "pbl": "PBL"
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "Outra aba está editando este curso",
+        "body": "A edição fica restrita a uma única aba para evitar alterações conflitantes. Feche a outra aba (ou aguarde a sessão dela expirar) antes de entrar no modo de edição aqui.",
+        "actionDismiss": "Entendi"
+      }
+    },
+    "text": {
+      "label": "Texto",
+      "font": "Fonte",
+      "fontDefault": "Padrão",
+      "sizeUp": "Aumentar tamanho",
+      "sizeDown": "Diminuir tamanho",
+      "fontSize": "Tamanho da fonte",
+      "bold": "Negrito",
+      "italic": "Itálico",
+      "underline": "Sublinhado",
+      "color": "Cor do texto",
+      "alignLeft": "Alinhar à esquerda",
+      "alignCenter": "Centralizar",
+      "alignRight": "Alinhar à direita",
+      "bullet": "Lista com marcadores"
+    },
+    "insert": {
+      "textBox": "Caixa de texto",
+      "expandToolbar": "Mostrar ferramentas de inserção",
+      "collapseToolbar": "Ocultar ferramentas de inserção",
+      "image": "Imagem",
+      "imageDrop": "Arraste uma imagem ou clique para escolher um arquivo",
+      "imageOr": "ou cole a URL de uma imagem",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "Inserir"
+    },
+    "nav": {
+      "addSlide": "Adicionar slide",
+      "duplicate": "Duplicar",
+      "delete": "Excluir",
+      "deleted": "Excluído",
+      "undo": "Desfazer",
+      "copySuffix": "(cópia)",
+      "untitledSlide": "Slide sem título",
+      "collapse": "Recolher painel",
+      "expand": "Expandir painel",
+      "dragHandle": "Arraste para reordenar",
+      "deckLabel": "Cenas",
+      "moreActions": "Mais ações",
+      "rename": "Renomear"
+    }
+  },
   "stage": {
     "currentScene": "Cena Atual",
     "generating": "Gerando...",
@@ -149,7 +212,9 @@
     "generatingNextPage": "A cena está sendo gerada, aguarde...",
     "courseComplete": "Curso concluído",
     "fullscreen": "Tela cheia",
-    "exitFullscreen": "Sair da tela cheia"
+    "exitFullscreen": "Sair da tela cheia",
+    "editCourse": "Editar curso",
+    "doneEditing": "Concluir edição"
   },
   "classroomComplete": {
     "title": "Curso concluído",
