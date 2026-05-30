@@ -175,11 +175,17 @@ function surfaceStateEqual(a: SurfaceState, b: SurfaceState | null): boolean {
     if (a.insertItems[i].id !== b.insertItems[i].id) return false;
     if (a.insertItems[i].active !== b.insertItems[i].active) return false;
     if (a.insertItems[i].disabled !== b.insertItems[i].disabled) return false;
+    // Label/tooltip are user-facing and locale-dependent: without them the
+    // insert toolbar text stays stale after a language switch.
+    if (a.insertItems[i].label !== b.insertItems[i].label) return false;
+    if (a.insertItems[i].tooltip !== b.insertItems[i].tooltip) return false;
   }
   if (a.commands.length !== b.commands.length) return false;
   for (let i = 0; i < a.commands.length; i++) {
     if (a.commands[i].id !== b.commands[i].id) return false;
     if (a.commands[i].disabled !== b.commands[i].disabled) return false;
+    if (a.commands[i].label !== b.commands[i].label) return false;
+    if (a.commands[i].tooltip !== b.commands[i].tooltip) return false;
   }
   if (a.floatingActions.length !== b.floatingActions.length) return false;
   for (let i = 0; i < a.floatingActions.length; i++) {

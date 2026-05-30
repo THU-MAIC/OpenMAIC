@@ -322,14 +322,18 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const outlines = outlinesRecord?.outlines || [];
 
       if (data) {
+        // Normalize legacy slide content (missing schemaVersion) at the load
+        // boundary, same as setScenes/addScene — IndexedDB snapshots predate
+        // the schema field, so they must be migrated on the way in.
+        const migrated = data.scenes.map(migrateScene);
         set({
           stage: data.stage,
-          scenes: data.scenes,
+          scenes: migrated,
           currentSceneId: data.currentSceneId,
           chats: data.chats,
           outlines,
           // Compute generatingOutlines from persisted outlines minus completed scenes
-          generatingOutlines: outlines.filter((o) => !data.scenes.some((s) => s.order === o.order)),
+          generatingOutlines: outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
           // `mode` is transient UI state, not persisted with the stage.
           // Reset to 'playback' on every load so SPA navigation between
           // classrooms doesn't carry Pro-mode state across — e.g. user

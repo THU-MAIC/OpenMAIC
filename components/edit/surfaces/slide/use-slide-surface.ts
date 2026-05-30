@@ -69,7 +69,14 @@ const IMAGE_MAX_H = 400;
  */
 export function insertImageElement(src: string): void {
   const id = createElementId('image');
+  // Bind the insert to the scene that was active at click time. Image
+  // sizing is resolved asynchronously (Image.onload), and the user may
+  // switch slides before it resolves — without this guard the element
+  // would be applied to whatever session is current when onload fires,
+  // i.e. inserted into the wrong slide.
+  const targetSceneId = useSlideEditSession.getState().sceneId;
   const dispatch = (width?: number, height?: number) => {
+    if (useSlideEditSession.getState().sceneId !== targetSceneId) return;
     const base = createDefaultImageElement(id, src);
     const element = width && height ? { ...base, width, height } : base;
     useSlideEditSession.getState().applyOp({ type: 'element.add', element });
