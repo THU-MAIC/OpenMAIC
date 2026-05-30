@@ -1,0 +1,37 @@
+name: Docs Build
+
+on:
+  push:
+    branches: [main]
+    paths: ['packages/docs/**', '.github/workflows/docs-build.yml']
+  pull_request:
+    branches: [main]
+    paths: ['packages/docs/**', '.github/workflows/docs-build.yml']
+
+concurrency:
+  group: docs-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build docs site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/docs
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: packages/docs/pnpm-lock.yaml
+
+      # Excluded from the root pnpm workspace, so install it standalone.
+      - run: pnpm install --frozen-lockfile --ignore-workspace
+
+      - name: Build (next build + static export)
+        run: pnpm build
