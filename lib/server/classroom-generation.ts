@@ -20,13 +20,14 @@ import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config'
 import { resolveModel } from '@/lib/server/resolve-model';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
-import type { WebSearchProviderId } from '@/lib/web-search/types';
+import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { persistClassroom } from '@/lib/server/classroom-storage';
 import {
   generateMediaForClassroom,
   replaceMediaPlaceholders,
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
+import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
 import { AGENT_COLOR_PALETTE, AGENT_DEFAULT_AVATARS } from '@/lib/constants/agent-defaults';
@@ -39,6 +40,7 @@ export interface GenerateClassroomInput {
   enableWebSearch?: boolean;
   webSearchProviderId?: WebSearchProviderId;
   webSearchApiKey?: string;
+  baiduSubSources?: BaiduSubSources;
   enableImageGeneration?: boolean;
   enableVideoGeneration?: boolean;
   enableTTS?: boolean;
@@ -254,6 +256,7 @@ export async function generateClassroom(
           query: searchQuery.query,
           apiKey: webSearchConfig.apiKey,
           baseUrl: webSearchConfig.baseUrl,
+          baiduSubSources: webSearchConfig.baiduSubSources,
         });
         researchContext = formatSearchResultsAsContext(searchResult);
         if (researchContext) {
@@ -326,6 +329,7 @@ export async function generateClassroom(
     name: outlines[0]?.title || requirement.slice(0, 50),
     description: undefined,
     languageDirective,
+    videoManifest: buildVideoManifestFromOutlines(outlines),
     style: 'interactive',
     createdAt: Date.now(),
     updatedAt: Date.now(),

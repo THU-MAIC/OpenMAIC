@@ -10,6 +10,7 @@ export function createSettingsStorage(overrides: Record<string, unknown> = {}) {
       agentMode: 'preset',
       selectedAgentIds: [],
       ttsEnabled: false,
+      reviewOutlineEnabled: false,
       autoConfigApplied: true,
       ...overrides,
     },

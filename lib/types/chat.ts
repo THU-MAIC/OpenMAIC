@@ -10,7 +10,7 @@ import type { ThinkingConfig } from './provider';
 
 // Session Types
 export type SessionType = 'qa' | 'discussion' | 'lecture';
-export type SessionStatus = 'idle' | 'active' | 'interrupted' | 'completed';
+export type SessionStatus = 'idle' | 'active' | 'interrupted' | 'completed' | 'error';
 
 /**
  * Metadata attached to chat messages
@@ -59,8 +59,6 @@ export interface ChatSession {
  */
 export interface SessionConfig {
   agentIds: string[];
-  maxTurns: number;
-  currentTurn: number;
   triggerAgentId?: string; // For discussion: first agent to speak
   defaultAgentId?: string; // For QA: the responding agent
 }
@@ -137,7 +135,6 @@ export interface CreateSessionRequest {
     message?: string;
     agentIds: string[];
     triggerAgentId?: string;
-    maxTurns?: number;
   };
 }
 

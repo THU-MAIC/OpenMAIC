@@ -3,7 +3,7 @@
 import type { ChatSession, SessionStatus } from '@/lib/types/chat';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { ChevronDown, Circle, CheckCircle, Clock } from 'lucide-react';
+import { ChevronDown, Circle, CheckCircle, Clock, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChatSessionComponent } from './chat-session';
 
@@ -32,6 +32,8 @@ function getStatusIcon(status: SessionStatus) {
       return <Clock className="size-2.5 text-yellow-500" />;
     case 'completed':
       return <CheckCircle className="size-2.5 text-gray-400" />;
+    case 'error':
+      return <AlertCircle className="size-2.5 text-red-500" />;
     case 'idle':
     default:
       return <Circle className="size-2.5 text-gray-300" />;

@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
       ...(rawBody.enableWebSearch != null ? { enableWebSearch: rawBody.enableWebSearch } : {}),
       ...(rawBody.webSearchProviderId ? { webSearchProviderId: rawBody.webSearchProviderId } : {}),
       ...(rawBody.webSearchApiKey ? { webSearchApiKey: rawBody.webSearchApiKey } : {}),
+      ...(rawBody.baiduSubSources ? { baiduSubSources: rawBody.baiduSubSources } : {}),
       ...(rawBody.enableImageGeneration != null
         ? { enableImageGeneration: rawBody.enableImageGeneration }
         : {}),

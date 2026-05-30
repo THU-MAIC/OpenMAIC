@@ -73,6 +73,7 @@ const TTS_ENV_MAP: Record<string, string> = {
 const ASR_ENV_MAP: Record<string, string> = {
   ASR_OPENAI: 'openai-whisper',
   ASR_QWEN: 'qwen-asr',
+  ASR_AZURE: 'azure-asr',
   ASR_LEMONADE: 'lemonade-asr',
 };
 
@@ -99,11 +100,14 @@ const VIDEO_ENV_MAP: Record<string, string> = {
   VIDEO_SORA: 'sora',
   VIDEO_MINIMAX: 'minimax-video',
   VIDEO_GROK: 'grok-video',
+  VIDEO_HAPPYHORSE: 'happyhorse',
 };
 
 const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   TAVILY: 'tavily',
   BOCHA: 'bocha',
+  BRAVE: 'brave',
+  BAIDU: 'baidu',
 };
 
 // ---------------------------------------------------------------------------
@@ -509,5 +513,7 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
     return preferredProviderId;
   }
   if (webSearch.tavily?.apiKey) return 'tavily';
+  if (webSearch.bocha?.apiKey) return 'bocha';
+  if (webSearch.baidu?.apiKey) return 'baidu';
   return Object.keys(webSearch)[0];
 }

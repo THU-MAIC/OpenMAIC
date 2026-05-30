@@ -2,6 +2,7 @@ import pkg from "./package.json" with { type: "json" };
 import resolve from "@rollup/plugin-node-resolve";
 import commonjs from "@rollup/plugin-commonjs";
 import typescript from "rollup-plugin-typescript2";
+import ts from "typescript";
 
 const nodeBuiltinsRE = /^node:.*/; /* Regex that matches all Node built-in specifiers */
 
@@ -24,7 +25,10 @@ export default {
 	],
 	plugins: [
 		resolve({ preferBuiltins: true }),
+		typescript({
+			typescript: ts,
+			include: [/\.tsx?$/],
+		}),
 		commonjs(),
-		typescript({ typescript: require("typescript") }),
 	]
 };

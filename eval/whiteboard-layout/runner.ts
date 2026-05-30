@@ -54,7 +54,6 @@ const SCORER_MODEL: string = SCORER_MODEL_RAW;
 const REPEAT = parseInt(args.repeat || '1', 10);
 const OUTPUT_DIR = args['output-dir']!;
 const SCENARIO_FILTER = args.scenario;
-const MAX_AGENT_TURNS = 10;
 
 // ==================== Scenario Loading ====================
 
@@ -251,7 +250,6 @@ async function runScenario(
           },
         },
         controller.signal,
-        MAX_AGENT_TURNS,
       );
       const turnDurationMs = Date.now() - turnStartMs;
       turnDurationsMs.push(turnDurationMs);

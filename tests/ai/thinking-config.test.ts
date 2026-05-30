@@ -153,7 +153,7 @@ describe('thinking config normalization', () => {
   });
 
   it('normalizes Lemonade reasoning models as disabled-by-default token budgets', () => {
-    const thinking = getThinking('lemonade', 'Qwen3.5-4B-GGUF');
+    const thinking = getThinking('lemonade', 'Gemma-4-26B-A4B-it-GGUF');
 
     expect(supportsConfigurableThinking(thinking)).toBe(true);
     expect(thinking?.requestAdapter).toBe('lemonade');

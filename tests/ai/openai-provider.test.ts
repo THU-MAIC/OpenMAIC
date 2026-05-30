@@ -147,7 +147,7 @@ describe('OpenAI provider defaults', () => {
     ],
     [
       'lemonade',
-      'Qwen3.5-4B-GGUF',
+      'Gemma-4-26B-A4B-it-GGUF',
       { mode: 'enabled', budgetTokens: 4096 },
       { chat_template_kwargs: { enable_thinking: true, thinking_budget: 4096 } },
     ],
@@ -160,7 +160,7 @@ describe('OpenAI provider defaults', () => {
   );
 
   it('disables Lemonade thinking by default for recognized local reasoning models', async () => {
-    const body = await captureInjectedRequestBody('lemonade', 'Qwen3.5-4B-GGUF');
+    const body = await captureInjectedRequestBody('lemonade', 'Gemma-4-26B-A4B-it-GGUF');
 
     expect(body).toMatchObject({
       chat_template_kwargs: { enable_thinking: false },

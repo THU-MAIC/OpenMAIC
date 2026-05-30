@@ -15,6 +15,7 @@
  * - Kling (Kuaishou video generation)
  * - Veo (Google DeepMind video generation)
  * - Sora (OpenAI video generation)
+ * - HappyHorse (Alibaba Cloud Model Studio video generation)
  *
  * HOW TO ADD A NEW PROVIDER:
  *
@@ -192,7 +193,8 @@ export type VideoProviderId =
   | 'veo'
   | 'sora'
   | 'minimax-video'
-  | 'grok-video';
+  | 'grok-video'
+  | 'happyhorse';
 // Add new video providers below (uncomment and modify):
 // | 'runway'
 // | 'pika'

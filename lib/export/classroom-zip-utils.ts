@@ -1,4 +1,4 @@
-import type { Action, SpeechAction } from '@/lib/types/action';
+import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action';
 import type { ManifestAction } from './classroom-zip-types';
 import { db } from '@/lib/utils/database';
 import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
@@ -53,6 +53,7 @@ export async function collectMediaFiles(stageId: string): Promise<CollectedMedia
 export function actionsToManifest(
   actions: Action[],
   audioIdToPath: Map<string, string>,
+  agentIdToIndex: Map<string, number> = new Map(),
 ): ManifestAction[] {
   return actions.map((action) => {
     if (action.type === 'speech') {
@@ -65,15 +66,30 @@ export function actionsToManifest(
         ...(speech.audioUrl ? { audioUrl: speech.audioUrl } : {}),
       } as ManifestAction;
     }
+    if (action.type === 'discussion') {
+      const discussion = action as DiscussionAction;
+      const { agentId, ...rest } = discussion;
+      const agentIndex = agentId ? agentIdToIndex.get(agentId) : undefined;
+      return {
+        ...rest,
+        ...(agentIndex !== undefined ? { agentIndex } : agentId ? { agentId } : {}),
+      } as ManifestAction;
+    }
     return action as ManifestAction;
   });
 }
 
 // ─── Import: Reference Rewriting ───────────────────────────────
 
+interface RewriteManifestActionOptions {
+  agentIds?: string[];
+  fallbackDiscussionAgentIndex?: number;
+}
+
 export function rewriteAudioRefsToIds(
   actions: ManifestAction[],
   audioRefMap: Record<string, string>,
+  options: RewriteManifestActionOptions = {},
 ): Action[] {
   return actions.map((action) => {
     if (action.type === 'speech' && 'audioRef' in action) {
@@ -82,6 +98,30 @@ export function rewriteAudioRefsToIds(
       return {
         ...rest,
         ...(audioId ? { audioId } : {}),
+      } as Action;
+    }
+    if (action.type === 'discussion') {
+      const {
+        agentIndex,
+        agentId: legacyAgentId,
+        ...rest
+      } = action as ManifestAction & { type: 'discussion'; agentIndex?: number; agentId?: string };
+      const indexedAgentId =
+        typeof agentIndex === 'number' ? options.agentIds?.[agentIndex] : undefined;
+      const preservedLegacyAgentId =
+        legacyAgentId && (!options.agentIds?.length || options.agentIds.includes(legacyAgentId))
+          ? legacyAgentId
+          : undefined;
+      const fallbackAgentId =
+        typeof options.fallbackDiscussionAgentIndex === 'number'
+          ? options.agentIds?.[options.fallbackDiscussionAgentIndex]
+          : undefined;
+
+      return {
+        ...rest,
+        ...(indexedAgentId || preservedLegacyAgentId || fallbackAgentId
+          ? { agentId: indexedAgentId || preservedLegacyAgentId || fallbackAgentId }
+          : {}),
       } as Action;
     }
     return action as Action;

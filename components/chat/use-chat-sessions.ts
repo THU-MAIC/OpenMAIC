@@ -170,6 +170,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         s.id === sessionId
           ? {
               ...s,
+              status: 'error' as SessionStatus,
               updatedAt: now,
               messages: [
                 ...s.messages,
@@ -456,8 +457,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       controller: AbortController,
       sessionType: SessionType,
     ): Promise<void> => {
-      const settingsState = useSettingsStore.getState();
-
       // Attach full configs for generated (non-default) agents so the server can use them.
       // The server-side registry only has default agents; generated agents exist only client-side.
       const generatedConfigs = requestTemplate.config.agentIds
@@ -468,11 +467,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       if (generatedConfigs.length > 0) {
         requestTemplate.config.agentConfigs = generatedConfigs;
       }
-
-      const defaultMaxTurns = requestTemplate.config.agentIds.length <= 1 ? 1 : 10;
-      const maxTurns = settingsState.maxTurns
-        ? parseInt(settingsState.maxTurns, 10) || defaultMaxTurns
-        : defaultMaxTurns;
 
       // Per-iteration buffer reference — set in onEvent, used in onIterationEnd
       let currentBuffer: StreamBuffer | null = null;
@@ -607,28 +601,40 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           },
         },
         controller.signal,
-        maxTurns,
       );
 
-      // Handle loop completion (UI-specific)
+      // Handle loop completion (UI-specific). Map each outcome.reason to a
+      // distinct session state — don't conflate error paths with completion.
       if (!controller.signal.aborted) {
-        if (outcome.reason !== 'cue_user') {
-          setSessions((prev) =>
-            prev.map((s) =>
-              s.id === sessionId
-                ? {
-                    ...s,
-                    status: 'completed' as SessionStatus,
-                    updatedAt: Date.now(),
-                  }
-                : s,
-            ),
-          );
-          onStopSessionRef.current?.();
+        switch (outcome.reason) {
+          case 'cue_user':
+            // Session stays active; UI waits for the next user message.
+            break;
+          case 'end':
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === sessionId
+                  ? { ...s, status: 'completed' as SessionStatus, updatedAt: Date.now() }
+                  : s,
+              ),
+            );
+            onStopSessionRef.current?.();
+            break;
+          case 'empty_turns':
+            clearLiveSessionAfterError(sessionId, t('chat.error.emptyAgentResponses'));
+            onStopSessionRef.current?.();
+            break;
+          case 'no_done':
+            clearLiveSessionAfterError(sessionId, t('chat.error.streamInterrupted'));
+            onStopSessionRef.current?.();
+            break;
+          case 'aborted':
+            // Already handled elsewhere via abort signal.
+            break;
         }
       }
     },
-    [createBufferForSession],
+    [createBufferForSession, clearLiveSessionAfterError, t],
   );
 
   /**
@@ -646,8 +652,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       messages: [],
       config: {
         agentIds: ['default-1'],
-        maxTurns: 0, // Not used for runtime — frontend loop manages maxTurns
-        currentTurn: 0,
         defaultAgentId: 'default-1',
       },
       toolCalls: [],
@@ -1070,8 +1074,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
             messages: [userMessage],
             config: {
               agentIds,
-              maxTurns: 0, // Not used for runtime — frontend loop manages maxTurns
-              currentTurn: 0,
               defaultAgentId: agentIds[0],
             },
             toolCalls: [],
@@ -1208,8 +1210,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         messages: [],
         config: {
           agentIds,
-          maxTurns: 0, // Not used for runtime — frontend loop manages maxTurns
-          currentTurn: 0,
           triggerAgentId: agentId,
         },
         toolCalls: [],
@@ -1370,8 +1370,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         messages: [lectureMessage],
         config: {
           agentIds: ['default-1'],
-          maxTurns: 0,
-          currentTurn: 0,
         },
         toolCalls: [],
         pendingToolCalls: [],

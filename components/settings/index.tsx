@@ -160,6 +160,7 @@ function getASRProviderName(providerId: ASRProviderId, t: (key: string) => strin
     'openai-whisper': t('settings.providerOpenAIWhisper'),
     'browser-native': t('settings.providerBrowserNative'),
     'qwen-asr': t('settings.providerQwenASR'),
+    'azure-asr': t('settings.providerAzureASR'),
     'lemonade-asr': t('settings.providerLemonadeASR'),
   };
   return names[providerId] || providerId;
@@ -193,6 +194,7 @@ const VIDEO_PROVIDER_NAMES: Record<VideoProviderId, string> = {
   sora: 'providerSora',
   'minimax-video': 'providerMiniMaxVideo',
   'grok-video': 'providerGrokVideo',
+  happyhorse: 'providerHappyHorse',
 };
 
 const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
@@ -202,6 +204,7 @@ const VIDEO_PROVIDER_ICONS: Record<VideoProviderId, string> = {
   sora: '/logos/openai.svg',
   'minimax-video': '/logos/minimax.svg',
   'grok-video': '/logos/grok.svg',
+  happyhorse: '/logos/qwen.svg',
 };
 
 interface SettingsDialogProps {
@@ -231,7 +234,6 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
   const asrProvidersConfig = useSettingsStore((state) => state.asrProvidersConfig);
 
   // Store actions
-  const setModel = useSettingsStore((state) => state.setModel);
   const setProviderConfig = useSettingsStore((state) => state.setProviderConfig);
   const setProvidersConfig = useSettingsStore((state) => state.setProvidersConfig);
   const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
@@ -484,22 +486,16 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     const pid = providerToDelete;
     const updatedConfig = { ...providersConfig };
     delete updatedConfig[pid];
+    // setProvidersConfig re-resolves the global (providerId, modelId)
+    // selection at the source (#580 invariant) — keep a still-usable
+    // provider, fall back to another usable one, or go to State A. No
+    // hand-rolled "pick the first config key" here: that ignored usability
+    // and could re-select an invalid/unusable provider.
     setProvidersConfig(updatedConfig);
     if (selectedProviderId === pid) {
+      // Settings-panel tab only (local UI), independent of model selection.
       const firstRemainingPid = Object.keys(updatedConfig)[0] as ProviderId | undefined;
       setSelectedProviderId(firstRemainingPid || 'openai');
-    }
-    if (providerId === pid) {
-      const firstRemainingPid = Object.keys(updatedConfig)[0] as ProviderId | undefined;
-      const firstModel = firstRemainingPid
-        ? updatedConfig[firstRemainingPid]?.serverModels?.[0] ||
-          updatedConfig[firstRemainingPid]?.models?.[0]?.id
-        : undefined;
-      if (firstRemainingPid && firstModel) {
-        setModel(firstRemainingPid, firstModel);
-      } else {
-        setModel('openai' as ProviderId, 'gpt-5.4-mini');
-      }
     }
     setProviderToDelete(null);
   };

@@ -13,7 +13,9 @@ import {
   MessageSquare,
   Focus,
   Play,
+  Maximize2,
 } from 'lucide-react';
+import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
 
@@ -22,10 +24,12 @@ export function StepVisualizer({
   stepId,
   outlines,
   webSearchSources,
+  onExpandOutline,
 }: {
   stepId: string;
   outlines?: SceneOutline[] | null;
   webSearchSources?: Array<{ title: string; url: string }>;
+  onExpandOutline?: () => void;
 }) {
   switch (stepId) {
     case 'pdf-analysis':
@@ -33,7 +37,7 @@ export function StepVisualizer({
     case 'web-search':
       return <WebSearchVisualizer sources={webSearchSources || []} />;
     case 'outline':
-      return <StreamingOutlineVisualizer outlines={outlines || []} />;
+      return <StreamingOutlineVisualizer outlines={outlines || []} onExpand={onExpandOutline} />;
     case 'agent-generation':
       return <AgentGenerationVisualizer />;
     case 'slide-content':
@@ -239,59 +243,142 @@ function WebSearchVisualizer({ sources }: { sources: Array<{ title: string; url:
 }
 
 // Outline: Streams real outline data as it arrives from SSE
-function StreamingOutlineVisualizer({ outlines }: { outlines: SceneOutline[] }) {
-  // Build display lines from outlines
-  const allLines: string[] = [];
-  outlines.forEach((outline, i) => {
-    allLines.push(`${i + 1}. ${outline.title}`);
-    outline.keyPoints?.slice(0, 2).forEach((kp) => {
-      const text = kp.length > 18 ? kp.substring(0, 18) + '...' : kp;
-      allLines.push(`   • ${text}`);
-    });
-  });
+function StreamingOutlineVisualizer({
+  outlines,
+  onExpand,
+}: {
+  outlines: SceneOutline[];
+  onExpand?: () => void;
+}) {
+  const { t } = useI18n();
+  const isInteractive = !!onExpand;
+
+  const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (!isInteractive) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onExpand?.();
+    }
+  };
 
   return (
-    <div className="w-40 h-52 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-2xl p-4 overflow-hidden relative rotate-[-2deg] hover:rotate-0 transition-transform duration-500">
-      <div className="absolute top-0 inset-x-0 h-1 bg-blue-500/50" />
-      <div className="w-1/3 h-2 bg-slate-100 dark:bg-slate-700 rounded mb-3" />
-      <div className="space-y-1.5 font-mono text-[8px] text-muted-foreground leading-tight">
-        {allLines.length === 0 ? (
-          // Waiting for first outline — show placeholder skeleton
-          <div className="space-y-2">
-            {[60, 80, 50, 70].map((w, i) => (
-              <motion.div
-                key={i}
-                className="h-1.5 bg-slate-100 dark:bg-slate-700 rounded"
-                style={{ width: `${w}%` }}
-                animate={{ opacity: [0.3, 0.7, 0.3] }}
-                transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.2 }}
-              />
-            ))}
-          </div>
-        ) : (
-          allLines.map((line, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, x: -8 }}
-              animate={{ opacity: 1, x: 0 }}
-              className={cn(
-                'truncate',
-                !line.startsWith('   ')
-                  ? 'text-blue-600 dark:text-blue-400 font-semibold text-[9px]'
-                  : 'pl-1 opacity-80',
-              )}
-            >
-              {line}
-            </motion.div>
-          ))
+    <motion.div
+      layoutId="outline-review-surface"
+      transition={{ type: 'spring', stiffness: 220, damping: 28 }}
+      // Slight tilt to suggest a tossed-down sticky note; straightens on hover.
+      // Layout-shared morph into the editor surface explicitly targets rotate: 0,
+      // so the rotation is interpolated as the surface grows.
+      initial={isInteractive ? { rotate: -3 } : false}
+      animate={isInteractive ? { rotate: -3 } : { rotate: 0 }}
+      whileHover={isInteractive ? { y: -3, scale: 1.04, rotate: 0 } : undefined}
+      whileTap={isInteractive ? { scale: 0.97, rotate: 0 } : undefined}
+      role={isInteractive ? 'button' : undefined}
+      tabIndex={isInteractive ? 0 : undefined}
+      aria-label={isInteractive ? t('generation.outlineExpandHint') : undefined}
+      onClick={onExpand}
+      onKeyDown={handleKeyDown}
+      style={{ transformOrigin: 'center center' }}
+      className={cn(
+        'group/outline-card relative h-52 w-44 overflow-hidden rounded-2xl border p-3 text-left',
+        'bg-white/90 shadow-xl shadow-slate-900/10 backdrop-blur',
+        'dark:bg-slate-900/80',
+        isInteractive
+          ? 'cursor-pointer border-blue-400/40 shadow-blue-500/10 transition-shadow hover:border-blue-500/60 hover:shadow-2xl hover:shadow-blue-500/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/40 dark:border-blue-400/30 dark:hover:border-blue-400/50'
+          : 'border-slate-200/70 dark:border-white/10',
+      )}
+    >
+      <div className="mb-3 flex items-center justify-between">
+        <div className="h-1.5 w-12 rounded-full bg-slate-200 dark:bg-slate-700" />
+        <motion.div
+          className="size-2 rounded-full bg-blue-500"
+          animate={{ opacity: [0.3, 1, 0.3], scale: [0.9, 1.15, 0.9] }}
+          transition={{ repeat: Infinity, duration: 1.1 }}
+        />
+      </div>
+
+      <div className="relative h-[168px] overflow-hidden pl-4">
+        {/* Spine sits at the dot's horizontal center: pl-4 (16px) - dot offset (-15px) + dot half (4px) = 5px */}
+        <div className="absolute bottom-0 left-[5px] top-0 w-px bg-slate-200 dark:bg-slate-700" />
+        <AnimatePresence initial={false}>
+          {outlines.length === 0
+            ? [58, 78, 48, 68].map((w, i) => (
+                <motion.div
+                  key={i}
+                  className="relative mb-3"
+                  animate={{ opacity: [0.35, 0.75, 0.35] }}
+                  transition={{ duration: 1.2, repeat: Infinity, delay: i * 0.16 }}
+                >
+                  <div className="absolute -left-[15px] top-0.5 size-2 rounded-full border border-blue-300 bg-white dark:bg-slate-900" />
+                  <div
+                    className="h-2 rounded-full bg-slate-100 dark:bg-slate-800"
+                    style={{ width: `${w}%` }}
+                  />
+                  <div className="mt-1 h-1 w-2/3 rounded-full bg-slate-100 dark:bg-slate-800" />
+                </motion.div>
+              ))
+            : outlines.slice(0, 4).map((outline, i) => (
+                <motion.div
+                  key={outline.id}
+                  layout
+                  initial={{ opacity: 0, x: -10, scale: 0.96 }}
+                  animate={{ opacity: 1, x: 0, scale: 1 }}
+                  exit={{ opacity: 0, x: -10, scale: 0.96 }}
+                  transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                  className="relative mb-3"
+                >
+                  <div className="absolute -left-[15px] top-0.5 size-2 rounded-full border border-blue-300 bg-white shadow-sm shadow-blue-500/20 dark:bg-slate-900" />
+                  <div className="truncate text-[9px] font-semibold leading-tight text-slate-700 dark:text-slate-200">
+                    {i + 1}. {outline.title}
+                  </div>
+                  <div className="mt-1 truncate text-[7px] leading-tight text-slate-400 dark:text-slate-500">
+                    {outline.description || outline.keyPoints?.[0] || '...'}
+                  </div>
+                </motion.div>
+              ))}
+        </AnimatePresence>
+
+        {outlines.length > 4 && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-[8px] font-medium text-blue-500/70"
+          >
+            +{outlines.length - 4}
+          </motion.div>
         )}
       </div>
+
       <motion.div
-        className="absolute bottom-3 right-3 size-2 bg-blue-500 rounded-full"
-        animate={{ opacity: [0, 1, 0] }}
-        transition={{ repeat: Infinity, duration: 0.8 }}
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-0 h-10 bg-gradient-to-t from-white via-white/80 to-transparent dark:from-slate-900 dark:via-slate-900/80"
+        aria-hidden
       />
-    </div>
+
+      {/* Expand affordance — always visible to telegraph clickability */}
+      {isInteractive && (
+        <div className="pointer-events-none absolute inset-x-0 bottom-2 z-20 flex items-center justify-center px-2">
+          <motion.span
+            className="inline-flex items-center gap-1 rounded-full bg-blue-500 px-2.5 py-1 text-[10px] font-semibold tracking-wide text-white shadow-lg shadow-blue-500/50 backdrop-blur"
+            animate={{ y: [0, -1.5, 0] }}
+            transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+          >
+            <Maximize2 className="size-3" />
+            {t('generation.outlineExpandHint')}
+          </motion.span>
+        </div>
+      )}
+
+      {/* Subtle expand icon in top-right corner — pulses gently */}
+      {isInteractive && (
+        <motion.div
+          className="absolute right-2 top-2 z-10 flex size-5 items-center justify-center rounded-md text-blue-500/80 group-hover/outline-card:text-blue-600 dark:text-blue-400/80 dark:group-hover/outline-card:text-blue-300"
+          animate={{ opacity: [0.6, 1, 0.6] }}
+          transition={{ duration: 2.4, repeat: Infinity, ease: 'easeInOut' }}
+          aria-hidden
+        >
+          <Maximize2 className="size-3" />
+        </motion.div>
+      )}
+    </motion.div>
   );
 }
 

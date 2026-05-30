@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Scene, SceneType, SceneContent, Whiteboard } from '@/lib/types/stage';
+import type { Scene, SceneType, SceneContent, Whiteboard, VideoManifest } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type {
   SessionType,
@@ -48,6 +48,7 @@ export interface StageRecord {
   style?: string;
   currentSceneId?: string;
   agentIds?: string[]; // Agent IDs selected at creation time
+  videoManifest?: VideoManifest; // Generated video request manifest; non-indexed
   interactiveMode?: boolean; // Interactive Mode flag; non-indexed
 }
 

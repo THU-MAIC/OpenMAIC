@@ -1,0 +1,308 @@
+[
+  {
+    "case_id": "tiananmen_3d_objection",
+    "description": "Direct reproduction of #511: after a long substantive discussion about axial symmetry with multiple agent turns, the user raises a soft 3D-vs-2D objection (starts with concession, ends with challenge). Director must route to teacher, not END.",
+    "agents": [
+      { "id": "teacher_1", "name": "林老师", "role": "teacher", "priority": 9 },
+      { "id": "peer_1", "name": "奇奇", "role": "student", "priority": 4 },
+      { "id": "peer_2", "name": "思思", "role": "student", "priority": 4 }
+    ],
+    "messages": [
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"哇,蝴蝶真的好漂亮!我想到了,咱们的天安门城楼是不是也是轴对称的呀?\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"奇奇观察得真仔细!天安门城楼确实是轴对称的。它的左右两边几乎一模一样——城楼、屋檐、门洞,从中间一折就能完全重合。谁来大胆猜猜看,生活中还有哪些轴对称的建筑?\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"肯定可以!像故宫的太和殿、巴黎的埃菲尔铁塔,从正面看都是左右对称的。\"}]"
+      },
+      {
+        "role": "user",
+        "content": "[You]: 天安门城楼是建筑物,为什么也是轴对称图形呢?蝴蝶和剪纸我觉得是对折能够完全重合是对称轴对称图形,那那个城楼对折能对折吗?城楼它是三D的怎么办?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"我觉得肯定能重合!只要找到正中间那条对称轴,两边的点就像照镜子一样一对一地对上呢。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"思思说得真妙,'照镜子'抓住了点对点的本质!虽然建筑是立体的,但在数学里,我们观察的是它的正面轮廓。当你看城楼的正面照片时,以正中央那条垂直线为轴,左半边和右半边就能严丝合缝地重合啦!\"}]"
+      },
+      {
+        "role": "user",
+        "content": "[You]: 我们当然可以说天安门城楼的照片是轴对称图形,但我们不能说天安门城楼这个物体是一个轴对称的吧。"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "peer_1",
+        "agentName": "奇奇",
+        "contentPreview": "肯定可以!像故宫的太和殿、巴黎的埃菲尔铁塔,从正面看都是左右对称的。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "peer_2",
+        "agentName": "思思",
+        "contentPreview": "我觉得肯定能重合!只要找到正中间那条对称轴,两边的点就像照镜子一样一对一地对上呢。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "teacher_1",
+        "agentName": "林老师",
+        "contentPreview": "思思说得真妙,'照镜子'抓住了点对点的本质!虽然建筑是立体的,但在数学里,我们观察的是它的正面轮廓。当你看城楼的正面照片时,以正中央那条垂直线为轴,左半边和右半边就能严丝合缝地重合啦!",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 5,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "concession_then_objection_physics",
+    "description": "After a fully-resolved-looking physics discussion (4 agent turns reaching consensus), user opens with 'I see what you mean...' (concession) then drops a sharp counter-question. Pre-fix director reads the consensus-y trajectory and ENDs; post-fix must respect the unresolved objection.",
+    "agents": [
+      { "id": "teacher_1", "name": "周老师", "role": "teacher", "priority": 9 },
+      { "id": "assistant_1", "name": "小研", "role": "assistant", "priority": 6 },
+      { "id": "peer_1", "name": "阿明", "role": "student", "priority": 4 }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "[You]: 为什么自由下落的物体感觉不到重力?宇航员在国际空间站里飘着,不也是被地球吸引吗?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"好问题。其实空间站里的宇航员确实受到地球引力——大约是地表的 89%。他们感觉'失重',是因为他们和空间站一起在做自由落体运动:两者具有相同的加速度,所以宇航员对空间站没有压力,这就是失重感的来源。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"周老师说的非常关键。爱因斯坦的'等效原理'其实就是从这个观察出发的——在自由下落的电梯里,你做任何实验都无法区分'真的没有引力'和'被引力拉着自由落体'。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"哦哦,所以失重不是因为没有引力,而是因为没有支持力对吧?就像我跳起来的瞬间,虽然地球还在拉我,但我感觉不到任何东西托着我。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"阿明这个类比非常贴切!对,失重的本质是'支持力为零',而不是'引力为零'。引力一直在,只是没有外力去对抗它,所以你感觉不到它的存在。\"}]"
+      },
+      {
+        "role": "user",
+        "content": "[You]: 嗯,我理解了支持力为零的解释。但既然如此,那为什么物理学家还要区分'惯性力'和'引力'呢?如果两者真的等效,那广义相对论说引力是时空弯曲,是不是意味着'惯性'本身也是一种时空效应?"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "teacher_1",
+        "agentName": "周老师",
+        "contentPreview": "好问题。其实空间站里的宇航员确实受到地球引力——大约是地表的 89%。他们感觉'失重',是因为他们和空间站一起在做自由落体运动:两者具有相同的加速度,所以宇航员对空间站没有压力,这就是失重感的来源。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "assistant_1",
+        "agentName": "小研",
+        "contentPreview": "周老师说的非常关键。爱因斯坦的'等效原理'其实就是从这个观察出发的——在自由下落的电梯里,你做任何实验都无法区分'真的没有引力'和'被引力拉着自由落体'。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "peer_1",
+        "agentName": "阿明",
+        "contentPreview": "哦哦,所以失重不是因为没有引力,而是因为没有支持力对吧?",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "teacher_1",
+        "agentName": "周老师",
+        "contentPreview": "阿明这个类比非常贴切!对,失重的本质是'支持力为零',而不是'引力为零'。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 4,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "topic_pivot_after_consensus",
+    "description": "Conversation reaches clean consensus on topic A; user pivots to a sharp follow-up on topic B that no agent has touched. Pre-fix director sees the trajectory hit a natural pause and ENDs; post-fix must keep going.",
+    "agents": [
+      { "id": "teacher_1", "name": "张老师", "role": "teacher", "priority": 9 },
+      { "id": "peer_1", "name": "小华", "role": "student", "priority": 4 },
+      { "id": "peer_2", "name": "小芳", "role": "student", "priority": 4 }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "[You]: 光合作用为什么需要叶绿素?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"叶绿素是一种能吸收特定波长光线的色素——主要吸收红光和蓝光,反射绿光,这就是叶片看起来绿色的原因。吸收的光能驱动水分解和后续的碳固定反应。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"我之前一直以为光合作用就是植物'吃光',现在明白了——是叶绿素把光能转成化学能,存到糖里面。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"对!我还想到一个细节:叶绿素其实有 a 和 b 两种,a 是主要的反应中心,b 是辅助色素帮忙'扩大捕光范围'。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"两位都说得很好,这就是植物光合作用的核心机制。简单总结一下:光能 → 叶绿素吸收 → 水裂解释放氧气 → ATP 与 NADPH → 卡尔文循环固定 CO2 → 葡萄糖。\"}]"
+      },
+      {
+        "role": "user",
+        "content": "[You]: 我理解了叶绿素吸收光的过程。但有个问题——既然绿光被反射不利用,那为什么进化没有让叶绿素吸收所有可见光波段?那不是效率更高吗?"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "teacher_1",
+        "agentName": "张老师",
+        "contentPreview": "叶绿素是一种能吸收特定波长光线的色素——主要吸收红光和蓝光,反射绿光,这就是叶片看起来绿色的原因。吸收的光能驱动水分解和后续的碳固定反应。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "peer_1",
+        "agentName": "小华",
+        "contentPreview": "我之前一直以为光合作用就是植物'吃光',现在明白了——是叶绿素把光能转成化学能,存到糖里面。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "peer_2",
+        "agentName": "小芳",
+        "contentPreview": "对!我还想到一个细节:叶绿素其实有 a 和 b 两种,a 是主要的反应中心,b 是辅助色素帮忙'扩大捕光范围'。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "teacher_1",
+        "agentName": "张老师",
+        "contentPreview": "两位都说得很好,这就是植物光合作用的核心机制。简单总结一下:光能 → 叶绿素吸收 → 水裂解释放氧气 → ATP 与 NADPH → 卡尔文循环固定 CO2 → 葡萄糖。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 4,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "agent_ack_after_question",
+    "description": "User asks substantive question; only subsequent agent turn is a brief acknowledgment. Pre-fix director may interpret 'an agent has spoken' as resolution; post-fix rule 12 says acks don't count as substantive answer.",
+    "agents": [
+      { "id": "teacher_1", "name": "赵老师", "role": "teacher", "priority": 9 },
+      { "id": "peer_1", "name": "小张", "role": "student", "priority": 4 }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "[You]: Transformer 的 attention 机制到底怎么决定关注哪些 token?真的就只是 softmax over dot products 这么简单吗?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"问得太好了!\"}]"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "teacher_1",
+        "agentName": "赵老师",
+        "contentPreview": "问得太好了!",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 1,
+    "whiteboardOpen": false
+  },
+  {
+    "case_id": "teacher_signals_end_then_user_objects",
+    "description": "Teacher explicitly wraps up the lesson ('这就是我们今天要讲的全部内容!'), then user immediately raises a substantive objection. Maximum END-pressure: closing language + many agent turns + late turnCount. Pre-fix director should be highly tempted to obey the closing signal; post-fix rule 11 must override.",
+    "agents": [
+      { "id": "teacher_1", "name": "孙老师", "role": "teacher", "priority": 9 },
+      { "id": "assistant_1", "name": "小助手", "role": "assistant", "priority": 6 },
+      { "id": "peer_1", "name": "小白", "role": "student", "priority": 4 },
+      { "id": "peer_2", "name": "小蓝", "role": "student", "priority": 4 }
+    ],
+    "messages": [
+      {
+        "role": "user",
+        "content": "[You]: 什么是傅里叶变换?"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"傅里叶变换是把一个时域信号(随时间变化的函数)拆解成不同频率的正弦/余弦波的叠加。简单理解:任何复杂的波,都能由很多简单的正弦波加起来近似出来。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"哦!这是不是就像把白光通过棱镜分成七色光?\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"对!这个类比非常贴切。傅里叶变换其实就是数学上的'棱镜'——把信号按频率分解。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"补充一下,棱镜是物理上的分光,傅里叶是数学上的分解。两者都遵循'叠加可逆'——分开了还能合回去。\"}]"
+      },
+      {
+        "role": "assistant",
+        "content": "[{\"type\":\"text\",\"content\":\"小蓝补充得很好。今天我们就讲到这里——傅里叶变换是把信号在时域和频域之间转换的工具,这就是今天的核心内容。希望大家都听懂了!\"}]"
+      },
+      {
+        "role": "user",
+        "content": "[You]: 等等,我有个问题——既然任何信号都能分解成正弦波,那像方波这种有'突变'的信号,是不是需要无穷多个频率才能完美还原?那实际工程里用的有限项 FFT 不就一定会失真吗?"
+      }
+    ],
+    "agentResponses": [
+      {
+        "agentId": "teacher_1",
+        "agentName": "孙老师",
+        "contentPreview": "傅里叶变换是把一个时域信号(随时间变化的函数)拆解成不同频率的正弦/余弦波的叠加。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "peer_1",
+        "agentName": "小白",
+        "contentPreview": "哦!这是不是就像把白光通过棱镜分成七色光?",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "teacher_1",
+        "agentName": "孙老师",
+        "contentPreview": "对!这个类比非常贴切。傅里叶变换其实就是数学上的'棱镜'——把信号按频率分解。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "peer_2",
+        "agentName": "小蓝",
+        "contentPreview": "补充一下,棱镜是物理上的分光,傅里叶是数学上的分解。两者都遵循'叠加可逆'——分开了还能合回去。",
+        "actionCount": 0,
+        "whiteboardActions": []
+      },
+      {
+        "agentId": "teacher_1",
+        "agentName": "孙老师",
+        "contentPreview": "小蓝补充得很好。今天我们就讲到这里——傅里叶变换是把信号在时域和频域之间转换的工具,这就是今天的核心内容。希望大家都听懂了!",
+        "actionCount": 0,
+        "whiteboardActions": []
+      }
+    ],
+    "turnCount": 5,
+    "whiteboardOpen": false
+  }
+]

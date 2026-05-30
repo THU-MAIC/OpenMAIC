@@ -51,6 +51,10 @@ describe('POST /api/web-search', () => {
     delete process.env.TAVILY_BASE_URL;
     delete process.env.BOCHA_API_KEY;
     delete process.env.BOCHA_BASE_URL;
+    delete process.env.BRAVE_API_KEY;
+    delete process.env.BRAVE_BASE_URL;
+    delete process.env.BAIDU_API_KEY;
+    delete process.env.BAIDU_BASE_URL;
     mocks.searchWeb.mockReset();
     mocks.formatSearchResultsAsContext.mockClear();
     mocks.resolveModelFromRequest.mockReset();
@@ -96,6 +100,48 @@ describe('POST /api/web-search', () => {
         providerId: 'bocha',
         apiKey: 'bocha-server-key',
         baseUrl: 'http://internal-proxy.local/bocha',
+      }),
+    );
+  });
+
+  it('runs Brave Search without an API key', async () => {
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'brave',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.searchWeb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'brave',
+        apiKey: '',
+      }),
+    );
+  });
+
+  it('passes Baidu sub-source toggles through to the dispatcher', async () => {
+    vi.stubEnv('BAIDU_API_KEY', 'baidu-server-key');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'baidu',
+      baiduSubSources: {
+        webSearch: false,
+        baike: true,
+        scholar: false,
+      },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.searchWeb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'baidu',
+        apiKey: 'baidu-server-key',
+        baiduSubSources: {
+          webSearch: false,
+          baike: true,
+          scholar: false,
+        },
       }),
     );
   });
