@@ -733,6 +733,8 @@
     "voiceBaseUrlRequired": "Требуется Base URL",
     "ttsTestTextPlaceholder": "Введите текст для озвучивания",
     "ttsTestTextDefault": "Привет, это тестовая речь.",
+    "minimaxVoiceId": "Voice ID / Пользовательский ID голоса",
+    "minimaxVoiceIdPlaceholder": "например ttv-voice-2026053021002326-CYyvUlBU",
     "startRecording": "Начать запись",
     "stopRecording": "Остановить запись",
     "recording": "Запись...",

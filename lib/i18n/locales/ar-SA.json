@@ -733,6 +733,8 @@
     "voiceBaseUrlRequired": "العنوان الأساسي مطلوب",
     "ttsTestTextPlaceholder": "أدخل نصًا للتحويل",
     "ttsTestTextDefault": "مرحبًا، هذا كلام تجريبي.",
+    "minimaxVoiceId": "Voice ID / معرّف الصوت المخصص",
+    "minimaxVoiceIdPlaceholder": "مثال ttv-voice-2026053021002326-CYyvUlBU",
     "startRecording": "بدء التسجيل",
     "stopRecording": "إيقاف التسجيل",
     "recording": "جارٍ التسجيل...",

@@ -155,7 +155,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               ...(ttsProvidersConfig[selectedProviderId]?.providerOptions || {}),
               ...(await getVoxCPMProviderOptions(effectiveVoice, { role: 'teacher', locale })),
             }
-          : undefined;
+          : selectedProviderId === 'minimax-tts'
+            ? (ttsProvidersConfig[selectedProviderId]?.providerOptions || undefined)
+            : undefined;
       await startPreview({
         text: testText,
         providerId: selectedProviderId,
@@ -450,6 +452,33 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             )}
           </>
         ))}
+
+      {/* MiniMax TTS: Custom Voice ID */}
+      {selectedProviderId === 'minimax-tts' && (
+        <div className="space-y-2">
+          <Label className="text-sm">{t('settings.minimaxVoiceId')}</Label>
+          <Input
+            name="minimax-voice-id"
+            autoComplete="off"
+            autoCapitalize="none"
+            autoCorrect="off"
+            spellCheck={false}
+            placeholder={t('settings.minimaxVoiceIdPlaceholder')}
+            value={
+              (ttsProvidersConfig[selectedProviderId]?.providerOptions?.voiceId as string) || ''
+            }
+            onChange={(e) =>
+              setTTSProviderConfig(selectedProviderId, {
+                providerOptions: {
+                  ...(ttsProvidersConfig[selectedProviderId]?.providerOptions || {}),
+                  voiceId: e.target.value,
+                },
+              })
+            }
+            className="text-sm font-mono"
+          />
+        </div>
+      )}
 
       {/* Test TTS */}
       <div className="space-y-2">
