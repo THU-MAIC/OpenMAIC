@@ -996,7 +996,7 @@
     "selectAgents": "选择智能体",
     "noVisionWarning": "当前模型不支持视觉能力，图片仍可放入幻灯片，但模型无法理解图片内容来优化选择和布局",
     "serverConfigured": "服务端",
-    "serverConfiguredNotice": "管理员已在服务端配置了此提供方的 API Key，可直接使用。也可输入自己的 Key 覆盖。",
+    "serverConfiguredNotice": "此提供方由服务端托管，无法在此修改。如需使用自己的凭据，请新增一个提供方。",
     "optionalOverride": "可选，留空则使用服务端配置",
     "setupNeeded": "请先完成配置",
     "modelNotConfigured": "请选择一个模型以开始使用",

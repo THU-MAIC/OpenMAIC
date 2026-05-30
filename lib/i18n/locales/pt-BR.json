@@ -996,7 +996,7 @@
     "selectAgents": "Selecionar Agentes",
     "noVisionWarning": "O modelo atual não suporta visão. As imagens ainda podem ser colocadas nos slides, mas o modelo não conseguirá entender o conteúdo das imagens para otimizar seleção e layout",
     "serverConfigured": "Servidor",
-    "serverConfiguredNotice": "O administrador configurou uma chave de API para este provedor no servidor. Você pode usá-la diretamente ou digitar sua própria chave para sobrepor.",
+    "serverConfiguredNotice": "Este provedor é gerenciado pelo servidor e não pode ser editado aqui. Para usar suas próprias credenciais, adicione um provedor separado.",
     "optionalOverride": "Opcional — deixe vazio para usar a configuração do servidor",
     "setupNeeded": "Configuração necessária",
     "modelNotConfigured": "Selecione um modelo para começar",

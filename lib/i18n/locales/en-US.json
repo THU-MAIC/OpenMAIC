@@ -996,7 +996,7 @@
     "selectAgents": "Select Agents",
     "noVisionWarning": "Current model does not support vision. Images can still be placed in slides, but the model cannot understand image content to optimize selection and layout",
     "serverConfigured": "Server",
-    "serverConfiguredNotice": "Admin has configured an API key for this provider on the server. You can use it directly or enter your own key to override.",
+    "serverConfiguredNotice": "This provider is managed by the server and can't be edited here. To use your own credentials, add a separate provider.",
     "optionalOverride": "Optional — leave empty to use server config",
     "setupNeeded": "Setup required",
     "modelNotConfigured": "Please select a model to get started",
