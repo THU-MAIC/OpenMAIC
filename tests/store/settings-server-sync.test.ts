@@ -668,20 +668,20 @@ describe('fetchServerProviders — Web Search provider sync', () => {
     return useSettingsStore;
   }
 
-  it('marks Bocha as server-configured and stores serverBaseUrl', async () => {
+  it('marks Bocha as server-configured without storing a server base URL', async () => {
     const store = await getStore();
     mockServerResponse({
       webSearch: {
-        bocha: { baseUrl: 'https://api.bocha.cn' },
+        bocha: {},
       },
     });
 
     await store.getState().fetchServerProviders();
 
-    expect(store.getState().webSearchProvidersConfig.bocha).toMatchObject({
-      isServerConfigured: true,
-      serverBaseUrl: 'https://api.bocha.cn',
-    });
+    const bocha = store.getState().webSearchProvidersConfig.bocha;
+    expect(bocha.isServerConfigured).toBe(true);
+    // The server base URL is never exposed to / stored on the client.
+    expect((bocha as Record<string, unknown>).serverBaseUrl).toBeUndefined();
   });
 
   it('falls back to Bocha when selected Tavily loses server config and has no client key', async () => {

@@ -291,45 +291,71 @@ function getConfig(): ServerConfig {
 }
 
 // ---------------------------------------------------------------------------
+// Managed-provider resolution
+//
+// A provider is "server-managed" iff the operator configured it (an entry is
+// present in the server config). Managed providers are admin-owned and NOT
+// overridable from the client: the server key and base URL are authoritative
+// and any client-sent key/baseUrl is ignored. Unmanaged providers (the user's
+// own custom credentials) resolve purely from the client value. This single
+// rule removes the tri-state where a client base URL could partially override
+// server config (the bug class #533 patched route-by-route).
+// ---------------------------------------------------------------------------
+
+type ProviderSection = keyof ServerConfig;
+
+/** Whether the operator configured this provider in the given section. */
+export function isServerConfiguredProvider(section: ProviderSection, providerId: string): boolean {
+  return !!getConfig()[section][providerId];
+}
+
+function resolveSectionApiKey(
+  section: ProviderSection,
+  providerId: string,
+  clientKey?: string,
+): string {
+  const entry = getConfig()[section][providerId];
+  if (entry) return entry.apiKey || ''; // managed: server key is authoritative
+  return clientKey || ''; // unmanaged: client-supplied key only
+}
+
+function resolveSectionBaseUrl(
+  section: ProviderSection,
+  providerId: string,
+  clientBaseUrl?: string,
+): string | undefined {
+  const entry = getConfig()[section][providerId];
+  if (entry) return entry.baseUrl; // managed: server base URL is authoritative
+  return clientBaseUrl; // unmanaged: client-supplied base URL only
+}
+
+// ---------------------------------------------------------------------------
 // Public API — LLM
 // ---------------------------------------------------------------------------
 
-/** Returns server-configured LLM providers (no apiKeys) */
-export function getServerProviders(): Record<string, { models?: string[]; baseUrl?: string }> {
+/**
+ * Returns server-configured LLM providers. Exposes only the allowed model list
+ * and the "managed" flag (presence in this map) — never the API key or the
+ * base URL, which can reveal internal gateway/proxy infrastructure.
+ */
+export function getServerProviders(): Record<string, { models?: string[] }> {
   const cfg = getConfig();
-  const result: Record<string, { models?: string[]; baseUrl?: string }> = {};
+  const result: Record<string, { models?: string[] }> = {};
   for (const [id, entry] of Object.entries(cfg.providers)) {
     result[id] = {};
     if (entry.models && entry.models.length > 0) result[id].models = entry.models;
-    if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
   }
   return result;
 }
 
-/** Resolve API key: client key > server key > empty string */
+/** Resolve API key. Managed provider ⇒ server key; otherwise client key. */
 export function resolveApiKey(providerId: string, clientKey?: string): string {
-  if (clientKey) return clientKey;
-  return getConfig().providers[providerId]?.apiKey || '';
+  return resolveSectionApiKey('providers', providerId, clientKey);
 }
 
-/** Resolve base URL: client > server > undefined */
+/** Resolve base URL. Managed provider ⇒ server URL; otherwise client URL. */
 export function resolveBaseUrl(providerId: string, clientBaseUrl?: string): string | undefined {
-  if (clientBaseUrl) return clientBaseUrl;
-  return getConfig().providers[providerId]?.baseUrl;
-}
-
-export function normalizeProviderBaseUrl(url?: string): string | undefined {
-  return url?.trim().replace(/\/+$/, '');
-}
-
-export function canUseServerApiKeyForBaseUrl(
-  clientBaseUrl: string | undefined,
-  serverBaseUrl: string | undefined,
-): boolean {
-  if (!clientBaseUrl) return true;
-  const normalizedClientBaseUrl = normalizeProviderBaseUrl(clientBaseUrl);
-  const normalizedServerBaseUrl = normalizeProviderBaseUrl(serverBaseUrl);
-  return !!normalizedClientBaseUrl && normalizedClientBaseUrl === normalizedServerBaseUrl;
+  return resolveSectionBaseUrl('providers', providerId, clientBaseUrl);
 }
 
 /** Resolve proxy URL for a provider (server config only) */
@@ -341,142 +367,106 @@ export function resolveProxy(providerId: string): string | undefined {
 // Public API — TTS
 // ---------------------------------------------------------------------------
 
-export function getServerTTSProviders(): Record<string, { baseUrl?: string }> {
-  const cfg = getConfig();
-  const result: Record<string, { baseUrl?: string }> = {};
-  for (const [id, entry] of Object.entries(cfg.tts)) {
-    result[id] = {};
-    if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
-  }
-  return result;
+/** Returns server-configured TTS providers (managed flag only, no base URLs). */
+export function getServerTTSProviders(): Record<string, Record<string, never>> {
+  return Object.fromEntries(Object.keys(getConfig().tts).map((id) => [id, {}]));
 }
 
 export function resolveTTSApiKey(providerId: string, clientKey?: string): string {
-  if (clientKey) return clientKey;
-  return getConfig().tts[providerId]?.apiKey || '';
+  return resolveSectionApiKey('tts', providerId, clientKey);
 }
 
 export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): string | undefined {
-  if (clientBaseUrl) return clientBaseUrl;
-  return getConfig().tts[providerId]?.baseUrl;
+  return resolveSectionBaseUrl('tts', providerId, clientBaseUrl);
 }
 
 // ---------------------------------------------------------------------------
 // Public API — ASR
 // ---------------------------------------------------------------------------
 
-export function getServerASRProviders(): Record<string, { baseUrl?: string }> {
-  const cfg = getConfig();
-  const result: Record<string, { baseUrl?: string }> = {};
-  for (const [id, entry] of Object.entries(cfg.asr)) {
-    result[id] = {};
-    if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
-  }
-  return result;
+/** Returns server-configured ASR providers (managed flag only, no base URLs). */
+export function getServerASRProviders(): Record<string, Record<string, never>> {
+  return Object.fromEntries(Object.keys(getConfig().asr).map((id) => [id, {}]));
 }
 
 export function resolveASRApiKey(providerId: string, clientKey?: string): string {
-  if (clientKey) return clientKey;
-  return getConfig().asr[providerId]?.apiKey || '';
+  return resolveSectionApiKey('asr', providerId, clientKey);
 }
 
 export function resolveASRBaseUrl(providerId: string, clientBaseUrl?: string): string | undefined {
-  if (clientBaseUrl) return clientBaseUrl;
-  return getConfig().asr[providerId]?.baseUrl;
+  return resolveSectionBaseUrl('asr', providerId, clientBaseUrl);
 }
 
 // ---------------------------------------------------------------------------
 // Public API — PDF
 // ---------------------------------------------------------------------------
 
-export function getServerPDFProviders(): Record<string, { baseUrl?: string }> {
-  const cfg = getConfig();
-  const result: Record<string, { baseUrl?: string }> = {};
-  for (const [id, entry] of Object.entries(cfg.pdf)) {
-    result[id] = {};
-    if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
-  }
-  return result;
+/** Returns server-configured PDF providers (managed flag only, no base URLs). */
+export function getServerPDFProviders(): Record<string, Record<string, never>> {
+  return Object.fromEntries(Object.keys(getConfig().pdf).map((id) => [id, {}]));
 }
 
 export function resolvePDFApiKey(providerId: string, clientKey?: string): string {
-  if (clientKey) return clientKey;
-  return getConfig().pdf[providerId]?.apiKey || '';
+  return resolveSectionApiKey('pdf', providerId, clientKey);
 }
 
 export function resolvePDFBaseUrl(providerId: string, clientBaseUrl?: string): string | undefined {
-  if (clientBaseUrl) return clientBaseUrl;
-  return getConfig().pdf[providerId]?.baseUrl;
+  return resolveSectionBaseUrl('pdf', providerId, clientBaseUrl);
 }
 
 // ---------------------------------------------------------------------------
 // Public API — Image Generation
 // ---------------------------------------------------------------------------
 
-export function getServerImageProviders(): Record<string, { models?: string[]; baseUrl?: string }> {
+/** Returns server-configured image providers (allowed models only, no base URLs). */
+export function getServerImageProviders(): Record<string, { models?: string[] }> {
   const cfg = getConfig();
-  const result: Record<string, { models?: string[]; baseUrl?: string }> = {};
+  const result: Record<string, { models?: string[] }> = {};
   for (const [id, entry] of Object.entries(cfg.image)) {
     result[id] = {};
     if (entry.models && entry.models.length > 0) result[id].models = entry.models;
-    if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
   }
   return result;
 }
 
 export function resolveImageApiKey(providerId: string, clientKey?: string): string {
-  if (clientKey) return clientKey;
-  return getConfig().image[providerId]?.apiKey || '';
+  return resolveSectionApiKey('image', providerId, clientKey);
 }
 
 export function resolveImageBaseUrl(
   providerId: string,
   clientBaseUrl?: string,
 ): string | undefined {
-  if (clientBaseUrl) return clientBaseUrl;
-  return getConfig().image[providerId]?.baseUrl;
+  return resolveSectionBaseUrl('image', providerId, clientBaseUrl);
 }
 
 // ---------------------------------------------------------------------------
 // Public API — Video Generation
 // ---------------------------------------------------------------------------
 
-export function getServerVideoProviders(): Record<string, { baseUrl?: string }> {
-  const cfg = getConfig();
-  const result: Record<string, { baseUrl?: string }> = {};
-  for (const [id, entry] of Object.entries(cfg.video)) {
-    result[id] = {};
-    if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
-  }
-  return result;
+/** Returns server-configured video providers (managed flag only, no base URLs). */
+export function getServerVideoProviders(): Record<string, Record<string, never>> {
+  return Object.fromEntries(Object.keys(getConfig().video).map((id) => [id, {}]));
 }
 
 export function resolveVideoApiKey(providerId: string, clientKey?: string): string {
-  if (clientKey) return clientKey;
-  return getConfig().video[providerId]?.apiKey || '';
+  return resolveSectionApiKey('video', providerId, clientKey);
 }
 
 export function resolveVideoBaseUrl(
   providerId: string,
   clientBaseUrl?: string,
 ): string | undefined {
-  if (clientBaseUrl) return clientBaseUrl;
-  return getConfig().video[providerId]?.baseUrl;
+  return resolveSectionBaseUrl('video', providerId, clientBaseUrl);
 }
 
 // ---------------------------------------------------------------------------
 // Public API — Web Search
 // ---------------------------------------------------------------------------
 
-/** Returns server-configured web search providers (no apiKeys exposed) */
-export function getServerWebSearchProviders(): Record<string, { baseUrl?: string }> {
-  const cfg = getConfig();
-  const result: Record<string, { baseUrl?: string }> = {};
-  for (const [id, entry] of Object.entries(cfg.webSearch)) {
-    result[id] = {};
-    if (entry.baseUrl) result[id].baseUrl = entry.baseUrl;
-  }
-  return result;
+/** Returns server-configured web search providers (managed flag only, no base URLs). */
+export function getServerWebSearchProviders(): Record<string, Record<string, never>> {
+  return Object.fromEntries(Object.keys(getConfig().webSearch).map((id) => [id, {}]));
 }
 
 /**
@@ -492,19 +482,14 @@ export function resolveWebSearchApiKey(providerIdOrClientKey?: string, clientKey
   const hasProviderId = arguments.length >= 2;
   const providerId = hasProviderId ? providerIdOrClientKey || 'tavily' : 'tavily';
   const effectiveClientKey = hasProviderId ? clientKey : providerIdOrClientKey;
-
-  if (effectiveClientKey) return effectiveClientKey;
-  const serverKey = getConfig().webSearch[providerId]?.apiKey;
-  if (serverKey) return serverKey;
-  return '';
+  return resolveSectionApiKey('webSearch', providerId, effectiveClientKey);
 }
 
 export function resolveWebSearchBaseUrl(
   providerId: string,
   clientBaseUrl?: string,
 ): string | undefined {
-  if (clientBaseUrl) return clientBaseUrl;
-  return getConfig().webSearch[providerId]?.baseUrl;
+  return resolveSectionBaseUrl('webSearch', providerId, clientBaseUrl);
 }
 
 export function resolveServerWebSearchProviderId(preferredProviderId?: string): string | undefined {

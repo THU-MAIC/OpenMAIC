@@ -17,7 +17,7 @@
 import { NextRequest } from 'next/server';
 import { testVideoConnectivity } from '@/lib/media/video-providers';
 import {
-  canUseServerApiKeyForBaseUrl,
+  isServerConfiguredProvider,
   resolveVideoApiKey,
   resolveVideoBaseUrl,
 } from '@/lib/server/provider-config';
@@ -32,8 +32,10 @@ export async function POST(request: NextRequest) {
   try {
     const providerId = (request.headers.get('x-video-provider') || 'seedance') as VideoProviderId;
     const model = request.headers.get('x-video-model') || undefined;
-    const clientApiKey = request.headers.get('x-api-key') || undefined;
-    const clientBaseUrl = request.headers.get('x-base-url') || undefined;
+    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+    const managed = isServerConfiguredProvider('video', providerId);
+    const clientApiKey = managed ? undefined : request.headers.get('x-api-key') || undefined;
+    const clientBaseUrl = managed ? undefined : request.headers.get('x-base-url') || undefined;
 
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
@@ -42,12 +44,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const serverBaseUrl = resolveVideoBaseUrl(providerId);
-    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
-    const apiKey = canUseServerApiKey
-      ? resolveVideoApiKey(providerId, clientApiKey)
-      : clientApiKey || '';
-    const baseUrl = clientBaseUrl || serverBaseUrl;
+    const apiKey = resolveVideoApiKey(providerId, clientApiKey);
+    const baseUrl = resolveVideoBaseUrl(providerId, clientBaseUrl);
 
     if (!apiKey) {
       return apiError('MISSING_API_KEY', 400, 'No API key configured');

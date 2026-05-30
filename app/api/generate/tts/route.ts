@@ -10,7 +10,7 @@
 import { NextRequest } from 'next/server';
 import { generateTTS } from '@/lib/audio/tts-providers';
 import {
-  canUseServerApiKeyForBaseUrl,
+  isServerConfiguredProvider,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
@@ -73,7 +73,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const clientBaseUrl = ttsBaseUrl || undefined;
+    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+    const managed = isServerConfiguredProvider('tts', ttsProviderId);
+    const clientBaseUrl = managed ? undefined : ttsBaseUrl || undefined;
     if (clientBaseUrl) {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
@@ -81,12 +83,8 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const serverBaseUrl = resolveTTSBaseUrl(ttsProviderId);
-    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
-    const apiKey = canUseServerApiKey
-      ? resolveTTSApiKey(ttsProviderId, ttsApiKey || undefined)
-      : ttsApiKey || '';
-    const baseUrl = clientBaseUrl || serverBaseUrl;
+    const apiKey = resolveTTSApiKey(ttsProviderId, managed ? undefined : ttsApiKey || undefined);
+    const baseUrl = resolveTTSBaseUrl(ttsProviderId, clientBaseUrl);
 
     // Build TTS config
     const config = {

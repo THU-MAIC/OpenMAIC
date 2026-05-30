@@ -109,7 +109,6 @@ export function getAvailableProvidersWithVoices(
       apiKey?: string;
       enabled?: boolean;
       isServerConfigured?: boolean;
-      serverBaseUrl?: string;
       baseUrl?: string;
       modelId?: string;
       providerOptions?: Record<string, unknown>;
@@ -132,14 +131,10 @@ export function getAvailableProvidersWithVoices(
     const isServerConfigured = providerConfig?.isServerConfigured === true;
     const isKeylessLocalProvider =
       !config.requiresApiKey &&
-      !!(
-        providerConfig?.serverBaseUrl?.trim() ||
-        providerConfig?.baseUrl?.trim() ||
-        config.defaultBaseUrl
-      );
+      !!(isServerConfigured || providerConfig?.baseUrl?.trim() || config.defaultBaseUrl);
     const isLocalVoxCPM =
       providerId === VOXCPM_TTS_PROVIDER_ID &&
-      !!(providerConfig?.serverBaseUrl?.trim() || providerConfig?.baseUrl?.trim());
+      !!(isServerConfigured || providerConfig?.baseUrl?.trim());
     const visibleVoxCPMProfiles =
       providerId === VOXCPM_TTS_PROVIDER_ID
         ? voxcpmProfiles.filter((profile) => {
