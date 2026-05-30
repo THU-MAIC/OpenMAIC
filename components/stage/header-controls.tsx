@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
 import {
   Archive,
   Download,
@@ -29,17 +28,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { CHROME_EASE } from '@/lib/edit/transitions';
 import type { StageMode } from '@/lib/types/stage';
-
-// Stable layout IDs used by `motion.layoutId` so the Pro Switch and the
-// settings pill morph between their positions in the playback Header and
-// the edit-mode CommandBar (instead of "jumping" when the mode swap
-// re-renders the trees). The transition is automatic — motion measures
-// both instances and animates the shared element across the gap.
-const PRO_SWITCH_LAYOUT_ID = 'maic-pro-switch';
-const SETTINGS_PILL_LAYOUT_ID = 'maic-settings-pill';
-const SHARED_LAYOUT_TRANSITION = { duration: 0.28, ease: CHROME_EASE } as const;
 
 interface HeaderControlsProps {
   readonly mode?: StageMode;
@@ -113,11 +102,16 @@ export function HeaderControls({
 
   const compact = variant === 'compact';
 
+  // Self-contained spacing so the control cluster is identical regardless of
+  // host. The playback Header (`gap-4`) and the edit CommandBar's trailing
+  // slot (`gap-2`) would otherwise impose different inter-control spacing on
+  // these fragment children, making the pill/switch/export cluster visibly
+  // shift width and position across the mode swap. A fixed internal gap keeps
+  // the cluster pixel-stable; both hosts pad to `px-8`, so the right edge
+  // anchors identically too.
   return (
-    <>
-      <motion.div
-        layoutId={SETTINGS_PILL_LAYOUT_ID}
-        transition={SHARED_LAYOUT_TRANSITION}
+    <div className="flex items-center gap-4">
+      <div
         className={cn(
           'shrink-0 flex items-center gap-1 backdrop-blur-md shadow-sm rounded-full',
           compact
@@ -186,19 +180,16 @@ export function HeaderControls({
         >
           <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
         </button>
-      </motion.div>
+      </div>
 
       {/* Pro Switch — toggle property: on/off both clickable, not a
           one-way "Done" button. Disabled only when the current scene
-          can't be entered (pending/generating/etc.).
-          `layoutId` makes it a shared element between the playback
-          Header and the edit CommandBar — motion morphs its position
-          and size across the mode swap instead of letting the user
-          watch the click target jump. */}
+          can't be entered (pending/generating/etc.). Fades in with its
+          host bar on the mode swap (no cross-bar layoutId morph: the
+          playback Header and edit CommandBar have different left-side
+          widths, so morphing made the pill visibly drift). */}
       {onToggleEditMode && (
-        <motion.label
-          layoutId={PRO_SWITCH_LAYOUT_ID}
-          transition={SHARED_LAYOUT_TRANSITION}
+        <label
           className={cn(
             'shrink-0 inline-flex items-center gap-2.5 rounded-full border shadow-sm transition-colors duration-200',
             'bg-white/60 dark:bg-gray-800/60 backdrop-blur-md',
@@ -229,7 +220,7 @@ export function HeaderControls({
             aria-label={mode === 'edit' ? t('stage.doneEditing') : t('stage.editCourse')}
             className="data-[state=checked]:bg-violet-600 dark:data-[state=checked]:bg-violet-500"
           />
-        </motion.label>
+        </label>
       )}
 
       {/* Export / Download — lives to the right of the Pro Switch.
@@ -313,6 +304,6 @@ export function HeaderControls({
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
-    </>
+    </div>
   );
 }

@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { EditShell } from '@/components/edit/EditShell';
 import { SlideNavRail } from '@/components/edit/SlideNavRail';
 import { HeaderControls } from '@/components/stage/header-controls';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
+import { preloadEditor } from '@/lib/edit/preload-editor';
 import type { Scene } from '@/lib/types/stage';
 
 interface EditChromeRootProps {
@@ -47,28 +48,16 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     };
   }, []);
 
-  // Editor-only side effects are deferred to here so flag-off
-  // classroom/playback users never pay for them at module load:
-  //   1. `editor-fonts` injects ~23 @fontsource font-face tables that
-  //      only the slide font picker needs (CSS side effect, fire-and-forget).
-  //   2. `surfaces/slide` registers the slide SceneEditorSurface into
-  //      `sceneEditorRegistry`. EditShell resolves the registry and falls
-  //      back to NOOP_SURFACE (read-only) for an unregistered type, so we
-  //      hold the EditShell render until the slide surface has registered
-  //      to avoid a NOOP/read-only flash on first paint of Pro mode.
-  const [surfaceReady, setSurfaceReady] = useState(false);
+  // Safety net: the editor chunk (fonts + slide surface registration) is
+  // normally preloaded by the Pro Switch handler in stage.tsx BEFORE mode
+  // flips, so by the time we mount the surface is already registered and
+  // EditShell resolves it immediately (no NOOP flash). This call is a
+  // promise-cached no-op in that path; it only does real work if edit mode
+  // is ever entered without going through the handler. Render is NOT gated
+  // on it — the preload-before-flip contract keeps the chrome smooth.
   useEffect(() => {
-    let active = true;
-    void import('@/app/editor-fonts');
-    void import('@/components/edit/surfaces/slide').then(() => {
-      if (active) setSurfaceReady(true);
-    });
-    return () => {
-      active = false;
-    };
+    void preloadEditor();
   }, []);
-
-  if (!surfaceReady) return null;
 
   return (
     <EditShell

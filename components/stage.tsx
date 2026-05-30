@@ -13,6 +13,7 @@ import {
 import { useEditModeLock } from '@/components/edit/use-edit-mode-lock';
 import { MultiTabEditConflictPrompt } from '@/components/edit/MultiTabEditConflictPrompt';
 import { CHROME_EASE } from '@/lib/edit/transitions';
+import { preloadEditor } from '@/lib/edit/preload-editor';
 
 /**
  * Stage — top-level classroom container. Dispatches between the two
@@ -64,8 +65,14 @@ export function Stage({
       return;
     }
     if (!editLock.acquire()) return;
+    // Load the editor chunk (fonts + slide surface) BEFORE flipping mode,
+    // so the edit chrome animates in with its content already present and
+    // the slide surface registered — no mid-animation pop-in / NOOP flash.
+    // Runs concurrently with teardown; the import is promise-cached so it's
+    // a no-op on subsequent toggles.
+    const editorLoad = preloadEditor();
     try {
-      await playbackRef.current?.teardown();
+      await Promise.all([playbackRef.current?.teardown(), editorLoad]);
     } catch (err) {
       // Teardown failed after the cross-tab lock was acquired but before we
       // flipped into edit mode. Release the lock we just took: otherwise it
@@ -98,21 +105,27 @@ export function Stage({
 
   const toggleHandler = isMaicEditorEnabled() ? handleToggleEditMode : undefined;
 
-  // Mode swap choreography — drawer feel. Edit chrome enters from above
-  // (translateY: -32 → 0) + fades in; playback chrome fades. Both layer
-  // via `absolute inset-0` so they coexist for the ~250ms cross-fade
-  // window without one popping out before the other arrives. The
-  // outgoing root keeps rendering its canvas during exit so `canvasStore`
-  // (the shared scale writer) doesn't briefly read zero.
+  // Mode swap choreography — a clean opacity cross-fade. Both roots layer
+  // via `absolute inset-0` so they coexist for the ~280ms window without
+  // one popping out before the other arrives. The outgoing root keeps
+  // rendering its canvas during exit so `canvasStore` (the shared scale
+  // writer) doesn't briefly read zero.
+  //
+  // Deliberately NO transform (translateY) on these layers: the edit
+  // chrome hosts the Pro Switch / settings pill, which morph across the
+  // swap via `layoutId`. A transform on this ancestor distorts motion's
+  // layout measurement (the pill visibly drifts) and the blurred chrome
+  // would repaint its backdrop-filter every frame while translating. A
+  // pure fade keeps layout static so the shared elements land precisely.
   return (
     <div className="relative flex flex-1 overflow-hidden">
       <AnimatePresence initial={false}>
         {mode === 'edit' && currentScene ? (
           <motion.div
             key="edit"
-            initial={{ opacity: 0, y: -32 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -32 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
             transition={{ duration: 0.28, ease: CHROME_EASE }}
             className="absolute inset-0 flex"
           >

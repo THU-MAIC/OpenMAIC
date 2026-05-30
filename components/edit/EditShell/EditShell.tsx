@@ -210,12 +210,19 @@ interface FrameProps {
 function Frame({ title, leftRail, history, commands, trailing, children }: FrameProps) {
   const prefersReducedMotion = useReducedMotion();
 
-  // When reduced motion is requested, drop transforms (y/x) and only fade.
-  // Layout remains static and timing collapses to ~120ms.
-  const cmdInitial = prefersReducedMotion ? { opacity: 0 } : { y: -56, opacity: 0 };
-  const cmdAnimate = prefersReducedMotion ? { opacity: 1 } : { y: 0, opacity: 1 };
-  const railInitial = prefersReducedMotion ? { opacity: 0 } : { x: -32, opacity: 0 };
-  const railAnimate = prefersReducedMotion ? { opacity: 1 } : { x: 0, opacity: 1 };
+  // Chrome layers fade in (opacity only) — deliberately NO transform (x/y)
+  // slide. Two reasons: (1) the CommandBar's trailing slot and the rail host
+  // the Pro Switch / settings pill, which animate across the mode swap via
+  // `layoutId`; a transform on an ancestor distorts motion's layout
+  // measurement and makes the shared element drift. (2) the rail
+  // (`backdrop-blur-xl`) and the pills (`backdrop-blur-md`) would force a
+  // per-frame backdrop-filter recompute while transforming, which drops
+  // frames. A pure opacity fade composites cleanly and keeps the layout
+  // static so layoutId morphs land precisely.
+  const cmdInitial = { opacity: 0 };
+  const cmdAnimate = { opacity: 1 };
+  const railInitial = { opacity: 0 };
+  const railAnimate = { opacity: 1 };
 
   const stepTransition = prefersReducedMotion
     ? { duration: 0.12, ease: CHROME_EASE }
