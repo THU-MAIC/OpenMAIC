@@ -21,7 +21,11 @@ import {
   aspectRatioToDimensions,
   IMAGE_PROVIDERS,
 } from '@/lib/media/image-providers';
-import { resolveImageApiKey, resolveImageBaseUrl } from '@/lib/server/provider-config';
+import {
+  canUseServerApiKeyForBaseUrl,
+  resolveImageApiKey,
+  resolveImageBaseUrl,
+} from '@/lib/server/provider-config';
 import type { ImageProviderId, ImageGenerationOptions } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -51,9 +55,11 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const apiKey = clientBaseUrl
-      ? clientApiKey || ''
-      : resolveImageApiKey(providerId, clientApiKey);
+    const serverBaseUrl = resolveImageBaseUrl(providerId);
+    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
+    const apiKey = canUseServerApiKey
+      ? resolveImageApiKey(providerId, clientApiKey)
+      : clientApiKey || '';
     const provider = IMAGE_PROVIDERS[providerId];
     if (provider?.requiresApiKey && !apiKey) {
       return apiError(
@@ -63,7 +69,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl = clientBaseUrl ? clientBaseUrl : resolveImageBaseUrl(providerId, clientBaseUrl);
+    const baseUrl = clientBaseUrl || serverBaseUrl;
 
     // Resolve dimensions from aspect ratio if not explicitly set
     if (!body.width && !body.height && body.aspectRatio) {

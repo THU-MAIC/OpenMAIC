@@ -318,6 +318,20 @@ export function resolveBaseUrl(providerId: string, clientBaseUrl?: string): stri
   return getConfig().providers[providerId]?.baseUrl;
 }
 
+export function normalizeProviderBaseUrl(url?: string): string | undefined {
+  return url?.trim().replace(/\/+$/, '');
+}
+
+export function canUseServerApiKeyForBaseUrl(
+  clientBaseUrl: string | undefined,
+  serverBaseUrl: string | undefined,
+): boolean {
+  if (!clientBaseUrl) return true;
+  const normalizedClientBaseUrl = normalizeProviderBaseUrl(clientBaseUrl);
+  const normalizedServerBaseUrl = normalizeProviderBaseUrl(serverBaseUrl);
+  return !!normalizedClientBaseUrl && normalizedClientBaseUrl === normalizedServerBaseUrl;
+}
+
 /** Resolve proxy URL for a provider (server config only) */
 export function resolveProxy(providerId: string): string | undefined {
   return getConfig().providers[providerId]?.proxy;

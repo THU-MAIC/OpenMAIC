@@ -1,7 +1,11 @@
 import { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { resolvePDFApiKey, resolvePDFBaseUrl } from '@/lib/server/provider-config';
+import {
+  canUseServerApiKeyForBaseUrl,
+  resolvePDFApiKey,
+  resolvePDFBaseUrl,
+} from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { MINERU_CLOUD_DEFAULT_BASE } from '@/lib/pdf/constants';
 
@@ -20,11 +24,6 @@ export async function POST(req: NextRequest) {
 
     // MinerU Cloud: verify by calling the cloud API with the token
     if (providerId === 'mineru-cloud') {
-      const resolvedApiKey = resolvePDFApiKey(providerId, apiKey);
-      if (!resolvedApiKey) {
-        return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
-      }
-
       const clientCloudBase = (baseUrl as string | undefined) || undefined;
       if (clientCloudBase && process.env.NODE_ENV === 'production') {
         const ssrfError = await validateUrlForSSRF(clientCloudBase);
@@ -33,11 +32,16 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      const cloudBase = (
-        clientCloudBase ||
-        resolvePDFBaseUrl(providerId) ||
-        MINERU_CLOUD_DEFAULT_BASE
-      ).replace(/\/+$/, '');
+      const serverCloudBase = resolvePDFBaseUrl(providerId) || MINERU_CLOUD_DEFAULT_BASE;
+      const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientCloudBase, serverCloudBase);
+      const resolvedApiKey = canUseServerApiKey
+        ? resolvePDFApiKey(providerId, apiKey)
+        : (apiKey as string | undefined) || '';
+      if (!resolvedApiKey) {
+        return apiError('MISSING_REQUIRED_FIELD', 400, 'API Key is required for MinerU Cloud');
+      }
+
+      const cloudBase = (clientCloudBase || serverCloudBase).replace(/\/+$/, '');
 
       // Probe the batch endpoint with an empty body to verify auth
       const response = await fetch(`${cloudBase}/extract-results/batch/test-connection`, {
@@ -74,14 +78,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const resolvedBaseUrl = clientBaseUrl ? clientBaseUrl : resolvePDFBaseUrl(providerId, baseUrl);
+    const serverBaseUrl = resolvePDFBaseUrl(providerId);
+    const resolvedBaseUrl = clientBaseUrl || serverBaseUrl;
     if (!resolvedBaseUrl) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Base URL is required');
     }
 
-    const resolvedApiKey = clientBaseUrl
-      ? (apiKey as string | undefined) || ''
-      : resolvePDFApiKey(providerId, apiKey);
+    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
+    const resolvedApiKey = canUseServerApiKey
+      ? resolvePDFApiKey(providerId, apiKey)
+      : (apiKey as string | undefined) || '';
 
     const headers: Record<string, string> = {};
     if (resolvedApiKey) {

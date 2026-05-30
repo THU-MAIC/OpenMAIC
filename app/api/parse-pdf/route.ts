@@ -1,6 +1,10 @@
 import { NextRequest } from 'next/server';
 import { parsePDF } from '@/lib/pdf/pdf-providers';
-import { resolvePDFApiKey, resolvePDFBaseUrl } from '@/lib/server/provider-config';
+import {
+  canUseServerApiKeyForBaseUrl,
+  resolvePDFApiKey,
+  resolvePDFBaseUrl,
+} from '@/lib/server/provider-config';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { createLogger } from '@/lib/logger';
@@ -45,14 +49,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const serverBaseUrl = resolvePDFBaseUrl(effectiveProviderId);
+    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
+
     const config = {
       providerId: effectiveProviderId,
-      apiKey: clientBaseUrl
-        ? apiKey || ''
-        : resolvePDFApiKey(effectiveProviderId, apiKey || undefined),
-      baseUrl: clientBaseUrl
-        ? clientBaseUrl
-        : resolvePDFBaseUrl(effectiveProviderId, baseUrl || undefined),
+      apiKey: canUseServerApiKey
+        ? resolvePDFApiKey(effectiveProviderId, apiKey || undefined)
+        : apiKey || '',
+      baseUrl: clientBaseUrl || serverBaseUrl,
     };
 
     // Convert PDF to buffer
