@@ -1,0 +1,58 @@
+---
+title: Развертывание
+description: Разверните OpenMAIC на Vercel, Docker или собственном хосте.
+---
+
+OpenMAIC — стандартное приложение Next.js. Его можно развернуть везде, где запускается Next.js.
+
+## Vercel (one click)
+
+Самый быстрый путь. Нажмите кнопку deploy в [README](https://github.com/THU-MAIC/OpenMAIC), fork репозиторий и укажите как минимум один LLM API key во время настройки.
+
+Vercel собирает приложение на каждом commit и автоматически раздает статические assets через edge network.
+
+## Docker
+
+В репозитории есть production-ready `Dockerfile`. Соберите и запустите:
+
+```bash
+docker build -t openmaic .
+
+docker run -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  openmaic
+```
+
+Для multi-container setups (например, с reverse proxy или другими сервисами рядом) используйте `docker-compose`:
+
+```yaml title="docker-compose.yml"
+services:
+  openmaic:
+    image: openmaic:latest
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.local
+    restart: unless-stopped
+```
+
+## Self-host на VM
+
+Соберите и запустите через `pnpm`:
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # по умолчанию слушает port 3000
+```
+
+Поставьте nginx или Caddy перед приложением для TLS termination. Для классов с высоким трафиком можно запускать несколько app instances за load balancer — OpenMAIC по умолчанию stateless (состояние хранится в IndexedDB браузера).
+
+## Переменные окружения
+
+Полный список смотрите в [Конфигурации](./configuration.mdx). Минимально нужен key одного LLM provider.
+
+## Контроль доступа
+
+Для общих demo задайте `ACCESS_CODE`, чтобы закрыть весь сайт паролем. См. [Конфигурацию](./configuration.mdx).
+

@@ -1,0 +1,171 @@
+---
+title: الإعدادات
+description: موفرو LLM و TTS و ASR والتحكم بالوصول و feature flags.
+---
+
+يقرأ OpenMAIC الإعدادات من متغيرات البيئة عند بدء الخادم. جميعها اختيارية — فعّل الموفرات والميزات التي تحتاجها فقط. للاطلاع على القائمة الكاملة راجع [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) في المستودع. لمعرّفات النماذج المدمجة، راجع [النماذج المدعومة](./supported-models.mdx).
+
+## موفرو LLM
+
+يستخدم كل provider نفس شكل المتغيرات الثلاثة. مفتاح API فقط هو المطلوب؛ أما base URL وقائمة النماذج فاختياريان.
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # تجاوز اختياري لـ base URL
+OPENAI_MODELS=                  # قائمة اختيارية بالنماذج المسموحة، مفصولة بفواصل
+```
+
+بادئات provider المدعومة:
+
+| البادئة            | الموفر                                                  |
+| ------------------ | ------------------------------------------------------- |
+| `OPENAI_`          | OpenAI                                                  |
+| `ANTHROPIC_`       | Anthropic                                               |
+| `GOOGLE_`          | Google Gemini                                           |
+| `DEEPSEEK_`        | DeepSeek                                                |
+| `QWEN_`            | Alibaba Qwen                                            |
+| `KIMI_`            | Moonshot Kimi                                           |
+| `MINIMAX_`         | MiniMax (يستخدم endpoint متوافقا مع Anthropic افتراضيا) |
+| `GLM_`             | Zhipu GLM                                               |
+| `SILICONFLOW_`     | SiliconFlow                                             |
+| `DOUBAO_`          | Doubao (ByteDance)                                      |
+| `OPENROUTER_`      | OpenRouter                                              |
+| `GROK_`            | xAI Grok                                                |
+| `TENCENT_`         | Tencent Hunyuan                                         |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan                                         |
+| `XIAOMI_`          | Xiaomi MiMo                                             |
+| `MIMO_`            | Xiaomi MiMo                                             |
+| `OLLAMA_`          | Ollama (محلي)                                           |
+| `LEMONADE_`        | Lemonade (محلي)                                         |
+
+## النماذج المحلية عبر Ollama
+
+لا تحتاج إلى API key. اضبط base URL على الخادم حتى يتجاوز OpenMAIC فحص SSRF:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+في production يتم حظر localhost URL القادم من العميل، لذلك يجب ضبطه على الخادم.
+
+## موفرو TTS
+
+يستخدم موفرو TTS على الخادم `TTS_<PROVIDER>_API_KEY` و `TTS_<PROVIDER>_BASE_URL` الاختياري.
+
+```bash
+# Doubao TTS (Volcengine Seed-TTS، MP3 أصلي)
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # تجاوز اختياري
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # تجاوز اختياري
+
+# أي endpoint متوافق مع OpenAI TTS
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2 (TTS ذاتي الاستضافة مع استنساخ الصوت، راجع صفحة VoxCPM2)
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+بادئات TTS المدعومة هي `TTS_MINIMAX_` و `TTS_DOUBAO_` و `TTS_OPENAI_` و `TTS_AZURE_` و `TTS_GLM_` و `TTS_QWEN_` و `TTS_VOXCPM_` و `TTS_ELEVENLABS_`. يستخدم Lemonade TTS المحلي `TTS_LEMONADE_BASE_URL` ولا يحتاج إلى API key.
+
+لمعرفة VoxCPM2 (TTS ذاتي الاستضافة مع استنساخ الصوت)، راجع صفحة [VoxCPM2](./voxcpm.mdx).
+
+## ASR (تحويل الكلام إلى نص)
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # تجاوز اختياري
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # تجاوز اختياري
+
+# Lemonade ASR (محلي، لا يحتاج إلى key)
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## موفرو توليد الصور
+
+يستخدم موفرو الصور `IMAGE_<PROVIDER>_API_KEY` و `IMAGE_<PROVIDER>_BASE_URL` الاختياري. يعمل Lemonade محليا ولا يحتاج إلى key:
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## ACCESS_CODE — كلمة مرور على مستوى الموقع
+
+لعمليات النشر المشتركة (عروض داخلية، صفوف)، اضبط access code حتى يكتب الزوار كلمة مرور قبل رؤية التطبيق:
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+يُطلب من الزائر إدخاله مرة واحدة، ثم يُحفظ في HTTP-only cookie. اتركه فارغا لتعطيله.
+
+## بحث الويب
+
+اضبط Tavily أو Bocha:
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # تجاوز اختياري
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # تجاوز اختياري
+```
+
+تعرض الواجهة الأمامية مفتاح تبديل لتفعيل البحث لكل عملية generation.
+
+## موفرو تحليل PDF
+
+لملفات PDF ذات التخطيطات المعقدة أو الرياضيات أو الجداول، اضبط parser على الخادم:
+
+```bash
+# MinerU self-hosted
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+```
+
+من دون parser على الخادم، يعود OpenMAIC إلى `unpdf`.
+
+## استخدام ملف إعداد YAML
+
+بدلا من env vars، يمكنك وضع الإعدادات في `server-providers.yml` في جذر المشروع. يتم تحميل الملف عند بدء الخادم. الأقسام تطابق فئات env vars:
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+```
+
+تتجاوز متغيرات البيئة حقول YAML المطابقة حقلا بحقل. ترتبط المفاتيح بمعرّفات provider مثل `openai` أو `doubao-tts` أو `openai-whisper` أو `mineru` أو `tavily`.
+

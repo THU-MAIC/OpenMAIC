@@ -1,0 +1,70 @@
+---
+title: はじめに
+description: OpenMAIC を 5 分でローカル環境に立ち上げます。
+---
+
+OpenMAIC は自分のマシンで実行できる Next.js アプリケーションです。Node.js、pnpm、そして少なくとも 1 つの LLM API key が必要です。
+
+## 前提条件
+
+- **Node.js** 20 以降
+- **pnpm** 10 以降（未インストールの場合は `npm install -g pnpm`）
+- 少なくとも 1 つの LLM プロバイダーの API key —— OpenAI、Anthropic、Google、DeepSeek、Zhipu、MiniMax、Qwen、Doubao、Groq、SiliconFlow、またはローカル Ollama
+
+## インストール
+
+リポジトリをクローンして依存関係をインストールします。
+
+```bash
+git clone https://github.com/THU-MAIC/OpenMAIC.git
+cd OpenMAIC
+pnpm install
+```
+
+インストール時には 2 つの workspace パッケージ（`mathml2omml` と `pptxgenjs`）もビルドされます。初回は 1 分ほどかかります。
+
+## 設定
+
+サンプルの環境ファイルをコピーし、少なくとも 1 つの LLM プロバイダーを入力します。
+
+```bash
+cp .env.example .env.local
+```
+
+`.env.local` を開き、利用できる key を持つプロバイダーを設定します。例：
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+# または
+ANTHROPIC_API_KEY=sk-ant-...
+# またはローカル Ollama（key は不要）
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+プロバイダー、TTS、ASR、feature flag の完全な設定一覧は[設定](./configuration.mdx)を参照してください。
+
+## 実行
+
+開発サーバーを起動します。
+
+```bash
+pnpm dev
+```
+
+[http://localhost:3000](http://localhost:3000) を開くと OpenMAIC のクラスルーム生成画面が表示されます。トピックまたは PDF を投入し、Generate をクリックすると、AI 教師が複数シーンからなるクラスルームを作成します。
+
+## 本番ビルド
+
+```bash
+pnpm build
+pnpm start
+```
+
+Vercel、Docker、または自分のサーバーにもデプロイできます。詳しくは[デプロイ](./deployment.mdx)を参照してください。
+
+## 次のステップ
+
+- [プロバイダー、TTS、ACCESS_CODE を設定する →](./configuration.mdx)
+- [Vercel または Docker にデプロイする →](./deployment.mdx)
+- [GitHub でアーキテクチャを確認し、コントリビュートする](https://github.com/THU-MAIC/OpenMAIC#-contributing)
+

@@ -1,0 +1,70 @@
+---
+title: 快速上手
+description: 五分钟内在本地跑起 OpenMAIC。
+---
+
+OpenMAIC 是一个 Next.js 应用，可以在自己的机器上运行。你需要 Node.js、pnpm，以及至少一个 LLM 服务的 API key。
+
+## 前置条件
+
+- **Node.js** 20 或更高
+- **pnpm** 10 或更高（如果没装，先 `npm install -g pnpm`）
+- 至少一个 LLM 提供方的 API key —— OpenAI、Anthropic、Google、DeepSeek、Zhipu、MiniMax、Qwen、Doubao、Groq、SiliconFlow，或本地 Ollama
+
+## 安装
+
+克隆仓库并安装依赖：
+
+```bash
+git clone https://github.com/THU-MAIC/OpenMAIC.git
+cd OpenMAIC
+pnpm install
+```
+
+安装过程会顺便构建两个 workspace 包（`mathml2omml` 和 `pptxgenjs`）。首次运行大约一分钟。
+
+## 配置
+
+复制示例环境文件，填入至少一个 LLM 提供方：
+
+```bash
+cp .env.example .env.local
+```
+
+打开 `.env.local`，填入你有 key 的提供方。例如：
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+# 或
+ANTHROPIC_API_KEY=sk-ant-...
+# 或本地 Ollama（不需要 key）
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+完整的 provider、TTS、ASR 和 feature flag 配置见[配置说明](./configuration.mdx)。
+
+## 运行
+
+启动开发服务器：
+
+```bash
+pnpm dev
+```
+
+打开 [http://localhost:3000](http://localhost:3000)，应该能看到 OpenMAIC 的课堂生成器。输入一个主题或上传 PDF，点生成，AI 教师会搭建一场完整的多场景课堂。
+
+## 生产构建
+
+```bash
+pnpm build
+pnpm start
+```
+
+或者部署到 Vercel、Docker、你自己的服务器上——见[部署指南](./deployment.mdx)。
+
+## 下一步
+
+- [配置 provider、TTS、ACCESS_CODE →](./configuration.mdx)
+- [部署到 Vercel 或 Docker →](./deployment.mdx)
+- 想了解架构或贡献代码，请访问 [GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)
+

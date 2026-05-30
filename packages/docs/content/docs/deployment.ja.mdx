@@ -1,0 +1,58 @@
+---
+title: デプロイ
+description: OpenMAIC を Vercel、Docker、または自分のホストにデプロイします。
+---
+
+OpenMAIC は標準的な Next.js アプリです。Next.js が動作する場所ならどこにでもデプロイできます。
+
+## Vercel（ワンクリック）
+
+最短の方法です。[README](https://github.com/THU-MAIC/OpenMAIC) の deploy ボタンをクリックし、リポジトリを fork して、セットアップ中に少なくとも 1 つの LLM API key を入力します。
+
+Vercel は各コミットでビルドし、静的アセットを自動的にエッジネットワークから配信します。
+
+## Docker
+
+本番向けの `Dockerfile` が含まれています。ビルドして実行します。
+
+```bash
+docker build -t openmaic .
+
+docker run -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  openmaic
+```
+
+リバースプロキシや他サービスを含むマルチコンテナ構成では `docker-compose` を使います。
+
+```yaml title="docker-compose.yml"
+services:
+  openmaic:
+    image: openmaic:latest
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.local
+    restart: unless-stopped
+```
+
+## VM にセルフホストする
+
+`pnpm` でビルドして起動します。
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # 既定では port 3000 で待ち受けます
+```
+
+TLS 終端には前段に nginx または Caddy を置いてください。トラフィックの多い授業では、ロードバランサー配下で複数のアプリインスタンスを動かす構成を検討できます。OpenMAIC は既定でステートレスです（状態はブラウザーの IndexedDB に保存されます）。
+
+## 環境変数
+
+完全な一覧は[設定](./configuration.mdx)を参照してください。最低限、1 つの LLM プロバイダー key が必要です。
+
+## アクセス制御
+
+共有デモでは `ACCESS_CODE` を設定して、サイト全体をパスワードで保護できます。詳しくは[設定](./configuration.mdx)を参照してください。
+

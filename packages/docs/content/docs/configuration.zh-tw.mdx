@@ -1,0 +1,171 @@
+---
+title: 設定說明
+description: LLM 供應商、TTS、ASR、存取控制和功能開關。
+---
+
+OpenMAIC 會在伺服器啟動時讀取環境變數。所有項目都是選填——依需求啟用即可。完整清單請見倉庫中的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。內建模型 ID 請見[支援模型](./supported-models.mdx)。
+
+## LLM 供應商
+
+每個 provider 都使用三個環境變數：只有 API key 必填，base URL 和模型清單都是選填。
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # 選填的 base URL 覆蓋
+OPENAI_MODELS=                  # 選填的模型白名單（逗號分隔）
+```
+
+支援的 provider 前綴：
+
+| 前綴               | 供應商                                 |
+| ------------------ | -------------------------------------- |
+| `OPENAI_`          | OpenAI                                 |
+| `ANTHROPIC_`       | Anthropic                              |
+| `GOOGLE_`          | Google Gemini                          |
+| `DEEPSEEK_`        | DeepSeek                               |
+| `QWEN_`            | Alibaba Qwen                           |
+| `KIMI_`            | Moonshot Kimi                          |
+| `MINIMAX_`         | MiniMax（預設使用 Anthropic 相容端點） |
+| `GLM_`             | Zhipu GLM                              |
+| `SILICONFLOW_`     | SiliconFlow                            |
+| `DOUBAO_`          | Doubao（ByteDance）                    |
+| `OPENROUTER_`      | OpenRouter                             |
+| `GROK_`            | xAI Grok                               |
+| `TENCENT_`         | Tencent Hunyuan                        |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan                        |
+| `XIAOMI_`          | Xiaomi MiMo                            |
+| `MIMO_`            | Xiaomi MiMo                            |
+| `OLLAMA_`          | Ollama（本機）                         |
+| `LEMONADE_`        | Lemonade（本機）                       |
+
+## 本機模型（Ollama）
+
+不需要 API key。把 base URL 寫在伺服器端，讓 OpenMAIC 繞過 SSRF 檢查：
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+生產環境會攔截由用戶端傳入的 localhost URL，所以必須在伺服器端設定。
+
+## TTS 供應商
+
+伺服器端 TTS 供應商使用 `TTS_<PROVIDER>_API_KEY`，可選 `TTS_<PROVIDER>_BASE_URL`。
+
+```bash
+# Doubao TTS（Volcengine Seed-TTS，原生 MP3）
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # 選填覆蓋
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # 選填覆蓋
+
+# 任何 OpenAI 相容的 TTS 端點
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2（自託管 TTS，支援聲音複製，詳見 VoxCPM2 頁面）
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+支援的 TTS 前綴包括 `TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_VOXCPM_` 和 `TTS_ELEVENLABS_`。本機 Lemonade TTS 使用 `TTS_LEMONADE_BASE_URL`，不需要 API key。
+
+VoxCPM2（自託管 TTS + 聲音複製）請見獨立的 [VoxCPM2](./voxcpm.mdx) 頁面。
+
+## ASR（語音轉文字）
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # 選填覆蓋
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # 選填覆蓋
+
+# Lemonade ASR（本機，不需要 key）
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## 圖像生成供應商
+
+圖像生成供應商使用 `IMAGE_<PROVIDER>_API_KEY`，可選 `IMAGE_<PROVIDER>_BASE_URL`。Lemonade 是本機服務，不需要 key：
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## ACCESS_CODE —— 全站密碼
+
+對共享部署（內部 demo、課堂），可以設定存取碼，讓訪客先輸入密碼才能看到應用：
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+訪客只會被提示一次，密碼會存放在 HTTP-only cookie 中。留空則關閉。
+
+## 聯網搜尋
+
+設定 Tavily 或 Bocha：
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # 選填覆蓋
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # 選填覆蓋
+```
+
+前端會提供一個開關，讓每次生成時選擇是否啟用搜尋。
+
+## PDF 解析供應商
+
+對於版面複雜、包含公式或表格的 PDF，可以設定伺服器端解析器：
+
+```bash
+# MinerU 自託管
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+```
+
+未設定伺服器端解析器時，OpenMAIC 會回退到 `unpdf`。
+
+## 使用 YAML 設定檔
+
+除了環境變數，你也可以把設定放在專案根目錄下的 `server-providers.yml`。伺服器啟動時會載入該檔案，區段與環境變數分類對應：
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+```
+
+環境變數會逐欄位覆蓋 YAML 中對應的 provider 設定。鍵名使用 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru` 或 `tavily`。
+

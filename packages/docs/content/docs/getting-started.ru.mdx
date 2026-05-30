@@ -1,0 +1,70 @@
+---
+title: Начало работы
+description: Установите OpenMAIC и запустите его локально за пять минут.
+---
+
+OpenMAIC — это приложение Next.js, которое можно запустить на своей машине. Вам нужны Node.js, pnpm и как минимум один API key для LLM.
+
+## Требования
+
+- **Node.js** 20 или новее
+- **pnpm** 10 или новее (при необходимости установите через `npm install -g pnpm`)
+- API key как минимум одного LLM provider — OpenAI, Anthropic, Google, DeepSeek, Zhipu, MiniMax, Qwen, Doubao, Groq, SiliconFlow или локальный Ollama
+
+## Установка
+
+Клонируйте репозиторий и установите зависимости:
+
+```bash
+git clone https://github.com/THU-MAIC/OpenMAIC.git
+cd OpenMAIC
+pnpm install
+```
+
+На этапе установки также собираются два workspace-пакета (`mathml2omml` и `pptxgenjs`). При первом запуске это занимает около минуты.
+
+## Настройка
+
+Скопируйте пример env-файла и заполните как минимум одного LLM provider:
+
+```bash
+cp .env.example .env.local
+```
+
+Откройте `.env.local` и укажите провайдеры, для которых у вас есть key. Например:
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+# или
+ANTHROPIC_API_KEY=sk-ant-...
+# или локальный Ollama (key не нужен)
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+Полный список provider, TTS, ASR и feature flags смотрите в разделе [Конфигурация](./configuration.mdx).
+
+## Запуск
+
+Запустите dev server:
+
+```bash
+pnpm dev
+```
+
+Откройте [http://localhost:3000](http://localhost:3000). Вы увидите генератор classroom в OpenMAIC. Добавьте тему или PDF, нажмите Generate, и AI teacher соберет полноценный classroom из нескольких сцен.
+
+## Production build
+
+```bash
+pnpm build
+pnpm start
+```
+
+Также можно развернуть OpenMAIC на Vercel, Docker или собственном сервере — см. [Развертывание](./deployment.mdx).
+
+## Дальше
+
+- [Настроить provider, TTS и ACCESS_CODE →](./configuration.mdx)
+- [Развернуть на Vercel или Docker →](./deployment.mdx)
+- [Изучить архитектуру и внести вклад на GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)
+

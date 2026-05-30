@@ -6,6 +6,9 @@ node_modules/
 packages/pptxgenjs/
 packages/mathml2omml/
 
+# Docs site (separate Fumadocs app with its own toolchain)
+packages/docs/
+
 # Build output
 .next/
 out/

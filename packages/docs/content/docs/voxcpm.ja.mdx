@@ -1,0 +1,81 @@
+---
+title: VoxCPM2
+description: 音声クローン対応のセルフホスト TTS。バックエンド、設定、音声管理。
+---
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) は OpenBMB による、音声クローン対応のオープンソース TTS モデルです。OpenMAIC には adapter が含まれているため、自分のハードウェアで VoxCPM を実行すれば OpenMAIC から接続できます。
+
+## VoxCPM2 を使う場面
+
+- 文字数課金のない、決定的で無料の TTS が必要。
+- 各 agent に短い参照クリップから固有の声を持たせる音声クローンを使いたい。
+- オンプレミスまたは閉域環境で実行している。
+
+単に既定の声が必要なだけなら、組み込みの **Doubao** または **OpenAI 互換** プロバイダーの方が簡単です。[設定 → TTS プロバイダー](./configuration.mdx#tts-プロバイダー)を参照してください。
+
+## 1. VoxCPM backend を起動する
+
+OpenMAIC は 3 つのデプロイ方式に対応しています。3 つとも同じ OpenMAIC adapter を使い、Settings で backend を切り替えるだけです。
+
+| Backend        | Endpoint           | 使いどころ                                                  |
+| -------------- | ------------------ | ----------------------------------------------------------- |
+| **vLLM-Omni**  | `/v1/audio/speech` | OpenAI 互換の speech endpoint。GPU サーバーに適しています。 |
+| **Python API** | `/tts/upload`      | FastAPI 経由の公式 VoxCPM Python runtime。                  |
+| **Nano-vLLM**  | `/generate`        | 小さめのマシン向けの軽量 Nano-vLLM FastAPI デプロイ。       |
+
+各 backend のセットアップ手順は [VoxCPM リポジトリ](https://github.com/OpenBMB/VoxCPM)にあります。典型的なローカル quick-start:
+
+```bash
+# vLLM-Omni example
+pip install vllm
+python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
+# endpoint at http://localhost:8000/v1
+```
+
+## 2. OpenMAIC から接続する
+
+方法は 2 つです。どちらかを選んでください。
+
+### A. ユーザー単位（Settings UI、サーバー変更なし）
+
+**Settings → Text-to-Speech → VoxCPM2** を開き、backend を選んで Base URL を貼り付けます。Request URL preview で、OpenMAIC が正しい endpoint に接続することを確認できます。
+
+この方法は個人テストやブラウザー単位の上書きに向いています。他のユーザーには影響しません。
+
+### B. サーバー側（環境変数、全員の既定値）
+
+`.env.local`（または YAML config）に次を設定します。API key は不要です。
+
+```bash
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+サーバー側の既定値は、初回ユーザーの Settings UI を初期化します。ユーザーは引き続きローカルで上書きできます。
+
+## 3. 音声管理
+
+VoxCPM2 には 3 つの音声モードがあり、すべて **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices** にあります。
+
+### Auto Voice（既定）
+
+OpenMAIC は合成時に各 agent の persona から voice prompt を生成します。設定は不要で、何も変更しなければこの挙動になります。
+
+### Prompt voice
+
+自然言語で声を記述します。結果は再利用でき、任意の agent に割り当てられます。
+
+> _例:「温かい女性教師の声。落ち着いて励ます調子、中音域、明瞭な発音。」_
+
+### Clone voice
+
+短い参照音声クリップ（60 秒以下、10 MB 以下）をアップロードするか、ブラウザーで録音します。クリップは IndexedDB に保存され、合成のたびに VoxCPM backend へ送信されます。
+
+## トラブルシューティング
+
+| 症状                                  | 考えられる原因                                                                                              |
+| ------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| Request URL preview が 404            | 選択した backend が間違っています。手順 1 の endpoint 表を確認してください。                                |
+| 初回の clone request が約 30 秒止まる | backend の cold-start です。以降の clone は warm runtime を再利用します。                                   |
+| 音声が文の途中で切れる                | backend の出力 token limit が原因です。`--max-tokens` または VoxCPM config の相当項目を引き上げてください。 |
+| 401 / 403                             | key を想定していない backend に `TTS_VOXCPM_API_KEY` を設定しています。空にしてください。                   |
+

@@ -1,0 +1,58 @@
+---
+title: 部署
+description: 部署 OpenMAIC 到 Vercel、Docker，或你自己的主机。
+---
+
+OpenMAIC 是一个标准的 Next.js 应用，Next.js 能跑的地方它就能跑。
+
+## Vercel（一键）
+
+最快的路径。点[仓库 README](https://github.com/THU-MAIC/OpenMAIC)里的 Deploy 按钮，fork 仓库，按提示填入至少一个 LLM 的 API key 即可。
+
+Vercel 会在每次提交时重新构建，并自动把静态资源托管到它的边缘网络上。
+
+## Docker
+
+仓库里有一份适合生产的 `Dockerfile`。构建并运行：
+
+```bash
+docker build -t openmaic .
+
+docker run -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  openmaic
+```
+
+多容器部署（比如套反向代理或加其他服务），用 `docker-compose`：
+
+```yaml title="docker-compose.yml"
+services:
+  openmaic:
+    image: openmaic:latest
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.local
+    restart: unless-stopped
+```
+
+## 自建虚拟机
+
+用 `pnpm` 构建并启动：
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # 默认监听 3000 端口
+```
+
+前面套 nginx 或 Caddy 做 TLS 终止。高流量场景下可以部署多实例 + 负载均衡，OpenMAIC 默认无状态（状态存在浏览器 IndexedDB 里）。
+
+## 环境变量
+
+完整清单见[配置说明](./configuration.mdx)。至少要配置一个 LLM 提供方的 key。
+
+## 访问控制
+
+共享 demo 可以设置 `ACCESS_CODE`，给整站加密码门。见[配置说明 → ACCESS_CODE](./configuration.mdx#access_code--站点级访问密码)。
+

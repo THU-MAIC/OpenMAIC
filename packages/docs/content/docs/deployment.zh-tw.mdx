@@ -1,0 +1,58 @@
+---
+title: 部署
+description: 將 OpenMAIC 部署到 Vercel、Docker，或你自己的主機。
+---
+
+OpenMAIC 是標準的 Next.js 應用程式。任何能執行 Next.js 的地方都可以部署。
+
+## Vercel（一鍵）
+
+最快的方式。點選[倉庫 README](https://github.com/THU-MAIC/OpenMAIC) 中的 Deploy 按鈕，fork 倉庫，並在設定過程中填入至少一個 LLM API key。
+
+Vercel 會在每次提交時重新建置，並自動透過邊緣網路提供靜態資源。
+
+## Docker
+
+倉庫內包含可用於生產環境的 `Dockerfile`。建置並執行：
+
+```bash
+docker build -t openmaic .
+
+docker run -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  openmaic
+```
+
+多容器部署（例如搭配反向代理或其他服務）可使用 `docker-compose`：
+
+```yaml title="docker-compose.yml"
+services:
+  openmaic:
+    image: openmaic:latest
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.local
+    restart: unless-stopped
+```
+
+## 自建 VM
+
+使用 `pnpm` 建置並啟動：
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # 預設監聽 3000 連接埠
+```
+
+前面可以加 nginx 或 Caddy 做 TLS 終止。高流量課堂情境可考慮在負載平衡器後面執行多個應用實例——OpenMAIC 預設是無狀態的（狀態存在瀏覽器的 IndexedDB 中）。
+
+## 環境變數
+
+完整清單請見[設定說明](./configuration.mdx)。至少需要一個 LLM 供應商 key。
+
+## 存取控制
+
+共享 demo 可以設定 `ACCESS_CODE`，讓整個站點先經過密碼驗證。請見[設定說明](./configuration.mdx)。
+

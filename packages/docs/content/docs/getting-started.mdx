@@ -1,0 +1,70 @@
+---
+title: Getting Started
+description: Install OpenMAIC and run it locally in five minutes.
+---
+
+OpenMAIC is a Next.js application you can run on your own machine. You need Node.js, pnpm, and at least one LLM API key.
+
+## Prerequisites
+
+- **Node.js** 20 or later
+- **pnpm** 10 or later (install with `npm install -g pnpm` if needed)
+- An API key from at least one LLM provider — OpenAI, Anthropic, Google, DeepSeek, Zhipu, MiniMax, Qwen, Doubao, Groq, SiliconFlow, or Ollama (local)
+
+## Install
+
+Clone the repository and install dependencies:
+
+```bash
+git clone https://github.com/THU-MAIC/OpenMAIC.git
+cd OpenMAIC
+pnpm install
+```
+
+The install step also builds the two workspace packages (`mathml2omml` and `pptxgenjs`). This takes a minute on first run.
+
+## Configure
+
+Copy the sample env file and fill in at least one LLM provider:
+
+```bash
+cp .env.example .env.local
+```
+
+Open `.env.local` and set whichever providers you have keys for. For example:
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+# or
+ANTHROPIC_API_KEY=sk-ant-...
+# or local Ollama (no key needed)
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+See [Configuration](./configuration.mdx) for the full list of providers, TTS, ASR, and feature flags.
+
+## Run
+
+Start the dev server:
+
+```bash
+pnpm dev
+```
+
+Open [http://localhost:3000](http://localhost:3000). You should see the OpenMAIC classroom generator. Drop a topic or PDF, click Generate, and watch an AI teacher build a full multi-scene classroom.
+
+## Build for production
+
+```bash
+pnpm build
+pnpm start
+```
+
+Or deploy to Vercel, Docker, or your own server — see [Deployment](./deployment.mdx).
+
+## Next steps
+
+- [Configure providers, TTS, and ACCESS_CODE →](./configuration.mdx)
+- [Deploy to Vercel or Docker →](./deployment.mdx)
+- Explore the [architecture and contribute on GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)
+

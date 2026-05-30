@@ -1,0 +1,171 @@
+---
+title: 設定
+description: LLM プロバイダー、TTS、ASR、アクセス制御、feature flag。
+---
+
+OpenMAIC はサーバー起動時に環境変数を読み込みます。すべて任意項目なので、必要なプロバイダーと機能だけを有効にしてください。完全な一覧はリポジトリの [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) を参照してください。組み込みモデル ID は[対応モデル](./supported-models.mdx)にあります。
+
+## LLM プロバイダー
+
+各 provider は同じ 3 つの変数を使います。必須なのは API key だけで、base URL とモデル一覧は任意です。
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # 任意の base URL 上書き
+OPENAI_MODELS=                  # 任意の許可モデル一覧（カンマ区切り）
+```
+
+対応している provider prefix:
+
+| Prefix             | プロバイダー                                     |
+| ------------------ | ------------------------------------------------ |
+| `OPENAI_`          | OpenAI                                           |
+| `ANTHROPIC_`       | Anthropic                                        |
+| `GOOGLE_`          | Google Gemini                                    |
+| `DEEPSEEK_`        | DeepSeek                                         |
+| `QWEN_`            | Alibaba Qwen                                     |
+| `KIMI_`            | Moonshot Kimi                                    |
+| `MINIMAX_`         | MiniMax（既定では Anthropic 互換エンドポイント） |
+| `GLM_`             | Zhipu GLM                                        |
+| `SILICONFLOW_`     | SiliconFlow                                      |
+| `DOUBAO_`          | Doubao（ByteDance）                              |
+| `OPENROUTER_`      | OpenRouter                                       |
+| `GROK_`            | xAI Grok                                         |
+| `TENCENT_`         | Tencent Hunyuan                                  |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan                                  |
+| `XIAOMI_`          | Xiaomi MiMo                                      |
+| `MIMO_`            | Xiaomi MiMo                                      |
+| `OLLAMA_`          | Ollama（ローカル）                               |
+| `LEMONADE_`        | Lemonade（ローカル）                             |
+
+## Ollama によるローカルモデル
+
+API key は不要です。OpenMAIC の SSRF チェックを回避できるよう、base URL はサーバー側に設定します。
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+本番環境ではクライアントから渡された localhost URL はブロックされるため、必ずサーバー側で設定してください。
+
+## TTS プロバイダー
+
+サーバー側 TTS プロバイダーは `TTS_<PROVIDER>_API_KEY` と任意の `TTS_<PROVIDER>_BASE_URL` を使います。
+
+```bash
+# Doubao TTS（Volcengine Seed-TTS、ネイティブ MP3）
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # 任意の上書き
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # 任意の上書き
+
+# 任意の OpenAI 互換 TTS エンドポイント
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2（セルフホスト TTS、音声クローン対応。VoxCPM2 ページを参照）
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+対応している TTS prefix は `TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_VOXCPM_`、`TTS_ELEVENLABS_` です。ローカル Lemonade TTS は `TTS_LEMONADE_BASE_URL` を設定します。API key は不要です。
+
+VoxCPM2（セルフホスト TTS と音声クローン）については専用の [VoxCPM2](./voxcpm.mdx) ページを参照してください。
+
+## ASR（音声認識）
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # 任意の上書き
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # 任意の上書き
+
+# Lemonade ASR（ローカル、key は不要）
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## 画像生成プロバイダー
+
+画像生成プロバイダーは `IMAGE_<PROVIDER>_API_KEY` と任意の `IMAGE_<PROVIDER>_BASE_URL` を使います。Lemonade はローカルで動作し、key は不要です。
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## ACCESS_CODE — サイト全体のパスワード
+
+共有デプロイ（社内デモ、授業など）では、アクセスコードを設定して、訪問者にアプリ表示前のパスワード入力を求められます。
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+訪問者は一度だけ入力を求められ、コードは HTTP-only cookie に保存されます。空のままにすると無効になります。
+
+## Web 検索
+
+Tavily または Bocha を設定します。
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # 任意の上書き
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # 任意の上書き
+```
+
+フロントエンドには、生成ごとに検索を有効化するためのトグルが表示されます。
+
+## PDF 解析プロバイダー
+
+複雑なレイアウト、数式、表を含む PDF には、サーバー側パーサーを設定できます。
+
+```bash
+# MinerU self-hosted
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+```
+
+サーバー側パーサーが未設定の場合、OpenMAIC は `unpdf` にフォールバックします。
+
+## YAML 設定ファイルを使う
+
+環境変数の代わりに、プロジェクトルートの `server-providers.yml` に設定を書くこともできます。このファイルはサーバー起動時に読み込まれます。セクションは環境変数のカテゴリに対応します。
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+```
+
+環境変数は対応する YAML フィールドをフィールド単位で上書きします。キーは `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`tavily` のような provider ID に対応します。
+

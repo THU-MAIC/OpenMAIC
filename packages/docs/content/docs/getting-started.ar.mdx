@@ -1,0 +1,70 @@
+---
+title: البدء
+description: ثبّت OpenMAIC وشغّله محليا خلال خمس دقائق.
+---
+
+OpenMAIC هو تطبيق Next.js يمكنك تشغيله على جهازك. تحتاج إلى Node.js و pnpm ومفتاح API واحد على الأقل لموفر LLM.
+
+## المتطلبات
+
+- **Node.js** 20 أو أحدث
+- **pnpm** 10 أو أحدث (ثبّته عبر `npm install -g pnpm` عند الحاجة)
+- مفتاح API من موفر LLM واحد على الأقل — OpenAI أو Anthropic أو Google أو DeepSeek أو Zhipu أو MiniMax أو Qwen أو Doubao أو Groq أو SiliconFlow أو Ollama محلي
+
+## التثبيت
+
+استنسخ المستودع وثبّت الاعتماديات:
+
+```bash
+git clone https://github.com/THU-MAIC/OpenMAIC.git
+cd OpenMAIC
+pnpm install
+```
+
+تقوم خطوة التثبيت أيضا ببناء حزمتي workspace (`mathml2omml` و `pptxgenjs`). يستغرق ذلك نحو دقيقة في أول تشغيل.
+
+## الإعداد
+
+انسخ ملف env النموذجي واملأ موفر LLM واحدا على الأقل:
+
+```bash
+cp .env.example .env.local
+```
+
+افتح `.env.local` واضبط الموفرات التي تملك مفاتيحها. مثال:
+
+```bash title=".env.local"
+OPENAI_API_KEY=sk-...
+# أو
+ANTHROPIC_API_KEY=sk-ant-...
+# أو Ollama محلي (لا يحتاج إلى key)
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+راجع [الإعدادات](./configuration.mdx) للقائمة الكاملة من providers و TTS و ASR و feature flags.
+
+## التشغيل
+
+شغّل dev server:
+
+```bash
+pnpm dev
+```
+
+افتح [http://localhost:3000](http://localhost:3000). سترى مولّد الصفوف في OpenMAIC. أدخل موضوعا أو PDF، اضغط Generate، وسيبني AI teacher صفا كاملا من عدة مشاهد.
+
+## بناء الإنتاج
+
+```bash
+pnpm build
+pnpm start
+```
+
+يمكنك أيضا النشر على Vercel أو Docker أو خادمك الخاص — راجع [النشر](./deployment.mdx).
+
+## الخطوات التالية
+
+- [اضبط providers و TTS و ACCESS_CODE →](./configuration.mdx)
+- [انشر على Vercel أو Docker →](./deployment.mdx)
+- [استكشف البنية وساهم على GitHub](https://github.com/THU-MAIC/OpenMAIC#-contributing)
+

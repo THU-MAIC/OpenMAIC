@@ -1,0 +1,171 @@
+---
+title: Конфигурация
+description: LLM providers, TTS, ASR, контроль доступа и feature flags.
+---
+
+OpenMAIC читает конфигурацию из переменных окружения при запуске сервера. Все параметры необязательны — включайте только нужные providers и функции. Полный список смотрите в [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) в репозитории. Встроенные model ID перечислены в разделе [Поддерживаемые модели](./supported-models.mdx).
+
+## LLM providers
+
+Каждый provider использует три переменные одного формата. Обязателен только API key; base URL и список моделей необязательны.
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # необязательное переопределение base URL
+OPENAI_MODELS=                  # необязательный список разрешенных моделей через запятую
+```
+
+Поддерживаемые provider prefixes:
+
+| Prefix             | Provider                                             |
+| ------------------ | ---------------------------------------------------- |
+| `OPENAI_`          | OpenAI                                               |
+| `ANTHROPIC_`       | Anthropic                                            |
+| `GOOGLE_`          | Google Gemini                                        |
+| `DEEPSEEK_`        | DeepSeek                                             |
+| `QWEN_`            | Alibaba Qwen                                         |
+| `KIMI_`            | Moonshot Kimi                                        |
+| `MINIMAX_`         | MiniMax (по умолчанию Anthropic-compatible endpoint) |
+| `GLM_`             | Zhipu GLM                                            |
+| `SILICONFLOW_`     | SiliconFlow                                          |
+| `DOUBAO_`          | Doubao (ByteDance)                                   |
+| `OPENROUTER_`      | OpenRouter                                           |
+| `GROK_`            | xAI Grok                                             |
+| `TENCENT_`         | Tencent Hunyuan                                      |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan                                      |
+| `XIAOMI_`          | Xiaomi MiMo                                          |
+| `MIMO_`            | Xiaomi MiMo                                          |
+| `OLLAMA_`          | Ollama (локально)                                    |
+| `LEMONADE_`        | Lemonade (локально)                                  |
+
+## Локальные модели через Ollama
+
+API key не нужен. Укажите base URL на сервере, чтобы OpenMAIC обошел SSRF check:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+В production localhost URL, переданные клиентом, блокируются, поэтому это нужно настраивать на сервере.
+
+## TTS providers
+
+Серверные TTS providers используют `TTS_<PROVIDER>_API_KEY` и необязательный `TTS_<PROVIDER>_BASE_URL`.
+
+```bash
+# Doubao TTS (Volcengine Seed-TTS, native MP3)
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # необязательное переопределение
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # необязательное переопределение
+
+# Любой OpenAI-compatible TTS endpoint
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2 (self-hosted TTS с клонированием голоса, см. страницу VoxCPM2)
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+Поддерживаемые TTS prefixes: `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_VOXCPM_` и `TTS_ELEVENLABS_`. Для локального Lemonade TTS задайте `TTS_LEMONADE_BASE_URL`; API key не нужен.
+
+Для VoxCPM2 (self-hosted TTS с клонированием голоса) смотрите отдельную страницу [VoxCPM2](./voxcpm.mdx).
+
+## ASR (speech to text)
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # необязательное переопределение
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # необязательное переопределение
+
+# Lemonade ASR (локально, key не нужен)
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## Провайдеры генерации изображений
+
+Провайдеры изображений используют `IMAGE_<PROVIDER>_API_KEY` и необязательный `IMAGE_<PROVIDER>_BASE_URL`. Lemonade работает локально и не требует key:
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## ACCESS_CODE — пароль для всего сайта
+
+Для общих deployments (внутренние демо, классы) задайте access code, чтобы посетители вводили пароль перед входом в приложение:
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+Посетитель вводит код один раз; он сохраняется в HTTP-only cookie. Оставьте пустым, чтобы отключить.
+
+## Web search
+
+Настройте Tavily или Bocha:
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # необязательное переопределение
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # необязательное переопределение
+```
+
+На фронтенде есть toggle для включения поиска в каждом запуске generation.
+
+## PDF parsing providers
+
+Для PDF со сложной версткой, математикой или таблицами настройте серверный parser:
+
+```bash
+# MinerU self-hosted
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+```
+
+Без серверного parser OpenMAIC откатывается на `unpdf`.
+
+## YAML config file
+
+Вместо env vars можно положить конфигурацию в `server-providers.yml` в корне проекта. Файл загружается при запуске сервера. Секции соответствуют категориям env vars:
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+```
+
+Переменные окружения переопределяют совпадающие YAML fields по отдельным полям. Ключи соответствуют provider ID, например `openai`, `doubao-tts`, `openai-whisper`, `mineru` или `tavily`.
+

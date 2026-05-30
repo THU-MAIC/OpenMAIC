@@ -1,2 +1,3 @@
 packages:
   - "packages/*"
+  - "!packages/docs" # standalone docs sub-app: own lockfile, build, deploy

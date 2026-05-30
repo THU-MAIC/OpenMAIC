@@ -1,0 +1,81 @@
+---
+title: VoxCPM2
+description: TTS ذاتي الاستضافة مع استنساخ الصوت. Backends والإعداد وإدارة الأصوات.
+---
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) هو نموذج TTS مفتوح المصدر من OpenBMB يدعم استنساخ الصوت. يأتي OpenMAIC مع adapter؛ شغّل VoxCPM على عتادك وسيتصل به OpenMAIC.
+
+## متى تستخدم VoxCPM2
+
+- تريد TTS حتميا ومجانيا بلا تسعير لكل حرف.
+- تريد استنساخ الصوت بحيث يحصل كل agent على صوته من مقطع مرجعي قصير.
+- تعمل on-prem أو في بيئة air-gapped.
+
+إذا كنت تريد صوتا افتراضيا فقط، فالموفران المدمجان **Doubao** أو **OpenAI-compatible** أبسط. راجع [الإعدادات → موفرو TTS](./configuration.mdx).
+
+## 1. شغّل VoxCPM backend
+
+يدعم OpenMAIC ثلاثة أساليب نشر. تتحدث الثلاثة مع OpenMAIC adapter نفسه؛ ما عليك إلا تبديل backend في Settings.
+
+| Backend        | Endpoint           | متى تستخدمه                                          |
+| -------------- | ------------------ | ---------------------------------------------------- |
+| **vLLM-Omni**  | `/v1/audio/speech` | OpenAI-compatible speech endpoint، مثالي لخوادم GPU. |
+| **Python API** | `/tts/upload`      | VoxCPM Python runtime الرسمي عبر FastAPI.            |
+| **Nano-vLLM**  | `/generate`        | نشر Nano-vLLM FastAPI خفيف للأجهزة الأصغر.           |
+
+تعليمات إعداد كل backend موجودة في [مستودع VoxCPM](https://github.com/OpenBMB/VoxCPM). تشغيل محلي نموذجي:
+
+```bash
+# vLLM-Omni example
+pip install vllm
+python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
+# endpoint at http://localhost:8000/v1
+```
+
+## 2. وجّه OpenMAIC إليه
+
+هناك طريقتان. اختر واحدة.
+
+### A. لكل مستخدم (Settings UI بلا تغيير في الخادم)
+
+افتح **Settings → Text-to-Speech → VoxCPM2**، اختر backend، والصق Base URL. تؤكد معاينة Request URL أن OpenMAIC سيضرب endpoint الصحيح.
+
+هذا المسار مناسب للاختبار الفردي و per-browser overrides. لا يؤثر على المستخدمين الآخرين.
+
+### B. على الخادم (env var، افتراضي للجميع)
+
+اضبط التالي في `.env.local` أو YAML config. لا تحتاج إلى API key.
+
+```bash
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+القيمة الافتراضية على الخادم تملأ Settings UI للمستخدمين الجدد. لا يزال بإمكان المستخدمين تجاوزها محليا.
+
+## 3. إدارة الأصوات
+
+يملك VoxCPM2 ثلاثة voice modes، كلها ضمن **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices**.
+
+### Auto Voice (افتراضي)
+
+ينشئ OpenMAIC voice prompt من persona الخاصة بكل agent وقت synthesis. لا يحتاج إلى إعداد، وهذا ما يحدث إن لم تغيّر شيئا.
+
+### Prompt voice
+
+صف الصوت بلغة طبيعية. تصبح النتيجة صوتا قابلا لإعادة الاستخدام ويمكن إسناده إلى أي agent.
+
+> _مثال: "صوت معلمة دافئ، هادئ ومشجع، متوسط الطبقة، نطق واضح."_
+
+### Clone voice
+
+ارفع مقطع صوت مرجعي قصير (≤ 60 ثانية، ≤ 10 MB) أو سجّل واحدا في المتصفح. يُخزّن المقطع في IndexedDB ويُرسل إلى VoxCPM backend عند كل synthesis.
+
+## استكشاف الأخطاء
+
+| العَرَض                         | السبب المحتمل                                                                  |
+| ------------------------------- | ------------------------------------------------------------------------------ |
+| 404 في معاينة Request URL       | تم اختيار backend خاطئ. راجع جدول endpoints في الخطوة 1.                       |
+| أول clone request يتوقف نحو 30s | cold-start في backend. الطلبات التالية تعيد استخدام warm runtime.              |
+| ينقطع الصوت في منتصف الجملة     | حد output token في backend. ارفع `--max-tokens` أو ما يكافئه في VoxCPM config. |
+| 401 / 403                       | ضبطت `TTS_VOXCPM_API_KEY` لـ backend لا يتوقعه. اتركه فارغا.                   |
+

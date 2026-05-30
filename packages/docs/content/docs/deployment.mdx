@@ -1,0 +1,58 @@
+---
+title: Deployment
+description: Deploy OpenMAIC to Vercel, Docker, or your own host.
+---
+
+OpenMAIC is a standard Next.js app. You can deploy it anywhere Next.js runs.
+
+## Vercel (one click)
+
+The fastest path. Click the deploy button in the [README](https://github.com/THU-MAIC/OpenMAIC), fork the repo, and fill in at least one LLM API key during setup.
+
+Vercel builds on each commit and serves static assets from its edge network automatically.
+
+## Docker
+
+A production-ready `Dockerfile` is included. Build and run:
+
+```bash
+docker build -t openmaic .
+
+docker run -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  openmaic
+```
+
+For multi-container setups (with a reverse proxy or other services alongside), use `docker-compose`:
+
+```yaml title="docker-compose.yml"
+services:
+  openmaic:
+    image: openmaic:latest
+    ports:
+      - '3000:3000'
+    env_file:
+      - .env.local
+    restart: unless-stopped
+```
+
+## Self-host on a VM
+
+Build and start with `pnpm`:
+
+```bash
+pnpm install
+pnpm build
+pnpm start      # listens on port 3000 by default
+```
+
+Put nginx or Caddy in front for TLS termination. For high-traffic classrooms, consider running multiple app instances behind a load balancer — OpenMAIC is stateless by default (state lives in the browser's IndexedDB).
+
+## Environment variables
+
+See [Configuration](./configuration.mdx) for the full list. At minimum you need one LLM provider key.
+
+## Access control
+
+For shared demos, set `ACCESS_CODE` to gate the whole site behind a password. See [Configuration → ACCESS_CODE](./configuration.mdx#access_code--site-wide-password).
+

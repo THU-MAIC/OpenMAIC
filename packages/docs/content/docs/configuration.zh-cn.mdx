@@ -1,0 +1,171 @@
+---
+title: 配置说明
+description: LLM 提供方、TTS、ASR、访问控制和功能开关。
+---
+
+OpenMAIC 在服务器启动时读取环境变量。所有项都是可选的——按需启用。完整清单见仓库里的 [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example)。内置模型 ID 请见[支持模型](./supported-models.mdx)。
+
+## LLM 提供方
+
+每个 provider 都用三个环境变量：只有 API key 必填，base URL 和 model 列表是可选的。
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # 可选的 base URL 覆盖
+OPENAI_MODELS=                  # 可选的模型白名单（逗号分隔）
+```
+
+支持的 provider 前缀：
+
+| 前缀               | 提供方                               |
+| ------------------ | ------------------------------------ |
+| `OPENAI_`          | OpenAI                               |
+| `ANTHROPIC_`       | Anthropic                            |
+| `GOOGLE_`          | Google Gemini                        |
+| `DEEPSEEK_`        | DeepSeek                             |
+| `QWEN_`            | 阿里 Qwen                            |
+| `KIMI_`            | Moonshot Kimi                        |
+| `MINIMAX_`         | MiniMax（默认用 Anthropic 兼容端点） |
+| `GLM_`             | 智谱 GLM                             |
+| `SILICONFLOW_`     | SiliconFlow                          |
+| `DOUBAO_`          | 豆包（字节跳动）                     |
+| `OPENROUTER_`      | OpenRouter                           |
+| `GROK_`            | xAI Grok                             |
+| `TENCENT_`         | 腾讯混元                             |
+| `TENCENT_HUNYUAN_` | 腾讯混元                             |
+| `XIAOMI_`          | 小米 MiMo                            |
+| `MIMO_`            | 小米 MiMo                            |
+| `OLLAMA_`          | Ollama（本地）                       |
+| `LEMONADE_`        | Lemonade（本地）                     |
+
+## 本地模型（Ollama）
+
+不需要 API key。把 base URL 写在服务端，绕过 SSRF 检查：
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+生产环境会拦截客户端传过来的 localhost URL，所以必须在服务端配置。
+
+## TTS 提供方
+
+服务端 TTS 提供方使用 `TTS_<PROVIDER>_API_KEY`，可选 `TTS_<PROVIDER>_BASE_URL`。
+
+```bash
+# 豆包 TTS（火山引擎 Seed-TTS，原生 MP3）
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # 可选覆盖
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # 可选覆盖
+
+# 任何 OpenAI 兼容的 TTS 端点
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2（自托管 TTS，支持声音克隆，详见 VoxCPM2 单独页）
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+支持的 TTS 前缀包括 `TTS_MINIMAX_`、`TTS_DOUBAO_`、`TTS_OPENAI_`、`TTS_AZURE_`、`TTS_GLM_`、`TTS_QWEN_`、`TTS_VOXCPM_`、`TTS_ELEVENLABS_`。本地 Lemonade TTS 使用 `TTS_LEMONADE_BASE_URL`，不需要 API key。
+
+VoxCPM2（自托管 TTS + 声音克隆）请见单独的 [VoxCPM2](./voxcpm.mdx) 章节。
+
+## ASR（语音转文字）
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # 可选覆盖
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # 可选覆盖
+
+# Lemonade ASR（本地，不需要 key）
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## 图像生成提供方
+
+图像生成提供方使用 `IMAGE_<PROVIDER>_API_KEY`，可选 `IMAGE_<PROVIDER>_BASE_URL`。Lemonade 是本地服务，不需要 key：
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## ACCESS_CODE —— 站点级访问密码
+
+对共享部署（内部 demo、课堂），可以设置访问码，访客先输密码才能看到应用：
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+访客只会被提示一次，密码存在 HTTP-only cookie 里。留空则关闭。
+
+## 联网搜索
+
+配置 Tavily 或 Bocha：
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # 可选覆盖
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # 可选覆盖
+```
+
+前端会暴露一个 toggle，每次生成时可以选是否开启搜索。
+
+## PDF 解析提供方
+
+对于布局复杂、含公式/表格的 PDF，可以配置服务端解析器：
+
+```bash
+# MinerU 自托管
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+```
+
+没配置服务端解析器时，OpenMAIC 会回退到 `unpdf`。
+
+## 用 YAML 配置文件
+
+除了环境变量，你也可以把配置放在项目根目录下的 `server-providers.yml` 文件里。服务端启动时加载，结构与环境变量分类对应：
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+```
+
+环境变量会逐字段覆盖 YAML 中的同名 provider 配置。键名使用 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru` 或 `tavily`。
+

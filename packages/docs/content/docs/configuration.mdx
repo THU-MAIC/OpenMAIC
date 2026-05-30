@@ -1,0 +1,172 @@
+---
+title: Configuration
+description: LLM providers, TTS, ASR, access control, and feature flags.
+---
+
+OpenMAIC reads configuration from environment variables at server start. All of them are optional — enable the providers and features you need. For a full list see [`.env.example`](https://github.com/THU-MAIC/OpenMAIC/blob/main/.env.example) in the repo. For built-in model IDs, see [Supported Models](./supported-models.mdx).
+
+## LLM providers
+
+Every provider uses the same shape of three variables. Only the API key is required; base URL and model list are optional.
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=                # optional override
+OPENAI_MODELS=                  # optional comma-separated list of allowed models
+```
+
+Supported provider prefixes:
+
+| Prefix             | Provider                                           |
+| ------------------ | -------------------------------------------------- |
+| `OPENAI_`          | OpenAI                                             |
+| `ANTHROPIC_`       | Anthropic                                          |
+| `GOOGLE_`          | Google Gemini                                      |
+| `DEEPSEEK_`        | DeepSeek                                           |
+| `QWEN_`            | Alibaba Qwen                                       |
+| `KIMI_`            | Moonshot Kimi                                      |
+| `MINIMAX_`         | MiniMax (Anthropic-compatible endpoint by default) |
+| `GLM_`             | Zhipu GLM                                          |
+| `SILICONFLOW_`     | SiliconFlow                                        |
+| `DOUBAO_`          | Doubao (ByteDance)                                 |
+| `OPENROUTER_`      | OpenRouter                                         |
+| `GROK_`            | xAI Grok                                           |
+| `TENCENT_`         | Tencent Hunyuan                                    |
+| `TENCENT_HUNYUAN_` | Tencent Hunyuan                                    |
+| `XIAOMI_`          | Xiaomi MiMo                                        |
+| `MIMO_`            | Xiaomi MiMo                                        |
+| `OLLAMA_`          | Ollama (local)                                     |
+| `LEMONADE_`        | Lemonade (local)                                   |
+
+## Local models via Ollama
+
+No API key is needed. Set the base URL so OpenMAIC bypasses its SSRF check:
+
+```bash
+OLLAMA_BASE_URL=http://localhost:11434/v1
+```
+
+Client-supplied localhost URLs are blocked in production, so this must be configured on the server.
+
+## TTS providers
+
+Server-side TTS providers use `TTS_<PROVIDER>_API_KEY` and optional `TTS_<PROVIDER>_BASE_URL`.
+
+```bash
+# Doubao TTS (Volcengine Seed-TTS, native MP3)
+TTS_DOUBAO_API_KEY=appId:accessKey
+TTS_DOUBAO_BASE_URL=       # optional override
+
+# Qwen TTS
+TTS_QWEN_API_KEY=
+TTS_QWEN_BASE_URL=         # optional override
+
+# Any OpenAI-compatible TTS endpoint
+TTS_OPENAI_API_KEY=
+TTS_OPENAI_BASE_URL=
+
+# VoxCPM2 (self-hosted TTS with voice cloning, see VoxCPM2 page)
+TTS_VOXCPM_BASE_URL=http://localhost:8000
+```
+
+Supported TTS prefixes are `TTS_MINIMAX_`, `TTS_DOUBAO_`, `TTS_OPENAI_`, `TTS_AZURE_`, `TTS_GLM_`, `TTS_QWEN_`, `TTS_VOXCPM_`, and `TTS_ELEVENLABS_`.
+For local Lemonade TTS, set `TTS_LEMONADE_BASE_URL` (no API key required).
+
+For VoxCPM2 (self-hosted TTS with voice cloning), see the dedicated [VoxCPM2](./voxcpm.mdx) page.
+
+## ASR (speech to text)
+
+```bash
+# OpenAI Whisper
+ASR_OPENAI_API_KEY=
+ASR_OPENAI_BASE_URL=       # optional override
+
+# Qwen ASR
+ASR_QWEN_API_KEY=
+ASR_QWEN_BASE_URL=         # optional override
+
+# Lemonade ASR (local, no key needed)
+ASR_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## Image generation providers
+
+Image providers use `IMAGE_<PROVIDER>_API_KEY` and optional `IMAGE_<PROVIDER>_BASE_URL`. Lemonade is local and does not require a key:
+
+```bash
+IMAGE_LEMONADE_BASE_URL=http://localhost:13305/v1
+```
+
+## ACCESS_CODE — site-wide password
+
+For shared deployments (internal demos, classrooms), set an access code so visitors enter a password before seeing the app:
+
+```bash
+ACCESS_CODE=your-secret-code
+```
+
+Visitors are prompted once and the code is stored in an HTTP-only cookie. Leave empty to disable.
+
+## Web search
+
+Configure Tavily or Bocha:
+
+```bash
+TAVILY_API_KEY=
+TAVILY_BASE_URL=           # optional override
+
+BOCHA_API_KEY=
+BOCHA_BASE_URL=            # optional override
+```
+
+The front-end exposes a toggle to enable search per generation.
+
+## PDF parsing providers
+
+For PDFs with complex layouts, math, or tables, configure a server-side parser:
+
+```bash
+# MinerU self-hosted
+PDF_MINERU_BASE_URL=http://localhost:8888
+
+# MinerU Cloud
+PDF_MINERU_CLOUD_API_KEY=
+PDF_MINERU_CLOUD_BASE_URL=https://mineru.net/api/v4
+```
+
+Without a server-side parser, OpenMAIC falls back to `unpdf`.
+
+## Using a YAML config file
+
+As an alternative to env vars, you can put configuration in `server-providers.yml` at the project root. The file is loaded on server start. Sections mirror the env-var categories:
+
+```yaml title="server-providers.yml"
+providers:
+  openai:
+    apiKey: sk-...
+    baseUrl: https://api.openai.com/v1
+    models:
+      - gpt-4o
+      - gpt-4o-mini
+  anthropic:
+    apiKey: sk-ant-...
+
+tts:
+  doubao-tts:
+    apiKey: appId:accessKey
+
+asr:
+  openai-whisper:
+    apiKey: sk-...
+
+pdf:
+  mineru:
+    baseUrl: http://localhost:8888
+
+web-search:
+  tavily:
+    apiKey: tvly-...
+```
+
+Environment variables override matching YAML fields field-by-field. Keys map to provider IDs such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, or `tavily`.
+

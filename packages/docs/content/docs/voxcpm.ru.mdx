@@ -1,0 +1,81 @@
+---
+title: VoxCPM2
+description: Self-hosted TTS с клонированием голоса. Backends, конфигурация и управление голосами.
+---
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) — open-source TTS model от OpenBMB с клонированием голоса. OpenMAIC поставляется с adapter; запустите VoxCPM на своем hardware, и OpenMAIC сможет к нему обращаться.
+
+## Когда использовать VoxCPM2
+
+- Нужен deterministic и бесплатный TTS без оплаты за символы.
+- Нужно клонирование голоса, чтобы каждый agent получал собственный голос из короткого reference clip.
+- Вы запускаете систему on-prem или в air-gapped environment.
+
+Если нужен просто default voice, встроенные providers **Doubao** или **OpenAI-compatible** проще. См. [Конфигурация → TTS providers](./configuration.mdx).
+
+## 1. Запустите VoxCPM backend
+
+OpenMAIC поддерживает три варианта deployment. Все три используют один и тот же OpenMAIC adapter; нужно лишь выбрать backend в Settings.
+
+| Backend        | Endpoint           | Когда использовать                                         |
+| -------------- | ------------------ | ---------------------------------------------------------- |
+| **vLLM-Omni**  | `/v1/audio/speech` | OpenAI-compatible speech endpoint, удобен для GPU servers. |
+| **Python API** | `/tts/upload`      | Официальный VoxCPM Python runtime через FastAPI.           |
+| **Nano-vLLM**  | `/generate`        | Легкий Nano-vLLM FastAPI deployment для небольших машин.   |
+
+Инструкции по настройке каждого backend есть в [репозитории VoxCPM](https://github.com/OpenBMB/VoxCPM). Типичный локальный quick-start:
+
+```bash
+# vLLM-Omni example
+pip install vllm
+python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
+# endpoint at http://localhost:8000/v1
+```
+
+## 2. Направьте OpenMAIC на backend
+
+Есть два способа. Выберите один.
+
+### A. Для одного пользователя (Settings UI, без изменений сервера)
+
+Откройте **Settings → Text-to-Speech → VoxCPM2**, выберите backend и вставьте Base URL. Request URL preview подтвердит, что OpenMAIC обращается к правильному endpoint.
+
+Этот путь удобен для индивидуального тестирования и per-browser overrides. Он не влияет на других пользователей.
+
+### B. На стороне сервера (env var, значение по умолчанию для всех)
+
+Добавьте следующее в `.env.local` или YAML config. API key не нужен.
+
+```bash
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+Серверное значение по умолчанию заполняет Settings UI для новых пользователей. Пользователи все еще могут переопределить его локально.
+
+## 3. Управление голосами
+
+У VoxCPM2 есть три voice modes, все находятся в **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices**.
+
+### Auto Voice (по умолчанию)
+
+OpenMAIC генерирует voice prompt из persona каждого agent во время synthesis. Настройка не требуется. Это поведение используется, если ничего не менять.
+
+### Prompt voice
+
+Опишите голос естественным языком. Результат можно переиспользовать и назначать любому agent.
+
+> _Пример: «Теплый женский голос учителя, спокойный и поддерживающий, средняя высота, четкая артикуляция.»_
+
+### Clone voice
+
+Загрузите короткий reference audio clip (≤ 60 секунд, ≤ 10 MB) или запишите его в браузере. Clip хранится в IndexedDB и отправляется на ваш VoxCPM backend при каждом synthesis.
+
+## Troubleshooting
+
+| Симптом                         | Вероятная причина                                                                                      |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 404 в Request URL preview       | Выбран неправильный backend. Проверьте таблицу endpoint в шаге 1.                                      |
+| Первый clone request висит ~30s | Cold-start на backend. Последующие clone requests используют warm runtime.                             |
+| Audio обрывается посреди фразы  | Лимит output tokens на backend. Увеличьте `--max-tokens` или соответствующий параметр в VoxCPM config. |
+| 401 / 403                       | Вы задали `TTS_VOXCPM_API_KEY` для backend, который его не ожидает. Оставьте пустым.                   |
+

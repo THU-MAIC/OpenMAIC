@@ -1,0 +1,81 @@
+---
+title: VoxCPM2
+description: 自托管 TTS 与声音克隆。后端选型、配置和声音管理。
+---
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) 是 OpenBMB 开源的 TTS 模型，支持声音克隆。OpenMAIC 自带适配器，把 VoxCPM 跑在自己机器上即可对接。
+
+## 什么时候用 VoxCPM2
+
+- 想要稳定、免费的 TTS，无字符计费。
+- 想要声音克隆（每个 Agent 用一段短样本生成自己的音色）。
+- 在本地部署或离线环境。
+
+如果只想要一个默认音色，用内置的 **豆包** 或 **OpenAI 兼容** 提供方更简单，参见 [配置 → TTS 提供方](./configuration.mdx#tts-providers)。
+
+## 1. 起一个 VoxCPM 后端
+
+OpenMAIC 支持三种部署形态。三种走的是同一个 OpenMAIC 适配器，你只需要在设置里切换对应的后端类型即可。
+
+| 后端           | 端点               | 适用场景                                     |
+| -------------- | ------------------ | -------------------------------------------- |
+| **vLLM-Omni**  | `/v1/audio/speech` | OpenAI 兼容的语音端点，适合 GPU 服务器。     |
+| **Python API** | `/tts/upload`      | VoxCPM 官方 Python runtime（基于 FastAPI）。 |
+| **Nano-vLLM**  | `/generate`        | 轻量的 Nano-vLLM FastAPI 部署，适合小机器。  |
+
+每种后端的具体启动方式见 [VoxCPM 仓库](https://github.com/OpenBMB/VoxCPM)。一个典型的本地快速启动：
+
+```bash
+# vLLM-Omni 示例
+pip install vllm
+python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
+# 端点为 http://localhost:8000/v1
+```
+
+## 2. 让 OpenMAIC 对接它
+
+两种方式选一种。
+
+### A. 单用户（设置 UI，不动服务端）
+
+打开 **设置 → 语音合成 → VoxCPM2**，选择后端类型，粘贴 Base URL。下方的 Request URL 预览会显示 OpenMAIC 实际请求的地址。
+
+这条路适合个人测试和按浏览器覆盖配置，不会影响其他用户。
+
+### B. 服务端默认（环境变量，所有人共用）
+
+在 `.env.local` 或 YAML 配置里加上下面一行，不需要 API key。
+
+```bash
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+服务端默认值会作为新用户首次进入设置页时的初始值，用户依然可以本地覆盖。
+
+## 3. 声音管理
+
+VoxCPM2 有三种声音模式，都在 **设置 → 语音合成 → VoxCPM2 → VoxCPM 音色** 里。
+
+### Auto Voice（默认）
+
+OpenMAIC 在合成时根据每个 Agent 的人设动态生成 voice prompt。无需任何配置，什么都不做就是这个效果。
+
+### Prompt voice（提示词音色）
+
+用自然语言描述音色。生成后可以复用，分配给任意 Agent。
+
+> _示例："温暖的女老师声音，平稳鼓励，中音域，吐字清晰。"_
+
+### Clone voice（声音克隆）
+
+上传一段短的参考音频（≤ 60 秒，≤ 10 MB），或者直接在浏览器里录一段。音频存在 IndexedDB 中，每次合成时发给后端。
+
+## 常见问题
+
+| 现象                     | 可能原因                                                        |
+| ------------------------ | --------------------------------------------------------------- |
+| Request URL 预览返回 404 | 后端类型选错了，对照第 1 步的端点表。                           |
+| 第一次克隆请求要等 ~30s  | 后端冷启动，后续克隆会复用热运行时。                            |
+| 音频说到一半就断         | 后端输出 token 数受限，提高 `--max-tokens` 或对应 VoxCPM 配置。 |
+| 401 / 403                | 给一个不需要 key 的后端配了 `TTS_VOXCPM_API_KEY`，留空即可。    |
+

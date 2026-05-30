@@ -1,0 +1,81 @@
+---
+title: VoxCPM2
+description: 自託管 TTS 與聲音複製。後端選型、設定和聲音管理。
+---
+
+[VoxCPM2](https://github.com/OpenBMB/VoxCPM) 是 OpenBMB 開源的 TTS 模型，支援聲音複製。OpenMAIC 內建適配器，把 VoxCPM 跑在自己的硬體上即可對接。
+
+## 什麼時候使用 VoxCPM2
+
+- 想要穩定、免費的 TTS，沒有字元計費。
+- 想要聲音複製，讓每個 agent 都能從一段短參考音訊取得自己的音色。
+- 在本機部署或離線環境中執行。
+
+如果只是想要一個預設音色，內建的 **Doubao** 或 **OpenAI 相容** 供應商會更簡單。請見[設定 → TTS 供應商](./configuration.mdx#tts-供應商)。
+
+## 1. 啟動 VoxCPM 後端
+
+OpenMAIC 支援三種部署形態。三種都使用同一個 OpenMAIC 適配器，你只需要在 Settings 中切換後端類型。
+
+| 後端           | 端點               | 適用場景                                      |
+| -------------- | ------------------ | --------------------------------------------- |
+| **vLLM-Omni**  | `/v1/audio/speech` | OpenAI 相容的語音端點，適合 GPU 伺服器。      |
+| **Python API** | `/tts/upload`      | VoxCPM 官方 Python runtime（透過 FastAPI）。  |
+| **Nano-vLLM**  | `/generate`        | 輕量的 Nano-vLLM FastAPI 部署，適合小型機器。 |
+
+每種後端的具體啟動方式請見 [VoxCPM 倉庫](https://github.com/OpenBMB/VoxCPM)。典型的本機快速啟動如下：
+
+```bash
+# vLLM-Omni 範例
+pip install vllm
+python -m vllm_omni.server --model openbmb/VoxCPM2 --port 8000
+# 端點位於 http://localhost:8000/v1
+```
+
+## 2. 讓 OpenMAIC 對接它
+
+兩種方式，選一種即可。
+
+### A. 單一使用者（Settings UI，不改伺服器）
+
+打開 **Settings → Text-to-Speech → VoxCPM2**，選擇後端類型並貼上 Base URL。Request URL 預覽會確認 OpenMAIC 將呼叫正確端點。
+
+這條路適合個人測試和每個瀏覽器各自覆蓋設定，不會影響其他使用者。
+
+### B. 伺服器端預設（環境變數，所有人共用）
+
+在 `.env.local`（或 YAML 設定）中加入下列內容。不需要 API key。
+
+```bash
+TTS_VOXCPM_BASE_URL=http://localhost:8000/v1
+```
+
+伺服器端預設值會作為新使用者首次進入 Settings UI 時的初始值。使用者仍可在本機覆蓋。
+
+## 3. 聲音管理
+
+VoxCPM2 有三種聲音模式，全部都在 **Settings → Text-to-Speech → VoxCPM2 → VoxCPM Voices** 下。
+
+### Auto Voice（預設）
+
+OpenMAIC 會在合成時根據每個 agent 的人設動態生成 voice prompt。無需設定；不改任何東西就是這個效果。
+
+### Prompt voice
+
+用自然語言描述聲音。生成結果可以重複使用，並分配給任意 agent。
+
+> _範例：「溫暖的女老師聲音，平穩而鼓勵，中音域，吐字清晰。」_
+
+### Clone voice
+
+上傳一段短參考音訊（≤ 60 秒，≤ 10 MB），或直接在瀏覽器中錄音。音訊會存放在 IndexedDB 中，並在每次合成時送到你的 VoxCPM 後端。
+
+## 疑難排解
+
+| 現象                       | 可能原因                                                          |
+| -------------------------- | ----------------------------------------------------------------- |
+| Request URL 預覽返回 404   | 後端類型選錯了，請對照第 1 步的端點表。                           |
+| 第一次複製請求等待約 30 秒 | 後端冷啟動；後續複製會重用已暖機的 runtime。                      |
+| 音訊說到一半就中斷         | 後端輸出 token 數受限，調高 `--max-tokens` 或 VoxCPM 的對應設定。 |
+| 401 / 403                  | 為不需要 key 的後端設定了 `TTS_VOXCPM_API_KEY`，留空即可。        |
+
