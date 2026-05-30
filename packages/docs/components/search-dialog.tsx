@@ -14,22 +14,40 @@ import {
 import type { SharedProps } from 'fumadocs-ui/contexts/search';
 import { useDocsSearch } from 'fumadocs-core/search/client';
 import { create } from '@orama/orama';
-
-// Map each docs locale to an Orama-supported tokenizer language. MUST match the
-// build-time localeMap in app/static.json/route.ts, because the static client
-// re-creates one Orama DB per locale partition and Orama rejects unknown
-// languages like "zh-cn"/"ja".
-const ORAMA_LANGUAGE: Record<string, string> = {
-  en: 'english',
-  'zh-cn': 'english',
-  'zh-tw': 'english',
-  ja: 'english',
-  ru: 'russian',
-  ar: 'arabic',
-};
+import { createTokenizer as createMandarinTokenizer } from '@orama/tokenizers/mandarin';
+import { createTokenizer as createJapaneseTokenizer } from '@orama/tokenizers/japanese';
+import {
+  ORAMA_TOKENIZER,
+  DEFAULT_LANGUAGE,
+  DOCS_BASE_PATH,
+} from '@/lib/locales.mjs';
 
 // Where the static Orama index is served (basePath '/docs' + the route).
-const STATIC_API = '/docs/static.json';
+const STATIC_API = `${DOCS_BASE_PATH}/static.json`;
+
+// Build the per-locale Orama instance the client uses to query the static
+// index. The tokenizer discriminator (single source: lib/locales.mjs) MUST be
+// mapped exactly as the build side maps it in app/static.json/route.ts, because
+// the static client re-creates one Orama DB per locale partition and the query
+// tokenizer must match the one that built the index. CJK locales need a custom
+// tokenizer; the others use Orama's built-in `language`.
+function initOrama(loc?: string) {
+  const tokenizer = ORAMA_TOKENIZER[loc ?? DEFAULT_LANGUAGE] ?? 'english';
+  switch (tokenizer) {
+    case 'mandarin':
+      return create({
+        schema: { _: 'string' },
+        components: { tokenizer: createMandarinTokenizer() },
+      });
+    case 'japanese':
+      return create({
+        schema: { _: 'string' },
+        components: { tokenizer: createJapaneseTokenizer() },
+      });
+    default:
+      return create({ schema: { _: 'string' }, language: tokenizer });
+  }
+}
 
 export default function StaticSearchDialog(props: SharedProps) {
   const { locale } = useI18n();
@@ -37,11 +55,7 @@ export default function StaticSearchDialog(props: SharedProps) {
     type: 'static',
     from: STATIC_API,
     locale,
-    initOrama: (loc) =>
-      create({
-        schema: { _: 'string' },
-        language: ORAMA_LANGUAGE[loc ?? 'en'] ?? 'english',
-      }),
+    initOrama,
   });
 
   return (

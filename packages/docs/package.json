@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@orama/orama": "3.1.18",
+    "@orama/tokenizers": "^3.1.18",
     "fumadocs-core": "16.9.2",
     "fumadocs-mdx": "15.0.9",
     "fumadocs-ui": "16.9.2",

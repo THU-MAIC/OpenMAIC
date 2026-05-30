@@ -1,4 +1,5 @@
 import { createMDX } from 'fumadocs-mdx/next';
+import { DOCS_BASE_PATH } from './lib/locales.mjs';
 
 const withMDX = createMDX();
 
@@ -8,7 +9,7 @@ const config = {
   // Static export: served as plain files by nginx, no Node server.
   output: 'export',
   // Target deploy path: open.maic.chat/docs
-  basePath: '/docs',
+  basePath: DOCS_BASE_PATH,
   // Static export cannot optimize images at runtime.
   images: {
     unoptimized: true,

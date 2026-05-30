@@ -8,12 +8,12 @@
 import { existsSync } from 'node:fs';
 import { mkdir, writeFile, stat, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { DEFAULT_LANGUAGE, LANGUAGES, DOCS_BASE_PATH } from '../lib/locales.mjs';
 
 const OUT = new URL('../out/', import.meta.url).pathname;
 const INDEX_SLUG = 'getting-started';
-// Keep in sync with lib/i18n.ts.
-const DEFAULT_LANG = 'en';
-const LANGS = ['en', 'zh-cn', 'zh-tw', 'ja', 'ru', 'ar'];
+const DEFAULT_LANG = DEFAULT_LANGUAGE;
+const LANGS = LANGUAGES;
 
 function redirectHtml(target) {
   return `<!doctype html><html><head><meta charset="utf-8">
@@ -32,7 +32,7 @@ async function main() {
     if (lang === DEFAULT_LANG) continue;
     const dir = join(OUT, lang);
     await mkdir(dir, { recursive: true });
-    const target = `/docs/${lang}/${INDEX_SLUG}`;
+    const target = `${DOCS_BASE_PATH}/${lang}/${INDEX_SLUG}`;
     await writeFile(join(dir, 'index.html'), redirectHtml(target));
     console.log(`[postexport] wrote out/${lang}/index.html -> ${target}`);
   }
@@ -47,21 +47,24 @@ async function main() {
     .filter((s) => !SPECIAL.has(s));
   const enDir = join(OUT, DEFAULT_LANG);
   await mkdir(enDir, { recursive: true });
-  await writeFile(join(enDir, 'index.html'), redirectHtml('/docs/'));
+  await writeFile(join(enDir, 'index.html'), redirectHtml(`${DOCS_BASE_PATH}/`));
   for (const slug of enSlugs) {
-    await writeFile(join(enDir, `${slug}.html`), redirectHtml(`/docs/${slug}`));
+    await writeFile(
+      join(enDir, `${slug}.html`),
+      redirectHtml(`${DOCS_BASE_PATH}/${slug}`),
+    );
   }
   console.log(`[postexport] wrote out/${DEFAULT_LANG}/{index,${enSlugs.join(',')}}.html -> unprefixed`);
 
-  // Sanity report.
+  // Sanity report. Derived from the locale source so it can't drift.
   const expect = [
     'index.html',
-    'getting-started.html',
-    'configuration.html',
-    'zh-cn/getting-started.html',
-    'zh-cn/index.html',
-    'ar/getting-started.html',
+    `${INDEX_SLUG}.html`,
     'static.json',
+    ...LANGS.filter((l) => l !== DEFAULT_LANG).flatMap((l) => [
+      `${l}/${INDEX_SLUG}.html`,
+      `${l}/index.html`,
+    ]),
   ];
   let ok = true;
   for (const rel of expect) {
