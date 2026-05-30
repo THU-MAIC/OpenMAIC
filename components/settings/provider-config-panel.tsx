@@ -154,6 +154,10 @@ export function ProviderConfigPanel({
 
   const models = providersConfig[provider.id]?.models || [];
   const isServerConfigured = providersConfig[provider.id]?.isServerConfigured;
+  // When the operator pins an allowed model list (MODELS env/yaml), the model
+  // catalog is admin-managed too — view-only, no add/edit/delete. Without a
+  // pinned list the server manages only credentials and the user curates models.
+  const modelsLocked = !!providersConfig[provider.id]?.serverModels?.length;
 
   return (
     <div className="space-y-6 max-w-3xl">
@@ -322,24 +326,33 @@ export function ProviderConfigPanel({
       {/* Models - No selection state, just list for management */}
       <div className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-2">
-          <Label className="text-base">{t('settings.models')}</Label>
-          <div className="flex items-center gap-2 flex-wrap">
-            {isBuiltIn && onResetToDefault && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setShowResetDialog(true)}
-                className="gap-1.5"
-              >
-                <RotateCcw className="h-3.5 w-3.5" />
-                {t('settings.reset')}
-              </Button>
+          <div className="flex items-center gap-2">
+            <Label className="text-base">{t('settings.models')}</Label>
+            {modelsLocked && (
+              <span className="text-[10px] px-1 py-0 h-4 leading-4 rounded bg-muted text-muted-foreground">
+                {t('settings.serverConfigured')}
+              </span>
             )}
-            <Button variant="outline" size="sm" onClick={onAddModel} className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" />
-              {t('settings.addNewModel')}
-            </Button>
           </div>
+          {!modelsLocked && (
+            <div className="flex items-center gap-2 flex-wrap">
+              {isBuiltIn && onResetToDefault && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowResetDialog(true)}
+                  className="gap-1.5"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {t('settings.reset')}
+                </Button>
+              )}
+              <Button variant="outline" size="sm" onClick={onAddModel} className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                {t('settings.addNewModel')}
+              </Button>
+            </div>
+          )}
         </div>
         <div className="space-y-1.5">
           {models.map((model, index) => {
@@ -390,27 +403,29 @@ export function ProviderConfigPanel({
                   </div>
                 </div>
 
-                {/* Edit/Delete Buttons */}
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2"
-                    onClick={() => onEditModel(index)}
-                    title={t('settings.editModel')}
-                  >
-                    <Settings2 className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
-                    onClick={() => onDeleteModel(index)}
-                    title={t('settings.deleteModel')}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+                {/* Edit/Delete Buttons — hidden when the model catalog is server-managed */}
+                {!modelsLocked && (
+                  <div className="flex items-center gap-1">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2"
+                      onClick={() => onEditModel(index)}
+                      title={t('settings.editModel')}
+                    >
+                      <Settings2 className="h-3.5 w-3.5" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 px-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => onDeleteModel(index)}
+                      title={t('settings.deleteModel')}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
             );
           })}

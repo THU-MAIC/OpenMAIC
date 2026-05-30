@@ -72,6 +72,10 @@ test.describe('#620 managed providers are read-only', () => {
     // the override inputs must be absent.
     await expect(page.locator('input[name="llm-api-key-openai"]')).toHaveCount(0);
     await expect(page.locator('input[name="llm-base-url-openai"]')).toHaveCount(0);
+    // The mock pins an allowed model list, so the catalog is locked too:
+    // no add/reset affordance, and the pinned models are shown read-only.
+    await expect(page.getByRole('button', { name: /new model/i })).toHaveCount(0);
+    await expect(page.getByText('gpt-4o', { exact: true })).toBeVisible();
 
     await page.screenshot({
       path: `${SCREENSHOT_DIR}/620-managed-openai-readonly.png`,
