@@ -45,7 +45,8 @@
     "exportSuccess": "匯出成功",
     "exportFailed": "匯出失敗",
     "classroomZip": "匯出課堂 ZIP",
-    "classroomZipDesc": "課程結構 + 媒體檔案"
+    "classroomZipDesc": "課程結構 + 媒體檔案",
+    "inlinePartial": "{{count}} 個外部資源未能打包，離線時課程可能無法正常顯示。"
   },
   "import": {
     "classroom": "匯入課堂",

@@ -547,6 +547,8 @@ cp -R /path/to/OpenMAIC/skills/openmaic ~/.openclaw/skills/openmaic
 | **交互式 HTML** | 自包含的网页，包含交互式模拟实验 |
 | **课堂 ZIP** | 完整课堂导出（课程结构 + 媒体文件），可备份或分享 |
 
+**离线 / 内网课堂：** 导出课堂（`.maic.zip`）或资源包时，OpenMAIC 会把互动场景引用的外部资源（KaTeX、Three.js 含 `three/addons`、Tailwind CDN、Google Fonts、图片）以 `data:` URI 形式内联进导出的 HTML。导出的课程在导入到内网/离线实例后即可完全离线播放，播放时不再访问任何公网 CDN。导出时无法抓取的资源（如开启了 CORS 限制的图床）会被记录并保留为原始 URL。本功能上线*之前*导出的课堂仍引用 CDN，需要重新导出才能离线播放。
+
 ### 更多功能
 
 - **语音合成（TTS）** — 多种语音服务商，支持自定义音色

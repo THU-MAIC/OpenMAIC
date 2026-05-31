@@ -45,7 +45,8 @@
     "classroomZipDesc": "هيكل المقرر + ملفات الوسائط",
     "exporting": "جارٍ التصدير...",
     "exportSuccess": "تم التصدير بنجاح",
-    "exportFailed": "فشل التصدير"
+    "exportFailed": "فشل التصدير",
+    "inlinePartial": "تعذّر تضمين {{count}} من الموارد الخارجية؛ قد لا يتم عرض الدورة بشكل صحيح دون اتصال بالإنترنت."
   },
   "import": {
     "classroom": "استيراد فصل",

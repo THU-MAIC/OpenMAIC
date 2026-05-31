@@ -45,7 +45,8 @@
     "exportSuccess": "Exportação concluída",
     "exportFailed": "Falha na exportação",
     "classroomZip": "Exportar ZIP da Sala",
-    "classroomZipDesc": "Estrutura do curso + arquivos de mídia"
+    "classroomZipDesc": "Estrutura do curso + arquivos de mídia",
+    "inlinePartial": "{{count}} recurso(s) externo(s) não puderam ser empacotados; o curso pode não ser exibido corretamente offline."
   },
   "import": {
     "classroom": "Importar Sala de Aula",

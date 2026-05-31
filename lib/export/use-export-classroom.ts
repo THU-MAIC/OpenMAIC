@@ -18,6 +18,25 @@ import {
 import { collectAudioFiles, collectMediaFiles, actionsToManifest } from './classroom-zip-utils';
 import type { SpeechAction } from '@/lib/types/action';
 import { createLogger } from '@/lib/logger';
+import {
+  inlineHtmlAssets,
+  createAssetFetcher,
+  type InlineOptions,
+  type InlineReport,
+} from './inline-assets';
+import { createProxiedFetch } from './proxied-fetch';
+import type { SceneContent } from '@/lib/types/stage';
+
+export async function inlineSceneContent(
+  content: SceneContent,
+  options?: InlineOptions,
+): Promise<{ content: SceneContent; report: InlineReport }> {
+  if (content?.type !== 'interactive' || !('html' in content) || !content.html) {
+    return { content, report: { inlined: [], failed: [] } };
+  }
+  const { html, report } = await inlineHtmlAssets(content.html, options);
+  return { content: { ...content, html }, report };
+}
 
 const log = createLogger('ExportClassroom');
 
@@ -95,27 +114,41 @@ export function useExportClassroom() {
         stage.generatedAgentConfigs.forEach((a, i) => agentIdToIndex.set(a.id, i));
       }
 
-      const manifestScenes: ManifestScene[] = scenes.map((scene) => ({
-        type: scene.type,
-        title: scene.title,
-        order: scene.order,
-        content: scene.content,
-        actions: scene.actions
-          ? actionsToManifest(scene.actions, audioIdToPath, agentIdToIndex)
-          : undefined,
-        whiteboards: scene.whiteboards,
-        ...(scene.multiAgent?.enabled
-          ? {
-              multiAgent: {
-                enabled: true,
-                agentIndices: (scene.multiAgent.agentIds ?? [])
-                  .map((id) => agentIdToIndex.get(id))
-                  .filter((i): i is number => i !== undefined),
-                directorPrompt: scene.multiAgent.directorPrompt,
-              },
-            }
-          : {}),
-      }));
+      const aggregateReport: InlineReport = { inlined: [], failed: [] };
+      const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
+      const manifestScenes: ManifestScene[] = await Promise.all(
+        scenes.map(async (scene) => {
+          const { content, report } = await inlineSceneContent(scene.content, {
+            fetcher: sharedFetcher,
+          });
+          for (const u of report.inlined)
+            if (!aggregateReport.inlined.includes(u)) aggregateReport.inlined.push(u);
+          for (const f of report.failed)
+            if (!aggregateReport.failed.some((g) => g.url === f.url))
+              aggregateReport.failed.push(f);
+          return {
+            type: scene.type,
+            title: scene.title,
+            order: scene.order,
+            content,
+            actions: scene.actions
+              ? actionsToManifest(scene.actions, audioIdToPath, agentIdToIndex)
+              : undefined,
+            whiteboards: scene.whiteboards,
+            ...(scene.multiAgent?.enabled
+              ? {
+                  multiAgent: {
+                    enabled: true,
+                    agentIndices: (scene.multiAgent.agentIds ?? [])
+                      .map((id) => agentIdToIndex.get(id))
+                      .filter((i): i is number => i !== undefined),
+                    directorPrompt: scene.multiAgent.directorPrompt,
+                  },
+                }
+              : {}),
+          };
+        }),
+      );
 
       // 7. Build mediaIndex
       const mediaIndex: Record<string, MediaIndexEntry> = {};
@@ -179,6 +212,23 @@ export function useExportClassroom() {
       const safeName = latestName.replace(/[\\/:*?"<>|]/g, '_') || 'classroom';
       saveAs(zipBlob, `${safeName}${CLASSROOM_ZIP_EXTENSION}`);
 
+      if (aggregateReport.failed.length > 0) {
+        log.warn('Some interactive-scene assets could not be inlined:', aggregateReport.failed);
+        const hosts = [
+          ...new Set(
+            aggregateReport.failed.map((f) => {
+              try {
+                return new URL(f.url).host;
+              } catch {
+                return f.url;
+              }
+            }),
+          ),
+        ];
+        toast.warning(t('export.inlinePartial', { count: aggregateReport.failed.length }), {
+          description: hosts.join(', '),
+        });
+      }
       toast.success(t('export.exportSuccess'), { id: toastId });
     } catch (error) {
       log.error('Classroom ZIP export failed:', error);
