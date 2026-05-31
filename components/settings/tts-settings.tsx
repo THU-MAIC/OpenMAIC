@@ -156,7 +156,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
               ...(await getVoxCPMProviderOptions(effectiveVoice, { role: 'teacher', locale })),
             }
           : selectedProviderId === 'minimax-tts'
-            ? (ttsProvidersConfig[selectedProviderId]?.providerOptions || undefined)
+            ? ttsProvidersConfig[selectedProviderId]?.providerOptions || undefined
             : undefined;
       await startPreview({
         text: testText,

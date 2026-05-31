@@ -144,7 +144,7 @@ export async function generateAndStoreTTS(
           ...(await getVoxCPMProviderOptions(settings.ttsVoice, { role: 'teacher', language })),
         }
       : settings.ttsProviderId === 'minimax-tts'
-        ? (ttsProviderConfig?.providerOptions || undefined)
+        ? ttsProviderConfig?.providerOptions || undefined
         : undefined;
   const response = await fetch('/api/generate/tts', {
     method: 'POST',

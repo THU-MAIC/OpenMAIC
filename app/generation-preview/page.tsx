@@ -879,7 +879,7 @@ function GenerationPreviewContent() {
                 })),
               }
             : settings.ttsProviderId === 'minimax-tts'
-              ? (ttsProviderConfig?.providerOptions || undefined)
+              ? ttsProviderConfig?.providerOptions || undefined
               : undefined;
         const speechActions = (data.scene.actions || []).filter(
           (a: { type: string; text?: string }) => a.type === 'speech' && a.text,

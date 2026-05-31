@@ -165,7 +165,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
               })),
             }
           : item.providerId === 'minimax-tts'
-            ? (providerConfig?.providerOptions || undefined)
+            ? providerConfig?.providerOptions || undefined
             : undefined;
       const res = await fetch('/api/generate/tts', {
         method: 'POST',
