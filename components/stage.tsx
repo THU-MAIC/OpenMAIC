@@ -12,6 +12,7 @@ import {
 } from '@/components/edit/PlaybackChromeRoot';
 import { useEditModeLock } from '@/components/edit/use-edit-mode-lock';
 import { MultiTabEditConflictPrompt } from '@/components/edit/MultiTabEditConflictPrompt';
+import { InteractiveIframeHost } from '@/components/scene-renderers/InteractiveIframeHost';
 import { CHROME_EASE } from '@/lib/edit/transitions';
 import { preloadEditor } from '@/lib/edit/preload-editor';
 
@@ -157,6 +158,10 @@ export function Stage({
         open={editLock.conflictOpen}
         onDismiss={editLock.dismissConflict}
       />
+      {/* Keep-alive host for interactive scene iframes (#619). Lives here, above
+          the mode-swap subtree, so its iframes survive Pro mode toggles and
+          scene switches instead of reloading on every remount. */}
+      <InteractiveIframeHost />
     </div>
   );
 }

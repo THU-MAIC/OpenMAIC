@@ -1,8 +1,8 @@
 'use client';
 
-import { useMemo, useRef, useEffect, useCallback } from 'react';
+import { useMemo, useRef, useEffect } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
-import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
+import { hashContent, useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
 
 interface InteractiveRendererProps {
@@ -10,43 +10,62 @@ interface InteractiveRendererProps {
   readonly sceneId: string;
 }
 
+/**
+ * Placeholder for an interactive scene. The actual iframe lives in the stable
+ * `InteractiveIframeHost` (keyed by sceneId) so it survives remounts (#619);
+ * this component only (1) registers the scene's content in the keep-alive pool,
+ * (2) marks it active/visible while mounted, and (3) reports its on-screen rect
+ * so the host can position the iframe over this slot. On unmount it hides the
+ * iframe but never evicts it — that preserves the document for a zero-reload
+ * return on the next mount.
+ */
 export function InteractiveRenderer({ content, sceneId }: InteractiveRendererProps) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const registerIframe = useWidgetIframeStore((state) => state.registerIframe);
-  const setActiveScene = useWidgetIframeStore((state) => state.setActiveScene);
+  const slotRef = useRef<HTMLDivElement>(null);
+  const mount = useInteractiveIframePool((s) => s.mount);
+  const setRect = useInteractiveIframePool((s) => s.setRect);
+  const show = useInteractiveIframePool((s) => s.show);
+  const hide = useInteractiveIframePool((s) => s.hide);
+  const setActive = useInteractiveIframePool((s) => s.setActive);
 
   const patchedHtml = useMemo(
     () => (content.html ? patchHtmlForIframe(content.html) : undefined),
     [content.html],
   );
-
-  // Create iframe messaging callback
-  const sendMessageToIframe = useCallback((type: string, payload: Record<string, unknown>) => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage({ type, ...payload }, '*');
-    }
-  }, []);
-
-  // Register iframe messaging callback on mount, unregister on unmount
-  // Key by sceneId to prevent race conditions on scene switch
-  useEffect(() => {
-    registerIframe(sceneId, sendMessageToIframe);
-    setActiveScene(sceneId);
-    return () => {
-      registerIframe(sceneId, null);
-    };
-  }, [sceneId, registerIframe, sendMessageToIframe, setActiveScene]);
-
-  return (
-    <div className="w-full h-full relative">
-      <iframe
-        ref={iframeRef}
-        srcDoc={patchedHtml}
-        src={patchedHtml ? undefined : content.url}
-        className="absolute inset-0 w-full h-full border-0"
-        title={`Interactive Scene ${sceneId}`}
-        sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-      />
-    </div>
+  const hash = useMemo(
+    () => hashContent(patchedHtml ?? content.url ?? ''),
+    [patchedHtml, content.url],
   );
+
+  // Register / activate / show in the pool while mounted; hide (keep-alive) on
+  // unmount. A changed hash re-runs this and rebuilds the iframe — the only
+  // intended reload path.
+  useEffect(() => {
+    mount(sceneId, {
+      srcDoc: patchedHtml,
+      src: patchedHtml ? undefined : content.url,
+      hash,
+    });
+    setActive(sceneId);
+    show(sceneId);
+    return () => hide(sceneId);
+  }, [sceneId, hash, patchedHtml, content.url, mount, setActive, show, hide]);
+
+  // Track this slot's screen rect for the host. rAF loop mirrors useTrackedRect:
+  // one getBoundingClientRect read resolves canvas scale, viewport offset and
+  // scroll, following the box through every resize / layout change.
+  useEffect(() => {
+    let raf = 0;
+    const measure = () => {
+      const node = slotRef.current;
+      if (node) {
+        const r = node.getBoundingClientRect();
+        setRect(sceneId, { left: r.left, top: r.top, width: r.width, height: r.height });
+      }
+      raf = requestAnimationFrame(measure);
+    };
+    raf = requestAnimationFrame(measure);
+    return () => cancelAnimationFrame(raf);
+  }, [sceneId, setRect]);
+
+  return <div ref={slotRef} className="w-full h-full" aria-hidden />;
 }
