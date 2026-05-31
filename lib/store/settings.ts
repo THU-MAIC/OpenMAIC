@@ -674,6 +674,32 @@ function ensureBaiduSubSources(state: Partial<SettingsState>): void {
   };
 }
 
+/**
+ * Strip the removed `serverBaseUrl` field from any persisted provider config.
+ *
+ * Managed providers no longer expose their base URL to the client (#620). Old
+ * localStorage may still carry a `serverBaseUrl` on provider entries; this
+ * clears it on every rehydrate so a stale server URL can't linger in client
+ * state. Called from both migrate and merge to cover all rehydration paths.
+ */
+function stripLegacyServerBaseUrl(state: Partial<SettingsState>): void {
+  const maps = [
+    state.providersConfig,
+    state.ttsProvidersConfig,
+    state.asrProvidersConfig,
+    state.pdfProvidersConfig,
+    state.imageProvidersConfig,
+    state.videoProvidersConfig,
+    state.webSearchProvidersConfig,
+  ];
+  for (const map of maps) {
+    if (!map) continue;
+    for (const cfg of Object.values(map as Record<string, Record<string, unknown>>)) {
+      if (cfg && 'serverBaseUrl' in cfg) delete cfg.serverBaseUrl;
+    }
+  }
+}
+
 // Migrate from old localStorage format
 const migrateFromOldStorage = () => {
   if (typeof window === 'undefined') return null;
@@ -1575,7 +1601,7 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: 'settings-storage',
-      version: 2,
+      version: 3,
       // Migrate persisted state
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<SettingsState>;
@@ -1741,6 +1767,10 @@ export const useSettingsStore = create<SettingsState>()(
           delete stateRecord.webSearchIsServerConfigured;
         }
 
+        // v2 → v3: managed providers no longer expose a base URL to the client;
+        // drop any persisted serverBaseUrl left over from older versions (#620).
+        stripLegacyServerBaseUrl(state);
+
         ensureValidProviderSelections(state);
         ensureBuiltInAudioProviders(state);
         ensureBuiltInWebSearchProviders(state);
@@ -1759,6 +1789,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
         ensureBuiltInWebSearchProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
+        stripLegacyServerBaseUrl(merged as Partial<SettingsState>);
         const typedMerged = merged as Partial<SettingsState>;
         typedMerged.thinkingConfigs = pruneThinkingConfigs(
           typedMerged.thinkingConfigs,

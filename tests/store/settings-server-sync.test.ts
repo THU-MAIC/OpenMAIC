@@ -269,6 +269,56 @@ describe('settings rehydrate — built-in provider models', () => {
     expect(models[0].name).toBe('GPT-4o');
     expect(models[3].name).toBe('Custom Earlier');
   });
+
+  it('strips a legacy serverBaseUrl from persisted provider configs on rehydrate (#620)', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        state: {
+          providerId: 'openai',
+          modelId: 'gpt-4o',
+          providersConfig: {
+            openai: {
+              apiKey: '',
+              baseUrl: '',
+              models: [{ id: 'gpt-4o', name: 'GPT-4o' }],
+              name: 'OpenAI',
+              type: 'openai',
+              defaultBaseUrl: 'https://api.openai.com/v1',
+              requiresApiKey: true,
+              isBuiltIn: true,
+              isServerConfigured: true,
+              serverBaseUrl: 'https://internal-gateway.local/v1',
+            },
+          },
+          webSearchProvidersConfig: {
+            bocha: {
+              apiKey: '',
+              baseUrl: '',
+              enabled: true,
+              requiresApiKey: true,
+              isServerConfigured: true,
+              serverBaseUrl: 'https://api.bocha.cn',
+            },
+          },
+        },
+        version: 2,
+      }),
+    );
+
+    const store = await getStore();
+    const openai = store.getState().providersConfig.openai as unknown as Record<string, unknown>;
+    const bocha = store.getState().webSearchProvidersConfig.bocha as unknown as Record<
+      string,
+      unknown
+    >;
+
+    // The removed field must not linger in persisted client state...
+    expect('serverBaseUrl' in openai).toBe(false);
+    expect('serverBaseUrl' in bocha).toBe(false);
+    // ...while the managed flag itself is preserved.
+    expect(openai.isServerConfigured).toBe(true);
+  });
 });
 
 describe('fetchServerProviders — provider availability sync', () => {
