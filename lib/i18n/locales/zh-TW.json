@@ -149,7 +149,72 @@
     "generatingNextPage": "場景正在生成，請稍候...",
     "fullscreen": "全螢幕",
     "exitFullscreen": "離開全螢幕",
-    "courseComplete": "課程完成"
+    "courseComplete": "課程完成",
+    "editCourse": "編輯課程",
+    "doneEditing": "完成編輯"
+  },
+  "edit": {
+    "proMode": "專業模式",
+    "undo": "復原",
+    "redo": "重做",
+    "delete": "刪除",
+    "title": "編輯 · {{type}}",
+    "unsupportedScene": "{{type}}暫不支援編輯",
+    "readOnlyBadge": "{{type}} · 僅檢視",
+    "sceneType": {
+      "slide": "投影片",
+      "quiz": "測驗",
+      "interactive": "互動",
+      "pbl": "PBL"
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "另一個分頁正在編輯此課程",
+        "body": "編輯模式同一時間只允許一個分頁持有，以避免變更衝突。請先關閉其他分頁（或等待對方工作階段逾時），再於此處進入編輯模式。",
+        "actionDismiss": "知道了"
+      }
+    },
+    "text": {
+      "label": "文字",
+      "font": "字型",
+      "fontDefault": "預設",
+      "sizeUp": "放大字級",
+      "sizeDown": "縮小字級",
+      "fontSize": "字級",
+      "bold": "粗體",
+      "italic": "斜體",
+      "underline": "底線",
+      "color": "文字色彩",
+      "alignLeft": "靠左對齊",
+      "alignCenter": "置中對齊",
+      "alignRight": "靠右對齊",
+      "bullet": "項目符號"
+    },
+    "insert": {
+      "textBox": "文字方塊",
+      "expandToolbar": "展開插入工具",
+      "collapseToolbar": "收起插入工具",
+      "image": "圖片",
+      "imageDrop": "拖曳圖片或點按選擇檔案",
+      "imageOr": "或貼上圖片網址",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "插入"
+    },
+    "nav": {
+      "addSlide": "新增投影片",
+      "duplicate": "複製",
+      "delete": "刪除",
+      "deleted": "已刪除",
+      "undo": "復原",
+      "copySuffix": "（副本）",
+      "untitledSlide": "未命名投影片",
+      "collapse": "收合側欄",
+      "expand": "展開側欄",
+      "dragHandle": "拖曳重新排序",
+      "deckLabel": "場景",
+      "moreActions": "更多操作",
+      "rename": "重新命名"
+    }
   },
   "whiteboard": {
     "title": "互動白板",

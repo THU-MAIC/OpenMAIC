@@ -149,7 +149,72 @@
     "generatingNextPage": "シーンを生成中です。お待ちください...",
     "courseComplete": "コース完了",
     "fullscreen": "全画面表示",
-    "exitFullscreen": "全画面表示を終了"
+    "exitFullscreen": "全画面表示を終了",
+    "editCourse": "コースを編集",
+    "doneEditing": "編集を完了"
+  },
+  "edit": {
+    "proMode": "プロモード",
+    "undo": "元に戻す",
+    "redo": "やり直し",
+    "delete": "削除",
+    "title": "編集 · {{type}}",
+    "unsupportedScene": "{{type}}はまだ編集できません",
+    "readOnlyBadge": "{{type}} · 表示のみ",
+    "sceneType": {
+      "slide": "スライド",
+      "quiz": "クイズ",
+      "interactive": "インタラクティブ",
+      "pbl": "PBL"
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "別のタブでこのコースを編集中です",
+        "body": "編集モードは同時に 1 つのタブのみが保持できます。他のタブを閉じる（またはセッションがタイムアウトするのを待つ）してから、このタブで編集を開始してください。",
+        "actionDismiss": "了解"
+      }
+    },
+    "text": {
+      "label": "テキスト",
+      "font": "フォント",
+      "fontDefault": "デフォルト",
+      "sizeUp": "文字を大きく",
+      "sizeDown": "文字を小さく",
+      "fontSize": "フォントサイズ",
+      "bold": "太字",
+      "italic": "斜体",
+      "underline": "下線",
+      "color": "文字色",
+      "alignLeft": "左揃え",
+      "alignCenter": "中央揃え",
+      "alignRight": "右揃え",
+      "bullet": "箇条書き"
+    },
+    "insert": {
+      "textBox": "テキストボックス",
+      "expandToolbar": "挿入ツールを表示",
+      "collapseToolbar": "挿入ツールを隠す",
+      "image": "画像",
+      "imageDrop": "画像をドロップまたはクリックして選択",
+      "imageOr": "または画像 URL を貼り付け",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "挿入"
+    },
+    "nav": {
+      "addSlide": "スライドを追加",
+      "duplicate": "複製",
+      "delete": "削除",
+      "deleted": "削除しました",
+      "undo": "元に戻す",
+      "copySuffix": "（コピー）",
+      "untitledSlide": "無題のスライド",
+      "collapse": "サイドを折りたたむ",
+      "expand": "サイドを開く",
+      "dragHandle": "ドラッグして並べ替え",
+      "deckLabel": "シーン",
+      "moreActions": "その他の操作",
+      "rename": "名前を変更"
+    }
   },
   "classroomComplete": {
     "title": "コース完了",

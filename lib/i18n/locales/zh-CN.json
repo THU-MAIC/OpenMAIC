@@ -149,7 +149,72 @@
     "generatingNextPage": "场景正在生成，请稍候...",
     "courseComplete": "课程完成",
     "fullscreen": "全屏",
-    "exitFullscreen": "退出全屏"
+    "exitFullscreen": "退出全屏",
+    "editCourse": "编辑课程",
+    "doneEditing": "完成编辑"
+  },
+  "edit": {
+    "proMode": "专业模式",
+    "undo": "撤销",
+    "redo": "重做",
+    "delete": "删除",
+    "title": "编辑 · {{type}}",
+    "unsupportedScene": "{{type}}暂不支持编辑",
+    "readOnlyBadge": "{{type}} · 仅查看",
+    "sceneType": {
+      "slide": "幻灯片",
+      "quiz": "测验",
+      "interactive": "互动",
+      "pbl": "PBL"
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "另一个标签页正在编辑此课程",
+        "body": "编辑模式同一时间只允许一个标签页持有，避免变更冲突。请先关闭其他标签页（或等待对方会话超时），再在此进入编辑模式。",
+        "actionDismiss": "知道了"
+      }
+    },
+    "text": {
+      "label": "文本",
+      "font": "字体",
+      "fontDefault": "默认",
+      "sizeUp": "增大字号",
+      "sizeDown": "减小字号",
+      "fontSize": "字号",
+      "bold": "加粗",
+      "italic": "斜体",
+      "underline": "下划线",
+      "color": "文字颜色",
+      "alignLeft": "左对齐",
+      "alignCenter": "居中对齐",
+      "alignRight": "右对齐",
+      "bullet": "项目符号"
+    },
+    "insert": {
+      "textBox": "文本框",
+      "expandToolbar": "展开插入工具",
+      "collapseToolbar": "收起插入工具",
+      "image": "图片",
+      "imageDrop": "拖入图片或点击选择文件",
+      "imageOr": "或粘贴图片 URL",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "插入"
+    },
+    "nav": {
+      "addSlide": "新增幻灯片",
+      "duplicate": "复制",
+      "delete": "删除",
+      "deleted": "已删除",
+      "undo": "撤销",
+      "copySuffix": "（副本）",
+      "untitledSlide": "未命名幻灯片",
+      "collapse": "收起",
+      "expand": "展开",
+      "dragHandle": "拖动",
+      "deckLabel": "场景",
+      "moreActions": "更多操作",
+      "rename": "重命名"
+    }
   },
   "classroomComplete": {
     "title": "课程完成",

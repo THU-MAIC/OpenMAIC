@@ -25,6 +25,8 @@ export function TextElementOperate({
   scaleElement,
 }: TextElementOperateProps) {
   const canvasScale = useCanvasStore.use.canvasScale();
+  const editingElementId = useCanvasStore.use.editingElementId();
+  const isEditing = editingElementId === elementInfo.id;
 
   const scaleWidth = useMemo(
     () => elementInfo.width * canvasScale,
@@ -44,14 +46,30 @@ export function TextElementOperate({
 
   return (
     <div className="text-element-operate">
-      {borderLines.map((line) => (
-        <BorderLine
-          key={line.type}
-          type={line.type}
-          style={line.style}
-          className="operate-border-line"
+      {isEditing ? (
+        // One clean editing frame. While a single text element is being
+        // edited the surface sets `editingElementId`, so the renderer drops
+        // the dashed select frame here — eliminating the redundant box
+        // stacked on the focused editor. Resize/rotate handles are kept.
+        //
+        // pointer-events-none: this is a purely visual full-size overlay —
+        // without it, it would mask the text element's own move cursor,
+        // text cursor, click-to-caret and drag-to-move. The dashed
+        // BorderLines it replaces are thin edge lines, so they never did.
+        <div
+          className="operate-edit-frame pointer-events-none absolute top-0 left-0 border border-primary"
+          style={{ width: scaleWidth + 'px', height: scaleHeight + 'px' }}
         />
-      ))}
+      ) : (
+        borderLines.map((line) => (
+          <BorderLine
+            key={line.type}
+            type={line.type}
+            style={line.style}
+            className="operate-border-line"
+          />
+        ))
+      )}
       {handlerVisible && (
         <>
           {resizeHandlers.map((point) => (

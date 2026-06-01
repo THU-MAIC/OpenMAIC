@@ -361,7 +361,10 @@ function buildSpeakerNotes(scene: Scene): string {
   return parts.join('\n');
 }
 
-async function buildPptxBlob(
+// Exported for the round-trip integration test harness — the test wires its
+// own slides + ratios in and inspects the resulting PPTX bytes via JSZip.
+// The hook below is still the only intended runtime caller.
+export async function buildPptxBlob(
   slides: Slide[],
   slideScenes: Scene[],
   viewportRatio: number,

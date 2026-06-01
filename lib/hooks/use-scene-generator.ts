@@ -2,6 +2,7 @@
 
 import { useCallback, useRef } from 'react';
 import { useStageStore } from '@/lib/store/stage';
+import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
 import { db } from '@/lib/utils/database';
@@ -474,6 +475,22 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       const outline = state.failedOutlines.find((o) => o.id === outlineId);
       const params = lastParamsRef.current;
       if (!outline || !state.stage || !params) return;
+
+      // Regen-lock (#571): never silently replace a scene that is open in
+      // edit mode. Failed outlines have no completed scene yet so this is
+      // structurally a no-op today, but the guard is in place for the
+      // moment a "regenerate a successful scene" path routes through here.
+      const lockedScene = state.scenes.find((s) => s.order === outline.order);
+      if (
+        lockedScene &&
+        isSceneEditLocked({
+          sceneId: lockedScene.id,
+          mode: state.mode,
+          currentSceneId: state.currentSceneId,
+        })
+      ) {
+        return;
+      }
 
       const removeGeneratingOutline = () => {
         const current = store.getState().generatingOutlines;
