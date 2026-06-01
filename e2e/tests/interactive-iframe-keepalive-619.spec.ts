@@ -192,6 +192,12 @@ test.describe('#619 interactive iframe keep-alive', () => {
     await page.getByRole('switch').first().click();
     await expect(iframeEl).toBeVisible(); // back to playback
     await expect(count).toHaveText('3'); // state preserved → no reload
+    // Let the ~280ms mode cross-fade fully settle: the outgoing chrome's
+    // placeholder cleanup fires late, and a non-owner-checked release would hide
+    // the iframe here (the blank-on-return regression). It must stay visible.
+    await page.waitForTimeout(600);
+    await expect(iframeEl).toBeVisible();
+    await expect(count).toHaveText('3');
     await page.screenshot({ path: `${SHOTS}/03-back-from-pro.png`, fullPage: true });
 
     // --- Trigger B: scene switch away and back (placeholder unmount/remount) ---

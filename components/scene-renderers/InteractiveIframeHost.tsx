@@ -65,7 +65,7 @@ export function InteractiveIframeHost() {
           key={sceneId}
           sceneId={sceneId}
           entry={entry}
-          visible={mode !== 'edit' && entry.visible && sceneId === activeSceneId}
+          visible={mode !== 'edit' && entry.owner !== null && sceneId === activeSceneId}
         />
       ))}
     </>,

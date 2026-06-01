@@ -40,14 +40,24 @@ describe('mount', () => {
   });
 });
 
-describe('visibility + rect + active', () => {
-  test('hide keeps the entry alive but not visible', () => {
+describe('visibility ownership + rect + active', () => {
+  test('release keeps the entry alive but clears its owner', () => {
     pool().mount('s1', { srcDoc: 'x' });
-    pool().show('s1');
-    expect(pool().entries['s1'].visible).toBe(true);
-    pool().hide('s1');
+    pool().claim('s1', 'ownerA');
+    expect(pool().entries['s1'].owner).toBe('ownerA');
+    pool().release('s1', 'ownerA');
     expect(pool().entries['s1']).toBeDefined(); // keep-alive
-    expect(pool().entries['s1'].visible).toBe(false);
+    expect(pool().entries['s1'].owner).toBeNull();
+  });
+
+  test('a stale release (wrong owner) does NOT clear a re-claimed entry', () => {
+    // Models the mode cross-fade: a newer placeholder re-claims the scene, then
+    // the outgoing placeholder's unmount cleanup fires with its old owner id.
+    pool().mount('s1', { srcDoc: 'x' });
+    pool().claim('s1', 'old');
+    pool().claim('s1', 'new'); // newer placeholder takes over
+    pool().release('s1', 'old'); // stale cleanup must not hide it
+    expect(pool().entries['s1'].owner).toBe('new');
   });
 
   test('setRect updates the tracked rect', () => {
@@ -62,10 +72,10 @@ describe('visibility + rect + active', () => {
     expect(pool().activeSceneId).toBe('s1');
   });
 
-  test('setRect / show / hide on an unknown scene are no-ops', () => {
+  test('setRect / claim / release on an unknown scene are no-ops', () => {
     pool().setRect('ghost', { left: 0, top: 0, width: 0, height: 0 });
-    pool().show('ghost');
-    pool().hide('ghost');
+    pool().claim('ghost', 'o');
+    pool().release('ghost', 'o');
     expect(pool().entries['ghost']).toBeUndefined();
   });
 });

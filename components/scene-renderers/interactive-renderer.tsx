@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useEffect } from 'react';
+import { useId, useMemo, useRef, useEffect } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
 import { useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
@@ -21,10 +21,13 @@ interface InteractiveRendererProps {
  */
 export function InteractiveRenderer({ content, sceneId }: InteractiveRendererProps) {
   const slotRef = useRef<HTMLDivElement>(null);
+  // Unique per mounted placeholder instance — its visibility ownership token, so
+  // a stale unmount during the mode cross-fade can't hide a newer instance.
+  const owner = useId();
   const mount = useInteractiveIframePool((s) => s.mount);
   const setRect = useInteractiveIframePool((s) => s.setRect);
-  const show = useInteractiveIframePool((s) => s.show);
-  const hide = useInteractiveIframePool((s) => s.hide);
+  const claim = useInteractiveIframePool((s) => s.claim);
+  const release = useInteractiveIframePool((s) => s.release);
   const setActive = useInteractiveIframePool((s) => s.setActive);
 
   const patchedHtml = useMemo(
@@ -32,7 +35,7 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
     [content.html],
   );
 
-  // Register / activate / show in the pool while mounted; hide (keep-alive) on
+  // Register / activate / claim visibility while mounted; release (keep-alive) on
   // unmount. A content change re-runs this and rebuilds the iframe — the only
   // intended reload path.
   useEffect(() => {
@@ -41,9 +44,9 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
       src: patchedHtml ? undefined : content.url,
     });
     setActive(sceneId);
-    show(sceneId);
-    return () => hide(sceneId);
-  }, [sceneId, patchedHtml, content.url, mount, setActive, show, hide]);
+    claim(sceneId, owner);
+    return () => release(sceneId, owner);
+  }, [sceneId, owner, patchedHtml, content.url, mount, setActive, claim, release]);
 
   // Track this slot's screen rect for the host. rAF loop mirrors useTrackedRect:
   // one getBoundingClientRect read resolves canvas scale, viewport offset and

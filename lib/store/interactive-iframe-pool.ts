@@ -34,8 +34,16 @@ export interface IframePoolEntry {
   readonly src?: string;
   /** Live screen rect the host positions the iframe over, or null until measured. */
   readonly rect: IframeRect | null;
-  /** Whether the iframe should currently be shown (placeholder mounted & active). */
-  readonly visible: boolean;
+  /**
+   * Id of the placeholder instance that currently owns visibility, or null when
+   * no placeholder is mounted. The iframe shows iff this is non-null. Ownership
+   * (rather than a bare boolean) is what makes `release` race-safe: during the
+   * Stage mode cross-fade an outgoing placeholder's unmount cleanup can run
+   * *after* a newer placeholder for the same scene has already mounted and
+   * claimed it — keying the release on the owner id lets the stale cleanup
+   * no-op instead of hiding the live iframe.
+   */
+  readonly owner: string | null;
   /** Monotonic recency marker for LRU eviction. */
   readonly tick: number;
 }
@@ -52,8 +60,10 @@ interface InteractiveIframePoolState {
   tick: number;
   mount: (sceneId: string, input: MountInput) => void;
   setRect: (sceneId: string, rect: IframeRect) => void;
-  show: (sceneId: string) => void;
-  hide: (sceneId: string) => void;
+  /** A placeholder claims visibility for its scene, recording its owner id. */
+  claim: (sceneId: string, owner: string) => void;
+  /** Release visibility, but only if `owner` still owns it (stale = no-op). */
+  release: (sceneId: string, owner: string) => void;
   setActive: (sceneId: string) => void;
   evict: (sceneId: string) => void;
   /** Drop everything (e.g. when the host unmounts on classroom switch). */
@@ -106,7 +116,7 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
         srcDoc: input.srcDoc,
         src: input.src,
         rect: existing?.rect ?? null,
-        visible: existing?.visible ?? false,
+        owner: existing?.owner ?? null,
         tick,
       };
       const entries = evictLru({ ...state.entries, [sceneId]: entry }, state.activeSceneId);
@@ -130,18 +140,21 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       return { entries: { ...state.entries, [sceneId]: { ...existing, rect } } };
     }),
 
-  show: (sceneId) =>
+  claim: (sceneId, owner) =>
     set((state) => {
       const existing = state.entries[sceneId];
-      if (!existing || existing.visible) return {};
-      return { entries: { ...state.entries, [sceneId]: { ...existing, visible: true } } };
+      if (!existing || existing.owner === owner) return {};
+      return { entries: { ...state.entries, [sceneId]: { ...existing, owner } } };
     }),
 
-  hide: (sceneId) =>
+  release: (sceneId, owner) =>
     set((state) => {
       const existing = state.entries[sceneId];
-      if (!existing || !existing.visible) return {};
-      return { entries: { ...state.entries, [sceneId]: { ...existing, visible: false } } };
+      // Only the current owner may release. A stale placeholder (whose unmount
+      // cleanup runs after a newer one already re-claimed during the mode
+      // cross-fade) finds owner !== its id and no-ops, so the live iframe stays.
+      if (!existing || existing.owner !== owner) return {};
+      return { entries: { ...state.entries, [sceneId]: { ...existing, owner: null } } };
     }),
 
   setActive: (sceneId) => set({ activeSceneId: sceneId }),
