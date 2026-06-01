@@ -41,4 +41,29 @@ describe('LLM thinking provider options', () => {
     };
     expect(params.providerOptions?.anthropic).not.toHaveProperty('effort');
   });
+
+  it('sends MiniMax M3 thinking disablement through Anthropic provider options', async () => {
+    await callLLM(
+      {
+        model: {
+          provider: 'anthropic.messages',
+          modelId: 'MiniMax-M3',
+        },
+        prompt: 'hi',
+      } as Parameters<typeof callLLM>[0],
+      'test',
+      undefined,
+      { mode: 'disabled' },
+    );
+
+    expect(aiMock.generateText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerOptions: {
+          anthropic: {
+            thinking: { type: 'disabled' },
+          },
+        },
+      }),
+    );
+  });
 });

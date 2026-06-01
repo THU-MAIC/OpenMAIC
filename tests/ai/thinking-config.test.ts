@@ -25,12 +25,21 @@ describe('thinking config metadata', () => {
 
   it('does not expose fixed thinking models as configurable', () => {
     const thinking = getThinking('grok', 'grok-4.20-reasoning');
-    const minimaxThinking = getThinking('minimax', 'MiniMax-M2.7');
+    const minimaxM27Thinking = getThinking('minimax', 'MiniMax-M2.7');
 
     expect(thinking?.control).toBe('none');
     expect(supportsConfigurableThinking(thinking)).toBe(false);
-    expect(minimaxThinking?.control).toBe('none');
-    expect(supportsConfigurableThinking(minimaxThinking)).toBe(false);
+    expect(minimaxM27Thinking?.control).toBe('none');
+    expect(supportsConfigurableThinking(minimaxM27Thinking)).toBe(false);
+  });
+
+  it('exposes MiniMax M3 thinking as a toggle through the Anthropic adapter', () => {
+    const thinking = getThinking('minimax', 'MiniMax-M3');
+
+    expect(supportsConfigurableThinking(thinking)).toBe(true);
+    expect(thinking?.control).toBe('toggle');
+    expect(thinking?.requestAdapter).toBe('anthropic');
+    expect(getDefaultThinkingConfig(thinking)).toEqual({ mode: 'disabled' });
   });
 
   it('exposes Claude Haiku 4.5 thinking as budget-only, not effort', () => {
@@ -73,7 +82,7 @@ describe('thinking config metadata', () => {
     expect(googleModels).not.toContain('gemini-3-pro-preview');
     expect(deepseekModels).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash']);
     expect(hunyuanModels).toEqual(['hy3-preview']);
-    expect(minimaxModels).toEqual(['MiniMax-M2.7']);
+    expect(minimaxModels).toEqual(['MiniMax-M3', 'MiniMax-M2.7']);
     expect(siliconflowModels).not.toContain('MiniMaxAI/MiniMax-M2');
   });
 });
@@ -108,6 +117,7 @@ describe('thinking config normalization', () => {
 
   it('normalizes Claude 4.5+ thinking as effort levels', () => {
     const thinking = getThinking('anthropic', 'claude-sonnet-4-6');
+    const opus48Thinking = getThinking('anthropic', 'claude-opus-4-8');
     const opus47Thinking = getThinking('anthropic', 'claude-opus-4-7');
 
     expect(getDefaultThinkingConfig(thinking)).toEqual({
@@ -122,6 +132,7 @@ describe('thinking config normalization', () => {
       mode: 'disabled',
       effort: 'none',
     });
+    expect(opus48Thinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
     expect(opus47Thinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
   });
 
