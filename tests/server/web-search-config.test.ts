@@ -12,6 +12,8 @@ describe('server web search config', () => {
     delete process.env.BRAVE_BASE_URL;
     delete process.env.BAIDU_API_KEY;
     delete process.env.BAIDU_BASE_URL;
+    delete process.env.WEB_SEARCH_MINIMAX_API_KEY;
+    delete process.env.WEB_SEARCH_MINIMAX_BASE_URL;
   });
 
   it('rejects client-controlled base URLs outside the provider allowlist', async () => {
@@ -28,6 +30,17 @@ describe('server web search config', () => {
     expect(resolveSafeClientWebSearchBaseUrl('bocha', 'https://api.bochaai.com/v1')).toBe(
       'https://api.bochaai.com/v1',
     );
+  });
+
+  it('allows official MiniMax client base URLs', async () => {
+    const { resolveSafeClientWebSearchBaseUrl } = await import('@/lib/server/web-search-config');
+
+    expect(
+      resolveSafeClientWebSearchBaseUrl(
+        'minimax',
+        'https://api.minimaxi.com/v1/coding_plan/search',
+      ),
+    ).toBe('https://api.minimaxi.com/v1/coding_plan/search');
   });
 
   it('resolves classroom web search config from selected provider and client key', async () => {
@@ -65,6 +78,19 @@ describe('server web search config', () => {
       providerId: 'brave',
       apiKey: '',
       baseUrl: undefined,
+    });
+  });
+
+  it('resolves MiniMax classroom web search config from dedicated server env vars', async () => {
+    vi.stubEnv('WEB_SEARCH_MINIMAX_API_KEY', 'minimax-server-key');
+    vi.stubEnv('WEB_SEARCH_MINIMAX_BASE_URL', 'https://api.minimaxi.com');
+
+    const { resolveClassroomWebSearchConfig } = await import('@/lib/server/web-search-config');
+
+    expect(resolveClassroomWebSearchConfig({ webSearchProviderId: 'minimax' })).toEqual({
+      providerId: 'minimax',
+      apiKey: 'minimax-server-key',
+      baseUrl: 'https://api.minimaxi.com',
     });
   });
 

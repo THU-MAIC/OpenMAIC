@@ -139,6 +139,8 @@ function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
       return 'BOCHA_API_KEY';
     case 'brave':
       return 'BRAVE_API_KEY';
+    case 'minimax':
+      return 'WEB_SEARCH_MINIMAX_API_KEY';
     case 'tavily':
     default:
       return 'TAVILY_API_KEY';

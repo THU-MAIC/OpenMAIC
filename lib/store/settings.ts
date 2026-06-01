@@ -466,6 +466,12 @@ const getDefaultWebSearchConfig = () => ({
       requiresApiKey: false,
     },
     baidu: { apiKey: '', baseUrl: '', enabled: true, requiresApiKey: true },
+    minimax: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.minimax.defaultBaseUrl || '',
+      enabled: true,
+      requiresApiKey: true,
+    },
   } as Record<
     WebSearchProviderId,
     { apiKey: string; baseUrl: string; enabled: boolean; requiresApiKey?: boolean }
@@ -1772,6 +1778,12 @@ export const useSettingsStore = create<SettingsState>()(
             baidu: {
               apiKey: '',
               baseUrl: '',
+              enabled: true,
+              requiresApiKey: true,
+            },
+            minimax: {
+              apiKey: '',
+              baseUrl: WEB_SEARCH_PROVIDERS.minimax.defaultBaseUrl || '',
               enabled: true,
               requiresApiKey: true,
             },
