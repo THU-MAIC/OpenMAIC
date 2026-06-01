@@ -12,8 +12,8 @@
  * rect to position the iframe over, and whether it should currently be visible.
  *
  * Entries are keyed by sceneId and persist across scene/mode changes — a scene's
- * iframe is only rebuilt when its content hash changes. A small LRU cap bounds
- * how many documents stay resident in memory.
+ * iframe is only rebuilt when its content actually changes. A small LRU cap
+ * bounds how many documents stay resident in memory.
  */
 
 import { create } from 'zustand';
@@ -32,8 +32,6 @@ export interface IframePoolEntry {
   readonly srcDoc?: string;
   /** URL for `src`, when the scene points at an external page. */
   readonly src?: string;
-  /** Content fingerprint — a change is the only thing that rebuilds the iframe. */
-  readonly hash: string;
   /** Live screen rect the host positions the iframe over, or null until measured. */
   readonly rect: IframeRect | null;
   /** Whether the iframe should currently be shown (placeholder mounted & active). */
@@ -45,7 +43,6 @@ export interface IframePoolEntry {
 interface MountInput {
   readonly srcDoc?: string;
   readonly src?: string;
-  readonly hash: string;
 }
 
 interface InteractiveIframePoolState {
@@ -59,15 +56,8 @@ interface InteractiveIframePoolState {
   hide: (sceneId: string) => void;
   setActive: (sceneId: string) => void;
   evict: (sceneId: string) => void;
-}
-
-/** djb2 string hash — cheap and stable, enough to detect content changes. */
-export function hashContent(content: string): string {
-  let h = 5381;
-  for (let i = 0; i < content.length; i++) {
-    h = ((h << 5) + h + content.charCodeAt(i)) | 0;
-  }
-  return (h >>> 0).toString(36);
+  /** Drop everything (e.g. when the host unmounts on classroom switch). */
+  reset: () => void;
 }
 
 /**
@@ -104,17 +94,17 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       const existing = state.entries[sceneId];
       // Same content already loaded: just refresh recency. Crucially we keep the
       // existing srcDoc/src reference so the host never re-sets it (which would
-      // reload the iframe). This is the keep-alive fast path.
-      if (existing && existing.hash === input.hash) {
+      // reload the iframe). String `===` is by value, so a remount that produces
+      // an equal-but-new srcDoc string still hits this keep-alive fast path.
+      if (existing && existing.srcDoc === input.srcDoc && existing.src === input.src) {
         const entries = { ...state.entries, [sceneId]: { ...existing, tick } };
         return { entries, tick };
       }
-      // New scene, or content changed: (re)build the entry. A changed hash here
+      // New scene, or content changed: (re)build the entry. A content change here
       // is the one intended reload path.
       const entry: IframePoolEntry = {
         srcDoc: input.srcDoc,
         src: input.src,
-        hash: input.hash,
         rect: existing?.rect ?? null,
         visible: existing?.visible ?? false,
         tick,
@@ -164,4 +154,6 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
       const activeSceneId = state.activeSceneId === sceneId ? null : state.activeSceneId;
       return { entries, activeSceneId };
     }),
+
+  reset: () => set({ entries: {}, activeSceneId: null, tick: 0 }),
 }));

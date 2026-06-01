@@ -439,8 +439,15 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         engineRef.current.stop();
       }
 
-      // Get widget iframe messaging callback for interactive scenes (keyed by sceneId)
-      const widgetSendMessage = useWidgetIframeStore.getState().getSendMessage(currentScene.id);
+      // Widget iframe messaging callback for interactive scenes, resolved lazily
+      // at send time (keyed by sceneId). The interactive iframe now lives in the
+      // keep-alive host (#619), which registers its postMessage callback a commit
+      // after this engine is built — so resolving eagerly here would capture null
+      // on a scene's first visit and silently drop every widget action. Looking it
+      // up per-send always sees the live registration.
+      const sceneIdForWidget = currentScene.id;
+      const widgetSendMessage = (type: string, payload: Record<string, unknown>) =>
+        useWidgetIframeStore.getState().getSendMessage(sceneIdForWidget)?.(type, payload);
 
       // Create ActionEngine for playback (with audioPlayer for TTS and widget messaging)
       const actionEngine = new ActionEngine(

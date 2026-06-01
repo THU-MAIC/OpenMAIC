@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useEffect } from 'react';
 import type { InteractiveContent } from '@/lib/types/stage';
-import { hashContent, useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
+import { useInteractiveIframePool } from '@/lib/store/interactive-iframe-pool';
 import { patchHtmlForIframe } from '@/lib/utils/iframe';
 
 interface InteractiveRendererProps {
@@ -31,24 +31,19 @@ export function InteractiveRenderer({ content, sceneId }: InteractiveRendererPro
     () => (content.html ? patchHtmlForIframe(content.html) : undefined),
     [content.html],
   );
-  const hash = useMemo(
-    () => hashContent(patchedHtml ?? content.url ?? ''),
-    [patchedHtml, content.url],
-  );
 
   // Register / activate / show in the pool while mounted; hide (keep-alive) on
-  // unmount. A changed hash re-runs this and rebuilds the iframe — the only
+  // unmount. A content change re-runs this and rebuilds the iframe — the only
   // intended reload path.
   useEffect(() => {
     mount(sceneId, {
       srcDoc: patchedHtml,
       src: patchedHtml ? undefined : content.url,
-      hash,
     });
     setActive(sceneId);
     show(sceneId);
     return () => hide(sceneId);
-  }, [sceneId, hash, patchedHtml, content.url, mount, setActive, show, hide]);
+  }, [sceneId, patchedHtml, content.url, mount, setActive, show, hide]);
 
   // Track this slot's screen rect for the host. rAF loop mirrors useTrackedRect:
   // one getBoundingClientRect read resolves canvas scale, viewport offset and
