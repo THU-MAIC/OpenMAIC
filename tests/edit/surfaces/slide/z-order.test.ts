@@ -19,9 +19,7 @@ function seed(ids: string[]) {
 /* eslint-enable @typescript-eslint/no-explicit-any */
 
 function order(): string[] {
-  return useSlideEditSession
-    .getState()
-    .history!.present.canvas.elements.map((e) => e.id);
+  return useSlideEditSession.getState().history!.present.canvas.elements.map((e) => e.id);
 }
 
 describe('reorderSlideElement', () => {
