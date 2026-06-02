@@ -39,4 +39,12 @@ describe('reorderSlideElement', () => {
     reorderSlideElement('zzz', 'front');
     expect(order()).toEqual(['a', 'b', 'c']);
   });
+
+  it('does not push an undo step when the element is already at that edge', () => {
+    // 'c' is last → to-front is a no-op; 'a' is first → to-back is a no-op.
+    reorderSlideElement('c', 'front');
+    reorderSlideElement('a', 'back');
+    expect(order()).toEqual(['a', 'b', 'c']);
+    expect(useSlideEditSession.getState().history!.past).toHaveLength(0);
+  });
 });
