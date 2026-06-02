@@ -24,7 +24,7 @@ describe('slide insert palette', () => {
 
   it('exposes a text-box and an image insert item', () => {
     const items = buildInsertItems((k) => k, undefined);
-    expect(items.map((i) => i.id)).toEqual(['insert-text', 'insert-image']);
+    expect(items.map((i) => i.id)).toEqual(['insert-text', 'insert-image', 'slide-background']);
     expect(items[1].popoverContent).toBeTypeOf('function');
     expect(items[0].onInvoke).toBeTypeOf('function');
   });
