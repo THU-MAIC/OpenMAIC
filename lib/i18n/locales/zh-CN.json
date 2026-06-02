@@ -214,6 +214,21 @@
       "deckLabel": "场景",
       "moreActions": "更多操作",
       "rename": "重命名"
+    },
+    "zorder": {
+      "toFront": "置于顶层",
+      "toBack": "置于底层"
+    },
+    "image": {
+      "replace": "替换图片",
+      "crop": "裁剪",
+      "flipH": "水平翻转",
+      "flipV": "垂直翻转"
+    },
+    "background": {
+      "label": "背景",
+      "solid": "纯色",
+      "image": "图片"
     }
   },
   "classroomComplete": {

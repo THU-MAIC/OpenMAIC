@@ -214,6 +214,21 @@
       "deckLabel": "المشاهد",
       "moreActions": "إجراءات إضافية",
       "rename": "إعادة تسمية"
+    },
+    "zorder": {
+      "toFront": "إحضار إلى الأمام",
+      "toBack": "إرسال إلى الخلف"
+    },
+    "image": {
+      "replace": "استبدال الصورة",
+      "crop": "اقتصاص",
+      "flipH": "قلب أفقي",
+      "flipV": "قلب رأسي"
+    },
+    "background": {
+      "label": "الخلفية",
+      "solid": "لون خالص",
+      "image": "صورة"
     }
   },
   "classroomComplete": {

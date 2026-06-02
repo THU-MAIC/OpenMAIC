@@ -214,6 +214,21 @@
       "deckLabel": "Scenes",
       "moreActions": "More actions",
       "rename": "Rename"
+    },
+    "zorder": {
+      "toFront": "Bring to front",
+      "toBack": "Send to back"
+    },
+    "image": {
+      "replace": "Replace image",
+      "crop": "Crop",
+      "flipH": "Flip horizontal",
+      "flipV": "Flip vertical"
+    },
+    "background": {
+      "label": "Background",
+      "solid": "Solid",
+      "image": "Image"
     }
   },
   "classroomComplete": {

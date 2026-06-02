@@ -110,6 +110,17 @@ export function deleteSlideElement(elementId: string): void {
   useCanvasStore.getState().setActiveElementIdList([]);
 }
 
+/**
+ * Move an element to the front (top) or back (bottom) of the z-order.
+ * Two-way only — intermediate forward/backward steps stay AI's domain.
+ */
+export function reorderSlideElement(elementId: string, edge: 'front' | 'back'): void {
+  const present = useSlideEditSession.getState().history?.present ?? null;
+  if (!present) return;
+  const index = edge === 'front' ? present.canvas.elements.length - 1 : 0;
+  useSlideEditSession.getState().applyOp({ type: 'element.reorder', elementId, index });
+}
+
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
 
 function currentSlideContent(sceneId: string): SlideContent | null {

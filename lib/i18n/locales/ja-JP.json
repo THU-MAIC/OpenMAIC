@@ -214,6 +214,21 @@
       "deckLabel": "シーン",
       "moreActions": "その他の操作",
       "rename": "名前を変更"
+    },
+    "zorder": {
+      "toFront": "最前面へ移動",
+      "toBack": "最背面へ移動"
+    },
+    "image": {
+      "replace": "画像を置き換え",
+      "crop": "トリミング",
+      "flipH": "左右反転",
+      "flipV": "上下反転"
+    },
+    "background": {
+      "label": "背景",
+      "solid": "単色",
+      "image": "画像"
     }
   },
   "classroomComplete": {
