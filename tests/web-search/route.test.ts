@@ -55,6 +55,8 @@ describe('POST /api/web-search', () => {
     delete process.env.BRAVE_BASE_URL;
     delete process.env.BAIDU_API_KEY;
     delete process.env.BAIDU_BASE_URL;
+    delete process.env.WEB_SEARCH_MINIMAX_API_KEY;
+    delete process.env.WEB_SEARCH_MINIMAX_BASE_URL;
     mocks.searchWeb.mockReset();
     mocks.formatSearchResultsAsContext.mockClear();
     mocks.resolveModelFromRequest.mockReset();
@@ -164,6 +166,25 @@ describe('POST /api/web-search', () => {
           baike: true,
           scholar: false,
         },
+      }),
+    );
+  });
+
+  it('routes MiniMax web search through the dispatcher with server config', async () => {
+    vi.stubEnv('WEB_SEARCH_MINIMAX_API_KEY', 'minimax-server-key');
+    vi.stubEnv('WEB_SEARCH_MINIMAX_BASE_URL', 'https://api.minimaxi.com');
+
+    const res = await postWebSearch({
+      query: 'test query',
+      providerId: 'minimax',
+    });
+
+    expect(res.status).toBe(200);
+    expect(mocks.searchWeb).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'minimax',
+        apiKey: 'minimax-server-key',
+        baseUrl: 'https://api.minimaxi.com',
       }),
     );
   });

@@ -108,6 +108,7 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   BOCHA: 'bocha',
   BRAVE: 'brave',
   BAIDU: 'baidu',
+  WEB_SEARCH_MINIMAX: 'minimax',
 };
 
 // ---------------------------------------------------------------------------
@@ -500,5 +501,6 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (webSearch.tavily?.apiKey) return 'tavily';
   if (webSearch.bocha?.apiKey) return 'bocha';
   if (webSearch.baidu?.apiKey) return 'baidu';
+  if (webSearch.minimax?.apiKey) return 'minimax';
   return Object.keys(webSearch)[0];
 }

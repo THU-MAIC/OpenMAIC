@@ -49,6 +49,7 @@ const ENV_PREFIXES_TO_CLEAR = [
   'VIDEO_MINIMAX',
   'VIDEO_GROK',
   'BOCHA',
+  'WEB_SEARCH_MINIMAX',
 ];
 
 function clearProviderEnv() {
@@ -300,6 +301,17 @@ providers:
       expect(resolveWebSearchBaseUrl('bocha', 'https://client.example.com')).toBe(
         'https://proxy.example.com/bocha',
       );
+    });
+
+    it('resolves MiniMax web search API key and base URL from dedicated env vars', async () => {
+      vi.stubEnv('WEB_SEARCH_MINIMAX_API_KEY', 'minimax-env-key');
+      vi.stubEnv('WEB_SEARCH_MINIMAX_BASE_URL', 'https://proxy.example.com/minimax');
+      const { getServerWebSearchProviders, resolveWebSearchApiKey, resolveWebSearchBaseUrl } =
+        await import('@/lib/server/provider-config');
+
+      expect(resolveWebSearchApiKey('minimax', undefined)).toBe('minimax-env-key');
+      expect(resolveWebSearchBaseUrl('minimax')).toBe('https://proxy.example.com/minimax');
+      expect(getServerWebSearchProviders().minimax).toEqual({});
     });
   });
 

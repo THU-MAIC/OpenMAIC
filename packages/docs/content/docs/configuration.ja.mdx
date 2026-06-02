@@ -108,7 +108,7 @@ ACCESS_CODE=your-secret-code
 
 ## Web 検索
 
-Tavily または Bocha を設定します。
+Tavily、Bocha、または MiniMax を設定します。
 
 ```bash
 TAVILY_API_KEY=
@@ -116,6 +116,9 @@ TAVILY_BASE_URL=           # 任意の上書き
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 任意の上書き
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 任意の上書き
 ```
 
 フロントエンドには、生成ごとに検索を有効化するためのトグルが表示されます。
@@ -165,7 +168,9 @@ pdf:
 web-search:
   tavily:
     apiKey: tvly-...
+  minimax:
+    apiKey: sk-...
+    baseUrl: https://api.minimaxi.com
 ```
 
-環境変数は対応する YAML フィールドをフィールド単位で上書きします。キーは `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`tavily` のような provider ID に対応します。
-
+環境変数は対応する YAML フィールドをフィールド単位で上書きします。キーは `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`tavily`、`minimax` のような provider ID に対応します。
