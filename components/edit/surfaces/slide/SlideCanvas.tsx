@@ -6,12 +6,12 @@ import { SceneProvider } from '@/lib/contexts/scene-context';
 import { useCanvasStore } from '@/lib/store/canvas';
 import {
   useEditingTextElementId,
-  useSelectedNonTextElementId,
+  useSelectedNonTextElement,
   useSlideCanvasController,
   useSyncEditingElementId,
 } from './use-slide-surface';
 import { AnchoredTextBar } from './AnchoredTextBar';
-import { AnchoredDeleteBar } from './AnchoredDeleteBar';
+import { AnchoredElementBar } from './AnchoredElementBar';
 
 /**
  * The slide surface's canvas. Reuses the unmodified slide renderer
@@ -23,13 +23,14 @@ import { AnchoredDeleteBar } from './AnchoredDeleteBar';
  * It also owns the selection-anchored chrome: it derives the selected element,
  * mirrors a selected text element into the canvas store's `editingElementId`
  * (which the renderer reads to draw a clean frame), and renders the anchored
- * bars — the format bar for text, a delete bar for every other element type.
+ * bars — the format bar for text, a type-aware element bar (z-order + delete,
+ * plus replace/crop/flip for images) for every other element type.
  * At most one bar is open at a time (single selection).
  */
 export function SlideCanvas() {
   const { controller, gestureProps } = useSlideCanvasController();
   const editingElementId = useEditingTextElementId();
-  const nonTextElementId = useSelectedNonTextElementId();
+  const nonTextElement = useSelectedNonTextElement();
   useSyncEditingElementId(editingElementId);
 
   // Esc disarms in-flight insert mode. Read via getState so the listener mounts
@@ -58,7 +59,7 @@ export function SlideCanvas() {
         <Canvas />
       </SceneProvider>
       <AnchoredTextBar editingElementId={editingElementId} />
-      <AnchoredDeleteBar elementId={nonTextElementId} />
+      <AnchoredElementBar element={nonTextElement} />
     </div>
   );
 }
