@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useCanvasStore } from '@/lib/store/canvas';
 
 export interface TrackedRect {
   readonly left: number;
@@ -37,10 +38,18 @@ const STABLE_FRAMES_BEFORE_IDLE = 20;
  * scale, viewport offset and page scroll). A requestAnimationFrame loop drives
  * it, but it parks itself once the rect holds steady, so an idle selection
  * doesn't spin at 60fps. It re-arms on the events that move the element's
- * screen rect: a pointer press (drag-move / resize-handle — the loop stays live
- * for the whole press and follows frame-by-frame), a ResizeObserver callback
- * (element resize, or canvas rescale on zoom), and window scroll / resize. The
- * loop starts after mount, so on first selection the bar appears one frame
+ * screen rect:
+ *  - a pointer press (drag-move / resize-handle — the loop stays live for the
+ *    whole press and follows frame-by-frame),
+ *  - a ResizeObserver callback (the element's own box resized),
+ *  - window scroll / resize,
+ *  - and canvas-zoom transforms (`canvasScale` / `zoomTarget` in the canvas
+ *    store). The zoom is a CSS `transform: scale(...)` on an ancestor, which a
+ *    ResizeObserver on the element node does NOT observe — so without this the
+ *    bar would detach after the loop parks. `zoomTarget` is an animated 700ms
+ *    transform, so the loop is kept alive (like a pointer press) while it is
+ *    set, not merely re-armed once.
+ * The loop starts after mount, so on first selection the bar appears one frame
  * late — imperceptible. Returns null while `elementId` is "" or unmounted.
  */
 export function useTrackedRect(elementId: string): TrackedRect | null {
@@ -56,6 +65,9 @@ export function useTrackedRect(elementId: string): TrackedRect | null {
     let current: TrackedRect | null = null;
     let stableFrames = 0;
     let pointerDown = false;
+    // A canvas zoom is an animated ancestor transform; keep the loop live for
+    // its whole duration (a ResizeObserver on the element node can't see it).
+    let zoomActive = useCanvasStore.getState().zoomTarget !== null;
 
     const read = (): TrackedRect | null => {
       const wrapper = document.getElementById(`editable-element-${elementId}`);
@@ -80,9 +92,10 @@ export function useTrackedRect(elementId: string): TrackedRect | null {
       } else {
         stableFrames += 1;
       }
-      // Keep following for the whole pointer press (drag/resize); otherwise park
-      // once the rect has settled. Scroll/resize/RO/pointer re-arm via `arm`.
-      if (!pointerDown && stableFrames >= STABLE_FRAMES_BEFORE_IDLE) {
+      // Keep following for the whole pointer press / zoom animation; otherwise
+      // park once the rect has settled. Scroll/resize/RO/pointer/zoom re-arm
+      // via `arm`.
+      if (!pointerDown && !zoomActive && stableFrames >= STABLE_FRAMES_BEFORE_IDLE) {
         raf = 0;
         return;
       }
@@ -116,9 +129,20 @@ export function useTrackedRect(elementId: string): TrackedRect | null {
     window.addEventListener('pointerup', onPointerUp);
     window.addEventListener('pointercancel', onPointerUp);
 
+    // Canvas zoom changes the element's screen rect via an ancestor transform
+    // that the ResizeObserver can't see; re-arm (and keep alive while a
+    // zoom-to animation is running) on the relevant store fields.
+    const unsubscribeZoom = useCanvasStore.subscribe((state, prev) => {
+      if (state.canvasScale !== prev.canvasScale || state.zoomTarget !== prev.zoomTarget) {
+        zoomActive = state.zoomTarget !== null;
+        arm();
+      }
+    });
+
     return () => {
       if (raf) cancelAnimationFrame(raf);
       ro?.disconnect();
+      unsubscribeZoom();
       window.removeEventListener('scroll', arm, true);
       window.removeEventListener('resize', arm);
       window.removeEventListener('pointerdown', onPointerDown);

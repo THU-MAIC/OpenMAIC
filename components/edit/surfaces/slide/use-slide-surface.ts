@@ -129,7 +129,12 @@ export function deleteSlideElement(elementId: string): void {
 export function reorderSlideElement(elementId: string, edge: 'front' | 'back'): void {
   const present = useSlideEditSession.getState().history?.present ?? null;
   if (!present) return;
-  const index = edge === 'front' ? present.canvas.elements.length - 1 : 0;
+  const elements = present.canvas.elements;
+  const currentIndex = elements.findIndex((el) => el.id === elementId);
+  if (currentIndex === -1) return;
+  const index = edge === 'front' ? elements.length - 1 : 0;
+  // Already at the target edge — skip so we don't push an empty undo step.
+  if (currentIndex === index) return;
   useSlideEditSession.getState().applyOp({ type: 'element.reorder', elementId, index });
 }
 
