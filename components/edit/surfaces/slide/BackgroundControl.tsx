@@ -16,7 +16,7 @@ export function BackgroundControl() {
   const bg = useResolvedSlideContent().canvas.background;
   const color = bg?.type === 'solid' && bg.color ? bg.color : '#ffffff';
   return (
-    <Tabs defaultValue={bg?.type === 'image' ? 'image' : 'solid'} className="w-[248px]">
+    <Tabs defaultValue={bg?.type === 'image' ? 'image' : 'solid'} className="w-full">
       <TabsList className="w-full">
         <TabsTrigger value="solid" className="flex-1">
           {t('edit.background.solid')}
@@ -27,6 +27,7 @@ export function BackgroundControl() {
       </TabsList>
       <TabsContent value="solid" className="pt-3">
         <ColorPicker
+          className="w-full"
           value={color}
           onChange={(c) => updateSlideBackground({ type: 'solid', color: c })}
           onCommit={(c) => updateSlideBackground({ type: 'solid', color: c })}
