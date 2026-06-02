@@ -308,7 +308,9 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
-    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
+    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
+      keylessProviders: new Set(['brave']),
+    }),
     ttsDisabled: collectDisabledTTS(yamlData.tts),
   };
 }
@@ -566,5 +568,8 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (webSearch.bocha?.apiKey) return 'bocha';
   if (webSearch.baidu?.apiKey) return 'baidu';
   if (webSearch.minimax?.apiKey) return 'minimax';
+  // Brave needs no API key (it scrapes the public results page), so a configured
+  // keyless Brave is a valid fallback even though it has no apiKey.
+  if (webSearch.brave) return 'brave';
   return Object.keys(webSearch)[0];
 }

@@ -315,6 +315,30 @@ providers:
     });
   });
 
+  describe('resolveServerWebSearchProviderId', () => {
+    it('selects keyless Brave when only BRAVE_BASE_URL is set (no API key)', async () => {
+      vi.stubEnv('BRAVE_BASE_URL', 'https://search.brave.com');
+      const {
+        resolveServerWebSearchProviderId,
+        getServerWebSearchProviders,
+        resolveWebSearchBaseUrl,
+      } = await import('@/lib/server/provider-config');
+      // Brave is activated as a keyless server provider via base URL alone. The
+      // exposed map shows only presence (managed flag), not the base URL (#624).
+      expect(getServerWebSearchProviders().brave).toEqual({});
+      expect(resolveWebSearchBaseUrl('brave')).toBe('https://search.brave.com');
+      // ...and Brave is then auto-selected as the server default.
+      expect(resolveServerWebSearchProviderId()).toBe('brave');
+    });
+
+    it('prefers a keyed provider over keyless Brave', async () => {
+      vi.stubEnv('BRAVE_BASE_URL', 'https://search.brave.com');
+      vi.stubEnv('TAVILY_API_KEY', 'tvly-key');
+      const { resolveServerWebSearchProviderId } = await import('@/lib/server/provider-config');
+      expect(resolveServerWebSearchProviderId()).toBe('tavily');
+    });
+  });
+
   describe('baseUrl-only providers (e.g. mineru)', () => {
     it('includes PDF provider from YAML when only baseUrl is configured (no apiKey)', async () => {
       yamlOverride = `
