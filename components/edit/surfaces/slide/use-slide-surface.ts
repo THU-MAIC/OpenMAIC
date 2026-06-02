@@ -1,7 +1,7 @@
 'use client';
 
 import { produce } from 'immer';
-import { Image as ImageIcon, Type } from 'lucide-react';
+import { Image as ImageIcon, PaintBucket, Type } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
@@ -14,6 +14,7 @@ import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
 import type { PPTElement, PPTImageElement, SlideBackground } from '@/lib/types/slides';
 import { ImagePicker } from './ImagePicker';
+import { BackgroundControl } from './BackgroundControl';
 import { useSlideEditSession } from './slide-edit-session';
 import { resolveEditingElementId, resolveSelectedElement } from './editing-state';
 
@@ -52,6 +53,16 @@ export function buildInsertItems(
         React.createElement(ImagePicker, {
           onPick: insertImageElement,
         }),
+    },
+    {
+      // Slide-level (not element-anchored): set the slide background. Rides the
+      // always-visible insert strip so it stays reachable with nothing selected.
+      id: 'slide-background',
+      label: t('edit.background.label'),
+      tooltip: t('edit.background.label'),
+      icon: React.createElement(PaintBucket, { className: 'h-4 w-4' }),
+      onInvoke: () => {}, // popover-only: see insert-image above
+      popoverContent: () => React.createElement(BackgroundControl),
     },
   ];
 }
