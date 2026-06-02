@@ -8,7 +8,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { generateTTS } from '@/lib/audio/tts-providers';
+import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import {
   canUseServerApiKeyForBaseUrl,
   resolveTTSApiKey,
@@ -115,6 +115,9 @@ export async function POST(req: NextRequest) {
       `TTS generation failed [provider=${ttsProviderId ?? 'unknown'}, voice=${ttsVoice ?? 'unknown'}, audioId=${audioId ?? 'unknown'}]:`,
       error,
     );
+    if (error instanceof TTSRateLimitError) {
+      return apiError('RATE_LIMITED', 429, error.message);
+    }
     return apiError(
       'GENERATION_FAILED',
       500,
