@@ -99,6 +99,14 @@ export function ElementCreateSelection({ onCreated }: ElementCreateSelectionProp
           start: [startPageX, startPageY],
           end: [endPageX, endPageY],
         });
+      } else if (creatingElement?.type === 'text') {
+        // Click or sub-threshold wobble for a text box — hand the raw start/end
+        // through; the consumer applies a text-natural default size (a 200×200
+        // square pad would never suit a text box).
+        onCreated({
+          start: [startPageX, startPageY],
+          end: [endPageX, endPageY],
+        });
       } else {
         const defaultSize = 200;
         const minX = Math.min(endPageX, startPageX);

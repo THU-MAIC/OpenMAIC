@@ -1,14 +1,18 @@
 import { describe, expect, test } from 'vitest';
 import { buildPrompt, PROMPT_IDS, processConditionalBlocks } from '@/lib/prompts';
+import type { PromptId } from '@/lib/prompts';
 
-function buildOutlinePrompt(flags: {
-  hasSourceImages?: boolean;
-  imageEnabled?: boolean;
-  videoEnabled?: boolean;
-}) {
+function buildOutlinePrompt(
+  flags: {
+    hasSourceImages?: boolean;
+    imageEnabled?: boolean;
+    videoEnabled?: boolean;
+  },
+  promptId: PromptId = PROMPT_IDS.REQUIREMENTS_TO_OUTLINES,
+) {
   const imageEnabled = flags.imageEnabled ?? false;
   const videoEnabled = flags.videoEnabled ?? false;
-  return buildPrompt(PROMPT_IDS.REQUIREMENTS_TO_OUTLINES, {
+  return buildPrompt(promptId, {
     requirement: 'Teach water cycle basics',
     pdfContent: 'None',
     availableImages: flags.hasSourceImages ? '- img_1: water cycle diagram' : 'No images available',
@@ -98,6 +102,52 @@ describe('requirements-to-outlines media prompt conditions', () => {
     );
 
     expect(text).toContain('suggestedImageIds');
+    expect(text).toContain('mediaGenerations');
+    expect(text).toContain('gen_img_1');
+    expect(text).toContain('gen_vid_1');
+    expect(text).toContain('Content Safety Guidelines');
+    expect(text).not.toContain('{{');
+  });
+});
+
+describe('interactive-outlines media prompt conditions', () => {
+  // Interactive Mode (Ultra Mode) uses a separate outline template. It must gate
+  // the same media snippets as the standard template, or weak local models never
+  // emit `mediaGenerations` and images silently never generate (issue #626).
+  const INTERACTIVE = PROMPT_IDS.INTERACTIVE_OUTLINES;
+
+  test('omits media generation instructions when image and video generation are disabled', () => {
+    const text = combined(buildOutlinePrompt({ hasSourceImages: false }, INTERACTIVE));
+
+    expect(text).not.toContain('mediaGenerations');
+    expect(text).not.toContain('gen_img_');
+    expect(text).not.toContain('gen_vid_');
+    expect(text).not.toContain('{{');
+  });
+
+  test('includes image generation instructions without video instructions when only images are enabled', () => {
+    const text = combined(buildOutlinePrompt({ imageEnabled: true }, INTERACTIVE));
+
+    expect(text).toContain('mediaGenerations');
+    expect(text).toContain('gen_img_1');
+    expect(text).not.toContain('gen_vid_');
+    expect(text).not.toContain('{{');
+  });
+
+  test('includes video generation instructions without image generation placeholders when only video is enabled', () => {
+    const text = combined(buildOutlinePrompt({ videoEnabled: true }, INTERACTIVE));
+
+    expect(text).toContain('mediaGenerations');
+    expect(text).toContain('gen_vid_1');
+    expect(text).not.toContain('gen_img_');
+    expect(text).not.toContain('{{');
+  });
+
+  test('includes both image and video instructions plus safety guidelines when both are enabled', () => {
+    const text = combined(
+      buildOutlinePrompt({ imageEnabled: true, videoEnabled: true }, INTERACTIVE),
+    );
+
     expect(text).toContain('mediaGenerations');
     expect(text).toContain('gen_img_1');
     expect(text).toContain('gen_vid_1');

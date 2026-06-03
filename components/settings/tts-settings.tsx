@@ -164,8 +164,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         voice: effectiveVoice,
         speed: ttsSpeed,
         apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
+        // Managed providers resolve their base URL server-side; only send the
+        // client's own base URL (custom providers).
         baseUrl:
-          ttsProvidersConfig[selectedProviderId]?.serverBaseUrl ||
           ttsProvidersConfig[selectedProviderId]?.baseUrl ||
           providerConfig?.customDefaultBaseUrl ||
           '',
@@ -226,8 +227,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         </div>
       )}
 
-      {/* API Key & Base URL */}
-      {(requiresApiKey || isServerConfigured || isCustom || isVoxCPM || isKeylessLocalProvider) &&
+      {/* API Key & Base URL — hidden for managed providers, which are admin-owned
+          and not overridable from the client. */}
+      {!isServerConfigured &&
+        (requiresApiKey || isCustom || isVoxCPM || isKeylessLocalProvider) &&
         (isVoxCPM ? (
           <div className="rounded-lg border border-border/60 bg-background px-3 py-2.5">
             <div className="flex flex-col gap-2 md:flex-row md:items-end">
@@ -339,11 +342,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}
-                        placeholder={
-                          isServerConfigured
-                            ? t('settings.optionalOverride')
-                            : t('settings.enterApiKey')
-                        }
+                        placeholder={t('settings.enterApiKey')}
                         value={doubaoAppId}
                         onChange={(e) => setDoubaoCompoundKey(e.target.value, doubaoAccessKey)}
                         className="font-mono text-sm pr-10"
@@ -367,11 +366,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}
-                        placeholder={
-                          isServerConfigured
-                            ? t('settings.optionalOverride')
-                            : t('settings.enterApiKey')
-                        }
+                        placeholder={t('settings.enterApiKey')}
                         value={doubaoAccessKey}
                         onChange={(e) => setDoubaoCompoundKey(doubaoAppId, e.target.value)}
                         className="font-mono text-sm pr-10"
@@ -397,11 +392,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                       autoCapitalize="none"
                       autoCorrect="off"
                       spellCheck={false}
-                      placeholder={
-                        isServerConfigured
-                          ? t('settings.optionalOverride')
-                          : t('settings.enterApiKey')
-                      }
+                      placeholder={t('settings.enterApiKey')}
                       value={ttsProvidersConfig[selectedProviderId]?.apiKey || ''}
                       onChange={(e) =>
                         setTTSProviderConfig(selectedProviderId, {
@@ -780,12 +771,10 @@ function VoxCPMVoiceManager() {
     }
 
     const providerConfig = ttsProvidersConfig[VOXCPM_TTS_PROVIDER_ID];
-    const baseUrl =
-      providerConfig?.serverBaseUrl ||
-      providerConfig?.baseUrl ||
-      providerConfig?.customDefaultBaseUrl ||
-      '';
-    if (!baseUrl.trim()) {
+    // Managed providers resolve their base URL server-side, so only the client's
+    // own base URL is sent; a managed VoxCPM is reachable without a local URL.
+    const baseUrl = providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl || '';
+    if (!providerConfig?.isServerConfigured && !baseUrl.trim()) {
       toast.error(t('settings.voxcpmBaseUrlRequired'));
       return;
     }

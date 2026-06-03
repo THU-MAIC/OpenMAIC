@@ -899,8 +899,9 @@ function GenerationPreviewContent() {
                 ttsVoice: settings.ttsVoice,
                 ttsSpeed: settings.ttsSpeed,
                 ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+                // Managed providers resolve their base URL server-side; only
+                // send the client's own base URL (custom providers).
                 ttsBaseUrl:
-                  ttsProviderConfig?.serverBaseUrl ||
                   ttsProviderConfig?.baseUrl ||
                   ttsProviderConfig?.customDefaultBaseUrl ||
                   undefined,

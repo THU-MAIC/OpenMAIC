@@ -134,7 +134,15 @@ const fontname: MarkSpec = {
   toDOM: (mark) => {
     const { fontname } = mark.attrs;
     let style = '';
-    if (fontname) style += `font-family: ${fontname};`;
+    // Quote the family name — unquoted, a name with spaces or a trailing digit
+    // (e.g. "Source Sans 3") is an invalid font-family value and gets dropped.
+    // parseDOM's getAttrs strips the quotes again, so the attr round-trips clean.
+    // Reject `"` or `\` (illegal in a CSS family name): rendering them unescaped
+    // here would let a hand-crafted mark close the quoted string and inject
+    // arbitrary CSS at `toDOM`.
+    if (fontname && !/["\\]/.test(fontname)) {
+      style += `font-family: "${fontname}";`;
+    }
     return ['span', { style }, 0];
   },
 };

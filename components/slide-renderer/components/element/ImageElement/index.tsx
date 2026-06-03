@@ -11,6 +11,7 @@ import { useClipImage } from './useClipImage';
 import { useFilter } from './useFilter';
 import { ImageOutline } from './ImageOutline';
 import { ImageClipHandler } from './ImageClipHandler';
+import { useResolvedImageSrc } from './useResolvedImageSrc';
 
 export interface ImageElementProps {
   elementInfo: PPTImageElement;
@@ -30,6 +31,12 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
   const { flipStyle } = useElementFlip(elementInfo.flipH, elementInfo.flipV);
   const { clipShape, imgPosition } = useClipImage(elementInfo);
   const { filter } = useFilter(elementInfo.filters);
+
+  // Resolve gen_img_* placeholders against the media generation store so the
+  // editor canvas displays the generated image (the read-only BaseImageElement
+  // has always done this; the interactive variant previously rendered the raw
+  // placeholder string, surfacing a broken-image icon in Pro mode).
+  const { resolvedSrc } = useResolvedImageSrc(elementInfo);
 
   const isCliping = clipingImageElementId === elementInfo.id;
 
@@ -102,7 +109,7 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
       >
         {isCliping ? (
           <ImageClipHandler
-            src={elementInfo.src}
+            src={resolvedSrc}
             clipData={elementInfo.clip}
             width={elementInfo.width}
             height={elementInfo.height}
@@ -129,7 +136,7 @@ export function ImageElement({ elementInfo, selectElement }: ImageElementProps) 
               style={{ clipPath: clipShape.style }}
             >
               <img
-                src={elementInfo.src}
+                src={resolvedSrc}
                 draggable={false}
                 style={{
                   position: 'absolute',

@@ -107,10 +107,9 @@ export function TtsConfigPopover() {
         voice: ttsVoice,
         speed: ttsSpeed,
         apiKey: providerConfig?.apiKey,
-        baseUrl:
-          providerConfig?.serverBaseUrl ||
-          providerConfig?.baseUrl ||
-          providerConfig?.customDefaultBaseUrl,
+        // Managed providers resolve their base URL server-side; only send the
+        // client's own base URL (custom providers).
+        baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
         providerOptions,
       });
     } catch (error) {

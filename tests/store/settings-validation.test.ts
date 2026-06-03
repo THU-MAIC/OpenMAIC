@@ -182,7 +182,7 @@ describe('hasUsableLLMProvider', () => {
   it('returns true for a server-configured provider without a client key', () => {
     expect(
       hasUsableLLMProvider({
-        openai: { isServerConfigured: true, models: [{ id: 'm1' }], serverBaseUrl: 'https://s' },
+        openai: { isServerConfigured: true, models: [{ id: 'm1' }] },
       }),
     ).toBe(true);
   });
@@ -245,7 +245,6 @@ describe('hasUsableLLMProvider', () => {
           baseUrl: '',
           isServerConfigured: true,
           models: [{ id: 'llama3.3' }],
-          serverBaseUrl: 'http://srv/v1',
         },
       }),
     ).toBe(true);

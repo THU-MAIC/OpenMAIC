@@ -22,7 +22,7 @@ import {
   IMAGE_PROVIDERS,
 } from '@/lib/media/image-providers';
 import {
-  canUseServerApiKeyForBaseUrl,
+  isServerConfiguredProvider,
   resolveImageApiKey,
   resolveImageBaseUrl,
 } from '@/lib/server/provider-config';
@@ -44,8 +44,10 @@ export async function POST(request: NextRequest) {
     }
 
     const providerId = (request.headers.get('x-image-provider') || 'seedream') as ImageProviderId;
-    const clientApiKey = request.headers.get('x-api-key') || undefined;
-    const clientBaseUrl = request.headers.get('x-base-url') || undefined;
+    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+    const managed = isServerConfiguredProvider('image', providerId);
+    const clientApiKey = managed ? undefined : request.headers.get('x-api-key') || undefined;
+    const clientBaseUrl = managed ? undefined : request.headers.get('x-base-url') || undefined;
     const clientModel = request.headers.get('x-image-model') || undefined;
 
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
@@ -55,11 +57,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const serverBaseUrl = resolveImageBaseUrl(providerId);
-    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
-    const apiKey = canUseServerApiKey
-      ? resolveImageApiKey(providerId, clientApiKey)
-      : clientApiKey || '';
+    const apiKey = resolveImageApiKey(providerId, clientApiKey);
     const provider = IMAGE_PROVIDERS[providerId];
     if (provider?.requiresApiKey && !apiKey) {
       return apiError(
@@ -69,7 +67,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const baseUrl = clientBaseUrl || serverBaseUrl;
+    const baseUrl = resolveImageBaseUrl(providerId, clientBaseUrl);
 
     // Resolve dimensions from aspect ratio if not explicitly set
     if (!body.width && !body.height && body.aspectRatio) {

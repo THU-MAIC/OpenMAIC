@@ -25,7 +25,8 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
 
   const provider = WEB_SEARCH_PROVIDERS[selectedProviderId];
   const isServerConfigured = !!webSearchProvidersConfig[selectedProviderId]?.isServerConfigured;
-  const showCredentialFields = true;
+  // Managed providers are admin-owned: hide the key/base-URL override inputs.
+  const showCredentialFields = !isServerConfigured;
 
   const buildRequestUrl = (baseUrl: string) => {
     const trimmed = baseUrl.replace(/\/$/, '');
@@ -71,11 +72,9 @@ export function WebSearchSettings({ selectedProviderId }: WebSearchSettingsProps
                   autoCorrect="off"
                   spellCheck={false}
                   placeholder={
-                    isServerConfigured
+                    !provider.requiresApiKey
                       ? t('settings.optionalOverride')
-                      : !provider.requiresApiKey
-                        ? t('settings.optionalOverride')
-                        : t('settings.enterApiKey')
+                      : t('settings.enterApiKey')
                   }
                   value={webSearchProvidersConfig[selectedProviderId]?.apiKey || ''}
                   onChange={(e) =>

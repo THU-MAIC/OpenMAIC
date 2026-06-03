@@ -84,7 +84,6 @@ export interface SettingsState {
       customModels?: Array<{ id: string; name: string }>;
       providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
-      serverBaseUrl?: string;
       // Custom provider fields
       customName?: string;
       customDefaultBaseUrl?: string;
@@ -104,7 +103,6 @@ export interface SettingsState {
       customModels?: Array<{ id: string; name: string }>;
       providerOptions?: Record<string, unknown>;
       isServerConfigured?: boolean;
-      serverBaseUrl?: string;
       // Custom provider fields
       customName?: string;
       customDefaultBaseUrl?: string;
@@ -123,7 +121,6 @@ export interface SettingsState {
       enabled: boolean;
       requiresApiKey?: boolean;
       isServerConfigured?: boolean;
-      serverBaseUrl?: string;
     }
   >;
   baiduSubSources: BaiduSubSources;
@@ -138,7 +135,6 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       isServerConfigured?: boolean;
-      serverBaseUrl?: string;
       customModels?: Array<{ id: string; name: string }>;
     }
   >;
@@ -153,7 +149,6 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       isServerConfigured?: boolean;
-      serverBaseUrl?: string;
       customModels?: Array<{ id: string; name: string }>;
     }
   >;
@@ -173,7 +168,6 @@ export interface SettingsState {
       enabled: boolean;
       requiresApiKey?: boolean;
       isServerConfigured?: boolean;
-      serverBaseUrl?: string;
     }
   >;
 
@@ -199,6 +193,9 @@ export interface SettingsState {
   sidebarCollapsed: boolean;
   chatAreaCollapsed: boolean;
   chatAreaWidth: number;
+  editRailCollapsed: boolean;
+  editRailWidth: number;
+  editInsertToolbarCollapsed: boolean;
 
   // Actions
   setModel: (providerId: ProviderId, modelId: string) => void;
@@ -222,6 +219,9 @@ export interface SettingsState {
   setSidebarCollapsed: (collapsed: boolean) => void;
   setChatAreaCollapsed: (collapsed: boolean) => void;
   setChatAreaWidth: (width: number) => void;
+  setEditRailCollapsed: (collapsed: boolean) => void;
+  setEditInsertToolbarCollapsed: (collapsed: boolean) => void;
+  setEditRailWidth: (width: number) => void;
 
   // Audio actions
   setTTSProvider: (providerId: TTSProviderId) => void;
@@ -466,6 +466,12 @@ const getDefaultWebSearchConfig = () => ({
       requiresApiKey: false,
     },
     baidu: { apiKey: '', baseUrl: '', enabled: true, requiresApiKey: true },
+    minimax: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.minimax.defaultBaseUrl || '',
+      enabled: true,
+      requiresApiKey: true,
+    },
   } as Record<
     WebSearchProviderId,
     { apiKey: string; baseUrl: string; enabled: boolean; requiresApiKey?: boolean }
@@ -680,6 +686,32 @@ function ensureBaiduSubSources(state: Partial<SettingsState>): void {
   };
 }
 
+/**
+ * Strip the removed `serverBaseUrl` field from any persisted provider config.
+ *
+ * Managed providers no longer expose their base URL to the client (#620). Old
+ * localStorage may still carry a `serverBaseUrl` on provider entries; this
+ * clears it on every rehydrate so a stale server URL can't linger in client
+ * state. Called from both migrate and merge to cover all rehydration paths.
+ */
+function stripLegacyServerBaseUrl(state: Partial<SettingsState>): void {
+  const maps = [
+    state.providersConfig,
+    state.ttsProvidersConfig,
+    state.asrProvidersConfig,
+    state.pdfProvidersConfig,
+    state.imageProvidersConfig,
+    state.videoProvidersConfig,
+    state.webSearchProvidersConfig,
+  ];
+  for (const map of maps) {
+    if (!map) continue;
+    for (const cfg of Object.values(map as Record<string, Record<string, unknown>>)) {
+      if (cfg && 'serverBaseUrl' in cfg) delete cfg.serverBaseUrl;
+    }
+  }
+}
+
 // Migrate from old localStorage format
 const migrateFromOldStorage = () => {
   if (typeof window === 'undefined') return null;
@@ -781,6 +813,9 @@ export const useSettingsStore = create<SettingsState>()(
         sidebarCollapsed: true,
         chatAreaCollapsed: true,
         chatAreaWidth: 320,
+        editRailCollapsed: false,
+        editRailWidth: 220,
+        editInsertToolbarCollapsed: false,
 
         // Audio settings (use defaults)
         ...defaultAudioConfig,
@@ -887,6 +922,10 @@ export const useSettingsStore = create<SettingsState>()(
         // Layout actions
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
         setChatAreaCollapsed: (collapsed) => set({ chatAreaCollapsed: collapsed }),
+        setEditRailCollapsed: (collapsed) => set({ editRailCollapsed: collapsed }),
+        setEditRailWidth: (width) => set({ editRailWidth: width }),
+        setEditInsertToolbarCollapsed: (collapsed) =>
+          set({ editInsertToolbarCollapsed: collapsed }),
         setChatAreaWidth: (width) => set({ chatAreaWidth: width }),
 
         // Audio actions
@@ -1153,14 +1192,16 @@ export const useSettingsStore = create<SettingsState>()(
           try {
             const res = await fetch('/api/server-providers');
             if (!res.ok) return;
+            // Managed providers expose only their allowed model list (LLM/image)
+            // and presence (the "managed" flag) — never a base URL.
             const data = (await res.json()) as {
-              providers: Record<string, { models?: string[]; baseUrl?: string }>;
-              tts: Record<string, { baseUrl?: string }>;
-              asr: Record<string, { baseUrl?: string }>;
-              pdf: Record<string, { baseUrl?: string }>;
-              image: Record<string, { baseUrl?: string }>;
-              video: Record<string, { baseUrl?: string }>;
-              webSearch: Record<string, { baseUrl?: string }>;
+              providers: Record<string, { models?: string[] }>;
+              tts: Record<string, Record<string, never>>;
+              asr: Record<string, Record<string, never>>;
+              pdf: Record<string, Record<string, never>>;
+              image: Record<string, { models?: string[] }>;
+              video: Record<string, Record<string, never>>;
+              webSearch: Record<string, Record<string, never>>;
             };
 
             set((state) => {
@@ -1174,7 +1215,6 @@ export const useSettingsStore = create<SettingsState>()(
                     ...newProvidersConfig[key],
                     isServerConfigured: false,
                     serverModels: undefined,
-                    serverBaseUrl: undefined,
                   };
                 }
               }
@@ -1193,7 +1233,6 @@ export const useSettingsStore = create<SettingsState>()(
                     ...newProvidersConfig[key],
                     isServerConfigured: true,
                     serverModels: info.models,
-                    serverBaseUrl: info.baseUrl,
                     models: filteredModels,
                   };
                 }
@@ -1207,17 +1246,15 @@ export const useSettingsStore = create<SettingsState>()(
                   newTTSConfig[key] = {
                     ...newTTSConfig[key],
                     isServerConfigured: false,
-                    serverBaseUrl: undefined,
                   };
                 }
               }
-              for (const [pid, info] of Object.entries(data.tts)) {
+              for (const pid of Object.keys(data.tts)) {
                 const key = pid as TTSProviderId;
                 if (newTTSConfig[key]) {
                   newTTSConfig[key] = {
                     ...newTTSConfig[key],
                     isServerConfigured: true,
-                    serverBaseUrl: info.baseUrl,
                   };
                 }
               }
@@ -1230,17 +1267,15 @@ export const useSettingsStore = create<SettingsState>()(
                   newASRConfig[key] = {
                     ...newASRConfig[key],
                     isServerConfigured: false,
-                    serverBaseUrl: undefined,
                   };
                 }
               }
-              for (const [pid, info] of Object.entries(data.asr)) {
+              for (const pid of Object.keys(data.asr)) {
                 const key = pid as ASRProviderId;
                 if (newASRConfig[key]) {
                   newASRConfig[key] = {
                     ...newASRConfig[key],
                     isServerConfigured: true,
-                    serverBaseUrl: info.baseUrl,
                   };
                 }
               }
@@ -1253,17 +1288,15 @@ export const useSettingsStore = create<SettingsState>()(
                   newPDFConfig[key] = {
                     ...newPDFConfig[key],
                     isServerConfigured: false,
-                    serverBaseUrl: undefined,
                   };
                 }
               }
-              for (const [pid, info] of Object.entries(data.pdf)) {
+              for (const pid of Object.keys(data.pdf)) {
                 const key = pid as PDFProviderId;
                 if (newPDFConfig[key]) {
                   newPDFConfig[key] = {
                     ...newPDFConfig[key],
                     isServerConfigured: true,
-                    serverBaseUrl: info.baseUrl,
                   };
                 }
               }
@@ -1276,17 +1309,15 @@ export const useSettingsStore = create<SettingsState>()(
                   newImageConfig[key] = {
                     ...newImageConfig[key],
                     isServerConfigured: false,
-                    serverBaseUrl: undefined,
                   };
                 }
               }
-              for (const [pid, info] of Object.entries(data.image)) {
+              for (const pid of Object.keys(data.image)) {
                 const key = pid as ImageProviderId;
                 if (newImageConfig[key]) {
                   newImageConfig[key] = {
                     ...newImageConfig[key],
                     isServerConfigured: true,
-                    serverBaseUrl: info.baseUrl,
                   };
                 }
               }
@@ -1299,18 +1330,16 @@ export const useSettingsStore = create<SettingsState>()(
                   newVideoConfig[key] = {
                     ...newVideoConfig[key],
                     isServerConfigured: false,
-                    serverBaseUrl: undefined,
                   };
                 }
               }
               if (data.video) {
-                for (const [pid, info] of Object.entries(data.video)) {
+                for (const pid of Object.keys(data.video)) {
                   const key = pid as VideoProviderId;
                   if (newVideoConfig[key]) {
                     newVideoConfig[key] = {
                       ...newVideoConfig[key],
                       isServerConfigured: true,
-                      serverBaseUrl: info.baseUrl,
                     };
                   }
                 }
@@ -1322,17 +1351,15 @@ export const useSettingsStore = create<SettingsState>()(
                 newWebSearchConfig[key] = {
                   ...newWebSearchConfig[key],
                   isServerConfigured: false,
-                  serverBaseUrl: undefined,
                 };
               }
               if (data.webSearch) {
-                for (const [pid, info] of Object.entries(data.webSearch)) {
+                for (const pid of Object.keys(data.webSearch)) {
                   const key = pid as WebSearchProviderId;
                   if (newWebSearchConfig[key]) {
                     newWebSearchConfig[key] = {
                       ...newWebSearchConfig[key],
                       isServerConfigured: true,
-                      serverBaseUrl: info.baseUrl,
                     };
                   }
                 }
@@ -1593,7 +1620,7 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: 'settings-storage',
-      version: 2,
+      version: 3,
       // Migrate persisted state
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<SettingsState>;
@@ -1754,10 +1781,20 @@ export const useSettingsStore = create<SettingsState>()(
               enabled: true,
               requiresApiKey: true,
             },
+            minimax: {
+              apiKey: '',
+              baseUrl: WEB_SEARCH_PROVIDERS.minimax.defaultBaseUrl || '',
+              enabled: true,
+              requiresApiKey: true,
+            },
           } as SettingsState['webSearchProvidersConfig'];
           delete stateRecord.webSearchApiKey;
           delete stateRecord.webSearchIsServerConfigured;
         }
+
+        // v2 → v3: managed providers no longer expose a base URL to the client;
+        // drop any persisted serverBaseUrl left over from older versions (#620).
+        stripLegacyServerBaseUrl(state);
 
         ensureValidProviderSelections(state);
         ensureBuiltInAudioProviders(state);
@@ -1777,6 +1814,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
         ensureBuiltInWebSearchProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
+        stripLegacyServerBaseUrl(merged as Partial<SettingsState>);
         const typedMerged = merged as Partial<SettingsState>;
         typedMerged.thinkingConfigs = pruneThinkingConfigs(
           typedMerged.thinkingConfigs,

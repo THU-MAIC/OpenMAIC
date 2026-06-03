@@ -102,8 +102,9 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
         </div>
       )}
 
-      {/* Configuration section (for remote providers) */}
-      {(needsRemoteConfig || isServerConfigured) && (
+      {/* Configuration section — hidden for managed providers, which are
+          admin-owned and not overridable from the client. */}
+      {!isServerConfigured && needsRemoteConfig && (
         <>
           <div className="grid grid-cols-2 gap-4">
             {/* API Key — shown first for cloud, second for self-hosted */}
@@ -119,11 +120,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
                       autoCapitalize="none"
                       autoCorrect="off"
                       spellCheck={false}
-                      placeholder={
-                        isServerConfigured
-                          ? t('settings.optionalOverride')
-                          : t('settings.mineruCloudApiKeyPlaceholder')
-                      }
+                      placeholder={t('settings.mineruCloudApiKeyPlaceholder')}
                       value={providerConfig?.apiKey || ''}
                       onChange={(e) =>
                         setPDFProviderConfig(selectedProviderId, { apiKey: e.target.value })
@@ -223,11 +220,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
                     autoCapitalize="none"
                     autoCorrect="off"
                     spellCheck={false}
-                    placeholder={
-                      isServerConfigured
-                        ? t('settings.optionalOverride')
-                        : t('settings.enterApiKey')
-                    }
+                    placeholder={t('settings.enterApiKey')}
                     value={providerConfig?.apiKey || ''}
                     onChange={(e) =>
                       setPDFProviderConfig(selectedProviderId, { apiKey: e.target.value })
