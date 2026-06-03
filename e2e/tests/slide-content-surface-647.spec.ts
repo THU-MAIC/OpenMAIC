@@ -10,7 +10,7 @@ const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
  * PR3b — slide content surface completion (#647). Verifies the new
  * surface-level affordances render and anchor correctly in Pro edit mode:
  * the slide-background insert item, z-order on the element bar, and the
- * image-type bar (replace/crop/flip). Icon-class selectors keep the
+ * image-type bar (replace/flip). Icon-class selectors keep the
  * assertions locale-independent.
  */
 test.describe('Slide content surface (#647)', () => {
@@ -73,8 +73,8 @@ test.describe('Slide content surface (#647)', () => {
     });
 
     // --- Image insert popover hosts the picker (the image-type bar's
-    // replace/crop/flip ops are covered by image-actions.test.ts and the
-    // image-crop-flip round-trip suite, which don't need a live canvas).
+    // replace/flip ops are covered by image-actions.test.ts and the
+    // image-flip round-trip suite, which don't need a live canvas).
     await page.keyboard.press('Escape');
     await page.locator('button:has(.lucide-image)').first().click();
     await expect(page.getByPlaceholder(/https/i)).toBeVisible({ timeout: 10_000 });

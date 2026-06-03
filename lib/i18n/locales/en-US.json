@@ -221,7 +221,6 @@
     },
     "image": {
       "replace": "Replace image",
-      "crop": "Crop",
       "flipH": "Flip horizontal",
       "flipV": "Flip vertical"
     },

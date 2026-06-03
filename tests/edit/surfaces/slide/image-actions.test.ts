@@ -2,10 +2,8 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   replaceImageSrc,
   toggleImageFlip,
-  startImageCrop,
 } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
-import { useCanvasStore } from '@/lib/store/canvas';
 import type { PPTImageElement } from '@/lib/types/slides';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -21,7 +19,6 @@ function seedImage() {
       future: [],
     },
   } as any);
-  useCanvasStore.getState().setClipingImageElementId('');
 }
 const img = (over: Partial<PPTImageElement>) =>
   ({ id: 'img', type: 'image', src: 'a.png', ...over }) as any;
@@ -59,10 +56,5 @@ describe('image surface helpers', () => {
       elementId: 'img',
       patch: { flipV: false },
     });
-  });
-
-  it('startImageCrop arms renderer crop mode via the canvas store', () => {
-    startImageCrop('img');
-    expect(useCanvasStore.getState().clipingImageElementId).toBe('img');
   });
 });

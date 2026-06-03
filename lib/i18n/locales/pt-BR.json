@@ -207,7 +207,6 @@
     },
     "image": {
       "replace": "Substituir imagem",
-      "crop": "Recortar",
       "flipH": "Inverter horizontalmente",
       "flipV": "Inverter verticalmente"
     },

@@ -154,14 +154,6 @@ export function toggleImageFlip(el: PPTImageElement, axis: 'H' | 'V'): void {
   useSlideEditSession.getState().applyOp({ type: 'element.update', elementId: el.id, patch });
 }
 
-/**
- * Enter crop mode for an image. The renderer's ImageClipHandler takes over from
- * `clipingImageElementId` and commits the crop through its own update path.
- */
-export function startImageCrop(elementId: string): void {
-  useCanvasStore.getState().setClipingImageElementId(elementId);
-}
-
 /** Set the slide-level background (solid color or image). */
 export function updateSlideBackground(background: SlideBackground): void {
   useSlideEditSession.getState().applyOp({ type: 'slide.update', patch: { background } });

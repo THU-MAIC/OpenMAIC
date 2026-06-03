@@ -43,40 +43,10 @@ function slideWithImage(): { scene: Scene; content: SlideContent } {
 }
 
 /**
- * Per-op round-trip for the image `element.update` crop + flip patches. Crop
- * (`clip.range`) becomes a `<a:srcRect>` (insets in 1000ths of a percent);
- * flip becomes `flipH`/`flipV` attributes on the pic's `<a:xfrm>`.
+ * Per-op round-trip for the image `element.update` flip patch: flip becomes
+ * `flipH`/`flipV` attributes on the pic's `<a:xfrm>`.
  */
-describe('round-trip: image crop + flip', () => {
-  it('serializes a crop clip.range into <a:srcRect>', async () => {
-    const { scene, content } = slideWithImage();
-
-    const before = await readSlideXml(await exportSlideContent(content, scene));
-    // Guard: an un-cropped image carries no srcRect.
-    expect(before).not.toContain('<a:srcRect');
-
-    const after = await readSlideXml(
-      await exportSlideContent(
-        applySlideEditOperation(content, {
-          type: 'element.update',
-          elementId: 'img-1',
-          patch: {
-            clip: {
-              shape: 'rect',
-              range: [
-                [10, 20],
-                [80, 90],
-              ],
-            },
-          },
-        }),
-        scene,
-      ),
-    );
-    // l=10%, t=20%, r=100-80=20%, b=100-90=10% — pptxgenjs emits 1000ths of a %.
-    expect(after).toContain('<a:srcRect l="10000" r="20000" t="20000" b="10000"/>');
-  });
-
+describe('round-trip: image flip', () => {
   it('serializes flipH / flipV onto the pic xfrm', async () => {
     const { scene, content } = slideWithImage();
 
