@@ -8,6 +8,7 @@ import {
   createQuizEditHistory,
   deleteOption,
   deleteQuestion,
+  MAX_OPTIONS,
   redoQuiz,
   reorderOptions,
   reorderQuestions,
@@ -203,5 +204,19 @@ describe('option mutations keep value=letter and answer correct', () => {
     const c0 = content(createBlankQuestion('short_answer', 'q1'));
     expect(addOption(c0, 'q1').questions[0].options).toBeUndefined();
     expect(toggleCorrect(c0, 'q1', 0).questions[0]).toEqual(c0.questions[0]);
+  });
+
+  it('addOption caps at MAX_OPTIONS (A–Z)', () => {
+    let c = content(choiceQuestion({ options: [], answer: [] }));
+    for (let i = 0; i < MAX_OPTIONS + 5; i++) c = addOption(c, 'q1');
+    expect(c.questions[0].options).toHaveLength(MAX_OPTIONS);
+    expect(c.questions[0].options?.at(-1)?.value).toBe('Z');
+  });
+
+  it('reorderOptions with out-of-range or equal indices is a no-op', () => {
+    const c0 = content(choiceQuestion());
+    expect(reorderOptions(c0, 'q1', 1, 1).questions[0].options).toEqual(c0.questions[0].options);
+    expect(reorderOptions(c0, 'q1', -1, 0).questions[0].options).toEqual(c0.questions[0].options);
+    expect(reorderOptions(c0, 'q1', 0, 99).questions[0].options).toEqual(c0.questions[0].options);
   });
 });
