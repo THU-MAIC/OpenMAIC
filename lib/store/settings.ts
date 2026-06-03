@@ -175,6 +175,10 @@ export interface SettingsState {
   ttsEnabled: boolean;
   asrEnabled: boolean;
 
+  // Server-configured opt-in parallel scene-content concurrency (#572).
+  // 0 = off (serial generation); populated by fetchServerProviders.
+  parallelSceneConcurrency: number;
+
   // Auto-config lifecycle flag (persisted)
   autoConfigApplied: boolean;
 
@@ -838,6 +842,9 @@ export const useSettingsStore = create<SettingsState>()(
         ttsEnabled: true,
         asrEnabled: true,
 
+        // Off until the server reports a concurrency via fetchServerProviders.
+        parallelSceneConcurrency: 0,
+
         autoConfigApplied: false,
 
         // Web Search settings (use defaults)
@@ -1202,6 +1209,7 @@ export const useSettingsStore = create<SettingsState>()(
               image: Record<string, { models?: string[] }>;
               video: Record<string, Record<string, never>>;
               webSearch: Record<string, Record<string, never>>;
+              generation?: { parallelSceneConcurrency?: number };
             };
 
             set((state) => {
@@ -1553,6 +1561,10 @@ export const useSettingsStore = create<SettingsState>()(
                 imageProvidersConfig: newImageConfig,
                 videoProvidersConfig: newVideoConfig,
                 webSearchProvidersConfig: newWebSearchConfig,
+                parallelSceneConcurrency: Math.max(
+                  0,
+                  Math.floor(data.generation?.parallelSceneConcurrency ?? 0),
+                ),
                 autoConfigApplied: true,
                 // Validated selections
                 ...(validLLMProvider !== state.providerId && {

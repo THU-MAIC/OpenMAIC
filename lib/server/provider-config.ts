@@ -504,3 +504,18 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (webSearch.minimax?.apiKey) return 'minimax';
   return Object.keys(webSearch)[0];
 }
+
+/**
+ * Opt-in concurrency for parallel scene-content generation (#572).
+ *
+ * Returns the server-configured `PARALLEL_SCENE_CONCURRENCY`, clamped to
+ * [0, 10]. `0` (the default) means the client keeps the original serial
+ * generation loop; a value `> 1` enables the hybrid two-phase path. Kept
+ * server-side because many deployments use API keys with low per-key
+ * concurrency quotas, where a bursty default would surface as 429s.
+ */
+export function getParallelSceneConcurrency(): number {
+  const raw = Number.parseInt(process.env.PARALLEL_SCENE_CONCURRENCY ?? '', 10);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(raw, 10);
+}
