@@ -58,8 +58,8 @@ const LEFT_RAIL_DELAY = CHROME_STAGGER * 2;
  * Architecture: this shell resolves `scene.type` to a registered surface
  * (or falls back to NOOP_SURFACE for unregistered types) and **never
  * branches into a different component type**. The same `<Frame>` mounts
- * across every scene-type change — only the `surface.CanvasComponent`
- * inside the canvas slot swaps. That guarantees CommandBar and `leftRail`
+ * across every scene-type change — only the `surface.SurfaceComponent`
+ * inside the center slot swaps. That guarantees CommandBar and `leftRail`
  * never remount during scene navigation, removing the chrome flicker that
  * the previous two-branch design caused (PR3a rearch).
  */
@@ -70,7 +70,7 @@ export function EditShell({ scene, leftRail, commandTrailing }: EditShellProps) 
   // rules-of-hooks naturally allows a different hook signature). The chrome
   // around it stays mounted and consumes state via these props.
   const [state, setState] = useState<SurfaceState | null>(null);
-  const CanvasComponent = surface.CanvasComponent;
+  const SurfaceComponent = surface.SurfaceComponent;
 
   return (
     <>
@@ -90,7 +90,7 @@ export function EditShell({ scene, leftRail, commandTrailing }: EditShellProps) 
         commands={state?.commands}
         trailing={commandTrailing}
       >
-        <CanvasComponent />
+        <SurfaceComponent />
         {state?.insertItems && state.insertItems.length > 0 && (
           <FloatingInsertToolbar items={state.insertItems} />
         )}

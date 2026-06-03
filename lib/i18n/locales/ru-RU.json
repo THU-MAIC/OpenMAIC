@@ -228,6 +228,35 @@
       "label": "Фон",
       "solid": "Сплошной цвет",
       "image": "Изображение"
+    },
+    "quiz": {
+      "addQuestion": "Добавить вопрос",
+      "reorder": "Перетащите для сортировки",
+      "deleteQuestion": "Удалить вопрос",
+      "untitledQuestion": "Вопрос без названия",
+      "questionLabel": "Вопрос",
+      "questionPlaceholder": "Введите вопрос…",
+      "typeLabel": "Тип",
+      "pointsLabel": "Баллы",
+      "optionsLabel": "Варианты",
+      "optionPlaceholder": "Текст варианта",
+      "addOption": "Добавить вариант",
+      "deleteOption": "Удалить вариант",
+      "markCorrect": "Отметить как правильный",
+      "moveUp": "Вверх",
+      "moveDown": "Вниз",
+      "analysisLabel": "Пояснение",
+      "analysisPlaceholder": "Показывается после проверки…",
+      "hasAnswerLabel": "Автопроверка",
+      "commentPromptLabel": "Указания по оценке",
+      "commentPromptPlaceholder": "Как оценивать этот развёрнутый ответ?",
+      "empty": "Пока нет вопросов",
+      "emptyHint": "Нажмите «Добавить вопрос» выше, чтобы создать первый.",
+      "type": {
+        "single": "Один выбор",
+        "multiple": "Несколько вариантов",
+        "short_answer": "Краткий ответ"
+      }
     }
   },
   "classroomComplete": {

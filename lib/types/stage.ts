@@ -124,9 +124,11 @@ export interface QuizOption {
   value: string; // Selection key: "A", "B", "C", "D"
 }
 
+export type QuizQuestionType = 'single' | 'multiple' | 'short_answer';
+
 export interface QuizQuestion {
   id: string;
-  type: 'single' | 'multiple' | 'short_answer';
+  type: QuizQuestionType;
   question: string;
   options?: QuizOption[];
   answer?: string[]; // Correct answer values: ["A"], ["A","C"], or undefined for text

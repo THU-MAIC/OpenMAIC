@@ -228,6 +228,35 @@
       "label": "Background",
       "solid": "Solid",
       "image": "Image"
+    },
+    "quiz": {
+      "addQuestion": "Add question",
+      "reorder": "Drag to reorder",
+      "deleteQuestion": "Delete question",
+      "untitledQuestion": "Untitled question",
+      "questionLabel": "Question",
+      "questionPlaceholder": "Enter the question…",
+      "typeLabel": "Type",
+      "pointsLabel": "Points",
+      "optionsLabel": "Options",
+      "optionPlaceholder": "Option text",
+      "addOption": "Add option",
+      "deleteOption": "Remove option",
+      "markCorrect": "Mark as correct answer",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "analysisLabel": "Explanation",
+      "analysisPlaceholder": "Shown after the question is graded…",
+      "hasAnswerLabel": "Auto-grade this answer",
+      "commentPromptLabel": "Grading guidance",
+      "commentPromptPlaceholder": "How should this open response be graded?",
+      "empty": "No questions yet",
+      "emptyHint": "Use the “Add question” button above to create the first one.",
+      "type": {
+        "single": "Single choice",
+        "multiple": "Multiple choice",
+        "short_answer": "Short answer"
+      }
     }
   },
   "classroomComplete": {

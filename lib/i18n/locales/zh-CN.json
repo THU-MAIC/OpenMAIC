@@ -228,6 +228,35 @@
       "label": "背景",
       "solid": "纯色",
       "image": "图片"
+    },
+    "quiz": {
+      "addQuestion": "添加题目",
+      "reorder": "拖动排序",
+      "deleteQuestion": "删除题目",
+      "untitledQuestion": "未命名题目",
+      "questionLabel": "题干",
+      "questionPlaceholder": "输入题目…",
+      "typeLabel": "类型",
+      "pointsLabel": "分值",
+      "optionsLabel": "选项",
+      "optionPlaceholder": "选项内容",
+      "addOption": "添加选项",
+      "deleteOption": "删除选项",
+      "markCorrect": "标记为正确答案",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "analysisLabel": "解析",
+      "analysisPlaceholder": "评分后显示…",
+      "hasAnswerLabel": "自动评分",
+      "commentPromptLabel": "评分指引",
+      "commentPromptPlaceholder": "应如何评判这道主观题？",
+      "empty": "暂无题目",
+      "emptyHint": "点击上方“添加题目”创建第一道题。",
+      "type": {
+        "single": "单选",
+        "multiple": "多选",
+        "short_answer": "简答"
+      }
     }
   },
   "classroomComplete": {

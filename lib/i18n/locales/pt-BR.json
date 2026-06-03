@@ -214,6 +214,35 @@
       "label": "Fundo",
       "solid": "Cor sólida",
       "image": "Imagem"
+    },
+    "quiz": {
+      "addQuestion": "Adicionar pergunta",
+      "reorder": "Arraste para reordenar",
+      "deleteQuestion": "Excluir pergunta",
+      "untitledQuestion": "Pergunta sem título",
+      "questionLabel": "Pergunta",
+      "questionPlaceholder": "Digite a pergunta…",
+      "typeLabel": "Tipo",
+      "pointsLabel": "Pontos",
+      "optionsLabel": "Opções",
+      "optionPlaceholder": "Texto da opção",
+      "addOption": "Adicionar opção",
+      "deleteOption": "Remover opção",
+      "markCorrect": "Marcar como correta",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "analysisLabel": "Explicação",
+      "analysisPlaceholder": "Exibida após a correção…",
+      "hasAnswerLabel": "Corrigir automaticamente",
+      "commentPromptLabel": "Orientação de correção",
+      "commentPromptPlaceholder": "Como esta resposta aberta deve ser avaliada?",
+      "empty": "Nenhuma pergunta ainda",
+      "emptyHint": "Use “Adicionar pergunta” acima para criar a primeira.",
+      "type": {
+        "single": "Escolha única",
+        "multiple": "Múltipla escolha",
+        "short_answer": "Resposta curta"
+      }
     }
   },
   "stage": {

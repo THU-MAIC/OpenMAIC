@@ -228,6 +228,35 @@
       "label": "الخلفية",
       "solid": "لون خالص",
       "image": "صورة"
+    },
+    "quiz": {
+      "addQuestion": "إضافة سؤال",
+      "reorder": "اسحب لإعادة الترتيب",
+      "deleteQuestion": "حذف السؤال",
+      "untitledQuestion": "سؤال بلا عنوان",
+      "questionLabel": "السؤال",
+      "questionPlaceholder": "أدخل السؤال…",
+      "typeLabel": "النوع",
+      "pointsLabel": "النقاط",
+      "optionsLabel": "الخيارات",
+      "optionPlaceholder": "نص الخيار",
+      "addOption": "إضافة خيار",
+      "deleteOption": "حذف الخيار",
+      "markCorrect": "تحديد كإجابة صحيحة",
+      "moveUp": "تحريك لأعلى",
+      "moveDown": "تحريك لأسفل",
+      "analysisLabel": "الشرح",
+      "analysisPlaceholder": "يظهر بعد التصحيح…",
+      "hasAnswerLabel": "تصحيح تلقائي",
+      "commentPromptLabel": "إرشادات التصحيح",
+      "commentPromptPlaceholder": "كيف ينبغي تقييم هذه الإجابة المفتوحة؟",
+      "empty": "لا توجد أسئلة بعد",
+      "emptyHint": "استخدم «إضافة سؤال» أعلاه لإنشاء أول سؤال.",
+      "type": {
+        "single": "اختيار واحد",
+        "multiple": "اختيار متعدد",
+        "short_answer": "إجابة قصيرة"
+      }
     }
   },
   "classroomComplete": {

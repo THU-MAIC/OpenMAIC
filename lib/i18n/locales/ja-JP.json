@@ -228,6 +228,35 @@
       "label": "背景",
       "solid": "単色",
       "image": "画像"
+    },
+    "quiz": {
+      "addQuestion": "問題を追加",
+      "reorder": "ドラッグして並べ替え",
+      "deleteQuestion": "問題を削除",
+      "untitledQuestion": "無題の問題",
+      "questionLabel": "問題文",
+      "questionPlaceholder": "問題を入力…",
+      "typeLabel": "種類",
+      "pointsLabel": "配点",
+      "optionsLabel": "選択肢",
+      "optionPlaceholder": "選択肢のテキスト",
+      "addOption": "選択肢を追加",
+      "deleteOption": "選択肢を削除",
+      "markCorrect": "正解としてマーク",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "analysisLabel": "解説",
+      "analysisPlaceholder": "採点後に表示…",
+      "hasAnswerLabel": "自動採点する",
+      "commentPromptLabel": "採点ガイド",
+      "commentPromptPlaceholder": "この記述式をどう採点しますか？",
+      "empty": "問題がありません",
+      "emptyHint": "上の「問題を追加」から最初の問題を作成します。",
+      "type": {
+        "single": "単一選択",
+        "multiple": "複数選択",
+        "short_answer": "記述"
+      }
     }
   },
   "classroomComplete": {

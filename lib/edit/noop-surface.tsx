@@ -10,11 +10,12 @@ import type { SceneEditorSurface, SurfaceState } from './scene-editor-surface';
 
 /**
  * NOOP_SURFACE — the read-only fallback surface used by the shell when no
- * editor surface is registered for the current `scene.type` (today: quiz /
- * interactive / pbl). The shell resolves `surface ?? NOOP_SURFACE`, so it
- * always renders a single, structurally stable `<Frame>` regardless of scene
- * type. Switching from a slide to a non-slide scene therefore only swaps the
- * `surface.CanvasComponent` inside the frame — `<CommandBar>` and the
+ * editor surface is registered for the current `scene.type` (today:
+ * interactive / pbl — slide and quiz have real surfaces). The shell resolves
+ * `surface ?? NOOP_SURFACE`, so it always renders a single, structurally
+ * stable `<Frame>` regardless of scene type. Switching to an unregistered
+ * scene type therefore only swaps the
+ * `surface.SurfaceComponent` inside the frame — `<CommandBar>` and the
  * `leftRail` slot stay mounted, eliminating the chrome remount flicker that
  * the previous two-component-types branch caused.
  *
@@ -76,6 +77,6 @@ function useNoopSurfaceState(): SurfaceState<SceneContent, undefined> {
 
 export const NOOP_SURFACE: SceneEditorSurface<SceneContent, undefined> = {
   sceneType: 'slide',
-  CanvasComponent: NoopCanvas,
+  SurfaceComponent: NoopCanvas,
   useSurfaceState: useNoopSurfaceState,
 };
