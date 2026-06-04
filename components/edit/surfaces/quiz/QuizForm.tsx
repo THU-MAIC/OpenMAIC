@@ -46,8 +46,17 @@ export function QuizForm() {
   }, [questions]);
 
   return (
-    <div className="h-full w-full overflow-y-auto" data-testid="quiz-surface">
-      <div className="mx-auto flex max-w-2xl flex-col gap-2 px-4 pb-16 pt-16">
+    <div
+      className="h-full w-full overflow-y-auto bg-zinc-50/40 dark:bg-zinc-950/30"
+      data-testid="quiz-surface"
+      // Faint dot grid gives the authoring canvas a subtle texture so the
+      // white question cards read as floating sheets rather than flat boxes.
+      style={{
+        backgroundImage: 'radial-gradient(circle, rgba(113,113,122,0.10) 1px, transparent 1px)',
+        backgroundSize: '22px 22px',
+      }}
+    >
+      <div className="mx-auto flex max-w-2xl flex-col gap-2.5 px-5 pb-20 pt-16">
         {questions.length === 0 ? (
           <EmptyState />
         ) : (
@@ -56,7 +65,7 @@ export function QuizForm() {
             as="ol"
             values={questions.map((q) => q.id)}
             onReorder={reorderQuizQuestions}
-            className="m-0 flex list-none flex-col gap-2 p-0"
+            className="m-0 flex list-none flex-col gap-2.5 p-0"
           >
             {questions.map((q, index) => (
               <QuestionCard
@@ -77,13 +86,16 @@ export function QuizForm() {
 function EmptyState() {
   const { t } = useI18n();
   return (
-    <div
-      className="mt-16 flex flex-col items-center gap-2 text-center text-zinc-400 dark:text-zinc-500"
-      data-testid="quiz-empty"
-    >
-      <ListChecks className="h-10 w-10 opacity-50" />
-      <p className="text-sm font-medium text-zinc-500 dark:text-zinc-400">{t('edit.quiz.empty')}</p>
-      <p className="text-xs">{t('edit.quiz.emptyHint')}</p>
+    <div className="mt-20 flex flex-col items-center gap-3 text-center" data-testid="quiz-empty">
+      <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-violet-50 text-violet-500 shadow-[0_8px_24px_-12px_rgba(114,46,209,0.5)] dark:from-violet-500/20 dark:to-violet-500/5 dark:text-violet-300">
+        <ListChecks className="h-7 w-7" strokeWidth={1.75} />
+      </div>
+      <p className="text-sm font-semibold text-zinc-600 dark:text-zinc-300">
+        {t('edit.quiz.empty')}
+      </p>
+      <p className="max-w-xs text-xs text-zinc-400 dark:text-zinc-500">
+        {t('edit.quiz.emptyHint')}
+      </p>
     </div>
   );
 }

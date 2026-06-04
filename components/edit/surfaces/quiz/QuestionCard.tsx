@@ -1,7 +1,16 @@
 'use client';
 
-import { Reorder, useDragControls } from 'motion/react';
-import { ChevronRight, GripVertical, Plus, Trash2, ChevronUp, ChevronDown, X } from 'lucide-react';
+import { Reorder, motion, useDragControls } from 'motion/react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  ChevronUp,
+  GripVertical,
+  Plus,
+  Trash2,
+  X,
+} from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
@@ -30,6 +39,25 @@ import {
 
 const TYPES: QuizQuestionType[] = ['single', 'multiple', 'short_answer'];
 
+/** Per-type accent: a quiz scene's question types read at a glance by colour. */
+const TYPE_ACCENT: Record<QuizQuestionType, { badge: string; rail: string }> = {
+  single: {
+    badge: 'bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300',
+    rail: 'from-violet-400 to-violet-600',
+  },
+  multiple: {
+    badge: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-300',
+    rail: 'from-indigo-400 to-indigo-600',
+  },
+  short_answer: {
+    badge: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+    rail: 'from-amber-400 to-amber-600',
+  },
+};
+
+/** Brand-violet focus treatment shared by every text input in the form. */
+const FOCUS = 'focus-visible:border-violet-400 focus-visible:ring-violet-400/25';
+
 /** Stop a pointer event from reaching the Reorder.Item drag listener. */
 const stopDrag = (e: React.PointerEvent) => e.stopPropagation();
 
@@ -44,6 +72,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
   const { t } = useI18n();
   const controls = useDragControls();
   const choice = isChoice(q.type);
+  const accent = TYPE_ACCENT[q.type];
 
   return (
     <Reorder.Item
@@ -53,17 +82,38 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
       dragListener={false}
       dragControls={controls}
       layout="position"
-      whileDrag={{ scale: 1.01, zIndex: 30 }}
+      whileDrag={{ scale: 1.01, boxShadow: '0 18px 40px -12px rgba(24,24,27,0.25)', zIndex: 30 }}
       transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
-      className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900"
+      className={cn(
+        'group/card relative overflow-hidden rounded-2xl border bg-white transition-shadow dark:bg-zinc-900',
+        expanded
+          ? 'border-violet-200/80 shadow-[0_12px_32px_-16px_rgba(114,46,209,0.35)] dark:border-violet-500/25'
+          : 'border-zinc-200/80 hover:border-zinc-300 hover:shadow-[0_8px_24px_-16px_rgba(24,24,27,0.25)] dark:border-zinc-800 dark:hover:border-zinc-700',
+      )}
     >
-      {/* Header row — caret + summary toggles expansion; grip drags; trash deletes. */}
-      <div className="flex items-center gap-2 px-2.5 py-2">
+      {/* Left accent rail — colours the active question by its type. */}
+      <div
+        aria-hidden
+        className={cn(
+          'absolute inset-y-0 left-0 w-1 bg-gradient-to-b transition-opacity',
+          accent.rail,
+          expanded ? 'opacity-100' : 'opacity-0',
+        )}
+      />
+
+      {/* Header — caret + summary toggles expansion; grip drags; trash deletes. */}
+      <div
+        className={cn(
+          'flex items-center gap-2 py-2 pr-2.5 pl-3 transition-colors',
+          expanded &&
+            'bg-gradient-to-r from-violet-50/60 to-transparent dark:from-violet-500/[0.06]',
+        )}
+      >
         <button
           type="button"
           aria-label={t('edit.quiz.reorder')}
           onPointerDown={(e) => controls.start(e)}
-          className="cursor-grab touch-none text-zinc-300 hover:text-zinc-500 active:cursor-grabbing dark:text-zinc-600 dark:hover:text-zinc-400"
+          className="cursor-grab touch-none text-zinc-300 opacity-0 transition-opacity group-hover/card:opacity-100 hover:text-zinc-500 active:cursor-grabbing dark:text-zinc-600 dark:hover:text-zinc-400"
         >
           <GripVertical className="h-4 w-4" />
         </button>
@@ -71,35 +121,57 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
           type="button"
           onPointerDown={stopDrag}
           onClick={onToggle}
-          className="flex min-w-0 flex-1 items-center gap-2 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2.5 text-left"
         >
           <ChevronRight
             className={cn(
-              'h-4 w-4 shrink-0 text-zinc-400 transition-transform',
-              expanded && 'rotate-90',
+              'h-4 w-4 shrink-0 text-zinc-400 transition-transform duration-200',
+              expanded && 'rotate-90 text-violet-500',
             )}
           />
-          <span className="shrink-0 text-xs font-semibold text-zinc-400">{index + 1}</span>
-          <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-zinc-100 font-mono text-xs font-semibold text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
+            {index + 1}
+          </span>
+          <span
+            className={cn(
+              'shrink-0 rounded-md px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider',
+              accent.badge,
+            )}
+          >
             {t(`edit.quiz.type.${q.type}`)}
           </span>
-          <span className="truncate text-sm text-zinc-700 dark:text-zinc-200">
+          <span
+            className={cn(
+              'truncate text-sm',
+              q.question
+                ? 'font-medium text-zinc-800 dark:text-zinc-100'
+                : 'italic text-zinc-400 dark:text-zinc-500',
+            )}
+          >
             {q.question || t('edit.quiz.untitledQuestion')}
           </span>
         </button>
+        <span className="shrink-0 rounded-md bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-zinc-500 tabular-nums dark:bg-zinc-800 dark:text-zinc-400">
+          {q.points ?? 1}
+        </span>
         <button
           type="button"
           aria-label={t('edit.quiz.deleteQuestion')}
           onPointerDown={stopDrag}
           onClick={() => deleteQuizQuestion(q.id)}
-          className="shrink-0 rounded-md p-1 text-zinc-400 transition-colors hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/40"
+          className="shrink-0 rounded-lg p-1.5 text-zinc-300 transition-colors hover:bg-rose-50 hover:text-rose-500 dark:text-zinc-600 dark:hover:bg-rose-950/40"
         >
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
 
       {expanded && (
-        <div className="flex flex-col gap-4 border-t border-zinc-100 px-3.5 pb-4 pt-3 dark:border-zinc-800">
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+          className="flex flex-col gap-4 border-t border-zinc-100 px-4 pb-4 pt-3.5 dark:border-zinc-800/80"
+        >
           {/* Question text */}
           <Field label={t('edit.quiz.questionLabel')}>
             <Textarea
@@ -110,6 +182,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
               }
               placeholder={t('edit.quiz.questionPlaceholder')}
               rows={2}
+              className={cn('resize-none', FOCUS)}
             />
           </Field>
 
@@ -120,7 +193,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                 value={q.type}
                 onValueChange={(v) => setQuizQuestionType(q.id, v as QuizQuestionType)}
               >
-                <SelectTrigger onPointerDown={stopDrag}>
+                <SelectTrigger onPointerDown={stopDrag} className={FOCUS}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -143,6 +216,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                   if (Number.isNaN(n)) return;
                   typeQuizQuestion(q.id, { points: n }, `${q.id}:points`);
                 }}
+                className={cn('font-mono tabular-nums', FOCUS)}
               />
             </Field>
           </div>
@@ -159,7 +233,15 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                   // buttons (focus stays on the button), so React reconciling
                   // the label inputs by position is invisible in practice.
                   return (
-                    <div key={opt.value} className="flex items-center gap-1.5">
+                    <div
+                      key={opt.value}
+                      className={cn(
+                        'group/opt flex items-center gap-2 rounded-xl border p-1 transition-colors',
+                        correct
+                          ? 'border-emerald-200 bg-emerald-50/70 dark:border-emerald-500/25 dark:bg-emerald-500/[0.07]'
+                          : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-800/40',
+                      )}
+                    >
                       <button
                         type="button"
                         aria-label={t('edit.quiz.markCorrect')}
@@ -167,23 +249,26 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                         onPointerDown={stopDrag}
                         onClick={() => toggleQuizCorrect(q.id, i)}
                         className={cn(
-                          'flex h-7 w-7 shrink-0 items-center justify-center border text-[11px] font-bold transition-colors',
-                          q.type === 'single' ? 'rounded-full' : 'rounded-md',
+                          'relative flex h-8 w-8 shrink-0 items-center justify-center border font-mono text-xs font-bold transition-all',
+                          q.type === 'single' ? 'rounded-full' : 'rounded-lg',
                           correct
-                            ? 'border-emerald-500 bg-emerald-500 text-white'
-                            : 'border-zinc-300 text-zinc-400 hover:border-emerald-400 dark:border-zinc-600',
+                            ? 'border-emerald-500 bg-emerald-500 text-white shadow-sm shadow-emerald-500/30'
+                            : 'border-zinc-300 bg-white text-zinc-400 hover:border-emerald-400 hover:text-emerald-500 dark:border-zinc-600 dark:bg-zinc-800',
                         )}
                       >
-                        {optionLetter(i)}
+                        {correct ? <Check className="h-4 w-4" strokeWidth={3} /> : optionLetter(i)}
                       </button>
                       <Input
                         value={opt.label}
                         onPointerDown={stopDrag}
                         onChange={(e) => typeQuizOptionLabel(q.id, i, e.target.value)}
                         placeholder={t('edit.quiz.optionPlaceholder')}
-                        className="flex-1"
+                        className={cn(
+                          'flex-1 border-transparent bg-transparent shadow-none',
+                          FOCUS,
+                        )}
                       />
-                      <div className="flex shrink-0 items-center">
+                      <div className="flex shrink-0 items-center opacity-60 transition-opacity group-hover/opt:opacity-100">
                         <IconButton
                           label={t('edit.quiz.moveUp')}
                           disabled={i === 0}
@@ -202,6 +287,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                           label={t('edit.quiz.deleteOption')}
                           disabled={(q.options?.length ?? 0) <= 1}
                           onClick={() => deleteQuizOption(q.id, i)}
+                          danger
                         >
                           <X className="h-4 w-4" />
                         </IconButton>
@@ -214,7 +300,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                   disabled={(q.options?.length ?? 0) >= MAX_OPTIONS}
                   onPointerDown={stopDrag}
                   onClick={() => addQuizOption(q.id)}
-                  className="mt-0.5 inline-flex w-fit items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 disabled:pointer-events-none disabled:opacity-40 dark:text-violet-300 dark:hover:bg-violet-500/10"
+                  className="mt-0.5 inline-flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-zinc-200 py-2 text-xs font-medium text-zinc-500 transition-colors hover:border-violet-300 hover:bg-violet-50/60 hover:text-violet-600 disabled:pointer-events-none disabled:opacity-40 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-violet-500/40 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   {t('edit.quiz.addOption')}
@@ -226,7 +312,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
           {/* Short-answer grading fields */}
           {!choice && (
             <>
-              <label className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-200">
+              <label className="flex items-center gap-3 rounded-xl border border-zinc-200/80 bg-zinc-50/60 px-3 py-2.5 text-sm font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-800/30 dark:text-zinc-200">
                 <Switch
                   checked={q.hasAnswer ?? false}
                   onCheckedChange={(v) => patchQuizQuestion(q.id, { hasAnswer: v })}
@@ -246,6 +332,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                   }
                   placeholder={t('edit.quiz.commentPromptPlaceholder')}
                   rows={2}
+                  className={cn('resize-none', FOCUS)}
                 />
               </Field>
             </>
@@ -261,9 +348,10 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
               }
               placeholder={t('edit.quiz.analysisPlaceholder')}
               rows={2}
+              className={cn('resize-none', FOCUS)}
             />
           </Field>
-        </div>
+        </motion.div>
       )}
     </Reorder.Item>
   );
@@ -279,8 +367,10 @@ function Field({
   readonly children: React.ReactNode;
 }) {
   return (
-    <div className={cn('flex flex-col gap-1', className)}>
-      <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">{label}</span>
+    <div className={cn('flex flex-col gap-1.5', className)}>
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+        {label}
+      </span>
       {children}
     </div>
   );
@@ -289,11 +379,13 @@ function Field({
 function IconButton({
   label,
   disabled,
+  danger,
   onClick,
   children,
 }: {
   readonly label: string;
   readonly disabled?: boolean;
+  readonly danger?: boolean;
   readonly onClick: () => void;
   readonly children: React.ReactNode;
 }) {
@@ -304,7 +396,12 @@ function IconButton({
       disabled={disabled}
       onPointerDown={stopDrag}
       onClick={onClick}
-      className="rounded-md p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-600 disabled:pointer-events-none disabled:opacity-30 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+      className={cn(
+        'rounded-lg p-1 text-zinc-400 transition-colors disabled:pointer-events-none disabled:opacity-30',
+        danger
+          ? 'hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/40'
+          : 'hover:bg-zinc-100 hover:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-300',
+      )}
     >
       {children}
     </button>
