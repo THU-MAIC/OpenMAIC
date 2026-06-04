@@ -256,7 +256,13 @@
         "multiple": "複数選択",
         "short_answer": "記述"
       },
-      "shortAnswerGradingNote": "記述式は下の採点ガイドに基づき AI が自動採点します。"
+      "shortAnswerGradingNote": "記述式は下の採点ガイドに基づき AI が自動採点します。",
+      "hint": {
+        "emptyText": "問題 {{n}}：問題文を入力してください",
+        "fewOptions": "問題 {{n}}：選択肢は2つ以上必要です",
+        "emptyOption": "問題 {{n}}：空の選択肢があります",
+        "noCorrect": "問題 {{n}}：正解を指定してください"
+      }
     }
   },
   "classroomComplete": {

@@ -256,7 +256,13 @@
         "multiple": "Multiple choice",
         "short_answer": "Short answer"
       },
-      "shortAnswerGradingNote": "Short answers are always graded by AI from the guidance below."
+      "shortAnswerGradingNote": "Short answers are always graded by AI from the guidance below.",
+      "hint": {
+        "emptyText": "Question {{n}}: add question text",
+        "fewOptions": "Question {{n}}: add at least two options",
+        "emptyOption": "Question {{n}}: an option label is empty",
+        "noCorrect": "Question {{n}}: mark a correct answer"
+      }
     }
   },
   "classroomComplete": {

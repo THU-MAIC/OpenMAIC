@@ -112,6 +112,9 @@ test.describe('Quiz content surface (#657)', () => {
     await expect(page.locator('[data-question-type="multiple"]')).toHaveCount(1);
     await expect(page.locator('[data-question-type="short_answer"]')).toHaveCount(1);
 
+    // The just-added blank questions surface authoring validation hints.
+    await expect(page.getByText(/add question text/i).first()).toBeVisible();
+
     // Edit the seeded question's text; the header summary reflects it live.
     await cards
       .first()

@@ -256,7 +256,13 @@
         "multiple": "多选",
         "short_answer": "简答"
       },
-      "shortAnswerGradingNote": "简答题由 AI 依据下方评分指引自动打分。"
+      "shortAnswerGradingNote": "简答题由 AI 依据下方评分指引自动打分。",
+      "hint": {
+        "emptyText": "第 {{n}} 题：请填写题干",
+        "fewOptions": "第 {{n}} 题：至少需要两个选项",
+        "emptyOption": "第 {{n}} 题：有选项内容为空",
+        "noCorrect": "第 {{n}} 题：请标记正确答案"
+      }
     }
   },
   "classroomComplete": {

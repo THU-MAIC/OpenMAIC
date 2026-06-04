@@ -256,7 +256,13 @@
         "multiple": "多選",
         "short_answer": "簡答"
       },
-      "shortAnswerGradingNote": "簡答題由 AI 依據下方評分指引自動評分。"
+      "shortAnswerGradingNote": "簡答題由 AI 依據下方評分指引自動評分。",
+      "hint": {
+        "emptyText": "第 {{n}} 題：請填寫題幹",
+        "fewOptions": "第 {{n}} 題：至少需要兩個選項",
+        "emptyOption": "第 {{n}} 題：有選項內容為空",
+        "noCorrect": "第 {{n}} 題：請標記正確答案"
+      }
     }
   },
   "whiteboard": {

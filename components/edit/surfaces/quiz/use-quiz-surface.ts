@@ -2,7 +2,7 @@
 
 import { Plus } from 'lucide-react';
 import React, { useEffect } from 'react';
-import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
+import type { EditorHint, InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { QuizContent, QuizQuestionType } from '@/lib/types/stage';
@@ -11,6 +11,7 @@ import {
   addQuestion,
   deleteOption,
   deleteQuestion,
+  isChoice,
   reorderOptions,
   reorderQuestions,
   setQuestionType,
@@ -103,6 +104,46 @@ export function buildQuizInsertItems(t: (k: string) => string): InsertPaletteIte
   ];
 }
 
+/** Max validation hints shown at once so the HintRail stays readable. */
+const MAX_HINTS = 5;
+
+/**
+ * Authoring validation surfaced through the chrome's reserved `hints` slot:
+ * one hint per problematic question (highest-priority issue only), so the
+ * author sees what still needs fixing before the quiz is playable. A choice
+ * question with no correct answer is a warning (it always scores incorrect in
+ * playback); blank text / options are gentler suggestions.
+ */
+export function buildQuizHints(
+  content: QuizContent,
+  t: (k: string, o?: Record<string, unknown>) => string,
+): EditorHint[] {
+  const hints: EditorHint[] = [];
+  content.questions.forEach((q, i) => {
+    if (hints.length >= MAX_HINTS) return;
+    const n = i + 1;
+    const choice = isChoice(q.type);
+    let issue: { severity: EditorHint['severity']; key: string } | null = null;
+    if (!q.question.trim()) {
+      issue = { severity: 'suggestion', key: 'emptyText' };
+    } else if (choice && (q.options?.length ?? 0) < 2) {
+      issue = { severity: 'warning', key: 'fewOptions' };
+    } else if (choice && (q.options ?? []).some((o) => !o.label.trim())) {
+      issue = { severity: 'suggestion', key: 'emptyOption' };
+    } else if (choice && (q.answer?.length ?? 0) === 0) {
+      issue = { severity: 'warning', key: 'noCorrect' };
+    }
+    if (issue) {
+      hints.push({
+        id: q.id,
+        severity: issue.severity,
+        message: t(`edit.quiz.hint.${issue.key}`, { n }),
+      });
+    }
+  });
+  return hints;
+}
+
 /**
  * The resolved quiz content the form reads: in-memory session present (once
  * seeded, ref-stable until a commit), else the canonical stage scene as a
@@ -148,9 +189,7 @@ export function useQuizSurfaceState(): SurfaceState<QuizContent, QuizSelection> 
     insertItems: buildQuizInsertItems(t),
     floatingActions: [],
     commands: [],
-    // Validation hints (no-correct-answer, empty options) are a deferred
-    // follow-up — the reserved slot stays empty for v0.
-    hints: [],
+    hints: buildQuizHints(content, t),
   };
 }
 

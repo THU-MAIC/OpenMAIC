@@ -242,7 +242,13 @@
         "multiple": "Múltipla escolha",
         "short_answer": "Resposta curta"
       },
-      "shortAnswerGradingNote": "Respostas curtas são sempre avaliadas por IA com base na orientação abaixo."
+      "shortAnswerGradingNote": "Respostas curtas são sempre avaliadas por IA com base na orientação abaixo.",
+      "hint": {
+        "emptyText": "Pergunta {{n}}: adicione o texto da pergunta",
+        "fewOptions": "Pergunta {{n}}: adicione ao menos duas opções",
+        "emptyOption": "Pergunta {{n}}: há uma opção vazia",
+        "noCorrect": "Pergunta {{n}}: marque a resposta correta"
+      }
     }
   },
   "stage": {
