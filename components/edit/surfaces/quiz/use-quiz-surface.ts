@@ -66,10 +66,6 @@ export function reorderQuizQuestions(orderedIds: readonly string[]): void {
 export function setQuizQuestionType(id: string, type: QuizQuestionType): void {
   useQuizEditSession.getState().commit(setQuestionType(resolvePresent(), id, type));
 }
-/** Discrete scalar patch (e.g. hasAnswer toggle) — its own undo step. */
-export function patchQuizQuestion(id: string, patch: QuestionTextPatch): void {
-  useQuizEditSession.getState().commit(updateQuestion(resolvePresent(), id, patch));
-}
 /** Coalesced text/number patch (question / analysis / commentPrompt / points). */
 export function typeQuizQuestion(id: string, patch: QuestionTextPatch, coalesceKey: string): void {
   useQuizEditSession

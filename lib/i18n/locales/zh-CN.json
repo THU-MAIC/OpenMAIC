@@ -256,7 +256,8 @@
         "single": "单选",
         "multiple": "多选",
         "short_answer": "简答"
-      }
+      },
+      "shortAnswerGradingNote": "简答题由 AI 依据下方评分指引自动打分。"
     }
   },
   "classroomComplete": {

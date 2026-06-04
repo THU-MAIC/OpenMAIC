@@ -242,7 +242,8 @@
         "single": "Escolha única",
         "multiple": "Múltipla escolha",
         "short_answer": "Resposta curta"
-      }
+      },
+      "shortAnswerGradingNote": "Respostas curtas são sempre avaliadas por IA com base na orientação abaixo."
     }
   },
   "stage": {

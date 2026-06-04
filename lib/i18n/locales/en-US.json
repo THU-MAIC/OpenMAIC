@@ -256,7 +256,8 @@
         "single": "Single choice",
         "multiple": "Multiple choice",
         "short_answer": "Short answer"
-      }
+      },
+      "shortAnswerGradingNote": "Short answers are always graded by AI from the guidance below."
     }
   },
   "classroomComplete": {

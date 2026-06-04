@@ -8,12 +8,12 @@ import {
   ChevronUp,
   GripVertical,
   Plus,
+  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Switch } from '@/components/ui/switch';
 import {
   Select,
   SelectContent,
@@ -29,7 +29,6 @@ import {
   addQuizOption,
   deleteQuizOption,
   deleteQuizQuestion,
-  patchQuizQuestion,
   reorderQuizOptions,
   setQuizQuestionType,
   toggleQuizCorrect,
@@ -193,7 +192,7 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
                 value={q.type}
                 onValueChange={(v) => setQuizQuestionType(q.id, v as QuizQuestionType)}
               >
-                <SelectTrigger onPointerDown={stopDrag} className={FOCUS}>
+                <SelectTrigger onPointerDown={stopDrag} className={cn('w-full', FOCUS)}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -309,16 +308,16 @@ export function QuestionCard({ question: q, index, expanded, onToggle }: Props) 
             </Field>
           )}
 
-          {/* Short-answer grading fields */}
+          {/* Short-answer grading fields. Short answers are always AI-graded
+              from the guidance below (see lib/quiz/grading.ts isShortAnswer),
+              so there is no auto-grade toggle — an info note explains the
+              scoring model instead. */}
           {!choice && (
             <>
-              <label className="flex items-center gap-3 rounded-xl border border-zinc-200/80 bg-zinc-50/60 px-3 py-2.5 text-sm font-medium text-zinc-700 dark:border-zinc-800 dark:bg-zinc-800/30 dark:text-zinc-200">
-                <Switch
-                  checked={q.hasAnswer ?? false}
-                  onCheckedChange={(v) => patchQuizQuestion(q.id, { hasAnswer: v })}
-                />
-                {t('edit.quiz.hasAnswerLabel')}
-              </label>
+              <div className="flex items-start gap-2.5 rounded-xl border border-violet-200/70 bg-violet-50/50 px-3 py-2.5 text-xs leading-relaxed text-violet-700 dark:border-violet-500/20 dark:bg-violet-500/[0.07] dark:text-violet-300">
+                <Sparkles className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={2} />
+                <span>{t('edit.quiz.shortAnswerGradingNote')}</span>
+              </div>
               <Field label={t('edit.quiz.commentPromptLabel')}>
                 <Textarea
                   value={q.commentPrompt ?? ''}

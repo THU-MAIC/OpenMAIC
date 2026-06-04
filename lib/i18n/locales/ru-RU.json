@@ -256,7 +256,8 @@
         "single": "Один выбор",
         "multiple": "Несколько вариантов",
         "short_answer": "Краткий ответ"
-      }
+      },
+      "shortAnswerGradingNote": "Краткие ответы всегда оцениваются ИИ по указаниям ниже."
     }
   },
   "classroomComplete": {
