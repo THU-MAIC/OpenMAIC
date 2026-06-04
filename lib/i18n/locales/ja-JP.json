@@ -247,7 +247,6 @@
       "moveDown": "下へ移動",
       "analysisLabel": "解説",
       "analysisPlaceholder": "採点後に表示…",
-      "hasAnswerLabel": "自動採点する",
       "commentPromptLabel": "採点ガイド",
       "commentPromptPlaceholder": "この記述式をどう採点しますか？",
       "empty": "問題がありません",

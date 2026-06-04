@@ -247,7 +247,6 @@
       "moveDown": "Вниз",
       "analysisLabel": "Пояснение",
       "analysisPlaceholder": "Показывается после проверки…",
-      "hasAnswerLabel": "Автопроверка",
       "commentPromptLabel": "Указания по оценке",
       "commentPromptPlaceholder": "Как оценивать этот развёрнутый ответ?",
       "empty": "Пока нет вопросов",

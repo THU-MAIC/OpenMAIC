@@ -183,14 +183,20 @@ test.describe('Quiz content surface (#657)', () => {
 
     // Pro mode has two Pro toggles (the playback header's and the edit chrome's,
     // morphed via layoutId) and only one is the live control at a time. Click
-    // switches until the editor surface reaches the desired state.
+    // switches until the editor surface reaches the desired state, polling with
+    // a web-first assertion after each click (no fixed sleeps) and bailing as
+    // soon as it flips so a no-op click on the morph ghost can't over-toggle.
+    const surface = page.getByTestId('quiz-surface');
+    const atTarget = async (on: boolean) => {
+      try {
+        await expect(surface)[on ? 'toBeVisible' : 'toBeHidden']({ timeout: 1500 });
+        return true;
+      } catch {
+        return false;
+      }
+    };
     const setProMode = async (on: boolean) => {
-      const visible = () =>
-        page
-          .getByTestId('quiz-surface')
-          .isVisible()
-          .catch(() => false);
-      if ((await visible()) === on) return;
+      if (await atTarget(on)) return;
       const switches = page.getByRole('switch');
       const n = await switches.count();
       for (let i = 0; i < n; i++) {
@@ -198,9 +204,9 @@ test.describe('Quiz content surface (#657)', () => {
           .nth(i)
           .click()
           .catch(() => {});
-        await page.waitForTimeout(300);
-        if ((await visible()) === on) return;
+        if (await atTarget(on)) return;
       }
+      await expect(surface)[on ? 'toBeVisible' : 'toBeHidden']();
     };
 
     // --- Author: edit the single-choice question text in Pro mode.

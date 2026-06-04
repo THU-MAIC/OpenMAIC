@@ -247,7 +247,6 @@
       "moveDown": "Move down",
       "analysisLabel": "Explanation",
       "analysisPlaceholder": "Shown after the question is graded…",
-      "hasAnswerLabel": "Auto-grade this answer",
       "commentPromptLabel": "Grading guidance",
       "commentPromptPlaceholder": "How should this open response be graded?",
       "empty": "No questions yet",

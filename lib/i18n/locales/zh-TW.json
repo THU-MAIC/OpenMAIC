@@ -247,7 +247,6 @@
       "moveDown": "下移",
       "analysisLabel": "解析",
       "analysisPlaceholder": "評分後顯示…",
-      "hasAnswerLabel": "自動評分",
       "commentPromptLabel": "評分指引",
       "commentPromptPlaceholder": "應如何評判這道主觀題？",
       "empty": "尚無題目",

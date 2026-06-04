@@ -247,7 +247,6 @@
       "moveDown": "تحريك لأسفل",
       "analysisLabel": "الشرح",
       "analysisPlaceholder": "يظهر بعد التصحيح…",
-      "hasAnswerLabel": "تصحيح تلقائي",
       "commentPromptLabel": "إرشادات التصحيح",
       "commentPromptPlaceholder": "كيف ينبغي تقييم هذه الإجابة المفتوحة؟",
       "empty": "لا توجد أسئلة بعد",

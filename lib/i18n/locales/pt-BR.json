@@ -233,7 +233,6 @@
       "moveDown": "Mover para baixo",
       "analysisLabel": "Explicação",
       "analysisPlaceholder": "Exibida após a correção…",
-      "hasAnswerLabel": "Corrigir automaticamente",
       "commentPromptLabel": "Orientação de correção",
       "commentPromptPlaceholder": "Como esta resposta aberta deve ser avaliada?",
       "empty": "Nenhuma pergunta ainda",
