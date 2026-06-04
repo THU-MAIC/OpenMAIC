@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { lookupMock } = vi.hoisted(() => ({
   lookupMock: vi.fn(),
@@ -10,10 +10,24 @@ vi.mock('node:dns', () => ({
   },
 }));
 
+const PRIVATE_NETWORK_BLOCK_MESSAGE =
+  'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
+const ALLOW_LOCAL_NETWORKS_GUIDANCE = 'ALLOW_LOCAL_NETWORKS=true';
+const originalAllowLocalNetworks = process.env.ALLOW_LOCAL_NETWORKS;
+
 describe('validateUrlForSSRF', () => {
   beforeEach(() => {
     vi.resetModules();
     lookupMock.mockReset();
+    delete process.env.ALLOW_LOCAL_NETWORKS;
+  });
+
+  afterEach(() => {
+    if (originalAllowLocalNetworks === undefined) {
+      delete process.env.ALLOW_LOCAL_NETWORKS;
+    } else {
+      process.env.ALLOW_LOCAL_NETWORKS = originalAllowLocalNetworks;
+    }
   });
 
   it('allows a public hostname when DNS resolves to a public IP', async () => {
@@ -57,11 +71,11 @@ describe('validateUrlForSSRF', () => {
   it('rejects blocked hostnames immediately', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    await expect(validateUrlForSSRF('http://localhost')).resolves.toBe(
-      'Local/private network URLs are not allowed',
-    );
+    const localhostResult = await validateUrlForSSRF('http://localhost');
+    expect(localhostResult).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    expect(localhostResult).toContain(ALLOW_LOCAL_NETWORKS_GUIDANCE);
     await expect(validateUrlForSSRF('http://printer.local')).resolves.toBe(
-      'Local/private network URLs are not allowed',
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
     );
     expect(lookupMock).not.toHaveBeenCalled();
   });
@@ -80,9 +94,7 @@ describe('validateUrlForSSRF', () => {
     ];
 
     for (const url of urls) {
-      await expect(validateUrlForSSRF(url)).resolves.toBe(
-        'Local/private network URLs are not allowed',
-      );
+      await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
     }
 
     expect(lookupMock).not.toHaveBeenCalled();
@@ -100,9 +112,7 @@ describe('validateUrlForSSRF', () => {
     ];
 
     for (const url of urls) {
-      await expect(validateUrlForSSRF(url)).resolves.toBe(
-        'Local/private network URLs are not allowed',
-      );
+      await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
     }
 
     expect(lookupMock).not.toHaveBeenCalled();
@@ -113,11 +123,11 @@ describe('validateUrlForSSRF', () => {
 
     // 2002:7f00:0001:: embeds 127.0.0.1
     await expect(validateUrlForSSRF('http://[2002:7f00:0001::]')).resolves.toBe(
-      'Local/private network URLs are not allowed',
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
     );
     // 2002:0a00:0001:: embeds 10.0.0.1
     await expect(validateUrlForSSRF('http://[2002:0a00:0001::]')).resolves.toBe(
-      'Local/private network URLs are not allowed',
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
     );
     expect(lookupMock).not.toHaveBeenCalled();
   });
@@ -136,7 +146,7 @@ describe('validateUrlForSSRF', () => {
     // Client IPv4 127.0.0.1 XOR 0xFFFFFFFF = 0x80FFFFFE → hextets 80ff:fffe
     await expect(
       validateUrlForSSRF('http://[2001:0000:4136:e378:8000:63bf:80ff:fffe]'),
-    ).resolves.toBe('Local/private network URLs are not allowed');
+    ).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
@@ -155,9 +165,9 @@ describe('validateUrlForSSRF', () => {
 
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    await expect(validateUrlForSSRF('https://attacker.com')).resolves.toBe(
-      'Local/private network URLs are not allowed',
-    );
+    const result = await validateUrlForSSRF('https://attacker.com');
+    expect(result).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    expect(result).toContain(ALLOW_LOCAL_NETWORKS_GUIDANCE);
   });
 
   it('rejects hostnames when any DNS answer is private', async () => {
@@ -169,8 +179,19 @@ describe('validateUrlForSSRF', () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
     await expect(validateUrlForSSRF('https://mixed.example')).resolves.toBe(
-      'Local/private network URLs are not allowed',
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
     );
+  });
+
+  it('allows local network targets when ALLOW_LOCAL_NETWORKS=true', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    lookupMock.mockResolvedValue([{ address: '127.0.0.1', family: 4 }]);
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('http://192.168.1.10')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('https://internal.example')).resolves.toBeNull();
+    expect(lookupMock).not.toHaveBeenCalled();
   });
 
   it('fails closed when DNS lookup errors', async () => {
