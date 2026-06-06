@@ -9,7 +9,7 @@ import type {
   ToolCallRequest,
 } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
-import type { VoxCPMVoiceDesign } from '@/lib/audio/voxcpm';
+import type { VoiceDesign } from '@/lib/audio/voice-design';
 import type { UIMessage } from 'ai';
 import { createLogger } from '@/lib/logger';
 
@@ -167,7 +167,7 @@ export interface GeneratedAgentRecord {
   avatar: string;
   color: string;
   priority: number;
-  voiceDesign?: VoxCPMVoiceDesign; // 3-layer vocal descriptor for VoxCPM auto voice
+  voiceDesign?: VoiceDesign; // 3-layer vocal descriptor for auto voice
   createdAt: number;
 }
 
@@ -189,11 +189,11 @@ export interface VoiceProfileRecord {
 }
 
 /**
- * Cached reference clip for a VoxCPM registered auto voice. The clip is the
- * source of truth; the deterministic `voiceId` is its key, enabling
+ * Cached reference clip for a registered auto voice (any TTS provider). The
+ * clip is the source of truth; the deterministic `voiceId` is its key, enabling
  * register-on-invalid re-registration after backend GC/restart.
  */
-export interface VoxCPMAutoVoiceCacheRecord {
+export interface AutoVoiceCacheRecord {
   voiceId: string;
   referenceAudio: Blob;
   mimeType: string;
@@ -226,7 +226,7 @@ class MAICDatabase extends Dexie {
   mediaFiles!: EntityTable<MediaFileRecord, 'id'>;
   generatedAgents!: EntityTable<GeneratedAgentRecord, 'id'>;
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
-  voxcpmAutoVoiceCache!: EntityTable<VoxCPMAutoVoiceCacheRecord, 'voiceId'>;
+  autoVoiceCache!: EntityTable<AutoVoiceCacheRecord, 'voiceId'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -394,7 +394,7 @@ class MAICDatabase extends Dexie {
       voiceProfiles: 'id, providerId, kind, updatedAt',
     });
 
-    // Version 11: Add VoxCPM auto-voice reference-clip cache (register-by-id).
+    // Version 11: Add auto-voice reference-clip cache (provider-neutral register-by-id).
     this.version(11).stores({
       stages: 'id, updatedAt',
       scenes: 'id, stageId, order, [stageId+order]',
@@ -407,7 +407,7 @@ class MAICDatabase extends Dexie {
       mediaFiles: 'id, stageId, [stageId+type]',
       generatedAgents: 'id, stageId',
       voiceProfiles: 'id, providerId, kind, updatedAt',
-      voxcpmAutoVoiceCache: 'voiceId, updatedAt',
+      autoVoiceCache: 'voiceId, updatedAt',
     });
   }
 }

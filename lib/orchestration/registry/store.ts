@@ -8,7 +8,7 @@ import { persist } from 'zustand/middleware';
 import type { AgentConfig } from './types';
 import { getActionsForRole } from './types';
 import type { TTSProviderId } from '@/lib/audio/types';
-import type { VoxCPMVoiceDesign } from '@/lib/audio/voxcpm';
+import type { VoiceDesign } from '@/lib/audio/voice-design';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
@@ -384,7 +384,7 @@ export async function saveGeneratedAgents(
     color: string;
     priority: number;
     voiceConfig?: { providerId: string; voiceId: string };
-    voiceDesign?: VoxCPMVoiceDesign;
+    voiceDesign?: VoiceDesign;
   }>,
 ): Promise<string[]> {
   const { db } = await import('@/lib/utils/database');

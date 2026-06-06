@@ -12,7 +12,7 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
-import { normalizeVoiceDesign } from '@/lib/audio/voxcpm';
+import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
 
 const log = createLogger('Agent Profiles API');
 

@@ -1,23 +1,15 @@
 /**
- * VoxCPM voice-registration backend client (server-side).
+ * VoxCPM voice-registration adapter (server-side) — the first concrete
+ * implementation of the provider-neutral `VoiceRegistrationAdapter`.
  *
- * Drives the reference-by-id timbre-stability flow against backends that
- * expose a runtime voice-registration API (vLLM-Omni `/v1/audio/voices`):
- * synthesize a voice-design prompt once, register the resulting clip under a
- * deterministic id, then reference `voice=<id>` on later speech requests.
+ * Drives the reference-by-id timbre-stability flow against vLLM-Omni
+ * (`/v1/audio/voices`): synthesize a voice-design prompt once, register the
+ * clip under a deterministic id, then later TTS references `voice=<id>`.
  */
 
-import {
-  buildVoiceDesignPrompt,
-  VOXCPM_VLLM_MODEL_ID,
-  type VoxCPMVoiceDesign,
-} from '@/lib/audio/voxcpm';
-
-export interface VoxCPMRegistrationConfig {
-  baseUrl: string; // backend root or `.../v1`
-  apiKey?: string;
-  model?: string;
-}
+import { buildVoiceDesignPrompt, type VoiceDesign } from '@/lib/audio/voice-design';
+import { VOXCPM_VLLM_MODEL_ID, normalizeVoxCPMBackend, voxCPMBackendSupportsVoiceRegistration } from '@/lib/audio/voxcpm';
+import type { VoiceRegistrationAdapter, VoiceRegistrationConfig } from '@/lib/audio/voice-registration';
 
 function v1(baseUrl: string): string {
   const clean = baseUrl.replace(/\/$/, '');
@@ -56,14 +48,9 @@ function bootstrapSentence(language?: string): string {
   return BOOTSTRAP_SENTENCE[key] || BOOTSTRAP_SENTENCE.default;
 }
 
-/**
- * Whether a voice id is already registered on the backend.
- *
- * vLLM-Omni exposes no per-name GET (that route is 405); list all voices and
- * check membership.
- */
+/** Whether a voice id is already registered (vLLM-Omni has no per-name GET → list + membership). */
 export async function voxCPMVoiceExists(
-  cfg: VoxCPMRegistrationConfig,
+  cfg: VoiceRegistrationConfig,
   voiceId: string,
 ): Promise<boolean> {
   const res = await fetch(`${v1(cfg.baseUrl)}/audio/voices`, {
@@ -77,7 +64,7 @@ export async function voxCPMVoiceExists(
 
 /** Register (or re-register, idempotently) a reference clip under `voiceId`. */
 export async function registerVoxCPMVoice(
-  cfg: VoxCPMRegistrationConfig,
+  cfg: VoiceRegistrationConfig,
   params: { voiceId: string; referenceAudioBase64: string; mimeType?: string },
 ): Promise<string> {
   const form = new FormData();
@@ -103,8 +90,8 @@ export async function registerVoxCPMVoice(
 
 /** Synthesize the voice-design prompt once into a reference clip. */
 export async function bootstrapVoxCPMReferenceClip(
-  cfg: VoxCPMRegistrationConfig,
-  params: { design: VoxCPMVoiceDesign; language?: string },
+  cfg: VoiceRegistrationConfig,
+  params: { design: VoiceDesign; language?: string },
 ): Promise<{ referenceAudioBase64: string; mimeType: string }> {
   const prompt = buildVoiceDesignPrompt(params.design);
   const sample = bootstrapSentence(params.language);
@@ -128,3 +115,13 @@ export async function bootstrapVoxCPMReferenceClip(
     mimeType: res.headers.get('content-type') || 'audio/wav',
   };
 }
+
+/** VoxCPM implementation of the provider-neutral registration adapter. */
+export const voxcpmVoiceRegistrationAdapter: VoiceRegistrationAdapter = {
+  supportsRegistration(options) {
+    return voxCPMBackendSupportsVoiceRegistration(normalizeVoxCPMBackend(options?.backend));
+  },
+  voiceExists: voxCPMVoiceExists,
+  registerVoice: registerVoxCPMVoice,
+  bootstrapReferenceClip: bootstrapVoxCPMReferenceClip,
+};

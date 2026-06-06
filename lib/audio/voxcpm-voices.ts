@@ -8,20 +8,16 @@ import {
   VOXCPM_AUTO_VOICE_ID,
   VOXCPM_TTS_PROVIDER_ID,
   buildAutoVoxCPMVoicePrompt,
-  getDeterministicVoxCPMVoiceId,
   getVoxCPMProfileIdFromVoiceId,
   getVoxCPMProfileVoiceId,
   voxCPMBackendSupportsVoiceRegistration,
   type VoxCPMProviderOptions,
   type VoxCPMVoicePromptContext,
 } from '@/lib/audio/voxcpm';
-
-/** Provider config the registration endpoint needs (forwarded for non-managed providers). */
-export interface VoxCPMTTSRequestConfig {
-  ttsApiKey?: string;
-  ttsBaseUrl?: string;
-  ttsModelId?: string;
-}
+import {
+  ensureRegisteredVoice,
+  type VoiceRegistrationRequestConfig,
+} from '@/lib/audio/voice-registration-client';
 
 export type VoxCPMVoiceProfile = VoiceProfileRecord;
 
@@ -51,82 +47,6 @@ async function blobToBase64(blob: Blob): Promise<string> {
     };
     reader.readAsDataURL(blob);
   });
-}
-
-function base64ToBlob(base64: string, mimeType?: string): Blob {
-  const binary = atob(base64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new Blob([bytes], { type: mimeType || 'audio/wav' });
-}
-
-// Voice ids confirmed registered in this browser session — skip the round-trip.
-const registeredAutoVoicesThisSession = new Set<string>();
-
-async function getCachedAutoVoiceClip(
-  voiceId: string,
-): Promise<{ base64: string; mimeType: string } | undefined> {
-  const row = await db.voxcpmAutoVoiceCache.get(voiceId);
-  if (!row) return undefined;
-  return { base64: await blobToBase64(row.referenceAudio), mimeType: row.mimeType };
-}
-
-/**
- * Ensure the agent's deterministic auto voice is registered on the backend,
- * returning its voice id (or undefined when registration is unavailable, so
- * callers fall back to the inline voice-design prompt path).
- *
- * Lazy + idempotent: memoized per session, reference clip cached in IndexedDB.
- * register-on-invalid is handled by the endpoint's existence check, which
- * re-registers a GC'd voice from the supplied cached clip.
- */
-export async function ensureRegisteredAutoVoice(
-  context: VoxCPMVoicePromptContext,
-  request: VoxCPMTTSRequestConfig,
-): Promise<string | undefined> {
-  if (
-    !context.voiceDesign ||
-    !context.backend ||
-    !voxCPMBackendSupportsVoiceRegistration(context.backend)
-  ) {
-    return undefined;
-  }
-
-  const voiceId = await getDeterministicVoxCPMVoiceId(context.voiceDesign, {
-    language: context.language || context.locale,
-    model: request.ttsModelId,
-  });
-  if (registeredAutoVoicesThisSession.has(voiceId)) return voiceId;
-
-  const cached = await getCachedAutoVoiceClip(voiceId);
-  const res = await fetch('/api/generate/voxcpm-voice', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      voiceId,
-      descriptor: context.voiceDesign,
-      language: context.language || context.locale,
-      referenceAudioBase64: cached?.base64,
-      mimeType: cached?.mimeType,
-      ...request,
-    }),
-  });
-  if (!res.ok) return undefined; // graceful fallback to the inline prompt path
-
-  const data = (await res.json().catch(() => ({}))) as {
-    referenceAudioBase64?: string;
-    mimeType?: string;
-  };
-  if (data.referenceAudioBase64 && !cached) {
-    await db.voxcpmAutoVoiceCache.put({
-      voiceId,
-      referenceAudio: base64ToBlob(data.referenceAudioBase64, data.mimeType),
-      mimeType: data.mimeType || 'audio/wav',
-      updatedAt: Date.now(),
-    });
-  }
-  registeredAutoVoicesThisSession.add(voiceId);
-  return voiceId;
 }
 
 function isWavAudio(blob: Blob, fileName?: string): boolean {
@@ -361,11 +281,19 @@ export function useVoxCPMVoiceProfiles() {
 export async function getVoxCPMProviderOptions(
   voiceId: string,
   context?: VoxCPMVoicePromptContext,
-  request?: VoxCPMTTSRequestConfig,
+  request?: VoiceRegistrationRequestConfig,
 ): Promise<VoxCPMProviderOptions> {
   if (voiceId === VOXCPM_AUTO_VOICE_ID) {
-    const registeredVoiceId = request
-      ? await ensureRegisteredAutoVoice(context || {}, request).catch(() => undefined)
+    // Drive register-once only when this VoxCPM backend supports it; otherwise
+    // (and on any failure) fall back to the inline voice-design prompt.
+    const canRegister =
+      !!request && !!context?.voiceDesign && voxCPMBackendSupportsVoiceRegistration(context.backend ?? 'vllm-omni');
+    const registeredVoiceId = canRegister
+      ? await ensureRegisteredVoice(
+          VOXCPM_TTS_PROVIDER_ID,
+          { voiceDesign: context!.voiceDesign, language: context!.language || context!.locale },
+          request!,
+        ).catch(() => undefined)
       : undefined;
     return {
       voiceMode: 'auto',
