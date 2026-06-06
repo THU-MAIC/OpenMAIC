@@ -126,7 +126,8 @@
     "voiceLoading": "加载中...",
     "voiceAutoAssign": "音色将自动分配",
     "searchVoice": "搜索音色",
-    "noMatchingVoices": "没有匹配音色"
+    "noMatchingVoices": "没有匹配音色",
+    "noVoice": "无可用音色"
   },
   "proactiveCard": {
     "discussion": "讨论",
@@ -1063,6 +1064,10 @@
     "noVisionWarning": "当前模型不支持视觉能力，图片仍可放入幻灯片，但模型无法理解图片内容来优化选择和布局",
     "serverConfigured": "服务端",
     "serverConfiguredNotice": "此提供方由服务端托管，无法在此修改。如需使用自己的凭据，请新增一个提供方。",
+    "ttsProviderEnabledLabel": "启用此提供方",
+    "ttsProviderEnabledHint": "关闭后，此提供方将不会出现在语音选择器中，也不会被自动分配。",
+    "ttsProviderUnavailableHint": "请先配置此提供方再启用。",
+    "ttsProviderDisabledByAdmin": "此提供方已被服务端管理员禁用，无法启用。",
     "optionalOverride": "可选，留空则使用服务端配置",
     "setupNeeded": "请先完成配置",
     "modelNotConfigured": "请选择一个模型以开始使用",

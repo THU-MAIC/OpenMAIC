@@ -126,7 +126,8 @@
     "voiceLoading": "جارٍ التحميل...",
     "voiceAutoAssign": "سيتم تعيين الأصوات تلقائيًا",
     "searchVoice": "البحث عن الأصوات",
-    "noMatchingVoices": "لا توجد أصوات مطابقة"
+    "noMatchingVoices": "لا توجد أصوات مطابقة",
+    "noVoice": "لا يوجد صوت"
   },
   "proactiveCard": {
     "discussion": "نقاش",
@@ -1063,6 +1064,10 @@
     "noVisionWarning": "النموذج الحالي لا يدعم الرؤية. يمكن وضع الصور في الشرائح، لكن النموذج لا يستطيع فهم محتوى الصور لتحسين الاختيار والتخطيط",
     "serverConfigured": "الخادم",
     "serverConfiguredNotice": "تتم إدارة هذا المزوّد من قبل الخادم ولا يمكن تعديله هنا. لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً.",
+    "ttsProviderEnabledLabel": "تفعيل هذا المزوّد",
+    "ttsProviderEnabledHint": "عند الإيقاف، يُخفى هذا المزوّد من اختيار الصوت ولا يُعيَّن تلقائيًا.",
+    "ttsProviderUnavailableHint": "يرجى إعداد هذا المزوّد قبل تفعيله.",
+    "ttsProviderDisabledByAdmin": "تم تعطيل هذا المزوّد من قِبل مسؤول الخادم ولا يمكن تفعيله.",
     "optionalOverride": "اختياري — اتركه فارغًا لاستخدام تكوين الخادم",
     "setupNeeded": "يلزم الإعداد",
     "modelNotConfigured": "يرجى اختيار نموذج للبدء",

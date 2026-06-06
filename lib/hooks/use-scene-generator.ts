@@ -11,6 +11,7 @@ import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
@@ -136,6 +137,14 @@ export async function generateAndStoreTTS(
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   if (settings.ttsProviderId === 'browser-native-tts') return;
+  // Don't server-generate against a disabled/unconfigured provider (#665).
+  if (
+    !isTTSProviderEnabled(
+      settings.ttsProviderId,
+      settings.ttsProvidersConfig?.[settings.ttsProviderId],
+    )
+  )
+    return;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
   const providerOptions =
@@ -393,7 +402,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             const settings = useSettingsStore.getState();
 
             // TTS generation — failure means the whole scene fails
-            if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
+            if (
+              settings.ttsEnabled &&
+              settings.ttsProviderId !== 'browser-native-tts' &&
+              isTTSProviderEnabled(
+                settings.ttsProviderId,
+                settings.ttsProvidersConfig?.[settings.ttsProviderId],
+              )
+            ) {
               const ttsResult = await generateTTSForScene(
                 scene,
                 params.languageDirective || params.stageInfo.language,
@@ -560,7 +576,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
         // Step 3: TTS
         const settings = useSettingsStore.getState();
-        if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
+        if (
+          settings.ttsEnabled &&
+          settings.ttsProviderId !== 'browser-native-tts' &&
+          isTTSProviderEnabled(
+            settings.ttsProviderId,
+            settings.ttsProvidersConfig?.[settings.ttsProviderId],
+          )
+        ) {
           const ttsResult = await generateTTSForScene(
             actionsResult.scene,
             params.languageDirective || params.stageInfo.language,

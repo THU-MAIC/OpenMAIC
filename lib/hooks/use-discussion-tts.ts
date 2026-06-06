@@ -1,13 +1,14 @@
 'use client';
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useBrowserTTS } from '@/lib/hooks/use-browser-tts';
 import {
   resolveAgentVoice,
-  getAvailableProvidersWithVoices,
+  getSelectableProvidersWithVoices,
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
@@ -88,41 +89,67 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     agentIndexMap.current = map;
   }, [agents]);
 
+  // Browser-native voices (dynamic, client-only) — same source the AgentBar
+  // picker uses, so discussion resolution and the picker stay in sync.
+  const [browserVoices, setBrowserVoices] = useState<SpeechSynthesisVoice[]>([]);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+    const load = () => setBrowserVoices(window.speechSynthesis.getVoices());
+    load();
+    window.speechSynthesis.addEventListener('voiceschanged', load);
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', load);
+  }, []);
+
   const resolveVoiceForAgent = useCallback(
-    (agentId: string | null): ResolvedVoice => {
-      const providers = getAvailableProvidersWithVoices(ttsProvidersConfig, voxcpmProfiles);
-      if (!agentId) {
-        if (providers.length > 0) {
-          return {
-            providerId: providers[0].providerId,
-            voiceId: providers[0].voices[0]?.id ?? 'default',
-          };
-        }
-        return { providerId: 'browser-native-tts', voiceId: 'default' };
-      }
-      const agent = agents.find((a) => a.id === agentId);
-      if (!agent) {
-        if (providers.length > 0) {
-          return {
-            providerId: providers[0].providerId,
-            voiceId: providers[0].voices[0]?.id ?? 'default',
-            modelId: undefined,
-          };
-        }
-        return { providerId: 'browser-native-tts', voiceId: 'default', modelId: undefined };
-      }
-      // Teacher: always use global lecture voice (single source of truth with settings)
+    (agentId: string | null): ResolvedVoice | null => {
+      // ONE selectable-provider list shared with the AgentBar picker: enabled
+      // server/custom providers + opt-in browser-native. Students resolve against
+      // it (fixes the #665 student-silence bug); the teacher uses the global
+      // lecture voice (below).
+      const providers = getSelectableProvidersWithVoices(
+        ttsProvidersConfig,
+        voxcpmProfiles,
+        browserVoices,
+      );
+      const firstVoice = (): ResolvedVoice | null =>
+        providers.length > 0
+          ? {
+              providerId: providers[0].providerId,
+              voiceId: providers[0].voices[0]?.id ?? 'default',
+            }
+          : null;
+
+      const agent = agentId ? agents.find((a) => a.id === agentId) : undefined;
+      if (!agent) return firstVoice();
+
+      // Teacher's voice = the global lecture selection, honored VERBATIM (incl.
+      // its model) whenever that provider is enabled — identical to what the
+      // pre-generated lecture sends (use-scene-generator), so lecture and
+      // discussion teacher never diverge. No voiceId re-validation/fallback that
+      // could swap the user's chosen voice. Only if the global provider is itself
+      // disabled does the teacher fall back to an enabled provider.
       if (agent.role === 'teacher') {
-        return {
-          providerId: globalTtsProviderId,
-          voiceId: globalTtsVoice,
-          modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
-        };
+        if (isTTSProviderEnabled(globalTtsProviderId, ttsProvidersConfig[globalTtsProviderId])) {
+          return {
+            providerId: globalTtsProviderId,
+            voiceId: globalTtsVoice,
+            modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
+          };
+        }
+        return firstVoice();
       }
-      const index = agentIndexMap.current.get(agentId) ?? 0;
+
+      const index = agentIndexMap.current.get(agentId!) ?? 0;
       return resolveAgentVoice(agent, index, providers);
     },
-    [agents, ttsProvidersConfig, voxcpmProfiles, globalTtsProviderId, globalTtsVoice],
+    [
+      agents,
+      ttsProvidersConfig,
+      voxcpmProfiles,
+      browserVoices,
+      globalTtsProviderId,
+      globalTtsVoice,
+    ],
   );
 
   const processQueue = useCallback(async () => {
@@ -242,7 +269,10 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
     (messageId: string, partId: string, fullText: string, agentId: string | null) => {
       if (!enabled || ttsMuted || !fullText.trim()) return;
 
-      const { providerId, modelId, voiceId } = resolveVoiceForAgent(agentId);
+      // No enabled provider for this agent ⇒ skip TTS (no silent browser-native).
+      const resolved = resolveVoiceForAgent(agentId);
+      if (!resolved) return;
+      const { providerId, modelId, voiceId } = resolved;
       queueRef.current.push({
         messageId,
         partId,

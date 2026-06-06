@@ -126,7 +126,8 @@
     "voiceLoading": "Loading...",
     "voiceAutoAssign": "Voices will be auto-assigned",
     "searchVoice": "Search voices",
-    "noMatchingVoices": "No matching voices"
+    "noMatchingVoices": "No matching voices",
+    "noVoice": "No voice"
   },
   "proactiveCard": {
     "discussion": "Discussion",
@@ -1063,6 +1064,10 @@
     "noVisionWarning": "Current model does not support vision. Images can still be placed in slides, but the model cannot understand image content to optimize selection and layout",
     "serverConfigured": "Server",
     "serverConfiguredNotice": "This provider is managed by the server and can't be edited here. To use your own credentials, add a separate provider.",
+    "ttsProviderEnabledLabel": "Enable this provider",
+    "ttsProviderEnabledHint": "When off, this provider is hidden from the voice picker and never auto-assigned.",
+    "ttsProviderUnavailableHint": "Configure this provider before enabling it.",
+    "ttsProviderDisabledByAdmin": "This provider has been disabled by the server administrator and cannot be enabled.",
     "optionalOverride": "Optional — leave empty to use server config",
     "setupNeeded": "Setup required",
     "modelNotConfigured": "Please select a model to get started",
