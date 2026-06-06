@@ -13,6 +13,7 @@ import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
+import { normalizeVoxCPMBackend } from '@/lib/audio/voxcpm';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
 
@@ -151,7 +152,20 @@ export async function generateAndStoreTTS(
     settings.ttsProviderId === 'voxcpm-tts'
       ? {
           ...(ttsProviderConfig?.providerOptions || {}),
-          ...(await getVoxCPMProviderOptions(settings.ttsVoice, { role: 'teacher', language })),
+          ...(await getVoxCPMProviderOptions(
+            settings.ttsVoice,
+            {
+              role: 'teacher',
+              language,
+              backend: normalizeVoxCPMBackend(ttsProviderConfig?.providerOptions?.backend),
+            },
+            {
+              ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+              ttsBaseUrl:
+                ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
+              ttsModelId: ttsProviderConfig?.modelId,
+            },
+          )),
         }
       : undefined;
   const response = await fetch('/api/generate/tts', {

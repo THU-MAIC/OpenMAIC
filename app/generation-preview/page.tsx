@@ -15,6 +15,7 @@ import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getEnabledProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { normalizeVoxCPMBackend } from '@/lib/audio/voxcpm';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   loadImageMapping,
@@ -883,10 +884,22 @@ function GenerationPreviewContent() {
           settings.ttsProviderId === 'voxcpm-tts'
             ? {
                 ...(ttsProviderConfig?.providerOptions || {}),
-                ...(await getVoxCPMProviderOptions(settings.ttsVoice, {
-                  role: 'teacher',
-                  language: languageDirective,
-                })),
+                ...(await getVoxCPMProviderOptions(
+                  settings.ttsVoice,
+                  {
+                    role: 'teacher',
+                    language: languageDirective,
+                    backend: normalizeVoxCPMBackend(ttsProviderConfig?.providerOptions?.backend),
+                  },
+                  {
+                    ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+                    ttsBaseUrl:
+                      ttsProviderConfig?.baseUrl ||
+                      ttsProviderConfig?.customDefaultBaseUrl ||
+                      undefined,
+                    ttsModelId: ttsProviderConfig?.modelId,
+                  },
+                )),
               }
             : undefined;
         const speechActions = (data.scene.actions || []).filter(

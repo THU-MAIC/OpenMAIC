@@ -11,7 +11,11 @@ import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { resolveAgentVoice, getSelectableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { playBrowserTTSPreview } from '@/lib/audio/browser-tts-preview';
 import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
-import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
+import {
+  VOXCPM_AUTO_VOICE_ID,
+  VOXCPM_TTS_PROVIDER_ID,
+  normalizeVoxCPMBackend,
+} from '@/lib/audio/voxcpm';
 import {
   Sparkles,
   ChevronDown,
@@ -143,12 +147,22 @@ function AgentVoicePill({
           providerId === 'voxcpm-tts'
             ? {
                 ...(providerConfig?.providerOptions || {}),
-                ...(await getVoxCPMProviderOptions(voiceId, {
-                  agentName: agent.name,
-                  role: agent.role,
-                  persona: agent.persona,
-                  locale,
-                })),
+                ...(await getVoxCPMProviderOptions(
+                  voiceId,
+                  {
+                    agentName: agent.name,
+                    role: agent.role,
+                    persona: agent.persona,
+                    voiceDesign: agent.voiceDesign,
+                    locale,
+                    backend: normalizeVoxCPMBackend(providerConfig?.providerOptions?.backend),
+                  },
+                  {
+                    ttsApiKey: providerConfig?.apiKey,
+                    ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
+                    ttsModelId: modelId || providerConfig?.modelId,
+                  },
+                )),
               }
             : undefined;
         const res = await fetch('/api/generate/tts', {

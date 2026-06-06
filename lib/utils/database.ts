@@ -9,6 +9,7 @@ import type {
   ToolCallRequest,
 } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
+import type { VoxCPMVoiceDesign } from '@/lib/audio/voxcpm';
 import type { UIMessage } from 'ai';
 import { createLogger } from '@/lib/logger';
 
@@ -166,6 +167,7 @@ export interface GeneratedAgentRecord {
   avatar: string;
   color: string;
   priority: number;
+  voiceDesign?: VoxCPMVoiceDesign; // 3-layer vocal descriptor for VoxCPM auto voice
   createdAt: number;
 }
 

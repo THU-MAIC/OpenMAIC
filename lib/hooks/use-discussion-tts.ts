@@ -10,6 +10,7 @@ import {
 } from '@/lib/audio/voice-resolver';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { normalizeVoxCPMBackend } from '@/lib/audio/voxcpm';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { AudioIndicatorState } from '@/components/roundtable/audio-indicator';
@@ -184,12 +185,22 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         item.providerId === 'voxcpm-tts'
           ? {
               ...(providerConfig?.providerOptions || {}),
-              ...(await getVoxCPMProviderOptions(item.voiceId, {
-                agentName: agent?.name,
-                role: agent?.role,
-                persona: agent?.persona,
-                locale,
-              })),
+              ...(await getVoxCPMProviderOptions(
+                item.voiceId,
+                {
+                  agentName: agent?.name,
+                  role: agent?.role,
+                  persona: agent?.persona,
+                  voiceDesign: agent?.voiceDesign,
+                  locale,
+                  backend: normalizeVoxCPMBackend(providerConfig?.providerOptions?.backend),
+                },
+                {
+                  ttsApiKey: providerConfig?.apiKey,
+                  ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
+                  ttsModelId: item.modelId || providerConfig?.modelId,
+                },
+              )),
             }
           : undefined;
       const res = await fetch('/api/generate/tts', {
