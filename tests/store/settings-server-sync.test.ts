@@ -269,6 +269,56 @@ describe('settings rehydrate — built-in provider models', () => {
     expect(models[0].name).toBe('GPT-4o');
     expect(models[3].name).toBe('Custom Earlier');
   });
+
+  it('strips a legacy serverBaseUrl from persisted provider configs on rehydrate (#620)', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        state: {
+          providerId: 'openai',
+          modelId: 'gpt-4o',
+          providersConfig: {
+            openai: {
+              apiKey: '',
+              baseUrl: '',
+              models: [{ id: 'gpt-4o', name: 'GPT-4o' }],
+              name: 'OpenAI',
+              type: 'openai',
+              defaultBaseUrl: 'https://api.openai.com/v1',
+              requiresApiKey: true,
+              isBuiltIn: true,
+              isServerConfigured: true,
+              serverBaseUrl: 'https://internal-gateway.local/v1',
+            },
+          },
+          webSearchProvidersConfig: {
+            bocha: {
+              apiKey: '',
+              baseUrl: '',
+              enabled: true,
+              requiresApiKey: true,
+              isServerConfigured: true,
+              serverBaseUrl: 'https://api.bocha.cn',
+            },
+          },
+        },
+        version: 2,
+      }),
+    );
+
+    const store = await getStore();
+    const openai = store.getState().providersConfig.openai as unknown as Record<string, unknown>;
+    const bocha = store.getState().webSearchProvidersConfig.bocha as unknown as Record<
+      string,
+      unknown
+    >;
+
+    // The removed field must not linger in persisted client state...
+    expect('serverBaseUrl' in openai).toBe(false);
+    expect('serverBaseUrl' in bocha).toBe(false);
+    // ...while the managed flag itself is preserved.
+    expect(openai.isServerConfigured).toBe(true);
+  });
 });
 
 describe('fetchServerProviders — provider availability sync', () => {
@@ -668,20 +718,20 @@ describe('fetchServerProviders — Web Search provider sync', () => {
     return useSettingsStore;
   }
 
-  it('marks Bocha as server-configured and stores serverBaseUrl', async () => {
+  it('marks Bocha as server-configured without storing a server base URL', async () => {
     const store = await getStore();
     mockServerResponse({
       webSearch: {
-        bocha: { baseUrl: 'https://api.bocha.cn' },
+        bocha: {},
       },
     });
 
     await store.getState().fetchServerProviders();
 
-    expect(store.getState().webSearchProvidersConfig.bocha).toMatchObject({
-      isServerConfigured: true,
-      serverBaseUrl: 'https://api.bocha.cn',
-    });
+    const bocha = store.getState().webSearchProvidersConfig.bocha;
+    expect(bocha.isServerConfigured).toBe(true);
+    // The server base URL is never exposed to / stored on the client.
+    expect((bocha as Record<string, unknown>).serverBaseUrl).toBeUndefined();
   });
 
   it('falls back to Bocha when selected Tavily loses server config and has no client key', async () => {

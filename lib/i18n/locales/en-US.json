@@ -45,7 +45,8 @@
     "exportSuccess": "Export successful",
     "exportFailed": "Export failed",
     "classroomZip": "Export Classroom ZIP",
-    "classroomZipDesc": "Course structure + media files"
+    "classroomZipDesc": "Course structure + media files",
+    "inlinePartial": "{{count}} external asset(s) couldn't be bundled; the course may not display correctly offline."
   },
   "import": {
     "classroom": "Import Classroom",
@@ -148,7 +149,72 @@
     "generatingNextPage": "Scene is being generated, please wait...",
     "courseComplete": "Course complete",
     "fullscreen": "Fullscreen",
-    "exitFullscreen": "Exit Fullscreen"
+    "exitFullscreen": "Exit Fullscreen",
+    "editCourse": "Edit course",
+    "doneEditing": "Done editing"
+  },
+  "edit": {
+    "proMode": "Pro",
+    "undo": "Undo",
+    "redo": "Redo",
+    "delete": "Delete",
+    "title": "Editing · {{type}}",
+    "unsupportedScene": "{{type}} is not editable yet",
+    "readOnlyBadge": "{{type}} · view-only",
+    "sceneType": {
+      "slide": "Slide",
+      "quiz": "Quiz",
+      "interactive": "Interactive",
+      "pbl": "PBL"
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "Another tab is editing this course",
+        "body": "Editing is locked to a single tab to avoid conflicting changes. Close the other tab (or wait for its session to time out) before entering edit mode here.",
+        "actionDismiss": "Got it"
+      }
+    },
+    "text": {
+      "label": "Text",
+      "font": "Font",
+      "fontDefault": "Default",
+      "sizeUp": "Increase size",
+      "sizeDown": "Decrease size",
+      "fontSize": "Font size",
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "color": "Text color",
+      "alignLeft": "Align left",
+      "alignCenter": "Align center",
+      "alignRight": "Align right",
+      "bullet": "Bulleted list"
+    },
+    "insert": {
+      "textBox": "Text box",
+      "expandToolbar": "Show insert tools",
+      "collapseToolbar": "Hide insert tools",
+      "image": "Image",
+      "imageDrop": "Drop an image or click to choose a file",
+      "imageOr": "or paste an image URL",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "Insert"
+    },
+    "nav": {
+      "addSlide": "Add slide",
+      "duplicate": "Duplicate",
+      "delete": "Delete",
+      "deleted": "Deleted",
+      "undo": "Undo",
+      "copySuffix": "(copy)",
+      "untitledSlide": "Untitled slide",
+      "collapse": "Collapse rail",
+      "expand": "Expand rail",
+      "dragHandle": "Drag to reorder",
+      "deckLabel": "Scenes",
+      "moreActions": "More actions",
+      "rename": "Rename"
+    }
   },
   "classroomComplete": {
     "title": "Course complete",
@@ -996,7 +1062,7 @@
     "selectAgents": "Select Agents",
     "noVisionWarning": "Current model does not support vision. Images can still be placed in slides, but the model cannot understand image content to optimize selection and layout",
     "serverConfigured": "Server",
-    "serverConfiguredNotice": "Admin has configured an API key for this provider on the server. You can use it directly or enter your own key to override.",
+    "serverConfiguredNotice": "This provider is managed by the server and can't be edited here. To use your own credentials, add a separate provider.",
     "optionalOverride": "Optional — leave empty to use server config",
     "setupNeeded": "Setup required",
     "modelNotConfigured": "Please select a model to get started",

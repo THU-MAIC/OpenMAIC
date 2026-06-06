@@ -6,9 +6,8 @@ import { useElementFlip } from '../hooks/useElementFlip';
 import { useClipImage } from './useClipImage';
 import { useFilter } from './useFilter';
 import { ImageOutline } from './ImageOutline';
-import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
-import { useMediaStageId } from '@/lib/contexts/media-stage-context';
+import { useResolvedImageSrc } from './useResolvedImageSrc';
 import { retryMediaTask } from '@/lib/media/media-orchestrator';
 import { RotateCcw, Paintbrush, ShieldAlert, ImageOff } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -27,21 +26,12 @@ export function BaseImageElement({ elementInfo }: BaseImageElementProps) {
   const { clipShape, imgPosition } = useClipImage(elementInfo);
   const { filter } = useFilter(elementInfo.filters);
 
-  // Only subscribe to media store when inside a classroom (stageId provided via context).
-  // Homepage thumbnails have no stageId context → skip store to prevent cross-course contamination.
-  const stageId = useMediaStageId();
-  const isPlaceholder = !!stageId && isMediaPlaceholder(elementInfo.src);
-  const task = useMediaGenerationStore((s) => {
-    if (!isPlaceholder) return undefined;
-    const t = s.tasks[elementInfo.src];
-    // Only use task if it belongs to the current stage
-    if (t && t.stageId !== stageId) return undefined;
-    return t;
-  });
+  // Shared with the editor canvas's interactive ImageElement so both variants
+  // resolve gen_img_* placeholders identically (Pro mode previously rendered
+  // the raw placeholder string and showed a broken-image icon).
+  const { resolvedSrc, isPlaceholder, task } = useResolvedImageSrc(elementInfo);
 
   const imageGenerationEnabled = useSettingsStore((s) => s.imageGenerationEnabled);
-  // Resolve actual src: use objectUrl from store if available, otherwise original src
-  const resolvedSrc = task?.status === 'done' && task.objectUrl ? task.objectUrl : elementInfo.src;
   const showDisabled = isPlaceholder && !task && !imageGenerationEnabled;
   const showSkeleton =
     isPlaceholder &&

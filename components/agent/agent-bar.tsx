@@ -161,10 +161,9 @@ function AgentVoicePill({
             ttsVoice: voiceId,
             ttsSpeed: 1,
             ttsApiKey: providerConfig?.apiKey,
-            ttsBaseUrl:
-              providerConfig?.serverBaseUrl ||
-              providerConfig?.baseUrl ||
-              providerConfig?.customDefaultBaseUrl,
+            // Managed providers resolve their base URL server-side; only send
+            // the client's own base URL (custom providers).
+            ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
             ttsProviderOptions: providerOptions,
           }),
           signal: controller.signal,
@@ -442,10 +441,9 @@ function TeacherVoicePill({
             ttsVoice: voiceId,
             ttsSpeed: 1,
             ttsApiKey: providerConfig?.apiKey,
-            ttsBaseUrl:
-              providerConfig?.serverBaseUrl ||
-              providerConfig?.baseUrl ||
-              providerConfig?.customDefaultBaseUrl,
+            // Managed providers resolve their base URL server-side; only send
+            // the client's own base URL (custom providers).
+            ttsBaseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
             ttsProviderOptions: providerOptions,
           }),
           signal: controller.signal,

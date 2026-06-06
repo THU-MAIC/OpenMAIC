@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
 import { transcribeAudio } from '@/lib/audio/asr-providers';
 import {
-  canUseServerApiKeyForBaseUrl,
+  isServerConfiguredProvider,
   resolveASRApiKey,
   resolveASRBaseUrl,
 } from '@/lib/server/provider-config';
@@ -34,7 +34,9 @@ export async function POST(req: NextRequest) {
     resolvedProviderId = effectiveProviderId;
     resolvedModelId = modelId ?? undefined;
 
-    const clientBaseUrl = baseUrl || undefined;
+    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+    const managed = isServerConfiguredProvider('asr', effectiveProviderId);
+    const clientBaseUrl = managed ? undefined : baseUrl || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
@@ -42,17 +44,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const serverBaseUrl = resolveASRBaseUrl(effectiveProviderId);
-    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
-
     const config = {
       providerId: effectiveProviderId,
       modelId: modelId || undefined,
       language: language || 'auto',
-      apiKey: canUseServerApiKey
-        ? resolveASRApiKey(effectiveProviderId, apiKey || undefined)
-        : apiKey || '',
-      baseUrl: clientBaseUrl || serverBaseUrl,
+      apiKey: resolveASRApiKey(effectiveProviderId, managed ? undefined : apiKey || undefined),
+      baseUrl: resolveASRBaseUrl(effectiveProviderId, clientBaseUrl),
     };
 
     // Transcribe using the provider system

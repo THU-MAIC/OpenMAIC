@@ -86,7 +86,6 @@ export interface LLMProviderCfgLike {
   models: Array<{ id: string }>;
   baseUrl?: string;
   defaultBaseUrl?: string;
-  serverBaseUrl?: string;
 }
 
 /**
@@ -108,7 +107,7 @@ export function isLLMProviderConfigured(config: LLMProviderCfgLike): boolean {
   if (config.isServerConfigured) return true;
   if (config.requiresApiKey === false) return !!config.baseUrl;
   if (!config.apiKey) return false;
-  return !!(config.baseUrl || config.defaultBaseUrl || config.serverBaseUrl);
+  return !!(config.baseUrl || config.defaultBaseUrl);
 }
 
 /**

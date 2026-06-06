@@ -85,9 +85,10 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     name: 'MiniMax Video',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.minimaxi.com',
+    // Hailuo 2.3 Fast requires Image-to-Video with first_frame_image; this
+    // provider currently submits Text-to-Video requests only.
     models: [
       { id: 'MiniMax-Hailuo-2.3', name: 'Hailuo 2.3' },
-      { id: 'MiniMax-Hailuo-2.3-Fast', name: 'Hailuo 2.3 Fast' },
       { id: 'MiniMax-Hailuo-02', name: 'Hailuo 02' },
       { id: 'T2V-01-Director', name: 'T2V-01 Director' },
       { id: 'T2V-01', name: 'T2V-01' },

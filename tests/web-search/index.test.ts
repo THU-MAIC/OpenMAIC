@@ -4,6 +4,7 @@ const searchWithBochaMock = vi.hoisted(() => vi.fn());
 const searchWithBraveMock = vi.hoisted(() => vi.fn());
 const searchWithBaiduMock = vi.hoisted(() => vi.fn());
 const searchWithTavilyMock = vi.hoisted(() => vi.fn());
+const searchWithMiniMaxMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/web-search/bocha', () => ({
   searchWithBocha: searchWithBochaMock,
@@ -21,6 +22,10 @@ vi.mock('@/lib/web-search/tavily', () => ({
   searchWithTavily: searchWithTavilyMock,
 }));
 
+vi.mock('@/lib/web-search/minimax', () => ({
+  searchWithMiniMax: searchWithMiniMaxMock,
+}));
+
 import { searchWeb } from '@/lib/web-search';
 
 describe('searchWeb', () => {
@@ -29,6 +34,7 @@ describe('searchWeb', () => {
     searchWithBraveMock.mockReset();
     searchWithBaiduMock.mockReset();
     searchWithTavilyMock.mockReset();
+    searchWithMiniMaxMock.mockReset();
   });
 
   it('dispatches Tavily provider requests', async () => {
@@ -133,6 +139,36 @@ describe('searchWeb', () => {
       maxResults: undefined,
       baseUrl: undefined,
       subSources: { webSearch: false, baike: true, scholar: false },
+    });
+  });
+
+  it('dispatches MiniMax provider requests', async () => {
+    searchWithMiniMaxMock.mockResolvedValueOnce({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.5,
+    });
+
+    await expect(
+      searchWeb({
+        providerId: 'minimax',
+        query: 'q',
+        apiKey: 'minimax-key',
+        maxResults: 5,
+        baseUrl: 'https://api.minimaxi.com',
+      }),
+    ).resolves.toEqual({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.5,
+    });
+    expect(searchWithMiniMaxMock).toHaveBeenCalledWith({
+      query: 'q',
+      apiKey: 'minimax-key',
+      maxResults: 5,
+      baseUrl: 'https://api.minimaxi.com',
     });
   });
 });

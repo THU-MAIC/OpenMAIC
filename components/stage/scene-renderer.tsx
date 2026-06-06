@@ -12,6 +12,11 @@ interface SceneRendererProps {
   readonly mode: StageMode;
 }
 
+/**
+ * Playback scene dispatcher. In Pro (edit) mode, Stage renders EditShell
+ * directly as a top-level takeover — SceneRenderer is only on the playback
+ * path, so it does not branch on `mode === 'edit'`.
+ */
 export function SceneRenderer({ scene, mode }: SceneRendererProps) {
   const renderer = useMemo(() => {
     switch (scene.type) {

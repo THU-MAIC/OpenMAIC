@@ -25,9 +25,13 @@ import { indentCommand, textIndentCommand } from '@/lib/prosemirror/commands/set
 import { toggleList } from '@/lib/prosemirror/commands/toggleList';
 import { setListStyle } from '@/lib/prosemirror/commands/setListStyle';
 import { replaceText } from '@/lib/prosemirror/commands/replaceText';
+import {
+  registerActiveTextEditor,
+  type TextCommandPayload,
+} from '@/lib/prosemirror/active-editor-registry';
+import { shouldPushAttrs } from '@/lib/prosemirror/selection-sync';
 import type { TextFormatPainterKeys } from '@/lib/types/edit';
 import { KEYS } from '@/configs/hotkey';
-import { toast } from 'sonner';
 
 export interface ProsemirrorEditorProps {
   elementId: string;
@@ -68,8 +72,12 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
   ) => {
     const editorViewRef = useRef<HTMLDivElement>(null);
     const editorView = useRef<EditorView | null>(null);
+    // Mutable refs so the single-init dispatchTransaction always reads fresh values
+    const editableRef = useRef(editable);
+    const pushTextAttrsRef = useRef<((view: EditorView) => void) | null>(null);
 
     const handleElementId = useCanvasStore.use.handleElementId();
+    const editingElementId = useCanvasStore.use.editingElementId();
     const textFormatPainter = useCanvasStore.use.textFormatPainter();
     const richTextAttrs = useCanvasStore.use.richTextAttrs();
     const activeElementIdList = useCanvasStore.use.activeElementIdList();
@@ -134,6 +142,17 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
       [defaultColor, defaultFontName, setRichtextAttrs],
     );
 
+    // Stable attrs push used by the selection-sync dispatchTransaction guard
+    const pushTextAttrs = useCallback(
+      (view: EditorView) => {
+        setRichtextAttrs(getTextAttrs(view, { color: defaultColor, fontname: defaultFontName }));
+      },
+      [defaultColor, defaultFontName, setRichtextAttrs],
+    );
+    // Keep mutable refs current on every render so the once-init dispatchTransaction reads fresh values
+    editableRef.current = editable;
+    pushTextAttrsRef.current = pushTextAttrs;
+
     // Handle keydown
     const handleKeydown = useCallback(
       (view: EditorView, e: KeyboardEvent) => {
@@ -165,10 +184,6 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
             });
             autoSelectAll(editorView.current);
             addMark(editorView.current, mark);
-
-            if (item.value && !document.fonts.check(`16px ${item.value}`)) {
-              toast.warning('Font is loading, please wait...');
-            }
           } else if (item.command === 'fontsize' && item.value) {
             const mark = editorView.current.state.schema.marks.fontsize.create({
               fontsize: item.value,
@@ -360,6 +375,62 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
       [handleElementId, elementId, richTextAttrs, handleInput, handleClick],
     );
 
+    // Additive bridge: map a surface-driven TextCommandPayload onto the SAME
+    // existing RichTextAction switch (execCommand). This reuses the renderer's
+    // existing ProseMirror command implementations verbatim — no new schema,
+    // no behavior change. `target: elementId` routes to THIS element exactly
+    // like the existing targeted-command semantics already in execCommand.
+    const runCommand = useCallback(
+      (payload: TextCommandPayload) => {
+        if (!editorView.current) return;
+        switch (payload.command) {
+          case 'bold':
+          case 'em':
+          case 'underline':
+          // bulletList: undefined value → execCommand defaults to the standard bullet (item.value || '')
+          case 'bulletList':
+          case 'fontname':
+          case 'fontsize':
+            execCommand({
+              target: elementId,
+              action: { command: payload.command, value: payload.value },
+            });
+            break;
+          case 'forecolor':
+            execCommand({
+              target: elementId,
+              action: { command: 'color', value: payload.value },
+            });
+            break;
+          case 'align-left':
+          case 'align-center':
+          case 'align-right':
+            execCommand({
+              target: elementId,
+              action: {
+                command: 'align',
+                value: payload.command.replace('align-', ''),
+              },
+            });
+            break;
+          default: {
+            const _exhaustive: never = payload.command;
+            void _exhaustive;
+          }
+        }
+      },
+      [execCommand, elementId],
+    );
+
+    // Register the runner only while this element is editable. Playback uses
+    // editable=false → this effect early-returns → nothing registers, so the
+    // renderer is byte-unchanged on the playback/uncontrolled path (PR1-shaped).
+    useEffect(() => {
+      if (!editable) return;
+      const off = registerActiveTextEditor(elementId, runCommand);
+      return off;
+    }, [editable, elementId, runCommand]);
+
     // Handle mouseup for format painter
     const handleMouseup = useCallback(() => {
       if (!textFormatPainter || !editorView.current) return;
@@ -395,6 +466,16 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
           mouseup: handleMouseup,
         },
         editable: () => editable,
+        dispatchTransaction(this: EditorView, tr) {
+          // Apply the transaction (replicates ProseMirror's default dispatch)
+          const newState = this.state.apply(tr);
+          this.updateState(newState);
+          // Additive: push toolbar attrs on selection/doc/marks change — editable only.
+          // Playback path (editable=false) is never reached → byte-unchanged.
+          if (editableRef.current && shouldPushAttrs(tr)) {
+            pushTextAttrsRef.current?.(this);
+          }
+        },
       });
 
       if (autoFocus) {
@@ -434,6 +515,22 @@ export const ProsemirrorEditor = forwardRef<ProsemirrorEditorRef, ProsemirrorEdi
         emitter.off(EmitterEvents.SYNC_RICH_TEXT_ATTRS_TO_STORE, syncAttrsToStore);
       };
     }, [execCommand, syncAttrsToStore]);
+
+    // Auto-focus when the surface picks this element as the editing
+    // target. Fixes "insert a text element from the floating toolbar →
+    // have to click inside again to type" — after the insert, the slide
+    // surface's `useEditingTextElementId` mirrors the new element's id
+    // into `canvasStore.editingElementId`. This effect catches that
+    // transition and pushes focus into the freshly mounted ProseMirror
+    // view. The `hasFocus()` guard avoids re-focusing on every render
+    // for an already-active editor.
+    useEffect(() => {
+      if (!editable) return;
+      if (editingElementId !== elementId) return;
+      const view = editorView.current;
+      if (!view || view.hasFocus()) return;
+      view.focus();
+    }, [editingElementId, elementId, editable]);
 
     // Expose focus method
     useImperativeHandle(ref, () => ({
