@@ -186,6 +186,18 @@ export interface VoiceProfileRecord {
   updatedAt: number;
 }
 
+/**
+ * Cached reference clip for a VoxCPM registered auto voice. The clip is the
+ * source of truth; the deterministic `voiceId` is its key, enabling
+ * register-on-invalid re-registration after backend GC/restart.
+ */
+export interface VoxCPMAutoVoiceCacheRecord {
+  voiceId: string;
+  referenceAudio: Blob;
+  mimeType: string;
+  updatedAt: number;
+}
+
 /** Build the compound primary key for mediaFiles: `${stageId}:${elementId}` */
 export function mediaFileKey(stageId: string, elementId: string): string {
   return `${stageId}:${elementId}`;
@@ -194,7 +206,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 10;
+const _DATABASE_VERSION = 11;
 
 /**
  * MAIC Database Instance
@@ -212,6 +224,7 @@ class MAICDatabase extends Dexie {
   mediaFiles!: EntityTable<MediaFileRecord, 'id'>;
   generatedAgents!: EntityTable<GeneratedAgentRecord, 'id'>;
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
+  voxcpmAutoVoiceCache!: EntityTable<VoxCPMAutoVoiceCacheRecord, 'voiceId'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -377,6 +390,22 @@ class MAICDatabase extends Dexie {
       mediaFiles: 'id, stageId, [stageId+type]',
       generatedAgents: 'id, stageId',
       voiceProfiles: 'id, providerId, kind, updatedAt',
+    });
+
+    // Version 11: Add VoxCPM auto-voice reference-clip cache (register-by-id).
+    this.version(11).stores({
+      stages: 'id, updatedAt',
+      scenes: 'id, stageId, order, [stageId+order]',
+      audioFiles: 'id, createdAt',
+      imageFiles: 'id, createdAt',
+      snapshots: '++id',
+      chatSessions: 'id, stageId, [stageId+createdAt]',
+      playbackState: 'stageId',
+      stageOutlines: 'stageId',
+      mediaFiles: 'id, stageId, [stageId+type]',
+      generatedAgents: 'id, stageId',
+      voiceProfiles: 'id, providerId, kind, updatedAt',
+      voxcpmAutoVoiceCache: 'voiceId, updatedAt',
     });
   }
 }
