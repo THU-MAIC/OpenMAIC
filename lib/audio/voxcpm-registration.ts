@@ -41,6 +41,9 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** vLLM-Omni requires a consent string on voice registration. */
+const VOXCPM_VOICE_CONSENT = 'I confirm I have the right to use this voice sample.';
+
 /** A short neutral sentence used to synthesize the bootstrap reference clip. */
 const BOOTSTRAP_SENTENCE: Record<string, string> = {
   default: 'Hello, welcome to today’s lesson. Let us begin.',
@@ -53,17 +56,23 @@ function bootstrapSentence(language?: string): string {
   return BOOTSTRAP_SENTENCE[key] || BOOTSTRAP_SENTENCE.default;
 }
 
-/** Whether a voice id is already registered on the backend. */
+/**
+ * Whether a voice id is already registered on the backend.
+ *
+ * vLLM-Omni exposes no per-name GET (that route is 405); list all voices and
+ * check membership.
+ */
 export async function voxCPMVoiceExists(
   cfg: VoxCPMRegistrationConfig,
   voiceId: string,
 ): Promise<boolean> {
-  const res = await fetch(`${v1(cfg.baseUrl)}/audio/voices/${encodeURIComponent(voiceId)}`, {
+  const res = await fetch(`${v1(cfg.baseUrl)}/audio/voices`, {
     method: 'GET',
     headers: authHeaders(cfg.apiKey),
   });
-  if (res.status === 404) return false;
-  return res.ok;
+  if (!res.ok) return false;
+  const data = (await res.json().catch(() => ({}))) as { voices?: unknown };
+  return Array.isArray(data.voices) && data.voices.includes(voiceId);
 }
 
 /** Register (or re-register, idempotently) a reference clip under `voiceId`. */
@@ -72,9 +81,10 @@ export async function registerVoxCPMVoice(
   params: { voiceId: string; referenceAudioBase64: string; mimeType?: string },
 ): Promise<string> {
   const form = new FormData();
-  form.set('voice_id', params.voiceId);
+  form.set('name', params.voiceId);
+  form.set('consent', VOXCPM_VOICE_CONSENT);
   form.set(
-    'file',
+    'audio_sample',
     new Blob([base64ToBytes(params.referenceAudioBase64)], { type: params.mimeType || 'audio/wav' }),
     `${params.voiceId}.wav`,
   );
@@ -87,8 +97,8 @@ export async function registerVoxCPMVoice(
   if (!res.ok) {
     throw new Error(`VoxCPM voice registration failed: ${res.status}`);
   }
-  const data = (await res.json().catch(() => ({}))) as { id?: string };
-  return data.id || params.voiceId;
+  const data = (await res.json().catch(() => ({}))) as { voice?: { name?: string } };
+  return data.voice?.name || params.voiceId;
 }
 
 /** Synthesize the voice-design prompt once into a reference clip. */
