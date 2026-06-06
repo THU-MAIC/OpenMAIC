@@ -5,7 +5,18 @@ export const VOXCPM_MODEL_ID = 'VoxCPM2';
 export const VOXCPM_VLLM_MODEL_ID = 'voxcpm2';
 export const VOXCPM_AUTO_VOICE_ID = 'voxcpm:auto';
 export const VOXCPM_PROFILE_VOICE_PREFIX = 'voxcpm:profile:';
+export const VOXCPM_REGISTERED_VOICE_PREFIX = 'voxcpm:voice:' as const;
 const VOXCPM_AUTO_VOICE_PROMPT_MAX_CHARS = 200;
+
+/**
+ * Per-agent voice-design descriptor (the 3-layer recipe). Describes vocal
+ * identity, not personality — fed to VoxCPM auto voice for a real timbre.
+ */
+export interface VoxCPMVoiceDesign {
+  identity: string; // gender / age / role
+  texture: string; // pitch / vocal quality
+  delivery: string; // emotion / pace
+}
 
 export const VOXCPM_BACKENDS = [
   {
@@ -38,6 +49,8 @@ export interface VoxCPMVoicePromptContext {
   persona?: string;
   language?: string;
   locale?: string;
+  voiceDesign?: VoxCPMVoiceDesign;
+  backend?: VoxCPMBackendType;
 }
 
 export interface VoxCPMProviderOptions {
@@ -52,6 +65,7 @@ export interface VoxCPMProviderOptions {
   inferenceTimesteps?: number;
   normalize?: boolean;
   denoise?: boolean;
+  registeredVoiceId?: string;
 }
 
 export const VOXCPM_AUTO_VOICE: TTSVoiceInfo = {
@@ -102,7 +116,71 @@ function sanitizeAutoVoicePromptPart(value?: string): string {
     .trim();
 }
 
+/**
+ * Compose the 3-layer descriptor into a single voice-design prompt
+ * ("identity, texture, delivery"), dropping blank layers.
+ */
+export function buildVoiceDesignPrompt(design: VoxCPMVoiceDesign): string {
+  return [design.identity, design.texture, design.delivery]
+    .map((part) => sanitizeAutoVoicePromptPart(part))
+    .filter(Boolean)
+    .join(', ');
+}
+
+/**
+ * Coerce an arbitrary (LLM-produced) value into a VoxCPMVoiceDesign.
+ * Returns undefined when no layer carries content.
+ */
+export function normalizeVoiceDesign(raw: unknown): VoxCPMVoiceDesign | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const record = raw as Record<string, unknown>;
+  const pick = (value: unknown) => (typeof value === 'string' ? value.trim() : '');
+  const design = {
+    identity: pick(record.identity),
+    texture: pick(record.texture),
+    delivery: pick(record.delivery),
+  };
+  if (!design.identity && !design.texture && !design.delivery) return undefined;
+  return design;
+}
+
+/**
+ * Whether a backend exposes a runtime voice-registration API
+ * (POST /v1/audio/voices) for reference-by-id timbre stability.
+ */
+export function voxCPMBackendSupportsVoiceRegistration(backend: VoxCPMBackendType): boolean {
+  return backend === 'vllm-omni';
+}
+
+/**
+ * Deterministic voice id derived from the descriptor (+ language + model).
+ * Stable across re-synthesis and recomputable anywhere from the descriptor,
+ * so registration is idempotent and needs no separately persisted id.
+ */
+export async function getDeterministicVoxCPMVoiceId(
+  design: VoxCPMVoiceDesign,
+  opts: { language?: string; model?: string } = {},
+): Promise<string> {
+  const seed = [
+    design.identity,
+    design.texture,
+    design.delivery,
+    opts.language || '',
+    opts.model || VOXCPM_MODEL_ID,
+  ].join('|');
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(seed));
+  const hex = Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+  return `${VOXCPM_REGISTERED_VOICE_PREFIX}${hex.slice(0, 16)}`;
+}
+
 export function buildAutoVoxCPMVoicePrompt(context: VoxCPMVoicePromptContext = {}): string {
+  if (context.voiceDesign) {
+    const designPrompt = sanitizeAutoVoicePromptPart(buildVoiceDesignPrompt(context.voiceDesign));
+    if (designPrompt) return designPrompt;
+  }
+
   const persona = sanitizeAutoVoicePromptPart(context.persona);
   if (persona) return persona;
 
