@@ -68,10 +68,15 @@ export async function POST(req: NextRequest) {
 
     const voxcpmVoicePrompt =
       typeof ttsProviderOptions?.voicePrompt === 'string' ? ttsProviderOptions.voicePrompt : '';
+    const voxcpmRegisteredVoiceId =
+      typeof ttsProviderOptions?.registeredVoiceId === 'string'
+        ? ttsProviderOptions.registeredVoiceId
+        : '';
     if (
       ttsProviderId === VOXCPM_TTS_PROVIDER_ID &&
       ttsVoice === VOXCPM_AUTO_VOICE_ID &&
-      !voxcpmVoicePrompt.trim()
+      !voxcpmVoicePrompt.trim() &&
+      !voxcpmRegisteredVoiceId.trim()
     ) {
       return apiError(
         'VOXCPM_AUTO_VOICE_REQUIRES_CONTEXT',
