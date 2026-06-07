@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Select,
@@ -48,6 +49,7 @@ import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
+import { isTTSProviderConfigured, isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import {
   getVoxCPMProviderOptions,
@@ -88,6 +90,14 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const isCustom = isCustomTTSProvider(selectedProviderId);
   const providerConfig = ttsProvidersConfig[selectedProviderId];
   const isServerConfigured = !!providerConfig?.isServerConfigured;
+  // Per-provider enablement (#665): the toggle is meaningful only for an
+  // AVAILABLE provider (configured / server-managed). An unconfigured provider
+  // can't be "enabled" into the picker, so its toggle is disabled. Server
+  // force-disable also locks it. `checked` reflects the true effective state.
+  const providerServerDisabled = !!providerConfig?.serverDisabled;
+  const providerConfigured = isTTSProviderConfigured(selectedProviderId, providerConfig);
+  const providerEnableLocked = providerServerDisabled || !providerConfigured;
+  const providerEnabled = isTTSProviderEnabled(selectedProviderId, providerConfig);
   const isVoxCPM = selectedProviderId === 'voxcpm-tts';
   const voxcpmBackend = normalizeVoxCPMBackend(providerConfig?.providerOptions?.backend);
   const requiresApiKey = isCustom
@@ -164,8 +174,9 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         voice: effectiveVoice,
         speed: ttsSpeed,
         apiKey: ttsProvidersConfig[selectedProviderId]?.apiKey,
+        // Managed providers resolve their base URL server-side; only send the
+        // client's own base URL (custom providers).
         baseUrl:
-          ttsProvidersConfig[selectedProviderId]?.serverBaseUrl ||
           ttsProvidersConfig[selectedProviderId]?.baseUrl ||
           providerConfig?.customDefaultBaseUrl ||
           '',
@@ -219,6 +230,27 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
 
   return (
     <div className={cn('space-y-6', isVoxCPM ? 'max-w-5xl' : 'max-w-3xl')}>
+      {/* Enable / disable this provider for the voice picker and auto-assignment (#665). */}
+      <div className="flex items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2.5">
+        <div className="min-w-0 pr-3">
+          <p className="text-sm font-medium">{t('settings.ttsProviderEnabledLabel')}</p>
+          <p className="text-[11px] text-muted-foreground">
+            {providerServerDisabled
+              ? t('settings.ttsProviderDisabledByAdmin')
+              : !providerConfigured
+                ? t('settings.ttsProviderUnavailableHint')
+                : t('settings.ttsProviderEnabledHint')}
+          </p>
+        </div>
+        <Switch
+          checked={providerEnabled}
+          disabled={providerEnableLocked}
+          onCheckedChange={(checked) =>
+            setTTSProviderConfig(selectedProviderId, { enabled: checked })
+          }
+        />
+      </div>
+
       {/* Server-configured notice */}
       {isServerConfigured && (
         <div className="rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 p-3 text-sm text-blue-700 dark:text-blue-300">
@@ -226,8 +258,10 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         </div>
       )}
 
-      {/* API Key & Base URL */}
-      {(requiresApiKey || isServerConfigured || isCustom || isVoxCPM || isKeylessLocalProvider) &&
+      {/* API Key & Base URL — hidden for managed providers, which are admin-owned
+          and not overridable from the client. */}
+      {!isServerConfigured &&
+        (requiresApiKey || isCustom || isVoxCPM || isKeylessLocalProvider) &&
         (isVoxCPM ? (
           <div className="rounded-lg border border-border/60 bg-background px-3 py-2.5">
             <div className="flex flex-col gap-2 md:flex-row md:items-end">
@@ -339,11 +373,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}
-                        placeholder={
-                          isServerConfigured
-                            ? t('settings.optionalOverride')
-                            : t('settings.enterApiKey')
-                        }
+                        placeholder={t('settings.enterApiKey')}
                         value={doubaoAppId}
                         onChange={(e) => setDoubaoCompoundKey(e.target.value, doubaoAccessKey)}
                         className="font-mono text-sm pr-10"
@@ -367,11 +397,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                         autoCapitalize="none"
                         autoCorrect="off"
                         spellCheck={false}
-                        placeholder={
-                          isServerConfigured
-                            ? t('settings.optionalOverride')
-                            : t('settings.enterApiKey')
-                        }
+                        placeholder={t('settings.enterApiKey')}
                         value={doubaoAccessKey}
                         onChange={(e) => setDoubaoCompoundKey(doubaoAppId, e.target.value)}
                         className="font-mono text-sm pr-10"
@@ -397,11 +423,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
                       autoCapitalize="none"
                       autoCorrect="off"
                       spellCheck={false}
-                      placeholder={
-                        isServerConfigured
-                          ? t('settings.optionalOverride')
-                          : t('settings.enterApiKey')
-                      }
+                      placeholder={t('settings.enterApiKey')}
                       value={ttsProvidersConfig[selectedProviderId]?.apiKey || ''}
                       onChange={(e) =>
                         setTTSProviderConfig(selectedProviderId, {
@@ -780,12 +802,10 @@ function VoxCPMVoiceManager() {
     }
 
     const providerConfig = ttsProvidersConfig[VOXCPM_TTS_PROVIDER_ID];
-    const baseUrl =
-      providerConfig?.serverBaseUrl ||
-      providerConfig?.baseUrl ||
-      providerConfig?.customDefaultBaseUrl ||
-      '';
-    if (!baseUrl.trim()) {
+    // Managed providers resolve their base URL server-side, so only the client's
+    // own base URL is sent; a managed VoxCPM is reachable without a local URL.
+    const baseUrl = providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl || '';
+    if (!providerConfig?.isServerConfigured && !baseUrl.trim()) {
       toast.error(t('settings.voxcpmBaseUrlRequired'));
       return;
     }

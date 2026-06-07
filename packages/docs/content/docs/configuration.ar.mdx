@@ -108,7 +108,7 @@ ACCESS_CODE=your-secret-code
 
 ## بحث الويب
 
-اضبط Tavily أو Bocha:
+اضبط Tavily أو Bocha أو MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -116,6 +116,9 @@ TAVILY_BASE_URL=           # تجاوز اختياري
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # تجاوز اختياري
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # تجاوز اختياري
 ```
 
 تعرض الواجهة الأمامية مفتاح تبديل لتفعيل البحث لكل عملية generation.
@@ -165,7 +168,9 @@ pdf:
 web-search:
   tavily:
     apiKey: tvly-...
+  minimax:
+    apiKey: sk-...
+    baseUrl: https://api.minimaxi.com
 ```
 
-تتجاوز متغيرات البيئة حقول YAML المطابقة حقلا بحقل. ترتبط المفاتيح بمعرّفات provider مثل `openai` أو `doubao-tts` أو `openai-whisper` أو `mineru` أو `tavily`.
-
+تتجاوز متغيرات البيئة حقول YAML المطابقة حقلا بحقل. ترتبط المفاتيح بمعرّفات provider مثل `openai` أو `doubao-tts` أو `openai-whisper` أو `mineru` أو `tavily` أو `minimax`.

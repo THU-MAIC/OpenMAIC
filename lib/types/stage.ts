@@ -6,7 +6,7 @@ import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widget
 
 export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
 
-export type StageMode = 'autonomous' | 'playback';
+export type StageMode = 'autonomous' | 'playback' | 'edit';
 
 export type Whiteboard = Omit<Slide, 'theme' | 'turningMode' | 'sectionTag' | 'type'>;
 
@@ -97,10 +97,16 @@ export interface Scene {
 export type SceneContent = SlideContent | QuizContent | InteractiveContent | PBLContent;
 
 /**
- * Slide content - PPTist Canvas data
+ * Slide content - PPTist Canvas data.
+ *
+ * `schemaVersion` tags the on-disk shape of this content so future schema
+ * changes can ship behind a migration step (see `migrateSlideContent`).
+ * Optional for backward compatibility — legacy / pre-versioning data
+ * lacks the field and `migrateSlideContent` normalizes it.
  */
 export interface SlideContent {
   type: 'slide';
+  schemaVersion?: number;
   // PPTist slide data structure
   canvas: Slide;
 }

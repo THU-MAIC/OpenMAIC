@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback } from 'react';
-import type { PBLContent } from '@/lib/types/stage';
+import type { PBLContent, StageMode } from '@/lib/types/stage';
 import type { PBLProjectConfig } from '@/lib/pbl/types';
 import { useStageStore } from '@/lib/store/stage';
 import { PBLRoleSelection } from './pbl/role-selection';
@@ -10,7 +10,7 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 
 interface PBLRendererProps {
   readonly content: PBLContent;
-  readonly mode: 'autonomous' | 'playback';
+  readonly mode: StageMode;
   readonly sceneId: string;
 }
 

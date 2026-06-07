@@ -26,16 +26,39 @@ interface SceneContextValue<T = unknown> {
 const SceneContext = createContext<SceneContextValue | null>(null);
 
 /**
+ * Controlled data source for `SceneProvider`. Edit surfaces own a private
+ * SlideEditHistory (undo/redo, op stream, autosave) and must NOT write
+ * edits straight back into the live stage store; they pass a controller so
+ * the unmodified slide renderer reads/writes the surface's staged content
+ * instead. Omitting `controller` keeps the original stage-store-backed
+ * behavior unchanged for the playback path.
+ */
+export interface SceneDataController<T = unknown> {
+  sceneId: string;
+  sceneType: Scene['type'];
+  getSnapshot: () => T;
+  updateSceneData: (updater: (draft: T) => void) => void;
+}
+
+/**
  * Generic Scene Provider
- * Provides current scene data and update methods to child components
- * Automatically syncs changes back to stageStore
+ * Provides current scene data and update methods to child components.
+ * Uncontrolled (default): syncs changes back to stageStore.
+ * Controlled (`controller` prop): reads/writes a caller-owned data source
+ * (used by edit surfaces that stage edits in their own history).
  *
  * Usage:
  * <SceneProvider>
  *   <SlideRenderer /> // Uses useSceneData<SlideContent>()
  * </SceneProvider>
  */
-export function SceneProvider({ children }: { children: React.ReactNode }) {
+export function SceneProvider({
+  children,
+  controller,
+}: {
+  children: React.ReactNode;
+  controller?: SceneDataController;
+}) {
   // Subscribe to current scene
   const currentScene = useStageStore((state) => {
     if (!state.currentSceneId) return null;
@@ -44,9 +67,9 @@ export function SceneProvider({ children }: { children: React.ReactNode }) {
 
   const updateScene = useStageStore((state) => state.updateScene);
 
-  const sceneId = currentScene?.id || '';
-  const sceneType = currentScene?.type || 'slide';
-  const sceneData = currentScene?.content || null;
+  const sceneId = controller ? controller.sceneId : currentScene?.id || '';
+  const sceneType = controller ? controller.sceneType : currentScene?.type || 'slide';
+  const sceneData = controller ? controller.getSnapshot() : currentScene?.content || null;
 
   // Listeners for scene data changes
   const listenersRef = useRef(new Set<() => void>());
@@ -69,8 +92,8 @@ export function SceneProvider({ children }: { children: React.ReactNode }) {
     listenersRef.current.forEach((listener) => listener());
   }, [sceneData]);
 
-  // Update scene data with Immer
-  const updateSceneData = useCallback(
+  // Update scene data with Immer (uncontrolled: write back to stage store)
+  const storeUpdateSceneData = useCallback(
     (updater: (draft: unknown) => void) => {
       if (!currentScene) return;
 
@@ -81,6 +104,10 @@ export function SceneProvider({ children }: { children: React.ReactNode }) {
     },
     [currentScene, updateScene],
   );
+
+  const updateSceneData = controller
+    ? (controller.updateSceneData as (updater: (draft: unknown) => void) => void)
+    : storeUpdateSceneData;
 
   const value = useMemo(
     () => ({
@@ -94,8 +121,9 @@ export function SceneProvider({ children }: { children: React.ReactNode }) {
     [sceneId, sceneType, sceneData, updateSceneData, subscribe, getSnapshot],
   );
 
-  // Don't render anything if there's no scene - let parent component handle this
-  if (!currentScene) {
+  // Uncontrolled with no scene: render nothing (parent handles it).
+  // Controlled: the caller owns the data, so always render.
+  if (!controller && !currentScene) {
     return null;
   }
 

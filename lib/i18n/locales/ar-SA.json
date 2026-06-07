@@ -45,7 +45,8 @@
     "classroomZipDesc": "هيكل المقرر + ملفات الوسائط",
     "exporting": "جارٍ التصدير...",
     "exportSuccess": "تم التصدير بنجاح",
-    "exportFailed": "فشل التصدير"
+    "exportFailed": "فشل التصدير",
+    "inlinePartial": "تعذّر تضمين {{count}} من الموارد الخارجية؛ قد لا يتم عرض الدورة بشكل صحيح دون اتصال بالإنترنت."
   },
   "import": {
     "classroom": "استيراد فصل",
@@ -125,7 +126,8 @@
     "voiceLoading": "جارٍ التحميل...",
     "voiceAutoAssign": "سيتم تعيين الأصوات تلقائيًا",
     "searchVoice": "البحث عن الأصوات",
-    "noMatchingVoices": "لا توجد أصوات مطابقة"
+    "noMatchingVoices": "لا توجد أصوات مطابقة",
+    "noVoice": "لا يوجد صوت"
   },
   "proactiveCard": {
     "discussion": "نقاش",
@@ -148,7 +150,72 @@
     "generatingNextPage": "جارٍ توليد المشهد، يرجى الانتظار...",
     "courseComplete": "اكتملت الدورة",
     "fullscreen": "ملء الشاشة",
-    "exitFullscreen": "الخروج من ملء الشاشة"
+    "exitFullscreen": "الخروج من ملء الشاشة",
+    "editCourse": "تحرير الدورة",
+    "doneEditing": "إنهاء التحرير"
+  },
+  "edit": {
+    "proMode": "احترافي",
+    "undo": "تراجع",
+    "redo": "إعادة",
+    "delete": "حذف",
+    "title": "تحرير · {{type}}",
+    "unsupportedScene": "{{type}} غير قابل للتحرير بعد",
+    "readOnlyBadge": "{{type}} · للعرض فقط",
+    "sceneType": {
+      "slide": "شريحة",
+      "quiz": "اختبار",
+      "interactive": "تفاعلي",
+      "pbl": "PBL"
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "علامة تبويب أخرى تحرّر هذه الدورة",
+        "body": "وضع التحرير محصور بعلامة تبويب واحدة في كل مرة لتجنب تعارض التغييرات. أغلق علامة التبويب الأخرى (أو انتظر انتهاء جلستها) قبل الدخول إلى وضع التحرير هنا.",
+        "actionDismiss": "حسناً"
+      }
+    },
+    "text": {
+      "label": "نص",
+      "font": "الخط",
+      "fontDefault": "افتراضي",
+      "sizeUp": "تكبير الحجم",
+      "sizeDown": "تصغير الحجم",
+      "fontSize": "حجم الخط",
+      "bold": "غامق",
+      "italic": "مائل",
+      "underline": "تسطير",
+      "color": "لون النص",
+      "alignLeft": "محاذاة لليسار",
+      "alignCenter": "توسيط",
+      "alignRight": "محاذاة لليمين",
+      "bullet": "قائمة نقطية"
+    },
+    "insert": {
+      "textBox": "مربع نص",
+      "expandToolbar": "إظهار أدوات الإدراج",
+      "collapseToolbar": "إخفاء أدوات الإدراج",
+      "image": "صورة",
+      "imageDrop": "أفلِت صورة أو انقر لاختيار ملف",
+      "imageOr": "أو الصق رابط صورة",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "إدراج"
+    },
+    "nav": {
+      "addSlide": "إضافة شريحة",
+      "duplicate": "تكرار",
+      "delete": "حذف",
+      "deleted": "تم الحذف",
+      "undo": "تراجع",
+      "copySuffix": "(نسخة)",
+      "untitledSlide": "شريحة بدون عنوان",
+      "collapse": "طي الشريط الجانبي",
+      "expand": "توسيع الشريط الجانبي",
+      "dragHandle": "اسحب لإعادة الترتيب",
+      "deckLabel": "المشاهد",
+      "moreActions": "إجراءات إضافية",
+      "rename": "إعادة تسمية"
+    }
   },
   "classroomComplete": {
     "title": "اكتملت الدورة",
@@ -996,7 +1063,11 @@
     "selectAgents": "اختيار الوكلاء",
     "noVisionWarning": "النموذج الحالي لا يدعم الرؤية. يمكن وضع الصور في الشرائح، لكن النموذج لا يستطيع فهم محتوى الصور لتحسين الاختيار والتخطيط",
     "serverConfigured": "الخادم",
-    "serverConfiguredNotice": "قام المسؤول بتكوين مفتاح API لهذا المزوّد على الخادم. يمكنك استخدامه مباشرةً أو إدخال مفتاحك الخاص للتجاوز.",
+    "serverConfiguredNotice": "تتم إدارة هذا المزوّد من قبل الخادم ولا يمكن تعديله هنا. لاستخدام بيانات الاعتماد الخاصة بك، أضِف مزوّدًا منفصلاً.",
+    "ttsProviderEnabledLabel": "تفعيل هذا المزوّد",
+    "ttsProviderEnabledHint": "عند الإيقاف، يُخفى هذا المزوّد من اختيار الصوت ولا يُعيَّن تلقائيًا.",
+    "ttsProviderUnavailableHint": "يرجى إعداد هذا المزوّد قبل تفعيله.",
+    "ttsProviderDisabledByAdmin": "تم تعطيل هذا المزوّد من قِبل مسؤول الخادم ولا يمكن تفعيله.",
     "optionalOverride": "اختياري — اتركه فارغًا لاستخدام تكوين الخادم",
     "setupNeeded": "يلزم الإعداد",
     "modelNotConfigured": "يرجى اختيار نموذج للبدء",

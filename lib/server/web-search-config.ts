@@ -22,6 +22,16 @@ const OFFICIAL_CLIENT_BASE_URLS: Record<WebSearchProviderId, string[]> = {
     'https://api.search.brave.com',
   ],
   baidu: ['https://qianfan.baidubce.com'],
+  minimax: [
+    'https://api.minimaxi.com',
+    'https://api.minimaxi.com/v1',
+    'https://api.minimaxi.com/v1/coding_plan',
+    'https://api.minimaxi.com/v1/coding_plan/search',
+    'https://api.minimax.io',
+    'https://api.minimax.io/v1',
+    'https://api.minimax.io/v1/coding_plan',
+    'https://api.minimax.io/v1/coding_plan/search',
+  ],
 };
 
 function normalizeBaseUrl(value: string): string {

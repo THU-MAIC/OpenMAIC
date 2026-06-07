@@ -9,7 +9,7 @@ import type { NextRequest } from 'next/server';
 import { getModel, parseModelString, type ModelWithInfo } from '@/lib/ai/providers';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import {
-  canUseServerApiKeyForBaseUrl,
+  isServerConfiguredProvider,
   resolveApiKey,
   resolveBaseUrl,
   resolveProxy,
@@ -46,10 +46,12 @@ export async function resolveModel(params: {
   const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-5.4-mini';
   const { providerId, modelId } = parseModelString(modelString);
 
-  // SSRF validation applies only to client-supplied base URLs.
-  // Server-configured URLs (e.g. OLLAMA_BASE_URL from env/YAML) flow through
-  // resolveBaseUrl() and bypass this check — they're trusted by the operator.
-  const clientBaseUrl = params.baseUrl || undefined;
+  // Server-managed providers are admin-owned: the operator's key and base URL
+  // are authoritative and any client-sent override is ignored. SSRF validation
+  // therefore applies only to unmanaged providers, where the base URL really is
+  // client-supplied. (Server-configured URLs are trusted by the operator.)
+  const managed = isServerConfiguredProvider('providers', providerId);
+  const clientBaseUrl = managed ? undefined : params.baseUrl || undefined;
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
     const ssrfError = await validateUrlForSSRF(clientBaseUrl);
     if (ssrfError) {
@@ -57,12 +59,8 @@ export async function resolveModel(params: {
     }
   }
 
-  const serverBaseUrl = resolveBaseUrl(providerId);
-  const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
-  const apiKey = canUseServerApiKey
-    ? resolveApiKey(providerId, params.apiKey || '')
-    : params.apiKey || '';
-  const baseUrl = clientBaseUrl || serverBaseUrl;
+  const apiKey = resolveApiKey(providerId, params.apiKey || '');
+  const baseUrl = resolveBaseUrl(providerId, clientBaseUrl);
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({
     providerId,

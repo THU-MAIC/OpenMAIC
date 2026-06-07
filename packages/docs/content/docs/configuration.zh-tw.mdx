@@ -108,7 +108,7 @@ ACCESS_CODE=your-secret-code
 
 ## 聯網搜尋
 
-設定 Tavily 或 Bocha：
+設定 Tavily、Bocha 或 MiniMax：
 
 ```bash
 TAVILY_API_KEY=
@@ -116,6 +116,9 @@ TAVILY_BASE_URL=           # 選填覆蓋
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # 選填覆蓋
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # 選填覆蓋
 ```
 
 前端會提供一個開關，讓每次生成時選擇是否啟用搜尋。
@@ -165,7 +168,9 @@ pdf:
 web-search:
   tavily:
     apiKey: tvly-...
+  minimax:
+    apiKey: sk-...
+    baseUrl: https://api.minimaxi.com
 ```
 
-環境變數會逐欄位覆蓋 YAML 中對應的 provider 設定。鍵名使用 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru` 或 `tavily`。
-
+環境變數會逐欄位覆蓋 YAML 中對應的 provider 設定。鍵名使用 provider ID，例如 `openai`、`doubao-tts`、`openai-whisper`、`mineru`、`tavily` 或 `minimax`。

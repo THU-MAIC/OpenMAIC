@@ -4,6 +4,8 @@ import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
+import { useCanvasStore } from '@/lib/store/canvas';
+import { migrateScene } from '@/lib/edit/slide-schema';
 
 const log = createLogger('StageStore');
 
@@ -69,6 +71,7 @@ interface StageState {
   setStage: (stage: Stage) => void;
   setScenes: (scenes: Scene[]) => void;
   addScene: (scene: Scene) => void;
+  insertSceneAfter: (anchorSceneId: string, scene: Scene) => void;
   updateScene: (sceneId: string, updates: Partial<Scene>) => void;
   deleteScene: (sceneId: string) => void;
   setCurrentSceneId: (sceneId: string | null) => void;
@@ -123,10 +126,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   setScenes: (scenes) => {
-    set({ scenes });
+    // Funnel through migrateScene so any incoming slide content lacking
+    // a schemaVersion (API / snapshot / legacy) is normalized once at
+    // the store boundary.
+    const migrated = scenes.map(migrateScene);
+    set({ scenes: migrated });
     // Auto-select first scene if no current scene
-    if (!get().currentSceneId && scenes.length > 0) {
-      set({ currentSceneId: scenes[0].id });
+    if (!get().currentSceneId && migrated.length > 0) {
+      set({ currentSceneId: migrated[0].id });
     }
     debouncedSave();
   },
@@ -140,7 +147,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       );
       return;
     }
-    const scenes = [...get().scenes, scene];
+    const scenes = [...get().scenes, migrateScene(scene)];
     // Remove the matching outline from generatingOutlines (match by order)
     const generatingOutlines = get().generatingOutlines.filter((o) => o.order !== scene.order);
     // Auto-switch from pending page to the newly generated scene
@@ -150,6 +157,28 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       generatingOutlines,
       ...(shouldSwitch ? { currentSceneId: scene.id } : {}),
     });
+    debouncedSave();
+  },
+
+  insertSceneAfter: (anchorSceneId, scene) => {
+    // Pro mode slide management entry point — inserts after the anchor and
+    // rebalances `order` so PPTX export / array position stay consistent.
+    // Edit mode is gated against active regeneration (see useEditModeLock),
+    // so rewriting `order` here is safe — no outline matcher is racing us.
+    const currentStage = get().stage;
+    if (!currentStage || scene.stageId !== currentStage.id) {
+      log.warn(
+        `insertSceneAfter ignored "${scene.title}" - stageId mismatch (scene: ${scene.stageId}, current: ${currentStage?.id})`,
+      );
+      return;
+    }
+    const current = get().scenes;
+    const anchorIndex = current.findIndex((s) => s.id === anchorSceneId);
+    const insertIndex = anchorIndex < 0 ? current.length : anchorIndex + 1;
+    const migrated = migrateScene(scene);
+    const next = [...current.slice(0, insertIndex), migrated, ...current.slice(insertIndex)];
+    const rebalanced = next.map((s, i) => (s.order === i + 1 ? s : { ...s, order: i + 1 }));
+    set({ scenes: rebalanced });
     debouncedSave();
   },
 
@@ -189,7 +218,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     debouncedSave();
   },
 
-  setMode: (mode) => set({ mode }),
+  setMode: (mode) => {
+    const previousMode = get().mode;
+    set({ mode });
+
+    if (previousMode === 'edit' && mode !== 'edit') {
+      useCanvasStore.getState().resetCanvasState();
+    }
+  },
 
   setToolbarState: (toolbarState) => set({ toolbarState }),
 
@@ -286,14 +322,25 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const outlines = outlinesRecord?.outlines || [];
 
       if (data) {
+        // Normalize legacy slide content (missing schemaVersion) at the load
+        // boundary, same as setScenes/addScene — IndexedDB snapshots predate
+        // the schema field, so they must be migrated on the way in.
+        const migrated = data.scenes.map(migrateScene);
         set({
           stage: data.stage,
-          scenes: data.scenes,
+          scenes: migrated,
           currentSceneId: data.currentSceneId,
           chats: data.chats,
           outlines,
           // Compute generatingOutlines from persisted outlines minus completed scenes
-          generatingOutlines: outlines.filter((o) => !data.scenes.some((s) => s.order === o.order)),
+          generatingOutlines: outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
+          // `mode` is transient UI state, not persisted with the stage.
+          // Reset to 'playback' on every load so SPA navigation between
+          // classrooms doesn't carry Pro-mode state across — e.g. user
+          // enters edit in A, navigates to B → B was inheriting
+          // mode='edit'. Refresh already reset via initial store value;
+          // this normalises the SPA path to match.
+          mode: 'playback',
         });
         log.info('Loaded from storage:', stageId);
       } else {

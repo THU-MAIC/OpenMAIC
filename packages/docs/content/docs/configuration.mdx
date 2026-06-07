@@ -109,7 +109,7 @@ Visitors are prompted once and the code is stored in an HTTP-only cookie. Leave 
 
 ## Web search
 
-Configure Tavily or Bocha:
+Configure Tavily, Bocha, or MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -117,6 +117,9 @@ TAVILY_BASE_URL=           # optional override
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # optional override
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # optional override
 ```
 
 The front-end exposes a toggle to enable search per generation.
@@ -166,7 +169,9 @@ pdf:
 web-search:
   tavily:
     apiKey: tvly-...
+  minimax:
+    apiKey: sk-...
+    baseUrl: https://api.minimaxi.com
 ```
 
-Environment variables override matching YAML fields field-by-field. Keys map to provider IDs such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, or `tavily`.
-
+Environment variables override matching YAML fields field-by-field. Keys map to provider IDs such as `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `tavily`, or `minimax`.

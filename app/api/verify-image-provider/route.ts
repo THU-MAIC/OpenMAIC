@@ -17,7 +17,7 @@
 import { NextRequest } from 'next/server';
 import { IMAGE_PROVIDERS, testImageConnectivity } from '@/lib/media/image-providers';
 import {
-  canUseServerApiKeyForBaseUrl,
+  isServerConfiguredProvider,
   resolveImageApiKey,
   resolveImageBaseUrl,
 } from '@/lib/server/provider-config';
@@ -32,8 +32,10 @@ export async function POST(request: NextRequest) {
   try {
     const providerId = (request.headers.get('x-image-provider') || 'seedream') as ImageProviderId;
     const model = request.headers.get('x-image-model') || undefined;
-    const clientApiKey = request.headers.get('x-api-key') || undefined;
-    const clientBaseUrl = request.headers.get('x-base-url') || undefined;
+    // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
+    const managed = isServerConfiguredProvider('image', providerId);
+    const clientApiKey = managed ? undefined : request.headers.get('x-api-key') || undefined;
+    const clientBaseUrl = managed ? undefined : request.headers.get('x-base-url') || undefined;
 
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
@@ -42,12 +44,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const serverBaseUrl = resolveImageBaseUrl(providerId);
-    const canUseServerApiKey = canUseServerApiKeyForBaseUrl(clientBaseUrl, serverBaseUrl);
-    const apiKey = canUseServerApiKey
-      ? resolveImageApiKey(providerId, clientApiKey)
-      : clientApiKey || '';
-    const baseUrl = clientBaseUrl || serverBaseUrl;
+    const apiKey = resolveImageApiKey(providerId, clientApiKey);
+    const baseUrl = resolveImageBaseUrl(providerId, clientBaseUrl);
 
     const provider = IMAGE_PROVIDERS[providerId];
     if (provider?.requiresApiKey && !apiKey) {

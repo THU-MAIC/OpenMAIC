@@ -40,6 +40,14 @@ export const WEB_SEARCH_PROVIDERS: Record<WebSearchProviderId, WebSearchProvider
     endpointPath: '/v2/ai_search/web_search',
     icon: '/logos/baidu.png',
   },
+  minimax: {
+    id: 'minimax',
+    name: 'MiniMax',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://api.minimaxi.com',
+    endpointPath: '/v1/coding_plan/search',
+    icon: '/logos/minimax.svg',
+  },
 };
 
 export const BAIDU_SUB_SOURCES: Record<

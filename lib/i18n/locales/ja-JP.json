@@ -45,7 +45,8 @@
     "exportSuccess": "エクスポートが完了しました",
     "exportFailed": "エクスポートに失敗しました",
     "classroomZip": "教室ZIPをエクスポート",
-    "classroomZipDesc": "コース構造 + メディアファイル"
+    "classroomZipDesc": "コース構造 + メディアファイル",
+    "inlinePartial": "{{count}} 個の外部リソースをバンドルできませんでした。オフラインでは正しく表示されない可能性があります。"
   },
   "import": {
     "classroom": "教室をインポート",
@@ -125,7 +126,8 @@
     "voiceLoading": "読み込み中...",
     "voiceAutoAssign": "ボイスは自動的に割り当てられます",
     "searchVoice": "音色を検索",
-    "noMatchingVoices": "一致する音色はありません"
+    "noMatchingVoices": "一致する音色はありません",
+    "noVoice": "音声なし"
   },
   "proactiveCard": {
     "discussion": "ディスカッション",
@@ -148,7 +150,72 @@
     "generatingNextPage": "シーンを生成中です。お待ちください...",
     "courseComplete": "コース完了",
     "fullscreen": "全画面表示",
-    "exitFullscreen": "全画面表示を終了"
+    "exitFullscreen": "全画面表示を終了",
+    "editCourse": "コースを編集",
+    "doneEditing": "編集を完了"
+  },
+  "edit": {
+    "proMode": "プロモード",
+    "undo": "元に戻す",
+    "redo": "やり直し",
+    "delete": "削除",
+    "title": "編集 · {{type}}",
+    "unsupportedScene": "{{type}}はまだ編集できません",
+    "readOnlyBadge": "{{type}} · 表示のみ",
+    "sceneType": {
+      "slide": "スライド",
+      "quiz": "クイズ",
+      "interactive": "インタラクティブ",
+      "pbl": "PBL"
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "別のタブでこのコースを編集中です",
+        "body": "編集モードは同時に 1 つのタブのみが保持できます。他のタブを閉じる（またはセッションがタイムアウトするのを待つ）してから、このタブで編集を開始してください。",
+        "actionDismiss": "了解"
+      }
+    },
+    "text": {
+      "label": "テキスト",
+      "font": "フォント",
+      "fontDefault": "デフォルト",
+      "sizeUp": "文字を大きく",
+      "sizeDown": "文字を小さく",
+      "fontSize": "フォントサイズ",
+      "bold": "太字",
+      "italic": "斜体",
+      "underline": "下線",
+      "color": "文字色",
+      "alignLeft": "左揃え",
+      "alignCenter": "中央揃え",
+      "alignRight": "右揃え",
+      "bullet": "箇条書き"
+    },
+    "insert": {
+      "textBox": "テキストボックス",
+      "expandToolbar": "挿入ツールを表示",
+      "collapseToolbar": "挿入ツールを隠す",
+      "image": "画像",
+      "imageDrop": "画像をドロップまたはクリックして選択",
+      "imageOr": "または画像 URL を貼り付け",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "挿入"
+    },
+    "nav": {
+      "addSlide": "スライドを追加",
+      "duplicate": "複製",
+      "delete": "削除",
+      "deleted": "削除しました",
+      "undo": "元に戻す",
+      "copySuffix": "（コピー）",
+      "untitledSlide": "無題のスライド",
+      "collapse": "サイドを折りたたむ",
+      "expand": "サイドを開く",
+      "dragHandle": "ドラッグして並べ替え",
+      "deckLabel": "シーン",
+      "moreActions": "その他の操作",
+      "rename": "名前を変更"
+    }
   },
   "classroomComplete": {
     "title": "コース完了",
@@ -996,7 +1063,11 @@
     "selectAgents": "エージェントを選択",
     "noVisionWarning": "現在のモデルは画像認識に対応していません。スライドに画像を配置することは可能ですが、モデルは画像の内容を理解して選択やレイアウトを最適化することができません",
     "serverConfigured": "サーバー",
-    "serverConfiguredNotice": "管理者がこのプロバイダーのAPIキーをサーバーに設定済みです。そのまま使用するか、独自のキーを入力して上書きできます。",
+    "serverConfiguredNotice": "このプロバイダーはサーバーで管理されており、ここでは編集できません。独自の認証情報を使うには、別のプロバイダーを追加してください。",
+    "ttsProviderEnabledLabel": "このプロバイダーを有効化",
+    "ttsProviderEnabledHint": "オフにすると、このプロバイダーは音声選択に表示されず、自動割り当てもされません。",
+    "ttsProviderUnavailableHint": "有効化する前にこのプロバイダーを設定してください。",
+    "ttsProviderDisabledByAdmin": "このプロバイダーはサーバー管理者によって無効化されており、有効化できません。",
     "optionalOverride": "任意 — 空欄の場合はサーバー設定を使用",
     "setupNeeded": "設定が必要です",
     "modelNotConfigured": "モデルを選択して開始してください",

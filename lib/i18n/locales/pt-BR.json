@@ -45,7 +45,8 @@
     "exportSuccess": "Exportação concluída",
     "exportFailed": "Falha na exportação",
     "classroomZip": "Exportar ZIP da Sala",
-    "classroomZipDesc": "Estrutura do curso + arquivos de mídia"
+    "classroomZipDesc": "Estrutura do curso + arquivos de mídia",
+    "inlinePartial": "{{count}} recurso(s) externo(s) não puderam ser empacotados; o curso pode não ser exibido corretamente offline."
   },
   "import": {
     "classroom": "Importar Sala de Aula",
@@ -125,7 +126,8 @@
     "voiceLoading": "Carregando...",
     "voiceAutoAssign": "As vozes serão atribuídas automaticamente",
     "searchVoice": "Pesquisar vozes",
-    "noMatchingVoices": "Nenhuma voz correspondente"
+    "noMatchingVoices": "Nenhuma voz correspondente",
+    "noVoice": "Sem voz"
   },
   "proactiveCard": {
     "discussion": "Discussão",
@@ -138,6 +140,69 @@
     "startListening": "Entrada por voz",
     "stopListening": "Parar gravação"
   },
+  "edit": {
+    "proMode": "Pro",
+    "undo": "Desfazer",
+    "redo": "Refazer",
+    "delete": "Excluir",
+    "title": "Editando · {{type}}",
+    "unsupportedScene": "{{type}} ainda não pode ser editada",
+    "readOnlyBadge": "{{type}} · somente visualização",
+    "sceneType": {
+      "slide": "Slide",
+      "quiz": "Questionário",
+      "interactive": "Interativa",
+      "pbl": "PBL"
+    },
+    "multiTab": {
+      "conflict": {
+        "title": "Outra aba está editando este curso",
+        "body": "A edição fica restrita a uma única aba para evitar alterações conflitantes. Feche a outra aba (ou aguarde a sessão dela expirar) antes de entrar no modo de edição aqui.",
+        "actionDismiss": "Entendi"
+      }
+    },
+    "text": {
+      "label": "Texto",
+      "font": "Fonte",
+      "fontDefault": "Padrão",
+      "sizeUp": "Aumentar tamanho",
+      "sizeDown": "Diminuir tamanho",
+      "fontSize": "Tamanho da fonte",
+      "bold": "Negrito",
+      "italic": "Itálico",
+      "underline": "Sublinhado",
+      "color": "Cor do texto",
+      "alignLeft": "Alinhar à esquerda",
+      "alignCenter": "Centralizar",
+      "alignRight": "Alinhar à direita",
+      "bullet": "Lista com marcadores"
+    },
+    "insert": {
+      "textBox": "Caixa de texto",
+      "expandToolbar": "Mostrar ferramentas de inserção",
+      "collapseToolbar": "Ocultar ferramentas de inserção",
+      "image": "Imagem",
+      "imageDrop": "Arraste uma imagem ou clique para escolher um arquivo",
+      "imageOr": "ou cole a URL de uma imagem",
+      "imageUrlPlaceholder": "https://…",
+      "imageInsert": "Inserir"
+    },
+    "nav": {
+      "addSlide": "Adicionar slide",
+      "duplicate": "Duplicar",
+      "delete": "Excluir",
+      "deleted": "Excluído",
+      "undo": "Desfazer",
+      "copySuffix": "(cópia)",
+      "untitledSlide": "Slide sem título",
+      "collapse": "Recolher painel",
+      "expand": "Expandir painel",
+      "dragHandle": "Arraste para reordenar",
+      "deckLabel": "Cenas",
+      "moreActions": "Mais ações",
+      "rename": "Renomear"
+    }
+  },
   "stage": {
     "currentScene": "Cena Atual",
     "generating": "Gerando...",
@@ -148,7 +213,9 @@
     "generatingNextPage": "A cena está sendo gerada, aguarde...",
     "courseComplete": "Curso concluído",
     "fullscreen": "Tela cheia",
-    "exitFullscreen": "Sair da tela cheia"
+    "exitFullscreen": "Sair da tela cheia",
+    "editCourse": "Editar curso",
+    "doneEditing": "Concluir edição"
   },
   "classroomComplete": {
     "title": "Curso concluído",
@@ -996,7 +1063,11 @@
     "selectAgents": "Selecionar Agentes",
     "noVisionWarning": "O modelo atual não suporta visão. As imagens ainda podem ser colocadas nos slides, mas o modelo não conseguirá entender o conteúdo das imagens para otimizar seleção e layout",
     "serverConfigured": "Servidor",
-    "serverConfiguredNotice": "O administrador configurou uma chave de API para este provedor no servidor. Você pode usá-la diretamente ou digitar sua própria chave para sobrepor.",
+    "serverConfiguredNotice": "Este provedor é gerenciado pelo servidor e não pode ser editado aqui. Para usar suas próprias credenciais, adicione um provedor separado.",
+    "ttsProviderEnabledLabel": "Ativar este provedor",
+    "ttsProviderEnabledHint": "Quando desligado, este provedor fica oculto no seletor de voz e nunca é atribuído automaticamente.",
+    "ttsProviderUnavailableHint": "Configure este provedor antes de ativá-lo.",
+    "ttsProviderDisabledByAdmin": "Este provedor foi desativado pelo administrador do servidor e não pode ser ativado.",
     "optionalOverride": "Opcional — deixe vazio para usar a configuração do servidor",
     "setupNeeded": "Configuração necessária",
     "modelNotConfigured": "Selecione um modelo para começar",

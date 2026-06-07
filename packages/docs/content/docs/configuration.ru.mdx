@@ -108,7 +108,7 @@ ACCESS_CODE=your-secret-code
 
 ## Web search
 
-Настройте Tavily или Bocha:
+Настройте Tavily, Bocha или MiniMax:
 
 ```bash
 TAVILY_API_KEY=
@@ -116,6 +116,9 @@ TAVILY_BASE_URL=           # необязательное переопредел
 
 BOCHA_API_KEY=
 BOCHA_BASE_URL=            # необязательное переопределение
+
+WEB_SEARCH_MINIMAX_API_KEY=
+WEB_SEARCH_MINIMAX_BASE_URL=https://api.minimaxi.com  # необязательное переопределение
 ```
 
 На фронтенде есть toggle для включения поиска в каждом запуске generation.
@@ -165,7 +168,9 @@ pdf:
 web-search:
   tavily:
     apiKey: tvly-...
+  minimax:
+    apiKey: sk-...
+    baseUrl: https://api.minimaxi.com
 ```
 
-Переменные окружения переопределяют совпадающие YAML fields по отдельным полям. Ключи соответствуют provider ID, например `openai`, `doubao-tts`, `openai-whisper`, `mineru` или `tavily`.
-
+Переменные окружения переопределяют совпадающие YAML fields по отдельным полям. Ключи соответствуют provider ID, например `openai`, `doubao-tts`, `openai-whisper`, `mineru`, `tavily` или `minimax`.

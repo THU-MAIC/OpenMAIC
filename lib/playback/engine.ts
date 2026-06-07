@@ -37,6 +37,7 @@ import type { AudioPlayer } from '@/lib/utils/audio-player';
 import { ActionEngine } from '@/lib/action/engine';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('PlaybackEngine');
@@ -494,11 +495,16 @@ export class PlaybackEngine {
           .play(speechAction.audioId || '', speechAction.audioUrl)
           .then((audioStarted) => {
             if (!audioStarted) {
-              // No pre-generated audio — try browser-native TTS if selected
+              // No pre-generated audio — try browser-native TTS only when it is
+              // the selected provider AND actually enabled (opt-in, #665).
               const settings = useSettingsStore.getState();
               if (
                 settings.ttsEnabled &&
                 settings.ttsProviderId === 'browser-native-tts' &&
+                isTTSProviderEnabled(
+                  'browser-native-tts',
+                  settings.ttsProvidersConfig?.['browser-native-tts'],
+                ) &&
                 typeof window !== 'undefined' &&
                 window.speechSynthesis
               ) {

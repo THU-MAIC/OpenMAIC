@@ -156,6 +156,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/claude.svg',
     models: [
       {
+        id: 'claude-opus-4-8',
+        name: 'Claude Opus 4.8',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: false,
+          },
+        },
+      },
+      {
         id: 'claude-opus-4-7',
         name: 'Claude Opus 4.7',
         contextWindow: 1000000,
@@ -681,6 +697,13 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/minimax.svg',
     models: [
+      {
+        id: 'MiniMax-M3',
+        name: 'MiniMax M3',
+        contextWindow: 1000000,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
       {
         id: 'MiniMax-M2.7',
         name: 'MiniMax M2.7',
@@ -1399,10 +1422,43 @@ export function getModel(config: ModelConfig): ModelWithInfo {
     }
 
     case 'anthropic': {
-      const anthropic = createAnthropic({
-        apiKey: effectiveApiKey,
+      const anthropicOptions: Parameters<typeof createAnthropic>[0] = {
         baseURL: effectiveBaseUrl,
-      });
+      };
+      if (config.providerId === 'minimax' && effectiveApiKey.startsWith('sk-cp-')) {
+        anthropicOptions.authToken = effectiveApiKey;
+      } else {
+        anthropicOptions.apiKey = effectiveApiKey;
+      }
+      if (config.providerId === 'minimax') {
+        anthropicOptions.fetch = (async (url: RequestInfo | URL, init?: RequestInit) => {
+          const capability = getCatalogThinkingCapability(config.providerId, config.modelId);
+          const thinkingCtx = (globalThis as Record<string, unknown>).__thinkingContext as
+            | { getStore?: () => unknown }
+            | undefined;
+          const thinking = thinkingCtx?.getStore?.() as ThinkingConfig | undefined;
+
+          if (
+            capability?.requestAdapter === 'anthropic' &&
+            capability.control !== 'none' &&
+            getThinkingMode(thinking) === 'disabled' &&
+            init?.body &&
+            typeof init.body === 'string'
+          ) {
+            try {
+              const body = JSON.parse(init.body);
+              body.thinking = { type: 'disabled' };
+              init = { ...init, body: JSON.stringify(body) };
+            } catch {
+              /* leave body as-is */
+            }
+          }
+
+          return globalThis.fetch(url, init);
+        }) as typeof globalThis.fetch;
+      }
+
+      const anthropic = createAnthropic(anthropicOptions);
       model = anthropic.chat(config.modelId);
       break;
     }

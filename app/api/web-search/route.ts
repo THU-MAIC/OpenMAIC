@@ -8,7 +8,7 @@
 import { NextRequest } from 'next/server';
 import { callLLM } from '@/lib/ai/llm';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
-import { resolveWebSearchApiKey } from '@/lib/server/provider-config';
+import { isServerConfiguredProvider, resolveWebSearchApiKey } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
@@ -31,8 +31,8 @@ export async function POST(req: NextRequest) {
       query: requestQuery,
       pdfText,
       providerId: requestProviderId,
-      apiKey: clientApiKey,
-      baseUrl: clientBaseUrl,
+      apiKey: bodyApiKey,
+      baseUrl: bodyBaseUrl,
       baiduSubSources,
     } = body as {
       query?: string;
@@ -51,6 +51,12 @@ export async function POST(req: NextRequest) {
     const providerId: WebSearchProviderId =
       requestProviderId && WEB_SEARCH_PROVIDERS[requestProviderId] ? requestProviderId : 'tavily';
     const provider = WEB_SEARCH_PROVIDERS[providerId];
+    // Managed providers are admin-owned: ignore (don't reject) any client-sent
+    // key/baseUrl. The server config is authoritative, so a stale client base
+    // URL is dropped rather than failing the request.
+    const managed = isServerConfiguredProvider('webSearch', providerId);
+    const clientApiKey = managed ? undefined : bodyApiKey;
+    const clientBaseUrl = managed ? undefined : bodyBaseUrl;
     const apiKey = resolveWebSearchApiKey(providerId, clientApiKey);
     if (provider.requiresApiKey && !apiKey) {
       return apiError(
@@ -133,6 +139,8 @@ function getWebSearchEnvKey(providerId: WebSearchProviderId): string {
       return 'BOCHA_API_KEY';
     case 'brave':
       return 'BRAVE_API_KEY';
+    case 'minimax':
+      return 'WEB_SEARCH_MINIMAX_API_KEY';
     case 'tavily':
     default:
       return 'TAVILY_API_KEY';

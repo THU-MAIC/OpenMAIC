@@ -185,7 +185,7 @@ vi.stubGlobal('window', { localStorage: localStorageStub });
 /** Full server response shape */
 interface MockServerResponse {
   providers?: Record<string, { models?: string[]; baseUrl?: string }>;
-  tts?: Record<string, { baseUrl?: string }>;
+  tts?: Record<string, { baseUrl?: string; disabled?: boolean }>;
   asr?: Record<string, { baseUrl?: string }>;
   pdf?: Record<string, { baseUrl?: string }>;
   image?: Record<string, { baseUrl?: string }>;
@@ -268,6 +268,56 @@ describe('settings rehydrate — built-in provider models', () => {
     ]);
     expect(models[0].name).toBe('GPT-4o');
     expect(models[3].name).toBe('Custom Earlier');
+  });
+
+  it('strips a legacy serverBaseUrl from persisted provider configs on rehydrate (#620)', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        state: {
+          providerId: 'openai',
+          modelId: 'gpt-4o',
+          providersConfig: {
+            openai: {
+              apiKey: '',
+              baseUrl: '',
+              models: [{ id: 'gpt-4o', name: 'GPT-4o' }],
+              name: 'OpenAI',
+              type: 'openai',
+              defaultBaseUrl: 'https://api.openai.com/v1',
+              requiresApiKey: true,
+              isBuiltIn: true,
+              isServerConfigured: true,
+              serverBaseUrl: 'https://internal-gateway.local/v1',
+            },
+          },
+          webSearchProvidersConfig: {
+            bocha: {
+              apiKey: '',
+              baseUrl: '',
+              enabled: true,
+              requiresApiKey: true,
+              isServerConfigured: true,
+              serverBaseUrl: 'https://api.bocha.cn',
+            },
+          },
+        },
+        version: 2,
+      }),
+    );
+
+    const store = await getStore();
+    const openai = store.getState().providersConfig.openai as unknown as Record<string, unknown>;
+    const bocha = store.getState().webSearchProvidersConfig.bocha as unknown as Record<
+      string,
+      unknown
+    >;
+
+    // The removed field must not linger in persisted client state...
+    expect('serverBaseUrl' in openai).toBe(false);
+    expect('serverBaseUrl' in bocha).toBe(false);
+    // ...while the managed flag itself is preserved.
+    expect(openai.isServerConfigured).toBe(true);
   });
 });
 
@@ -668,20 +718,20 @@ describe('fetchServerProviders — Web Search provider sync', () => {
     return useSettingsStore;
   }
 
-  it('marks Bocha as server-configured and stores serverBaseUrl', async () => {
+  it('marks Bocha as server-configured without storing a server base URL', async () => {
     const store = await getStore();
     mockServerResponse({
       webSearch: {
-        bocha: { baseUrl: 'https://api.bocha.cn' },
+        bocha: {},
       },
     });
 
     await store.getState().fetchServerProviders();
 
-    expect(store.getState().webSearchProvidersConfig.bocha).toMatchObject({
-      isServerConfigured: true,
-      serverBaseUrl: 'https://api.bocha.cn',
-    });
+    const bocha = store.getState().webSearchProvidersConfig.bocha;
+    expect(bocha.isServerConfigured).toBe(true);
+    // The server base URL is never exposed to / stored on the client.
+    expect((bocha as Record<string, unknown>).serverBaseUrl).toBeUndefined();
   });
 
   it('falls back to Bocha when selected Tavily loses server config and has no client key', async () => {
@@ -1450,5 +1500,105 @@ describe('settings store — outline review preference', () => {
     const store = await getStore();
 
     expect(store.getState().reviewOutlineEnabled).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TTS provider enablement (#665)
+// ---------------------------------------------------------------------------
+
+describe('TTS provider enablement (#665)', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    storage.clear();
+    mockFetch.mockReset();
+  });
+
+  async function getStore() {
+    const { useSettingsStore } = await import('@/lib/store/settings');
+    return useSettingsStore;
+  }
+
+  it('browser-native TTS is OFF by default (fresh install, opt-in)', async () => {
+    const store = await getStore();
+    expect(store.getState().ttsProvidersConfig['browser-native-tts'].enabled).toBe(false);
+  });
+
+  it('TTS master toggle is OFF by default on a fresh install', async () => {
+    const store = await getStore();
+    expect(store.getState().ttsEnabled).toBe(false);
+  });
+
+  it('first server-sync auto-enables TTS when a server provider exists', async () => {
+    mockServerResponse({ tts: { 'openai-tts': {} } });
+    const store = await getStore();
+    expect(store.getState().ttsEnabled).toBe(false);
+    await store.getState().fetchServerProviders();
+    expect(store.getState().ttsEnabled).toBe(true);
+  });
+
+  it('server-sync does NOT auto-enable TTS when no provider is configured', async () => {
+    mockServerResponse({ tts: {} });
+    const store = await getStore();
+    await store.getState().fetchServerProviders();
+    expect(store.getState().ttsEnabled).toBe(false);
+  });
+
+  it('non-browser-native built-ins default enabled:true (configured ⇒ visible)', async () => {
+    const store = await getStore();
+    // azure-tts is in the mocked registry; it must default ON so a configured /
+    // server-managed provider is never hidden by a stale default.
+    expect(store.getState().ttsProvidersConfig['azure-tts'].enabled).toBe(true);
+  });
+
+  it('v3→v4 migration normalizes stale enabled flags (others ON, browser-native OFF)', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        version: 3,
+        state: {
+          ttsProvidersConfig: {
+            'openai-tts': { apiKey: '', baseUrl: '', enabled: true },
+            // stale default-false on a configured-capable provider — must flip ON
+            'azure-tts': { apiKey: '', baseUrl: '', enabled: false },
+            // legacy default-true browser-native — must flip OFF
+            'browser-native-tts': { apiKey: '', baseUrl: '', enabled: true },
+          },
+          asrProvidersConfig: {},
+        },
+      }),
+    );
+    const store = await getStore();
+    const cfg = store.getState().ttsProvidersConfig;
+    expect(cfg['azure-tts'].enabled).toBe(true);
+    expect(cfg['browser-native-tts'].enabled).toBe(false);
+  });
+
+  it('server force-disable sets serverDisabled and does NOT mark the provider managed', async () => {
+    mockServerResponse({ tts: { 'openai-tts': { disabled: true } } });
+    const store = await getStore();
+    await store.getState().fetchServerProviders();
+    const cfg = store.getState().ttsProvidersConfig['openai-tts'];
+    expect(cfg.serverDisabled).toBe(true);
+    expect(cfg.isServerConfigured).toBe(false);
+  });
+
+  it('a server-managed (not disabled) provider is marked configured, not disabled', async () => {
+    mockServerResponse({ tts: { 'openai-tts': {} } });
+    const store = await getStore();
+    await store.getState().fetchServerProviders();
+    const cfg = store.getState().ttsProvidersConfig['openai-tts'];
+    expect(cfg.isServerConfigured).toBe(true);
+    expect(cfg.serverDisabled).toBe(false);
+  });
+
+  it('clears serverDisabled when a later sync no longer reports the provider disabled', async () => {
+    const store = await getStore();
+    mockServerResponse({ tts: { 'openai-tts': { disabled: true } } });
+    await store.getState().fetchServerProviders();
+    expect(store.getState().ttsProvidersConfig['openai-tts'].serverDisabled).toBe(true);
+    mockServerResponse({ tts: {} });
+    await store.getState().fetchServerProviders();
+    expect(store.getState().ttsProvidersConfig['openai-tts'].serverDisabled).toBe(false);
   });
 });

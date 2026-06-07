@@ -118,6 +118,8 @@ function getModelProviderId(params: GenerateTextParams | StreamTextParams): stri
   if (!m || typeof m !== 'object' || !('provider' in m)) return undefined;
   const provider = (m as { provider?: string }).provider;
   if (!provider) return undefined;
+  const modelId = 'modelId' in m ? (m as { modelId?: string }).modelId : undefined;
+  if (provider === 'anthropic.messages' && modelId?.startsWith('MiniMax-')) return 'minimax';
   if (provider in PROVIDERS) return provider;
   const prefix = provider.split('.')[0];
   return prefix in PROVIDERS ? prefix : undefined;
@@ -147,36 +149,36 @@ function buildThinkingProviderOptions(
     }
 
     case 'anthropic': {
-      if (mode === 'disabled') return { anthropic: { thinking: { type: 'disabled' } } };
+      const buildAnthropicOptions = (options: Record<string, unknown>): ProviderOptions => ({
+        anthropic: options,
+      });
+
+      if (mode === 'disabled') return buildAnthropicOptions({ thinking: { type: 'disabled' } });
 
       if (thinking.control === 'toggle-budget' || thinking.control === 'budget-only') {
         const budget = pickThinkingBudget(thinking, config);
         return budget === undefined
           ? undefined
-          : { anthropic: { thinking: { type: 'enabled', budgetTokens: budget } } };
+          : buildAnthropicOptions({ thinking: { type: 'enabled', budgetTokens: budget } });
       }
 
       const effort = getAnthropicEffort(thinking, config);
       if (!effort) return undefined;
 
       if (thinking.anthropicThinking?.type === 'adaptive') {
-        return {
-          anthropic: {
-            thinking: { type: 'adaptive' },
-            effort,
-          },
-        };
+        return buildAnthropicOptions({
+          thinking: { type: 'adaptive' },
+          effort,
+        });
       }
 
       const manualEffort = effort === 'xhigh' ? 'max' : effort;
       const budget = thinking.anthropicThinking?.budgetByEffort?.[manualEffort];
       if (!budget) return undefined;
-      return {
-        anthropic: {
-          thinking: { type: 'enabled', budgetTokens: budget },
-          effort: manualEffort,
-        },
-      };
+      return buildAnthropicOptions({
+        thinking: { type: 'enabled', budgetTokens: budget },
+        effort: manualEffort,
+      });
     }
 
     case 'google': {
