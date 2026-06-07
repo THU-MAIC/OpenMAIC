@@ -8,8 +8,15 @@
  */
 
 import { buildVoiceDesignPrompt, type VoiceDesign } from '@/lib/audio/voice-design';
-import { VOXCPM_VLLM_MODEL_ID, normalizeVoxCPMBackend, voxCPMBackendSupportsVoiceRegistration } from '@/lib/audio/voxcpm';
-import type { VoiceRegistrationAdapter, VoiceRegistrationConfig } from '@/lib/audio/voice-registration';
+import {
+  VOXCPM_VLLM_MODEL_ID,
+  normalizeVoxCPMBackend,
+  voxCPMBackendSupportsVoiceRegistration,
+} from '@/lib/audio/voxcpm';
+import type {
+  VoiceRegistrationAdapter,
+  VoiceRegistrationConfig,
+} from '@/lib/audio/voice-registration';
 
 function v1(baseUrl: string): string {
   const clean = baseUrl.replace(/\/$/, '');

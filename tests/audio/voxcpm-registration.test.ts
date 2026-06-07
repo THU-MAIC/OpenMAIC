@@ -76,8 +76,7 @@ describe('bootstrapVoxCPMReferenceClip', () => {
   it('synthesizes the descriptor prompt into base64 wav', async () => {
     const wav = new Uint8Array([82, 73, 70, 70]); // "RIFF"
     const f = vi.fn(
-      async () =>
-        new Response(wav, { status: 200, headers: { 'content-type': 'audio/wav' } }),
+      async () => new Response(wav, { status: 200, headers: { 'content-type': 'audio/wav' } }),
     );
     vi.stubGlobal('fetch', f);
 

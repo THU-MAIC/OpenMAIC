@@ -25,7 +25,11 @@ describe('buildVoiceDesignPrompt', () => {
   });
   it('strips parentheses so they cannot break the (prompt)text delimiter', () => {
     expect(
-      buildVoiceDesignPrompt({ identity: 'male teacher (deep)', texture: '英文（带口音）', delivery: 'calm' }),
+      buildVoiceDesignPrompt({
+        identity: 'male teacher (deep)',
+        texture: '英文（带口音）',
+        delivery: 'calm',
+      }),
     ).toBe('male teacher deep, 英文 带口音, calm');
   });
 });
@@ -67,7 +71,10 @@ describe('getDeterministicVoiceId', () => {
       { providerId: 'voxcpm-tts', model: 'm' },
     );
     const model = await getDeterministicVoiceId(design, { providerId: 'voxcpm-tts', model: 'm2' });
-    const prov = await getDeterministicVoiceId(design, { providerId: 'elevenlabs-tts', model: 'm' });
+    const prov = await getDeterministicVoiceId(design, {
+      providerId: 'elevenlabs-tts',
+      model: 'm',
+    });
     expect(tex).not.toBe(base);
     expect(model).not.toBe(base);
     expect(prov).not.toBe(base);

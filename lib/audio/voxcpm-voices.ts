@@ -287,7 +287,9 @@ export async function getVoxCPMProviderOptions(
     // Drive register-once only when this VoxCPM backend supports it; otherwise
     // (and on any failure) fall back to the inline voice-design prompt.
     const canRegister =
-      !!request && !!context?.voiceDesign && voxCPMBackendSupportsVoiceRegistration(context.backend ?? 'vllm-omni');
+      !!request &&
+      !!context?.voiceDesign &&
+      voxCPMBackendSupportsVoiceRegistration(context.backend ?? 'vllm-omni');
     const registeredVoiceId = canRegister
       ? await ensureRegisteredVoice(
           VOXCPM_TTS_PROVIDER_ID,

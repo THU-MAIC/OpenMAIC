@@ -19,15 +19,17 @@ const VOICE_DESIGN_PROMPT_MAX_CHARS = 200;
 export const AUTO_VOICE_ID_PREFIX = 'auto-' as const;
 
 function sanitizeVoiceDesignPart(value?: string): string {
-  return (value || '')
-    .replace(/[\p{C}]+/gu, ' ')
-    // Strip parentheses: VoxCPM uses `(prompt)text` delimiters, so a paren in the
-    // descriptor/persona would corrupt the bootstrap synthesis prompt.
-    .replace(/[()（）]/gu, ' ')
-    .replace(/\s+/gu, ' ')
-    .trim()
-    .slice(0, VOICE_DESIGN_PROMPT_MAX_CHARS)
-    .trim();
+  return (
+    (value || '')
+      .replace(/[\p{C}]+/gu, ' ')
+      // Strip parentheses: VoxCPM uses `(prompt)text` delimiters, so a paren in the
+      // descriptor/persona would corrupt the bootstrap synthesis prompt.
+      .replace(/[()（）]/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, VOICE_DESIGN_PROMPT_MAX_CHARS)
+      .trim()
+  );
 }
 
 /** Compose the 3 layers into one comma-joined prompt, dropping blank layers. */
