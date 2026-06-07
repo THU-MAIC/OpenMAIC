@@ -23,6 +23,11 @@ describe('buildVoiceDesignPrompt', () => {
       buildVoiceDesignPrompt({ identity: '  male  teacher ', texture: '', delivery: 'slow' }),
     ).toBe('male teacher, slow');
   });
+  it('strips parentheses so they cannot break the (prompt)text delimiter', () => {
+    expect(
+      buildVoiceDesignPrompt({ identity: 'male teacher (deep)', texture: '英文（带口音）', delivery: 'calm' }),
+    ).toBe('male teacher deep, 英文 带口音, calm');
+  });
 });
 
 describe('normalizeVoiceDesign', () => {

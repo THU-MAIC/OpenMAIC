@@ -100,11 +100,12 @@ export async function resolveAgentVoiceOptions(
 }
 
 /**
- * Eager warm-up: right after generated agents are saved, pre-register each
- * agent's auto voice using the SAME idempotent ensure as the TTS path, so the
- * first spoken line is already stable (no first-utterance registration stall).
- * Fire-and-forget; the on-use ensure remains the correctness path (handles
- * provider switch / GC / cache miss via the deterministic id).
+ * Eager warm-up: right after generated agents are saved, pre-register the
+ * narrator's (teacher's) auto voice using the SAME idempotent ensure as the TTS
+ * path, so the first spoken line is already stable. Only the narrator is warmed:
+ * it always speaks (lecture narration), whereas discussion agents may never be
+ * selected, so warming all of them would synthesize voices that go unused.
+ * Fire-and-forget; the on-use ensure remains the correctness path for the rest.
  */
 export function warmUpAgentVoices(agents: AgentConfig[]): void {
   const settings = useSettingsStore.getState();
@@ -112,14 +113,11 @@ export function warmUpAgentVoices(agents: AgentConfig[]): void {
   if (providerId !== VOXCPM_TTS_PROVIDER_ID) return;
   const providerConfig = settings.ttsProvidersConfig?.[providerId];
 
-  for (const agent of agents) {
-    if (!effectiveVoiceDesign(agent)) continue;
-    const assigned = agent.voiceConfig?.voiceId;
-    if (assigned && assigned !== VOXCPM_AUTO_VOICE_ID) continue; // uses a specific voice, not auto
-    void resolveAgentVoiceOptions(agent, {
-      providerId,
-      providerConfig,
-      voiceId: VOXCPM_AUTO_VOICE_ID,
-    }).catch(() => undefined);
-  }
+  const narrator = pickNarratorAgent(agents);
+  if (!narrator || !effectiveVoiceDesign(narrator)) return;
+  void resolveAgentVoiceOptions(narrator, {
+    providerId,
+    providerConfig,
+    voiceId: VOXCPM_AUTO_VOICE_ID,
+  }).catch(() => undefined);
 }

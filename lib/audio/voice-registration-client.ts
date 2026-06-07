@@ -41,6 +41,10 @@ async function blobToBase64(blob: Blob): Promise<string> {
 
 // Voice ids confirmed registered in this browser session — skip the round-trip.
 const registeredThisSession = new Set<string>();
+// In-flight registrations, keyed by voiceId, so concurrent callers (e.g. the
+// eager warm-up racing the first utterance) share one request instead of each
+// firing a duplicate bootstrap + register.
+const inFlight = new Map<string, Promise<string | undefined>>();
 
 async function getCachedClip(
   voiceId: string,
@@ -70,6 +74,23 @@ export async function ensureRegisteredVoice(
   });
   if (registeredThisSession.has(voiceId)) return voiceId;
 
+  // Coalesce concurrent calls for the same voiceId into one request.
+  const existing = inFlight.get(voiceId);
+  if (existing) return existing;
+
+  const promise = registerOnce(providerId, voiceId, params, request).finally(() =>
+    inFlight.delete(voiceId),
+  );
+  inFlight.set(voiceId, promise);
+  return promise;
+}
+
+async function registerOnce(
+  providerId: string,
+  voiceId: string,
+  params: { voiceDesign?: VoiceDesign; language?: string },
+  request: VoiceRegistrationRequestConfig,
+): Promise<string | undefined> {
   const cached = await getCachedClip(voiceId);
   const res = await fetch('/api/generate/voice', {
     method: 'POST',

@@ -401,26 +401,20 @@ async function postVoxCPMVLLMOmni(
   },
   config: TTSModelConfig,
 ): Promise<Response> {
-  // A registered voice carries timbre by id (pre-encoded latents): reference it
-  // directly and send the raw text — no inline voice-design prompt or ref_audio.
-  const payload: Record<string, unknown> = params.registeredVoiceId
-    ? {
-        model: getVLLMOmniModelId(config),
-        input: params.rawText ?? params.targetText,
-        voice: params.registeredVoiceId,
-        response_format: 'wav',
-        stream: false,
-      }
-    : {
-        model: getVLLMOmniModelId(config),
-        input: params.targetText,
-        // Without a registered voice, prompts/ref_audio carry voice identity.
-        voice: 'default',
-        response_format: 'wav',
-        stream: false,
-      };
+  const payload: Record<string, unknown> = {
+    model: getVLLMOmniModelId(config),
+    input: params.targetText,
+    voice: 'default',
+    response_format: 'wav',
+    stream: false,
+  };
 
-  if (!params.registeredVoiceId && params.referenceAudioBase64) {
+  if (params.registeredVoiceId) {
+    // A registered voice carries timbre by id (pre-encoded latents): reference it
+    // directly and send the raw text — no inline voice-design prompt or ref_audio.
+    payload.voice = params.registeredVoiceId;
+    payload.input = params.rawText ?? params.targetText;
+  } else if (params.referenceAudioBase64) {
     const referenceAudio = getVoxCPMDataAudioUrl(
       params.referenceAudioBase64,
       params.referenceAudioMimeType,

@@ -17,6 +17,7 @@
 import { NextRequest } from 'next/server';
 import {
   isServerConfiguredProvider,
+  isServerTTSProviderDisabled,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
   resolveTTSModel,
@@ -67,6 +68,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // A server-force-disabled provider is off for everyone (#665), same as the TTS route.
+    if (isServerTTSProviderDisabled(providerId)) {
+      return apiError('PROVIDER_DISABLED', 403, 'This TTS provider is disabled by the server');
+    }
+
     const adapter = getVoiceRegistrationAdapter(providerId);
     if (!adapter) {
       return apiError(
@@ -98,18 +104,20 @@ export async function POST(req: NextRequest) {
       model: resolveTTSModel(providerId, body.ttsModelId),
     };
 
-    // Client supplied a cached reference clip → (re)register it (register-on-invalid).
+    // Already registered → no-op (also avoids a redundant re-register when the
+    // client offered a cached clip but the voice is still live on the backend).
+    if (await adapter.voiceExists(cfg, voiceId)) {
+      return apiSuccess({ voiceId, registered: true });
+    }
+
+    // Not present, but the client has the cached reference clip → re-register it
+    // (register-on-invalid; preserves the original timbre instead of re-synthesizing).
     if (body.referenceAudioBase64) {
       await adapter.registerVoice(cfg, {
         voiceId,
         referenceAudioBase64: body.referenceAudioBase64,
         mimeType: body.mimeType,
       });
-      return apiSuccess({ voiceId, registered: true });
-    }
-
-    // Already registered → no-op.
-    if (await adapter.voiceExists(cfg, voiceId)) {
       return apiSuccess({ voiceId, registered: true });
     }
 
