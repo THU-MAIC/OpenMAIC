@@ -19,6 +19,13 @@ describe('toPoints', () => {
     const malformed = 'M 1 0.5 alert 0.5 0.5 0 1 1 0 0.5 A 0.5 0.5 0 1 1 1 0.5 Z';
     expect(toPoints(malformed)).toEqual([]);
   });
+
+  test('returns [] for an arc-first path instead of throwing', () => {
+    // A syntactically valid path whose first command is an arc (A): `points` is
+    // still empty when the arc is reached, so reading the previous point must not
+    // throw. Guards the documented "malformed path returns []" contract.
+    expect(toPoints('A 0.5 0.5 0 1 1 1 0.5')).toEqual([]);
+  });
 });
 
 describe('getSvgPathRange', () => {
