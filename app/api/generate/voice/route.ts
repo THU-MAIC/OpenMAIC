@@ -19,6 +19,7 @@ import {
   isServerConfiguredProvider,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
+  resolveTTSModel,
 } from '@/lib/server/provider-config';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
@@ -91,7 +92,11 @@ export async function POST(req: NextRequest) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'TTS base URL is required');
     }
 
-    const cfg: VoiceRegistrationConfig = { baseUrl, apiKey, model: body.ttsModelId };
+    const cfg: VoiceRegistrationConfig = {
+      baseUrl,
+      apiKey,
+      model: resolveTTSModel(providerId, body.ttsModelId),
+    };
 
     // Client supplied a cached reference clip → (re)register it (register-on-invalid).
     if (body.referenceAudioBase64) {

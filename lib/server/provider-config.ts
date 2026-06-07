@@ -445,6 +445,18 @@ export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): s
   return resolveSectionBaseUrl('tts', providerId, clientBaseUrl);
 }
 
+/**
+ * Resolve the TTS model. A managed provider may pin its model server-side
+ * (`${PREFIX}_MODELS`, first entry) — authoritative like its key/baseUrl, since
+ * the managed-provider UI does not expose a model field. Otherwise the client
+ * model wins.
+ */
+export function resolveTTSModel(providerId: string, clientModel?: string): string | undefined {
+  const entry = getConfig().tts[providerId];
+  if (entry?.models && entry.models.length > 0) return entry.models[0];
+  return clientModel;
+}
+
 // ---------------------------------------------------------------------------
 // Public API — ASR
 // ---------------------------------------------------------------------------

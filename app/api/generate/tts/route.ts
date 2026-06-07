@@ -14,6 +14,7 @@ import {
   isServerTTSProviderDisabled,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
+  resolveTTSModel,
 } from '@/lib/server/provider-config';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
@@ -98,10 +99,10 @@ export async function POST(req: NextRequest) {
     const apiKey = resolveTTSApiKey(ttsProviderId, managed ? undefined : ttsApiKey || undefined);
     const baseUrl = resolveTTSBaseUrl(ttsProviderId, clientBaseUrl);
 
-    // Build TTS config
+    // Build TTS config (managed providers may pin the model server-side)
     const config = {
       providerId: ttsProviderId as TTSProviderId,
-      modelId: ttsModelId,
+      modelId: resolveTTSModel(ttsProviderId, ttsModelId),
       voice: ttsVoice,
       speed: ttsSpeed ?? 1.0,
       apiKey,
