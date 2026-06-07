@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils';
 import { useStageStore } from '@/lib/store/stage';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import { getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import { getEnabledProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -675,7 +676,7 @@ function GenerationPreviewContent() {
           ];
 
           const getAvailableVoicesForGeneration = () => {
-            const providers = getAvailableProvidersWithVoices(
+            const providers = getEnabledProvidersWithVoices(
               settings.ttsProvidersConfig,
               voxcpmProfiles,
             );
@@ -712,7 +713,9 @@ function GenerationPreviewContent() {
           const agentData = await agentResp.json();
           if (!agentData.success) throw new Error(agentData.error || 'Agent generation failed');
 
-          // Save to IndexedDB and registry
+          // Save to IndexedDB and registry. The agent-profile LLM has already
+          // bound each agent's voice (from availableVoices); the fallback for an
+          // invalid/unavailable voice is applied later at the live TTS call.
           const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
           const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
           settings.setSelectedAgentIds(savedIds);
@@ -867,7 +870,14 @@ function GenerationPreviewContent() {
       }
 
       // Generate TTS for first scene (part of actions step — blocking)
-      if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
+      if (
+        settings.ttsEnabled &&
+        settings.ttsProviderId !== 'browser-native-tts' &&
+        isTTSProviderEnabled(
+          settings.ttsProviderId,
+          settings.ttsProvidersConfig?.[settings.ttsProviderId],
+        )
+      ) {
         const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
         const providerOptions =
           settings.ttsProviderId === 'voxcpm-tts'

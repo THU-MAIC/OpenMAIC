@@ -11,6 +11,7 @@ import { NextRequest } from 'next/server';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
 import {
   isServerConfiguredProvider,
+  isServerTTSProviderDisabled,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
 } from '@/lib/server/provider-config';
@@ -57,6 +58,12 @@ export async function POST(req: NextRequest) {
     // Reject browser-native TTS — must be handled client-side
     if (ttsProviderId === 'browser-native-tts') {
       return apiError('INVALID_REQUEST', 400, 'browser-native-tts must be handled client-side');
+    }
+
+    // Enforce server precedence: a force-disabled provider is off for everyone,
+    // regardless of any client key/selection (#665).
+    if (isServerTTSProviderDisabled(ttsProviderId)) {
+      return apiError('PROVIDER_DISABLED', 403, 'This TTS provider is disabled by the server');
     }
 
     const voxcpmVoicePrompt =
