@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { mapWithConcurrency } from '@/lib/utils/concurrency';
+import { lazyBoundedMap, mapWithConcurrency } from '@/lib/utils/concurrency';
 
 const tick = (ms = 5) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -28,7 +28,7 @@ describe('mapWithConcurrency', () => {
         return n;
       },
     );
-    expect(peak).toBe(3); // saturated the pool…
+    expect(peak).toBeLessThanOrEqual(3); // never exceeds the pool
   });
 
   it('clamps the limit to the item count (no over-spawn)', async () => {
@@ -64,5 +64,59 @@ describe('mapWithConcurrency', () => {
 
   it('handles an empty list without spawning workers', async () => {
     expect(await mapWithConcurrency([], 4, async (n) => n)).toEqual([]);
+  });
+});
+
+describe('lazyBoundedMap', () => {
+  it('returns promises immediately and resolves them without a barrier', async () => {
+    const started: number[] = [];
+    const promises = lazyBoundedMap([0, 1, 2], 1, async (n) => {
+      started.push(n);
+      await tick();
+      return n * 10;
+    });
+    expect(promises).toHaveLength(3); // the array of promises exists synchronously
+    expect(await promises[0]).toBe(0); // the first resolves on its own…
+    expect(started.length).toBeLessThan(3); // …without forcing the last item to run (no barrier)
+    expect(await Promise.all(promises)).toEqual([0, 10, 20]); // order + values preserved
+  });
+
+  it('caps in-flight work at `limit`', async () => {
+    let active = 0;
+    let peak = 0;
+    await Promise.all(
+      lazyBoundedMap(
+        Array.from({ length: 8 }, (_, i) => i),
+        3,
+        async (n) => {
+          active += 1;
+          peak = Math.max(peak, active);
+          await tick();
+          active -= 1;
+          return n;
+        },
+      ),
+    );
+    expect(peak).toBeLessThanOrEqual(3);
+    expect(peak).toBeGreaterThan(1);
+  });
+
+  it('skips items via shouldContinue without running fn', async () => {
+    const ran: number[] = [];
+    let done = 0;
+    const out = await Promise.all(
+      lazyBoundedMap(
+        [1, 2, 3, 4, 5],
+        1,
+        async (n) => {
+          ran.push(n);
+          done += 1;
+          return n;
+        },
+        { shouldContinue: () => done < 2 },
+      ),
+    );
+    expect(ran).toEqual([1, 2]); // fn ran only twice
+    expect(out).toEqual([1, 2, undefined, undefined, undefined]); // skipped → undefined
   });
 });

@@ -13,7 +13,7 @@ import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
-import { mapWithConcurrency } from '@/lib/utils/concurrency';
+import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('SceneGenerator');
@@ -332,60 +332,68 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       // unchanged.
       const parallelConcurrency = Math.max(
         0,
+        // Belt-and-suspenders: the value is already clamped server-side and again
+        // in the settings store; re-clamp here so a stale/garbage store value can
+        // never spawn an unbounded fetch fan-out.
         Math.floor(useSettingsStore.getState().parallelSceneConcurrency ?? 0),
       );
       const useParallelContent = parallelConcurrency > 1 && pending.length > 1;
 
-      // Hybrid generation loop (#572). Phase 1 (opt-in) fetches scene *content*
-      // concurrently — content is the only per-scene step independent of
-      // cross-scene state, so it is safe to parallelise. Phase 2 runs actions +
-      // TTS strictly serially to preserve previousSpeeches threading and the
-      // pause-on-failure UX. When parallelism is off the content map is null and
-      // this is exactly the original one-at-a-time loop.
+      // Pipelined generation loop (#572). When parallelism is on, scene *content*
+      // fetches are kicked off up front with bounded concurrency (lazyBoundedMap)
+      // but CONSUMED IN ORDER inside the serial loop below — there is no barrier.
+      // So the first scene paints after content(1)+actions(1)+TTS(1) (same as
+      // serial) while later content fetches run hidden behind earlier scenes'
+      // actions/TTS. Content has no cross-scene dependency, so running it ahead is
+      // safe; actions + TTS stay strictly serial to preserve previousSpeeches
+      // threading and the pause-on-failure UX. With parallelism off this is exactly
+      // the original one-at-a-time loop.
       try {
-        const contentByOutline = useParallelContent ? new Map<string, SceneContentResult>() : null;
-        let hadContentFailure = false;
-
-        // Phase 1 — bounded-concurrency content. A content failure marks just
-        // that outline (and clears its spinner) without pausing the batch.
-        if (contentByOutline) {
-          store.getState().setCurrentGeneratingOrder(pending[0].order);
-          await mapWithConcurrency(
-            pending,
-            parallelConcurrency,
-            async (outline) => {
-              options.onPhaseChange?.('content', outline);
-              const result = await fetchSceneContent(
-                {
-                  outline,
-                  allOutlines: outlines,
-                  stageId: stage.id,
-                  pdfImages: params.pdfImages,
-                  imageMapping: params.imageMapping,
-                  stageInfo: params.stageInfo,
-                  agents: params.agents,
-                  languageDirective: params.languageDirective,
-                },
-                signal,
-              );
-              contentByOutline.set(outline.id, result);
-              if (!result.success || !result.content) {
-                if (abortRef.current || store.getState().generationEpoch !== startEpoch) return;
-                hadContentFailure = true;
-                store.getState().addFailedOutline(outline);
-                removeGeneratingOutline(outline.id);
-                options.onSceneFailed?.(outline, result.error || 'Content generation failed');
-              }
-            },
+        const fetchContent = (outline: SceneOutline) =>
+          fetchSceneContent(
             {
-              shouldContinue: () =>
-                !abortRef.current && store.getState().generationEpoch === startEpoch,
+              outline,
+              allOutlines: outlines,
+              stageId: stage.id,
+              pdfImages: params.pdfImages,
+              imageMapping: params.imageMapping,
+              stageInfo: params.stageInfo,
+              agents: params.agents,
+              languageDirective: params.languageDirective,
             },
+            signal,
           );
-        }
 
-        // Phase 2 — serial actions + TTS (also the full path when parallel is off).
+        // Pre-warm content fetches (<= parallelConcurrency in flight), keyed by
+        // outline id. Each promise resolves to a result and never rejects, so an
+        // unexpected throw routes through the same mark-failed path as the serial
+        // loop instead of taking sibling fetches down with it.
+        const contentPromises = useParallelContent
+          ? new Map(
+              lazyBoundedMap(
+                pending,
+                parallelConcurrency,
+                async (outline): Promise<SceneContentResult> => {
+                  options.onPhaseChange?.('content', outline);
+                  try {
+                    return await fetchContent(outline);
+                  } catch (err) {
+                    return {
+                      success: false,
+                      error: err instanceof Error ? err.message : 'Content generation failed',
+                    };
+                  }
+                },
+                {
+                  shouldContinue: () =>
+                    !abortRef.current && store.getState().generationEpoch === startEpoch,
+                },
+              ).map((promise, i) => [pending[i].id, promise] as const),
+            )
+          : null;
+
         let pausedByFailureOrAbort = false;
+        let hadContentFailure = false;
         for (const outline of pending) {
           if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
             store.getState().setGenerationStatus('paused');
@@ -395,43 +403,38 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
           store.getState().setCurrentGeneratingOrder(outline.order);
 
-          // Step 1: content — reuse Phase 1's result, or fetch now when serial.
+          // Step 1: content — await this outline's pre-warmed fetch (parallel),
+          // which usually resolved while the previous scene's actions/TTS ran; or
+          // fetch it now (serial).
           let contentResult: SceneContentResult;
-          if (contentByOutline) {
-            const preFetched = contentByOutline.get(outline.id);
-            if (!preFetched || !preFetched.success || !preFetched.content) {
-              // Failed in Phase 1 (already marked) or skipped on abort — don't
-              // pause the batch, just move on to the next outline.
-              continue;
-            }
-            contentResult = preFetched;
+          if (contentPromises) {
+            contentResult = (await contentPromises.get(outline.id)) ?? {
+              success: false,
+              error: 'Content generation failed',
+            };
           } else {
             options.onPhaseChange?.('content', outline);
-            contentResult = await fetchSceneContent(
-              {
-                outline,
-                allOutlines: outlines,
-                stageId: stage.id,
-                pdfImages: params.pdfImages,
-                imageMapping: params.imageMapping,
-                stageInfo: params.stageInfo,
-                agents: params.agents,
-                languageDirective: params.languageDirective,
-              },
-              signal,
-            );
+            contentResult = await fetchContent(outline);
+          }
 
-            if (!contentResult.success || !contentResult.content) {
-              if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
-                pausedByFailureOrAbort = true;
-                break;
-              }
-              store.getState().addFailedOutline(outline);
-              options.onSceneFailed?.(outline, contentResult.error || 'Content generation failed');
-              store.getState().setGenerationStatus('paused');
+          if (!contentResult.success || !contentResult.content) {
+            if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
               pausedByFailureOrAbort = true;
               break;
             }
+            store.getState().addFailedOutline(outline);
+            options.onSceneFailed?.(outline, contentResult.error || 'Content generation failed');
+            if (contentPromises) {
+              // Parallel: surface the failure but keep going with the other scenes
+              // (their content is already in flight).
+              hadContentFailure = true;
+              removeGeneratingOutline(outline.id);
+              continue;
+            }
+            // Serial: pause the batch (unchanged behaviour).
+            store.getState().setGenerationStatus('paused');
+            pausedByFailureOrAbort = true;
+            break;
           }
 
           if (abortRef.current || store.getState().generationEpoch !== startEpoch) {

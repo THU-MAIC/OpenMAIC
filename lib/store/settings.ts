@@ -1561,6 +1561,9 @@ export const useSettingsStore = create<SettingsState>()(
                 imageProvidersConfig: newImageConfig,
                 videoProvidersConfig: newVideoConfig,
                 webSearchProvidersConfig: newWebSearchConfig,
+                // Already clamped server-side (getParallelSceneConcurrency); this
+                // re-clamp is intentional belt-and-suspenders against a malformed
+                // response. The consumer (use-scene-generator) clamps once more.
                 parallelSceneConcurrency: Math.max(
                   0,
                   Math.floor(data.generation?.parallelSceneConcurrency ?? 0),
