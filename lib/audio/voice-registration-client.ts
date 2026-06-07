@@ -39,15 +39,17 @@ async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-// Confirmed-registered + in-flight memos, keyed by (voiceId, backend). The same
-// voiceId may be unregistered on a different backend, so the base URL must be
-// part of the key — otherwise switching the VoxCPM base URL mid-session would
-// skip re-registration and return an id registered only on the old backend.
+// Confirmed-registered + in-flight memos, keyed by (voiceId, backend, credential).
+// The same voiceId may be unregistered — or inaccessible — on a different backend
+// or under different credentials, so both the base URL and the API key are part
+// of the key. Otherwise switching the VoxCPM base URL or account mid-session
+// would skip re-registration and reuse an id from the old backend/credentials.
 const registeredThisSession = new Set<string>();
 const inFlight = new Map<string, Promise<string | undefined>>();
 
 function memoKeyFor(voiceId: string, request: VoiceRegistrationRequestConfig): string {
-  return `${voiceId}::${request.ttsBaseUrl ?? ''}`;
+  // In-memory only (never persisted or logged), so the raw key identity is fine.
+  return `${voiceId}::${request.ttsBaseUrl ?? ''}::${request.ttsApiKey ?? ''}`;
 }
 
 async function getCachedClip(

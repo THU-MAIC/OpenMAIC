@@ -50,4 +50,33 @@ describe('ensureRegisteredVoice memoization', () => {
     ]);
     expect(f).toHaveBeenCalledTimes(1);
   });
+
+  it('re-registers when the API key changes on the same base URL (auth-scoped)', async () => {
+    const f = okFetch();
+    const voiceDesign = {
+      identity: 'credential-switch teacher',
+      texture: 'warm',
+      delivery: 'calm',
+    };
+    const base = 'https://d.test/v1';
+
+    await ensureRegisteredVoice(
+      'voxcpm-tts',
+      { voiceDesign },
+      { ttsBaseUrl: base, ttsApiKey: 'k1' },
+    );
+    await ensureRegisteredVoice(
+      'voxcpm-tts',
+      { voiceDesign },
+      { ttsBaseUrl: base, ttsApiKey: 'k1' },
+    );
+    expect(f).toHaveBeenCalledTimes(1); // same creds → memoized
+
+    await ensureRegisteredVoice(
+      'voxcpm-tts',
+      { voiceDesign },
+      { ttsBaseUrl: base, ttsApiKey: 'k2' },
+    );
+    expect(f).toHaveBeenCalledTimes(2); // different creds → re-validate
+  });
 });
