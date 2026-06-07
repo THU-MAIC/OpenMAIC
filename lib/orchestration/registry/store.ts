@@ -424,5 +424,13 @@ export async function saveGeneratedAgents(
     });
   }
 
+  // Eager warm-up: pre-register each generated agent's auto voice so the first
+  // spoken line is already stable. Same idempotent ensure as the TTS path;
+  // fire-and-forget. Dynamic import keeps this client-only dep out of the
+  // server-importable store module.
+  void import('@/lib/audio/agent-voice')
+    .then((m) => m.warmUpAgentVoices(registry.listAgents().filter((a) => a.isGenerated)))
+    .catch(() => undefined);
+
   return records.map((r) => r.id);
 }

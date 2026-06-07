@@ -14,8 +14,8 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getEnabledProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
-import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
-import { normalizeVoxCPMBackend } from '@/lib/audio/voxcpm';
+import { useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
   loadImageMapping,
@@ -880,28 +880,14 @@ function GenerationPreviewContent() {
         )
       ) {
         const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
-        const providerOptions =
-          settings.ttsProviderId === 'voxcpm-tts'
-            ? {
-                ...(ttsProviderConfig?.providerOptions || {}),
-                ...(await getVoxCPMProviderOptions(
-                  settings.ttsVoice,
-                  {
-                    role: 'teacher',
-                    language: languageDirective,
-                    backend: normalizeVoxCPMBackend(ttsProviderConfig?.providerOptions?.backend),
-                  },
-                  {
-                    ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-                    ttsBaseUrl:
-                      ttsProviderConfig?.baseUrl ||
-                      ttsProviderConfig?.customDefaultBaseUrl ||
-                      undefined,
-                    ttsModelId: ttsProviderConfig?.modelId,
-                  },
-                )),
-              }
-            : undefined;
+        // Narration uses the teacher agent's voice (single resolver → stable timbre).
+        const teacherAgent = pickNarratorAgent(useAgentRegistry.getState().listAgents());
+        const providerOptions = await resolveAgentVoiceOptions(teacherAgent, {
+          providerId: settings.ttsProviderId,
+          providerConfig: ttsProviderConfig,
+          voiceId: settings.ttsVoice,
+          language: languageDirective,
+        });
         const speechActions = (data.scene.actions || []).filter(
           (a: { type: string; text?: string }) => a.type === 'speech' && a.text,
         );

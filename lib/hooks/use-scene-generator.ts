@@ -12,8 +12,8 @@ import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
-import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
-import { normalizeVoxCPMBackend } from '@/lib/audio/voxcpm';
+import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
+import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { createLogger } from '@/lib/logger';
 
@@ -148,26 +148,15 @@ export async function generateAndStoreTTS(
     return;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
-  const providerOptions =
-    settings.ttsProviderId === 'voxcpm-tts'
-      ? {
-          ...(ttsProviderConfig?.providerOptions || {}),
-          ...(await getVoxCPMProviderOptions(
-            settings.ttsVoice,
-            {
-              role: 'teacher',
-              language,
-              backend: normalizeVoxCPMBackend(ttsProviderConfig?.providerOptions?.backend),
-            },
-            {
-              ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-              ttsBaseUrl:
-                ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
-              ttsModelId: ttsProviderConfig?.modelId,
-            },
-          )),
-        }
-      : undefined;
+  // Narration is the teacher's voice — resolve it from the teacher agent profile
+  // through the single resolver (registers + references by id for stable timbre).
+  const teacher = pickNarratorAgent(useAgentRegistry.getState().listAgents());
+  const providerOptions = await resolveAgentVoiceOptions(teacher, {
+    providerId: settings.ttsProviderId,
+    providerConfig: ttsProviderConfig,
+    voiceId: settings.ttsVoice,
+    language,
+  });
   const response = await fetch('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

@@ -50,7 +50,7 @@ describe('registerVoxCPMVoice', () => {
     });
 
     expect(id).toBe('voxcpm:voice:abc');
-    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toBe('https://voxcpm.test/v1/audio/voices');
     expect(init.method).toBe('POST');
     const form = init.body as FormData;
@@ -90,7 +90,7 @@ describe('bootstrapVoxCPMReferenceClip', () => {
     expect(typeof out.referenceAudioBase64).toBe('string');
     expect(out.referenceAudioBase64.length).toBeGreaterThan(0);
 
-    const [url, init] = f.mock.calls[0] as [string, RequestInit];
+    const [url, init] = f.mock.calls[0] as unknown as [string, RequestInit];
     expect(String(url)).toBe('https://voxcpm.test/v1/audio/speech');
     const payload = JSON.parse(String(init.body));
     expect(payload.input).toContain('(male teacher, warm, calm)');

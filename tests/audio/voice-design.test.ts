@@ -48,35 +48,30 @@ describe('normalizeVoiceDesign', () => {
 });
 
 describe('getDeterministicVoiceId', () => {
-  it('is stable for the same descriptor+provider+language+model, with the neutral prefix', async () => {
-    const opts = { providerId: 'voxcpm-tts', language: 'zh', model: 'VoxCPM2' };
+  it('is stable for the same descriptor+provider+model, with the neutral prefix', async () => {
+    const opts = { providerId: 'voxcpm-tts', model: 'VoxCPM2' };
     const a = await getDeterministicVoiceId(design, opts);
     const b = await getDeterministicVoiceId(design, opts);
     expect(a).toBe(b);
     expect(a).toMatch(/^auto-[0-9a-f]{16}$/);
   });
-  it('changes when descriptor, language, model, or provider changes', async () => {
-    const base = await getDeterministicVoiceId(design, {
-      providerId: 'voxcpm-tts',
-      language: 'zh',
-      model: 'm',
-    });
-    const lang = await getDeterministicVoiceId(design, {
-      providerId: 'voxcpm-tts',
-      language: 'en',
-      model: 'm',
-    });
+  it('changes when descriptor, model, or provider changes', async () => {
+    const base = await getDeterministicVoiceId(design, { providerId: 'voxcpm-tts', model: 'm' });
     const tex = await getDeterministicVoiceId(
       { ...design, texture: 'bright' },
-      { providerId: 'voxcpm-tts', language: 'zh', model: 'm' },
+      { providerId: 'voxcpm-tts', model: 'm' },
     );
-    const prov = await getDeterministicVoiceId(design, {
-      providerId: 'elevenlabs-tts',
-      language: 'zh',
-      model: 'm',
-    });
-    expect(lang).not.toBe(base);
+    const model = await getDeterministicVoiceId(design, { providerId: 'voxcpm-tts', model: 'm2' });
+    const prov = await getDeterministicVoiceId(design, { providerId: 'elevenlabs-tts', model: 'm' });
     expect(tex).not.toBe(base);
+    expect(model).not.toBe(base);
     expect(prov).not.toBe(base);
+  });
+  it('is independent of language (descriptor already encodes it)', async () => {
+    // language is not a parameter of the id — same descriptor → same id regardless
+    // of which TTS path (narration directive vs discussion locale) resolves it.
+    const a = await getDeterministicVoiceId(design, { providerId: 'voxcpm-tts', model: 'm' });
+    const b = await getDeterministicVoiceId(design, { providerId: 'voxcpm-tts', model: 'm' });
+    expect(a).toBe(b);
   });
 });

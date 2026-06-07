@@ -66,7 +66,6 @@ export async function ensureRegisteredVoice(
 
   const voiceId = await getDeterministicVoiceId(params.voiceDesign, {
     providerId,
-    language: params.language,
     model: request.ttsModelId,
   });
   if (registeredThisSession.has(voiceId)) return voiceId;

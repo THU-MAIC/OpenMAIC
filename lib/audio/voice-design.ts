@@ -50,20 +50,25 @@ export function normalizeVoiceDesign(raw: unknown): VoiceDesign | undefined {
 }
 
 /**
- * Deterministic voice id derived from the descriptor (+ provider + language +
- * model). Stable across re-synthesis, recomputable anywhere from the descriptor
- * on the agent, and namespaced by provider so a shared registry can't collide.
+ * Deterministic voice id derived from the descriptor (+ provider + model).
+ * Stable across re-synthesis, recomputable anywhere from the descriptor on the
+ * agent, and namespaced by provider so a shared registry can't collide.
+ *
+ * Note: language is intentionally NOT part of the id — the descriptor text is
+ * already written in the course language, and language only selects the one-time
+ * bootstrap sample sentence (which affects neither output language nor timbre).
+ * Keeping it out means every TTS path (narration passes a directive, discussion
+ * passes a locale) resolves to the SAME id for the same agent.
  */
 export async function getDeterministicVoiceId(
   design: VoiceDesign,
-  opts: { providerId?: string; language?: string; model?: string } = {},
+  opts: { providerId?: string; model?: string } = {},
 ): Promise<string> {
   const seed = [
     opts.providerId || '',
     design.identity,
     design.texture,
     design.delivery,
-    opts.language || '',
     opts.model || '',
   ].join('|');
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(seed));

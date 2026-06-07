@@ -18,7 +18,7 @@ function stubSpeech() {
 }
 
 function lastPayload(f: ReturnType<typeof stubSpeech>) {
-  const [, init] = f.mock.calls[0] as [string, RequestInit];
+  const [, init] = f.mock.calls[0] as unknown as [string, RequestInit];
   return JSON.parse(String(init.body));
 }
 
