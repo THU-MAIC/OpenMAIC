@@ -253,8 +253,13 @@ export const getLineElementPath = (element: PPTLineElement) => {
     const mid = element.broken.join(',');
     return `M${start} L${mid} L${end}`;
   } else if (element.broken2) {
-    const { minX, maxX, minY, maxY } = getElementRange(element);
-    if (maxX - minX >= maxY - minY)
+    // Pick the elbow orientation from the endpoint extent, computed locally.
+    // getElementRange now folds in control points (#674); reusing it here would
+    // let the broken2 point itself flip the orientation. This preserves the
+    // exact pre-#674 heuristic (max of the endpoint offsets per axis).
+    const extentX = Math.max(startArr[0], endArr[0]);
+    const extentY = Math.max(startArr[1], endArr[1]);
+    if (extentX >= extentY)
       return `M${start} L${element.broken2[0]},${startArr[1]} L${element.broken2[0]},${endArr[1]} ${end}`;
     return `M${start} L${startArr[0]},${element.broken2[1]} L${endArr[0]},${element.broken2[1]} ${end}`;
   } else if (element.curve) {
