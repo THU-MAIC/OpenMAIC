@@ -1,12 +1,15 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // agent-voice pulls browser-only deps transitively (IndexedDB, settings store);
 // stub them so we can unit-test the pure narrator-selection logic in node.
 vi.mock('@/lib/audio/voxcpm-voices', () => ({ getVoxCPMProviderOptions: vi.fn() }));
 vi.mock('@/lib/store/settings', () => ({ useSettingsStore: { getState: () => ({}) } }));
 
-import { pickNarratorAgent } from '@/lib/audio/agent-voice';
+import { pickNarratorAgent, resolveAgentVoiceOptions } from '@/lib/audio/agent-voice';
+import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+
+const mockGetOptions = getVoxCPMProviderOptions as unknown as ReturnType<typeof vi.fn>;
 
 function agent(partial: Partial<AgentConfig>): AgentConfig {
   return {
@@ -54,5 +57,32 @@ describe('pickNarratorAgent', () => {
   it('returns undefined when there is no teacher', () => {
     expect(pickNarratorAgent([agent({ role: 'student' })])).toBeUndefined();
     expect(pickNarratorAgent([])).toBeUndefined();
+  });
+});
+
+describe('resolveAgentVoiceOptions — voice-design source', () => {
+  beforeEach(() => {
+    mockGetOptions.mockReset();
+    mockGetOptions.mockResolvedValue({});
+  });
+  const opts = { providerId: 'voxcpm-tts', voiceId: 'voxcpm:auto', providerConfig: {} };
+
+  it('uses the real voiceDesign when the agent has one (generated agents)', async () => {
+    await resolveAgentVoiceOptions(agent({ role: 'teacher', voiceDesign: DESIGN }), opts);
+    expect(mockGetOptions.mock.calls[0][1].voiceDesign).toEqual(DESIGN);
+  });
+
+  it('falls back to the persona as the descriptor when there is no voiceDesign (preset agents)', async () => {
+    await resolveAgentVoiceOptions(agent({ role: 'teacher', persona: 'patient mentor' }), opts);
+    expect(mockGetOptions.mock.calls[0][1].voiceDesign).toEqual({
+      identity: 'patient mentor',
+      texture: '',
+      delivery: '',
+    });
+  });
+
+  it('has no descriptor when the agent has neither voiceDesign nor persona', async () => {
+    await resolveAgentVoiceOptions(agent({ role: 'teacher', persona: '' }), opts);
+    expect(mockGetOptions.mock.calls[0][1].voiceDesign).toBeUndefined();
   });
 });

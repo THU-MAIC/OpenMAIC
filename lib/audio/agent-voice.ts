@@ -12,6 +12,7 @@
  */
 
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
+import type { VoiceDesign } from '@/lib/audio/voice-design';
 import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
 import {
   VOXCPM_AUTO_VOICE_ID,
@@ -53,6 +54,19 @@ export function pickNarratorAgent(agents: AgentConfig[]): AgentConfig | undefine
 }
 
 /**
+ * The descriptor used to bootstrap an agent's voice: the real `voiceDesign`
+ * when present (generated agents), otherwise the persona as a fallback seed.
+ * Persona is not a vocal description, so the resulting voice is stable but
+ * generic — good enough to register a consistent reference clip (no drift),
+ * pending a real descriptor if quality matters for that agent.
+ */
+function effectiveVoiceDesign(agent: AgentConfig | undefined): VoiceDesign | undefined {
+  if (agent?.voiceDesign) return agent.voiceDesign;
+  const persona = agent?.persona?.trim();
+  return persona ? { identity: persona, texture: '', delivery: '' } : undefined;
+}
+
+/**
  * Produce the `ttsProviderOptions` to send to /api/generate/tts for `agent`
  * (pass the teacher agent for narration, the speaking agent for discussion,
  * or undefined when there is no agent). Returns undefined for providers with
@@ -71,7 +85,7 @@ export async function resolveAgentVoiceOptions(
         agentName: agent?.name,
         role: agent?.role ?? 'teacher',
         persona: agent?.persona,
-        voiceDesign: agent?.voiceDesign,
+        voiceDesign: effectiveVoiceDesign(agent),
         language: opts.language,
         backend: normalizeVoxCPMBackend(opts.providerConfig?.providerOptions?.backend),
       },
@@ -99,7 +113,7 @@ export function warmUpAgentVoices(agents: AgentConfig[]): void {
   const providerConfig = settings.ttsProvidersConfig?.[providerId];
 
   for (const agent of agents) {
-    if (!agent.voiceDesign) continue;
+    if (!effectiveVoiceDesign(agent)) continue;
     const assigned = agent.voiceConfig?.voiceId;
     if (assigned && assigned !== VOXCPM_AUTO_VOICE_ID) continue; // uses a specific voice, not auto
     void resolveAgentVoiceOptions(agent, {
