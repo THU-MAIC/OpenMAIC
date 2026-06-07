@@ -20,11 +20,11 @@ function authHeaders(apiKey?: string): Record<string, string> {
   return apiKey?.trim() ? { Authorization: `Bearer ${apiKey.trim()}` } : {};
 }
 
-function base64ToBytes(base64: string): Uint8Array {
+function base64ToBlob(base64: string, mimeType?: string): Blob {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return new Blob([bytes], { type: mimeType || 'audio/wav' });
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -72,7 +72,7 @@ export async function registerVoxCPMVoice(
   form.set('consent', VOXCPM_VOICE_CONSENT);
   form.set(
     'audio_sample',
-    new Blob([base64ToBytes(params.referenceAudioBase64)], { type: params.mimeType || 'audio/wav' }),
+    base64ToBlob(params.referenceAudioBase64, params.mimeType),
     `${params.voiceId}.wav`,
   );
 
