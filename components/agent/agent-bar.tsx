@@ -32,7 +32,11 @@ function matchesVoiceQuery(value: string | undefined, query: string): boolean {
   return !!value?.toLowerCase().includes(query);
 }
 
-function getFilteredModelGroups(provider: ProviderWithVoices, query: string) {
+function getFilteredModelGroups(
+  provider: ProviderWithVoices,
+  query: string,
+  autoVoiceLabel?: string,
+) {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return provider.modelGroups;
 
@@ -48,7 +52,9 @@ function getFilteredModelGroups(provider: ProviderWithVoices, query: string) {
           groupMatches ||
           matchesVoiceQuery(voice.name, normalizedQuery) ||
           matchesVoiceQuery(voice.id, normalizedQuery) ||
-          matchesVoiceQuery(voice.language, normalizedQuery),
+          matchesVoiceQuery(voice.language, normalizedQuery) ||
+          // Auto Voice is shown by its localized label, not voice.name — match it too.
+          (voice.id === VOXCPM_AUTO_VOICE_ID && matchesVoiceQuery(autoVoiceLabel, normalizedQuery)),
       );
       return { ...group, voices };
     })
@@ -83,7 +89,7 @@ function AgentVoicePill({
   const visibleProviderGroups = availableProviders
     .map((provider) => ({
       provider,
-      groups: getFilteredModelGroups(provider, voiceQuery),
+      groups: getFilteredModelGroups(provider, voiceQuery, t('settings.voxcpmAutoVoice')),
     }))
     .filter(({ groups }) => groups.length > 0);
 
@@ -362,7 +368,7 @@ function TeacherVoicePill({
   const visibleProviderGroups = availableProviders
     .map((provider) => ({
       provider,
-      groups: getFilteredModelGroups(provider, voiceQuery),
+      groups: getFilteredModelGroups(provider, voiceQuery, t('settings.voxcpmAutoVoice')),
     }))
     .filter(({ groups }) => groups.length > 0);
 
