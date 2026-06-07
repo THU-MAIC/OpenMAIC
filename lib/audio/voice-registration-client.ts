@@ -39,12 +39,16 @@ async function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
-// Voice ids confirmed registered in this browser session — skip the round-trip.
+// Confirmed-registered + in-flight memos, keyed by (voiceId, backend). The same
+// voiceId may be unregistered on a different backend, so the base URL must be
+// part of the key — otherwise switching the VoxCPM base URL mid-session would
+// skip re-registration and return an id registered only on the old backend.
 const registeredThisSession = new Set<string>();
-// In-flight registrations, keyed by voiceId, so concurrent callers (e.g. the
-// eager warm-up racing the first utterance) share one request instead of each
-// firing a duplicate bootstrap + register.
 const inFlight = new Map<string, Promise<string | undefined>>();
+
+function memoKeyFor(voiceId: string, request: VoiceRegistrationRequestConfig): string {
+  return `${voiceId}::${request.ttsBaseUrl ?? ''}`;
+}
 
 async function getCachedClip(
   voiceId: string,
@@ -72,22 +76,24 @@ export async function ensureRegisteredVoice(
     providerId,
     model: request.ttsModelId,
   });
-  if (registeredThisSession.has(voiceId)) return voiceId;
+  const memoKey = memoKeyFor(voiceId, request);
+  if (registeredThisSession.has(memoKey)) return voiceId;
 
-  // Coalesce concurrent calls for the same voiceId into one request.
-  const existing = inFlight.get(voiceId);
+  // Coalesce concurrent calls for the same (voiceId, backend) into one request.
+  const existing = inFlight.get(memoKey);
   if (existing) return existing;
 
-  const promise = registerOnce(providerId, voiceId, params, request).finally(() =>
-    inFlight.delete(voiceId),
+  const promise = registerOnce(providerId, voiceId, memoKey, params, request).finally(() =>
+    inFlight.delete(memoKey),
   );
-  inFlight.set(voiceId, promise);
+  inFlight.set(memoKey, promise);
   return promise;
 }
 
 async function registerOnce(
   providerId: string,
   voiceId: string,
+  memoKey: string,
   params: { voiceDesign?: VoiceDesign; language?: string },
   request: VoiceRegistrationRequestConfig,
 ): Promise<string | undefined> {
@@ -119,6 +125,6 @@ async function registerOnce(
       updatedAt: Date.now(),
     });
   }
-  registeredThisSession.add(voiceId);
+  registeredThisSession.add(memoKey);
   return voiceId;
 }
