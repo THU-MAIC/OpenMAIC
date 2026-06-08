@@ -800,6 +800,8 @@
     "voiceBaseUrlRequired": "Base URL required",
     "ttsTestTextPlaceholder": "Enter text to convert",
     "ttsTestTextDefault": "Hello, this is a test speech.",
+    "minimaxVoiceId": "Voice ID / Custom Voice ID",
+    "minimaxVoiceIdPlaceholder": "e.g. ttv-voice-2026053021002326-CYyvUlBU",
     "startRecording": "Start Recording",
     "stopRecording": "Stop Recording",
     "recording": "Recording...",

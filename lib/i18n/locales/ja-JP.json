@@ -800,6 +800,8 @@
     "voiceBaseUrlRequired": "ベースURLが必要です",
     "ttsTestTextPlaceholder": "変換するテキストを入力",
     "ttsTestTextDefault": "こんにちは、これはテスト音声です。",
+    "minimaxVoiceId": "Voice ID / カスタム音声 ID",
+    "minimaxVoiceIdPlaceholder": "例: ttv-voice-2026053021002326-CYyvUlBU",
     "startRecording": "録音を開始",
     "stopRecording": "録音を停止",
     "recording": "録音中...",

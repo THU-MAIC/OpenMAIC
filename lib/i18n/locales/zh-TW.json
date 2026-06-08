@@ -1038,6 +1038,8 @@
     "transcribing": "轉錄中...",
     "transcriptionResult": "轉錄結果",
     "ttsTestTextDefault": "你好，這是測試語音。",
+    "minimaxVoiceId": "Voice ID / 自訂音色 ID",
+    "minimaxVoiceIdPlaceholder": "例如 ttv-voice-2026053021002326-CYyvUlBU",
     "ttsTestTextPlaceholder": "輸入要轉換的文字",
     "useThisProvider": "使用此供應商",
     "voiceApiKeyRequired": "需要 API 金鑰",

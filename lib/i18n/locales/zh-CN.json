@@ -800,6 +800,8 @@
     "voiceBaseUrlRequired": "需要 Base URL",
     "ttsTestTextPlaceholder": "输入要转换的文本",
     "ttsTestTextDefault": "你好，这是一段测试语音。",
+    "minimaxVoiceId": "Voice ID / 自定义音色 ID",
+    "minimaxVoiceIdPlaceholder": "例如 ttv-voice-2026053021002326-CYyvUlBU",
     "startRecording": "开始录音",
     "stopRecording": "停止录音",
     "recording": "录音中...",

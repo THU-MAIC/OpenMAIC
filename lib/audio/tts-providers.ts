@@ -709,7 +709,7 @@ async function generateMiniMaxTTS(
       stream: false,
       output_format: 'hex',
       voice_setting: {
-        voice_id: config.voice,
+        voice_id: (config.providerOptions?.voiceId as string) || config.voice,
         speed: config.speed || 1.0,
         vol: 1,
         pitch: 0,

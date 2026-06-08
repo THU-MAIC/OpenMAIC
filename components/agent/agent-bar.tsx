@@ -150,7 +150,9 @@ function AgentVoicePill({
                   locale,
                 })),
               }
-            : undefined;
+            : providerId === 'minimax-tts'
+              ? providerConfig?.providerOptions || undefined
+              : undefined;
         const res = await fetch('/api/generate/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -435,7 +437,9 @@ function TeacherVoicePill({
                   locale,
                 })),
               }
-            : undefined;
+            : providerId === 'minimax-tts'
+              ? providerConfig?.providerOptions || undefined
+              : undefined;
         const res = await fetch('/api/generate/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
