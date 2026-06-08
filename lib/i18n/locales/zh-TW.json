@@ -35,7 +35,13 @@
     "ttsPreview": "試聽",
     "ttsPreviewing": "播放中...",
     "interactiveModeHint": "開啟深度交互模式，生成更多互動內容",
-    "interactiveModeLabel": "深度交互"
+    "interactiveModeLabel": "深度交互",
+    "localKnowledge": "本地知識庫",
+    "localKnowledgeOn": "本地知識庫已開啟",
+    "localKnowledgeOff": "使用本地知識庫",
+    "localKnowledgeDesc": "從資料庫材料中進行向量檢索",
+    "localKnowledgePrivacy": "請在知識庫頁面上傳材料並完成向量化。",
+    "manageKnowledge": "管理材料知識庫"
   },
   "export": {
     "pptx": "匯出 PPTX",
@@ -457,7 +463,9 @@
     "generatingInProgress": "生成中...",
     "webSearching": "網路搜尋",
     "webSearchingDesc": "正在搜尋網路取得最新資料",
-    "webSearchFailed": "網路搜尋失敗"
+    "webSearchFailed": "網路搜尋失敗",
+    "retrievingKnowledge": "本地知識庫檢索",
+    "retrievingKnowledgeDesc": "正在從資料庫材料中檢索向量片段"
   },
   "settings": {
     "title": "設定",

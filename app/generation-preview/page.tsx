@@ -3,9 +3,19 @@
 import { useEffect, useState, Suspense, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle2, Sparkles, AlertCircle, AlertTriangle, ArrowLeft, Bot } from 'lucide-react';
+import {
+  CheckCircle2,
+  Sparkles,
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  Bot,
+  FileText,
+  Library,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { OutlinesEditor } from '@/components/generation/outlines-editor';
 import { cn } from '@/lib/utils';
@@ -30,12 +40,15 @@ import { nanoid } from 'nanoid';
 import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
+import { RagEvidencePanel } from '@/components/knowledge/rag-evidence-panel';
 import { createLogger } from '@/lib/logger';
 import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
 import { StepVisualizer } from './components/visualizers';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
+const ragHitKey = (hit: { documentId: string; chunkIndex: number }) =>
+  `${hit.documentId}:${hit.chunkIndex}`;
 
 function GenerationPreviewContent() {
   const router = useRouter();
@@ -44,6 +57,7 @@ function GenerationPreviewContent() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const outlineReviewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const outlineReviewResolveRef = useRef<((outlines: SceneOutline[]) => void) | null>(null);
+  const ragSelectionResolveRef = useRef<((session: GenerationSessionState) => void) | null>(null);
   // Sticky flag: true once the user signals review intent (either by clicking the
   // streaming card mid-stream, or by restoring a session that was already in review).
   // Combined with `reviewOutlineEnabled` to decide whether the post-stream timer fires.
@@ -64,6 +78,8 @@ function GenerationPreviewContent() {
   );
   const [showAgentReveal, setShowAgentReveal] = useState(false);
   const [isConfirmingOutlines, setIsConfirmingOutlines] = useState(false);
+  const [isConfirmingRagSelection, setIsConfirmingRagSelection] = useState(false);
+  const [selectedRagHitKeys, setSelectedRagHitKeys] = useState<string[]>([]);
   const [generatedAgents, setGeneratedAgents] = useState<
     Array<{
       id: string;
@@ -127,6 +143,20 @@ function GenerationPreviewContent() {
       }
     });
 
+  const waitForRagSelection = (signal: AbortSignal): Promise<GenerationSessionState> =>
+    new Promise((resolve, reject) => {
+      if (signal.aborted) {
+        reject(new DOMException('Aborted', 'AbortError'));
+        return;
+      }
+      ragSelectionResolveRef.current = resolve;
+      const onAbort = () => {
+        ragSelectionResolveRef.current = null;
+        reject(new DOMException('Aborted', 'AbortError'));
+      };
+      signal.addEventListener('abort', onAbort, { once: true });
+    });
+
   // Load session from sessionStorage
   useEffect(() => {
     cleanupOldImages(24).catch((e) => log.error(e));
@@ -143,6 +173,9 @@ function GenerationPreviewContent() {
         // the post-stream auto-continue timer doesn't fire after SSE restart.
         if (parsed.previewPhase === 'review' && !parsed.sceneOutlines?.length) {
           outlineReviewIntentRef.current = true;
+        }
+        if (parsed.previewPhase === 'retrieval-review' && parsed.ragHits?.length) {
+          setSelectedRagHitKeys(parsed.ragHits.map(ragHitKey));
         }
         setSession(parsed);
       } catch (e) {
@@ -292,7 +325,8 @@ function GenerationPreviewContent() {
           throw new Error(t('generation.pdfParseFailed'));
         }
 
-        let pdfText = parseResult.data.text as string;
+        const fullPdfText = parseResult.data.text as string;
+        let pdfText = fullPdfText;
 
         // Truncate if needed
         if (pdfText.length > MAX_PDF_CONTENT_CHARS) {
@@ -363,7 +397,7 @@ function GenerationPreviewContent() {
 
         // Truncation warnings
         const warnings: string[] = [];
-        if ((parseResult.data.text as string).length > MAX_PDF_CONTENT_CHARS) {
+        if (fullPdfText.length > MAX_PDF_CONTENT_CHARS) {
           warnings.push(t('generation.textTruncated', { n: MAX_PDF_CONTENT_CHARS }));
         }
         if (images.length > MAX_VISION_IMAGES) {
@@ -377,6 +411,40 @@ function GenerationPreviewContent() {
 
         // Reassign local reference for subsequent steps
         currentSession = updatedSession;
+        activeSteps = getActiveSteps(currentSession);
+      }
+
+      // Step: local knowledge retrieval review. The snapshot is not usable by generation
+      // until the user confirms which candidate excerpts should remain in it.
+      if (currentSession.requirements.localKnowledge && !currentSession.ragSelectionConfirmed) {
+        const knowledgeStepIdx = activeSteps.findIndex((step) => step.id === 'knowledge-retrieval');
+        if (knowledgeStepIdx >= 0) setCurrentStepIndex(knowledgeStepIdx);
+
+        const response = await fetch('/api/knowledge/retrieve', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            query: currentSession.requirements.requirement,
+            config: currentSession.requirements.ragConfig,
+          }),
+          signal,
+        });
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          throw new Error(data.error || '本地知识库未检索到可用材料');
+        }
+        const evidence = data.evidence;
+        const retrievalSession: GenerationSessionState = {
+          ...currentSession,
+          ragSnapshotId: evidence.id,
+          ragSources: evidence.sources,
+          ragHits: evidence.hits,
+          ragSelectionConfirmed: false,
+          previewPhase: 'retrieval-review',
+        };
+        setSelectedRagHitKeys(evidence.hits.map(ragHitKey));
+        persistSession(retrievalSession);
+        currentSession = await waitForRagSelection(signal);
         activeSteps = getActiveSteps(currentSession);
       }
 
@@ -428,6 +496,8 @@ function GenerationPreviewContent() {
         activeSteps = getActiveSteps(currentSession);
       }
 
+      const groundingContext = currentSession.researchContext;
+
       // Load imageMapping early (needed for both outline and scene generation)
       let imageMapping: ImageMapping = {};
       if (currentSession.imageStorageIds && currentSession.imageStorageIds.length > 0) {
@@ -458,7 +528,14 @@ function GenerationPreviewContent() {
       let languageDirective = currentSession.languageDirective;
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
-      setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
+      const knowledgeStepIdx = activeSteps.findIndex((s) => s.id === 'knowledge-retrieval');
+      setCurrentStepIndex(
+        currentSession.requirements.localKnowledge && knowledgeStepIdx >= 0
+          ? knowledgeStepIdx
+          : outlineStepIdx >= 0
+            ? outlineStepIdx
+            : 0,
+      );
       if (!outlines || outlines.length === 0) {
         log.debug('=== Generating outlines (SSE) ===');
         setStreamingOutlines([]);
@@ -467,6 +544,9 @@ function GenerationPreviewContent() {
         const outlineResult = await new Promise<{
           outlines: SceneOutline[];
           languageDirective: string;
+          ragSnapshotId?: string;
+          ragSources?: GenerationSessionState['ragSources'];
+          ragHits?: GenerationSessionState['ragHits'];
         }>((resolve, reject) => {
           const collected: SceneOutline[] = [];
           let directive: string | undefined;
@@ -480,7 +560,8 @@ function GenerationPreviewContent() {
                 pdfText: currentSession.pdfText,
                 pdfImages: currentSession.pdfImages,
                 imageMapping,
-                researchContext: currentSession.researchContext,
+                researchContext: groundingContext || undefined,
+                ragSnapshotId: currentSession.ragSnapshotId,
               }),
             ),
             signal,
@@ -512,9 +593,20 @@ function GenerationPreviewContent() {
                       if (!line.startsWith('data: ')) continue;
                       try {
                         const evt = JSON.parse(line.slice(6));
-                        if (evt.type === 'languageDirective') {
+                        if (evt.type === 'knowledge-retrieval') {
+                          const sessionWithEvidence: GenerationSessionState = {
+                            ...currentSession,
+                            ragSnapshotId: evt.ragSnapshotId,
+                            ragSources: evt.ragSources,
+                            ragHits: evt.ragHits,
+                          };
+                          persistSession(sessionWithEvidence);
+                          currentSession = sessionWithEvidence;
+                        } else if (evt.type === 'languageDirective') {
+                          if (outlineStepIdx >= 0) setCurrentStepIndex(outlineStepIdx);
                           directive = evt.data;
                         } else if (evt.type === 'outline') {
+                          if (outlineStepIdx >= 0) setCurrentStepIndex(outlineStepIdx);
                           collected.push(evt.data);
                           setStreamingOutlines([...collected]);
                         } else if (evt.type === 'retry') {
@@ -528,6 +620,9 @@ function GenerationPreviewContent() {
                             languageDirective:
                               directive ||
                               'Teach in the language that matches the user requirement.',
+                            ragSnapshotId: evt.ragSnapshotId,
+                            ragSources: evt.ragSources,
+                            ragHits: evt.ragHits,
                           });
                           return;
                         } else if (evt.type === 'error') {
@@ -571,6 +666,9 @@ function GenerationPreviewContent() {
           ...currentSession,
           sceneOutlines: outlines,
           languageDirective,
+          ragSnapshotId: outlineResult.ragSnapshotId,
+          ragSources: outlineResult.ragSources,
+          ragHits: outlineResult.ragHits,
           previewPhase: shouldReviewOutlines ? 'review' : 'outline-ready',
         };
         persistSession(updatedSession);
@@ -609,6 +707,7 @@ function GenerationPreviewContent() {
       if (languageDirective) {
         stage.languageDirective = languageDirective;
       }
+      stage.ragSnapshotId = currentSession.ragSnapshotId;
 
       // ── Agent generation (after outlines — uses languageDirective + outlines) ──
       const settings = useSettingsStore.getState();
@@ -822,6 +921,8 @@ function GenerationPreviewContent() {
             stageId: stage.id,
             agents,
             languageDirective,
+            groundingContext: groundingContext || undefined,
+            ragSnapshotId: currentSession.ragSnapshotId,
           }),
         ),
         signal,
@@ -854,6 +955,8 @@ function GenerationPreviewContent() {
             previousSpeeches: [],
             userProfile,
             languageDirective,
+            groundingContext: groundingContext || undefined,
+            ragSnapshotId: currentSession.ragSnapshotId,
           }),
         ),
         signal,
@@ -965,6 +1068,8 @@ function GenerationPreviewContent() {
           agents,
           userProfile,
           languageDirective,
+          groundingContext: groundingContext || undefined,
+          ragSnapshotId: currentSession.ragSnapshotId,
         }),
       );
 
@@ -991,9 +1096,59 @@ function GenerationPreviewContent() {
     return trimmed.substring(0, 500).trim() + '...';
   };
 
+  const handleConfirmRagSelection = async () => {
+    if (!session?.ragSnapshotId || !session.ragHits?.length || selectedRagHitKeys.length === 0) {
+      return;
+    }
+    setIsConfirmingRagSelection(true);
+    setError(null);
+    try {
+      const selectedKeys = new Set(selectedRagHitKeys);
+      const selectedHits = session.ragHits
+        .filter((hit) => selectedKeys.has(ragHitKey(hit)))
+        .map((hit) => ({ documentId: hit.documentId, chunkIndex: hit.chunkIndex }));
+      const response = await fetch(
+        `/api/knowledge/snapshots/${encodeURIComponent(session.ragSnapshotId)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ selectedHits }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || '无法保存所选检索材料');
+      }
+
+      const confirmedSession: GenerationSessionState = {
+        ...session,
+        ragSources: data.evidence.sources,
+        ragHits: data.evidence.hits,
+        ragSelectionConfirmed: true,
+        previewPhase: 'preparing',
+      };
+      persistSession(confirmedSession);
+
+      if (ragSelectionResolveRef.current) {
+        const resolve = ragSelectionResolveRef.current;
+        ragSelectionResolveRef.current = null;
+        resolve(confirmedSession);
+        return;
+      }
+
+      hasStartedRef.current = true;
+      void startGeneration(confirmedSession);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '无法保存所选检索材料');
+    } finally {
+      setIsConfirmingRagSelection(false);
+    }
+  };
+
   const goBackToHome = () => {
     abortControllerRef.current?.abort();
     clearOutlineReviewTimer();
+    ragSelectionResolveRef.current = null;
     outlineReviewIntentRef.current = false;
     sessionStorage.removeItem('generationSession');
     router.push('/');
@@ -1139,6 +1294,118 @@ function GenerationPreviewContent() {
     );
   }
 
+  if (session.previewPhase === 'retrieval-review' && session.ragHits?.length) {
+    const selectedCount = selectedRagHitKeys.length;
+    return (
+      <div className="min-h-[100dvh] w-full bg-background text-foreground">
+        <header className="border-b border-border">
+          <div className="mx-auto flex h-14 max-w-4xl items-center justify-between px-4">
+            <Button variant="ghost" size="sm" onClick={goBackToHome}>
+              <ArrowLeft className="size-4" />
+              返回需求编辑
+            </Button>
+            <div className="inline-flex items-center gap-2 text-sm font-medium">
+              <Library className="size-4 text-emerald-600" />
+              选择检索依据
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-4xl px-4 py-8">
+          <div className="mb-6">
+            <h1 className="text-2xl font-semibold">确认本课使用的材料片段</h1>
+            <p className="mt-2 text-sm text-muted-foreground">
+              已完成初步向量检索。只有勾选的片段会用于大纲、页面内容和讲解动作生成。
+            </p>
+          </div>
+
+          <Card className="mb-5 gap-2 rounded-md p-4">
+            <p className="text-xs text-muted-foreground">检索问题</p>
+            <p className="text-sm">{session.requirements.requirement}</p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              候选 {session.ragHits.length} 个 / 已选 {selectedCount} 个
+              {session.requirements.ragConfig
+                ? ` / Top-K ${session.requirements.ragConfig.topK} / 最低相似度 ${Math.round(session.requirements.ragConfig.minSimilarity * 100)}%`
+                : ''}
+            </p>
+          </Card>
+
+          {error && (
+            <div className="mb-5 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+
+          <section className="mb-7 max-h-[55vh] space-y-3 overflow-y-auto">
+            {session.ragHits.map((hit) => {
+              const key = ragHitKey(hit);
+              const checked = selectedRagHitKeys.includes(key);
+              return (
+                <label
+                  key={key}
+                  className={cn(
+                    'flex cursor-pointer gap-3 rounded-md border p-4 transition-colors',
+                    checked ? 'border-emerald-500/35 bg-emerald-500/5' : 'border-border',
+                  )}
+                >
+                  <Checkbox
+                    checked={checked}
+                    onCheckedChange={(value) => {
+                      setSelectedRagHitKeys((previous) =>
+                        value === true
+                          ? previous.includes(key)
+                            ? previous
+                            : [...previous, key]
+                          : previous.filter((item) => item !== key),
+                      );
+                    }}
+                    aria-label={`选择 ${hit.documentName} 片段 ${hit.chunkIndex + 1}`}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex items-center justify-between gap-3 text-xs">
+                      <span className="flex min-w-0 items-center gap-1.5 font-medium">
+                        <FileText className="size-3.5 shrink-0 text-muted-foreground" />
+                        <span className="truncate">{hit.documentName}</span>
+                      </span>
+                      <span className="shrink-0 text-muted-foreground">
+                        片段 {hit.chunkIndex + 1} / {(hit.score * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">
+                      {hit.excerpt}
+                    </p>
+                  </div>
+                </label>
+              );
+            })}
+          </section>
+
+          <div className="flex items-center justify-between gap-3 border-t border-border pt-5">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() =>
+                setSelectedRagHitKeys(
+                  selectedCount === session.ragHits!.length ? [] : session.ragHits!.map(ragHitKey),
+                )
+              }
+            >
+              {selectedCount === session.ragHits.length ? '取消全选' : '全选'}
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleConfirmRagSelection()}
+              disabled={selectedCount === 0 || isConfirmingRagSelection}
+            >
+              {isConfirmingRagSelection ? '正在确认...' : `确认并继续生成 (${selectedCount})`}
+            </Button>
+          </div>
+        </main>
+      </div>
+    );
+  }
+
   const activeStep =
     activeSteps.length > 0
       ? activeSteps[Math.min(currentStepIndex, activeSteps.length - 1)]
@@ -1203,6 +1470,18 @@ function GenerationPreviewContent() {
               <div className="mx-auto max-w-2xl rounded-md border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300">
                 {error}
               </div>
+            )}
+
+            {session.ragHits && session.ragHits.length > 0 && (
+              <RagEvidencePanel
+                evidence={{
+                  query: session.requirements.requirement,
+                  config: session.requirements.ragConfig,
+                  sources: session.ragSources || [],
+                  hits: session.ragHits,
+                }}
+                className="mx-auto max-w-2xl"
+              />
             )}
 
             <OutlinesEditor
@@ -1309,6 +1588,8 @@ function GenerationPreviewContent() {
                         stepId={activeStep.id}
                         outlines={session.sceneOutlines ?? streamingOutlines}
                         webSearchSources={webSearchSources}
+                        ragSources={session.ragSources}
+                        ragHits={session.ragHits}
                         onExpandOutline={
                           activeStep.id === 'outline' ? handleExpandStreamingOutline : undefined
                         }
@@ -1317,6 +1598,19 @@ function GenerationPreviewContent() {
                   )}
                 </AnimatePresence>
               </div>
+
+              {session.ragHits && session.ragHits.length > 0 && (
+                <RagEvidencePanel
+                  compact
+                  evidence={{
+                    query: session.requirements.requirement,
+                    config: session.requirements.ragConfig,
+                    sources: session.ragSources || [],
+                    hits: session.ragHits,
+                  }}
+                  className="max-w-md"
+                />
+              )}
 
               {/* Text Content */}
               <div className="space-y-3 max-w-sm mx-auto">

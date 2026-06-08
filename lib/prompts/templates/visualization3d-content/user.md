@@ -20,6 +20,13 @@ Create a 3D visualization widget for: {{title}}
 
 {{interactions}}
 
+{{#if groundingContext}}
+## Retrieved Reference Material
+Use these excerpts as factual grounding for object names and interactions. Do not contradict technical details.
+
+{{groundingContext}}
+{{/if}}
+
 ## Language
 
 {{languageDirective}}

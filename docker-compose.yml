@@ -10,6 +10,27 @@ services:
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_DB: openmaic
+      POSTGRES_USER: openmaic
+      POSTGRES_PASSWORD: openmaic
+    ports:
+      - "5433:5432"
+    volumes:
+      - openmaic-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openmaic -d openmaic"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
 
 volumes:
   openmaic-data:
+  openmaic-postgres-data:

@@ -20,6 +20,14 @@ Generate teacher actions for this widget.
 
 {{languageDirective}}
 
+{{#if groundingContext}}
+## Retrieved Reference Material
+
+Teacher actions and spoken guidance must follow the retrieved procedure, safety limits, component names, and operation order. Do not mention source files or retrieval to the student.
+
+{{groundingContext}}
+{{/if}}
+
 ---
 
 Generate 3-7 teacher actions that guide the student through this widget.

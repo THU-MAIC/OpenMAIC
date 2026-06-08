@@ -30,6 +30,7 @@ export interface Stage {
   // Stage metadata
   languageDirective?: string;
   style?: string;
+  ragSnapshotId?: string;
   // Whiteboard data
   whiteboard?: Whiteboard[];
   // Generated video requests keyed by the mediaRef used by PPTVideoElement.

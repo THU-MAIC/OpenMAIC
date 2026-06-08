@@ -10,6 +10,14 @@
 
 **Language Directive**: {{languageDirective}}
 
+{{#if groundingContext}}
+## Retrieved Reference Material
+
+Use these excerpts to keep the project introduction and case guidance factually correct. Do not mention source files or retrieval in the narration. Do not invent conflicting technical procedures.
+
+{{groundingContext}}
+{{/if}}
+
 Please generate the speech content for this PBL scene.
 
 Output as a JSON array directly (no explanation, no code fences):

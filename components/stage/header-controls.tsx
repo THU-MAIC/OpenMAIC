@@ -5,6 +5,7 @@ import {
   Archive,
   Download,
   FileDown,
+  Library,
   Loader2,
   Monitor,
   Moon,
@@ -22,12 +23,21 @@ import { useExportClassroom } from '@/lib/export/use-export-classroom';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { RagEvidencePanel } from '@/components/knowledge/rag-evidence-panel';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import type { RagEvidence } from '@/lib/types/rag';
 import type { StageMode } from '@/lib/types/stage';
 
 interface HeaderControlsProps {
@@ -65,6 +75,10 @@ export function HeaderControls({
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
+  const [evidence, setEvidence] = useState<RagEvidence | null>(null);
+  const [evidenceError, setEvidenceError] = useState<string | null>(null);
+  const [evidenceLoading, setEvidenceLoading] = useState(false);
 
   // Export plumbing — uses the stage / media task stores to check
   // readiness, then hands off to the export hooks. Available in both
@@ -72,6 +86,7 @@ export function HeaderControls({
   // across mode swaps (was previously in `Header` only, missing from
   // CommandBar's right cluster).
   const scenes = useStageStore((s) => s.scenes);
+  const ragSnapshotId = useStageStore((s) => s.stage?.ragSnapshotId);
   const generatingOutlines = useStageStore((s) => s.generatingOutlines);
   const failedOutlines = useStageStore((s) => s.failedOutlines);
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
@@ -101,6 +116,26 @@ export function HeaderControls({
   }, [exportMenuOpen, handleClickOutside]);
 
   const compact = variant === 'compact';
+
+  const openEvidence = async () => {
+    if (!ragSnapshotId) return;
+    setEvidenceOpen(true);
+    if (evidence?.id === ragSnapshotId) return;
+    setEvidenceLoading(true);
+    setEvidenceError(null);
+    try {
+      const response = await fetch(`/api/knowledge/snapshots/${encodeURIComponent(ragSnapshotId)}`);
+      const data = await response.json();
+      if (!response.ok || !data.success) {
+        throw new Error(data.error || '无法读取检索依据');
+      }
+      setEvidence(data.evidence);
+    } catch (error) {
+      setEvidenceError(error instanceof Error ? error.message : '无法读取检索依据');
+    } finally {
+      setEvidenceLoading(false);
+    }
+  };
 
   // Self-contained spacing so the control cluster is identical regardless of
   // host. The playback Header (`gap-4`) and the edit CommandBar's trailing
@@ -171,6 +206,18 @@ export function HeaderControls({
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+
+        {/* RAG evidence */}
+        {ragSnapshotId && (
+          <button
+            onClick={openEvidence}
+            className="p-2 rounded-full text-emerald-600 dark:text-emerald-400 hover:bg-white dark:hover:bg-gray-700 hover:shadow-sm transition-all"
+            title="查看本课参考材料"
+            aria-label="查看本课参考材料"
+          >
+            <Library className="w-4 h-4" />
+          </button>
+        )}
 
         {/* Settings */}
         <button
@@ -304,6 +351,25 @@ export function HeaderControls({
       </div>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <Dialog open={evidenceOpen} onOpenChange={setEvidenceOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>本课参考材料</DialogTitle>
+            <DialogDescription>以下材料片段用于约束课程内容与教师讲解。</DialogDescription>
+          </DialogHeader>
+          {evidenceLoading ? (
+            <div className="py-12 text-center text-sm text-muted-foreground">
+              正在读取检索依据...
+            </div>
+          ) : evidenceError ? (
+            <div className="rounded-md border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
+              {evidenceError}
+            </div>
+          ) : evidence ? (
+            <RagEvidencePanel evidence={evidence} />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

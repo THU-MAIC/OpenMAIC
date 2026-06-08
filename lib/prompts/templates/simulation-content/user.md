@@ -16,6 +16,14 @@ Create a simulation widget for: {{conceptName}}
 
 {{designIdea}}
 
+{{#if groundingContext}}
+## Retrieved Reference Material
+
+Use these excerpts as factual grounding for steps, labels, components, limits, and feedback. Do not invent conflicting procedures.
+
+{{groundingContext}}
+{{/if}}
+
 ## Language
 
 {{languageDirective}}

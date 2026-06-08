@@ -46,6 +46,7 @@ export interface StageRecord {
   updatedAt: number; // timestamp
   languageDirective?: string;
   style?: string;
+  ragSnapshotId?: string; // RAG evidence snapshot for this course; non-indexed
   currentSceneId?: string;
   agentIds?: string[]; // Agent IDs selected at creation time
   videoManifest?: VideoManifest; // Generated video request manifest; non-indexed

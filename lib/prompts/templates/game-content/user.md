@@ -16,6 +16,13 @@ Create an educational GAME widget for: {{title}}
 
 {{scoring}}
 
+{{#if groundingContext}}
+## Retrieved Reference Material
+Use these excerpts as factual grounding for objectives, procedure order, components, and feedback. Do not invent conflicting technical steps.
+
+{{groundingContext}}
+{{/if}}
+
 ## Language
 
 {{languageDirective}}

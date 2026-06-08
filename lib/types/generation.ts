@@ -7,6 +7,7 @@
 
 import type { ActionType } from './action';
 import type { MediaGenerationRequest } from '@/lib/media/types';
+import type { RagRetrievalConfig } from './rag';
 
 // ==================== PDF Image Types ====================
 
@@ -52,6 +53,8 @@ export interface UserRequirements {
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
   interactiveMode?: boolean; // Enable Interactive Mode for interactive-first generation
+  localKnowledge?: boolean; // Retrieve PostgreSQL/pgvector-backed reference excerpts before generation
+  ragConfig?: RagRetrievalConfig; // Retrieval controls applied when local knowledge is enabled
 }
 
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================

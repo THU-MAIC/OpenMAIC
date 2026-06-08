@@ -1,7 +1,20 @@
 'use client';
 
 import { useState, useRef, useMemo } from 'react';
-import { Bot, Brain, Check, Paperclip, FileText, X, Globe2, Search } from 'lucide-react';
+import Link from 'next/link';
+import {
+  Bot,
+  Brain,
+  Check,
+  Paperclip,
+  FileText,
+  X,
+  Globe2,
+  Search,
+  Library,
+  Database,
+  SlidersHorizontal,
+} from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -45,6 +58,8 @@ const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
 export interface GenerationToolbarProps {
   webSearch: boolean;
   onWebSearchChange: (v: boolean) => void;
+  localKnowledge: boolean;
+  onLocalKnowledgeChange: (v: boolean) => void;
   onSettingsOpen: (section?: SettingsSection) => void;
   // PDF
   pdfFile: File | null;
@@ -56,6 +71,8 @@ export interface GenerationToolbarProps {
 export function GenerationToolbar({
   webSearch,
   onWebSearchChange,
+  localKnowledge,
+  onLocalKnowledgeChange,
   onSettingsOpen,
   pdfFile,
   onPdfFileChange,
@@ -295,6 +312,59 @@ export function GenerationToolbar({
                 </div>
               )}
             </div>
+          </PopoverContent>
+        </Popover>
+
+        {/* ── Local knowledge base ── */}
+        <Popover>
+          <PopoverTrigger asChild>
+            <button className={localKnowledge ? pillActive : pillMuted}>
+              <Library className="size-3.5" />
+              {localKnowledge && <span>{t('toolbar.localKnowledge')}</span>}
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-64 p-3 space-y-2">
+            <button
+              onClick={() => onLocalKnowledgeChange(!localKnowledge)}
+              className={cn(
+                'w-full flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-all',
+                localKnowledge
+                  ? 'bg-violet-50 dark:bg-violet-950/20 border-violet-200 dark:border-violet-800'
+                  : 'border-border hover:bg-muted/50',
+              )}
+            >
+              <Library
+                className={cn(
+                  'size-4 shrink-0',
+                  localKnowledge ? 'text-violet-600 dark:text-violet-400' : 'text-muted-foreground',
+                )}
+              />
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium">
+                  {localKnowledge ? t('toolbar.localKnowledgeOn') : t('toolbar.localKnowledgeOff')}
+                </p>
+                <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                  {t('toolbar.localKnowledgeDesc')}
+                </p>
+              </div>
+            </button>
+            <p className="text-[10px] text-muted-foreground px-1">
+              {t('toolbar.localKnowledgePrivacy')}
+            </p>
+            <Link
+              href="/knowledge-base"
+              className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border text-xs font-medium transition-colors hover:bg-muted"
+            >
+              <Database className="size-3.5" />
+              {t('toolbar.manageKnowledge')}
+            </Link>
+            <Link
+              href="/knowledge-base/settings"
+              className="flex h-8 w-full items-center justify-center gap-1.5 rounded-md border border-border text-xs font-medium transition-colors hover:bg-muted"
+            >
+              <SlidersHorizontal className="size-3.5" />
+              配置检索参数
+            </Link>
           </PopoverContent>
         </Popover>
 

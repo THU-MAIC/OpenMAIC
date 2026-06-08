@@ -35,7 +35,13 @@
     "ttsPreview": "プレビュー",
     "ttsPreviewing": "再生中...",
     "interactiveModeHint": "インタラクティブ優先モードを有効にして、より実践的なコンテンツを生成",
-    "interactiveModeLabel": "インタラクティブモード"
+    "interactiveModeLabel": "インタラクティブモード",
+    "localKnowledge": "ローカル知識ベース",
+    "localKnowledgeOn": "ローカル知識ベースを使用中",
+    "localKnowledgeOff": "ローカル知識ベースを使用",
+    "localKnowledgeDesc": "データベースの資料をベクトル検索します",
+    "localKnowledgePrivacy": "資料は知識ベースページでアップロードして索引化します。",
+    "manageKnowledge": "知識ベースを管理"
   },
   "export": {
     "pptx": "PPTXエクスポート",
@@ -472,7 +478,9 @@
     "generatingInProgress": "生成中...",
     "webSearching": "ウェブ検索",
     "webSearchingDesc": "ウェブで最新情報を検索しています",
-    "webSearchFailed": "ウェブ検索に失敗しました"
+    "webSearchFailed": "ウェブ検索に失敗しました",
+    "retrievingKnowledge": "ローカル知識検索",
+    "retrievingKnowledgeDesc": "データベース資料からベクトル検索しています"
   },
   "settings": {
     "title": "設定",

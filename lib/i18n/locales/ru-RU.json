@@ -35,7 +35,13 @@
     "ttsPreview": "Прослушать",
     "ttsPreviewing": "Воспроизведение...",
     "interactiveModeHint": "Включить интерактивный режим для более практического контента",
-    "interactiveModeLabel": "Интерактивный режим"
+    "interactiveModeLabel": "Интерактивный режим",
+    "localKnowledge": "Локальные знания",
+    "localKnowledgeOn": "Локальные знания включены",
+    "localKnowledgeOff": "Использовать локальные знания",
+    "localKnowledgeDesc": "Векторный поиск по материалам из базы данных",
+    "localKnowledgePrivacy": "Загрузите и индексируйте материалы на странице базы знаний.",
+    "manageKnowledge": "Управлять базой знаний"
   },
   "export": {
     "pptx": "Экспорт PPTX",
@@ -472,7 +478,9 @@
     "generatingInProgress": "Генерация...",
     "webSearching": "Поиск в интернете",
     "webSearchingDesc": "Поиск актуальной информации в сети",
-    "webSearchFailed": "Ошибка веб-поиска"
+    "webSearchFailed": "Ошибка веб-поиска",
+    "retrievingKnowledge": "Локальные знания",
+    "retrievingKnowledgeDesc": "Векторный поиск по материалам базы данных"
   },
   "settings": {
     "title": "Настройки",

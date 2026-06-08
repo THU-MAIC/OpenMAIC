@@ -81,6 +81,8 @@ async function fetchSceneContent(
     };
     agents?: AgentInfo[];
     languageDirective?: string;
+    groundingContext?: string;
+    ragSnapshotId?: string;
   },
   signal?: AbortSignal,
 ): Promise<SceneContentResult> {
@@ -110,6 +112,8 @@ async function fetchSceneActions(
     previousSpeeches?: string[];
     userProfile?: string;
     languageDirective?: string;
+    groundingContext?: string;
+    ragSnapshotId?: string;
   },
   signal?: AbortSignal,
 ): Promise<SceneActionsResult> {
@@ -265,6 +269,8 @@ export interface GenerationParams {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
+  groundingContext?: string;
+  ragSnapshotId?: string;
 }
 
 export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
@@ -359,6 +365,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               stageInfo: params.stageInfo,
               agents: params.agents,
               languageDirective: params.languageDirective,
+              groundingContext: params.groundingContext,
+              ragSnapshotId: params.ragSnapshotId,
             },
             signal,
           );
@@ -393,6 +401,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
               previousSpeeches,
               userProfile: params.userProfile,
               languageDirective: params.languageDirective,
+              groundingContext: params.groundingContext,
+              ragSnapshotId: params.ragSnapshotId,
             },
             signal,
           );
@@ -537,6 +547,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             stageInfo: params.stageInfo,
             agents: params.agents,
             languageDirective: params.languageDirective,
+            groundingContext: params.groundingContext,
+            ragSnapshotId: params.ragSnapshotId,
           },
           signal,
         );
@@ -565,6 +577,8 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             previousSpeeches,
             userProfile: params.userProfile,
             languageDirective: params.languageDirective,
+            groundingContext: params.groundingContext,
+            ragSnapshotId: params.ragSnapshotId,
           },
           signal,
         );

@@ -35,7 +35,13 @@
     "ttsPreview": "试听",
     "ttsPreviewing": "播放中...",
     "interactiveModeHint": "开启深度交互模式，生成更多互动内容",
-    "interactiveModeLabel": "深度交互"
+    "interactiveModeLabel": "深度交互",
+    "localKnowledge": "本地知识库",
+    "localKnowledgeOn": "本地知识库已开启",
+    "localKnowledgeOff": "使用本地知识库",
+    "localKnowledgeDesc": "从数据库材料中进行向量检索",
+    "localKnowledgePrivacy": "材料请在知识库页面上传并完成向量化。",
+    "manageKnowledge": "管理材料知识库"
   },
   "export": {
     "pptx": "导出 PPTX",
@@ -472,7 +478,9 @@
     "generatingInProgress": "生成中...",
     "webSearching": "网络搜索",
     "webSearchingDesc": "正在搜索网络获取最新资料",
-    "webSearchFailed": "网络搜索失败"
+    "webSearchFailed": "网络搜索失败",
+    "retrievingKnowledge": "本地知识库检索",
+    "retrievingKnowledgeDesc": "正在从数据库材料中检索向量片段"
   },
   "settings": {
     "title": "设置",

@@ -71,6 +71,7 @@ export interface SceneContentOptions {
   agents?: AgentInfo[];
   languageDirective?: string;
   thinkingConfig?: ThinkingConfig;
+  groundingContext?: string;
 }
 
 export interface SceneActionsOptions {
@@ -78,6 +79,7 @@ export interface SceneActionsOptions {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
+  groundingContext?: string;
 }
 
 // ==================== Stage 2: Full Scenes (Two-Step) ====================
@@ -293,6 +295,7 @@ export async function generateSceneContent(
     agents,
     languageDirective,
     thinkingConfig,
+    groundingContext,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -316,7 +319,7 @@ export async function generateSceneContent(
     }
 
     // Route to widget generation (handles all 5 types)
-    return generateWidgetContent(outline, aiCall, languageDirective);
+    return generateWidgetContent(outline, aiCall, languageDirective, groundingContext);
   }
 
   switch (outline.type) {
@@ -330,11 +333,18 @@ export async function generateSceneContent(
         generatedMediaMapping,
         agents,
         languageDirective,
+        groundingContext,
       );
     case 'quiz':
-      return generateQuizContent(outline, aiCall, languageDirective);
+      return generateQuizContent(outline, aiCall, languageDirective, groundingContext);
     case 'pbl':
-      return generatePBLSceneContent(outline, languageModel, languageDirective, thinkingConfig);
+      return generatePBLSceneContent(
+        outline,
+        languageModel,
+        languageDirective,
+        thinkingConfig,
+        groundingContext,
+      );
     default:
       return null;
   }
@@ -661,6 +671,7 @@ async function generateSlideContent(
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
   languageDirective?: string,
+  groundingContext?: string,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -748,6 +759,7 @@ async function generateSlideContent(
     generatedImageEnabled,
     generatedVideoEnabled,
     mediaElementEnabled,
+    groundingContext: groundingContext || '',
   });
 
   if (!prompts) {
@@ -843,6 +855,7 @@ async function generateQuizContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
+  groundingContext?: string,
 ): Promise<GeneratedQuizContent | null> {
   const quizConfig = outline.quizConfig || {
     questionCount: 3,
@@ -858,6 +871,7 @@ async function generateQuizContent(
     difficulty: quizConfig.difficulty,
     questionTypes: quizConfig.questionTypes.join(', '),
     languageDirective: languageDirective || '',
+    groundingContext: groundingContext || '',
   });
 
   if (!prompts) {
@@ -947,6 +961,7 @@ async function generatePBLSceneContent(
   languageModel?: LanguageModel,
   languageDirective?: string,
   thinkingConfig?: ThinkingConfig,
+  groundingContext?: string,
 ): Promise<GeneratedPBLContent | null> {
   if (!languageModel) {
     log.error('LanguageModel required for PBL generation');
@@ -965,7 +980,9 @@ async function generatePBLSceneContent(
     const projectConfig = await generatePBLContent(
       {
         projectTopic: pblConfig.projectTopic,
-        projectDescription: pblConfig.projectDescription,
+        projectDescription: groundingContext
+          ? `${pblConfig.projectDescription}\n\nRetrieved reference material:\n${groundingContext}`
+          : pblConfig.projectDescription,
         targetSkills: pblConfig.targetSkills,
         issueCount: pblConfig.issueCount,
         languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
@@ -1033,6 +1050,7 @@ async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
+  groundingContext?: string,
 ): Promise<GeneratedInteractiveContent | null> {
   const widgetType = outline.widgetType;
   const widgetOutline = outline.widgetOutline;
@@ -1056,6 +1074,7 @@ async function generateWidgetContent(
         variables: widgetOutline.keyVariables?.join(', ') || '',
         designIdea: '',
         languageDirective: languageDirective || '',
+        groundingContext: groundingContext || '',
       };
       break;
 
@@ -1067,6 +1086,7 @@ async function generateWidgetContent(
         description: outline.description,
         keyPoints: (outline.keyPoints || []).join('\n'),
         languageDirective: languageDirective || '',
+        groundingContext: groundingContext || '',
       };
       break;
 
@@ -1081,6 +1101,7 @@ async function generateWidgetContent(
         testCases: '', // AI generates appropriate test cases based on challenge
         hints: '', // AI generates progressive hints based on challenge
         languageDirective: languageDirective || '',
+        groundingContext: groundingContext || '',
       };
       break;
 
@@ -1093,6 +1114,7 @@ async function generateWidgetContent(
         keyPoints: (outline.keyPoints || []).join('\n'),
         scoring: { correctPoints: 10, speedBonus: 5 },
         languageDirective: languageDirective || '',
+        groundingContext: groundingContext || '',
       };
       break;
 
@@ -1106,6 +1128,7 @@ async function generateWidgetContent(
         objects: widgetOutline.objects || [],
         interactions: widgetOutline.interactions || [],
         languageDirective: languageDirective || '',
+        groundingContext: groundingContext || '',
       };
       break;
 
@@ -1139,6 +1162,7 @@ async function generateWidgetContent(
     widgetConfig,
     aiCall,
     languageDirective,
+    groundingContext,
   );
   log.info(
     `[Ultra Mode] Generated ${teacherActions?.length || 0} teacher actions for "${outline.title}" (${widgetType})`,
@@ -1182,6 +1206,7 @@ async function generateWidgetTeacherActions(
   widgetConfig: WidgetConfig | undefined,
   aiCall: AICallFn,
   languageDirective?: string,
+  groundingContext?: string,
 ): Promise<TeacherAction[] | undefined> {
   const prompts = buildPrompt(PROMPT_IDS.WIDGET_TEACHER_ACTIONS, {
     widgetType,
@@ -1189,6 +1214,7 @@ async function generateWidgetTeacherActions(
     keyPoints: (outline.keyPoints || []).join('\n'),
     widgetConfig: JSON.stringify(widgetConfig || {}),
     languageDirective: languageDirective || '',
+    groundingContext: groundingContext || '',
   });
 
   if (!prompts) return undefined;
@@ -1215,7 +1241,7 @@ export async function generateSceneActions(
   aiCall: AICallFn,
   options: SceneActionsOptions = {},
 ): Promise<Action[]> {
-  const { ctx, agents, userProfile, languageDirective } = options;
+  const { ctx, agents, userProfile, languageDirective, groundingContext } = options;
   const agentsText = formatAgentsForPrompt(agents);
 
   // Debug: Log content type and teacherActions presence for interactive scenes
@@ -1249,6 +1275,7 @@ export async function generateSceneActions(
       agents: agentsText,
       userProfile: userProfile || '',
       languageDirective: languageDirective || '',
+      groundingContext: groundingContext || '',
     });
 
     if (!prompts) {
@@ -1278,6 +1305,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
+      groundingContext: groundingContext || '',
     });
 
     if (!prompts) {
@@ -1306,6 +1334,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
+      groundingContext: groundingContext || '',
     });
 
     if (!prompts) {
@@ -1334,6 +1363,7 @@ export async function generateSceneActions(
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
+      groundingContext: groundingContext || '',
     });
 
     if (!prompts) {

@@ -35,7 +35,13 @@
     "ttsPreview": "Pré-visualizar",
     "ttsPreviewing": "Reproduzindo...",
     "interactiveModeHint": "Ative o modo interativo para conteúdos mais práticos",
-    "interactiveModeLabel": "Modo Interativo"
+    "interactiveModeLabel": "Modo Interativo",
+    "localKnowledge": "Conhecimento local",
+    "localKnowledgeOn": "Conhecimento local ativado",
+    "localKnowledgeOff": "Usar conhecimento local",
+    "localKnowledgeDesc": "Recupere vetores de materiais armazenados no banco de dados",
+    "localKnowledgePrivacy": "Envie e indexe materiais na página da base de conhecimento.",
+    "manageKnowledge": "Gerenciar base de conhecimento"
   },
   "export": {
     "pptx": "Exportar PPTX",
@@ -401,6 +407,8 @@
     "generatingSlideContentDesc": "Criando slides, questionários e conteúdo interativo...",
     "generatingActions": "Gerando Ações de Ensino",
     "generatingActionsDesc": "Orquestrando narração, destaques e interações...",
+    "retrievingKnowledge": "Conhecimento local",
+    "retrievingKnowledgeDesc": "Recuperando correspondências vetoriais dos materiais do banco de dados",
     "generationComplete": "Geração concluída!",
     "generationFailed": "Falha na geração",
     "generatingCourse": "Gerando curso",

@@ -23,6 +23,12 @@
     "configureProviderHint": "قم بتكوين مزوّد نماذج واحد على الأقل لتوليد المقررات",
     "interactiveModeHint": "تفعيل وضع التفاعل_first للمحتوى العملي",
     "interactiveModeLabel": "وضع التفاعل",
+    "localKnowledge": "المعرفة المحلية",
+    "localKnowledgeOn": "المعرفة المحلية مفعلة",
+    "localKnowledgeOff": "استخدام المعرفة المحلية",
+    "localKnowledgeDesc": "بحث متجهي في المواد المحفوظة في قاعدة البيانات",
+    "localKnowledgePrivacy": "ارفع المواد وفهرسها من صفحة قاعدة المعرفة.",
+    "manageKnowledge": "إدارة قاعدة المعرفة",
     "enterClassroom": "دخول الفصل",
     "advancedSettings": "إعدادات متقدمة",
     "thinking": "التفكير",
@@ -472,7 +478,9 @@
     "generatingInProgress": "جارٍ التوليد...",
     "webSearching": "بحث في الإنترنت",
     "webSearchingDesc": "جارٍ البحث في الإنترنت عن معلومات محدّثة",
-    "webSearchFailed": "فشل البحث في الإنترنت"
+    "webSearchFailed": "فشل البحث في الإنترنت",
+    "retrievingKnowledge": "المعرفة المحلية",
+    "retrievingKnowledgeDesc": "جارٍ البحث المتجهي في مواد قاعدة البيانات"
   },
   "settings": {
     "title": "الإعدادات",

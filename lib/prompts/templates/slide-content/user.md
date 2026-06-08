@@ -9,6 +9,14 @@
 
 {{teacherContext}}
 
+{{#if groundingContext}}
+## Retrieved Reference Material
+
+Use these excerpts as factual grounding when relevant. Do not invent technical specifications or procedures that conflict with them.
+
+{{groundingContext}}
+{{/if}}
+
 ## Available Resources
 
 {{#if mediaElementEnabled}}

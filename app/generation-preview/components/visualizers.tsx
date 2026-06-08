@@ -14,21 +14,28 @@ import {
   Focus,
   Play,
   Maximize2,
+  Database,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
+import type { RagHit, RagSource } from '@/lib/types/rag';
+import { RagEvidencePanel } from '@/components/knowledge/rag-evidence-panel';
 
 // Step-specific visualizers
 export function StepVisualizer({
   stepId,
   outlines,
   webSearchSources,
+  ragSources,
+  ragHits,
   onExpandOutline,
 }: {
   stepId: string;
   outlines?: SceneOutline[] | null;
   webSearchSources?: Array<{ title: string; url: string }>;
+  ragSources?: RagSource[];
+  ragHits?: RagHit[];
   onExpandOutline?: () => void;
 }) {
   switch (stepId) {
@@ -36,6 +43,8 @@ export function StepVisualizer({
       return <PdfScanVisualizer />;
     case 'web-search':
       return <WebSearchVisualizer sources={webSearchSources || []} />;
+    case 'knowledge-retrieval':
+      return <KnowledgeRetrievalVisualizer sources={ragSources || []} hits={ragHits || []} />;
     case 'outline':
       return <StreamingOutlineVisualizer outlines={outlines || []} onExpand={onExpandOutline} />;
     case 'agent-generation':
@@ -47,6 +56,27 @@ export function StepVisualizer({
     default:
       return null;
   }
+}
+
+function KnowledgeRetrievalVisualizer({ sources, hits }: { sources: RagSource[]; hits: RagHit[] }) {
+  if (hits.length > 0) {
+    return (
+      <RagEvidencePanel
+        compact
+        evidence={{ query: '', sources, hits }}
+        className="w-72 shadow-sm"
+      />
+    );
+  }
+
+  return (
+    <div className="flex size-40 items-center justify-center rounded-md border border-border bg-background">
+      <div className="space-y-3 text-center">
+        <Database className="mx-auto size-8 animate-pulse text-emerald-600" />
+        <p className="text-xs text-muted-foreground">正在匹配材料片段</p>
+      </div>
+    </div>
+  );
 }
 
 // PDF: Document with scanning laser line

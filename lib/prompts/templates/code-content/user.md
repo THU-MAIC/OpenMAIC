@@ -26,6 +26,13 @@ Create a code playground widget for: {{title}}
 
 {{hints}}
 
+{{#if groundingContext}}
+## Retrieved Reference Material
+Use these excerpts as factual grounding when relevant to the challenge and validation.
+
+{{groundingContext}}
+{{/if}}
+
 ## Course Language
 
 {{languageDirective}}

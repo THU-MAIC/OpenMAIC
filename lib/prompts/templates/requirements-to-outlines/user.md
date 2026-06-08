@@ -29,7 +29,7 @@ Infer the course language directive by applying the decision rules from the syst
 
 {{availableImages}}
 
-### Web Search Results
+### Retrieved and External Reference Context
 
 {{researchContext}}
 
@@ -92,6 +92,6 @@ Never return a bare array. Never omit `languageDirective`. Both keys are require
 - **Scene count**: Based on inferred duration, typically 1-2 scenes per minute
 - **Quiz placement**: Recommend inserting a quiz every 3-5 slides for assessment
 - **Language**: Infer from the user's requirement text and context, then output all content in the inferred language
-- **If web search results are provided**, reference specific findings and sources in scene descriptions and keyPoints. The search results provide up-to-date information — incorporate it to make the course content current and accurate.
+- **If reference context is provided**, ground scene descriptions and keyPoints in it when relevant. Preserve source-specific technical procedures and do not invent conflicting details.
 
 **Final reminder**: your entire response must be a JSON **object** with exactly two top-level keys — `languageDirective` (string) and `outlines` (array). Do not return a bare array. Do not wrap in prose or code fences.

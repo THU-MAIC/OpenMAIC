@@ -35,7 +35,13 @@
     "ttsPreview": "Preview",
     "ttsPreviewing": "Playing...",
     "interactiveModeHint": "Enable interactive-first mode for more hands-on content",
-    "interactiveModeLabel": "Interactive Mode"
+    "interactiveModeLabel": "Interactive Mode",
+    "localKnowledge": "Local Knowledge",
+    "localKnowledgeOn": "Local knowledge enabled",
+    "localKnowledgeOff": "Use local knowledge",
+    "localKnowledgeDesc": "Retrieve vectors from database-backed materials",
+    "localKnowledgePrivacy": "Upload and index materials from the knowledge base page.",
+    "manageKnowledge": "Manage knowledge base"
   },
   "export": {
     "pptx": "Export PPTX",
@@ -472,7 +478,9 @@
     "generatingInProgress": "Generating...",
     "webSearching": "Web Search",
     "webSearchingDesc": "Searching the web for up-to-date information",
-    "webSearchFailed": "Web search failed"
+    "webSearchFailed": "Web search failed",
+    "retrievingKnowledge": "Local Knowledge",
+    "retrievingKnowledgeDesc": "Retrieving vector matches from database materials"
   },
   "settings": {
     "title": "Settings",

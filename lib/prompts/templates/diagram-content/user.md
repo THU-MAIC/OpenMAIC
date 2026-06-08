@@ -9,6 +9,13 @@ Create an interactive diagram for: {{title}}
 ## Key Points
 {{keyPoints}}
 
+{{#if groundingContext}}
+## Retrieved Reference Material
+Use these excerpts as factual grounding for nodes and process order. Do not invent conflicting steps.
+
+{{groundingContext}}
+{{/if}}
+
 ## Language
 {{languageDirective}}
 
