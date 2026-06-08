@@ -15,6 +15,8 @@ import type { AICallFn } from '@/lib/generation/pipeline-types';
 import type { AgentInfo } from '@/lib/generation/pipeline-types';
 import { getDefaultAgents } from '@/lib/orchestration/registry/store';
 import { createLogger } from '@/lib/logger';
+import { lazyBoundedMap } from '@/lib/utils/concurrency';
+import { getParallelSceneConcurrency } from '@/lib/server/provider-config';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
@@ -361,25 +363,52 @@ export async function generateClassroom(
   log.info('Stage 2: Generating scene content and actions...');
   let generatedScenes = 0;
 
-  for (const [index, outline] of outlines.entries()) {
-    const safeOutline = applyOutlineFallbacks(outline, true, {
-      allowProceduralSkill: vocationalActive,
-    });
-    const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
+  const safeOutlines = outlines.map((outline) =>
+    applyOutlineFallbacks(outline, true, { allowProceduralSkill: vocationalActive }),
+  );
+
+  // #660 follow-up: pre-warm scene CONTENT with bounded concurrency when the
+  // server opts into parallel generation (PARALLEL_SCENE_CONCURRENCY > 1). Content
+  // has no cross-scene dependency, so it is safe to run ahead; actions + scene
+  // assembly stay serial in the loop below to keep scenes in outline order and
+  // report progress in order. Default (0 / unset) keeps the original
+  // strictly-serial pipeline. A content failure resolves to undefined and is
+  // skipped per-scene (same as the serial path) rather than aborting the batch.
+  const sceneConcurrency = getParallelSceneConcurrency();
+  const contentPromises =
+    sceneConcurrency > 1 && safeOutlines.length > 1
+      ? lazyBoundedMap(safeOutlines, sceneConcurrency, async (safeOutline) => {
+          try {
+            return await generateSceneContent(safeOutline, aiCall, {
+              agents,
+              languageDirective,
+              allowProceduralSkill: vocationalActive,
+            });
+          } catch (err) {
+            log.warn(`Scene content generation threw for "${safeOutline.title}":`, err);
+            return undefined;
+          }
+        })
+      : null;
+
+  for (const [index, safeOutline] of safeOutlines.entries()) {
+    const progressStart = 30 + Math.floor((index / Math.max(safeOutlines.length, 1)) * 60);
 
     await options.onProgress?.({
       step: 'generating_scenes',
       progress: Math.max(progressStart, 31),
-      message: `Generating scene ${index + 1}/${outlines.length}: ${safeOutline.title}`,
+      message: `Generating scene ${index + 1}/${safeOutlines.length}: ${safeOutline.title}`,
       scenesGenerated: generatedScenes,
-      totalScenes: outlines.length,
+      totalScenes: safeOutlines.length,
     });
 
-    const content = await generateSceneContent(safeOutline, aiCall, {
-      agents,
-      languageDirective,
-      allowProceduralSkill: vocationalActive,
-    });
+    const content = contentPromises
+      ? await contentPromises[index]
+      : await generateSceneContent(safeOutline, aiCall, {
+          agents,
+          languageDirective,
+          allowProceduralSkill: vocationalActive,
+        });
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;
