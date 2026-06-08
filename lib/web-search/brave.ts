@@ -71,8 +71,13 @@ export function parseBraveSearchHtml(html: string, maxResults: number): WebSearc
     const url = decodeHtml(linkMatch[1].trim());
     if (!url || isBraveOwnedUrl(url)) continue;
 
+    // Brave moved the result title from `<span class="search-snippet-title">`
+    // to `<div class="title search-snippet-title …">`, which made this parser
+    // return zero results against the live page. Accept either element so we are
+    // robust to that (and a future) swap; the title text is stripped of tags
+    // regardless.
     const titleMatch = block.match(
-      /<span[^>]*class="[^"]*search-snippet-title[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+      /<(?:span|div)[^>]*class="[^"]*search-snippet-title[^"]*"[^>]*>([\s\S]*?)<\/(?:span|div)>/i,
     );
     const title = titleMatch ? stripHtml(titleMatch[1]) : '';
     if (!title) continue;

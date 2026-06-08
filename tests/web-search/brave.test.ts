@@ -9,12 +9,13 @@ vi.mock('@/lib/server/proxy-fetch', () => ({
 import { parseBraveSearchHtml, searchWithBrave } from '@/lib/web-search/brave';
 
 describe('parseBraveSearchHtml', () => {
-  it('extracts web results, decodes entities, strips date prefixes, and skips Brave links', () => {
+  // Result 1 uses Brave's current `<div class="… search-snippet-title …">` title
+  // markup; result 2 uses the legacy `<span>` form — both must parse.
+  it('extracts web results (div + legacy span titles), decodes entities, strips date prefixes, and skips Brave links', () => {
     const html = `
-      <div class="snippet svelte-abc" data-pos="0" data-type="web">
-        <a href="https://example.com/a?x=1&amp;y=2">
-          <span class="search-snippet-title">Example &amp; Title</span>
-        </a>
+      <div class="snippet svelte-abc" data-pos="0" data-type="web" data-keynav="true">
+        <a href="https://example.com/a?x=1&amp;y=2" class="l1"><div class="site-name-wrapper">example.com</div></a>
+        <div class="title search-snippet-title line-clamp-1 svelte-xyz" title="Example &amp; Title">Example &amp; Title</div>
         <div class="generic-snippet">Jan 1, 2026 - Result <strong>content</strong> &amp; more</div>
       </div>
       <div class="snippet svelte-def" data-pos="1" data-type="web">
@@ -57,7 +58,8 @@ describe('searchWithBrave', () => {
       new Response(
         `
           <div class="snippet" data-type="web">
-            <a href="https://example.com"><span class="search-snippet-title">Example</span></a>
+            <a href="https://example.com" class="l1"></a>
+            <div class="title search-snippet-title">Example</div>
             <div class="generic-snippet">Content</div>
           </div>
         `,
