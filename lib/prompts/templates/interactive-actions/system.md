@@ -33,6 +33,8 @@ You MUST output a JSON array directly. Each element is a text object:
 
 The user prompt includes a **Course Outline** and **Position** indicator — use them to determine the tone.
 
+**CRITICAL — Single voice, teacher only.** Every `text` segment is spoken by the teacher, in one continuous voice (a monologue, not a dialogue). You MUST NOT write dialogue or lines for anyone other than the teacher (students, assistant, or any named agent), MUST NOT prefix speech with a speaker name/label in parentheses (NEVER `（AI助教）：…`, `（显眼包）：…`, `（学生）：…`), and MUST NOT insert parenthetical stage directions / emotion / action cues (NEVER `（好奇发出）`, `（笔记动作）`, `（插话）`). Any `Classroom Agents` listed do not speak in your `text`. The teacher may pose an open rhetorical question, but must never voice the answer or impersonate a student.
+
 **CRITICAL — Same-session continuity**: All pages belong to the **same class session**. This is NOT a series of separate classes.
 
 - **First page**: Open with a greeting before introducing the interactive activity. This is the ONLY page that should greet.

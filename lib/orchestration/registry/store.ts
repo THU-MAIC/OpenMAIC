@@ -8,6 +8,7 @@ import { persist } from 'zustand/middleware';
 import type { AgentConfig } from './types';
 import { getActionsForRole } from './types';
 import type { TTSProviderId } from '@/lib/audio/types';
+import type { VoiceDesign } from '@/lib/audio/voice-design';
 import { USER_AVATAR } from '@/lib/types/roundtable';
 import type { Participant, ParticipantRole } from '@/lib/types/roundtable';
 import { useUserProfileStore } from '@/lib/store/user-profile';
@@ -383,6 +384,7 @@ export async function saveGeneratedAgents(
     color: string;
     priority: number;
     voiceConfig?: { providerId: string; voiceId: string };
+    voiceDesign?: VoiceDesign;
   }>,
 ): Promise<string[]> {
   const { db } = await import('@/lib/utils/database');
@@ -421,6 +423,14 @@ export async function saveGeneratedAgents(
         : {}),
     });
   }
+
+  // Eager warm-up: pre-register each generated agent's auto voice so the first
+  // spoken line is already stable. Same idempotent ensure as the TTS path;
+  // fire-and-forget. Dynamic import keeps this client-only dep out of the
+  // server-importable store module.
+  void import('@/lib/audio/agent-voice')
+    .then((m) => m.warmUpAgentVoices(registry.listAgents().filter((a) => a.isGenerated)))
+    .catch(() => undefined);
 
   return records.map((r) => r.id);
 }

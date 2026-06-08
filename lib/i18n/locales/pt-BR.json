@@ -126,7 +126,8 @@
     "voiceLoading": "Carregando...",
     "voiceAutoAssign": "As vozes serão atribuídas automaticamente",
     "searchVoice": "Pesquisar vozes",
-    "noMatchingVoices": "Nenhuma voz correspondente"
+    "noMatchingVoices": "Nenhuma voz correspondente",
+    "noVoice": "Sem voz"
   },
   "proactiveCard": {
     "discussion": "Discussão",
@@ -1063,6 +1064,10 @@
     "noVisionWarning": "O modelo atual não suporta visão. As imagens ainda podem ser colocadas nos slides, mas o modelo não conseguirá entender o conteúdo das imagens para otimizar seleção e layout",
     "serverConfigured": "Servidor",
     "serverConfiguredNotice": "Este provedor é gerenciado pelo servidor e não pode ser editado aqui. Para usar suas próprias credenciais, adicione um provedor separado.",
+    "ttsProviderEnabledLabel": "Ativar este provedor",
+    "ttsProviderEnabledHint": "Quando desligado, este provedor fica oculto no seletor de voz e nunca é atribuído automaticamente.",
+    "ttsProviderUnavailableHint": "Configure este provedor antes de ativá-lo.",
+    "ttsProviderDisabledByAdmin": "Este provedor foi desativado pelo administrador do servidor e não pode ser ativado.",
     "optionalOverride": "Opcional — deixe vazio para usar a configuração do servidor",
     "setupNeeded": "Configuração necessária",
     "modelNotConfigured": "Selecione um modelo para começar",
