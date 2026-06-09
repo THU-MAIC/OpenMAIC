@@ -5,7 +5,7 @@ export const formatAttributes = (attributes: ElementAttribute[]) => {
   return attributes.reduce((attrs, attribute) => {
     const { key, value } = attribute;
     if (value === null) return `${attrs} ${key}`;
-    if (key === 'style' && !value) return '';
+    if (key === 'style' && !value) return attrs;
 
     const quoteEscape = value.indexOf("'") !== -1;
     const quote = quoteEscape ? '"' : "'";
