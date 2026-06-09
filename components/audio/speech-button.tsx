@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import { Mic, Loader2 } from 'lucide-react';
 import { useAudioRecorder } from '@/lib/hooks/use-audio-recorder';
+import { useASRAvailable } from '@/lib/hooks/use-asr-available';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -44,6 +45,13 @@ export function SpeechButton({
 
   const active = isRecording || isProcessing;
 
+  // Gate on ASR availability (toggle + provider configured + browser support)
+  // so every call site is disabled uniformly when ASR is off/unusable — but
+  // never while actively recording/processing, so the user can always click to
+  // stop (the recorder has no auto-stop and would otherwise leave the mic open).
+  const asrAvailable = useASRAvailable();
+  const isDisabled = (disabled || !asrAvailable) && !active;
+
   const handleClick = () => {
     if (isRecording) {
       stopRecording();
@@ -62,7 +70,7 @@ export function SpeechButton({
       <TooltipTrigger asChild>
         <button
           type="button"
-          disabled={disabled || isProcessing}
+          disabled={isDisabled || isProcessing}
           onClick={handleClick}
           className={cn(
             'relative flex items-center justify-center rounded-lg transition-all duration-200 shrink-0 cursor-pointer',
@@ -70,7 +78,7 @@ export function SpeechButton({
             active
               ? 'bg-violet-500/90 dark:bg-violet-600/80 text-white shadow-[0_0_12px_rgba(139,92,246,0.45)] dark:shadow-[0_0_12px_rgba(139,92,246,0.3)]'
               : 'text-muted-foreground/60 hover:text-muted-foreground hover:bg-muted/80',
-            disabled && 'opacity-40 pointer-events-none',
+            isDisabled && 'opacity-40 pointer-events-none',
             className,
           )}
         >
