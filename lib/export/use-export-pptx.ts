@@ -251,7 +251,7 @@ function formatPoints(points: SvgPoints, ratioPx2Inch: number, scale = { x: 1, y
 
 // ── Shadow config ──
 
-function getShadowOption(shadow: PPTElementShadow, ratioPx2Pt: number): pptxgen.ShadowProps {
+export function getShadowOption(shadow: PPTElementShadow, ratioPx2Pt: number): pptxgen.ShadowProps {
   const c = formatColor(shadow.color);
   const { h, v } = shadow;
 
@@ -296,7 +296,7 @@ function getShadowOption(shadow: PPTElementShadow, ratioPx2Pt: number): pptxgen.
     color: c.color.replace('#', ''),
     opacity: c.alpha,
     blur: shadow.blur / ratioPx2Pt,
-    offset,
+    offset: offset / ratioPx2Pt,
     angle,
   };
 }
