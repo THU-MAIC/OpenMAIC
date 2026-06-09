@@ -175,6 +175,7 @@ export default function ClassroomDetailPage() {
           agents: params.agents,
           userProfile: params.userProfile,
           languageDirective: params.languageDirective || stage.languageDirective,
+          taskEngineMode: stage.taskEngineMode,
         });
       });
     } else if (outlines.length > 0 && stage) {
