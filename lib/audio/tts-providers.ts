@@ -845,6 +845,51 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 export { getAllTTSProviders, getTTSProvider, getTTSVoices } from './constants';
 
 /**
+ * Split a run of concatenated JSON objects (no delimiter between them) into
+ * individual object strings. Tracks string context and escapes so that a `{`
+ * or `}` inside a string value does not mis-align object boundaries.
+ */
+export function splitConcatenatedJsonObjects(text: string): string[] {
+  const objects: string[] = [];
+  let depth = 0;
+  let start = -1;
+  let inString = false;
+  let escapeNext = false;
+
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (char === '\\' && inString) {
+      escapeNext = true;
+      continue;
+    }
+    if (char === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+
+    if (char === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (char === '}') {
+      if (depth === 0) continue; // stray closer outside any object
+      depth--;
+      if (depth === 0 && start >= 0) {
+        objects.push(text.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+/**
  * Doubao TTS 2.0 implementation (Volcengine Seed-TTS 2.0)
  */
 async function generateDoubaoTTS(
@@ -890,38 +935,23 @@ async function generateDoubaoTTS(
   const responseText = await response.text();
   const audioChunks: Uint8Array[] = [];
 
-  let depth = 0;
-  let start = -1;
-  for (let i = 0; i < responseText.length; i++) {
-    if (responseText[i] === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (responseText[i] === '}') {
-      depth--;
-      if (depth === 0 && start >= 0) {
-        let chunk: { code: number; message?: string; data?: string };
-        try {
-          chunk = JSON.parse(responseText.slice(start, i + 1));
-        } catch {
-          start = -1;
-          continue;
-        }
-        start = -1;
+  for (const objText of splitConcatenatedJsonObjects(responseText)) {
+    let chunk: { code: number; message?: string; data?: string };
+    try {
+      chunk = JSON.parse(objText);
+    } catch {
+      continue;
+    }
 
-        if (chunk.code === 0 && chunk.data) {
-          audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
-        } else if (chunk.code === 20000000) {
-          break;
-        } else if (chunk.code && chunk.code !== 0) {
-          if (chunk.code === 45000000 || chunk.code === 45000292) {
-            throw new TTSRateLimitError(
-              'doubao-tts',
-              chunk.message || 'concurrency quota exceeded',
-            );
-          }
-          throw new Error(`Doubao TTS error: ${chunk.message || 'unknown'} (code: ${chunk.code})`);
-        }
+    if (chunk.code === 0 && chunk.data) {
+      audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
+    } else if (chunk.code === 20000000) {
+      break;
+    } else if (chunk.code && chunk.code !== 0) {
+      if (chunk.code === 45000000 || chunk.code === 45000292) {
+        throw new TTSRateLimitError('doubao-tts', chunk.message || 'concurrency quota exceeded');
       }
+      throw new Error(`Doubao TTS error: ${chunk.message || 'unknown'} (code: ${chunk.code})`);
     }
   }
 
