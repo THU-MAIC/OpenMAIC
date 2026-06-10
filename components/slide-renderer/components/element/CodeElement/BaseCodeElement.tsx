@@ -471,36 +471,47 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [highlighter, setHighlighter] = useState<any>(null);
-  const prevLinesRef = useRef<CodeLine[]>([]);
+  const prevLinesRef = useRef<CodeLine[]>(lines);
   const isFirstRenderRef = useRef(true);
 
-  const [animStates, setAnimStates] = useState<Map<string, LineAnimationState>>(
-    () => new Map<string, LineAnimationState>(),
-  );
+  // The entrance animation states must exist on the very first render:
+  // CodeLineRow latches `mounted` from its initial props, so if the rows
+  // mount before the states arrive (the old setTimeout(0) path), every row
+  // takes the non-animated branch and the per-line stagger collapses into
+  // simultaneous typing (#531).
+  const [animStates, setAnimStates] = useState<Map<string, LineAnimationState>>(() => {
+    const states = new Map<string, LineAnimationState>();
+    if (animate) {
+      lines.forEach((line, i) => {
+        states.set(line.id, { type: 'typing', timestamp: i * 80 });
+      });
+    }
+    return states;
+  });
 
   useEffect(() => {
+    // First render's states are computed synchronously in the useState
+    // initializer above; this effect only handles subsequent line edits.
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+
     const states = new Map<string, LineAnimationState>();
 
     if (animate) {
-      if (isFirstRenderRef.current) {
-        isFirstRenderRef.current = false;
-        lines.forEach((line, i) => {
-          states.set(line.id, { type: 'typing', timestamp: i * 80 });
-        });
-      } else {
-        const prevIds = new Set(prevLinesRef.current.map((l) => l.id));
+      const prevIds = new Set(prevLinesRef.current.map((l) => l.id));
 
-        for (const line of lines) {
-          if (!prevIds.has(line.id)) {
-            states.set(line.id, { type: 'inserted', timestamp: 0 });
-          }
+      for (const line of lines) {
+        if (!prevIds.has(line.id)) {
+          states.set(line.id, { type: 'inserted', timestamp: 0 });
         }
+      }
 
-        for (const line of lines) {
-          const prev = prevLinesRef.current.find((p) => p.id === line.id);
-          if (prev && prev.content !== line.content) {
-            states.set(line.id, { type: 'replaced', timestamp: 0 });
-          }
+      for (const line of lines) {
+        const prev = prevLinesRef.current.find((p) => p.id === line.id);
+        if (prev && prev.content !== line.content) {
+          states.set(line.id, { type: 'replaced', timestamp: 0 });
         }
       }
 
