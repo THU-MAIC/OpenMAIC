@@ -84,6 +84,17 @@ interface PooledIframeProps {
  * evicted by LRU), so its document is preserved across scene/mode changes.
  * `srcDoc` / `src` come straight from the entry and only change when the
  * content changes — that is the single intended reload path.
+ *
+ * Security: the sandbox intentionally omits `allow-same-origin`.
+ * Combining `allow-scripts` with `allow-same-origin` on a srcDoc iframe
+ * effectively negates sandbox protections — the embedded document is treated
+ * as same-origin with the parent and can access cookies, localStorage, and
+ * the parent DOM. Since the HTML may originate from LLM output or imported
+ * classroom JSON, keeping the iframe in a unique (null) origin prevents
+ * any embedded script from reaching the host application's state.
+ * postMessage communication (the only parent↔iframe channel used here)
+ * works correctly with a null origin because the host sends with
+ * targetOrigin='*'.
  */
 function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -127,7 +138,7 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
       src={entry.srcDoc ? undefined : entry.src}
       style={style}
       title={`Interactive Scene ${sceneId}`}
-      sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+      sandbox="allow-scripts allow-forms allow-popups"
     />
   );
 }
