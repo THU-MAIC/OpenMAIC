@@ -8,6 +8,7 @@
 export type PromptId =
   | 'requirements-to-outlines'
   | 'interactive-outlines'
+  | 'task-engine-outlines'
   | 'web-search-query-rewrite'
   | 'slide-content'
   | 'quiz-content'
@@ -19,6 +20,7 @@ export type PromptId =
   | 'code-content'
   | 'game-content'
   | 'visualization3d-content'
+  | 'procedural-skill-content'
   | 'widget-teacher-actions'
   | 'pbl-actions'
   | 'agent-system'

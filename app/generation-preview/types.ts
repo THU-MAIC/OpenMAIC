@@ -28,6 +28,8 @@ export interface GenerationSessionState {
   researchSources?: Array<{ title: string; url: string }>;
   // Language directive inferred from outline generation
   languageDirective?: string;
+  // Server-effective vocational mode from the outline generation done event.
+  taskEngineMode?: boolean;
 }
 
 export type GenerationStep = {

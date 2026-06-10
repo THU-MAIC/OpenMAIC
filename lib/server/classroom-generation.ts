@@ -18,6 +18,7 @@ import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
@@ -227,6 +228,7 @@ export async function generateClassroom(
   const requirements: UserRequirements = {
     requirement,
   };
+  const vocationalActive = resolveVocationalActive(requirements);
   const pdfText = pdfContent?.text || undefined;
 
   await options.onProgress?.({
@@ -360,7 +362,9 @@ export async function generateClassroom(
   let generatedScenes = 0;
 
   for (const [index, outline] of outlines.entries()) {
-    const safeOutline = applyOutlineFallbacks(outline, true);
+    const safeOutline = applyOutlineFallbacks(outline, true, {
+      allowProceduralSkill: vocationalActive,
+    });
     const progressStart = 30 + Math.floor((index / Math.max(outlines.length, 1)) * 60);
 
     await options.onProgress?.({
@@ -371,7 +375,11 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    const content = await generateSceneContent(safeOutline, aiCall, { agents, languageDirective });
+    const content = await generateSceneContent(safeOutline, aiCall, {
+      agents,
+      languageDirective,
+      allowProceduralSkill: vocationalActive,
+    });
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;

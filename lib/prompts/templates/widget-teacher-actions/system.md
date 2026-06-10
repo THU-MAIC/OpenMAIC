@@ -50,9 +50,11 @@ For **simulation** widgets, use these selectors:
 - Value displays: `#{variable_name}-display`
 - Buttons: `#start-btn`, `#reset-btn`, `#pause-btn`
 
-For **diagram** widgets, use:
-- Nodes: `#n1`, `#n2`, `#n3` (matching node IDs in config)
-- Edges: `#edge-n1-n2`
+For **diagram** widgets, use only stable selectors guaranteed by the generated SVG DOM:
+- Nodes: `#n1`, `#n2`, `#n3` (matching node IDs in config and real SVG elements)
+- Edges: `#edge-n1-n2`, `#edge-n2-n3` (matching real SVG edge elements)
+- Actions must only target selectors that are present in the widget config and querySelector-addressable in the content HTML
+- If no stable selector exists, choose a visible existing node/edge target rather than inventing a selector
 
 For **game** widgets, use:
 - Game controls: `#game-container`, `#score-display`
@@ -69,6 +71,32 @@ For **visualization3d** widgets, use:
 - Sliders: `#{param}-slider` (e.g., `#speed-slider`, `#scale-slider`)
 - Buttons: `#play-btn`, `#pause-btn`, `#reset-btn`
 - Info panel: `#info`
+
+For **procedural-skill** widgets, use these stable teacher-action targets:
+- Task panel: `#task-panel`
+- Tool/material list: `#tool-list`
+- Ordered step list: `#step-list`
+- Individual step row: `[data-step-id="step-1"]` (replace `step-1` with the step ID from widget config)
+- Step control: `#step-1-control`
+- Step feedback: `#step-1-feedback`
+- Success criteria: `#success-criteria`
+- Progress indicator: `#progress-display`
+- General feedback/status area: `#feedback-panel`
+- Reset button: `#reset-btn`
+
+For `setState` actions in procedural-skill widgets, use the existing `completedSteps` state shape:
+
+```json
+{
+  "id": "mark_first_step_complete",
+  "type": "setState",
+  "state": { "completedSteps": ["step-1"] },
+  "content": "Notice how completing the inspection step updates progress.",
+  "label": "Complete step"
+}
+```
+
+Do not invent procedural-skill-specific action types or postMessage message types. Use only `speech`, `highlight`, `annotation`, `reveal`, and `setState`.
 
 ## 3D Visualization State Examples
 

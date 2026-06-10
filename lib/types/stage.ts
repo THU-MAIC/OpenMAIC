@@ -58,6 +58,13 @@ export interface Stage {
    * Absent on legacy classrooms, imports, and regular-mode generations.
    */
   interactiveMode?: boolean;
+  /**
+   * True when this classroom was generated with the vocational Task Engine
+   * path enabled. This is distinct from `interactiveMode`: task-engine
+   * classrooms are interactive, but not every interactive classroom is
+   * vocational.
+   */
+  taskEngineMode?: boolean;
 }
 
 /**

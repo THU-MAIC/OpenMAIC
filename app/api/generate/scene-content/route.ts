@@ -18,6 +18,7 @@ import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generatio
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveVocationalActive } from '@/lib/config/feature-flags';
 
 const log = createLogger('Scene Content API');
 
@@ -37,6 +38,7 @@ export async function POST(req: NextRequest) {
       stageId,
       agents,
       languageDirective,
+      requirements,
     } = body as {
       outline: SceneOutline;
       allOutlines: SceneOutline[];
@@ -50,6 +52,7 @@ export async function POST(req: NextRequest) {
       stageId: string;
       agents?: AgentInfo[];
       languageDirective?: string;
+      requirements?: { taskEngineMode?: boolean };
     };
 
     // Validate required fields
@@ -122,7 +125,10 @@ export async function POST(req: NextRequest) {
     };
 
     // ── Apply fallbacks ──
-    const effectiveOutline = applyOutlineFallbacks(outline, !!languageModel);
+    const vocationalActive = resolveVocationalActive(requirements);
+    const effectiveOutline = applyOutlineFallbacks(outline, !!languageModel, {
+      allowProceduralSkill: vocationalActive,
+    });
 
     // ── Filter images assigned to this outline ──
     let assignedImages: PdfImage[] | undefined;
@@ -155,6 +161,7 @@ export async function POST(req: NextRequest) {
       agents,
       languageDirective,
       thinkingConfig,
+      allowProceduralSkill: vocationalActive,
     });
 
     if (!content) {

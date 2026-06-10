@@ -26,6 +26,7 @@ export {
 export const PROMPT_IDS = {
   REQUIREMENTS_TO_OUTLINES: 'requirements-to-outlines',
   INTERACTIVE_OUTLINES: 'interactive-outlines',
+  TASK_ENGINE_OUTLINES: 'task-engine-outlines',
   WEB_SEARCH_QUERY_REWRITE: 'web-search-query-rewrite',
   SLIDE_CONTENT: 'slide-content',
   QUIZ_CONTENT: 'quiz-content',
@@ -37,6 +38,7 @@ export const PROMPT_IDS = {
   CODE_CONTENT: 'code-content',
   GAME_CONTENT: 'game-content',
   VISUALIZATION3D_CONTENT: 'visualization3d-content',
+  PROCEDURAL_SKILL_CONTENT: 'procedural-skill-content',
   WIDGET_TEACHER_ACTIONS: 'widget-teacher-actions',
   PBL_ACTIONS: 'pbl-actions',
   AGENT_SYSTEM: 'agent-system',

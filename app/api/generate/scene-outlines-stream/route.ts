@@ -35,6 +35,7 @@ import type {
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveVocationalActive } from '@/lib/config/feature-flags';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -126,6 +127,113 @@ function extractNewOutlines(buffer: string, alreadyParsed: number): SceneOutline
   return results;
 }
 
+function normalizeTaskEngineProceduralOutline(
+  outline: SceneOutline,
+  requirement: string,
+): SceneOutline {
+  const widgetOutline = outline.widgetOutline ?? {};
+
+  return {
+    ...outline,
+    type: 'interactive',
+    widgetType: 'procedural-skill',
+    widgetOutline: {
+      ...widgetOutline,
+      procedureType: widgetOutline.procedureType ?? 'inspection',
+      task: widgetOutline.task || requirement,
+      tools:
+        widgetOutline.tools && widgetOutline.tools.length > 0
+          ? widgetOutline.tools
+          : ['required PPE', 'task checklist'],
+      steps:
+        widgetOutline.steps && widgetOutline.steps.length > 0
+          ? widgetOutline.steps
+          : ['Confirm task conditions', 'Select required tools', 'Complete safety check'],
+      successCriteria:
+        widgetOutline.successCriteria && widgetOutline.successCriteria.length > 0
+          ? widgetOutline.successCriteria
+          : ['Required checks completed', 'Unsafe conditions are not ignored'],
+      errorConsequences:
+        widgetOutline.errorConsequences && widgetOutline.errorConsequences.length > 0
+          ? widgetOutline.errorConsequences
+          : ['Unsafe or incorrect actions require stopping and rechecking'],
+    },
+  };
+}
+
+function normalizeTaskEngineSlideOutline(outline: SceneOutline): SceneOutline {
+  const normalized: SceneOutline = {
+    ...outline,
+    type: 'slide',
+  };
+  delete normalized.widgetType;
+  delete normalized.widgetOutline;
+  delete normalized.interactiveConfig;
+  return normalized;
+}
+
+const ORDINARY_WIDGET_TYPES = new Set(['simulation', 'diagram', 'code', 'game', 'visualization3d']);
+
+function normalizeTaskEngineOutline(outline: SceneOutline, requirement: string): SceneOutline {
+  if (outline.type === 'slide') {
+    return normalizeTaskEngineSlideOutline(outline);
+  }
+
+  if (outline.type === 'interactive' && outline.widgetType === 'procedural-skill') {
+    return normalizeTaskEngineProceduralOutline(outline, requirement);
+  }
+
+  if (
+    outline.type === 'interactive' &&
+    outline.widgetType &&
+    ORDINARY_WIDGET_TYPES.has(outline.widgetType)
+  ) {
+    return outline;
+  }
+
+  return normalizeTaskEngineSlideOutline(outline);
+}
+
+function sanitizeNonTaskEngineOutline(outline: SceneOutline): SceneOutline {
+  if (outline.widgetType !== 'procedural-skill') {
+    return outline;
+  }
+
+  const widgetOutline = { ...(outline.widgetOutline ?? {}) };
+  delete widgetOutline.procedureType;
+  delete widgetOutline.task;
+  delete widgetOutline.tools;
+  delete widgetOutline.steps;
+  delete widgetOutline.successCriteria;
+  delete widgetOutline.errorConsequences;
+
+  // procedural-skill is gated behind taskEngineMode to protect ordinary MAIC generation.
+  return {
+    ...outline,
+    type: 'interactive',
+    widgetType: 'diagram',
+    description: outline.description
+      ? `${outline.description} Present this as a process or structure diagram.`
+      : 'Present this topic as a process or structure diagram.',
+    widgetOutline,
+  };
+}
+
+function ensureUniqueOutlineId(outline: SceneOutline, usedIds: Set<string>): SceneOutline {
+  const candidate = typeof outline.id === 'string' && outline.id.trim() ? outline.id : undefined;
+  if (candidate && !usedIds.has(candidate)) {
+    usedIds.add(candidate);
+    return outline;
+  }
+
+  let id = nanoid();
+  while (usedIds.has(id)) {
+    id = nanoid();
+  }
+  usedIds.add(id);
+  return { ...outline, id };
+}
+
 export async function POST(req: NextRequest) {
   let requirementSnippet: string | undefined;
   let resolvedModelString: string | undefined;
@@ -203,11 +311,14 @@ export async function POST(req: NextRequest) {
     // Build teacher context from agents (if available)
     const teacherContext = formatTeacherPersonaForPrompt(agents);
 
-    // Check if Interactive Mode is enabled
+    // Check if Interactive Mode or server-enabled Task Engine mode is enabled.
     const interactiveMode = requirements.interactiveMode ?? false;
-    const promptId = interactiveMode
-      ? PROMPT_IDS.INTERACTIVE_OUTLINES
-      : PROMPT_IDS.REQUIREMENTS_TO_OUTLINES;
+    const taskEngineMode = resolveVocationalActive(requirements);
+    const promptId = taskEngineMode
+      ? PROMPT_IDS.TASK_ENGINE_OUTLINES
+      : interactiveMode
+        ? PROMPT_IDS.INTERACTIVE_OUTLINES
+        : PROMPT_IDS.REQUIREMENTS_TO_OUTLINES;
 
     const prompts = buildPrompt(promptId, {
       requirement: requirements.requirement,
@@ -287,6 +398,7 @@ export async function POST(req: NextRequest) {
               let fullText = '';
               parsedOutlines = [];
               languageDirective = null;
+              const usedOutlineIds = new Set<string>();
               const textStream = streamLLM(
                 streamParams,
                 'scene-outlines-stream',
@@ -312,11 +424,14 @@ export async function POST(req: NextRequest) {
                 const newOutlines = extractNewOutlines(fullText, parsedOutlines.length);
                 for (const outline of newOutlines) {
                   // Ensure ID and order
-                  const enriched = {
+                  const enrichedBase = {
                     ...outline,
-                    id: outline.id || nanoid(),
                     order: parsedOutlines.length + 1,
                   };
+                  const normalized = taskEngineMode
+                    ? normalizeTaskEngineOutline(enrichedBase, requirements.requirement)
+                    : sanitizeNonTaskEngineOutline(enrichedBase);
+                  const enriched = ensureUniqueOutlineId(normalized, usedOutlineIds);
                   parsedOutlines.push(enriched);
 
                   const event = JSON.stringify({
@@ -381,6 +496,7 @@ export async function POST(req: NextRequest) {
               type: 'done',
               outlines: uniquifiedOutlines,
               languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
+              taskEngineMode,
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else {

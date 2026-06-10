@@ -4,7 +4,13 @@
 
 // ==================== Base Types ====================
 
-export type WidgetType = 'simulation' | 'diagram' | 'code' | 'game' | 'visualization3d';
+export type WidgetType =
+  | 'simulation'
+  | 'diagram'
+  | 'code'
+  | 'game'
+  | 'visualization3d'
+  | 'procedural-skill';
 
 export interface TeacherAction {
   id: string;
@@ -190,6 +196,26 @@ export interface Visualization3DConfig {
   teacherActions?: TeacherAction[];
 }
 
+// ==================== Procedural Skill Widget ====================
+
+export interface ProceduralSkillStep {
+  id: string;
+  title: string;
+  description: string;
+  tools?: string[];
+  successCriteria?: string[];
+}
+
+export interface ProceduralSkillConfig {
+  type: 'procedural-skill';
+  task: string;
+  description: string;
+  tools?: string[];
+  steps: ProceduralSkillStep[];
+  successCriteria?: string[];
+  teacherActions?: TeacherAction[];
+}
+
 // ==================== Union Types ====================
 
 export type WidgetConfig =
@@ -197,4 +223,5 @@ export type WidgetConfig =
   | DiagramConfig
   | CodeConfig
   | GameConfig
-  | Visualization3DConfig;
+  | Visualization3DConfig
+  | ProceduralSkillConfig;
