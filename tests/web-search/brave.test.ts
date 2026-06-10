@@ -10,20 +10,21 @@ import { parseBraveSearchHtml, searchWithBrave } from '@/lib/web-search/brave';
 
 describe('parseBraveSearchHtml', () => {
   it('extracts web results, decodes entities, strips date prefixes, and skips Brave links', () => {
+    // Brave's current markup: the result title is a <div>, not a <span>
     const html = `
       <div class="snippet svelte-abc" data-pos="0" data-type="web">
         <a href="https://example.com/a?x=1&amp;y=2">
-          <span class="search-snippet-title">Example &amp; Title</span>
+          <div class="title search-snippet-title line-clamp-1 svelte-abc" title="Example &amp; Title">Example &amp; Title</div>
         </a>
         <div class="generic-snippet">Jan 1, 2026 - Result <strong>content</strong> &amp; more</div>
       </div>
       <div class="snippet svelte-def" data-pos="1" data-type="web">
-        <a href="https://search.brave.com/help"><span class="search-snippet-title">Brave Help</span></a>
+        <a href="https://search.brave.com/help"><div class="title search-snippet-title line-clamp-1">Brave Help</div></a>
         <div class="generic-snippet">Internal Brave result</div>
       </div>
       <div class="snippet svelte-ghi" data-pos="2" data-type="web">
         <a href="https://second.example.com">
-          <span class="search-snippet-title">Second result</span>
+          <div class="title search-snippet-title line-clamp-1">Second result</div>
         </a>
         <p class="snippet-description">2 days ago - Secondary description</p>
       </div>
@@ -45,6 +46,26 @@ describe('parseBraveSearchHtml', () => {
       },
     ]);
   });
+
+  it('still parses the legacy <span> title markup', () => {
+    const html = `
+      <div class="snippet" data-type="web">
+        <a href="https://legacy.example.com">
+          <span class="search-snippet-title">Legacy title</span>
+        </a>
+        <div class="generic-snippet">Legacy content</div>
+      </div>
+    `;
+
+    expect(parseBraveSearchHtml(html, 5)).toEqual([
+      {
+        title: 'Legacy title',
+        url: 'https://legacy.example.com',
+        content: 'Legacy content',
+        score: 1,
+      },
+    ]);
+  });
 });
 
 describe('searchWithBrave', () => {
@@ -57,7 +78,7 @@ describe('searchWithBrave', () => {
       new Response(
         `
           <div class="snippet" data-type="web">
-            <a href="https://example.com"><span class="search-snippet-title">Example</span></a>
+            <a href="https://example.com"><div class="title search-snippet-title line-clamp-1">Example</div></a>
             <div class="generic-snippet">Content</div>
           </div>
         `,

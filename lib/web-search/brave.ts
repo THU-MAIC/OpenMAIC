@@ -71,10 +71,11 @@ export function parseBraveSearchHtml(html: string, maxResults: number): WebSearc
     const url = decodeHtml(linkMatch[1].trim());
     if (!url || isBraveOwnedUrl(url)) continue;
 
+    // Brave has used both <span> and <div> for the result title over time
     const titleMatch = block.match(
-      /<span[^>]*class="[^"]*search-snippet-title[^"]*"[^>]*>([\s\S]*?)<\/span>/i,
+      /<(span|div)[^>]*class="[^"]*search-snippet-title[^"]*"[^>]*>([\s\S]*?)<\/\1>/i,
     );
-    const title = titleMatch ? stripHtml(titleMatch[1]) : '';
+    const title = titleMatch ? stripHtml(titleMatch[2]) : '';
     if (!title) continue;
 
     const genericMatch = block.match(
