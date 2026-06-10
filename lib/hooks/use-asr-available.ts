@@ -37,9 +37,14 @@ export function useASRAvailable(): boolean {
 
   const builtIn = ASR_PROVIDERS[asrProviderId as BuiltInASRProviderId];
   const requiresKey = builtIn ? builtIn.requiresApiKey : (providerConfig?.requiresApiKey ?? true);
-  const configured =
-    !requiresKey || !!providerConfig?.apiKey || !!providerConfig?.isServerConfigured;
+  // Trim to match what the recorder actually sends — a whitespace-only key is
+  // dropped at request time, so it must not count as configured here.
+  const keyOk =
+    !requiresKey || !!providerConfig?.apiKey?.trim() || !!providerConfig?.isServerConfigured;
+  // Custom providers are unusable until at least one model is configured
+  // (mirrors the media-popover listing rule that hides model-less customs).
+  const modelOk = !!builtIn || (providerConfig?.customModels?.length ?? 0) > 0;
   const browserOk = asrProviderId !== 'browser-native' || browserSpeechSupported;
 
-  return asrEnabled && configured && browserOk;
+  return asrEnabled && keyOk && modelOk && browserOk;
 }
