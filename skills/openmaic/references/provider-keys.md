@@ -39,13 +39,13 @@ Recommended when the user wants the smallest amount of configuration.
 Set:
 
 ```env
-ANTHROPIC_API_KEY=sk-ant-...
+OPENAI_API_KEY=sk-...
 ```
 
 Why:
 
-- OpenMAIC server fallback is currently `gpt-4o-mini` if `DEFAULT_MODEL` is unset.
-- If the user wants Anthropic or Google by default, they should set `DEFAULT_MODEL` explicitly.
+- OpenMAIC server fallback is currently `openai:gpt-4o-mini` if `DEFAULT_MODEL` is unset.
+- If the user wants Anthropic, Google, or another provider by default, they should set `DEFAULT_MODEL` explicitly with the provider prefix.
 
 ### 2. Better Speed / Cost Balance
 
@@ -128,7 +128,7 @@ DEFAULT_MODEL=google:gemini-3-flash-preview
 Preferred:
 
 - "I recommend configuring OpenMAIC through `.env.local` first. Please edit that file locally and tell me when you're done."
-- "For the simplest setup, I recommend Anthropic. For better speed/cost balance, I recommend Google plus `DEFAULT_MODEL=google:gemini-3-flash-preview`. Which path do you want?"
+- "For the simplest setup, I recommend OpenAI because it matches the default server fallback. For better speed/cost balance, I recommend Google plus `DEFAULT_MODEL=google:gemini-3-flash-preview`. Which path do you want?"
 
 Avoid as the first move:
 
