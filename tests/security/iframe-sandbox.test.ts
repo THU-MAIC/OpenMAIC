@@ -32,9 +32,7 @@ function isDangerousSandbox(sandbox: string): boolean {
 
 describe('iframe sandbox safety', () => {
   test('InteractiveIframeHost does not combine allow-scripts + allow-same-origin', () => {
-    const sandboxes = extractSandboxValues(
-      'components/scene-renderers/InteractiveIframeHost.tsx',
-    );
+    const sandboxes = extractSandboxValues('components/scene-renderers/InteractiveIframeHost.tsx');
     expect(sandboxes.length).toBeGreaterThan(0);
     for (const sandbox of sandboxes) {
       expect(isDangerousSandbox(sandbox)).toBe(false);
