@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTImageElement } from '@/lib/types/slides';
+import type { PPTImageElement } from '@maic/dsl';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { useElementFlip } from '../hooks/useElementFlip';
 import { useClipImage } from './useClipImage';

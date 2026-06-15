@@ -1,6 +1,6 @@
 // Non-professional designers can use this app to draw basic shapes: https://github.com/pipipi-pikachu/svgPathCreator
 
-import { ShapePathFormulasKeys } from '@/lib/types/slides';
+import { ShapePathFormulasKeys } from '@maic/dsl';
 
 export interface ShapePoolItem {
   viewBox: [number, number];

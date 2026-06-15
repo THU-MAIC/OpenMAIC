@@ -86,6 +86,7 @@
     "partial-json": "^0.1.7",
     "pptxgenjs": "workspace:*",
     "pptxtojson": "^1.11.0",
+    "@maic/dsl": "workspace:*",
     "@maic/importer": "workspace:*",
     "@maic/renderer": "workspace:*",
     "prosemirror-commands": "^1.7.1",
@@ -143,7 +144,7 @@
     "tslib": "^2.8.0",
     "tsx": "^4.21.0",
     "typescript": "^5",
-    "vitest": "^4.1.0",
+    "vitest": "^4.1.8",
     "vue-to-react": "^1.0.0"
   },
   "pnpm": {

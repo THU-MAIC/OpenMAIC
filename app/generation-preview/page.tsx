@@ -730,6 +730,8 @@ function GenerationPreviewContent() {
           const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
           const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
           settings.setSelectedAgentIds(savedIds);
+          // Stage-derived, not a user choice — must not carry across classrooms.
+          settings.setAgentSelectionIsUserSet(false);
           stage.agentIds = savedIds;
 
           // Show card-reveal modal, continue generation once all cards are revealed

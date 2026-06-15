@@ -1,7 +1,7 @@
 // lib/export/classroom-zip-types.ts
 import type { SceneType, SceneContent } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
-import type { Slide } from '@/lib/types/slides';
+import type { Slide } from '@maic/dsl';
 
 export const CLASSROOM_ZIP_FORMAT_VERSION = 1;
 export const CLASSROOM_ZIP_EXTENSION = '.maic.zip';

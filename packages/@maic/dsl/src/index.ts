@@ -11,6 +11,6 @@
  * validators / type-guards, and version/migration helpers. It must never gain
  * a runtime dependency on React, pptx, echarts, etc.
  */
-export * from './slides';
-export * from './guards';
-export * from './version';
+export * from './slides.js';
+export * from './guards.js';
+export * from './version.js';

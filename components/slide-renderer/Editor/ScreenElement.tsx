@@ -1,6 +1,6 @@
 'use client';
 
-import { ElementTypes, type PPTElement } from '@/lib/types/slides';
+import { ElementTypes, type PPTElement } from '@maic/dsl';
 import { useMemo } from 'react';
 
 import { BaseImageElement } from '../components/element/ImageElement/BaseImageElement';

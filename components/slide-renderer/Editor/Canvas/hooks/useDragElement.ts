@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useCanvasStore, useKeyboardStore } from '@/lib/store';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@maic/dsl';
 import type { AlignmentLineProps } from '@/lib/types/edit';
 import { getRectRotatedRange, uniqAlignLines, type AlignLine } from '@/lib/utils/element';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';

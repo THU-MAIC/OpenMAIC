@@ -7,7 +7,7 @@
  */
 
 import type { SlideContent } from '@/lib/types/stage';
-import type { SlideTheme, SlideBackground } from '@/lib/types/slides';
+import type { SlideTheme, SlideBackground } from '@maic/dsl';
 import { useCanvasStore } from '@/lib/store/canvas';
 import type { StageStore, APIResult, HighlightOptions, SpotlightOptions } from './stage-api-types';
 import { getScene } from './stage-api-defaults';

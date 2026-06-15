@@ -133,7 +133,7 @@ export interface SceneOutline {
 
 // ==================== Stage 3 Output: Generated Content ====================
 
-import type { PPTElement, SlideBackground } from './slides';
+import type { PPTElement, SlideBackground } from '@maic/dsl';
 import type { QuizQuestion } from './stage';
 
 /**

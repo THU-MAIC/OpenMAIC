@@ -1,4 +1,4 @@
-import type { LinePoint, LineStyleType } from '@/lib/types/slides';
+import type { LinePoint, LineStyleType } from '@maic/dsl';
 
 export interface LinePoolItem {
   path: string;

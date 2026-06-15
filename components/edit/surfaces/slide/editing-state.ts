@@ -1,4 +1,4 @@
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@maic/dsl';
 
 /**
  * The single selected slide element — `undefined` unless exactly one element is

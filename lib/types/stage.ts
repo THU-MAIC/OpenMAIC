@@ -1,5 +1,5 @@
 // Stage and Scene data types
-import type { Slide } from '@/lib/types/slides';
+import type { Slide } from '@maic/dsl';
 import type { Action } from '@/lib/types/action';
 import type { PBLProjectConfig } from '@/lib/pbl/types';
 import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';

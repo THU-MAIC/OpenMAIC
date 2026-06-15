@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { SlideBackground } from '@/lib/types/slides';
+import type { SlideBackground } from '@maic/dsl';
 
 /**
  * Convert slide background data to CSS styles

@@ -6,7 +6,7 @@ import type {
   ScatterSeriesOption,
   RadarSeriesOption,
 } from 'echarts/charts';
-import type { ChartData, ChartType } from '@/lib/types/slides';
+import type { ChartData, ChartType } from '@maic/dsl';
 
 type EChartOption = ComposeOption<
   BarSeriesOption | LineSeriesOption | PieSeriesOption | ScatterSeriesOption | RadarSeriesOption

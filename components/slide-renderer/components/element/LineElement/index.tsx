@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { PPTLineElement } from '@/lib/types/slides';
+import type { PPTLineElement } from '@maic/dsl';
 import { getLineElementPath } from '@/lib/utils/element';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { LinePointMarker } from './LinePointMarker';

@@ -1,5 +1,10 @@
-import type { ShapePathFormulasKeys } from '@/lib/types/slides';
-import type { PPTImageElement, PPTShapeElement, PPTTextElement, Slide } from '@/lib/types/slides';
+import type {
+  ShapePathFormulasKeys,
+  PPTImageElement,
+  PPTShapeElement,
+  PPTTextElement,
+  Slide,
+} from '@maic/dsl';
 
 export interface ShapeSpec {
   viewBox: [number, number];
