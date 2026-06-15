@@ -241,9 +241,9 @@ docker compose up --build
 
 ### Optional: MinerU (Advanced Document Parsing)
 
-[MinerU](https://github.com/opendatalab/MinerU) provides enhanced parsing for complex tables, formulas, and OCR. You can use the [MinerU official API](https://mineru.net/) or [self-host your own instance](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/).
+[MinerU](https://github.com/opendatalab/MinerU) provides enhanced parsing for complex tables, formulas, OCR, and Office-style course material. OpenMAIC can upload a single course material file and extract it through the document extractor boundary. PDF is supported by the built-in `unpdf` parser, plain text and Markdown are extracted locally, and DOCX/PPTX require a configured MinerU service.
 
-Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local`.
+You can use the [MinerU official API](https://mineru.net/) or [self-host your own instance](https://opendatalab.github.io/MinerU/quick_start/docker_deployment/). Set `PDF_MINERU_BASE_URL` (and `PDF_MINERU_API_KEY` if needed) in `.env.local` or configure `pdf.mineru.baseUrl` in `server-providers.yml`.
 
 ### Optional: VoxCPM2 (Self-Hosted TTS with Voice Cloning)
 
