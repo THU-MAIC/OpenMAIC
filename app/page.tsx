@@ -37,6 +37,7 @@ import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
+import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import type { UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
@@ -307,12 +308,17 @@ function HomePage() {
 
       let pdfStorageKey: string | undefined;
       let pdfFileName: string | undefined;
+      let documentMimeType: string | undefined;
       let pdfProviderId: string | undefined;
       let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
 
       if (form.pdfFile) {
         pdfStorageKey = await storePdfBlob(form.pdfFile);
         pdfFileName = form.pdfFile.name;
+        documentMimeType = normalizeDocumentMimeType({
+          mimeType: form.pdfFile.type,
+          fileName: form.pdfFile.name,
+        });
 
         const settings = useSettingsStore.getState();
         pdfProviderId = settings.pdfProviderId;
@@ -333,6 +339,7 @@ function HomePage() {
         imageStorageIds: [],
         pdfStorageKey,
         pdfFileName,
+        documentMimeType,
         pdfProviderId,
         pdfProviderConfig,
         sceneOutlines: null,
