@@ -72,8 +72,12 @@ next-env.d.ts
 /data
 /logs
 
-# docs
-/docs
+# docs (ignore root, but keep tracked documentation subdirectories)
+/docs/*
+!/docs/adrs/
+!/docs/decisions/
+!/docs/principles/
+!/docs/research/
 # Eval results
 eval/whiteboard-layout/results/
 eval/outline-language/results/
