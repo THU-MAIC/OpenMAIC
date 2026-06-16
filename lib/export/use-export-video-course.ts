@@ -86,6 +86,22 @@ interface AudioAsset {
   extension: string;
 }
 
+interface ExportTTSContext {
+  providerId: string;
+  modelId?: string;
+  voice?: string;
+  speed?: number;
+  baseUrl?: string;
+  providerOptions?: unknown;
+  providerConfig?: {
+    apiKey?: string;
+    baseUrl?: string;
+    customDefaultBaseUrl?: string;
+    modelId?: string;
+  };
+  language?: string;
+}
+
 function safeFileName(name: string | undefined, fallback: string): string {
   return (name || fallback).replace(/[\\/:*?"<>|]/g, '_') || fallback;
 }
@@ -108,6 +124,50 @@ function compactErrorMessage(value: string): string {
     .filter(Boolean)
     .join('\n');
   return normalized.length > 1800 ? `...${normalized.slice(normalized.length - 1800)}` : normalized;
+}
+
+function stableSerialize(value: unknown): string {
+  if (value === null || typeof value !== 'object') return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(stableSerialize).join(',')}]`;
+
+  const record = value as Record<string, unknown>;
+  return `{${Object.keys(record)
+    .filter((key) => record[key] !== undefined)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${stableSerialize(record[key])}`)
+    .join(',')}}`;
+}
+
+function fallbackHash(input: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+async function sha256Hex(input: string): Promise<string> {
+  if (!globalThis.crypto?.subtle) return fallbackHash(input);
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+async function exportSpeechCacheAudioId(text: string, context: ExportTTSContext): Promise<string> {
+  const seed = stableSerialize({
+    version: 1,
+    text: text.trim(),
+    language: context.language || '',
+    providerId: context.providerId,
+    modelId: context.modelId || '',
+    voice: context.voice || '',
+    speed: context.speed ?? 1,
+    baseUrl: context.baseUrl || '',
+    providerOptions: context.providerOptions ?? null,
+  });
+  return `tts_export_${(await sha256Hex(seed)).slice(0, 48)}`;
 }
 
 function estimateSpeechMs(text: string): number {
@@ -344,11 +404,7 @@ async function hasExistingExportableNarration(
   return false;
 }
 
-async function generateSpeechAudioForExport(
-  audioId: string,
-  text: string,
-  language?: string,
-): Promise<AudioAsset | null> {
+async function resolveExportTTSContext(language?: string): Promise<ExportTTSContext | null> {
   const settings = useSettingsStore.getState();
   if (settings.ttsProviderId === BROWSER_NATIVE_TTS_PROVIDER_ID) return null;
   if (
@@ -360,29 +416,45 @@ async function generateSpeechAudioForExport(
     return null;
   }
 
-  const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
+  const providerConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
   const teacher = pickNarratorAgent(useAgentRegistry.getState().listAgents());
   const providerOptions = await resolveAgentVoiceOptions(teacher, {
     providerId: settings.ttsProviderId,
-    providerConfig: ttsProviderConfig,
+    providerConfig,
     voiceId: settings.ttsVoice,
     language,
   });
 
+  return {
+    providerId: settings.ttsProviderId,
+    modelId: providerConfig?.modelId,
+    voice: settings.ttsVoice,
+    speed: settings.ttsSpeed,
+    baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl || undefined,
+    providerOptions,
+    providerConfig,
+    language,
+  };
+}
+
+async function generateSpeechAudioForExport(
+  audioId: string,
+  text: string,
+  context: ExportTTSContext,
+): Promise<AudioAsset | null> {
   const response = await fetch('/api/generate/tts', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       text,
       audioId,
-      ttsProviderId: settings.ttsProviderId,
-      ttsModelId: ttsProviderConfig?.modelId,
-      ttsVoice: settings.ttsVoice,
-      ttsSpeed: settings.ttsSpeed,
-      ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-      ttsBaseUrl:
-        ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
-      ttsProviderOptions: providerOptions,
+      ttsProviderId: context.providerId,
+      ttsModelId: context.modelId,
+      ttsVoice: context.voice,
+      ttsSpeed: context.speed,
+      ttsApiKey: context.providerConfig?.apiKey || undefined,
+      ttsBaseUrl: context.baseUrl,
+      ttsProviderOptions: context.providerOptions,
     }),
   });
 
@@ -403,6 +475,8 @@ async function generateSpeechAudioForExport(
     id: audioId,
     blob,
     format: data.format,
+    text,
+    voice: context.voice,
     createdAt: Date.now(),
   });
 
@@ -412,6 +486,22 @@ async function generateSpeechAudioForExport(
     mimeType,
     extension: audioExtFromMime(mimeType),
   };
+}
+
+function persistSpeechAudioId(sceneId: string, actionId: string, audioId: string): void {
+  const { getSceneById, updateScene } = useStageStore.getState();
+  const scene = getSceneById(sceneId);
+  if (!scene?.actions) return;
+
+  let changed = false;
+  const actions = scene.actions.map((action) => {
+    if (action.id !== actionId || action.type !== 'speech') return action;
+    if ((action as SpeechAction).audioId === audioId) return action;
+    changed = true;
+    return { ...action, audioId };
+  });
+
+  if (changed) updateScene(sceneId, { actions });
 }
 
 export function useExportVideoCourse() {
@@ -434,6 +524,27 @@ export function useExportVideoCourse() {
         const exportResolution = resolveVideoCourseExportResolution(options?.resolutionId);
         const settings = useSettingsStore.getState();
         const isBrowserNativeTTS = settings.ttsProviderId === BROWSER_NATIVE_TTS_PROVIDER_ID;
+        const ttsContext = isBrowserNativeTTS
+          ? null
+          : await resolveExportTTSContext(stage.languageDirective);
+        const pendingAudioById = new Map<string, Promise<AudioAsset | null>>();
+        const loadOrGenerateCachedAudio = async (
+          audioId: string,
+          text: string,
+          context: ExportTTSContext,
+        ): Promise<AudioAsset | null> => {
+          const pending = pendingAudioById.get(audioId);
+          if (pending) return pending;
+
+          const existing = await resolveSpeechAudioFromDb(audioId);
+          if (existing) return existing;
+
+          const generated = generateSpeechAudioForExport(audioId, text, context).finally(() => {
+            pendingAudioById.delete(audioId);
+          });
+          pendingAudioById.set(audioId, generated);
+          return generated;
+        };
         const speechEntries = orderedScenes.flatMap((scene) =>
           getSpeechActions(scene).map((speech, speechIndex) => ({ scene, speech, speechIndex })),
         );
@@ -488,13 +599,25 @@ export function useExportVideoCourse() {
           for (let speechIndex = 0; speechIndex < speechActions.length; speechIndex++) {
             const speech = speechActions[speechIndex];
             const exportAudioId = getSpeechExportAudioId(scene, speech, speechIndex);
+            const cachedAudioId = ttsContext
+              ? await exportSpeechCacheAudioId(speech.text, ttsContext)
+              : undefined;
             const audioUrl = isExportableAudioUrl(speech.audioUrl) ? speech.audioUrl : undefined;
-            let audio = await resolveSpeechAudioFromDb(exportAudioId);
+            let actionAudioId: string | undefined;
+            let audio = cachedAudioId ? await resolveSpeechAudioFromDb(cachedAudioId) : null;
+            if (audio && cachedAudioId) {
+              actionAudioId = cachedAudioId;
+            }
+            if (!audio) {
+              audio = await resolveSpeechAudioFromDb(exportAudioId);
+              if (audio) actionAudioId = exportAudioId;
+            }
             if (!audio && speech.audioId && speech.audioId !== exportAudioId) {
               audio = await resolveSpeechAudioFromDb(speech.audioId);
+              if (audio) actionAudioId = speech.audioId;
             }
             let generationFailed = false;
-            if (!audio && !audioUrl && !isBrowserNativeTTS) {
+            if (!audio && !audioUrl && ttsContext && cachedAudioId) {
               try {
                 toast.loading(
                   t('export.videoGeneratingNarration', {
@@ -503,11 +626,8 @@ export function useExportVideoCourse() {
                   }),
                   { id: toastId },
                 );
-                audio = await generateSpeechAudioForExport(
-                  exportAudioId,
-                  speech.text,
-                  stage.languageDirective,
-                );
+                audio = await loadOrGenerateCachedAudio(cachedAudioId, speech.text, ttsContext);
+                if (audio) actionAudioId = cachedAudioId;
               } catch {
                 generationFailed = true;
                 failedNarrationCount++;
@@ -524,6 +644,7 @@ export function useExportVideoCourse() {
                 mimeType: audio.mimeType,
                 required: true,
               });
+              if (actionAudioId) persistSpeechAudioId(scene.id, speech.id, actionAudioId);
             } else if (audioUrl) {
               narrationTrackCount++;
               tracks.push({
