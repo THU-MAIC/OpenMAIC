@@ -3,8 +3,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Archive,
+  Check,
   Download,
   FileDown,
+  FileVideo,
   Loader2,
   Monitor,
   Moon,
@@ -12,6 +14,15 @@ import {
   Settings,
   Sun,
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useTheme } from '@/lib/hooks/use-theme';
@@ -19,6 +30,12 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
+import {
+  DEFAULT_VIDEO_COURSE_EXPORT_RESOLUTION_ID,
+  VIDEO_COURSE_EXPORT_RESOLUTIONS,
+  useExportVideoCourse,
+  type VideoCourseExportResolutionId,
+} from '@/lib/export/use-export-video-course';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
 import {
@@ -77,8 +94,13 @@ export function HeaderControls({
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
+  const { exporting: isExportingVideo, exportVideoCourse } = useExportVideoCourse();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [videoResolutionDialogOpen, setVideoResolutionDialogOpen] = useState(false);
+  const [selectedVideoResolutionId, setSelectedVideoResolutionId] =
+    useState<VideoCourseExportResolutionId>(DEFAULT_VIDEO_COURSE_EXPORT_RESOLUTION_ID);
   const exportRef = useRef<HTMLDivElement>(null);
+  const isAnyExporting = isExporting || isExportingZip || isExportingVideo;
 
   const canExport =
     scenes.length > 0 &&
@@ -231,27 +253,27 @@ export function HeaderControls({
       <div className="relative" ref={exportRef}>
         <button
           onClick={() => {
-            if (canExport && !isExporting && !isExportingZip) {
+            if (canExport && !isAnyExporting) {
               setExportMenuOpen(!exportMenuOpen);
             }
           }}
-          disabled={!canExport || isExporting || isExportingZip}
+          disabled={!canExport || isAnyExporting}
           title={
             canExport
-              ? isExporting || isExportingZip
+              ? isAnyExporting
                 ? t('export.exporting')
                 : t('export.pptx')
               : t('share.notReady')
           }
           className={cn(
             'shrink-0 p-2 rounded-full transition-all',
-            canExport && !isExporting && !isExportingZip
+            canExport && !isAnyExporting
               ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
               : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
           )}
           aria-label={t('export.pptx')}
         >
-          {isExporting || isExportingZip ? (
+          {isAnyExporting ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <Download className="w-4 h-4" />
@@ -287,6 +309,22 @@ export function HeaderControls({
             <button
               onClick={() => {
                 setExportMenuOpen(false);
+                setVideoResolutionDialogOpen(true);
+              }}
+              disabled={isExportingVideo}
+              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
+            >
+              <FileVideo className="w-4 h-4 text-gray-400 shrink-0" />
+              <div>
+                <div>{t('export.videoCourse')}</div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {t('export.videoCourseDesc')}
+                </div>
+              </div>
+            </button>
+            <button
+              onClick={() => {
+                setExportMenuOpen(false);
                 exportClassroomZip();
               }}
               disabled={isExportingZip}
@@ -303,6 +341,71 @@ export function HeaderControls({
           </div>
         )}
       </div>
+
+      <Dialog open={videoResolutionDialogOpen} onOpenChange={setVideoResolutionDialogOpen}>
+        <DialogContent className="max-w-[420px] gap-5 rounded-xl p-5">
+          <DialogHeader className="pr-8">
+            <DialogTitle>{t('export.videoResolutionTitle')}</DialogTitle>
+            <DialogDescription>{t('export.videoResolutionDesc')}</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-2">
+            {VIDEO_COURSE_EXPORT_RESOLUTIONS.map((resolution) => {
+              const selected = selectedVideoResolutionId === resolution.id;
+              const recommended = resolution.id === DEFAULT_VIDEO_COURSE_EXPORT_RESOLUTION_ID;
+              return (
+                <button
+                  key={resolution.id}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setSelectedVideoResolutionId(resolution.id)}
+                  className={cn(
+                    'relative min-h-[84px] rounded-lg border p-3 text-left transition-all',
+                    'hover:bg-gray-50 dark:hover:bg-gray-800/70',
+                    selected
+                      ? 'border-violet-500 bg-violet-50/80 text-violet-950 shadow-sm dark:border-violet-400 dark:bg-violet-950/30 dark:text-violet-100'
+                      : 'border-gray-200 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100',
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="text-base font-semibold leading-none">{resolution.label}</div>
+                    {selected && <Check className="h-4 w-4 text-violet-600 dark:text-violet-300" />}
+                  </div>
+                  <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                    {resolution.width} × {resolution.height}
+                  </div>
+                  {recommended && (
+                    <div className="mt-2 inline-flex rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700 dark:bg-violet-500/15 dark:text-violet-200">
+                      {t('export.videoResolutionRecommended')}
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setVideoResolutionDialogOpen(false)}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              type="button"
+              disabled={isExportingVideo}
+              onClick={() => {
+                setVideoResolutionDialogOpen(false);
+                exportVideoCourse({ resolutionId: selectedVideoResolutionId });
+              }}
+            >
+              <FileVideo className="h-4 w-4" />
+              {t('export.videoResolutionExport')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
     </div>
