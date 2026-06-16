@@ -5,23 +5,27 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 // model-routes is left real (it just reads MODEL_ROUTES) so we exercise the
 // real integration point.
 // Use the real parseModelString (canonical `provider:model` colon format) so
-// the test exercises actual separator handling; only stub getModel so no real
-// provider client is constructed.
+// the test exercises actual separator handling; only stub getModel (recording
+// its args) so no real provider client is constructed. provider-config stubs
+// echo the client-supplied key/baseUrl so a test can assert they are dropped
+// when a stage route overrides the client model.
+const mocks = vi.hoisted(() => ({ getModelCalls: [] as Array<Record<string, unknown>> }));
+
 vi.mock('@/lib/ai/providers', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/ai/providers')>();
   return {
     ...actual,
-    getModel: ({ modelId }: { modelId: string }) => ({
-      model: { id: modelId },
-      modelInfo: undefined,
-    }),
+    getModel: (args: Record<string, unknown>) => {
+      mocks.getModelCalls.push(args);
+      return { model: { id: args.modelId }, modelInfo: undefined };
+    },
   };
 });
 
 vi.mock('@/lib/server/provider-config', () => ({
-  isServerConfiguredProvider: () => true,
-  resolveApiKey: () => 'key',
-  resolveBaseUrl: () => undefined,
+  isServerConfiguredProvider: () => false,
+  resolveApiKey: (_id: string, clientKey: string) => clientKey || 'server-key',
+  resolveBaseUrl: (_id: string, clientBaseUrl?: string) => clientBaseUrl,
   resolveProxy: () => undefined,
 }));
 
@@ -32,6 +36,7 @@ vi.mock('@/lib/server/ssrf-guard', () => ({
 describe('resolveModel — per-stage resolution order', () => {
   beforeEach(() => {
     vi.resetModules();
+    mocks.getModelCalls.length = 0;
     delete process.env.MODEL_ROUTES;
     delete process.env.DEFAULT_MODEL;
   });
@@ -82,6 +87,42 @@ describe('resolveModel — per-stage resolution order', () => {
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const r = await resolveModel({ stage: 'quiz-grade', modelString: 'anthropic:claude-sonnet-4' });
     expect(r.modelString).toBe('anthropic:claude-sonnet-4');
+  });
+
+  it('drops client apiKey/baseUrl/providerType when a stage route overrides the client model', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'pbl-chat': 'anthropic:claude-sonnet-4' });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    await resolveModel({
+      stage: 'pbl-chat',
+      modelString: 'openai:gpt-5.4-mini',
+      apiKey: 'client-openai-key',
+      baseUrl: 'https://client.example/v1',
+      providerType: 'openai',
+    });
+    const call = mocks.getModelCalls.at(-1)!;
+    expect(call.providerId).toBe('anthropic');
+    expect(call.modelId).toBe('claude-sonnet-4');
+    // None of the client-sent connection params for the OLD provider leak onto
+    // the routed provider — they resolve from server config instead.
+    expect(call.providerType).toBeUndefined();
+    expect(call.baseUrl).toBeUndefined();
+    expect(call.apiKey).toBe('server-key');
+  });
+
+  it('keeps client apiKey/baseUrl/providerType for an unrouted stage (x-model honored)', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'openai:gpt-5.4' });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    await resolveModel({
+      stage: 'quiz-grade',
+      modelString: 'openai:gpt-5.4-mini',
+      apiKey: 'client-key',
+      baseUrl: 'https://client.example/v1',
+      providerType: 'openai',
+    });
+    const call = mocks.getModelCalls.at(-1)!;
+    expect(call.providerType).toBe('openai');
+    expect(call.baseUrl).toBe('https://client.example/v1');
+    expect(call.apiKey).toBe('client-key');
   });
 
   it('resolves the stage route provider for cross-provider routing', async () => {

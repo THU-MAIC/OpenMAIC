@@ -57,19 +57,27 @@ export async function resolveModel(params: {
   // wins even over a client-sent x-model (otherwise the browser UI, which always
   // sends its saved model, would shadow every route). Unrouted stages fall back
   // to the client x-model, then DEFAULT_MODEL.
+  const stageModel = getStageModel(params.stage);
   const modelString =
-    getStageModel(params.stage) ||
-    params.modelString ||
-    process.env.DEFAULT_MODEL ||
-    'gpt-5.4-mini';
+    stageModel || params.modelString || process.env.DEFAULT_MODEL || 'gpt-5.4-mini';
   const { providerId, modelId } = parseModelString(modelString);
+
+  // When a stage route overrides the client's model, the client-sent connection
+  // params (apiKey/baseUrl/providerType) belong to the client's *other* model
+  // and must not bleed onto the routed provider — otherwise e.g. a routed
+  // Anthropic model would be built with the client's OpenAI providerType/key.
+  // A routed model resolves purely from server config, as if no x-model was sent.
+  const routed = Boolean(stageModel);
+  const clientApiKey = routed ? undefined : params.apiKey;
+  const clientProviderType = routed ? undefined : params.providerType;
+  const clientBaseUrlParam = routed ? undefined : params.baseUrl;
 
   // Server-managed providers are admin-owned: the operator's key and base URL
   // are authoritative and any client-sent override is ignored. SSRF validation
   // therefore applies only to unmanaged providers, where the base URL really is
   // client-supplied. (Server-configured URLs are trusted by the operator.)
   const managed = isServerConfiguredProvider('providers', providerId);
-  const clientBaseUrl = managed ? undefined : params.baseUrl || undefined;
+  const clientBaseUrl = managed ? undefined : clientBaseUrlParam || undefined;
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
     const ssrfError = await validateUrlForSSRF(clientBaseUrl);
     if (ssrfError) {
@@ -77,7 +85,7 @@ export async function resolveModel(params: {
     }
   }
 
-  const apiKey = resolveApiKey(providerId, params.apiKey || '');
+  const apiKey = resolveApiKey(providerId, clientApiKey || '');
   const baseUrl = resolveBaseUrl(providerId, clientBaseUrl);
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({
@@ -86,7 +94,7 @@ export async function resolveModel(params: {
     apiKey,
     baseUrl,
     proxy,
-    providerType: params.providerType as 'openai' | 'anthropic' | 'google' | undefined,
+    providerType: clientProviderType as 'openai' | 'anthropic' | 'google' | undefined,
   });
 
   return {
