@@ -38,22 +38,20 @@ export const LLM_STAGES = [
 
 export type LlmStage = (typeof LLM_STAGES)[number];
 
-const STAGE_SET = new Set<string>(LLM_STAGES);
-
-/** Cache keyed on the raw env string so env changes (and tests) re-parse. */
-let _cache: { raw: string | undefined; routes: Record<string, string> } | null = null;
+/** Parsed once per process (env is read at startup; tests reset via vi.resetModules). */
+let _routes: Record<string, string> | null = null;
 
 function loadRoutes(): Record<string, string> {
-  const raw = process.env.MODEL_ROUTES?.trim() || undefined;
-  if (_cache && _cache.raw === raw) return _cache.routes;
+  if (_routes) return _routes;
 
   const routes: Record<string, string> = {};
+  const raw = process.env.MODEL_ROUTES?.trim();
   if (raw) {
     try {
       const parsed = JSON.parse(raw) as unknown;
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
-          if (!STAGE_SET.has(key)) {
+          if (!(LLM_STAGES as readonly string[]).includes(key)) {
             log.warn(`Unknown stage "${key}" in MODEL_ROUTES ignored. Valid stages: ${LLM_STAGES.join(', ')}`);
             continue;
           }
@@ -71,8 +69,8 @@ function loadRoutes(): Record<string, string> {
     }
   }
 
-  _cache = { raw, routes };
-  return routes;
+  _routes = routes;
+  return _routes;
 }
 
 /**

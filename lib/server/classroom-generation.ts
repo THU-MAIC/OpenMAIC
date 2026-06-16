@@ -18,6 +18,7 @@ import { createLogger } from '@/lib/logger';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import { resolveClassroomWebSearchConfig } from '@/lib/server/web-search-config';
 import { resolveModel } from '@/lib/server/resolve-model';
+import { getStageModel } from '@/lib/server/model-routes';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { buildSearchQuery } from '@/lib/server/search-query-builder';
 import { formatSearchResultsAsContext, searchWeb } from '@/lib/web-search';
@@ -196,10 +197,11 @@ export async function generateClassroom(
   }
 
   // The web-search query rewrite is a light, separable stage operators may route
-  // to a cheaper model. Resolved independently; falls back to the same
-  // DEFAULT_MODEL when unrouted. A missing key here degrades gracefully (the
-  // search step is wrapped in try/catch below), so no fail-fast check.
-  const { model: searchQueryModel } = await resolveModel({ stage: 'web-search-query-rewrite' });
+  // to a cheaper model. It defaults to the classroom model and is only
+  // re-resolved lazily (inside the web-search branch, and only when a route is
+  // configured). This keeps a misconfigured optional route from aborting all
+  // classroom generation, and skips the extra resolution when web search is off.
+  let searchQueryModel = languageModel;
 
   const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(
@@ -249,6 +251,20 @@ export async function generateClassroom(
   if (input.enableWebSearch) {
     const webSearchConfig = resolveClassroomWebSearchConfig(input);
     if (webSearchConfig) {
+      // Re-resolve the query-rewrite model only when explicitly routed; on any
+      // resolution failure (e.g. routed provider missing a key) fall back to the
+      // classroom model so the rewrite — and the whole pipeline — still works.
+      const rewriteRoute = getStageModel('web-search-query-rewrite');
+      if (rewriteRoute) {
+        try {
+          searchQueryModel = (await resolveModel({ stage: 'web-search-query-rewrite' })).model;
+        } catch (err) {
+          log.warn(
+            `web-search-query-rewrite route "${rewriteRoute}" unavailable; using classroom model for query rewrite`,
+            err,
+          );
+        }
+      }
       try {
         const searchQuery = await buildSearchQuery(requirement, pdfText, searchQueryAiCall);
 

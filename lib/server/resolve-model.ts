@@ -15,7 +15,7 @@ import {
   resolveProxy,
 } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
-import { getStageModel } from '@/lib/server/model-routes';
+import { getStageModel, type LlmStage } from '@/lib/server/model-routes';
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
@@ -45,7 +45,7 @@ export async function resolveModel(params: {
    * `DEFAULT_MODEL` for this call. An explicit `modelString` (x-model) still
    * wins over the stage route. See lib/server/model-routes.ts.
    */
-  stage?: string;
+  stage?: LlmStage;
   apiKey?: string;
   baseUrl?: string;
   providerType?: string;
@@ -112,7 +112,7 @@ function getThinkingConfigFromBody(body: unknown): ThinkingConfig | undefined {
  */
 export async function resolveModelFromHeaders(
   req: NextRequest,
-  stage?: string,
+  stage?: LlmStage,
 ): Promise<ResolvedModel> {
   return resolveModel({
     modelString: req.headers.get('x-model') || undefined,
@@ -132,7 +132,7 @@ export async function resolveModelFromHeaders(
 export async function resolveModelFromRequest(
   req: NextRequest,
   body: unknown,
-  stage?: string,
+  stage?: LlmStage,
 ): Promise<ResolvedModel> {
   const resolved = await resolveModelFromHeaders(req, stage);
   return {
