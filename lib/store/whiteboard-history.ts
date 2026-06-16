@@ -9,7 +9,7 @@
  */
 
 import { create } from 'zustand';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@maic/dsl';
 import { elementFingerprint } from '@/lib/utils/element-fingerprint';
 
 export interface WhiteboardSnapshot {

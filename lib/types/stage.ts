@@ -1,150 +1,55 @@
-// Stage and Scene data types
-import type { Slide } from '@/lib/types/slides';
+// Stage and Scene data types.
+//
+// The universal lesson skeleton (Stage / Scene / SceneContent / Whiteboard /
+// VideoManifest / SlideContent / QuizContent / …) now lives in `@maic/dsl` and
+// is re-exported below. `Scene` is generic there: the contract owns only the
+// structure + the slide/quiz content kinds, while the playback `Action` set and
+// the richer feature content (interactive widgets, PBL) are app-side and get
+// composed in here.
+//
+// `Scene` is re-exported as an alias of the app's fully-instantiated
+// `Scene<Action, AppSceneContent>`, so existing `import { Scene }` callers keep
+// the same semantics (actions are `Action[]`, content spans all four kinds).
+import type { Scene as DslScene, SceneContent as DslSceneContent } from '@maic/dsl';
 import type { Action } from '@/lib/types/action';
-import type { PBLProjectConfig } from '@/lib/pbl/types';
 import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
+import type { PBLProjectConfig } from '@/lib/pbl/types';
 
-export type SceneType = 'slide' | 'quiz' | 'interactive' | 'pbl';
+export type {
+  SceneType,
+  StageMode,
+  Whiteboard,
+  VideoManifestEntry,
+  VideoManifest,
+  GeneratedAgentConfig,
+  MultiAgentConfig,
+  Stage,
+  SlideContent,
+  QuizOption,
+  QuizQuestion,
+  QuizContent,
+} from '@maic/dsl';
 
-export type StageMode = 'autonomous' | 'playback' | 'edit';
+// The two discriminant guards are runtime functions, so they must be value
+// re-exported — a bare `export type {}` erases them and leaves the import as
+// `undefined` at runtime / "cannot be used as a value" at the type level.
+export { isSlideContent, isQuizContent } from '@maic/dsl';
 
-export type Whiteboard = Omit<Slide, 'theme' | 'turningMode' | 'sectionTag' | 'type'>;
+// The contract's `SceneContent` is the universal subset (slide | quiz). Reach it
+// under a distinct name; the app's own `SceneContent` (declared below) is the
+// full four-way union so existing `switch (content.type)` call sites keep all
+// four cases.
+export type { SceneContent as SceneContentBase } from '@maic/dsl';
 
-export interface VideoManifestEntry {
-  type: 'video';
-  prompt: string;
-  aspectRatio?: string;
-}
-
-export type VideoManifest = Record<string, VideoManifestEntry>;
-
-/**
- * Stage - Represents the entire classroom/course
- */
-export interface Stage {
-  id: string;
-  name: string;
-  description?: string;
-  createdAt: number;
-  updatedAt: number;
-  // Stage metadata
-  languageDirective?: string;
-  style?: string;
-  // Whiteboard data
-  whiteboard?: Whiteboard[];
-  // Generated video requests keyed by the mediaRef used by PPTVideoElement.
-  // Runtime media state lives in the media task store / persisted media files.
-  videoManifest?: VideoManifest;
-  // Agent IDs selected when this classroom was created
-  agentIds?: string[];
-  /**
-   * Server-generated agent configurations.
-   * Embedded in persisted classroom JSON so clients can hydrate
-   * the agent registry without relying on IndexedDB pre-population.
-   * Only present for API-generated classrooms.
-   */
-  generatedAgentConfigs?: Array<{
-    id: string;
-    name: string;
-    role: string;
-    persona: string;
-    avatar: string;
-    color: string;
-    priority: number;
-  }>;
-  /**
-   * True when this classroom was generated with Interactive Mode enabled
-   * (the INTERACTIVE_OUTLINES prompt branch).
-   * Absent on legacy classrooms, imports, and regular-mode generations.
-   */
-  interactiveMode?: boolean;
-  /**
-   * True when this classroom was generated with the vocational Task Engine
-   * path enabled. This is distinct from `interactiveMode`: task-engine
-   * classrooms are interactive, but not every interactive classroom is
-   * vocational.
-   */
-  taskEngineMode?: boolean;
-}
+// The raw, generic contract Scene is reachable under a distinct name for
+// callers (e.g. read-only renderers) that want the feature-free skeleton.
+export type { Scene as SceneShape } from '@maic/dsl';
 
 /**
- * Scene - Represents a single page/scene in the course
- */
-export interface Scene {
-  id: string;
-  stageId: string; // ID of the parent stage (for data integrity checks)
-  type: SceneType;
-  title: string;
-  order: number; // Display order
-
-  // Type-specific content
-  content: SceneContent;
-
-  // Actions to execute during playback
-  actions?: Action[];
-
-  // Whiteboards to explain deeply
-  whiteboards?: Slide[];
-
-  // Multi-agent discussion configuration
-  multiAgent?: {
-    enabled: boolean; // Enable multi-agent for this scene
-    agentIds: string[]; // Which agents to include (from registry)
-    directorPrompt?: string; // Optional custom director instructions
-  };
-
-  // Metadata
-  createdAt?: number;
-  updatedAt?: number;
-}
-
-/**
- * Scene content based on type
- */
-export type SceneContent = SlideContent | QuizContent | InteractiveContent | PBLContent;
-
-/**
- * Slide content - PPTist Canvas data.
+ * Interactive content - Interactive web page (iframe).
  *
- * `schemaVersion` tags the on-disk shape of this content so future schema
- * changes can ship behind a migration step (see `migrateSlideContent`).
- * Optional for backward compatibility — legacy / pre-versioning data
- * lacks the field and `migrateSlideContent` normalizes it.
- */
-export interface SlideContent {
-  type: 'slide';
-  schemaVersion?: number;
-  // PPTist slide data structure
-  canvas: Slide;
-}
-
-/**
- * Quiz content - React component props/data
- */
-export interface QuizContent {
-  type: 'quiz';
-  questions: QuizQuestion[];
-}
-
-export interface QuizOption {
-  label: string; // Display text
-  value: string; // Selection key: "A", "B", "C", "D"
-}
-
-export interface QuizQuestion {
-  id: string;
-  type: 'single' | 'multiple' | 'short_answer';
-  question: string;
-  options?: QuizOption[];
-  answer?: string[]; // Correct answer values: ["A"], ["A","C"], or undefined for text
-  analysis?: string; // Explanation shown after grading
-  commentPrompt?: string; // Grading guidance for text questions
-  hasAnswer?: boolean; // Whether auto-grading is possible
-  points?: number; // Points per question (default 1)
-}
-
-/**
- * Interactive content - Interactive web page (iframe)
+ * App-level feature surface: kept here rather than in `@maic/dsl` because it
+ * couples to Ultra-mode widget configs (`WidgetType` / `WidgetConfig`).
  */
 export interface InteractiveContent {
   type: 'interactive';
@@ -158,18 +63,37 @@ export interface InteractiveContent {
 }
 
 /**
- * PBL content - Project-based learning
+ * PBL content - Project-based learning.
+ *
+ * App-level feature surface: kept here rather than in `@maic/dsl` because it
+ * couples to the project-based-learning config (`PBLProjectConfig`).
  */
 export interface PBLContent {
   type: 'pbl';
   projectConfig: PBLProjectConfig;
 }
 
-// Re-export generation types for convenience
-export type {
-  UserRequirements,
-  SceneOutline,
-  GenerationSession,
-  GenerationProgress,
-  UploadedDocument,
-} from './generation';
+/**
+ * The app's full scene-content union: the contract's universal kinds plus the
+ * app-only feature kinds. This is what `@/lib/types/stage` callers have always
+ * known as `SceneContent` (all four cases).
+ */
+export type AppSceneContent = DslSceneContent | InteractiveContent | PBLContent;
+
+/**
+ * The app's `SceneContent` — the full four-way union. Overrides the contract's
+ * narrower `SceneContentBase` (slide | quiz) so call sites that switch on all
+ * four `content.type` cases keep compiling.
+ */
+export type SceneContent = AppSceneContent;
+
+/**
+ * The app's concrete scene type: the contract skeleton instantiated with the
+ * app's playback action set and full content union.
+ *
+ * Aliased as `Scene` so existing `import { Scene } from '@/lib/types/stage'`
+ * callers keep their original semantics (actions are `Action[]`, content spans
+ * all four kinds).
+ */
+export type AppScene = DslScene<Action, SceneContent>;
+export type Scene = AppScene;

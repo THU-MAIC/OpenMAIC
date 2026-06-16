@@ -1,11 +1,6 @@
 import { useMemo } from 'react';
 import { useCanvasStore } from '@/lib/store';
-import type {
-  PPTVideoElement,
-  PPTLatexElement,
-  PPTAudioElement,
-  PPTChartElement,
-} from '@/lib/types/slides';
+import type { PPTVideoElement, PPTLatexElement, PPTAudioElement, PPTChartElement } from '@maic/dsl';
 import type { OperateResizeHandlers } from '@/lib/types/edit';
 import { useCommonOperate } from '../hooks/useCommonOperate';
 import { RotateHandler } from './RotateHandler';

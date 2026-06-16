@@ -77,9 +77,10 @@ function AgentVoicePill({
   disabled?: boolean;
 }) {
   const { t, locale } = useI18n();
-  const updateAgent = useAgentRegistry((s) => s.updateAgent);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
-  const resolved = resolveAgentVoice(agent, agentIndex, availableProviders);
+  const agentVoiceOverrides = useSettingsStore((s) => s.agentVoiceOverrides);
+  const setAgentVoiceOverride = useSettingsStore((s) => s.setAgentVoiceOverride);
+  const resolved = resolveAgentVoice(agent, agentIndex, availableProviders, agentVoiceOverrides);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
@@ -290,12 +291,13 @@ function AgentVoicePill({
                       <button
                         type="button"
                         onClick={() => {
-                          updateAgent(agent.id, {
-                            voiceConfig: {
-                              providerId: provider.providerId,
-                              modelId: group.modelId || undefined,
-                              voiceId: voice.id,
-                            },
+                          // Persisted in settings, not on the registry record:
+                          // default agent records are reset from code on every
+                          // load and would drop the pick.
+                          setAgentVoiceOverride(agent.id, {
+                            providerId: provider.providerId,
+                            modelId: group.modelId || undefined,
+                            voiceId: voice.id,
                           });
                           setPopoverOpen(false);
                         }}
@@ -616,6 +618,7 @@ export function AgentBar() {
   const setSelectedAgentIds = useSettingsStore((s) => s.setSelectedAgentIds);
   const agentMode = useSettingsStore((s) => s.agentMode);
   const setAgentMode = useSettingsStore((s) => s.setAgentMode);
+  const setAgentSelectionIsUserSet = useSettingsStore((s) => s.setAgentSelectionIsUserSet);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
 
@@ -661,6 +664,11 @@ export function AgentBar() {
   }, [open]);
 
   const handleModeChange = (mode: 'preset' | 'auto') => {
+    // Clicking the already-active tab is a visual no-op; it must not convert
+    // stage-derived defaults into a "user choice".
+    if (mode === agentMode) return;
+    // An explicit choice — restoreAgentSelection keeps it across classrooms.
+    setAgentSelectionIsUserSet(true);
     setAgentMode(mode);
     if (mode === 'preset') {
       // Remove stale auto-generated agent IDs that may linger from a previous auto classroom
@@ -675,12 +683,21 @@ export function AgentBar() {
       setSelectedAgentIds(
         presetIds.length > 0 ? presetIds : ['default-1', 'default-2', 'default-3'],
       );
+    } else {
+      // Auto mode plays the current classroom's generated agents — leaving the
+      // preset ids selected would desync playback from the toggle (UI says
+      // Auto, discussion still uses preset agents) and persist an auto
+      // selection that can never validate on restore. When no classroom's
+      // agents are loaded (fresh home), an empty selection falls back to the
+      // stage-derived defaults on the next classroom load.
+      setSelectedAgentIds(allAgents.filter((a) => a.isGenerated).map((a) => a.id));
     }
   };
 
   const toggleAgent = (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
     if (agent?.role === 'teacher') return;
+    setAgentSelectionIsUserSet(true);
     if (selectedAgentIds.includes(agentId)) {
       setSelectedAgentIds(selectedAgentIds.filter((id) => id !== agentId));
     } else {

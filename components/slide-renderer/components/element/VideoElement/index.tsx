@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTVideoElement } from '@/lib/types/slides';
+import type { PPTVideoElement } from '@maic/dsl';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 
 export interface VideoElementProps {

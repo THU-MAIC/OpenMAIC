@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { PPTShapeElement } from '@/lib/types/slides';
+import type { PPTShapeElement } from '@maic/dsl';
 
 /**
  * Calculate element fill style

@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useCanvasStore } from '@/lib/store';
-import type { PPTLineElement } from '@/lib/types/slides';
+import type { PPTLineElement } from '@maic/dsl';
 import { OperateLineHandlers } from '@/lib/types/edit';
 import { ResizeHandler } from './ResizeHandler';
 

@@ -11,6 +11,7 @@ import { PROVIDERS } from '@/lib/ai/providers';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thinking-config';
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
+import type { AgentVoiceOverride } from '@/lib/audio/voice-resolver';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { DEFAULT_VOXCPM_BACKEND, VOXCPM_MODEL_ID, VOXCPM_VLLM_MODEL_ID } from '@/lib/audio/voxcpm';
@@ -194,6 +195,19 @@ export interface SettingsState {
   selectedAgentIds: string[];
   agentMode: 'preset' | 'auto';
   autoAgentCount: number;
+  /**
+   * Per-agent voice picks made in the AgentBar, keyed by agent id. Lives here
+   * (persisted) rather than on registry AgentConfig records because default
+   * agents are reset from code and generated agents are rebuilt from IndexedDB
+   * on every load. Highest-priority input to resolveAgentVoice.
+   */
+  agentVoiceOverrides: Record<string, AgentVoiceOverride>;
+  /**
+   * Whether agentMode/selectedAgentIds were explicitly set by the user (in the
+   * AgentBar), as opposed to stage-derived defaults written by a classroom
+   * load. Only a user-set selection carries across classrooms on restore.
+   */
+  agentSelectionIsUserSet: boolean;
 
   // Layout preferences (persisted via localStorage)
   sidebarCollapsed: boolean;
@@ -220,6 +234,9 @@ export interface SettingsState {
   setSelectedAgentIds: (ids: string[]) => void;
   setAgentMode: (mode: 'preset' | 'auto') => void;
   setAutoAgentCount: (count: number) => void;
+  /** Set (or clear, with `undefined`) the persisted voice pick for one agent. */
+  setAgentVoiceOverride: (agentId: string, voice: AgentVoiceOverride | undefined) => void;
+  setAgentSelectionIsUserSet: (isUserSet: boolean) => void;
 
   // Layout actions
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -814,6 +831,8 @@ export const useSettingsStore = create<SettingsState>()(
         selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
         agentMode: 'auto' as const,
         autoAgentCount: 3,
+        agentVoiceOverrides: {},
+        agentSelectionIsUserSet: false,
 
         // Playback controls
         ttsMuted: false,
@@ -935,6 +954,17 @@ export const useSettingsStore = create<SettingsState>()(
 
         setAgentMode: (mode) => set({ agentMode: mode }),
         setAutoAgentCount: (count) => set({ autoAgentCount: count }),
+        setAgentVoiceOverride: (agentId, voice) =>
+          set((state) => {
+            const next = { ...state.agentVoiceOverrides };
+            if (voice) {
+              next[agentId] = voice;
+            } else {
+              delete next[agentId];
+            }
+            return { agentVoiceOverrides: next };
+          }),
+        setAgentSelectionIsUserSet: (isUserSet) => set({ agentSelectionIsUserSet: isUserSet }),
 
         // Layout actions
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),

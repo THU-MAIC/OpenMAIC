@@ -1,4 +1,4 @@
-import type { ChartData } from '@/lib/types/slides';
+import type { ChartData } from '@maic/dsl';
 
 export const CHART_TYPE_MAP: Record<string, string> = {
   bar: '柱状图',

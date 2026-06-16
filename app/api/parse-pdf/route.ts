@@ -1,5 +1,4 @@
 import { NextRequest } from 'next/server';
-import { parsePDF } from '@/lib/pdf/pdf-providers';
 import {
   isServerConfiguredProvider,
   resolvePDFApiKey,
@@ -7,6 +6,7 @@ import {
 } from '@/lib/server/provider-config';
 import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
+import { documentArtifactToParsedPdfContent, extractDocument } from '@/lib/document';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
@@ -61,8 +61,15 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await pdfFile.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Parse PDF using the provider system
-    const result = await parsePDF(config, buffer);
+    // Route the existing PDF API through the document extraction boundary.
+    const artifact = await extractDocument({
+      buffer,
+      fileName: pdfFile.name,
+      fileSize: pdfFile.size,
+      mimeType: 'application/pdf',
+      config,
+    });
+    const result = documentArtifactToParsedPdfContent(artifact);
 
     // Add file metadata
     const resultWithMetadata: ParsedPdfContent = {

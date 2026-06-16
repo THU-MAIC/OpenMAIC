@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { createBlankSlideScene, duplicateSlideScene } from '@/lib/edit/slide-defaults';
 import { CURRENT_SLIDE_CONTENT_SCHEMA_VERSION } from '@/lib/edit/slide-schema';
 import type { Scene, SlideContent } from '@/lib/types/stage';
-import type { PPTTextElement } from '@/lib/types/slides';
+import type { PPTTextElement } from '@maic/dsl';
 
 function makeTextEl(id: string, groupId?: string): PPTTextElement {
   return {

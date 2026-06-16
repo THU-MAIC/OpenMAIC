@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { PPTElementShadow } from '@/lib/types/slides';
+import type { PPTElementShadow } from '@maic/dsl';
 
 /**
  * Calculate element shadow style

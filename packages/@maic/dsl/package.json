@@ -22,7 +22,9 @@
     "clean": "rm -rf dist",
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "dev": "tsc -p tsconfig.json --watch",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "keywords": [
     "maic",
@@ -37,6 +39,7 @@
     "access": "public"
   },
   "devDependencies": {
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.8"
   }
 }

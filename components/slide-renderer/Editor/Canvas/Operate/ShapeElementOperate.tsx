@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useCanvasStore } from '@/lib/store';
-import type { PPTShapeElement } from '@/lib/types/slides';
+import type { PPTShapeElement } from '@maic/dsl';
 import type { OperateResizeHandlers } from '@/lib/types/edit';
 import { SHAPE_PATH_FORMULAS } from '@/configs/shapes';
 import { useCommonOperate } from '../hooks/useCommonOperate';

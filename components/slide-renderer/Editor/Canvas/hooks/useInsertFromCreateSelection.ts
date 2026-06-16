@@ -3,7 +3,7 @@ import { useCanvasStore } from '@/lib/store';
 import { createElementId } from '@/lib/edit/element-id';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
 import type { CreateElementSelectionData } from '@/lib/types/edit';
-import type { PPTTextElement } from '@/lib/types/slides';
+import type { PPTTextElement } from '@maic/dsl';
 
 // Click-fallback default size when the user clicks instead of drags (or wobbles
 // under this in either dimension): a sensibly-sized text box at the start point.

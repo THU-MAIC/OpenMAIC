@@ -6,7 +6,7 @@
  */
 
 import type { Whiteboard } from '@/lib/types/stage';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@maic/dsl';
 import type { StageStore, APIResult } from './stage-api-types';
 import { generateId } from './stage-api-defaults';
 

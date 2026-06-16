@@ -49,8 +49,8 @@ import {
   getFirstSlideByStages,
   revokeThumbnailSlideMediaUrls,
 } from '@/lib/utils/stage-storage';
-import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
-import type { Slide } from '@/lib/types/slides';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
+import type { Slide } from '@maic/dsl';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -1262,7 +1262,7 @@ function ClassroomCard({
         className="relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
       >
         {slide && thumbWidth > 0 ? (
-          <ThumbnailSlide
+          <SlideThumbnail
             slide={slide}
             size={thumbWidth}
             viewportSize={slide.viewportSize ?? 1000}

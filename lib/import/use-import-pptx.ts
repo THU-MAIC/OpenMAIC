@@ -4,7 +4,7 @@ import { useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
-import type { Slide } from '@/lib/types/slides';
+import type { Slide } from '@maic/dsl';
 // Type-only import: stripped at compile time, never reaches the bundler.
 // pdfjs-dist (transitively pulled by `maic-importer/src`) uses dynamic
 // `require()` patterns Turbopack refuses to bundle, so values flow through

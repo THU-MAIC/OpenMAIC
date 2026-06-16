@@ -41,6 +41,9 @@ jobs:
       - name: Unit Tests
         run: pnpm test
 
+      - name: Unit Tests (importer)
+        run: pnpm --filter @maic/importer test
+
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest

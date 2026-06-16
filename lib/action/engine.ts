@@ -36,7 +36,7 @@ import type {
   WidgetAnnotationAction,
   WidgetRevealAction,
 } from '@/lib/types/action';
-import type { CodeLine } from '@/lib/types/slides';
+import type { CodeLine } from '@maic/dsl';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
 
