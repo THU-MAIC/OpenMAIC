@@ -73,12 +73,15 @@ export async function POST(req: NextRequest) {
     const outline: SceneOutline = { ...rawOutline };
 
     // ── Model resolution from request headers/body ──
+    // Route per scene-content type (e.g. `scene-content:quiz`); getStageModel
+    // falls back to the base `scene-content` route when the type is unrouted.
+    const stage = outline.type ? (`scene-content:${outline.type}` as const) : 'scene-content';
     const {
       model: languageModel,
       modelInfo,
       modelString,
       thinkingConfig,
-    } = await resolveModelFromRequest(req, body, 'scene-content');
+    } = await resolveModelFromRequest(req, body, stage);
     outlineTitle = rawOutline?.title;
     resolvedModelString = modelString;
 

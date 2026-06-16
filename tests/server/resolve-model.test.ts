@@ -125,6 +125,28 @@ describe('resolveModel — per-stage resolution order', () => {
     expect(call.apiKey).toBe('client-key');
   });
 
+  it('uses a scene-content:<type> route over the base route and x-model', async () => {
+    process.env.DEFAULT_MODEL = 'openai:gpt-5.4-mini';
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': 'openai:gpt-5.4-mini',
+      'scene-content:quiz': 'openai:gpt-5.4',
+    });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({
+      stage: 'scene-content:quiz',
+      modelString: 'anthropic:claude-sonnet-4',
+    });
+    expect(r.modelString).toBe('openai:gpt-5.4');
+  });
+
+  it('falls back to the base scene-content route for an unrouted type', async () => {
+    process.env.DEFAULT_MODEL = 'openai:gpt-5.4-mini';
+    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'openai:gpt-5.4' });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({ stage: 'scene-content:slide' });
+    expect(r.modelString).toBe('openai:gpt-5.4');
+  });
+
   it('resolves the stage route provider for cross-provider routing', async () => {
     process.env.DEFAULT_MODEL = 'openai:gpt-5.4-mini';
     process.env.MODEL_ROUTES = JSON.stringify({ 'pbl-chat': 'anthropic:claude-sonnet-4' });

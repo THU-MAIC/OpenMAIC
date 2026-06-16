@@ -21,12 +21,21 @@ import { createLogger } from '@/lib/logger';
 const log = createLogger('model-routes');
 
 /**
- * Stages that can be independently routed to a model. Each value is both a
- * `callLLM` source label and a valid `MODEL_ROUTES` key.
+ * Stages that can be independently routed to a model. Each value is a valid
+ * `MODEL_ROUTES` key; the base entries also mirror a `callLLM` source label.
+ *
+ * `scene-content:<type>` are finer-grained composite keys: when a scene-content
+ * request carries an `outline.type`, it routes via the composite key and falls
+ * back to the base `scene-content` route (see getStageModel). Only the four
+ * core scene types are routable; interactive widget sub-types are not split.
  */
 export const LLM_STAGES = [
   'scene-outlines-stream',
   'scene-content',
+  'scene-content:slide',
+  'scene-content:quiz',
+  'scene-content:interactive',
+  'scene-content:pbl',
   'scene-actions',
   'agent-profiles',
   'quiz-grade',
@@ -78,8 +87,20 @@ function loadRoutes(): Record<string, string> {
 /**
  * Resolve the configured model string for a stage, or `undefined` when the
  * stage is unset/unconfigured (callers fall back to `DEFAULT_MODEL`).
+ *
+ * Composite `a:b` stages resolve most-specific-first: the full key is tried,
+ * then successively shorter prefixes (e.g. `scene-content:quiz` →
+ * `scene-content`). Plain stages (no colon) are a single exact lookup.
  */
 export function getStageModel(stage?: string): string | undefined {
   if (!stage) return undefined;
-  return loadRoutes()[stage];
+  const routes = loadRoutes();
+  let key: string | undefined = stage;
+  while (key) {
+    const model = routes[key];
+    if (model) return model;
+    const lastColon = key.lastIndexOf(':');
+    key = lastColon > 0 ? key.slice(0, lastColon) : undefined;
+  }
+  return undefined;
 }
