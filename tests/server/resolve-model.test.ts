@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 // Mock the heavy downstream of resolveModel so the test isolates the model
-// string *resolution order*: x-model > stage route > DEFAULT_MODEL > builtin.
+// string *resolution order*: stage route > x-model > DEFAULT_MODEL > builtin.
 // model-routes is left real (it just reads MODEL_ROUTES) so we exercise the
 // real integration point.
 // Use the real parseModelString (canonical `provider:model` colon format) so
@@ -69,7 +69,10 @@ describe('resolveModel — per-stage resolution order', () => {
     process.env.DEFAULT_MODEL = 'openai:gpt-5.4-mini';
     process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'openai:gpt-5.4' });
     const { resolveModel } = await import('@/lib/server/resolve-model');
-    const r = await resolveModel({ stage: 'scene-content', modelString: 'anthropic:claude-sonnet-4' });
+    const r = await resolveModel({
+      stage: 'scene-content',
+      modelString: 'anthropic:claude-sonnet-4',
+    });
     expect(r.modelString).toBe('openai:gpt-5.4');
   });
 

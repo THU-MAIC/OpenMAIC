@@ -52,7 +52,9 @@ function loadRoutes(): Record<string, string> {
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
           if (!(LLM_STAGES as readonly string[]).includes(key)) {
-            log.warn(`Unknown stage "${key}" in MODEL_ROUTES ignored. Valid stages: ${LLM_STAGES.join(', ')}`);
+            log.warn(
+              `Unknown stage "${key}" in MODEL_ROUTES ignored. Valid stages: ${LLM_STAGES.join(', ')}`,
+            );
             continue;
           }
           if (typeof value === 'string' && value.trim()) {

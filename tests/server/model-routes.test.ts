@@ -45,7 +45,9 @@ describe('model-routes', () => {
 
   it('ignores unknown stage keys with a warning but keeps valid ones', async () => {
     const warn = vi.fn();
-    vi.doMock('@/lib/logger', () => ({ createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }) }));
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
     process.env.MODEL_ROUTES = JSON.stringify({
       'not-a-stage': 'openai:gpt-5.4',
       'scene-content': 'openai:gpt-5.4',
@@ -58,7 +60,9 @@ describe('model-routes', () => {
 
   it('returns undefined for everything when MODEL_ROUTES is invalid JSON (no throw)', async () => {
     const error = vi.fn();
-    vi.doMock('@/lib/logger', () => ({ createLogger: () => ({ error, info: vi.fn(), warn: vi.fn(), debug: vi.fn() }) }));
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ error, info: vi.fn(), warn: vi.fn(), debug: vi.fn() }),
+    }));
     process.env.MODEL_ROUTES = '{not valid json';
     const { getStageModel } = await import('@/lib/server/model-routes');
     expect(getStageModel('scene-content')).toBeUndefined();
@@ -66,7 +70,10 @@ describe('model-routes', () => {
   });
 
   it('ignores non-string route values', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 123, 'pbl-chat': 'anthropic:claude-sonnet-4' });
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': 123,
+      'pbl-chat': 'anthropic:claude-sonnet-4',
+    });
     const { getStageModel } = await import('@/lib/server/model-routes');
     expect(getStageModel('scene-content')).toBeUndefined();
     expect(getStageModel('pbl-chat')).toBe('anthropic:claude-sonnet-4');
