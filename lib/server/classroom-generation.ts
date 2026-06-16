@@ -251,9 +251,11 @@ export async function generateClassroom(
   if (input.enableWebSearch) {
     const webSearchConfig = resolveClassroomWebSearchConfig(input);
     if (webSearchConfig) {
-      // Re-resolve the query-rewrite model only when explicitly routed; on any
-      // resolution failure (e.g. routed provider missing a key) fall back to the
-      // classroom model so the rewrite — and the whole pipeline — still works.
+      // Re-resolve the query-rewrite model only when explicitly routed. If
+      // resolution itself fails (e.g. unknown provider in the route), fall back
+      // to the classroom model here; a route with a missing key resolves fine
+      // and surfaces only later in callLLM, which the outer try/catch below
+      // degrades gracefully — either way the pipeline still works.
       const rewriteRoute = getStageModel('web-search-query-rewrite');
       if (rewriteRoute) {
         try {
