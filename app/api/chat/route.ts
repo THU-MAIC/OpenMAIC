@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
       providerId,
     } = await resolveModel({
       modelString: body.model,
+      stage: 'chat-adapter',
       apiKey: body.apiKey,
       baseUrl: body.baseUrl,
       providerType: body.providerType,

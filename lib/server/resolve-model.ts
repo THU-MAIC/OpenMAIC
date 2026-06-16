@@ -15,6 +15,7 @@ import {
   resolveProxy,
 } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { getStageModel } from '@/lib/server/model-routes';
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
@@ -38,12 +39,24 @@ export interface ResolvedModel extends ModelWithInfo {
  */
 export async function resolveModel(params: {
   modelString?: string;
+  /**
+   * Optional generation stage (a `callLLM` source label, e.g. 'scene-content').
+   * When set and a route is configured via `MODEL_ROUTES`, it overrides
+   * `DEFAULT_MODEL` for this call. An explicit `modelString` (x-model) still
+   * wins over the stage route. See lib/server/model-routes.ts.
+   */
+  stage?: string;
   apiKey?: string;
   baseUrl?: string;
   providerType?: string;
   thinkingConfig?: ThinkingConfig;
 }): Promise<ResolvedModel> {
-  const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-5.4-mini';
+  // Resolution order: x-model > stage route > DEFAULT_MODEL > builtin fallback.
+  const modelString =
+    params.modelString ||
+    getStageModel(params.stage) ||
+    process.env.DEFAULT_MODEL ||
+    'gpt-5.4-mini';
   const { providerId, modelId } = parseModelString(modelString);
 
   // Server-managed providers are admin-owned: the operator's key and base URL
@@ -97,9 +110,13 @@ function getThinkingConfigFromBody(body: unknown): ThinkingConfig | undefined {
  * Note: requiresApiKey is derived server-side from the provider registry,
  * never from client headers, to prevent auth bypass.
  */
-export async function resolveModelFromHeaders(req: NextRequest): Promise<ResolvedModel> {
+export async function resolveModelFromHeaders(
+  req: NextRequest,
+  stage?: string,
+): Promise<ResolvedModel> {
   return resolveModel({
     modelString: req.headers.get('x-model') || undefined,
+    stage,
     apiKey: req.headers.get('x-api-key') || undefined,
     baseUrl: req.headers.get('x-base-url') || undefined,
     providerType: req.headers.get('x-provider-type') || undefined,
@@ -115,8 +132,9 @@ export async function resolveModelFromHeaders(req: NextRequest): Promise<Resolve
 export async function resolveModelFromRequest(
   req: NextRequest,
   body: unknown,
+  stage?: string,
 ): Promise<ResolvedModel> {
-  const resolved = await resolveModelFromHeaders(req);
+  const resolved = await resolveModelFromHeaders(req, stage);
   return {
     ...resolved,
     thinkingConfig: getThinkingConfigFromBody(body) ?? resolved.thinkingConfig,

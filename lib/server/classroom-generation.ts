@@ -184,7 +184,7 @@ export async function generateClassroom(
     modelString,
     providerId,
     apiKey,
-  } = await resolveModel({});
+  } = await resolveModel({ stage: 'generate-classroom' });
   log.info(`Using server-configured model: ${modelString}`);
 
   // Fail fast if the resolved provider has no API key configured
@@ -194,6 +194,12 @@ export async function generateClassroom(
         `Set the appropriate key in .env.local or server-providers.yml (e.g. ${providerId.toUpperCase()}_API_KEY).`,
     );
   }
+
+  // The web-search query rewrite is a light, separable stage operators may route
+  // to a cheaper model. Resolved independently; falls back to the same
+  // DEFAULT_MODEL when unrouted. A missing key here degrades gracefully (the
+  // search step is wrapped in try/catch below), so no fail-fast check.
+  const { model: searchQueryModel } = await resolveModel({ stage: 'web-search-query-rewrite' });
 
   const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(
@@ -213,7 +219,7 @@ export async function generateClassroom(
   const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(
       {
-        model: languageModel,
+        model: searchQueryModel,
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userPrompt },

@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
       modelInfo,
       modelString,
       thinkingConfig,
-    } = await resolveModelFromRequest(req, body);
+    } = await resolveModelFromRequest(req, body, 'scene-content');
     outlineTitle = rawOutline?.title;
     resolvedModelString = modelString;
 
