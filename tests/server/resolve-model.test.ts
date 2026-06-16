@@ -65,11 +65,19 @@ describe('resolveModel — per-stage resolution order', () => {
     expect(r.modelString).toBe('openai:gpt-5.4-mini');
   });
 
-  it('lets an explicit modelString (x-model) win over the stage route', async () => {
+  it('lets a configured stage route win over an explicit modelString (x-model)', async () => {
     process.env.DEFAULT_MODEL = 'openai:gpt-5.4-mini';
     process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'openai:gpt-5.4' });
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const r = await resolveModel({ stage: 'scene-content', modelString: 'anthropic:claude-sonnet-4' });
+    expect(r.modelString).toBe('openai:gpt-5.4');
+  });
+
+  it('falls back to x-model for a stage that is not routed', async () => {
+    process.env.DEFAULT_MODEL = 'openai:gpt-5.4-mini';
+    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'openai:gpt-5.4' });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({ stage: 'quiz-grade', modelString: 'anthropic:claude-sonnet-4' });
     expect(r.modelString).toBe('anthropic:claude-sonnet-4');
   });
 

@@ -41,9 +41,10 @@ export async function resolveModel(params: {
   modelString?: string;
   /**
    * Optional generation stage (a `callLLM` source label, e.g. 'scene-content').
-   * When set and a route is configured via `MODEL_ROUTES`, it overrides
-   * `DEFAULT_MODEL` for this call. An explicit `modelString` (x-model) still
-   * wins over the stage route. See lib/server/model-routes.ts.
+   * When set and a route is configured via `MODEL_ROUTES`, the route wins for
+   * this call — even over a client-sent `modelString` (x-model). Unrouted
+   * stages fall back to `modelString` then `DEFAULT_MODEL`. See
+   * lib/server/model-routes.ts.
    */
   stage?: LlmStage;
   apiKey?: string;
@@ -51,10 +52,14 @@ export async function resolveModel(params: {
   providerType?: string;
   thinkingConfig?: ThinkingConfig;
 }): Promise<ResolvedModel> {
-  // Resolution order: x-model > stage route > DEFAULT_MODEL > builtin fallback.
+  // Resolution order: stage route > x-model > DEFAULT_MODEL > builtin fallback.
+  // A configured stage route is the operator's deliberate per-stage choice and
+  // wins even over a client-sent x-model (otherwise the browser UI, which always
+  // sends its saved model, would shadow every route). Unrouted stages fall back
+  // to the client x-model, then DEFAULT_MODEL.
   const modelString =
-    params.modelString ||
     getStageModel(params.stage) ||
+    params.modelString ||
     process.env.DEFAULT_MODEL ||
     'gpt-5.4-mini';
   const { providerId, modelId } = parseModelString(modelString);
