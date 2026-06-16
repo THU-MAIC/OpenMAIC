@@ -47,6 +47,7 @@
     "videoPreparingProgress": "جارٍ تجهيز الصفحة {{current}} / {{total}}...",
     "videoGeneratingNarration": "جارٍ إنشاء السرد للصفحة {{current}} / {{total}}...",
     "videoRendering": "جارٍ إنشاء الفيديو...",
+    "videoRenderFailedWithReason": "فشل إنشاء الفيديو: {{reason}}",
     "videoNoNarration": "لم يتم العثور على صوت السرد؛ تم التصدير بصمت.",
     "videoPartialNarration": "تعذّر إنشاء {{count}} عنصر سرد وتم استبداله بالصمت.",
     "videoNarrationUnavailable": "لم يتم العثور على صوت سرد أو تعذّر إنشاؤه. يرجى إعداد خدمة TTS متاحة أولاً.",

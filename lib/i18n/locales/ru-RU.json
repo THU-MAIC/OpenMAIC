@@ -47,6 +47,7 @@
     "videoPreparingProgress": "Подготовка страницы {{current}} / {{total}}...",
     "videoGeneratingNarration": "Создание озвучки для страницы {{current}} / {{total}}...",
     "videoRendering": "Сборка видео...",
+    "videoRenderFailedWithReason": "Не удалось собрать видео: {{reason}}",
     "videoNoNarration": "Озвучка не найдена; видео экспортировано без звука.",
     "videoPartialNarration": "Не удалось создать {{count}} элемент(ов) озвучки; они заменены тишиной.",
     "videoNarrationUnavailable": "Озвучка не найдена и не может быть создана. Сначала настройте доступный TTS-сервис.",

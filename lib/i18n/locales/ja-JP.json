@@ -47,6 +47,7 @@
     "videoPreparingProgress": "{{current}} / {{total}} ページを準備中...",
     "videoGeneratingNarration": "{{current}} / {{total}} ページのナレーションを生成中...",
     "videoRendering": "動画を合成中...",
+    "videoRenderFailedWithReason": "動画の合成に失敗しました：{{reason}}",
     "videoNoNarration": "ナレーション音声が見つからなかったため、無音でエクスポートしました。",
     "videoPartialNarration": "{{count}} 件のナレーションを生成できず、無音で補完しました。",
     "videoNarrationUnavailable": "ナレーション音声が見つからず生成もできません。利用可能な TTS サービスを設定してください。",

@@ -47,6 +47,7 @@
     "videoPreparingProgress": "Preparando página {{current}} / {{total}}...",
     "videoGeneratingNarration": "Gerando narração da página {{current}} / {{total}}...",
     "videoRendering": "Renderizando vídeo...",
+    "videoRenderFailedWithReason": "Falha ao renderizar vídeo: {{reason}}",
     "videoNoNarration": "Nenhuma narração foi encontrada; exportado com silêncio.",
     "videoPartialNarration": "{{count}} item(ns) de narração não puderam ser gerados e foram preenchidos com silêncio.",
     "videoNarrationUnavailable": "Nenhuma narração foi encontrada ou gerada. Configure primeiro um serviço TTS disponível.",

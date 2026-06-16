@@ -47,6 +47,7 @@
     "videoPreparingProgress": "正在準備第 {{current}} / {{total}} 頁...",
     "videoGeneratingNarration": "正在生成第 {{current}} / {{total}} 頁講解音訊...",
     "videoRendering": "正在合成影片...",
+    "videoRenderFailedWithReason": "影片合成失敗：{{reason}}",
     "videoNoNarration": "未找到講解音訊，已使用靜音匯出。",
     "videoPartialNarration": "{{count}} 條講解音訊未生成，已用靜音補齊。",
     "videoNarrationUnavailable": "未找到或無法生成講解音訊，請先在設定中配置可用的 TTS 服務。",

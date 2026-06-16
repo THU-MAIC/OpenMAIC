@@ -10,6 +10,7 @@ export const runtime = 'nodejs';
 export const maxDuration = 300;
 
 const execFileAsync = promisify(execFile);
+type ApiErrorCode = Parameters<typeof apiError>[0];
 
 interface VideoCourseManifest {
   fileName?: string;
@@ -57,6 +58,73 @@ const DEFAULT_HEIGHT = 720;
 const DEFAULT_FPS = 30;
 const DEFAULT_SCENE_MS = 2500;
 const MIN_SCENE_MS = 1000;
+const MAX_ERROR_DETAILS_LENGTH = 3000;
+
+class VideoCourseExportError extends Error {
+  constructor(
+    message: string,
+    readonly details?: string,
+    readonly status: number = 500,
+    readonly errorCode: ApiErrorCode = 'INTERNAL_ERROR',
+  ) {
+    super(message);
+    this.name = 'VideoCourseExportError';
+  }
+}
+
+function outputToString(value: unknown): string {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (Buffer.isBuffer(value)) return value.toString('utf8');
+  return String(value);
+}
+
+function normalizeErrorDetails(value: string): string {
+  const lines = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const normalized = lines.join('\n').trim();
+  if (normalized.length <= MAX_ERROR_DETAILS_LENGTH) return normalized;
+  return `...${normalized.slice(normalized.length - MAX_ERROR_DETAILS_LENGTH)}`;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function execFailureDetails(error: unknown): string {
+  const err = error as Error & {
+    code?: string | number;
+    signal?: string;
+    stderr?: string | Buffer;
+    stdout?: string | Buffer;
+  };
+  const parts = [
+    errorMessage(error),
+    err.code !== undefined ? `exit code: ${err.code}` : '',
+    err.signal ? `signal: ${err.signal}` : '',
+    outputToString(err.stderr),
+    outputToString(err.stdout),
+  ].filter(Boolean);
+  return normalizeErrorDetails(parts.join('\n'));
+}
+
+function sceneLabel(scene: VideoCourseScene, sceneIndex: number): string {
+  return `page ${sceneIndex + 1}${scene.title ? ` (${scene.title})` : ''}`;
+}
+
+function wrapExportError(message: string, error: unknown): VideoCourseExportError {
+  if (error instanceof VideoCourseExportError) {
+    return new VideoCourseExportError(
+      message,
+      normalizeErrorDetails([error.message, error.details].filter(Boolean).join('\n')),
+      error.status,
+      error.errorCode,
+    );
+  }
+  return new VideoCourseExportError(message, normalizeErrorDetails(errorMessage(error)));
+}
 
 function asFile(value: FormDataEntryValue | null): File | null {
   return value instanceof File ? value : null;
@@ -105,15 +173,14 @@ function resolveSafeAudioUrl(rawUrl: string, request: NextRequest): URL | null {
   }
 }
 
-async function runFfmpeg(args: string[]): Promise<void> {
+async function runFfmpeg(args: string[], context: string): Promise<void> {
   const binary = process.env.FFMPEG_PATH || 'ffmpeg';
   try {
     await execFileAsync(binary, ['-hide_banner', '-loglevel', 'error', ...args], {
       maxBuffer: 1024 * 1024 * 16,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(`ffmpeg failed: ${message}`);
+    throw new VideoCourseExportError(`${context} failed`, execFailureDetails(error));
   }
 }
 
@@ -150,7 +217,10 @@ async function writeUploadedFile(file: File, targetPath: string): Promise<void> 
 async function writeFetchedAudio(url: URL, targetPath: string): Promise<void> {
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Audio download failed: ${response.status} ${response.statusText}`);
+    throw new VideoCourseExportError(
+      'Narration audio download failed',
+      `HTTP ${response.status} ${response.statusText}: ${url.pathname}`,
+    );
   }
   const bytes = Buffer.from(await response.arrayBuffer());
   await writeFile(targetPath, bytes);
@@ -243,39 +313,45 @@ async function buildSceneAudio(
   const audioPath = path.join(workDir, `scene_${sceneIndex}_audio.m4a`);
 
   if (tracks.length === 1 && tracks[0].type === 'silence') {
-    await runFfmpeg([
-      '-y',
-      '-f',
-      'lavfi',
-      '-t',
-      (durationMs / 1000).toFixed(3),
-      '-i',
-      'anullsrc=channel_layout=stereo:sample_rate=44100',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
-      audioPath,
-    ]);
+    await runFfmpeg(
+      [
+        '-y',
+        '-f',
+        'lavfi',
+        '-t',
+        (durationMs / 1000).toFixed(3),
+        '-i',
+        'anullsrc=channel_layout=stereo:sample_rate=44100',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        audioPath,
+      ],
+      `Build audio for page ${sceneIndex + 1}`,
+    );
     return { audioPath, durationMs };
   }
 
   if (tracks.length === 1 && tracks[0].type === 'file' && tracks[0].path) {
-    await runFfmpeg([
-      '-y',
-      '-i',
-      tracks[0].path,
-      '-vn',
-      '-ac',
-      '2',
-      '-ar',
-      '44100',
-      '-c:a',
-      'aac',
-      '-b:a',
-      '128k',
-      audioPath,
-    ]);
+    await runFfmpeg(
+      [
+        '-y',
+        '-i',
+        tracks[0].path,
+        '-vn',
+        '-ac',
+        '2',
+        '-ar',
+        '44100',
+        '-c:a',
+        'aac',
+        '-b:a',
+        '128k',
+        audioPath,
+      ],
+      `Convert narration audio for page ${sceneIndex + 1}`,
+    );
     return { audioPath, durationMs };
   }
 
@@ -313,7 +389,7 @@ async function buildSceneAudio(
     audioPath,
   );
 
-  await runFfmpeg(args);
+  await runFfmpeg(args, `Merge narration audio for page ${sceneIndex + 1}`);
   return { audioPath, durationMs };
 }
 
@@ -335,37 +411,40 @@ async function buildSceneVideo({
   fps: number;
 }): Promise<void> {
   const duration = (durationMs / 1000).toFixed(3);
-  await runFfmpeg([
-    '-y',
-    '-loop',
-    '1',
-    '-t',
-    duration,
-    '-i',
-    imagePath,
-    '-i',
-    audioPath,
-    '-vf',
-    `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=white,setsar=1,format=yuv420p`,
-    '-r',
-    String(fps),
-    '-c:v',
-    'libx264',
-    '-preset',
-    'veryfast',
-    '-tune',
-    'stillimage',
-    '-c:a',
-    'aac',
-    '-b:a',
-    '128k',
-    '-ar',
-    '44100',
-    '-ac',
-    '2',
-    '-shortest',
-    outputPath,
-  ]);
+  await runFfmpeg(
+    [
+      '-y',
+      '-loop',
+      '1',
+      '-t',
+      duration,
+      '-i',
+      imagePath,
+      '-i',
+      audioPath,
+      '-vf',
+      `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2:color=white,setsar=1,format=yuv420p`,
+      '-r',
+      String(fps),
+      '-c:v',
+      'libx264',
+      '-preset',
+      'veryfast',
+      '-tune',
+      'stillimage',
+      '-c:a',
+      'aac',
+      '-b:a',
+      '128k',
+      '-ar',
+      '44100',
+      '-ac',
+      '2',
+      '-shortest',
+      outputPath,
+    ],
+    'Build page video segment',
+  );
 }
 
 async function concatSegments(segmentPaths: string[], outputPath: string, workDir: string) {
@@ -374,7 +453,10 @@ async function concatSegments(segmentPaths: string[], outputPath: string, workDi
     listPath,
     segmentPaths.map((segmentPath) => `file '${quoteConcatPath(segmentPath)}'`).join('\n'),
   );
-  await runFfmpeg(['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath]);
+  await runFfmpeg(
+    ['-y', '-f', 'concat', '-safe', '0', '-i', listPath, '-c', 'copy', outputPath],
+    'Concat video segments',
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -403,52 +485,99 @@ export async function POST(request: NextRequest) {
       const scene = manifest.scenes[sceneIndex];
       const imageFile = asFile(formData.get(scene.imageField));
       if (!imageFile) {
-        return apiError('INVALID_REQUEST', 400, `Missing image for scene ${sceneIndex + 1}`);
+        return apiError(
+          'INVALID_REQUEST',
+          400,
+          `Missing rendered image for ${sceneLabel(scene, sceneIndex)}`,
+        );
       }
 
       const imagePath = path.join(workDir, `scene_${sceneIndex}.png`);
-      await writeUploadedFile(imageFile, imagePath);
+      try {
+        await writeUploadedFile(imageFile, imagePath);
+      } catch (error) {
+        throw wrapExportError(
+          `Failed to write rendered image for ${sceneLabel(scene, sceneIndex)}`,
+          error,
+        );
+      }
 
       const fallbackMs = Math.max(MIN_SCENE_MS, Math.round(scene.fallbackMs || DEFAULT_SCENE_MS));
-      const preparedTracks = await Promise.all(
-        (scene.tracks ?? []).map((track, trackIndex) =>
-          prepareTrack(track, formData, workDir!, sceneIndex, trackIndex, request),
-        ),
-      );
-      const { audioPath, durationMs } = await buildSceneAudio(
-        preparedTracks,
-        fallbackMs,
-        workDir,
-        sceneIndex,
-      );
+      let preparedTracks: PreparedTrack[];
+      try {
+        preparedTracks = await Promise.all(
+          (scene.tracks ?? []).map((track, trackIndex) =>
+            prepareTrack(track, formData, workDir!, sceneIndex, trackIndex, request),
+          ),
+        );
+      } catch (error) {
+        throw wrapExportError(
+          `Failed to prepare narration audio for ${sceneLabel(scene, sceneIndex)}`,
+          error,
+        );
+      }
+
+      let sceneAudio: { audioPath: string; durationMs: number };
+      try {
+        sceneAudio = await buildSceneAudio(preparedTracks, fallbackMs, workDir, sceneIndex);
+      } catch (error) {
+        throw wrapExportError(
+          `Failed to build narration audio for ${sceneLabel(scene, sceneIndex)}`,
+          error,
+        );
+      }
 
       const segmentPath = path.join(workDir, `segment_${sceneIndex}.mp4`);
-      await buildSceneVideo({
-        imagePath,
-        audioPath,
-        outputPath: segmentPath,
-        durationMs,
-        width,
-        height,
-        fps,
-      });
+      try {
+        await buildSceneVideo({
+          imagePath,
+          audioPath: sceneAudio.audioPath,
+          outputPath: segmentPath,
+          durationMs: sceneAudio.durationMs,
+          width,
+          height,
+          fps,
+        });
+      } catch (error) {
+        throw wrapExportError(
+          `Failed to build video segment for ${sceneLabel(scene, sceneIndex)}`,
+          error,
+        );
+      }
       segmentPaths.push(segmentPath);
     }
 
     const outputPath = path.join(workDir, 'course.mp4');
-    await concatSegments(segmentPaths, outputPath, workDir);
-    const output = await readFile(outputPath);
+    try {
+      await concatSegments(segmentPaths, outputPath, workDir);
+    } catch (error) {
+      throw wrapExportError('Failed to concat video segments', error);
+    }
+
+    let output: Buffer;
+    try {
+      output = await readFile(outputPath);
+    } catch (error) {
+      throw wrapExportError('Failed to read rendered video file', error);
+    }
 
     const fileName = (manifest.fileName || 'course').replace(/[\\/:*?"<>|]/g, '_') || 'course';
-    return new NextResponse(output, {
+    return new NextResponse(new Uint8Array(output), {
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Disposition': `attachment; filename="${encodeURIComponent(fileName)}.mp4"`,
       },
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return apiError('INTERNAL_ERROR', 500, message);
+    if (error instanceof VideoCourseExportError) {
+      return apiError(error.errorCode, error.status, error.message, error.details);
+    }
+    return apiError(
+      'INTERNAL_ERROR',
+      500,
+      'Video course export failed',
+      normalizeErrorDetails(errorMessage(error)),
+    );
   } finally {
     if (workDir) {
       await rm(workDir, { recursive: true, force: true });

@@ -97,6 +97,19 @@ function videoCourseFileName(
   return `${safeFileName(name, 'course')}-${resolution.label}`;
 }
 
+function errorPayloadText(value: unknown): string | null {
+  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : null;
+}
+
+function compactErrorMessage(value: string): string {
+  const normalized = value
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join('\n');
+  return normalized.length > 1800 ? `...${normalized.slice(normalized.length - 1800)}` : normalized;
+}
+
 function estimateSpeechMs(text: string): number {
   const cjkCount = (
     text.match(/[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || []
@@ -554,9 +567,12 @@ export function useExportVideoCourse() {
 
         if (!res.ok) {
           const payload = await res.json().catch(() => null);
-          const message =
-            payload && typeof payload.error === 'string' ? payload.error : t('export.exportFailed');
-          throw new Error(message);
+          const summary = errorPayloadText(payload?.error);
+          const details = errorPayloadText(payload?.details);
+          const reason = compactErrorMessage([summary, details].filter(Boolean).join('\n'));
+          throw new Error(
+            reason ? t('export.videoRenderFailedWithReason', { reason }) : t('export.exportFailed'),
+          );
         }
 
         const blob = await res.blob();

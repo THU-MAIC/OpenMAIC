@@ -47,6 +47,7 @@
     "videoPreparingProgress": "Preparing page {{current}} / {{total}}...",
     "videoGeneratingNarration": "Generating narration for page {{current}} / {{total}}...",
     "videoRendering": "Rendering video...",
+    "videoRenderFailedWithReason": "Video rendering failed: {{reason}}",
     "videoNoNarration": "No narration audio was found; exported with silence.",
     "videoPartialNarration": "{{count}} narration item(s) could not be generated and were filled with silence.",
     "videoNarrationUnavailable": "No narration audio was found or generated. Configure an available TTS service first.",
