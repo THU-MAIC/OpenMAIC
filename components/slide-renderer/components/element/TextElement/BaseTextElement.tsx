@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTTextElement } from '@/lib/types/slides';
+import type { PPTTextElement } from '@maic/dsl';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { ElementOutline } from '../ElementOutline';
 

@@ -10,7 +10,7 @@ import {
   redoSlideEditOperation,
   undoSlideEditOperation,
 } from '@/lib/edit/slide-ops';
-import type { PPTTextElement } from '@/lib/types/slides';
+import type { PPTTextElement } from '@maic/dsl';
 import type { SlideContent } from '@/lib/types/stage';
 
 // The fixture's element 0 is always the default text element; narrow so

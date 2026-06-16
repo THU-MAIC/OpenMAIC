@@ -5,7 +5,7 @@ import { useKeyboardStore, useCanvasStore } from '@/lib/store';
 import { KEYS } from '@/configs/hotkey';
 import { OperateResizeHandlers } from '@/lib/types/edit';
 import type { ImageClipedEmitData } from '@/lib/types/edit';
-import type { ImageClipDataRange, ImageElementClip } from '@/lib/types/slides';
+import type { ImageClipDataRange, ImageElementClip } from '@maic/dsl';
 
 export interface ImageClipHandlerProps {
   src: string;

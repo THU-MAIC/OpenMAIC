@@ -16,7 +16,7 @@ import type {
   PPTVideoElement,
   PPTAudioElement,
   PPTCodeElement,
-} from './slides';
+} from './slides.js';
 
 /** All valid `PPTElement["type"]` discriminants. */
 export type PPTElementType = PPTElement['type'];

@@ -1,4 +1,4 @@
-import type { LinePoint } from '@/lib/types/slides';
+import type { LinePoint } from '@maic/dsl';
 
 type NonEmptyLinePoint = Exclude<LinePoint, ''>;
 

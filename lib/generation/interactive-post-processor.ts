@@ -49,19 +49,16 @@ function convertLatexDelimiters(html: string): string {
   // Use non-greedy match and exclude newlines to avoid false positives
   processed = processed.replace(/\$([^$\n]+?)\$/g, '\\($1\\)');
 
-  // Restore script blocks using indexOf + substring (not .replace())
-  // because script content may contain $ characters that .replace()
-  // would interpret as special substitution patterns.
-  for (let i = 0; i < scriptBlocks.length; i++) {
-    const placeholder = `__SCRIPT_BLOCK_${i}__`;
-    const idx = processed.indexOf(placeholder);
-    if (idx !== -1) {
-      processed =
-        processed.substring(0, idx) +
-        scriptBlocks[i] +
-        processed.substring(idx + placeholder.length);
-    }
-  }
+  // Restore script blocks in a single pass. A replacer FUNCTION (not a string)
+  // is safe even when script content contains `$` — a function's return value
+  // is inserted literally, with no `$&`/`$1` substitution. The previous
+  // indexOf+substring loop rebuilt the entire string once per block, i.e.
+  // O(blocks × length), which balloons memory and blocks the event loop when
+  // the generated widget HTML contains many <script> tags.
+  processed = processed.replace(
+    /__SCRIPT_BLOCK_(\d+)__/g,
+    (whole, index) => scriptBlocks[Number(index)] ?? whole,
+  );
 
   return processed;
 }

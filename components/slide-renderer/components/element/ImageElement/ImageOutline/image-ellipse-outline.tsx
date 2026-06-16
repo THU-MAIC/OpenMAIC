@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTElementOutline } from '@/lib/types/slides';
+import type { PPTElementOutline } from '@maic/dsl';
 import { useElementOutline } from '../../hooks/useElementOutline';
 
 export interface ImageEllipseOutlineProps {

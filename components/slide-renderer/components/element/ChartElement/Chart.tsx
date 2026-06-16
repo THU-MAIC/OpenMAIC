@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useMemo } from 'react';
 import tinycolor from 'tinycolor2';
-import type { ChartData, ChartOptions, ChartType } from '@/lib/types/slides';
+import type { ChartData, ChartOptions, ChartType } from '@maic/dsl';
 import { getChartOption } from './chartOption';
 
 import * as echarts from 'echarts/core';

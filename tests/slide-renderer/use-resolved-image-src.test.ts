@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { PPTImageElement } from '@/lib/types/slides';
+import type { PPTImageElement } from '@maic/dsl';
 import type { MediaTask } from '@/lib/store/media-generation';
 import { resolveImageSrc } from '@/components/slide-renderer/components/element/ImageElement/useResolvedImageSrc';
 

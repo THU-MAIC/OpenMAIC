@@ -6,7 +6,7 @@ import {
   undoSlideEditOperation,
 } from '@/lib/edit/slide-ops';
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement, PPTLineElement, PPTTextElement } from '@/lib/types/slides';
+import type { PPTElement, PPTLineElement, PPTTextElement } from '@maic/dsl';
 
 function textElement(overrides: Partial<PPTTextElement> = {}): PPTTextElement {
   return {

@@ -46,7 +46,12 @@ export const maxDuration = 300;
  *   {"languageDirective":"用中文授课...","outlines":[...
  */
 function extractLanguageDirective(buffer: string): string | null {
-  const match = buffer.match(/"languageDirective"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  // The directive is the first key of the wrapper object, so it can only ever
+  // appear in the head of the buffer. Bound the scan to keep this O(1) per
+  // streamed chunk — it is called on the full, growing buffer on every chunk,
+  // which is otherwise O(n²) over the stream.
+  const head = buffer.length > 8192 ? buffer.slice(0, 8192) : buffer;
+  const match = head.match(/"languageDirective"\s*:\s*"((?:[^"\\]|\\.)*)"/);
   if (!match) return null;
   try {
     return JSON.parse(`"${match[1]}"`);
@@ -57,38 +62,42 @@ function extractLanguageDirective(buffer: string): string | null {
 
 /**
  * Incremental JSON array parser.
- * Extracts complete top-level objects from a partially-streamed JSON array.
+ * Extracts complete top-level objects from a partially-streamed JSON array,
+ * resuming from `scanFrom` (an index into `buffer`) so the growing buffer is
+ * scanned only ONCE across the whole stream — O(n) total instead of O(n²).
  * Supports both a flat array `[{...},{...}]` and a wrapper object
- * `{"languageDirective":"...","outlines":[{...},{...}]}`.
- * Returns newly found objects (skipping `alreadyParsed` count).
+ * `{"languageDirective":"...","outlines":[{...},{...}]}`, with or without a
+ * markdown ```json fence (the array is located by content, not by stripping).
+ * Returns newly found objects plus the index to resume scanning from next time.
  */
-function extractNewOutlines(buffer: string, alreadyParsed: number): SceneOutline[] {
+function extractNewOutlines(
+  buffer: string,
+  scanFrom: number,
+): { outlines: SceneOutline[]; scanFrom: number } {
   const results: SceneOutline[] = [];
 
-  // Strip markdown fencing if present
-  const stripped = buffer.replace(/^[\s\S]*?(?=[\[{])/, '');
-
-  // Find the outlines array — either nested in {"outlines": [...]} or a flat array
-  let arrayStart = -1;
-  const outlinesKeyIdx = stripped.indexOf('"outlines"');
-  if (outlinesKeyIdx >= 0) {
-    // Wrapper format: find [ after "outlines":
-    arrayStart = stripped.indexOf('[', outlinesKeyIdx);
+  let i: number;
+  if (scanFrom > 0) {
+    // Resume just past the last fully-parsed object (between array elements,
+    // so not inside a string and at brace depth 0).
+    i = scanFrom;
   } else {
-    // Flat array fallback
-    arrayStart = stripped.indexOf('[');
+    // Locate the outlines array opening once.
+    const outlinesKeyIdx = buffer.indexOf('"outlines"');
+    const arrayStart =
+      outlinesKeyIdx >= 0 ? buffer.indexOf('[', outlinesKeyIdx) : buffer.indexOf('[');
+    if (arrayStart === -1) return { outlines: results, scanFrom: 0 };
+    i = arrayStart + 1;
   }
-
-  if (arrayStart === -1) return results;
 
   let depth = 0;
   let objectStart = -1;
   let inString = false;
   let escaped = false;
-  let objectCount = 0;
+  let consumed = i; // index just past the last fully-parsed object
 
-  for (let i = arrayStart + 1; i < stripped.length; i++) {
-    const char = stripped[i];
+  for (; i < buffer.length; i++) {
+    const char = buffer[i];
 
     if (escaped) {
       escaped = false;
@@ -110,21 +119,18 @@ function extractNewOutlines(buffer: string, alreadyParsed: number): SceneOutline
     } else if (char === '}') {
       depth--;
       if (depth === 0 && objectStart >= 0) {
-        objectCount++;
-        if (objectCount > alreadyParsed) {
-          try {
-            const obj = JSON.parse(stripped.substring(objectStart, i + 1));
-            results.push(obj);
-          } catch {
-            // Incomplete or invalid JSON — skip
-          }
+        try {
+          results.push(JSON.parse(buffer.substring(objectStart, i + 1)));
+        } catch {
+          // Incomplete or invalid JSON — skip
         }
         objectStart = -1;
+        consumed = i + 1;
       }
     }
   }
 
-  return results;
+  return { outlines: results, scanFrom: consumed };
 }
 
 function normalizeTaskEngineProceduralOutline(
@@ -366,6 +372,10 @@ export async function POST(req: NextRequest) {
         };
 
         const MAX_STREAM_RETRIES = 2;
+        // Hard ceiling on the accumulated stream buffer. Legitimate outline
+        // JSON is small (tens of KB); anything past this is a runaway/degenerate
+        // generation and must not be allowed to grow the heap unbounded.
+        const MAX_OUTLINE_STREAM_BYTES = 512 * 1024;
 
         try {
           startHeartbeat();
@@ -381,12 +391,16 @@ export async function POST(req: NextRequest) {
                   },
                 ],
                 maxOutputTokens: modelInfo?.outputWindow,
+                // Tear down the upstream LLM request when the client disconnects,
+                // instead of letting it run to completion for a dead connection.
+                abortSignal: req.signal,
               }
             : {
                 model: languageModel,
                 system: prompts.system,
                 prompt: prompts.user,
                 maxOutputTokens: modelInfo?.outputWindow,
+                abortSignal: req.signal,
               };
 
           let parsedOutlines: SceneOutline[] = [];
@@ -396,6 +410,7 @@ export async function POST(req: NextRequest) {
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
             try {
               let fullText = '';
+              let scanFrom = 0;
               parsedOutlines = [];
               languageDirective = null;
               const usedOutlineIds = new Set<string>();
@@ -406,7 +421,21 @@ export async function POST(req: NextRequest) {
               ).textStream;
 
               for await (const chunk of textStream) {
+                // Stop doing work the moment the client goes away — otherwise
+                // generation keeps running and buffering for a dead connection.
+                if (req.signal?.aborted) {
+                  stopHeartbeat();
+                  return;
+                }
+
                 fullText += chunk;
+
+                if (fullText.length > MAX_OUTLINE_STREAM_BYTES) {
+                  log.warn(
+                    `Outline stream exceeded ${MAX_OUTLINE_STREAM_BYTES} bytes (len=${fullText.length}); stopping read and finalizing with ${parsedOutlines.length} outline(s)`,
+                  );
+                  break;
+                }
 
                 // Try to extract language directive early
                 if (!languageDirective) {
@@ -420,8 +449,13 @@ export async function POST(req: NextRequest) {
                   }
                 }
 
-                // Try to extract new outlines from the accumulated text
-                const newOutlines = extractNewOutlines(fullText, parsedOutlines.length);
+                // Try to extract new outlines from the accumulated text,
+                // resuming the scan from where the previous chunk left off.
+                const { outlines: newOutlines, scanFrom: nextScanFrom } = extractNewOutlines(
+                  fullText,
+                  scanFrom,
+                );
+                scanFrom = nextScanFrom;
                 for (const outline of newOutlines) {
                   // Ensure ID and order
                   const enrichedBase = {
@@ -467,6 +501,12 @@ export async function POST(req: NextRequest) {
                 controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
               }
             } catch (error) {
+              // Client disconnected (AbortError from the now-propagated signal):
+              // stop immediately, don't burn retries re-running generation.
+              if (req.signal?.aborted) {
+                stopHeartbeat();
+                return;
+              }
               lastError = error instanceof Error ? error.message : String(error);
               log.warn(
                 `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
@@ -518,7 +558,12 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${errorEvent}\n\n`));
         } finally {
           stopHeartbeat();
-          controller.close();
+          // The controller may already be closed if the client disconnected.
+          try {
+            controller.close();
+          } catch {
+            // already closed — ignore
+          }
         }
       },
     });

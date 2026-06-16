@@ -42,6 +42,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
   // Global lecture voice — used as fallback for teacher agent
   const globalTtsProviderId = useSettingsStore((s) => s.ttsProviderId);
   const globalTtsVoice = useSettingsStore((s) => s.ttsVoice);
+  const agentVoiceOverrides = useSettingsStore((s) => s.agentVoiceOverrides);
   const { profiles: voxcpmProfiles } = useVoxCPMVoiceProfiles();
 
   const queueRef = useRef<QueueItem[]>([]);
@@ -141,7 +142,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       }
 
       const index = agentIndexMap.current.get(agentId!) ?? 0;
-      return resolveAgentVoice(agent, index, providers);
+      return resolveAgentVoice(agent, index, providers, agentVoiceOverrides);
     },
     [
       agents,
@@ -150,6 +151,7 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
       browserVoices,
       globalTtsProviderId,
       globalTtsVoice,
+      agentVoiceOverrides,
     ],
   );
 

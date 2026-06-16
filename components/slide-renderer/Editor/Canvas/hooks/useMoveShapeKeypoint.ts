@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import type { PPTElement, PPTShapeElement } from '@/lib/types/slides';
+import type { PPTElement, PPTShapeElement } from '@maic/dsl';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import { SHAPE_PATH_FORMULAS } from '@/configs/shapes';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';

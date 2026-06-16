@@ -6,7 +6,7 @@
  */
 
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@maic/dsl';
 import type { StageStore, APIResult, CreateElementParams } from './stage-api-types';
 import { generateId, getScene } from './stage-api-defaults';
 

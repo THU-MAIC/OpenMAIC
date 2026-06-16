@@ -1,4 +1,4 @@
-import type { TurningMode } from '@/lib/types/slides';
+import type { TurningMode } from '@maic/dsl';
 
 export const ANIMATION_DEFAULT_DURATION = 1000;
 export const ANIMATION_DEFAULT_TRIGGER = 'click';

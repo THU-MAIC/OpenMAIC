@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultSlide, createDefaultTextElement } from '@/lib/edit/slide-edit-elements';
-import type { PPTTextElement } from '@/lib/types/slides';
+import type { PPTTextElement } from '@maic/dsl';
 import type { SlideContent } from '@/lib/types/stage';
 
 // Mock the canonical stage store so we can assert write-through: every

@@ -2,7 +2,7 @@
 
 import { useRef, useEffect } from 'react';
 import { useAnimate } from 'motion/react';
-import type { PPTVideoElement } from '@/lib/types/slides';
+import type { PPTVideoElement } from '@maic/dsl';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';

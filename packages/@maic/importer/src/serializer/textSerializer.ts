@@ -896,6 +896,10 @@ export function renderTextBody(
     // (slide 3) 之类的相邻元素重叠。指标段（有 bullet 且 indent<0 且无
     // 显式 marL）按 PPT 默认补 marL = -indent。
     let effectiveMarginLeft = merged.marginLeft;
+    // 标记 marL 是否为「合成」(无真实 marL、按 -indent 补)。合成意味着 bullet 紧贴
+    // element 左沿、可能压住相邻形状（slide 3 编号圆）；真实 marL 则 bullet 落在
+    // marL+indent 的悬挂位、不贴边。下方 bullet 槽位的 symbol padding 据此区分。
+    let marginLeftSynthesized = false;
     if (
       (effectiveMarginLeft === undefined || effectiveMarginLeft === 0) &&
       merged.textIndent !== undefined &&
@@ -903,6 +907,7 @@ export function renderTextBody(
       (merged.bulletChar || merged.bulletAutoNum)
     ) {
       effectiveMarginLeft = -merged.textIndent;
+      marginLeftSynthesized = true;
     }
     // Tab stop width from a:tabLst (first stop): (firstStop − marginLeft), default
     // OOXML 96px grid. Shared by the leading-indent fold and the tab-size fallback.
@@ -1209,9 +1214,9 @@ export function renderTextBody(
           : baseSize;
       const bSizeCss = `font-size: ${bulletPt.toFixed(1)}pt;`;
 
-      // hanging-indent 段的 bullet 用 inline-block 占满 marL 宽度的"槽位"，
-      // ■ 在槽位左沿，槽位右侧留白把首行正文推到 element_x + marL，与 body
-      // 续行的左缩进对齐——这就是 PowerPoint 通过 bullet+tab 实现的视觉效果。
+      // hanging-indent 段的 bullet 用 inline-block 占满「悬挂缩进区域」的槽位：
+      // bullet 落在 marL+indent（首行起点），槽位把首行正文推到 element_x + marL，
+      // 与 body 续行的左缩进对齐——这就是 PowerPoint 通过 bullet+tab 实现的视觉效果。
       // 不用 inline-block 时正文紧贴 bullet 字形右侧（例如 slide 3 row 05
       // "■" 紧挨 "传承"），与 body 续行形成台阶状错位。
       const useBulletSlot =
@@ -1220,21 +1225,30 @@ export function renderTextBody(
         merged.textIndent !== undefined &&
         merged.textIndent < 0;
       if (useBulletSlot) {
-        // Wingdings/Symbol bullet (■ ◆ 等) 与左侧编号圆相邻时（slide 3 的 01-05
-        // 圆），source XML 把文本框摆在圆右沿仅 ~23 CSS px 处，bullet 字形落在
-        // 圆的粉色光晕里看着像"压"在圆上。PPT 靠 tab-stop auto-align 自动让开，
-        // 我们这层没有该机制，因此对 symbol bullet 在槽位内左侧补 padding 把字形
-        // 往右推、body 位置不变（box-sizing:border-box 让槽宽仍为 marL）。真 list
-        // bullet（•）不属于 symbol font，不受影响。
-        // 普通 list bullet（•/◦ 等非 symbol-font 字形）在槽位内靠右、贴近正文，
-        // 留一个 0.4em 的小间距——还原 PPT 里 bullet 紧挨首行正文的观感（如 slide 5
-        // marL=36px 时，左对齐会把 • 甩到槽位最左、离正文 ~28px 太远）。槽宽仍为
-        // marL、box-sizing:border-box，续行左缩进不变，仍与首行正文对齐。
-        // symbol bullet（■ ◆，slide 3 编号圆相邻）保持原左侧 padding 逻辑不动。
-        const slotPad = isSymbolBullet
+        // 槽宽 = 悬挂缩进量 |indent|（不是 marL）。<p> 上 margin-left:marL + text-indent:indent
+        // 已把首行起点定在 marL+indent；槽位只需补满到 marL，所以宽度是 |indent|。
+        // 若错用 marL：当真实 marL ≫ |indent|（如 slide 2「在集体中成长」右框 marL=78/indent=-30）
+        // 时，过宽的槽把正文推到 marL+|indent| 之外、bullet 离正文很远。slide 3 那种「无显式 marL、
+        // 由 -indent 合成 marL」的情形 marL==|indent|，取值不变、不受影响。
+        const slotWidthPx = -(merged.textIndent ?? 0);
+        // symbol bullet 的字形对齐：
+        // - 合成 marL（无真实 marL、bullet 紧贴 element 左沿、可能压住相邻形状，如 slide 3 编号圆）：
+        //   在槽内补 padding-left:16px 把 ■ 往右推、避开相邻形状光晕；body 位置不变。
+        // - 真实 marL：bullet 落在 marL+indent 的悬挂位（左对齐，无 padding），与 PPT 一致
+        //   （slide 2 右框 ■ 实测落在 marL+indent，加 padding 反而把 ■ 顶到正文上）。
+        const symbolSlotPad = marginLeftSynthesized
           ? 'padding-left:16px;box-sizing:border-box;'
+          : 'box-sizing:border-box;';
+        // 普通 list bullet（•/◦ 等非 symbol-font 字形）在槽位内靠右、贴近正文，
+        // 留一个 0.4em 的小间距，续行左缩进不变、仍与首行正文对齐。
+        const slotPad = isSymbolBullet
+          ? symbolSlotPad
           : 'text-align:right;padding-right:0.4em;box-sizing:border-box;';
-        bulletHtml = `<span style="display:inline-block;width:${effectiveMarginLeft}px;${slotPad}${bFontCss}${bSizeCss}color: ${bColor};">${escapeHtml(displayChar)}</span>`;
+        // text-indent:0 — hanging-indent 段在 <p> 上带 `text-indent:-N`，而 CSS text-indent
+        // 会被 display:inline-block 的槽位 span 当作块级容器继承，把槽内 bullet 字形再左移 N，
+        // 落到 element 左外（slide 3 的 ■ 飞到左侧编号圆上）。在槽位上显式归零切断继承，bullet
+        // 字形稳定落在 padding 处，body 与续行仍由 <p> 的 margin-left/text-indent 控制不受影响。
+        bulletHtml = `<span style="display:inline-block;width:${slotWidthPx}px;text-indent:0;${slotPad}${bFontCss}${bSizeCss}color: ${bColor};">${escapeHtml(displayChar)}</span>`;
       } else {
         bulletHtml = `<span style="${bFontCss}${bSizeCss}color: ${bColor};">${escapeHtml(displayChar)} </span>`;
       }

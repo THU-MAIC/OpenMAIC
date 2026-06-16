@@ -1,4 +1,4 @@
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@maic/dsl';
 import type { Stage, Scene } from '@/lib/types/stage';
 
 // ==================== Scenario ====================

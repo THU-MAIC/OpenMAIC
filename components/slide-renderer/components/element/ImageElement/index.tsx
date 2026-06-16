@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTImageElement, ImageElementClip } from '@/lib/types/slides';
+import type { PPTImageElement, ImageElementClip } from '@maic/dsl';
 import type { ImageClipedEmitData } from '@/lib/types/edit';
 import { useCanvasStore } from '@/lib/store';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';

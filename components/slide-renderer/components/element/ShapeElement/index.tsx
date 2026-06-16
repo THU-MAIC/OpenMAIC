@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState, useEffect, useCallback } from 'react';
-import type { PPTShapeElement, ShapeText } from '@/lib/types/slides';
+import type { PPTShapeElement, ShapeText } from '@maic/dsl';
 import { useCanvasStore } from '@/lib/store';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';

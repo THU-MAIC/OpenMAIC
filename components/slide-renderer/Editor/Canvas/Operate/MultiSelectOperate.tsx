@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useState } from 'react';
 import { useCanvasStore } from '@/lib/store';
-import type { PPTElement } from '@/lib/types/slides';
+import type { PPTElement } from '@maic/dsl';
 import { getElementListRange } from '@/lib/utils/element';
 import type { OperateResizeHandlers, MultiSelectRange } from '@/lib/types/edit';
 import { useCommonOperate } from '../hooks/useCommonOperate';

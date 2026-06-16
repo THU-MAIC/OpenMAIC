@@ -1,6 +1,6 @@
 import tinycolor from 'tinycolor2';
 import { nanoid } from 'nanoid';
-import type { PPTElement, PPTLineElement, Slide } from '@/lib/types/slides';
+import type { PPTElement, PPTLineElement, Slide } from '@maic/dsl';
 
 interface RotatedElementData {
   left: number;

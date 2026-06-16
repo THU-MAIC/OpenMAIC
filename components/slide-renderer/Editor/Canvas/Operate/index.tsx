@@ -10,7 +10,7 @@ import {
   type PPTChartElement,
   type Slide,
   type PPTAnimation,
-} from '@/lib/types/slides';
+} from '@maic/dsl';
 import type { OperateLineHandlers, OperateResizeHandlers } from '@/lib/types/edit';
 import { ImageElementOperate } from './ImageElementOperate';
 import { TextElementOperate } from './TextElementOperate';

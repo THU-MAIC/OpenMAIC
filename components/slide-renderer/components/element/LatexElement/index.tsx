@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useLayoutEffect } from 'react';
-import type { PPTLatexElement } from '@/lib/types/slides';
+import type { PPTLatexElement } from '@maic/dsl';
 
 export { BaseLatexElement } from './BaseLatexElement';
 

@@ -5,7 +5,7 @@ import {
   migrateSlideContent,
 } from '@/lib/edit/slide-schema';
 import type { Scene, SlideContent } from '@/lib/types/stage';
-import type { Slide } from '@/lib/types/slides';
+import type { Slide } from '@maic/dsl';
 
 function makeSlide(): Slide {
   return {

@@ -25,6 +25,7 @@ nothing.
 | Module        | Contents                                                            |
 | ------------- | ------------------------------------------------------------------- |
 | `slides.ts`   | The slide object model: `Slide`, `PPTElement` and all variants, theme, background, animation, table/chart/code types, plus `ElementTypes` / `ShapePathFormulasKeys` enums. |
+| `stage.ts`    | The lesson skeleton: `Stage`, generic `Scene<TAction, TContent>`, `SceneType`, `StageMode`, `Whiteboard`, `VideoManifest`, `SlideContent`, `QuizContent`, `MultiAgentConfig`, `GeneratedAgentConfig`, plus `isSlideContent` / `isQuizContent` guards. |
 | `guards.ts`   | Pure discriminant type-guards (`isTextElement`, …) and `PPT_ELEMENT_TYPES`. |
 | `version.ts`  | `DSL_VERSION` + the `DslMigration` shape and (empty) migration registry. |
 
@@ -51,10 +52,32 @@ of the slide types:
 - [x] Wire `@maic/importer` to import types from `@maic/dsl` (vendored copy deleted).
 - [x] Wire `@maic/renderer` to import types from `@maic/dsl` (vendored copy deleted).
 - [ ] Add the JSON Schema for the slide contract + a pure schema validator.
-- [ ] Promote the `stage` / `scene` / `scene-content` types into the DSL (these
-      currently live in `lib/types/stage.ts` and carry deps on `Action`, PBL,
-      Widgets, generation types — those pure types need migrating too).
+- [x] Promote the `stage` / `scene` / `scene-content` types into the DSL (the
+      universal skeleton now lives in `stage.ts`; `Action`, Ultra-mode widgets,
+      and PBL stay app-side and plug in via `Scene<TAction, TContent>`).
 - [ ] Reserve `@maic/exporter` as the 4th family member.
+
+### Stage / Scene split
+
+`stage.ts` owns only the **universal lesson skeleton**: `Stage`, the
+discriminated `SceneContent` (`SlideContent | QuizContent`), and a generic
+
+```ts
+interface Scene<TAction = never, TContent extends { type: SceneType } = SlideContent | QuizContent>
+```
+
+so the contract carries no dependency on the playback action set or the richer
+feature surfaces. Apps compose their full scene type by injecting their own
+types:
+
+```ts
+import type { Scene } from '@maic/dsl';
+type AppScene = Scene<AppAction, SlideContent | QuizContent | InteractiveContent | PBLContent>;
+```
+
+`Action`, widget configs (`WidgetType` / `WidgetConfig`), and `PBLProjectConfig`
+are deliberately out of scope here — they're faster-moving product surfaces and
+may graduate to sibling packages (`@maic/actions`, …) later.
 
 ## Divergence reconciled (seed provenance)
 

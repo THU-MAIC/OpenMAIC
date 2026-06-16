@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { ImageElementFilters } from '@/lib/types/slides';
+import type { ImageElementFilters } from '@maic/dsl';
 
 /**
  * Calculate CSS filter string from image filters array
