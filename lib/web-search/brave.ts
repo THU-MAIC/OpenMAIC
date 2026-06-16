@@ -75,11 +75,12 @@ export function parseBraveSearchHtml(html: string, maxResults: number): WebSearc
     // to `<div class="title search-snippet-title …">`, which made this parser
     // return zero results against the live page. Accept either element so we are
     // robust to that (and a future) swap; the title text is stripped of tags
-    // regardless.
+    // regardless. The `\1` backreference ties the closing tag to the captured
+    // opening tag, so a mismatched `<span …>…</div>` can't be picked up as a title.
     const titleMatch = block.match(
-      /<(?:span|div)[^>]*class="[^"]*search-snippet-title[^"]*"[^>]*>([\s\S]*?)<\/(?:span|div)>/i,
+      /<(span|div)[^>]*class="[^"]*search-snippet-title[^"]*"[^>]*>([\s\S]*?)<\/\1>/i,
     );
-    const title = titleMatch ? stripHtml(titleMatch[1]) : '';
+    const title = titleMatch ? stripHtml(titleMatch[2]) : '';
     if (!title) continue;
 
     const genericMatch = block.match(

@@ -46,6 +46,21 @@ describe('parseBraveSearchHtml', () => {
       },
     ]);
   });
+
+  it('does not pair a mismatched title open/close tag (span … /div)', () => {
+    // The closing tag is tied to the captured opening tag, so a malformed
+    // `<span …>…</div>` is not treated as a title and the result is skipped.
+    const html = `
+      <div class="snippet svelte-abc" data-pos="0" data-type="web">
+        <a href="https://example.org/x" class="l1"></a>
+        <span class="search-snippet-title">Broken Title</div>
+        <div class="generic-snippet">Some content</div>
+      </div>
+      <footer>footer</footer>
+    `;
+
+    expect(parseBraveSearchHtml(html, 5)).toEqual([]);
+  });
 });
 
 describe('searchWithBrave', () => {
