@@ -290,6 +290,8 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('glm', 'glm-4.6v')]: toggleCapability('glm'),
   [getModelMetadataKey('glm', 'glm-4.6v-flash')]: toggleCapability('glm'),
 
+  [getModelMetadataKey('qwen', 'qwen3.7-plus')]: qwenBudgetEnabled,
+  [getModelMetadataKey('qwen', 'qwen3.7-max')]: qwenBudgetEnabled,
   [getModelMetadataKey('qwen', 'qwen3.6-max-preview')]: qwenBudgetDisabled,
   [getModelMetadataKey('qwen', 'qwen3.6-plus')]: qwenBudgetEnabled,
   [getModelMetadataKey('qwen', 'qwen3.6-plus-2026-04-02')]: qwenBudgetEnabled,

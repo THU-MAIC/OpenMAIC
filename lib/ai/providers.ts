@@ -452,6 +452,38 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/qwen.svg',
     models: [
       {
+        id: 'qwen3.7-plus',
+        name: 'Qwen3.7 Plus',
+        contextWindow: 1000000,
+        outputWindow: 64000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'qwen3.7-max',
+        name: 'Qwen3.7 Max',
+        contextWindow: 1000000,
+        outputWindow: 64000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
         id: 'qwen3.6-max-preview',
         name: 'Qwen3.6 Max Preview',
         contextWindow: 256000,
