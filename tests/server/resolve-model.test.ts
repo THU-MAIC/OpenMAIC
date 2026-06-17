@@ -158,25 +158,28 @@ describe('resolveModel — per-stage resolution order', () => {
     expect(r.modelId).toBe('claude-sonnet-4');
   });
 
-  it('route effort wins over client thinking when the stage is routed', async () => {
+  it('route thinking wins over client thinking when the stage is routed', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({
-      'pbl-chat': { model: 'anthropic:claude-sonnet-4', effort: 'high' },
+      'pbl-chat': { model: 'anthropic:claude-sonnet-4', thinking: { effort: 'high' } },
     });
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const r = await resolveModel({ stage: 'pbl-chat', thinkingConfig: { effort: 'low' } });
     expect(r.thinkingConfig).toEqual({ effort: 'high' });
   });
 
-  it('route effort "none" disables thinking', async () => {
+  it('route can pass a full thinking config (enabled + budgetTokens)', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({
-      'scene-content': { model: 'deepseek:deepseek-v4-pro', effort: 'none' },
+      'scene-content:interactive': {
+        model: 'qwen:qwen3.7-plus',
+        thinking: { enabled: true, budgetTokens: 8000 },
+      },
     });
     const { resolveModel } = await import('@/lib/server/resolve-model');
-    const r = await resolveModel({ stage: 'scene-content', thinkingConfig: { effort: 'high' } });
-    expect(r.thinkingConfig).toEqual({ mode: 'disabled', enabled: false });
+    const r = await resolveModel({ stage: 'scene-content:interactive' });
+    expect(r.thinkingConfig).toEqual({ enabled: true, budgetTokens: 8000 });
   });
 
-  it('routed-without-effort drops client thinking (routed model uses its default)', async () => {
+  it('routed-without-thinking drops client thinking (routed model uses its default)', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'deepseek:deepseek-v4-pro' });
     const { resolveModel } = await import('@/lib/server/resolve-model');
     const r = await resolveModel({ stage: 'scene-content', thinkingConfig: { effort: 'high' } });

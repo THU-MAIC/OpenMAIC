@@ -7,10 +7,12 @@
  *
  * Surface: a single JSON env var `MODEL_ROUTES`. Each value is a model string in
  * the canonical `provider:model` format (see parseModelString), OR an object
- * `{model, effort}` to also pin the thinking effort for that stage, e.g.
+ * `{model, thinking}` where `thinking` is the full ThinkingConfig abstraction
+ * (mode/effort/level/enabled/budgetTokens/excludeReasoningOutput) — normalized
+ * per the model's capability by callLLM. e.g.
  *
  *   DEFAULT_MODEL=openai:gpt-5.4-mini
- *   MODEL_ROUTES='{"scene-content":"openai:gpt-5.4","pbl-chat":{"model":"anthropic:claude-sonnet-4","effort":"none"}}'
+ *   MODEL_ROUTES='{"scene-content":"openai:gpt-5.4","pbl-chat":{"model":"anthropic:claude-sonnet-4","thinking":{"enabled":false}}}'
  *
  * Only the *routable* stages below are valid keys — each is backed by a real
  * `resolveModel` call site. Downstream sub-calls (e.g. `pbl-generate`,
@@ -18,10 +20,16 @@
  */
 
 import { createLogger } from '@/lib/logger';
-import type { ThinkingEffort } from '@/lib/types/provider';
+import type {
+  ThinkingConfig,
+  ThinkingEffort,
+  ThinkingLevel,
+  ThinkingMode,
+} from '@/lib/types/provider';
 
 const log = createLogger('model-routes');
 
+const VALID_MODES: readonly ThinkingMode[] = ['default', 'disabled', 'enabled', 'auto'];
 const VALID_EFFORTS: readonly ThinkingEffort[] = [
   'none',
   'minimal',
@@ -31,11 +39,61 @@ const VALID_EFFORTS: readonly ThinkingEffort[] = [
   'xhigh',
   'max',
 ];
+const VALID_LEVELS: readonly ThinkingLevel[] = ['minimal', 'low', 'medium', 'high'];
 
-/** A resolved route entry: the model string plus an optional thinking effort. */
+/** A resolved route entry: the model string plus an optional full thinking config. */
 export interface StageRoute {
   model: string;
-  effort?: ThinkingEffort;
+  /**
+   * Full thinking config for this stage (the unified ThinkingConfig abstraction:
+   * mode / effort / level / enabled / budgetTokens / excludeReasoningOutput).
+   * Passed through to callLLM, which normalizes it against the model's capability.
+   */
+  thinking?: ThinkingConfig;
+}
+
+/** Validate/sanitize a route's `thinking` object into a ThinkingConfig (drops bad fields with a warn). */
+function parseThinking(key: string, raw: unknown): ThinkingConfig | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    log.warn(`"thinking" for stage "${key}" must be an object in MODEL_ROUTES; ignored.`);
+    return undefined;
+  }
+  const o = raw as Record<string, unknown>;
+  const out: ThinkingConfig = {};
+  const checkEnum = <T>(field: string, val: unknown, valid: readonly T[]): T | undefined => {
+    if (val === undefined) return undefined;
+    if (typeof val === 'string' && (valid as readonly string[]).includes(val)) return val as T;
+    log.warn(
+      `Invalid ${field} "${String(val)}" for stage "${key}" ignored. Valid: ${valid.join(', ')}`,
+    );
+    return undefined;
+  };
+  const mode = checkEnum<ThinkingMode>('mode', o.mode, VALID_MODES);
+  if (mode) out.mode = mode;
+  const effort = checkEnum<ThinkingEffort>('effort', o.effort, VALID_EFFORTS);
+  if (effort) out.effort = effort;
+  const level = checkEnum<ThinkingLevel>('level', o.level, VALID_LEVELS);
+  if (level) out.level = level;
+  if (o.enabled !== undefined) {
+    if (typeof o.enabled === 'boolean') out.enabled = o.enabled;
+    else
+      log.warn(
+        `Invalid enabled "${String(o.enabled)}" for stage "${key}" ignored (must be boolean).`,
+      );
+  }
+  if (o.budgetTokens !== undefined) {
+    if (typeof o.budgetTokens === 'number') out.budgetTokens = o.budgetTokens;
+    else
+      log.warn(
+        `Invalid budgetTokens "${String(o.budgetTokens)}" for stage "${key}" ignored (must be number).`,
+      );
+  }
+  if (o.excludeReasoningOutput !== undefined) {
+    if (typeof o.excludeReasoningOutput === 'boolean')
+      out.excludeReasoningOutput = o.excludeReasoningOutput;
+    else log.warn(`Invalid excludeReasoningOutput for stage "${key}" ignored (must be boolean).`);
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 /**
@@ -81,17 +139,9 @@ function parseRouteValue(key: string, value: unknown): StageRoute | undefined {
       return undefined;
     }
     const route: StageRoute = { model };
-    if (obj.effort !== undefined) {
-      if (
-        typeof obj.effort === 'string' &&
-        (VALID_EFFORTS as readonly string[]).includes(obj.effort)
-      ) {
-        route.effort = obj.effort as ThinkingEffort;
-      } else {
-        log.warn(
-          `Invalid effort "${String(obj.effort)}" for stage "${key}" ignored. Valid: ${VALID_EFFORTS.join(', ')}`,
-        );
-      }
+    if (obj.thinking !== undefined) {
+      const thinking = parseThinking(key, obj.thinking);
+      if (thinking) route.thinking = thinking;
     }
     return route;
   }

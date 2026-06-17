@@ -104,25 +104,16 @@ export async function resolveModel(params: {
     providerType: clientProviderType as 'openai' | 'anthropic' | 'google' | undefined,
   });
 
-  // Thinking arbitration mirrors model routing:
-  //  - routed + effort set  → the route's effort wins (over client thinking);
-  //    effort 'none' explicitly disables thinking.
-  //  - routed + no effort   → routed model uses its own default; client thinking
+  // Thinking arbitration mirrors model routing — the route carries a full
+  // ThinkingConfig (mode/effort/level/enabled/budgetTokens/…) which callLLM
+  // normalizes against the model's capability:
+  //  - routed + thinking set → the route's thinking wins (over client thinking).
+  //  - routed + no thinking  → routed model uses its own default; client thinking
   //    is dropped (it belonged to the client's other model).
-  //  - unrouted             → honor the client's thinking config.
-  let thinkingConfig: ThinkingConfig | undefined;
-  if (routed) {
-    if (stageRoute?.effort) {
-      thinkingConfig =
-        stageRoute.effort === 'none'
-          ? { mode: 'disabled', enabled: false }
-          : { effort: stageRoute.effort };
-    } else {
-      thinkingConfig = undefined;
-    }
-  } else {
-    thinkingConfig = params.thinkingConfig;
-  }
+  //  - unrouted              → honor the client's thinking config.
+  const thinkingConfig: ThinkingConfig | undefined = routed
+    ? stageRoute?.thinking
+    : params.thinkingConfig;
 
   return {
     model,

@@ -113,28 +113,58 @@ describe('model-routes', () => {
     expect(warn).toHaveBeenCalled();
   });
 
-  it('parses an object route value {model, effort} via getStageRoute', async () => {
+  it('parses an object route value {model, thinking} via getStageRoute', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({
-      'scene-content': { model: 'openai:gpt-5.4', effort: 'high' },
+      'scene-content': { model: 'openai:gpt-5.4', thinking: { effort: 'high' } },
     });
     const { getStageRoute, getStageModel } = await import('@/lib/server/model-routes');
-    expect(getStageRoute('scene-content')).toEqual({ model: 'openai:gpt-5.4', effort: 'high' });
+    expect(getStageRoute('scene-content')).toEqual({
+      model: 'openai:gpt-5.4',
+      thinking: { effort: 'high' },
+    });
     expect(getStageModel('scene-content')).toBe('openai:gpt-5.4');
   });
 
-  it('treats a string route value as a model with no effort', async () => {
+  it('supports the full thinking config (budgetTokens/enabled/level/mode)', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content:interactive': {
+        model: 'qwen:qwen3.7-plus',
+        thinking: { enabled: true, budgetTokens: 8000 },
+      },
+      'scene-content:slide': { model: 'google:gemini-3-flash-preview', thinking: { level: 'low' } },
+      'scene-content:quiz': {
+        model: 'deepseek:deepseek-v4-pro',
+        thinking: { mode: 'disabled', enabled: false },
+      },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content:interactive')!.thinking).toEqual({
+      enabled: true,
+      budgetTokens: 8000,
+    });
+    expect(getStageRoute('scene-content:slide')!.thinking).toEqual({ level: 'low' });
+    expect(getStageRoute('scene-content:quiz')!.thinking).toEqual({
+      mode: 'disabled',
+      enabled: false,
+    });
+  });
+
+  it('treats a string route value as a model with no thinking', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({ 'pbl-chat': 'anthropic:claude-sonnet-4' });
     const { getStageRoute } = await import('@/lib/server/model-routes');
     expect(getStageRoute('pbl-chat')).toEqual({ model: 'anthropic:claude-sonnet-4' });
   });
 
-  it('drops an invalid effort with a warning but keeps the model', async () => {
+  it('drops invalid thinking fields with a warning but keeps the model', async () => {
     const warn = vi.fn();
     vi.doMock('@/lib/logger', () => ({
       createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
     }));
     process.env.MODEL_ROUTES = JSON.stringify({
-      'scene-content': { model: 'openai:gpt-5.4', effort: 'bogus' },
+      'scene-content': {
+        model: 'openai:gpt-5.4',
+        thinking: { effort: 'bogus', budgetTokens: 'x' },
+      },
     });
     const { getStageRoute } = await import('@/lib/server/model-routes');
     expect(getStageRoute('scene-content')).toEqual({ model: 'openai:gpt-5.4' });
@@ -142,22 +172,24 @@ describe('model-routes', () => {
   });
 
   it('ignores an object route value with no model string', async () => {
-    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': { effort: 'high' } });
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': { thinking: { effort: 'high' } },
+    });
     const { getStageRoute } = await import('@/lib/server/model-routes');
     expect(getStageRoute('scene-content')).toBeUndefined();
   });
 
-  it('getStageRoute returns the matched composite entry (model+effort) as a unit', async () => {
+  it('getStageRoute returns the matched composite entry (model+thinking) as a unit', async () => {
     process.env.MODEL_ROUTES = JSON.stringify({
       'scene-content': { model: 'openai:gpt-5.4-mini' },
-      'scene-content:quiz': { model: 'openai:gpt-5.4', effort: 'high' },
+      'scene-content:quiz': { model: 'openai:gpt-5.4', thinking: { effort: 'high' } },
     });
     const { getStageRoute } = await import('@/lib/server/model-routes');
     expect(getStageRoute('scene-content:quiz')).toEqual({
       model: 'openai:gpt-5.4',
-      effort: 'high',
+      thinking: { effort: 'high' },
     });
-    // unrouted type falls back to the base entry (no effort there)
+    // unrouted type falls back to the base entry (no thinking there)
     expect(getStageRoute('scene-content:slide')).toEqual({ model: 'openai:gpt-5.4-mini' });
   });
 
