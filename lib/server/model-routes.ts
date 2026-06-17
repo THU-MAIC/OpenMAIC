@@ -126,7 +126,7 @@ export type LlmStage = (typeof LLM_STAGES)[number];
 /** Parsed once per process (env is read at startup; tests reset via vi.resetModules). */
 let _routes: Record<string, StageRoute> | null = null;
 
-/** Parse one MODEL_ROUTES value (string model, or {model, effort}) into a StageRoute. */
+/** Parse one MODEL_ROUTES value (string model, or {model, thinking}) into a StageRoute. */
 function parseRouteValue(key: string, value: unknown): StageRoute | undefined {
   if (typeof value === 'string') {
     return value.trim() ? { model: value.trim() } : undefined;
