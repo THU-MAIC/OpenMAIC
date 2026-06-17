@@ -36,5 +36,27 @@
 
 ---
 
+## DPDP / Privacy Sources
+
+[^23]: Dalberg. “Navigating the DPDP Act: What It Means for EdTech and the Future of Digital Learning.” dalberg.com/our-ideas/navigating-the-dpdp-act.  
+[^24]: Mondaq / Maheshwari & Co. “India's Digital Personal Data Protection Act, 2023.” mondaq.com / maheshwariandco.com.  
+[^25]: Corrida Legal. “Data protection and cross-border data transfer rules for foreign GCCs under India’s DPDP Act, 2023.” corridalegal.com.  
+[^26]: TaxGuru. “Digital Personal Data Protection Act 2023 Overview.” taxguru.in/corporate-law/digital-personal-data-protection-act-2023-overview.html.  
+
+## JEE / CBSE Sources
+
+[^27]: Indian Express / Education. “JEE Main Mathematics Syllabus 2026.” education.indianexpress.com.  
+[^28]: Testbook. “JEE Advanced 2026 Syllabus.” testbook.com/jee-advanced/syllabus.  
+[^29]: Super Tutor. “JEE Main 2026 Syllabus — Complete Chapter List.” supertutor.in.  
+
+## OMR Sources
+
+[^30]: Udayraj123. “OMRChecker.” GitHub repository. github.com/udayraj123/OMRChecker.  
+[^31]: JETIR. “Automatic Valuation of OMR using Computer vision.” jetir.org/papers/JETIR2505750.pdf.  
+[^32]: Inspiria / CollegeDunia / PW Store. “How to Fill OMR Sheet in CBSE Board Exam / Class 10 OMR Sheet.” inspiria.edu.in, collegedunia.com, store.pw.live.  
+[^33]: NationHub / Bihar Board. “Download Bihar Board OMR Sheet 2025 PDF.” nationhub.in.  
+
+---
+
 **Last updated:** 2026-06-04  
-**Research reports using this bibliography:** Research Report 003 (State Board Syllabus Mapping), Research Report 004 (Indian EdTech Market 2026)
+**Research reports using this bibliography:** Research Report 003 (State Board Syllabus Mapping), Research Report 004 (Indian EdTech Market 2026), Research Report 005 (DPDP + JEE/CBSE + OMR Deep Dive)
