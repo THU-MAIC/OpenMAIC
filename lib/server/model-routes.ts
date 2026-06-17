@@ -5,11 +5,12 @@
  * model string. Consulted during model resolution and falling back to today's
  * behavior (`DEFAULT_MODEL`) when unset — zero behavior change unless opted in.
  *
- * Surface: a single JSON env var `MODEL_ROUTES`. Model strings use the canonical
- * `provider:model` format (see parseModelString), e.g.
+ * Surface: a single JSON env var `MODEL_ROUTES`. Each value is a model string in
+ * the canonical `provider:model` format (see parseModelString), OR an object
+ * `{model, effort}` to also pin the thinking effort for that stage, e.g.
  *
  *   DEFAULT_MODEL=openai:gpt-5.4-mini
- *   MODEL_ROUTES='{"scene-content":"openai:gpt-5.4","pbl-chat":"anthropic:claude-sonnet-4"}'
+ *   MODEL_ROUTES='{"scene-content":"openai:gpt-5.4","pbl-chat":{"model":"anthropic:claude-sonnet-4","effort":"none"}}'
  *
  * Only the *routable* stages below are valid keys — each is backed by a real
  * `resolveModel` call site. Downstream sub-calls (e.g. `pbl-generate`,
@@ -17,8 +18,25 @@
  */
 
 import { createLogger } from '@/lib/logger';
+import type { ThinkingEffort } from '@/lib/types/provider';
 
 const log = createLogger('model-routes');
+
+const VALID_EFFORTS: readonly ThinkingEffort[] = [
+  'none',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+];
+
+/** A resolved route entry: the model string plus an optional thinking effort. */
+export interface StageRoute {
+  model: string;
+  effort?: ThinkingEffort;
+}
 
 /**
  * Stages that can be independently routed to a model. Each value is a valid
@@ -48,12 +66,43 @@ export const LLM_STAGES = [
 export type LlmStage = (typeof LLM_STAGES)[number];
 
 /** Parsed once per process (env is read at startup; tests reset via vi.resetModules). */
-let _routes: Record<string, string> | null = null;
+let _routes: Record<string, StageRoute> | null = null;
 
-function loadRoutes(): Record<string, string> {
+/** Parse one MODEL_ROUTES value (string model, or {model, effort}) into a StageRoute. */
+function parseRouteValue(key: string, value: unknown): StageRoute | undefined {
+  if (typeof value === 'string') {
+    return value.trim() ? { model: value.trim() } : undefined;
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    const model = typeof obj.model === 'string' ? obj.model.trim() : '';
+    if (!model) {
+      log.warn(`Route for stage "${key}" has no model string in MODEL_ROUTES; ignored.`);
+      return undefined;
+    }
+    const route: StageRoute = { model };
+    if (obj.effort !== undefined) {
+      if (
+        typeof obj.effort === 'string' &&
+        (VALID_EFFORTS as readonly string[]).includes(obj.effort)
+      ) {
+        route.effort = obj.effort as ThinkingEffort;
+      } else {
+        log.warn(
+          `Invalid effort "${String(obj.effort)}" for stage "${key}" ignored. Valid: ${VALID_EFFORTS.join(', ')}`,
+        );
+      }
+    }
+    return route;
+  }
+  log.warn(`Invalid route value for stage "${key}" in MODEL_ROUTES ignored.`);
+  return undefined;
+}
+
+function loadRoutes(): Record<string, StageRoute> {
   if (_routes) return _routes;
 
-  const routes: Record<string, string> = {};
+  const routes: Record<string, StageRoute> = {};
   const raw = process.env.MODEL_ROUTES?.trim();
   if (raw) {
     try {
@@ -66,14 +115,11 @@ function loadRoutes(): Record<string, string> {
             );
             continue;
           }
-          if (typeof value === 'string' && value.trim()) {
-            routes[key] = value.trim();
-          } else {
-            log.warn(`Non-string model for stage "${key}" in MODEL_ROUTES ignored.`);
-          }
+          const route = parseRouteValue(key, value);
+          if (route) routes[key] = route;
         }
       } else {
-        log.error('MODEL_ROUTES must be a JSON object of stage -> model string; ignoring.');
+        log.error('MODEL_ROUTES must be a JSON object of stage -> model; ignoring.');
       }
     } catch (err) {
       log.error('Invalid MODEL_ROUTES JSON, ignoring (falling back to DEFAULT_MODEL).', err);
@@ -92,15 +138,20 @@ function loadRoutes(): Record<string, string> {
  * then successively shorter prefixes (e.g. `scene-content:quiz` →
  * `scene-content`). Plain stages (no colon) are a single exact lookup.
  */
-export function getStageModel(stage?: string): string | undefined {
+export function getStageRoute(stage?: string): StageRoute | undefined {
   if (!stage) return undefined;
   const routes = loadRoutes();
   let key: string | undefined = stage;
   while (key) {
-    const model = routes[key];
-    if (model) return model;
+    const route = routes[key];
+    if (route) return route;
     const lastColon = key.lastIndexOf(':');
     key = lastColon > 0 ? key.slice(0, lastColon) : undefined;
   }
   return undefined;
+}
+
+/** Convenience: the resolved model string for a stage (route's `model`). */
+export function getStageModel(stage?: string): string | undefined {
+  return getStageRoute(stage)?.model;
 }

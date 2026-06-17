@@ -41,10 +41,11 @@ describe('resolveModel — per-stage resolution order', () => {
     delete process.env.DEFAULT_MODEL;
   });
 
-  it('falls back to the builtin default when nothing is configured', async () => {
+  it('throws (no hardcoded fallback) when nothing is configured', async () => {
     const { resolveModel } = await import('@/lib/server/resolve-model');
-    const r = await resolveModel({ stage: 'scene-content' });
-    expect(r.modelString).toBe('gpt-5.4-mini');
+    await expect(resolveModel({ stage: 'scene-content' })).rejects.toThrow(
+      /No model could be resolved/,
+    );
   });
 
   it('uses DEFAULT_MODEL when no stage route matches', async () => {
@@ -155,6 +156,42 @@ describe('resolveModel — per-stage resolution order', () => {
     expect(r.modelString).toBe('anthropic:claude-sonnet-4');
     expect(r.providerId).toBe('anthropic');
     expect(r.modelId).toBe('claude-sonnet-4');
+  });
+
+  it('route effort wins over client thinking when the stage is routed', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'pbl-chat': { model: 'anthropic:claude-sonnet-4', effort: 'high' },
+    });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({ stage: 'pbl-chat', thinkingConfig: { effort: 'low' } });
+    expect(r.thinkingConfig).toEqual({ effort: 'high' });
+  });
+
+  it('route effort "none" disables thinking', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': { model: 'deepseek:deepseek-v4-pro', effort: 'none' },
+    });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({ stage: 'scene-content', thinkingConfig: { effort: 'high' } });
+    expect(r.thinkingConfig).toEqual({ mode: 'disabled', enabled: false });
+  });
+
+  it('routed-without-effort drops client thinking (routed model uses its default)', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'deepseek:deepseek-v4-pro' });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({ stage: 'scene-content', thinkingConfig: { effort: 'high' } });
+    expect(r.thinkingConfig).toBeUndefined();
+  });
+
+  it('unrouted stage keeps the client thinking config', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': 'deepseek:deepseek-v4-pro' });
+    const { resolveModel } = await import('@/lib/server/resolve-model');
+    const r = await resolveModel({
+      stage: 'quiz-grade',
+      modelString: 'openai:gpt-5.4-mini',
+      thinkingConfig: { effort: 'medium' },
+    });
+    expect(r.thinkingConfig).toEqual({ effort: 'medium' });
   });
 
   it('ignores stage routing entirely when no stage is passed', async () => {

@@ -113,6 +113,54 @@ describe('model-routes', () => {
     expect(warn).toHaveBeenCalled();
   });
 
+  it('parses an object route value {model, effort} via getStageRoute', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': { model: 'openai:gpt-5.4', effort: 'high' },
+    });
+    const { getStageRoute, getStageModel } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toEqual({ model: 'openai:gpt-5.4', effort: 'high' });
+    expect(getStageModel('scene-content')).toBe('openai:gpt-5.4');
+  });
+
+  it('treats a string route value as a model with no effort', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'pbl-chat': 'anthropic:claude-sonnet-4' });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('pbl-chat')).toEqual({ model: 'anthropic:claude-sonnet-4' });
+  });
+
+  it('drops an invalid effort with a warning but keeps the model', async () => {
+    const warn = vi.fn();
+    vi.doMock('@/lib/logger', () => ({
+      createLogger: () => ({ warn, info: vi.fn(), error: vi.fn(), debug: vi.fn() }),
+    }));
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': { model: 'openai:gpt-5.4', effort: 'bogus' },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toEqual({ model: 'openai:gpt-5.4' });
+    expect(warn).toHaveBeenCalled();
+  });
+
+  it('ignores an object route value with no model string', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({ 'scene-content': { effort: 'high' } });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content')).toBeUndefined();
+  });
+
+  it('getStageRoute returns the matched composite entry (model+effort) as a unit', async () => {
+    process.env.MODEL_ROUTES = JSON.stringify({
+      'scene-content': { model: 'openai:gpt-5.4-mini' },
+      'scene-content:quiz': { model: 'openai:gpt-5.4', effort: 'high' },
+    });
+    const { getStageRoute } = await import('@/lib/server/model-routes');
+    expect(getStageRoute('scene-content:quiz')).toEqual({
+      model: 'openai:gpt-5.4',
+      effort: 'high',
+    });
+    // unrouted type falls back to the base entry (no effort there)
+    expect(getStageRoute('scene-content:slide')).toEqual({ model: 'openai:gpt-5.4-mini' });
+  });
+
   it('exposes the routable stage registry', async () => {
     const { LLM_STAGES } = await import('@/lib/server/model-routes');
     expect(LLM_STAGES).toEqual(

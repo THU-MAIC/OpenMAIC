@@ -185,6 +185,7 @@ export async function generateClassroom(
     modelString,
     providerId,
     apiKey,
+    thinkingConfig: classroomThinking,
   } = await resolveModel({ stage: 'generate-classroom' });
   log.info(`Using server-configured model: ${modelString}`);
 
@@ -202,6 +203,7 @@ export async function generateClassroom(
   // configured). This keeps a misconfigured optional route from aborting all
   // classroom generation, and skips the extra resolution when web search is off.
   let searchQueryModel = languageModel;
+  let searchQueryThinking = classroomThinking;
 
   const aiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(
@@ -214,6 +216,8 @@ export async function generateClassroom(
         maxOutputTokens: modelInfo?.outputWindow,
       },
       'generate-classroom',
+      undefined,
+      classroomThinking,
     );
     return result.text;
   };
@@ -229,6 +233,8 @@ export async function generateClassroom(
         maxOutputTokens: 256,
       },
       'web-search-query-rewrite',
+      undefined,
+      searchQueryThinking,
     );
     return result.text;
   };
@@ -259,7 +265,9 @@ export async function generateClassroom(
       const rewriteRoute = getStageModel('web-search-query-rewrite');
       if (rewriteRoute) {
         try {
-          searchQueryModel = (await resolveModel({ stage: 'web-search-query-rewrite' })).model;
+          const rewriteResolved = await resolveModel({ stage: 'web-search-query-rewrite' });
+          searchQueryModel = rewriteResolved.model;
+          searchQueryThinking = rewriteResolved.thinkingConfig;
         } catch (err) {
           log.warn(
             `web-search-query-rewrite route "${rewriteRoute}" unavailable; using classroom model for query rewrite`,

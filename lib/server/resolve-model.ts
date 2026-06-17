@@ -15,7 +15,7 @@ import {
   resolveProxy,
 } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
-import { getStageModel, type LlmStage } from '@/lib/server/model-routes';
+import { getStageRoute, type LlmStage } from '@/lib/server/model-routes';
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
@@ -52,14 +52,21 @@ export async function resolveModel(params: {
   providerType?: string;
   thinkingConfig?: ThinkingConfig;
 }): Promise<ResolvedModel> {
-  // Resolution order: stage route > x-model > DEFAULT_MODEL > builtin fallback.
+  // Resolution order: stage route > x-model > DEFAULT_MODEL.
   // A configured stage route is the operator's deliberate per-stage choice and
   // wins even over a client-sent x-model (otherwise the browser UI, which always
   // sends its saved model, would shadow every route). Unrouted stages fall back
-  // to the client x-model, then DEFAULT_MODEL.
-  const stageModel = getStageModel(params.stage);
-  const modelString =
-    stageModel || params.modelString || process.env.DEFAULT_MODEL || 'gpt-5.4-mini';
+  // to the client x-model, then DEFAULT_MODEL. There is intentionally no hardcoded
+  // model fallback — if nothing resolves we fail loud rather than silently pick a
+  // vendor default.
+  const stageRoute = getStageRoute(params.stage);
+  const stageModel = stageRoute?.model;
+  const modelString = stageModel || params.modelString || process.env.DEFAULT_MODEL;
+  if (!modelString) {
+    throw new Error(
+      'No model could be resolved. Configure DEFAULT_MODEL (and/or a MODEL_ROUTES entry for this stage), or send a model via x-model.',
+    );
+  }
   const { providerId, modelId } = parseModelString(modelString);
 
   // When a stage route overrides the client's model, the client-sent connection
@@ -97,6 +104,26 @@ export async function resolveModel(params: {
     providerType: clientProviderType as 'openai' | 'anthropic' | 'google' | undefined,
   });
 
+  // Thinking arbitration mirrors model routing:
+  //  - routed + effort set  → the route's effort wins (over client thinking);
+  //    effort 'none' explicitly disables thinking.
+  //  - routed + no effort   → routed model uses its own default; client thinking
+  //    is dropped (it belonged to the client's other model).
+  //  - unrouted             → honor the client's thinking config.
+  let thinkingConfig: ThinkingConfig | undefined;
+  if (routed) {
+    if (stageRoute?.effort) {
+      thinkingConfig =
+        stageRoute.effort === 'none'
+          ? { mode: 'disabled', enabled: false }
+          : { effort: stageRoute.effort };
+    } else {
+      thinkingConfig = undefined;
+    }
+  } else {
+    thinkingConfig = params.thinkingConfig;
+  }
+
   return {
     model,
     modelInfo,
@@ -105,7 +132,7 @@ export async function resolveModel(params: {
     modelId,
     apiKey,
     baseUrl,
-    thinkingConfig: params.thinkingConfig,
+    thinkingConfig,
   };
 }
 
@@ -126,6 +153,7 @@ function getThinkingConfigFromBody(body: unknown): ThinkingConfig | undefined {
 export async function resolveModelFromHeaders(
   req: NextRequest,
   stage?: LlmStage,
+  thinkingConfig?: ThinkingConfig,
 ): Promise<ResolvedModel> {
   return resolveModel({
     modelString: req.headers.get('x-model') || undefined,
@@ -133,6 +161,7 @@ export async function resolveModelFromHeaders(
     apiKey: req.headers.get('x-api-key') || undefined,
     baseUrl: req.headers.get('x-base-url') || undefined,
     providerType: req.headers.get('x-provider-type') || undefined,
+    thinkingConfig,
   });
 }
 
@@ -147,9 +176,7 @@ export async function resolveModelFromRequest(
   body: unknown,
   stage?: LlmStage,
 ): Promise<ResolvedModel> {
-  const resolved = await resolveModelFromHeaders(req, stage);
-  return {
-    ...resolved,
-    thinkingConfig: getThinkingConfigFromBody(body) ?? resolved.thinkingConfig,
-  };
+  // Pass the client's body thinking into resolveModel so the single arbiter
+  // there decides (a routed stage may override or drop it). See resolveModel.
+  return resolveModelFromHeaders(req, stage, getThinkingConfigFromBody(body));
 }
