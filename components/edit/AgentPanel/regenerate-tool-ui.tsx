@@ -80,7 +80,11 @@ export const RegenerateSceneActionsUI = makeAssistantToolUI<{ sceneId?: string }
     toolName: 'regenerate_scene_actions',
     render: ({ args, status, result, isError, toolCallId }) => {
       const running = status.type === 'running' || status.type === 'requires-action';
-      const failed = !running && (isError || status.type === 'incomplete');
+      // pi-agent-core 0.78.0 doesn't propagate a result's isError into the event,
+      // so derive failure from the result too: a finished call that produced no
+      // actions changed nothing — show "not generated", not a green "Updated".
+      const noActions = !running && result != null && (result.details?.actions?.length ?? 0) === 0;
+      const failed = !running && (isError || status.type === 'incomplete' || noActions);
       return (
         <RegenerateActionsCard
           running={running}

@@ -105,7 +105,11 @@ export function ToolCard({
         <ScenePill sceneId={sceneId} />
 
         <span className="ml-auto flex shrink-0 items-center gap-1">
-          {barAction ? <span onClick={(e) => e.stopPropagation()}>{barAction}</span> : null}
+          {barAction ? (
+            <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+              {barAction}
+            </span>
+          ) : null}
           <span title={statusLabel} className={cn('inline-flex items-center', STATUS_TONE[status])}>
             <StatusIcon className={cn('size-4', running && 'animate-spin')} />
           </span>

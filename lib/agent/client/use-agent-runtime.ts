@@ -112,10 +112,16 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   // Lightweight per-course persistence: one thread per stage, restored on mount
   // and when the course changes, so a refresh no longer drops the conversation.
   const stageId = useStageStore((s) => s.stage?.id);
+  const loadedStageRef = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (!stageId) return;
-    const saved = useAgentThreadStore.getState().load(stageId);
-    setMessages(deserializeThread(saved?.messages));
+    if (!stageId || loadedStageRef.current === stageId) return;
+    const firstResolve = loadedStageRef.current === undefined;
+    loadedStageRef.current = stageId;
+    // First resolve while a conversation is already underway (user sent before
+    // the stage id was known): keep the live thread, don't clobber it with the
+    // saved (likely empty) one. A genuine course SWITCH still loads its thread.
+    if (firstResolve && messagesRef.current.length > 0) return;
+    setMessages(deserializeThread(useAgentThreadStore.getState().load(stageId)?.messages));
   }, [stageId]);
 
   // Persist the thread whenever it settles (after a turn completes, not mid-run),
@@ -132,12 +138,6 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
     }
   }, [messages, isRunning]);
 
-  const clearThread = useCallback(() => {
-    setMessages([]);
-    const sid = useStageStore.getState().stage?.id;
-    if (sid) useAgentThreadStore.getState().clear(sid);
-  }, []);
-
   // Per-run accumulated state: chronological turns + tool results.
   const turnsRef = useRef<PiPart[][]>([]);
   const toolResultsRef = useRef<Map<string, { result: unknown; isError: boolean }>>(new Map());
@@ -146,6 +146,20 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   // Aborts the in-flight run; closing the fetch body cancels the server stream
   // (the route's ReadableStream.cancel() calls agent.abort()).
   const abortRef = useRef<AbortController | null>(null);
+
+  const clearThread = useCallback(() => {
+    // Discard any in-flight run first — otherwise its late SSE events still pass
+    // isCurrent() and could rewrite the cleared thread or apply tool patches to
+    // the slide after the user reset.
+    abortRef.current?.abort();
+    abortRef.current = null;
+    phaseRef.current = 'complete';
+    setIsRunning(false);
+    setMessages([]);
+    useRegenSnapshots.getState().clearAll();
+    const sid = useStageStore.getState().stage?.id;
+    if (sid) useAgentThreadStore.getState().clear(sid);
+  }, []);
 
   const buildAssistant = useCallback((id: string): ThreadMessageLike => {
     const parts = mergeAssistantParts({

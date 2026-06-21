@@ -40,4 +40,20 @@ describe('regen-snapshots store', () => {
     useRegenSnapshots.getState().restore('missing', apply);
     expect(apply).not.toHaveBeenCalled();
   });
+
+  it('actionsOnly snapshot restores actions only (never reverts slide content)', () => {
+    const apply = vi.fn();
+    useRegenSnapshots.getState().setSnapshot('call-1', { ...SNAP, actionsOnly: true });
+    useRegenSnapshots.getState().restore('call-1', apply);
+    expect(apply).toHaveBeenCalledWith('s1', { actions: SNAP.actions });
+    // crucially, the patch must NOT carry content (would clobber later edits)
+    expect(apply.mock.calls[0][1]).not.toHaveProperty('content');
+  });
+
+  it('clearAll drops every snapshot', () => {
+    useRegenSnapshots.getState().setSnapshot('call-1', SNAP);
+    useRegenSnapshots.getState().setSnapshot('call-2', SNAP);
+    useRegenSnapshots.getState().clearAll();
+    expect(useRegenSnapshots.getState().snapshots).toEqual({});
+  });
 });

@@ -137,6 +137,8 @@ describe('planRegenerateApply', () => {
       sceneId: 's1',
       content: scene.content,
       actions: scene.actions ?? [],
+      // narration-only → restore reverts actions only, not slide content
+      actionsOnly: true,
     });
   });
 

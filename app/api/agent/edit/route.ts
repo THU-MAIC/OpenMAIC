@@ -51,7 +51,7 @@ const MAX_HISTORY_TURNS = 24;
 /** Convert the client's text-only history into pi `AgentMessage`s. */
 function toHistoryMessages(history: AgentEditBody['history']): AgentMessage[] {
   if (!Array.isArray(history)) return [];
-  return history
+  const turns = history
     .filter(
       (m): m is { role: 'user' | 'assistant'; text: string } =>
         !!m &&
@@ -59,12 +59,16 @@ function toHistoryMessages(history: AgentEditBody['history']): AgentMessage[] {
         typeof m.text === 'string' &&
         m.text.trim().length > 0,
     )
-    .slice(-MAX_HISTORY_TURNS)
-    .map((m) =>
-      m.role === 'user'
-        ? ({ role: 'user', content: m.text } as AgentMessage)
-        : ({ role: 'assistant', content: [{ type: 'text', text: m.text }] } as AgentMessage),
-    );
+    .slice(-MAX_HISTORY_TURNS);
+  // Don't let the seeded transcript end on a user turn: agent.prompt() appends
+  // the new user message, and two consecutive user messages degrade on some
+  // providers. (Trailing user turns are dropped tool-call-only replies, etc.)
+  while (turns.length > 0 && turns[turns.length - 1].role === 'user') turns.pop();
+  return turns.map((m) =>
+    m.role === 'user'
+      ? ({ role: 'user', content: m.text } as AgentMessage)
+      : ({ role: 'assistant', content: [{ type: 'text', text: m.text }] } as AgentMessage),
+  );
 }
 
 export async function POST(req: NextRequest) {

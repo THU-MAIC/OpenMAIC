@@ -69,7 +69,13 @@ export interface RegenerateDetails {
 
 export interface RegenerateApplyPlan {
   /** Pre-regenerate scene state to keep for restore (both regenerate tools). */
-  snapshot: { sceneId: string; content: SceneContent; actions: Action[] } | null;
+  snapshot: {
+    sceneId: string;
+    content: SceneContent;
+    actions: Action[];
+    /** True for narration-only regen — restore reverts actions only, not content. */
+    actionsOnly?: boolean;
+  } | null;
   /** Partial scene update to apply, or null if nothing should change. */
   patch: Partial<Scene> | null;
 }
@@ -116,10 +122,12 @@ export function planRegenerateApply(
   }
 
   if (actions.length > 0) {
-    // Narration-only regen: keep a snapshot (current content unchanged + prior
-    // actions) so this card can offer Restore too.
+    // Narration-only regen: snapshot the prior actions so this card can offer
+    // Restore too. `actionsOnly` so restore reverts ONLY the actions — the slide
+    // content is unchanged here, and re-applying it would clobber later canvas
+    // edits + needlessly reseed the edit session.
     const snapshot = scene
-      ? { sceneId, content: scene.content, actions: scene.actions ?? [] }
+      ? { sceneId, content: scene.content, actions: scene.actions ?? [], actionsOnly: true }
       : null;
     return { snapshot, patch: { actions } };
   }
