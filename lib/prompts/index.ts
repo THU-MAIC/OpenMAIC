@@ -39,6 +39,7 @@ export const PROMPT_IDS = {
   GAME_CONTENT: 'game-content',
   VISUALIZATION3D_CONTENT: 'visualization3d-content',
   PROCEDURAL_SKILL_CONTENT: 'procedural-skill-content',
+  FIX_INTERACTIVE_HTML: 'fix-interactive-html',
   WIDGET_TEACHER_ACTIONS: 'widget-teacher-actions',
   PBL_ACTIONS: 'pbl-actions',
   AGENT_SYSTEM: 'agent-system',
