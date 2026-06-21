@@ -10,6 +10,11 @@ describe('buildSystemPrompt capability boundary', () => {
     expect(prompt).toContain('regenerate_scene');
   });
 
+  it('grants interactive-scene bug fixing', () => {
+    expect(prompt).toContain('fix_interactive_html');
+    expect(prompt).toContain('interactive');
+  });
+
   it('still forbids structural and non-slide edits', () => {
     expect(prompt).toContain('cannot');
     // Structural ops remain out of scope.

@@ -41,6 +41,7 @@ import { SpeechButton } from '@/components/audio/speech-button';
 import { MarkdownText } from './markdown-text';
 import { RegenerateSceneActionsUI } from './regenerate-tool-ui';
 import { RegenerateSceneUI } from './regenerate-scene-tool-ui';
+import { FixInteractiveHtmlUI } from './fix-interactive-html-tool-ui';
 import { ReadSceneContentUI } from './read-tool-ui';
 
 const MIN_WIDTH = 320;
@@ -243,6 +244,7 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string } })
         <ReadSceneContentUI />
         <RegenerateSceneActionsUI />
         <RegenerateSceneUI />
+        <FixInteractiveHtmlUI />
 
         <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport className="flex-1 space-y-6 overflow-y-auto px-4 py-5 scroll-smooth">

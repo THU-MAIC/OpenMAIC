@@ -375,6 +375,12 @@
       "restore": "Restore previous",
       "restored": "Restored"
     },
+    "fixHtml": {
+      "title": "Fix interactive page",
+      "fixing": "Fixing",
+      "fixed": "Fixed",
+      "notFixed": "Not fixed"
+    },
     "readCard": {
       "title": "Read slide content",
       "reading": "Reading",

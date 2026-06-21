@@ -375,6 +375,12 @@
       "restore": "还原到重生成前",
       "restored": "已还原"
     },
+    "fixHtml": {
+      "title": "修复交互页",
+      "fixing": "修复中",
+      "fixed": "已修复",
+      "notFixed": "未修复"
+    },
     "readCard": {
       "title": "读取页面内容",
       "reading": "读取中",
