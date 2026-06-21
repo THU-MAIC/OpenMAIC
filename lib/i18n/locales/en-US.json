@@ -302,9 +302,22 @@
       "emptyHint": "After editing this slide on the canvas, let AI regenerate narration that matches the content.",
       "placeholder": "Describe your changes to this slide…",
       "stop": "Stop generating",
-      "quickRegenerate": "Regenerate narration",
-      "quickColloquial": "Make it more conversational",
-      "quickAnalogy": "Add a relatable analogy"
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        }
+      },
+      "newConversation": "New conversation"
     },
     "timeline": {
       "title": "Narration script",
@@ -352,6 +365,21 @@
       "generating": "Generating",
       "notGenerated": "Not generated",
       "updated": "Updated"
+    },
+    "regenScene": {
+      "title": "Regenerate slide",
+      "generating": "Generating",
+      "updated": "Updated",
+      "notGenerated": "Not generated",
+      "elementsCount": "{{count}} elements",
+      "restore": "Restore previous",
+      "restored": "Restored"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
     }
   },
   "classroomComplete": {

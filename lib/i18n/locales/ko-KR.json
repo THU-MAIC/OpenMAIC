@@ -253,9 +253,22 @@
       "emptyHint": "캔버스에서 이 슬라이드를 편집한 뒤, 내용에 맞는 내레이션을 AI가 다시 생성하도록 하세요.",
       "placeholder": "이 슬라이드에 대한 변경 사항을 설명하세요…",
       "stop": "생성 중지",
-      "quickRegenerate": "내레이션 다시 생성",
-      "quickColloquial": "더 구어체로",
-      "quickAnalogy": "친근한 비유 추가"
+      "empty": {
+        "lead": "이 페이지를 어떻게 바꿀지 알려주세요. 내용을 다시 만들고 내레이션도 맞춥니다.",
+        "boundary": "세부 편집은 에디터에서, 슬라이드 추가 / 삭제 / 정렬은 왼쪽 내비에서.",
+        "comingSoon": "더 많은 기능이 곧 추가됩니다."
+      },
+      "cap": {
+        "content": {
+          "label": "슬라이드 다시 생성",
+          "examples": "“핵심 3가지로” “실생활 예시 추가”"
+        },
+        "narration": {
+          "label": "내레이션 스크립트 다시 생성",
+          "examples": "“좀 더 구어체로” “편집한 내용에 맞춰”"
+        }
+      },
+      "newConversation": "새 대화"
     },
     "timeline": {
       "title": "내레이션 스크립트",
@@ -303,6 +316,15 @@
       "generating": "생성 중",
       "notGenerated": "생성 안 됨",
       "updated": "업데이트됨"
+    },
+    "regenScene": {
+      "title": "슬라이드 다시 생성",
+      "generating": "생성 중",
+      "updated": "업데이트됨",
+      "notGenerated": "생성 안 됨",
+      "elementsCount": "요소 {{count}}개",
+      "restore": "이전 상태로 복원",
+      "restored": "복원됨"
     },
     "background": {
       "image": "이미지",
@@ -352,6 +374,12 @@
     "zorder": {
       "toFront": "맨 앞으로 가져오기",
       "toBack": "맨 뒤로 보내기"
+    },
+    "readCard": {
+      "title": "페이지 내용 읽기",
+      "reading": "읽는 중",
+      "done": "읽음",
+      "failed": "읽지 못함"
     }
   },
   "classroomComplete": {

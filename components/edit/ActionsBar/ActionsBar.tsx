@@ -666,6 +666,11 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const scene = useStageStore((s) => s.scenes.find((x) => x.id === sceneId));
   const actions = scene?.actions ?? EMPTY;
   const sceneOrder = scene?.order ?? 0;
+  // Element-bound cues (spotlight / laser) point at slide elements, so they only
+  // make sense on SLIDE scenes. Quiz / interactive / PBL scenes have no canvas to
+  // bind to — offer speech only, so the user can't insert unsupported cues.
+  const palette =
+    scene?.type === 'slide' ? PALETTE : PALETTE.filter((pt) => !ELEMENT_BOUND.has(pt));
   const language = useStageStore((s) => s.stage?.languageDirective);
   // Managed TTS on → speech clips show audio status + 试听 / 重新生成.
   const ttsActive = useSettingsStore(
@@ -847,7 +852,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
             <span className="text-[10px] text-muted-foreground/45">
               {t('edit.timeline.dragToAdd')}
             </span>
-            {PALETTE.map((pt) => {
+            {palette.map((pt) => {
               const Icon = cueMeta(pt).icon;
               return (
                 <span

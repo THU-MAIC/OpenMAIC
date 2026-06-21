@@ -21,6 +21,7 @@ import {
   ComposerPrimitive,
   MessagePrimitive,
   ThreadPrimitive,
+  useComposerRuntime,
   useMessage,
 } from '@assistant-ui/react';
 import {
@@ -31,22 +32,26 @@ import {
   PanelRightOpen,
   Sparkles,
   Square,
+  SquarePen,
 } from 'lucide-react';
+import { cn } from '@/lib/utils/cn';
 import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { SpeechButton } from '@/components/audio/speech-button';
 import { MarkdownText } from './markdown-text';
 import { RegenerateSceneActionsUI } from './regenerate-tool-ui';
+import { RegenerateSceneUI } from './regenerate-scene-tool-ui';
+import { ReadSceneContentUI } from './read-tool-ui';
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 640;
 const DEFAULT_WIDTH = 384;
 
-/** Quick-prompt chip i18n keys — one tap prefills the composer with the localized
- *  text (user reviews, then sends). */
-const QUICK_PROMPT_KEYS = [
-  'edit.agent.quickRegenerate',
-  'edit.agent.quickColloquial',
-  'edit.agent.quickAnalogy',
+/** Capability rows shown in the empty state — read-only tips (not clickable),
+ *  each a label + example phrasings. */
+const CAPABILITY_KEYS = [
+  { label: 'edit.agent.cap.content.label', examples: 'edit.agent.cap.content.examples' },
+  { label: 'edit.agent.cap.narration.label', examples: 'edit.agent.cap.narration.examples' },
 ];
 
 function UserMessage() {
@@ -97,9 +102,28 @@ function AssistantMessage() {
   );
 }
 
+/** Mic button that dictates into the composer. Lives inside ComposerPrimitive.Root
+ *  so it can append the transcription to the composer text via the composer
+ *  runtime. SpeechButton self-gates on ASR availability (disabled when off). */
+function VoiceInputButton() {
+  const composer = useComposerRuntime();
+  return (
+    <SpeechButton
+      size="md"
+      className="size-[30px]"
+      onTranscription={(text) => {
+        if (!text) return;
+        const cur = composer.getState().text ?? '';
+        const sep = cur && !cur.endsWith(' ') ? ' ' : '';
+        composer.setText(cur + sep + text);
+      }}
+    />
+  );
+}
+
 export function AgentPanel({ scene }: { scene?: { id: string; title: string } }) {
   const { t } = useI18n();
-  const runtime = useAgentRuntime({ scene });
+  const { runtime, clearThread, hasMessages } = useAgentRuntime({ scene });
 
   // Drag-to-resize from the left edge (pointer capture, direct DOM write).
   const railRef = useRef<HTMLElement>(null);
@@ -190,27 +214,67 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string } })
         <span className="text-[13px] font-semibold text-[#5b1fa8] dark:text-violet-300">
           Edit with AI
         </span>
+        {hasMessages ? (
+          <button
+            type="button"
+            onClick={clearThread}
+            title={t('edit.agent.newConversation')}
+            aria-label={t('edit.agent.newConversation')}
+            className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <SquarePen className="size-4" />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => setCollapsed(true)}
           title={t('edit.agent.collapse')}
           aria-label={t('edit.agent.collapse')}
-          className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+          className={cn(
+            'grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground',
+            hasMessages ? '' : 'ml-auto',
+          )}
         >
           <PanelRightClose className="size-4" />
         </button>
       </header>
 
       <AssistantRuntimeProvider runtime={runtime}>
+        <ReadSceneContentUI />
         <RegenerateSceneActionsUI />
+        <RegenerateSceneUI />
 
         <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport className="flex-1 space-y-6 overflow-y-auto px-4 py-5 scroll-smooth">
             <ThreadPrimitive.Empty>
-              <div className="mx-auto mt-14 flex max-w-[260px] flex-col items-center text-center">
-                <p className="text-sm font-medium text-foreground">{t('edit.agent.emptyTitle')}</p>
-                <p className="mt-1.5 text-[12px] leading-relaxed text-muted-foreground">
-                  {t('edit.agent.emptyHint')}
+              {/* Capability tips — read-only (not clickable). Communicates what
+                  the agent can actually do (content + narration + read), with
+                  example phrasings, instead of clickable recommendation chips. */}
+              <div className="mx-auto mt-12 flex max-w-[268px] flex-col">
+                <p className="text-center text-sm font-medium text-foreground">
+                  {t('edit.agent.emptyTitle')}
+                </p>
+                <p className="mt-1.5 text-center text-[12px] leading-relaxed text-muted-foreground">
+                  {t('edit.agent.empty.lead')}
+                </p>
+
+                <div className="mt-5 space-y-3">
+                  {CAPABILITY_KEYS.map(({ label, examples }) => (
+                    <div key={label} className="flex flex-col gap-0.5">
+                      <span className="text-[12px] font-semibold text-foreground">{t(label)}</span>
+                      <span className="text-[11.5px] leading-relaxed text-[#5b1fa8]/70 dark:text-violet-300/70">
+                        {t(examples)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground/80">
+                  {t('edit.agent.empty.boundary')}
+                </p>
+                <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
+                  <Sparkles className="size-3 text-[#5b1fa8]/60 dark:text-violet-300/60" />
+                  {t('edit.agent.empty.comingSoon')}
                 </p>
               </div>
             </ThreadPrimitive.Empty>
@@ -222,25 +286,9 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string } })
             <ChevronDown className="size-4" />
           </ThreadPrimitive.ScrollToBottom>
 
-          {/* Composer (design .ae-composer): quick chips → bordered input shell
-              with an @-scene context chip and a square violet send. */}
+          {/* Composer (design .ae-composer): a bordered input shell with an
+              @-scene context chip, a voice-input mic, and a square violet send. */}
           <div className="px-3 pb-3 pt-1">
-            <div className="scrollbar-hide mb-2 flex gap-1.5 overflow-x-auto pb-0.5">
-              {QUICK_PROMPT_KEYS.map((key) => {
-                const label = t(key);
-                return (
-                  <ThreadPrimitive.Suggestion
-                    key={key}
-                    prompt={label}
-                    method="replace"
-                    className="shrink-0 whitespace-nowrap rounded-full border border-border bg-muted/50 px-2.5 py-1 text-[11.5px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground"
-                  >
-                    {label}
-                  </ThreadPrimitive.Suggestion>
-                );
-              })}
-            </div>
-
             <ComposerPrimitive.Root className="rounded-[10px] border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-violet-400 focus-within:ring-[3px] focus-within:ring-violet-500/10 dark:focus-within:ring-violet-500/20">
               {scene?.title ? (
                 <div className="px-2 pt-2">
@@ -262,29 +310,34 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string } })
               />
 
               <div className="flex items-center px-2 pb-2 pt-0.5">
-                {/* Send while idle; Stop while a response streams. Stop calls the
-                    thread runtime's cancelRun → our onCancel aborts the fetch. */}
-                <ThreadPrimitive.If running={false}>
-                  <ComposerPrimitive.Send className="ml-auto grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50">
-                    <ArrowUp className="size-4" />
-                  </ComposerPrimitive.Send>
-                </ThreadPrimitive.If>
-                <ThreadPrimitive.If running>
-                  <button
-                    type="button"
-                    aria-label={t('edit.agent.stop')}
-                    onClick={() => {
-                      try {
-                        runtime.thread.cancelRun();
-                      } catch {
-                        /* no run to cancel */
-                      }
-                    }}
-                    className="ml-auto grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90"
-                  >
-                    <Square className="size-3 fill-current" />
-                  </button>
-                </ThreadPrimitive.If>
+                {/* Voice + send cluster on the right; the mic sits immediately
+                    left of the send/stop button. Voice self-gates on ASR. */}
+                <div className="ml-auto flex items-center gap-1">
+                  <VoiceInputButton />
+                  {/* Send while idle; Stop while a response streams. Stop calls the
+                      thread runtime's cancelRun → our onCancel aborts the fetch. */}
+                  <ThreadPrimitive.If running={false}>
+                    <ComposerPrimitive.Send className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50">
+                      <ArrowUp className="size-4" />
+                    </ComposerPrimitive.Send>
+                  </ThreadPrimitive.If>
+                  <ThreadPrimitive.If running>
+                    <button
+                      type="button"
+                      aria-label={t('edit.agent.stop')}
+                      onClick={() => {
+                        try {
+                          runtime.thread.cancelRun();
+                        } catch {
+                          /* no run to cancel */
+                        }
+                      }}
+                      className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90"
+                    >
+                      <Square className="size-3 fill-current" />
+                    </button>
+                  </ThreadPrimitive.If>
+                </div>
               </div>
             </ComposerPrimitive.Root>
           </div>

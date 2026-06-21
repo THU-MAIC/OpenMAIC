@@ -302,9 +302,22 @@
       "emptyHint": "بعد تحرير هذه الشريحة على اللوحة، دع الذكاء الاصطناعي يعيد إنشاء سرد يطابق المحتوى.",
       "placeholder": "صف تغييراتك على هذه الشريحة…",
       "stop": "إيقاف التوليد",
-      "quickRegenerate": "إعادة توليد السرد",
-      "quickColloquial": "اجعله أكثر حوارية",
-      "quickAnalogy": "أضف تشبيهًا واقعيًا"
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        }
+      },
+      "newConversation": "New conversation"
     },
     "timeline": {
       "title": "نص السرد",
@@ -352,6 +365,21 @@
       "generating": "جارٍ التوليد",
       "notGenerated": "لم يُولّد",
       "updated": "تم التحديث"
+    },
+    "regenScene": {
+      "title": "إعادة توليد الشريحة",
+      "generating": "جارٍ التوليد",
+      "updated": "تم التحديث",
+      "notGenerated": "لم يُولّد",
+      "elementsCount": "{{count}} عناصر",
+      "restore": "استعادة السابق",
+      "restored": "تمت الاستعادة"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
     }
   },
   "classroomComplete": {

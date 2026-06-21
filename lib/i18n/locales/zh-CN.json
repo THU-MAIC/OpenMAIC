@@ -302,9 +302,22 @@
       "emptyHint": "在画布上编辑好这一页后，让 AI 重新生成与内容匹配的讲解旁白。",
       "placeholder": "描述对这一页的修改…",
       "stop": "停止生成",
-      "quickRegenerate": "重新生成讲解旁白",
-      "quickColloquial": "让讲解更口语一些",
-      "quickAnalogy": "加一个生活化类比"
+      "empty": {
+        "lead": "告诉我这一页怎么改，我会重做内容并对齐讲解。",
+        "boundary": "精细编辑请使用编辑器，增删 / 排序页面请用左侧导航。",
+        "comingSoon": "更多能力陆续加入中，敬请期待。"
+      },
+      "cap": {
+        "content": {
+          "label": "重新生成 PPT 页面",
+          "examples": "“精简成三个要点”、“加个生活化例子”"
+        },
+        "narration": {
+          "label": "重新生成讲解脚本",
+          "examples": "“讲得更口语一些”、“和画布上的改动对齐”"
+        }
+      },
+      "newConversation": "新对话"
     },
     "timeline": {
       "title": "讲解脚本",
@@ -352,6 +365,21 @@
       "generating": "生成中",
       "notGenerated": "未生成",
       "updated": "已更新"
+    },
+    "regenScene": {
+      "title": "重新生成页面",
+      "generating": "生成中",
+      "updated": "已更新",
+      "notGenerated": "未生成",
+      "elementsCount": "{{count}} 个元素",
+      "restore": "还原到重生成前",
+      "restored": "已还原"
+    },
+    "readCard": {
+      "title": "读取页面内容",
+      "reading": "读取中",
+      "done": "已读取",
+      "failed": "未读取"
     }
   },
   "classroomComplete": {

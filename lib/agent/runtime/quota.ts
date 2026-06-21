@@ -1,6 +1,6 @@
 import type { AfterToolCallContext, AfterToolCallResult } from '@earendil-works/pi-agent-core';
 
-/** Budget source — v0 stub; wire to the -live credit system (#410) later. */
+/** Budget source — v0 stub; wire to the credit/quota system later. */
 export interface QuotaSource {
   remaining(): number;
 }

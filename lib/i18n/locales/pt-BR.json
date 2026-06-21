@@ -287,9 +287,22 @@
       "emptyHint": "Depois de editar este slide no canvas, deixe a IA regenerar a narração correspondente ao conteúdo.",
       "placeholder": "Descreva suas alterações neste slide…",
       "stop": "Parar geração",
-      "quickRegenerate": "Regenerar narração",
-      "quickColloquial": "Tornar mais coloquial",
-      "quickAnalogy": "Adicionar uma analogia do dia a dia"
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        }
+      },
+      "newConversation": "New conversation"
     },
     "timeline": {
       "title": "Roteiro de narração",
@@ -337,6 +350,21 @@
       "generating": "Gerando",
       "notGenerated": "Não gerado",
       "updated": "Atualizado"
+    },
+    "regenScene": {
+      "title": "Regenerar slide",
+      "generating": "Gerando",
+      "updated": "Atualizado",
+      "notGenerated": "Não gerado",
+      "elementsCount": "{{count}} elementos",
+      "restore": "Restaurar anterior",
+      "restored": "Restaurado"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
     }
   },
   "stage": {

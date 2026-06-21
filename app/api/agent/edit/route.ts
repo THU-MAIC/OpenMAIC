@@ -6,7 +6,7 @@
  * editor flag.
  */
 import type { NextRequest } from 'next/server';
-import type { AgentEvent } from '@earendil-works/pi-agent-core';
+import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
@@ -31,12 +31,44 @@ interface AgentEditBody {
   message: string;
   scene?: { id: string; title: string };
   /**
+   * Prior conversation turns (text only) sent by the client so the agent has
+   * multi-turn memory — without this each request is stateless and the agent
+   * cannot recall earlier exchanges.
+   */
+  history?: Array<{ role: 'user' | 'assistant'; text: string }>;
+  /**
    * Trusted scene/stage context for every scene the agent may act on.
    * The client includes the active scene (and all sibling scenes) so the
    * `regenerate_scene_actions` tool can resolve outline + content without
    * relying on model-fabricated arguments.
    */
   sceneContextMap?: SceneContextMap;
+}
+
+/** Max prior turns carried into context (keeps the prompt bounded). */
+const MAX_HISTORY_TURNS = 24;
+
+/** Convert the client's text-only history into pi `AgentMessage`s. */
+function toHistoryMessages(history: AgentEditBody['history']): AgentMessage[] {
+  if (!Array.isArray(history)) return [];
+  const turns = history
+    .filter(
+      (m): m is { role: 'user' | 'assistant'; text: string } =>
+        !!m &&
+        (m.role === 'user' || m.role === 'assistant') &&
+        typeof m.text === 'string' &&
+        m.text.trim().length > 0,
+    )
+    .slice(-MAX_HISTORY_TURNS);
+  // Don't let the seeded transcript end on a user turn: agent.prompt() appends
+  // the new user message, and two consecutive user messages degrade on some
+  // providers. (Trailing user turns are dropped tool-call-only replies, etc.)
+  while (turns.length > 0 && turns[turns.length - 1].role === 'user') turns.pop();
+  return turns.map((m) =>
+    m.role === 'user'
+      ? ({ role: 'user', content: m.text } as AgentMessage)
+      : ({ role: 'assistant', content: [{ type: 'text', text: m.text }] } as AgentMessage),
+  );
 }
 
 export async function POST(req: NextRequest) {
@@ -74,6 +106,7 @@ export async function POST(req: NextRequest) {
   const tools = buildToolset({
     aiCall,
     getSceneContext: (sceneId) => sceneContextMap[sceneId],
+    activeSceneId: body.scene?.id,
   });
 
   const abortController = new AbortController();
@@ -85,7 +118,12 @@ export async function POST(req: NextRequest) {
     abortSignal: abortController.signal,
   });
 
-  const agent = buildAgent({ streamFn, systemPrompt: buildSystemPrompt(body.scene), tools });
+  const agent = buildAgent({
+    streamFn,
+    systemPrompt: buildSystemPrompt(body.scene),
+    tools,
+    history: toHistoryMessages(body.history),
+  });
   log.info(`agent edit turn [model=${modelString}] scene=${body.scene?.id ?? 'none'}`);
 
   const encoder = new TextEncoder();
