@@ -156,3 +156,62 @@ describe('planRegenerateApply', () => {
     });
   });
 });
+
+function interactiveScene(): Pick<Scene, 'content' | 'actions'> {
+  return {
+    content: {
+      type: 'interactive',
+      url: 'about:blank',
+      html: '<html><!-- old --></html>',
+      widgetType: 'simulation',
+      teacherActions: [{ id: 'ta_keep' }],
+    } as unknown as SceneContent,
+    actions: [{ type: 'speech', id: 'a_old' } as never],
+  };
+}
+
+describe('planRegenerateApply — fix_interactive_html', () => {
+  it('writes the fixed html and preserves the other interactive fields', () => {
+    const plan = planRegenerateApply(
+      { sceneId: 'w1', html: '<html><!-- fixed --></html>' },
+      interactiveScene(),
+      'fix_interactive_html',
+    );
+    const content = plan.patch?.content as unknown as {
+      type: string;
+      url: string;
+      html: string;
+      widgetType?: string;
+      teacherActions?: { id: string }[];
+    };
+    expect(content.type).toBe('interactive');
+    expect(content.html).toContain('fixed');
+    expect(content.url).toBe('about:blank');
+    expect(content.widgetType).toBe('simulation');
+    expect(content.teacherActions?.[0]?.id).toBe('ta_keep');
+  });
+
+  it('snapshots the pre-fix content for restore', () => {
+    const scene = interactiveScene();
+    const plan = planRegenerateApply(
+      { sceneId: 'w1', html: '<html><!-- fixed --></html>' },
+      scene,
+      'fix_interactive_html',
+    );
+    expect(plan.snapshot).toEqual({
+      sceneId: 'w1',
+      content: scene.content,
+      actions: scene.actions,
+    });
+  });
+
+  it('does nothing when the scene is not interactive', () => {
+    expect(
+      planRegenerateApply(
+        { sceneId: 's1', html: '<html></html>' },
+        slideScene(),
+        'fix_interactive_html',
+      ),
+    ).toEqual({ snapshot: null, patch: null });
+  });
+});

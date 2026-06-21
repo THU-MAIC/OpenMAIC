@@ -8,17 +8,23 @@ const deps = {
 };
 
 describe('agent toolset registry', () => {
-  it('builds the three v0 tools', () => {
+  it('builds the v0 tools', () => {
     const names = buildToolset(deps)
       .map((t) => t.name)
       .sort();
-    expect(names).toEqual(['read_scene_content', 'regenerate_scene', 'regenerate_scene_actions']);
+    expect(names).toEqual([
+      'fix_interactive_html',
+      'read_scene_content',
+      'regenerate_scene',
+      'regenerate_scene_actions',
+    ]);
   });
 
-  it('allowlists exactly the three v0 tools', () => {
+  it('allowlists exactly the v0 tools', () => {
     expect(V0_ALLOWLIST.has('read_scene_content')).toBe(true);
     expect(V0_ALLOWLIST.has('regenerate_scene')).toBe(true);
     expect(V0_ALLOWLIST.has('regenerate_scene_actions')).toBe(true);
+    expect(V0_ALLOWLIST.has('fix_interactive_html')).toBe(true);
     expect(V0_ALLOWLIST.has('definitely_not_a_tool')).toBe(false);
   });
 });
