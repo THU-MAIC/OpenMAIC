@@ -10,7 +10,7 @@
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { ToolCard, type ToolStatus } from './tool-card';
+import { ToolCard, isStoppedResult, type ToolStatus } from './tool-card';
 import { RestoreButton } from './restore-button';
 
 interface RegenerateSceneResult {
@@ -20,6 +20,7 @@ interface RegenerateSceneResult {
 
 function RegenerateSceneCard({
   running,
+  stopped,
   failed,
   sceneId,
   instruction,
@@ -28,6 +29,7 @@ function RegenerateSceneCard({
   toolCallId,
 }: {
   running: boolean;
+  stopped: boolean;
   failed: boolean;
   sceneId?: string;
   instruction?: string;
@@ -36,12 +38,20 @@ function RegenerateSceneCard({
   toolCallId: string;
 }) {
   const { t } = useI18n();
-  const toolStatus: ToolStatus = running ? 'running' : failed ? 'failed' : 'done';
+  const toolStatus: ToolStatus = running
+    ? 'running'
+    : stopped
+      ? 'stopped'
+      : failed
+        ? 'failed'
+        : 'done';
   const statusLabel = running
     ? t('edit.regenScene.generating')
-    : failed
-      ? t('edit.regenScene.notGenerated')
-      : t('edit.regenScene.updated');
+    : stopped
+      ? t('edit.agent.stopped')
+      : failed
+        ? t('edit.regenScene.notGenerated')
+        : t('edit.regenScene.updated');
 
   const hasBody = !!instruction || elementCount > 0 || (failed && !!failText);
 
@@ -52,7 +62,8 @@ function RegenerateSceneCard({
       sceneId={sceneId}
       status={toolStatus}
       statusLabel={statusLabel}
-      barAction={!failed ? <RestoreButton toolCallId={toolCallId} /> : undefined}
+      // No Restore for a stopped/failed run — nothing was applied to revert.
+      barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
     >
       {hasBody ? (
         <>
@@ -78,16 +89,20 @@ export const RegenerateSceneUI = makeAssistantToolUI<
   toolName: 'regenerate_scene',
   render: ({ args, status, result, isError, toolCallId }) => {
     const running = status.type === 'running' || status.type === 'requires-action';
+    // The user cancelled the turn before this tool finished → loud stopped state.
+    const stopped = !running && isStoppedResult(result);
     // pi-agent-core 0.78.0 does NOT propagate a tool result's `isError` into
     // `tool_execution_end.isError`, so refusals / generation-failures (which
     // return `details.content === null`, i.e. nothing was applied) would render
     // as a green "Updated" badge. Derive failure from the result too: if the run
     // finished but produced no content, treat it as failed.
-    const noContentApplied = !running && result != null && result.details?.content == null;
-    const failed = !running && (isError || status.type === 'incomplete' || noContentApplied);
+    const noContentApplied =
+      !running && !stopped && result != null && result.details?.content == null;
+    const failed = !running && !stopped && (isError || status.type === 'incomplete' || noContentApplied);
     return (
       <RegenerateSceneCard
         running={running}
+        stopped={stopped}
         failed={failed}
         sceneId={args?.sceneId ?? result?.details?.sceneId}
         instruction={args?.instruction}

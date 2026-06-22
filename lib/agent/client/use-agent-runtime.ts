@@ -142,7 +142,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   const turnsRef = useRef<PiPart[][]>([]);
   const toolResultsRef = useRef<Map<string, { result: unknown; isError: boolean }>>(new Map());
   const errorRef = useRef<string>('');
-  const phaseRef = useRef<'running' | 'complete' | 'error'>('complete');
+  const phaseRef = useRef<'running' | 'complete' | 'error' | 'cancelled'>('complete');
   // Aborts the in-flight run; closing the fetch body cancels the server stream
   // (the route's ReadableStream.cancel() calls agent.abort()).
   const abortRef = useRef<AbortController | null>(null);
@@ -172,7 +172,9 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         ? { type: 'running' }
         : phaseRef.current === 'error'
           ? { type: 'incomplete', reason: 'error' }
-          : { type: 'complete', reason: 'stop' };
+          : phaseRef.current === 'cancelled'
+            ? { type: 'incomplete', reason: 'cancelled' }
+            : { type: 'complete', reason: 'stop' };
     return { role: 'assistant', id, content: parts as ThreadMessageLike['content'], status };
   }, []);
 
@@ -365,7 +367,20 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
       } catch (err) {
         // User-initiated stop — keep whatever streamed, don't surface an error.
         if (abort.signal.aborted) {
-          phaseRef.current = 'complete';
+          // Only finalize if this run still owns the state (a newer run may have
+          // taken over). Mark any tool call that never produced a result as
+          // stopped, so its card shows a clear "stopped" state instead of a
+          // misleading green check, and flag the message as cancelled.
+          if (abortRef.current === abort) {
+            for (const turn of turnsRef.current) {
+              for (const p of turn) {
+                if (p.type === 'toolCall' && !toolResultsRef.current.has(p.id)) {
+                  toolResultsRef.current.set(p.id, { result: { __stopped: true }, isError: true });
+                }
+              }
+            }
+            phaseRef.current = 'cancelled';
+          }
         } else {
           errorRef.current = `⚠️ ${err instanceof Error ? err.message : String(err)}`;
           phaseRef.current = 'error';

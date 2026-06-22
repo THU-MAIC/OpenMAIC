@@ -9,7 +9,7 @@
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { ToolCard, type ToolStatus } from './tool-card';
+import { ToolCard, isStoppedResult, type ToolStatus } from './tool-card';
 import { RestoreButton } from './restore-button';
 
 interface FixInteractiveHtmlResult {
@@ -19,6 +19,7 @@ interface FixInteractiveHtmlResult {
 
 function FixInteractiveHtmlCard({
   running,
+  stopped,
   failed,
   sceneId,
   bugDescription,
@@ -26,6 +27,7 @@ function FixInteractiveHtmlCard({
   toolCallId,
 }: {
   running: boolean;
+  stopped: boolean;
   failed: boolean;
   sceneId?: string;
   bugDescription?: string;
@@ -33,12 +35,20 @@ function FixInteractiveHtmlCard({
   toolCallId: string;
 }) {
   const { t } = useI18n();
-  const toolStatus: ToolStatus = running ? 'running' : failed ? 'failed' : 'done';
+  const toolStatus: ToolStatus = running
+    ? 'running'
+    : stopped
+      ? 'stopped'
+      : failed
+        ? 'failed'
+        : 'done';
   const statusLabel = running
     ? t('edit.fixHtml.fixing')
-    : failed
-      ? t('edit.fixHtml.notFixed')
-      : t('edit.fixHtml.fixed');
+    : stopped
+      ? t('edit.agent.stopped')
+      : failed
+        ? t('edit.fixHtml.notFixed')
+        : t('edit.fixHtml.fixed');
 
   const hasBody = !!bugDescription || (failed && !!failText);
 
@@ -49,7 +59,8 @@ function FixInteractiveHtmlCard({
       sceneId={sceneId}
       status={toolStatus}
       statusLabel={statusLabel}
-      barAction={!failed ? <RestoreButton toolCallId={toolCallId} /> : undefined}
+      // No Restore for a stopped/failed run — nothing was applied to revert.
+      barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
     >
       {hasBody ? (
         <>
@@ -70,15 +81,18 @@ export const FixInteractiveHtmlUI = makeAssistantToolUI<
   toolName: 'fix_interactive_html',
   render: ({ args, status, result, isError, toolCallId }) => {
     const running = status.type === 'running' || status.type === 'requires-action';
+    // The user cancelled the turn before this tool finished → loud stopped state.
+    const stopped = !running && isStoppedResult(result);
     // Mirror regenerate_scene: pi-agent-core does not propagate a result's
     // `isError` into `tool_execution_end.isError`, so refusals / fix failures
     // (which return `details.html === null`, i.e. nothing was applied) would
     // render as a green "Fixed" badge. Derive failure from the result too.
-    const noHtmlApplied = !running && result != null && result.details?.html == null;
-    const failed = !running && (isError || status.type === 'incomplete' || noHtmlApplied);
+    const noHtmlApplied = !running && !stopped && result != null && result.details?.html == null;
+    const failed = !running && !stopped && (isError || status.type === 'incomplete' || noHtmlApplied);
     return (
       <FixInteractiveHtmlCard
         running={running}
+        stopped={stopped}
         failed={failed}
         sceneId={args?.sceneId ?? result?.details?.sceneId}
         bugDescription={args?.bugDescription}

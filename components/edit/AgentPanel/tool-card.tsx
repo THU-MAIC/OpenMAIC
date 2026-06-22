@@ -11,11 +11,33 @@
  */
 import type { ReactNode } from 'react';
 import { useState } from 'react';
-import { AtSign, Check, ChevronDown, Loader2, X, type LucideIcon } from 'lucide-react';
+import {
+  AtSign,
+  Check,
+  ChevronDown,
+  CircleStop,
+  Loader2,
+  X,
+  type LucideIcon,
+} from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useStageStore } from '@/lib/store/stage';
 
-export type ToolStatus = 'running' | 'done' | 'failed';
+export type ToolStatus = 'running' | 'done' | 'failed' | 'stopped';
+
+/**
+ * True when a tool result is the synthetic "stopped" marker the client runtime
+ * writes for tool calls that never produced a result because the user cancelled
+ * the turn (see use-agent-runtime). Shared so every tool UI reports a stopped
+ * card the same way.
+ */
+export function isStoppedResult(result: unknown): boolean {
+  return (
+    typeof result === 'object' &&
+    result !== null &&
+    (result as { __stopped?: boolean }).__stopped === true
+  );
+}
 
 /**
  * The page (scene) a tool acted on, shown as an `@title` chip — the chat is a
@@ -39,12 +61,16 @@ const STATUS_ICON: Record<ToolStatus, LucideIcon> = {
   running: Loader2,
   done: Check,
   failed: X,
+  stopped: CircleStop,
 };
 
 const STATUS_TONE: Record<ToolStatus, string> = {
   running: 'text-[#5b1fa8] dark:text-violet-300',
   done: 'text-emerald-600 dark:text-emerald-400',
   failed: 'text-amber-600 dark:text-amber-400',
+  // Stopped: a deliberately loud rose stop sign so an interrupted run reads as
+  // "you stopped this", clearly distinct from a green done or amber failure.
+  stopped: 'text-rose-600 dark:text-rose-400',
 };
 
 export function ToolCard({
