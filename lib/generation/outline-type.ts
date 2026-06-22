@@ -1,0 +1,90 @@
+import type { SceneOutline, WidgetOutline } from '@/lib/types/generation';
+import type { WidgetType } from '@/lib/types/widgets';
+
+type SceneType = SceneOutline['type'];
+
+const DEFAULT_QUIZ_CONFIG = {
+  questionCount: 3,
+  difficulty: 'medium' as const,
+  questionTypes: ['single' as const],
+};
+const MAX_TARGET_SKILLS = 6;
+
+/**
+ * Total constructor: returns a NEW outline of `newType` that is valid by
+ * construction. It strips every foreign per-type config and seeds the target
+ * type's required config from the shared fields (title / description /
+ * keyPoints), so the result survives `applyOutlineFallbacks` instead of being
+ * silently downgraded to a slide.
+ *
+ * Seeded values are pre-filled, user-editable defaults — not a hidden
+ * generation-time fallback. Switching away from a type therefore also clears
+ * its config so stale data is never persisted.
+ */
+export function changeOutlineType(outline: SceneOutline, newType: SceneType): SceneOutline {
+  // Shared fields only — every per-type config is intentionally dropped here and
+  // re-seeded per branch below.
+  const baseOutline: SceneOutline = {
+    id: outline.id,
+    type: newType,
+    title: outline.title,
+    description: outline.description,
+    keyPoints: outline.keyPoints ?? [],
+    order: outline.order,
+    ...(outline.teachingObjective !== undefined && {
+      teachingObjective: outline.teachingObjective,
+    }),
+    ...(outline.estimatedDuration !== undefined && {
+      estimatedDuration: outline.estimatedDuration,
+    }),
+    ...(outline.languageNote !== undefined && { languageNote: outline.languageNote }),
+    ...(outline.suggestedImageIds !== undefined && {
+      suggestedImageIds: outline.suggestedImageIds,
+    }),
+    ...(outline.mediaGenerations !== undefined && { mediaGenerations: outline.mediaGenerations }),
+  };
+
+  switch (newType) {
+    case 'quiz':
+      return { ...baseOutline, quizConfig: outline.quizConfig ?? { ...DEFAULT_QUIZ_CONFIG } };
+
+    case 'interactive': {
+      // Keep an already-valid widget config; otherwise seed a simulation widget.
+      // procedural-skill is a gated vocational feature and is not seeded here.
+      if (
+        outline.widgetType &&
+        outline.widgetType !== 'procedural-skill' &&
+        outline.widgetOutline
+      ) {
+        return {
+          ...baseOutline,
+          widgetType: outline.widgetType,
+          widgetOutline: outline.widgetOutline,
+        };
+      }
+      const widgetOutline: WidgetOutline = { concept: outline.title || '' };
+      return { ...baseOutline, widgetType: 'simulation' as WidgetType, widgetOutline };
+    }
+
+    case 'pbl': {
+      if (outline.pblConfig?.projectTopic) {
+        return { ...baseOutline, pblConfig: outline.pblConfig };
+      }
+      const targetSkills = Array.from(
+        new Set((outline.keyPoints ?? []).filter(Boolean)),
+      ).slice(0, MAX_TARGET_SKILLS);
+      return {
+        ...baseOutline,
+        pblConfig: {
+          projectTopic: outline.title || '',
+          projectDescription: outline.description || '',
+          targetSkills,
+        },
+      };
+    }
+
+    case 'slide':
+    default:
+      return baseOutline;
+  }
+}
