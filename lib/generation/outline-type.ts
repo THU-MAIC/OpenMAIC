@@ -21,6 +21,14 @@ const MAX_TARGET_SKILLS = 6;
  * its config so stale data is never persisted.
  */
 export function changeOutlineType(outline: SceneOutline, newType: SceneType): SceneOutline {
+  // Re-selecting the current type is a no-op: return the outline untouched so a
+  // harmless menu click never rebuilds it and drops fields this constructor does
+  // not re-seed (e.g. legacy interactiveConfig, or a partial pblConfig whose
+  // projectTopic happens to be empty).
+  if (newType === outline.type) {
+    return outline;
+  }
+
   // Shared fields only — every per-type config is intentionally dropped here and
   // re-seeded per branch below.
   const baseOutline: SceneOutline = {

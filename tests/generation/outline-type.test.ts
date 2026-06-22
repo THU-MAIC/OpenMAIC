@@ -91,6 +91,27 @@ describe('changeOutlineType', () => {
     expect(proc.widgetOutline?.steps).toEqual(['loosen', 'replace']);
   });
 
+  it('is a no-op when the type is unchanged (preserves non-seeded fields)', () => {
+    const interactive: SceneOutline = {
+      ...base,
+      type: 'interactive',
+      widgetType: 'simulation',
+      widgetOutline: { concept: 'X' },
+      interactiveConfig: { conceptName: 'X', conceptOverview: 'o', designIdea: 'd' },
+    };
+    // Same reference back — re-selecting the current type touches nothing.
+    expect(changeOutlineType(interactive, 'interactive')).toBe(interactive);
+
+    const partialPbl: SceneOutline = {
+      ...base,
+      type: 'pbl',
+      pblConfig: { projectTopic: '', projectDescription: 'keep me', targetSkills: ['s'] },
+    };
+    const r = changeOutlineType(partialPbl, 'pbl');
+    expect(r.pblConfig?.projectDescription).toBe('keep me');
+    expect(r.pblConfig?.targetSkills).toEqual(['s']);
+  });
+
   it('dedupes and caps seeded pbl targetSkills', () => {
     const many = changeOutlineType(
       { ...base, keyPoints: ['a', 'a', 'b', 'c', 'd', 'e', 'f', 'g'] },
