@@ -609,56 +609,64 @@ function SceneRow({
             )}
           />
 
-          {/* Key points */}
-          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-            <AnimatePresence initial={false}>
-              {(outline.keyPoints ?? []).filter(Boolean).map((point, idx) => (
-                <motion.span
-                  key={`${outline.id}-kp-${idx}-${point}`}
-                  layout
-                  initial={{ opacity: 0, scale: 0.85 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.85 }}
-                  transition={{ duration: 0.15 }}
-                  className={cn(
-                    'group/chip inline-flex max-w-[18rem] items-center gap-1 rounded-full px-2.5 py-1 text-xs',
-                    'bg-muted/70 text-foreground/80',
-                  )}
-                >
-                  <span className="truncate">{point}</span>
-                  {!disabled && (
-                    <button
-                      type="button"
-                      onClick={() => removeKeyPoint(idx)}
-                      aria-label={t('generation.removeKeyPoint')}
-                      className="ml-0.5 inline-flex size-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground/0 transition-colors hover:bg-muted-foreground/20 hover:text-muted-foreground group-hover/chip:text-muted-foreground/70"
-                    >
-                      <X className="size-2.5" />
-                    </button>
-                  )}
-                </motion.span>
-              ))}
-            </AnimatePresence>
-            {!disabled && (
-              <KeyPointInput
-                value={keyPointDraft}
-                onChange={setKeyPointDraft}
-                onKeyDown={handleKeyPointKeyDown}
-                placeholder={t('generation.addKeyPoint')}
-              />
+          {/* Key points (left) + type-specific config (pinned bottom-right, under the type pill) */}
+          <div className="flex items-end justify-between gap-3 pt-1">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              <AnimatePresence initial={false}>
+                {(outline.keyPoints ?? []).filter(Boolean).map((point, idx) => (
+                  <motion.span
+                    key={`${outline.id}-kp-${idx}-${point}`}
+                    layout
+                    initial={{ opacity: 0, scale: 0.85 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.85 }}
+                    transition={{ duration: 0.15 }}
+                    className={cn(
+                      'group/chip inline-flex max-w-[18rem] items-center gap-1 rounded-full px-2.5 py-1 text-xs',
+                      'bg-muted/70 text-foreground/80',
+                    )}
+                  >
+                    <span className="truncate">{point}</span>
+                    {!disabled && (
+                      <button
+                        type="button"
+                        onClick={() => removeKeyPoint(idx)}
+                        aria-label={t('generation.removeKeyPoint')}
+                        className="ml-0.5 inline-flex size-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground/0 transition-colors hover:bg-muted-foreground/20 hover:text-muted-foreground group-hover/chip:text-muted-foreground/70"
+                      >
+                        <X className="size-2.5" />
+                      </button>
+                    )}
+                  </motion.span>
+                ))}
+              </AnimatePresence>
+              {!disabled && (
+                <KeyPointInput
+                  value={keyPointDraft}
+                  onChange={setKeyPointDraft}
+                  onKeyDown={handleKeyPointKeyDown}
+                  placeholder={t('generation.addKeyPoint')}
+                />
+              )}
+            </div>
+
+            {/* Type-specific config (popover) — sits under the TypePill it configures */}
+            {!disabled && outline.type === 'quiz' && (
+              <div className="shrink-0">
+                <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} />
+              </div>
+            )}
+            {!disabled && outline.type === 'interactive' && (
+              <div className="shrink-0">
+                <InteractiveConfigDisclosure outline={outline} onUpdate={onUpdate} />
+              </div>
+            )}
+            {!disabled && outline.type === 'pbl' && (
+              <div className="shrink-0">
+                <PblConfigDisclosure outline={outline} onUpdate={onUpdate} />
+              </div>
             )}
           </div>
-
-          {/* Type-specific config (popover) */}
-          {outline.type === 'quiz' && !disabled && (
-            <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} />
-          )}
-          {outline.type === 'interactive' && !disabled && (
-            <InteractiveConfigDisclosure outline={outline} onUpdate={onUpdate} />
-          )}
-          {outline.type === 'pbl' && !disabled && (
-            <PblConfigDisclosure outline={outline} onUpdate={onUpdate} />
-          )}
         </div>
       </div>
     </motion.li>
@@ -991,7 +999,7 @@ function QuizConfigDisclosure({
         <button
           type="button"
           className={cn(
-            'mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
+            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
             'text-purple-600 transition-colors hover:bg-purple-500/[0.06] dark:text-purple-300',
           )}
         >
@@ -1111,7 +1119,7 @@ function InteractiveConfigDisclosure({
         <button
           type="button"
           className={cn(
-            'mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
+            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
             'text-emerald-600 transition-colors hover:bg-emerald-500/[0.06] dark:text-emerald-300',
           )}
         >
@@ -1216,7 +1224,7 @@ function PblConfigDisclosure({
         <button
           type="button"
           className={cn(
-            'mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
+            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
             'text-amber-600 transition-colors hover:bg-amber-500/[0.06] dark:text-amber-300',
           )}
         >
