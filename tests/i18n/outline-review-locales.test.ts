@@ -59,6 +59,21 @@ const outlineReviewKeys = [
   'generation.deleteSceneConfirmAction',
   'generation.collapseEditor',
   'generation.quizConfigSummary',
+  'generation.interactiveWidgetKind',
+  'generation.widgetSimulation',
+  'generation.widgetDiagram',
+  'generation.widgetCode',
+  'generation.widgetGame',
+  'generation.widgetVisualization3d',
+  'generation.interactiveConcept',
+  'generation.interactiveConceptPlaceholder',
+  'generation.pblConfigSummary',
+  'generation.pblProjectTopic',
+  'generation.pblProjectTopicPlaceholder',
+  'generation.pblProjectDescription',
+  'generation.pblProjectDescriptionPlaceholder',
+  'generation.pblTargetSkills',
+  'generation.pblAddSkill',
 ] as const;
 
 const countInterpolatedKeys = [
