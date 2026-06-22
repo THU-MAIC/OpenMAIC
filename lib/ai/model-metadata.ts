@@ -152,6 +152,17 @@ const deepseekEffort: ThinkingCapability = {
   defaultEnabled: true,
 };
 
+const glm52Effort: ThinkingCapability = {
+  control: 'effort',
+  requestAdapter: 'glm',
+  effortValues: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+  defaultEffort: 'max',
+  defaultMode: 'enabled',
+  toggleable: true,
+  budgetAdjustable: true,
+  defaultEnabled: true,
+};
+
 const hunyuanHy3Effort: ThinkingCapability = {
   control: 'effort',
   requestAdapter: 'hunyuan',
@@ -280,6 +291,7 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
     -1,
   ),
 
+  [getModelMetadataKey('glm', 'glm-5.2')]: glm52Effort,
   [getModelMetadataKey('glm', 'glm-5.1')]: toggleCapability('glm'),
   [getModelMetadataKey('glm', 'glm-5v-turbo')]: toggleCapability('glm'),
   [getModelMetadataKey('glm', 'glm-5')]: toggleCapability('glm'),
@@ -306,6 +318,8 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('deepseek', 'deepseek-v4-pro')]: deepseekEffort,
   [getModelMetadataKey('deepseek', 'deepseek-v4-flash')]: deepseekEffort,
 
+  [getModelMetadataKey('kimi', 'kimi-k2.7-code')]: fixedThinkingCapability,
+  [getModelMetadataKey('kimi', 'kimi-k2.7-code-highspeed')]: fixedThinkingCapability,
   [getModelMetadataKey('kimi', 'kimi-k2.6')]: toggleCapability('kimi'),
   [getModelMetadataKey('kimi', 'kimi-k2.5')]: toggleCapability('kimi'),
   [getModelMetadataKey('kimi', 'kimi-k2-thinking')]: toggleCapability('kimi'),
