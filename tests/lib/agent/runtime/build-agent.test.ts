@@ -11,7 +11,7 @@ describe('buildSystemPrompt capability boundary', () => {
   });
 
   it('grants interactive-scene bug fixing', () => {
-    expect(prompt).toContain('fix_interactive_html');
+    expect(prompt).toContain('edit_interactive_html');
     expect(prompt).toContain('interactive');
   });
 

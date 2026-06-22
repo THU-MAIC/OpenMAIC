@@ -70,7 +70,7 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
 
   // The AI edit panel (AgentPanel) is decoupled from the canvas surface: it
   // renders wherever the agent has an edit capability — slides (regenerate) AND
-  // interactive scenes (fix_interactive_html), even though the interactive canvas
+  // interactive scenes (edit_interactive_html), even though the interactive canvas
   // itself stays view-only. PBL has neither a surface nor an agent edit tool.
   const agentEnabled = authoringEnabled || scene.type === 'interactive';
 

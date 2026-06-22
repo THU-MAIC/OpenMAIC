@@ -170,12 +170,12 @@ function interactiveScene(): Pick<Scene, 'content' | 'actions'> {
   };
 }
 
-describe('planRegenerateApply — fix_interactive_html', () => {
+describe('planRegenerateApply — edit_interactive_html', () => {
   it('writes the fixed html and preserves the other interactive fields', () => {
     const plan = planRegenerateApply(
       { sceneId: 'w1', html: '<html><!-- fixed --></html>' },
       interactiveScene(),
-      'fix_interactive_html',
+      'edit_interactive_html',
     );
     const content = plan.patch?.content as unknown as {
       type: string;
@@ -196,7 +196,7 @@ describe('planRegenerateApply — fix_interactive_html', () => {
     const plan = planRegenerateApply(
       { sceneId: 'w1', html: '<html><!-- fixed --></html>' },
       scene,
-      'fix_interactive_html',
+      'edit_interactive_html',
     );
     expect(plan.snapshot).toEqual({
       sceneId: 'w1',
@@ -210,7 +210,7 @@ describe('planRegenerateApply — fix_interactive_html', () => {
       planRegenerateApply(
         { sceneId: 's1', html: '<html></html>' },
         slideScene(),
-        'fix_interactive_html',
+        'edit_interactive_html',
       ),
     ).toEqual({ snapshot: null, patch: null });
   });

@@ -1044,7 +1044,7 @@ async function generatePBLSceneContent(
  * Extract HTML document from AI response.
  * Tries to find <!DOCTYPE html>...</html> first, then falls back to code block extraction.
  */
-export function extractHtml(response: string): string | null {
+function extractHtml(response: string): string | null {
   // Strategy 1: Find complete HTML document
   const doctypeStart = response.indexOf('<!DOCTYPE html>');
   const htmlTagStart = response.indexOf('<html');

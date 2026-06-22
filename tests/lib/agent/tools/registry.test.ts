@@ -13,7 +13,7 @@ describe('agent toolset registry', () => {
       .map((t) => t.name)
       .sort();
     expect(names).toEqual([
-      'fix_interactive_html',
+      'edit_interactive_html',
       'read_scene_content',
       'regenerate_scene',
       'regenerate_scene_actions',
@@ -24,7 +24,7 @@ describe('agent toolset registry', () => {
     expect(V0_ALLOWLIST.has('read_scene_content')).toBe(true);
     expect(V0_ALLOWLIST.has('regenerate_scene')).toBe(true);
     expect(V0_ALLOWLIST.has('regenerate_scene_actions')).toBe(true);
-    expect(V0_ALLOWLIST.has('fix_interactive_html')).toBe(true);
+    expect(V0_ALLOWLIST.has('edit_interactive_html')).toBe(true);
     expect(V0_ALLOWLIST.has('definitely_not_a_tool')).toBe(false);
   });
 });

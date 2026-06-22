@@ -5,7 +5,7 @@ import {
 } from './regenerate-scene-actions';
 import { makeReadSceneContentTool } from './read-scene-content';
 import { makeRegenerateSceneTool } from './regenerate-scene';
-import { makeFixInteractiveHtmlTool } from './fix-interactive-html';
+import { makeEditInteractiveHtmlTool } from './edit-interactive-html';
 
 /**
  * Deps needed to build the v0 toolset.
@@ -23,14 +23,14 @@ export type ToolsetDeps = RegenerateActionsDeps & { activeSceneId?: string };
  * - `read_scene_content` — read the slide to reason / craft instructions (read-then-act)
  * - `regenerate_scene` — instruction-driven whole-slide regeneration (content + actions)
  * - `regenerate_scene_actions` — narration/actions only
- * - `fix_interactive_html` — surgical bug-fix for an interactive scene's HTML
+ * - `edit_interactive_html` — surgical str_replace edits for an interactive scene's HTML
  */
 export function buildToolset(deps: ToolsetDeps): AgentTool<never, never>[] {
   return [
     makeReadSceneContentTool(deps) as never,
     makeRegenerateSceneTool(deps) as never,
     makeRegenerateSceneActionsTool(deps) as never,
-    makeFixInteractiveHtmlTool(deps) as never,
+    makeEditInteractiveHtmlTool(deps) as never,
   ];
 }
 
@@ -39,5 +39,5 @@ export const V0_ALLOWLIST: ReadonlySet<string> = new Set([
   'read_scene_content',
   'regenerate_scene',
   'regenerate_scene_actions',
-  'fix_interactive_html',
+  'edit_interactive_html',
 ]);

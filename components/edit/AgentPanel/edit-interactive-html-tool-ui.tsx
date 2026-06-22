@@ -1,10 +1,10 @@
 'use client';
 
 /**
- * Tool-call UI for `fix_interactive_html` (interactive-scene bug fix). Renders via
- * the shared `ToolCard`; the body echoes the reported bug. The "还原到重生成前 /
- * Restore previous" button lives on the always-visible card row (ToolCard
- * `barAction`): the fix applies directly to the page, so revert is one tap.
+ * Tool-call UI for `edit_interactive_html` (interactive-scene str_replace edits).
+ * Renders via the shared `ToolCard`; the body reports how many edits applied, or
+ * the actionable error when an edit could not be anchored. The "还原 / Restore
+ * previous" button lives on the always-visible card row.
  */
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
@@ -12,17 +12,17 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { ToolCard, isStoppedResult, type ToolStatus } from './tool-card';
 import { RestoreButton } from './restore-button';
 
-interface FixInteractiveHtmlResult {
+interface EditInteractiveHtmlResult {
   content?: { type: string; text?: string }[];
-  details?: { sceneId?: string; html?: string | null };
+  details?: { sceneId?: string; html?: string | null; editCount?: number };
 }
 
-function FixInteractiveHtmlCard({
+function EditInteractiveHtmlCard({
   running,
   stopped,
   failed,
   sceneId,
-  bugDescription,
+  editCount,
   failText,
   toolCallId,
 }: {
@@ -30,7 +30,7 @@ function FixInteractiveHtmlCard({
   stopped: boolean;
   failed: boolean;
   sceneId?: string;
-  bugDescription?: string;
+  editCount: number;
   failText?: string;
   toolCallId: string;
 }) {
@@ -50,7 +50,7 @@ function FixInteractiveHtmlCard({
         ? t('edit.fixHtml.notFixed')
         : t('edit.fixHtml.fixed');
 
-  const hasBody = !!bugDescription || (failed && !!failText);
+  const hasBody = (!failed && !stopped && editCount > 0) || (failed && !!failText);
 
   return (
     <ToolCard
@@ -67,35 +67,36 @@ function FixInteractiveHtmlCard({
           {failed && failText ? (
             <p className="text-amber-600 dark:text-amber-500">{failText}</p>
           ) : null}
-          {bugDescription ? <p className="italic">“{bugDescription}”</p> : null}
+          {!failed && !stopped && editCount > 0 ? (
+            <p className="font-mono">{t('edit.fixHtml.editsCount', { count: editCount })}</p>
+          ) : null}
         </>
       ) : null}
     </ToolCard>
   );
 }
 
-export const FixInteractiveHtmlUI = makeAssistantToolUI<
-  { sceneId?: string; bugDescription?: string },
-  FixInteractiveHtmlResult
+export const EditInteractiveHtmlUI = makeAssistantToolUI<
+  { sceneId?: string; edits?: { oldText: string; newText: string }[] },
+  EditInteractiveHtmlResult
 >({
-  toolName: 'fix_interactive_html',
+  toolName: 'edit_interactive_html',
   render: ({ args, status, result, isError, toolCallId }) => {
     const running = status.type === 'running' || status.type === 'requires-action';
     // The user cancelled the turn before this tool finished → loud stopped state.
     const stopped = !running && isStoppedResult(result);
-    // Mirror regenerate_scene: pi-agent-core does not propagate a result's
-    // `isError` into `tool_execution_end.isError`, so refusals / fix failures
-    // (which return `details.html === null`, i.e. nothing was applied) would
-    // render as a green "Fixed" badge. Derive failure from the result too.
+    // pi-agent-core does not propagate a result's `isError` into the event, so a
+    // refusal / unappliable-edit (which returns `details.html === null`, i.e.
+    // nothing applied) would render as a green "Fixed" badge. Derive failure too.
     const noHtmlApplied = !running && !stopped && result != null && result.details?.html == null;
     const failed = !running && !stopped && (isError || status.type === 'incomplete' || noHtmlApplied);
     return (
-      <FixInteractiveHtmlCard
+      <EditInteractiveHtmlCard
         running={running}
         stopped={stopped}
         failed={failed}
         sceneId={args?.sceneId ?? result?.details?.sceneId}
-        bugDescription={args?.bugDescription}
+        editCount={result?.details?.editCount ?? args?.edits?.length ?? 0}
         failText={result?.content?.[0]?.text}
         toolCallId={toolCallId}
       />

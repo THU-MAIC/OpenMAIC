@@ -64,7 +64,7 @@ export interface RegenerateDetails {
   sceneId?: string;
   /** Present for `regenerate_scene` (whole-slide); absent for actions-only. */
   content?: GeneratedSlideContent | null;
-  /** Present for `fix_interactive_html` — the fixed interactive page HTML. */
+  /** Present for `edit_interactive_html` — the edited interactive page HTML. */
   html?: string | null;
   actions?: Action[];
 }
@@ -100,11 +100,11 @@ export function planRegenerateApply(
 
   const actions = Array.isArray(details.actions) ? details.actions : [];
 
-  // `fix_interactive_html` carries a fixed interactive-page HTML document.
-  // Snapshot the current scene, then write the new html onto the existing
+  // `edit_interactive_html` carries the edited interactive-page HTML. Snapshot
+  // the current scene, then write the new html onto the existing
   // InteractiveContent — preserving the page's other fields (url / widgetType /
   // widgetConfig / teacherActions). The iframe reloads when content.html changes.
-  if (toolName === 'fix_interactive_html' && typeof details.html === 'string') {
+  if (toolName === 'edit_interactive_html' && typeof details.html === 'string') {
     const prev = scene?.content as InteractiveContent | undefined;
     if (!prev || prev.type !== 'interactive') return { snapshot: null, patch: null };
     const runtime: InteractiveContent = { ...prev, html: details.html };

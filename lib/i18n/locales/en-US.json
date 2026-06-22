@@ -389,7 +389,8 @@
       "title": "Fix interactive page",
       "fixing": "Fixing",
       "fixed": "Fixed",
-      "notFixed": "Not fixed"
+      "notFixed": "Not fixed",
+      "editsCount": "{{count}} edit(s)"
     },
     "readCard": {
       "title": "Read slide content",

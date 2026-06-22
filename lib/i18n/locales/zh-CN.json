@@ -389,7 +389,8 @@
       "title": "修复交互页",
       "fixing": "修复中",
       "fixed": "已修复",
-      "notFixed": "未修复"
+      "notFixed": "未修复",
+      "editsCount": "{{count}} 处修改"
     },
     "readCard": {
       "title": "读取页面内容",

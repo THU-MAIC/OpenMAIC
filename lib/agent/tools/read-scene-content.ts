@@ -96,8 +96,28 @@ function extractElementText(el: unknown): string {
   }
 }
 
+// Interactive pages are edited with `edit_interactive_html`, which needs the
+// model to author EXACT `oldText` anchors — so it must see the full, raw,
+// un-escaped HTML (not a truncated JSON projection). Cap only as a pathological
+// safety net; real pages are well under this.
+const INTERACTIVE_HTML_CAP = 60000;
+
 function projectContent(content: SceneContext['content']): string {
-  const c = content as { type?: string; canvas?: { elements?: unknown[] } } | undefined;
+  const c = content as
+    | { type?: string; canvas?: { elements?: unknown[] }; html?: unknown }
+    | undefined;
+
+  // Interactive: return the full page HTML verbatim so edits can anchor exactly.
+  if (c?.type === 'interactive') {
+    const html = typeof c.html === 'string' ? c.html : '';
+    if (!html) return '(this interactive scene has no embedded HTML)';
+    const capped =
+      html.length > INTERACTIVE_HTML_CAP
+        ? `${html.slice(0, INTERACTIVE_HTML_CAP)}…(truncated)`
+        : html;
+    return `Interactive page HTML (to fix a bug, call edit_interactive_html with exact oldText snippets copied from below):\n${capped}`;
+  }
+
   let projection: string;
   if (c?.type === 'slide') {
     const elements = Array.isArray(c.canvas?.elements) ? c.canvas!.elements : [];
@@ -192,7 +212,7 @@ export function makeReadSceneContentTool(
               `Scene "${outline.title}" (type: ${outline.type}). ` +
               `Description: ${outline.description || '(none)'}. ` +
               `Key points: ${keyPoints || '(none)'}.\n` +
-              `Slide content:\n${projection}`,
+              `Scene content:\n${projection}`,
           },
         ],
         details: {
