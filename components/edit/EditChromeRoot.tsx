@@ -62,20 +62,26 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     void preloadEditor();
   }, []);
 
-  // The narration timeline (ActionsBar) and the AI edit panel (AgentPanel) are
-  // slide-narration authoring tools — they only apply to scene types with a
-  // registered editor surface. Read-only scenes (no surface → NOOP + the
-  // "· view-only" badge, e.g. interactive/PBL) get neither, so the timeline
-  // can't add spotlight/laser or edit speech and the agent can't rewrite a
-  // view-only scene's actions. Mirrors the shell's own surface resolution.
+  // The narration timeline (ActionsBar) is a slide-narration authoring tool — it
+  // only applies to scene types with a registered editor surface (slide/quiz).
+  // Read-only canvas scenes (no surface → NOOP + the "· view-only" badge, e.g.
+  // interactive/PBL) get no timeline.
   const authoringEnabled = !!sceneEditorRegistry.resolve(scene.type);
+
+  // The AI edit panel (AgentPanel) is decoupled from the canvas surface: it
+  // renders wherever the agent has an edit capability — slides (regenerate) AND
+  // interactive scenes (fix_interactive_html), even though the interactive canvas
+  // itself stays view-only. PBL has neither a surface nor an agent edit tool.
+  const agentEnabled = authoringEnabled || scene.type === 'interactive';
 
   return (
     <EditShell
       scene={scene}
       leftRail={<SlideNavRail />}
       rightRail={
-        authoringEnabled ? <AgentPanel scene={{ id: scene.id, title: scene.title }} /> : undefined
+        agentEnabled ? (
+          <AgentPanel scene={{ id: scene.id, title: scene.title, type: scene.type }} />
+        ) : undefined
       }
       bottomRail={authoringEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
       commandTrailing={

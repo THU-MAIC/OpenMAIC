@@ -307,6 +307,12 @@
         "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
         "comingSoon": "More capabilities coming soon."
       },
+      "interactive": {
+        "emptyTitle": "What needs fixing on this page?",
+        "lead": "Describe a bug on this interactive page — e.g. a button that does nothing — and I'll fix just that, keeping everything else.",
+        "placeholder": "Describe the bug on this interactive page…",
+        "boundary": "I make targeted fixes to the page; I won't rebuild the whole page. Switch scenes from the left nav."
+      },
       "cap": {
         "content": {
           "label": "Regenerate the slide",
@@ -315,6 +321,10 @@
         "narration": {
           "label": "Regenerate the narration script",
           "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "label": "Fix a bug on the page",
+          "examples": "“The start button does nothing”, “Panels overlap on mobile”"
         }
       },
       "newConversation": "New conversation"

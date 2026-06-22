@@ -49,10 +49,14 @@ const MAX_WIDTH = 640;
 const DEFAULT_WIDTH = 384;
 
 /** Capability rows shown in the empty state — read-only tips (not clickable),
- *  each a label + example phrasings. */
-const CAPABILITY_KEYS = [
+ *  each a label + example phrasings. Slide vs interactive scenes expose
+ *  different agent capabilities, so the tips differ by scene type. */
+const SLIDE_CAPABILITY_KEYS = [
   { label: 'edit.agent.cap.content.label', examples: 'edit.agent.cap.content.examples' },
   { label: 'edit.agent.cap.narration.label', examples: 'edit.agent.cap.narration.examples' },
+];
+const INTERACTIVE_CAPABILITY_KEYS = [
+  { label: 'edit.agent.cap.fixHtml.label', examples: 'edit.agent.cap.fixHtml.examples' },
 ];
 
 function UserMessage() {
@@ -122,9 +126,25 @@ function VoiceInputButton() {
   );
 }
 
-export function AgentPanel({ scene }: { scene?: { id: string; title: string } }) {
+export function AgentPanel({
+  scene,
+}: {
+  scene?: { id: string; title: string; type?: string };
+}) {
   const { t } = useI18n();
   const { runtime, clearThread, hasMessages } = useAgentRuntime({ scene });
+
+  // Interactive scenes expose a different agent capability (fix the page's bugs)
+  // than slides (regenerate content/narration), so the empty-state copy and the
+  // composer placeholder switch by scene type.
+  const isInteractive = scene?.type === 'interactive';
+  const capabilityKeys = isInteractive ? INTERACTIVE_CAPABILITY_KEYS : SLIDE_CAPABILITY_KEYS;
+  const emptyTitleKey = isInteractive ? 'edit.agent.interactive.emptyTitle' : 'edit.agent.emptyTitle';
+  const emptyLeadKey = isInteractive ? 'edit.agent.interactive.lead' : 'edit.agent.empty.lead';
+  const emptyBoundaryKey = isInteractive
+    ? 'edit.agent.interactive.boundary'
+    : 'edit.agent.empty.boundary';
+  const placeholderKey = isInteractive ? 'edit.agent.interactive.placeholder' : 'edit.agent.placeholder';
 
   // Drag-to-resize from the left edge (pointer capture, direct DOM write).
   const railRef = useRef<HTMLElement>(null);
@@ -254,14 +274,14 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string } })
                   example phrasings, instead of clickable recommendation chips. */}
               <div className="mx-auto mt-12 flex max-w-[268px] flex-col">
                 <p className="text-center text-sm font-medium text-foreground">
-                  {t('edit.agent.emptyTitle')}
+                  {t(emptyTitleKey)}
                 </p>
                 <p className="mt-1.5 text-center text-[12px] leading-relaxed text-muted-foreground">
-                  {t('edit.agent.empty.lead')}
+                  {t(emptyLeadKey)}
                 </p>
 
                 <div className="mt-5 space-y-3">
-                  {CAPABILITY_KEYS.map(({ label, examples }) => (
+                  {capabilityKeys.map(({ label, examples }) => (
                     <div key={label} className="flex flex-col gap-0.5">
                       <span className="text-[12px] font-semibold text-foreground">{t(label)}</span>
                       <span className="text-[11.5px] leading-relaxed text-[#5b1fa8]/70 dark:text-violet-300/70">
@@ -272,7 +292,7 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string } })
                 </div>
 
                 <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground/80">
-                  {t('edit.agent.empty.boundary')}
+                  {t(emptyBoundaryKey)}
                 </p>
                 <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
                   <Sparkles className="size-3 text-[#5b1fa8]/60 dark:text-violet-300/60" />
@@ -307,7 +327,7 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string } })
                 minRows={1}
                 maxRows={6}
                 autoFocus
-                placeholder={t('edit.agent.placeholder')}
+                placeholder={t(placeholderKey)}
                 className="block w-full resize-none bg-transparent px-3 pb-1 pt-2 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/50"
               />
 
