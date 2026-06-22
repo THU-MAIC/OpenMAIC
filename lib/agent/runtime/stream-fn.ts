@@ -128,19 +128,20 @@ export function createPartMapper(
   partial: AssistantMessage,
   push: (event: AssistantMessageEvent) => void,
 ) {
-  let textIndex = -1;
-  let textBuf = '';
-  let thinkingIndex = -1;
-  let thinkingBuf = '';
+  // A single "active" content block (text or thinking). Switching delta type, a
+  // tool call, an explicit reasoning-end, or finalize closes it — so interleaved
+  // reasoning/text streams ("reason → answer → reason → answer") produce blocks
+  // in arrival order instead of merging later text back into an earlier block.
+  let active: { kind: 'text' | 'thinking'; index: number; buf: string } | null = null;
 
-  // Close the open thinking block (if any) and reset, so a later reasoning delta
-  // in the same turn opens a fresh block instead of appending to the closed one.
-  const closeThinking = () => {
-    if (thinkingIndex >= 0) {
-      push({ type: 'thinking_end', contentIndex: thinkingIndex, content: thinkingBuf, partial });
-      thinkingIndex = -1;
-      thinkingBuf = '';
+  const closeActive = () => {
+    if (!active) return;
+    if (active.kind === 'text') {
+      push({ type: 'text_end', contentIndex: active.index, content: active.buf, partial });
+    } else {
+      push({ type: 'thinking_end', contentIndex: active.index, content: active.buf, partial });
     }
+    active = null;
   };
 
   const handle = (part: Record<string, unknown>): void => {
@@ -148,28 +149,33 @@ export function createPartMapper(
     if (type === 'text-delta' || type === 'text') {
       const delta = (part.text ?? part.delta ?? part.textDelta ?? '') as string;
       if (!delta) return;
-      if (textIndex < 0) {
-        textIndex = partial.content.length;
+      if (active?.kind !== 'text') {
+        closeActive();
+        const index = partial.content.length;
         partial.content.push({ type: 'text', text: '' } satisfies TextContent);
-        push({ type: 'text_start', contentIndex: textIndex, partial });
+        active = { kind: 'text', index, buf: '' };
+        push({ type: 'text_start', contentIndex: index, partial });
       }
-      textBuf += delta;
-      (partial.content[textIndex] as TextContent).text = textBuf;
-      push({ type: 'text_delta', contentIndex: textIndex, delta, partial });
+      active.buf += delta;
+      (partial.content[active.index] as TextContent).text = active.buf;
+      push({ type: 'text_delta', contentIndex: active.index, delta, partial });
     } else if (type === 'reasoning-delta' || type === 'reasoning') {
       const delta = (part.text ?? part.delta ?? '') as string;
       if (!delta) return;
-      if (thinkingIndex < 0) {
-        thinkingIndex = partial.content.length;
+      if (active?.kind !== 'thinking') {
+        closeActive();
+        const index = partial.content.length;
         partial.content.push({ type: 'thinking', thinking: '' } as ThinkingContent);
-        push({ type: 'thinking_start', contentIndex: thinkingIndex, partial });
+        active = { kind: 'thinking', index, buf: '' };
+        push({ type: 'thinking_start', contentIndex: index, partial });
       }
-      thinkingBuf += delta;
-      (partial.content[thinkingIndex] as ThinkingContent).thinking = thinkingBuf;
-      push({ type: 'thinking_delta', contentIndex: thinkingIndex, delta, partial });
+      active.buf += delta;
+      (partial.content[active.index] as ThinkingContent).thinking = active.buf;
+      push({ type: 'thinking_delta', contentIndex: active.index, delta, partial });
     } else if (type === 'reasoning-end') {
-      closeThinking();
+      if (active?.kind === 'thinking') closeActive();
     } else if (type === 'tool-call') {
+      closeActive();
       const idx = partial.content.length;
       const toolCall: ToolCall = {
         type: 'toolCall',
@@ -191,12 +197,8 @@ export function createPartMapper(
   };
 
   const finalize = (): void => {
-    // Close the thinking block first (if the stream omitted reasoning-end), then
-    // the text block — preserves chronological thinking → text ordering.
-    closeThinking();
-    if (textIndex >= 0) {
-      push({ type: 'text_end', contentIndex: textIndex, content: textBuf, partial });
-    }
+    // Close whatever block is still open (the stream may omit a trailing end).
+    closeActive();
   };
 
   return { handle, finalize };

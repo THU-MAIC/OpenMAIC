@@ -112,6 +112,29 @@ describe('createPartMapper — reasoning/thinking channel', () => {
     expect(events.filter((e) => e.type === 'thinking_end')).toHaveLength(2);
   });
 
+  it('preserves order for a reasoning→text→reasoning→text interleave in one turn', () => {
+    const partial = emptyPartial();
+    const events: AssistantMessageEvent[] = [];
+    const mapper = createPartMapper(partial, (e) => events.push(e));
+
+    mapper.handle({ type: 'reasoning-delta', text: 'r1' });
+    mapper.handle({ type: 'reasoning-end' });
+    mapper.handle({ type: 'text-delta', text: 't1' });
+    mapper.handle({ type: 'reasoning-delta', text: 'r2' });
+    mapper.handle({ type: 'reasoning-end' });
+    mapper.handle({ type: 'text-delta', text: 't2' });
+    mapper.finalize();
+
+    // Stream order must be preserved as four distinct blocks — t2 must NOT be
+    // merged back into the first text block.
+    expect(partial.content).toEqual([
+      { type: 'thinking', thinking: 'r1' },
+      { type: 'text', text: 't1' },
+      { type: 'thinking', thinking: 'r2' },
+      { type: 'text', text: 't2' },
+    ]);
+  });
+
   it('ignores empty reasoning deltas (no thinking block created)', () => {
     const partial = emptyPartial();
     const events: AssistantMessageEvent[] = [];
