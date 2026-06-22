@@ -28,7 +28,7 @@ export function ScenePill({ sceneId }: { sceneId?: string }) {
   );
   if (!title) return null;
   return (
-    <span className="inline-flex min-w-0 max-w-[45%] shrink-0 items-center gap-0.5 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10.5px] font-medium text-[#5b1fa8] dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+    <span className="inline-flex min-w-0 max-w-[150px] shrink items-center gap-0.5 rounded-md border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[10.5px] font-medium text-[#5b1fa8] dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
       <AtSign className="size-2.5 shrink-0 text-violet-500" />
       <span className="truncate">{title}</span>
     </span>
@@ -97,19 +97,20 @@ export function ToolCard({
         )}
       >
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
-        {/* Title yields first (truncates) so the @scene pill stays readable on a
-            narrow rail; the pill is capped + truncates rather than collapsing. */}
-        <span className="min-w-0 shrink truncate text-[12.5px] font-semibold text-foreground">
+        {/* Title takes the free space and truncates; the @scene pill rides in the
+            right cluster next to the status mark, so pills stay right-aligned
+            across cards regardless of how long each tool name is. */}
+        <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-foreground">
           {title}
         </span>
-        <ScenePill sceneId={sceneId} />
 
-        <span className="ml-auto flex shrink-0 items-center gap-1">
+        <span className="ml-auto flex shrink-0 items-center gap-1.5">
           {barAction ? (
             <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
               {barAction}
             </span>
           ) : null}
+          <ScenePill sceneId={sceneId} />
           <span title={statusLabel} className={cn('inline-flex items-center', STATUS_TONE[status])}>
             <StatusIcon className={cn('size-4', running && 'animate-spin')} />
           </span>
