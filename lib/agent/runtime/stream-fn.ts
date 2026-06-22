@@ -132,12 +132,14 @@ export function createPartMapper(
   let textBuf = '';
   let thinkingIndex = -1;
   let thinkingBuf = '';
-  let thinkingClosed = false;
 
+  // Close the open thinking block (if any) and reset, so a later reasoning delta
+  // in the same turn opens a fresh block instead of appending to the closed one.
   const closeThinking = () => {
-    if (thinkingIndex >= 0 && !thinkingClosed) {
-      thinkingClosed = true;
+    if (thinkingIndex >= 0) {
       push({ type: 'thinking_end', contentIndex: thinkingIndex, content: thinkingBuf, partial });
+      thinkingIndex = -1;
+      thinkingBuf = '';
     }
   };
 

@@ -41,10 +41,19 @@ export function createReasoningContentRewriter() {
     const reasoning = typeof rc === 'string' ? rc : '';
 
     if (reasoning !== '' && !closed) {
-      // Reasoning delta: open the block on the first one, then append raw.
+      // Reasoning delta: open the block on the first one (prefix `<think>`), then
+      // append raw. If the SAME chunk also carries real answer `content`, close
+      // the block BEFORE it so the answer isn't absorbed into the reasoning
+      // (some providers send the reasoning→answer transition in one delta).
       const origContent = typeof delta.content === 'string' ? delta.content : '';
-      delta.content = (open ? '' : '<think>') + reasoning + origContent;
+      const prefix = open ? '' : '<think>';
       open = true;
+      if (origContent !== '') {
+        delta.content = prefix + reasoning + '</think>' + origContent;
+        closed = true;
+      } else {
+        delta.content = prefix + reasoning;
+      }
       delete delta.reasoning_content;
       return chunk;
     }

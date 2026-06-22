@@ -23,8 +23,6 @@ function RegenerateSceneCard({
   stopped,
   failed,
   sceneId,
-  instruction,
-  elementCount,
   failText,
   toolCallId,
 }: {
@@ -32,8 +30,6 @@ function RegenerateSceneCard({
   stopped: boolean;
   failed: boolean;
   sceneId?: string;
-  instruction?: string;
-  elementCount: number;
   failText?: string;
   toolCallId: string;
 }) {
@@ -53,8 +49,6 @@ function RegenerateSceneCard({
         ? t('edit.regenScene.notGenerated')
         : t('edit.regenScene.updated');
 
-  const hasBody = !!instruction || elementCount > 0 || (failed && !!failText);
-
   return (
     <ToolCard
       title={t('edit.regenScene.title')}
@@ -64,21 +58,9 @@ function RegenerateSceneCard({
       statusLabel={statusLabel}
       // No Restore for a stopped/failed run — nothing was applied to revert.
       barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
-    >
-      {hasBody ? (
-        <>
-          {failed && failText ? (
-            <p className="text-amber-600 dark:text-amber-500">{failText}</p>
-          ) : null}
-          {instruction ? <p className="italic">“{instruction}”</p> : null}
-          {elementCount > 0 ? (
-            <p className="font-mono">
-              {t('edit.regenScene.elementsCount', { count: elementCount })}
-            </p>
-          ) : null}
-        </>
-      ) : null}
-    </ToolCard>
+      // Non-expandable card: surface only the actionable failure reason inline.
+      failText={failed ? failText : undefined}
+    />
   );
 }
 
@@ -105,8 +87,6 @@ export const RegenerateSceneUI = makeAssistantToolUI<
         stopped={stopped}
         failed={failed}
         sceneId={args?.sceneId ?? result?.details?.sceneId}
-        instruction={args?.instruction}
-        elementCount={result?.details?.content?.elements?.length ?? 0}
         failText={result?.content?.[0]?.text}
         toolCallId={toolCallId}
       />

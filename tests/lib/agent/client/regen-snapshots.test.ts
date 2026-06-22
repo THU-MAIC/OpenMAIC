@@ -49,6 +49,30 @@ describe('regen-snapshots store', () => {
     expect(useRegenSnapshots.getState().snapshots['call-1'].restored).toBe(true);
   });
 
+  it('resume of a content-only edit preserves actions (does not pass actions:[])', () => {
+    const apply = vi.fn();
+    // edit_interactive_html / action-less regen: redo patch has content, NO actions.
+    useRegenSnapshots
+      .getState()
+      .setSnapshot('call-1', { ...SNAP, redo: { content: SNAP.redo.content } });
+    useRegenSnapshots.getState().restore('call-1', apply); // undo
+    useRegenSnapshots.getState().restore('call-1', apply); // resume (redo)
+    // The redo patch must NOT carry actions — else updateScene wipes narration.
+    expect(apply.mock.calls[1][1]).toEqual({ content: SNAP.redo.content });
+    expect(apply.mock.calls[1][1]).not.toHaveProperty('actions');
+  });
+
+  it('resume of an actions-only redo preserves content (no content key)', () => {
+    const apply = vi.fn();
+    useRegenSnapshots
+      .getState()
+      .setSnapshot('call-1', { ...SNAP, redo: { actions: SNAP.redo.actions } });
+    useRegenSnapshots.getState().restore('call-1', apply);
+    useRegenSnapshots.getState().restore('call-1', apply);
+    expect(apply.mock.calls[1][1]).toEqual({ actions: SNAP.redo.actions });
+    expect(apply.mock.calls[1][1]).not.toHaveProperty('content');
+  });
+
   it('restored snapshot without redo data cannot resume (stays restored)', () => {
     const apply = vi.fn();
     const { redo: _redo, ...noRedo } = SNAP;

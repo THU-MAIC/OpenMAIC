@@ -72,6 +72,7 @@ export function ToolCard({
   status,
   statusLabel,
   barAction,
+  failText,
 }: {
   title: string;
   icon: LucideIcon;
@@ -81,13 +82,17 @@ export function ToolCard({
   statusLabel: string;
   /** Inline action rendered on the always-visible row (e.g. Restore). */
   barAction?: ReactNode;
+  /** Actionable failure reason, shown as a small inline line below the row (no
+   *  disclosure toggle). Only pass it on failure; success cards stay single-row. */
+  failText?: string;
   /** Accepted for source compatibility but IGNORED — cards are non-expandable. */
   children?: ReactNode;
 }) {
   const running = status === 'running';
   const StatusIcon = STATUS_ICON[status];
 
-  // Non-expandable by design: a single status row, no detail disclosure.
+  // Non-expandable by design: a single status row. The only detail surfaced is an
+  // actionable failure reason (inline, no toggle).
   return (
     <div
       className={cn(
@@ -112,6 +117,11 @@ export function ToolCard({
           </span>
         </span>
       </div>
+      {failText ? (
+        <div className="border-t border-border px-2.5 py-1.5 text-[11px] text-amber-600 dark:text-amber-500">
+          {failText}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -1,32 +1,19 @@
 'use client';
 
 /**
- * Tool-call UI for `regenerate_scene_actions`. Renders via the shared `ToolCard`;
- * the body shows the resulting action breakdown (the board's red/green line diff
- * isn't rendered — this tool regenerates a scene's actions wholesale rather than
- * producing a text diff).
+ * Tool-call UI for `regenerate_scene_actions`. Renders via the shared `ToolCard`
+ * as a single non-expandable status row (only an actionable failure reason is
+ * surfaced inline). The "还原 / Restore previous" button lives on the card row.
  */
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { cueLabel } from '@/components/edit/ActionsBar/cue-meta';
 import { ToolCard, isStoppedResult, type ToolStatus } from './tool-card';
 import { RestoreButton } from './restore-button';
-
-type TFn = (key: string, options?: Record<string, unknown>) => string;
 
 interface RegenerateResult {
   content?: { type: string; text?: string }[];
   details?: { sceneId?: string; actions?: { type?: string }[] };
-}
-
-function summarize(actions: { type?: string }[], t: TFn): string {
-  const counts = new Map<string, number>();
-  for (const a of actions) {
-    const type = a?.type ?? 'action';
-    counts.set(type, (counts.get(type) ?? 0) + 1);
-  }
-  return [...counts.entries()].map(([type, n]) => `${n} ${cueLabel(type, t)}`).join(' · ');
 }
 
 function RegenerateActionsCard({
@@ -34,7 +21,6 @@ function RegenerateActionsCard({
   stopped,
   failed,
   sceneId,
-  actions,
   failText,
   toolCallId,
 }: {
@@ -42,7 +28,6 @@ function RegenerateActionsCard({
   stopped: boolean;
   failed: boolean;
   sceneId?: string;
-  actions: { type?: string }[];
   failText?: string;
   toolCallId: string;
 }) {
@@ -62,8 +47,6 @@ function RegenerateActionsCard({
         ? t('edit.regen.notGenerated')
         : t('edit.regen.updated');
 
-  const hasBody = actions.length > 0 || (failed && !!failText);
-
   return (
     <ToolCard
       title={t('edit.regen.title')}
@@ -73,16 +56,9 @@ function RegenerateActionsCard({
       statusLabel={statusLabel}
       // No Restore for a stopped/failed run — nothing was applied to revert.
       barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
-    >
-      {hasBody ? (
-        <>
-          {failed && failText ? (
-            <p className="text-amber-600 dark:text-amber-500">{failText}</p>
-          ) : null}
-          {actions.length > 0 ? <p className="font-mono">{summarize(actions, t)}</p> : null}
-        </>
-      ) : null}
-    </ToolCard>
+      // Non-expandable card: surface only the actionable failure reason inline.
+      failText={failed ? failText : undefined}
+    />
   );
 }
 
@@ -105,7 +81,6 @@ export const RegenerateSceneActionsUI = makeAssistantToolUI<{ sceneId?: string }
           stopped={stopped}
           failed={failed}
           sceneId={args?.sceneId ?? result?.details?.sceneId}
-          actions={result?.details?.actions ?? []}
           failText={result?.content?.[0]?.text}
           toolCallId={toolCallId}
         />

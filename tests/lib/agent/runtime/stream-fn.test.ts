@@ -90,6 +90,28 @@ describe('createPartMapper — reasoning/thinking channel', () => {
     expect(events.some((e) => e.type === 'thinking_end')).toBe(true);
   });
 
+  it('opens a SECOND thinking block when reasoning resumes after it ended (same turn)', () => {
+    const partial = emptyPartial();
+    const events: AssistantMessageEvent[] = [];
+    const mapper = createPartMapper(partial, (e) => events.push(e));
+
+    mapper.handle({ type: 'reasoning-delta', text: 'first' });
+    mapper.handle({ type: 'reasoning-end' });
+    mapper.handle({ type: 'text-delta', text: 'answer' });
+    mapper.handle({ type: 'reasoning-delta', text: 'second' });
+    mapper.handle({ type: 'reasoning-end' });
+    mapper.finalize();
+
+    // Two distinct thinking blocks, not one merged block.
+    const thinking = partial.content.filter((c) => (c as { type: string }).type === 'thinking');
+    expect(thinking).toEqual([
+      { type: 'thinking', thinking: 'first' },
+      { type: 'thinking', thinking: 'second' },
+    ]);
+    expect(events.filter((e) => e.type === 'thinking_start')).toHaveLength(2);
+    expect(events.filter((e) => e.type === 'thinking_end')).toHaveLength(2);
+  });
+
   it('ignores empty reasoning deltas (no thinking block created)', () => {
     const partial = emptyPartial();
     const events: AssistantMessageEvent[] = [];

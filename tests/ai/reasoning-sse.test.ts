@@ -77,6 +77,15 @@ describe('createReasoningContentRewriter', () => {
     expect(contentOf(out)).toBe('</think>');
   });
 
+  it('closes the block within a chunk that carries BOTH reasoning_content and content', () => {
+    const rw = createReasoningContentRewriter();
+    // Some providers send the transition in one delta: reasoning + answer.
+    const out = rw(chunk({ reasoning_content: 'I think', content: 'answer' }));
+    // The answer must NOT be absorbed into <think>; the block closes before it.
+    expect(contentOf(out)).toBe('<think>I think</think>answer');
+    expect(hasRC(out)).toBe(false);
+  });
+
   it('passes through a plain (no-reasoning) content stream unchanged', () => {
     const rw = createReasoningContentRewriter();
     const out = rw(chunk({ content: 'hello' }));

@@ -33,10 +33,12 @@ export interface RegenSnapshot {
   redo?: { content?: SceneContent; actions?: Action[] };
 }
 
-/** Re-applies the snapshot to the stage store (injected so the store stays testable). */
+/** Re-applies the snapshot to the stage store (injected so the store stays testable).
+ *  `actions` is optional: omitting it preserves the scene's current actions
+ *  (updateScene shallow-merges), whereas `actions: []` would wipe them. */
 export type RestoreApplyFn = (
   sceneId: string,
-  patch: { content?: SceneContent; actions: Action[] },
+  patch: { content?: SceneContent; actions?: Action[] },
 ) => void;
 
 interface RegenSnapshotsState {
@@ -75,15 +77,16 @@ export const useRegenSnapshots = create<RegenSnapshotsState>((set, get) => ({
       }));
       return;
     }
-    // Resume (redo) → re-apply the post-edit state, if it was captured.
+    // Resume (redo) → re-apply EXACTLY the post-edit patch the tool applied,
+    // including only the keys it actually carried. Injecting `actions: []` (or
+    // `content: undefined`) for a key the patch never had would clobber the
+    // scene's existing narration/content on resume.
     const redo = snap.redo;
     if (!redo) return;
-    apply(
-      snap.sceneId,
-      redo.content !== undefined
-        ? { content: redo.content, actions: redo.actions ?? [] }
-        : { actions: redo.actions ?? [] },
-    );
+    const patch: { content?: SceneContent; actions?: Action[] } = {};
+    if (redo.content !== undefined) patch.content = redo.content;
+    if (redo.actions !== undefined) patch.actions = redo.actions;
+    apply(snap.sceneId, patch);
     set((s) => ({
       snapshots: { ...s.snapshots, [toolCallId]: { ...snap, restored: false } },
     }));
