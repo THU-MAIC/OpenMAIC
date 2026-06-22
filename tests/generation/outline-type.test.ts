@@ -72,4 +72,30 @@ describe('changeOutlineType', () => {
     );
     expect(applyOutlineFallbacks(changeOutlineType(base, 'pbl'), true).type).toBe('pbl');
   });
+
+  it('preserves an existing procedural-skill widget config instead of downgrading it', () => {
+    const proc = changeOutlineType(
+      {
+        ...base,
+        type: 'interactive',
+        widgetType: 'procedural-skill',
+        widgetOutline: {
+          concept: 'Brake repair',
+          procedureType: 'repair',
+          steps: ['loosen', 'replace'],
+        },
+      },
+      'interactive',
+    );
+    expect(proc.widgetType).toBe('procedural-skill');
+    expect(proc.widgetOutline?.steps).toEqual(['loosen', 'replace']);
+  });
+
+  it('dedupes and caps seeded pbl targetSkills', () => {
+    const many = changeOutlineType(
+      { ...base, keyPoints: ['a', 'a', 'b', 'c', 'd', 'e', 'f', 'g'] },
+      'pbl',
+    );
+    expect(many.pblConfig?.targetSkills).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+  });
 });

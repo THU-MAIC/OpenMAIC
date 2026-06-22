@@ -588,7 +588,11 @@ function SceneRow({
                   <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
                 )}
                 {!disabled && outline.type === 'interactive' && (
-                  <InteractiveConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
+                  <InteractiveConfigDisclosure
+                    outline={outline}
+                    onUpdate={onUpdate}
+                    theme={theme}
+                  />
                 )}
                 {!disabled && outline.type === 'pbl' && (
                   <PblConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
@@ -1112,7 +1116,9 @@ function InteractiveConfigDisclosure({
   const concept = outline.widgetOutline?.concept ?? '';
 
   const setWidgetType = (next: WidgetType) => {
-    onUpdate({ widgetType: next, widgetOutline: { ...outline.widgetOutline, concept } });
+    // Reset to the shared field only — keeping the previous kind's type-specific
+    // widgetOutline fields (language/gameType/diagramType/…) would leak stale config.
+    onUpdate({ widgetType: next, widgetOutline: { concept } });
   };
   const setConcept = (next: string) => {
     onUpdate({ widgetType, widgetOutline: { ...outline.widgetOutline, concept: next } });

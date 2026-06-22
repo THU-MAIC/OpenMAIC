@@ -1,5 +1,4 @@
 import type { SceneOutline, WidgetOutline } from '@/lib/types/generation';
-import type { WidgetType } from '@/lib/types/widgets';
 
 type SceneType = SceneOutline['type'];
 
@@ -49,13 +48,11 @@ export function changeOutlineType(outline: SceneOutline, newType: SceneType): Sc
       return { ...baseOutline, quizConfig: outline.quizConfig ?? { ...DEFAULT_QUIZ_CONFIG } };
 
     case 'interactive': {
-      // Keep an already-valid widget config; otherwise seed a simulation widget.
-      // procedural-skill is a gated vocational feature and is not seeded here.
-      if (
-        outline.widgetType &&
-        outline.widgetType !== 'procedural-skill' &&
-        outline.widgetOutline
-      ) {
+      // Preserve any already-valid widget config — including a gated
+      // procedural-skill one, whose task-engine fields must not be silently
+      // dropped when the type is re-selected. Otherwise seed a simulation widget.
+      // (The manual widget picker never *creates* procedural-skill.)
+      if (outline.widgetType && outline.widgetOutline) {
         return {
           ...baseOutline,
           widgetType: outline.widgetType,
@@ -63,16 +60,17 @@ export function changeOutlineType(outline: SceneOutline, newType: SceneType): Sc
         };
       }
       const widgetOutline: WidgetOutline = { concept: outline.title || '' };
-      return { ...baseOutline, widgetType: 'simulation' as WidgetType, widgetOutline };
+      return { ...baseOutline, widgetType: 'simulation', widgetOutline };
     }
 
     case 'pbl': {
       if (outline.pblConfig?.projectTopic) {
         return { ...baseOutline, pblConfig: outline.pblConfig };
       }
-      const targetSkills = Array.from(
-        new Set((outline.keyPoints ?? []).filter(Boolean)),
-      ).slice(0, MAX_TARGET_SKILLS);
+      const targetSkills = Array.from(new Set((outline.keyPoints ?? []).filter(Boolean))).slice(
+        0,
+        MAX_TARGET_SKILLS,
+      );
       return {
         ...baseOutline,
         pblConfig: {
