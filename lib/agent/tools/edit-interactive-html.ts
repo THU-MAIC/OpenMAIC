@@ -38,7 +38,14 @@ export const EditInteractiveHtmlParams = Type.Object({
           'Exact text to find in the current page HTML — copied verbatim, including whitespace. ' +
           'Must be UNIQUE in the page; keep it as small as possible while still unique. Do not overlap edits.',
       }),
-      newText: Type.String({ description: 'The replacement text for this region.' }),
+      newText: Type.String({
+        description:
+          'The replacement for this region. Preserve the surrounding structure: keep all HTML tags, ' +
+          'attributes and ids that appear in oldText — to change only a visible label, include the ' +
+          'enclosing tags in BOTH oldText and newText and change just the text between them (e.g. ' +
+          'oldText "<button id="go">Start</button>" → newText "<button id="go">Begin</button>"). ' +
+          'Never drop an element or its id when you only mean to change its text or one attribute.',
+      }),
     }),
     {
       minItems: 1,
