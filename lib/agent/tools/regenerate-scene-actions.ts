@@ -64,8 +64,17 @@ export interface RegenerateActionsDeps {
    * `scene-actions`) and the route resolves that stage's model via MODEL_ROUTES
    * — independent of the `maic-agent` model driving the agent conversation. The
    * agent only decides WHICH tool to call; the tool owns its model.
+   *
+   * `signal` is the tool's abort signal (from `execute`): when the user cancels
+   * the turn, the in-flight generation call is aborted so it stops promptly
+   * instead of running to completion in the background.
    */
-  aiCall: (stage: LlmStage, systemPrompt: string, userPrompt: string) => Promise<string>;
+  aiCall: (
+    stage: LlmStage,
+    systemPrompt: string,
+    userPrompt: string,
+    signal?: AbortSignal,
+  ) => Promise<string>;
 
   /**
    * Returns the trusted scene/stage context for a given scene id.
@@ -157,7 +166,7 @@ export function makeRegenerateSceneActionsTool(
       'Only supply the sceneId — the scene data is loaded automatically.',
     parameters: RegenerateSceneActionsParams,
 
-    execute: async (_toolCallId, params) => {
+    execute: async (_toolCallId, params, signal) => {
       const { sceneId, previousSpeeches, userProfile } = params;
 
       // ── Resolve trusted scene context from deps (not from model args) ──
@@ -198,7 +207,7 @@ export function makeRegenerateSceneActionsTool(
         systemPrompt: string,
         userPrompt: string,
         _images?: Array<{ id: string; src: string }>,
-      ): Promise<string> => deps.aiCall('scene-actions', systemPrompt, userPrompt);
+      ): Promise<string> => deps.aiCall('scene-actions', systemPrompt, userPrompt, signal);
 
       // ── Generate actions ───────────────────────────────────────────────
       // Convert the runtime SceneContent shape to the generation-time shape that

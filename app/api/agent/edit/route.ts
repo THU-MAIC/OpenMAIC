@@ -101,14 +101,27 @@ export async function POST(req: NextRequest) {
   // Unrouted stages fall back to the client's active frontend model, so default
   // behaviour is unchanged unless an operator routes a stage explicitly.
   const stageCache = new Map<LlmStage, Awaited<ReturnType<typeof resolveModelFromRequest>>>();
-  const aiCall = async (stage: LlmStage, system: string, prompt: string): Promise<string> => {
+  const aiCall = async (
+    stage: LlmStage,
+    system: string,
+    prompt: string,
+    signal?: AbortSignal,
+  ): Promise<string> => {
     let resolved = stageCache.get(stage);
     if (!resolved) {
       resolved = await resolveModelFromRequest(req, body, stage);
       stageCache.set(stage, resolved);
     }
     const r = await callLLM(
-      { model: resolved.model, system, prompt, maxOutputTokens: resolved.modelInfo?.outputWindow },
+      {
+        model: resolved.model,
+        system,
+        prompt,
+        maxOutputTokens: resolved.modelInfo?.outputWindow,
+        // Abort the in-flight generation when the user cancels the turn — pi
+        // passes each tool an AbortSignal, which the tools thread through here.
+        abortSignal: signal,
+      },
       'maic-agent-regen',
       undefined,
       resolved.thinkingConfig,

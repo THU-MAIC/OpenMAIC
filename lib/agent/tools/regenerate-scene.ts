@@ -152,7 +152,7 @@ export function makeRegenerateSceneTool(
       'the current slide is loaded automatically as the editing baseline.',
     parameters: RegenerateSceneParams,
 
-    execute: async (_toolCallId, params) => {
+    execute: async (_toolCallId, params, signal) => {
       const { sceneId, instruction } = params;
 
       const ctxData: SceneContext | undefined = deps.getSceneContext(sceneId);
@@ -220,12 +220,12 @@ export function makeRegenerateSceneTool(
         systemPrompt: string,
         userPrompt: string,
         _images?: Array<{ id: string; src: string }>,
-      ): Promise<string> => deps.aiCall('scene-content:slide', systemPrompt, userPrompt);
+      ): Promise<string> => deps.aiCall('scene-content:slide', systemPrompt, userPrompt, signal);
       const actionsAiCall = (
         systemPrompt: string,
         userPrompt: string,
         _images?: Array<{ id: string; src: string }>,
-      ): Promise<string> => deps.aiCall('scene-actions', systemPrompt, userPrompt);
+      ): Promise<string> => deps.aiCall('scene-actions', systemPrompt, userPrompt, signal);
 
       // ── Step 1: regenerate slide content in EDIT MODE ──────────────────────
       // Lift existing images into the generator's resource channel: the baseline

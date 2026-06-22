@@ -69,6 +69,25 @@ describe('fix_interactive_html tool', () => {
     expect(seenUser).toContain('<button id="go">Go</button>');
   });
 
+  it('forwards the abort signal to the model call', async () => {
+    let seenSignal: AbortSignal | undefined;
+    const aiCall = vi.fn(
+      async (_stage: string, _system: string, _user: string, signal?: AbortSignal) => {
+        seenSignal = signal;
+        return FIXED;
+      },
+    );
+    const tool = makeFixInteractiveHtmlTool({
+      aiCall,
+      getSceneContext: (id) => (id === 'w1' ? interactiveCtx('w1', BROKEN) : undefined),
+    });
+    const ac = new AbortController();
+
+    await tool.execute('call-1', { sceneId: 'w1', bugDescription: 'x' }, ac.signal);
+
+    expect(seenSignal).toBe(ac.signal);
+  });
+
   it('refuses a non-interactive scene', async () => {
     const aiCall = vi.fn(async () => FIXED);
     const tool = makeFixInteractiveHtmlTool({

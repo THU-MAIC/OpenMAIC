@@ -61,7 +61,7 @@ export function makeFixInteractiveHtmlTool(
       'automatically and only the reported problem is changed. Works on interactive scenes only.',
     parameters: FixInteractiveHtmlParams,
 
-    execute: async (_toolCallId, params) => {
+    execute: async (_toolCallId, params, signal) => {
       const { sceneId, bugDescription } = params;
 
       const ctxData: SceneContext | undefined = deps.getSceneContext(sceneId);
@@ -101,7 +101,7 @@ export function makeFixInteractiveHtmlTool(
       // model (the same route that generated the page) — independent of the
       // agent conversation model. The generation fn stays stage-agnostic.
       const fixed = await fixInteractiveHtml(content.html, bugDescription, (system, prompt) =>
-        deps.aiCall('scene-content:interactive', system, prompt),
+        deps.aiCall('scene-content:interactive', system, prompt, signal),
       );
 
       if (!fixed) {
