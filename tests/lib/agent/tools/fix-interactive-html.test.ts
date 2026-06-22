@@ -47,7 +47,8 @@ function slideCtx(id: string): SceneContext {
 describe('fix_interactive_html tool', () => {
   it('fixes the interactive page and returns the fixed html', async () => {
     let seenUser = '';
-    const aiCall = vi.fn(async (_system: string, user: string) => {
+    const aiCall = vi.fn(async (stage: string, _system: string, user: string) => {
+      expect(stage).toBe('scene-content:interactive');
       seenUser = user;
       return FIXED;
     });

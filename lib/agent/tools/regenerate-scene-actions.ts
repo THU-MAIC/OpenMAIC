@@ -34,6 +34,7 @@ import type {
   GeneratedPBLContent,
 } from '@/lib/types/generation';
 import type { SceneContent } from '@/lib/types/stage';
+import type { LlmStage } from '@/lib/server/model-routes';
 
 // ── Scene context shape (client-sourced, injected via deps) ──────────────────
 
@@ -56,11 +57,15 @@ export interface SceneContext {
 
 export interface RegenerateActionsDeps {
   /**
-   * Server-side LLM text call, model already resolved by the route.
-   * Mirrors the `AICallFn` signature from the pipeline but without the
-   * optional images arg (actions generation doesn't use vision).
+   * Server-side LLM text call, resolving the model PER GENERATION STAGE.
+   *
+   * Each tool is a self-contained generation black box: it names the stage it is
+   * generating for (e.g. `scene-content:interactive`, `scene-content:slide`,
+   * `scene-actions`) and the route resolves that stage's model via MODEL_ROUTES
+   * — independent of the `maic-agent` model driving the agent conversation. The
+   * agent only decides WHICH tool to call; the tool owns its model.
    */
-  aiCall: (systemPrompt: string, userPrompt: string) => Promise<string>;
+  aiCall: (stage: LlmStage, systemPrompt: string, userPrompt: string) => Promise<string>;
 
   /**
    * Returns the trusted scene/stage context for a given scene id.
@@ -186,12 +191,14 @@ export function makeRegenerateSceneActionsTool(
         previousSpeeches: previousSpeeches ?? [],
       };
 
-      // Wrap deps.aiCall to match AICallFn (adds optional images param)
+      // Wrap deps.aiCall to match AICallFn (adds optional images param). Actions
+      // generation resolves the `scene-actions` stage model — the same route the
+      // course-generation actions path uses — not the agent conversation model.
       const aiCallFn = (
         systemPrompt: string,
         userPrompt: string,
         _images?: Array<{ id: string; src: string }>,
-      ): Promise<string> => deps.aiCall(systemPrompt, userPrompt);
+      ): Promise<string> => deps.aiCall('scene-actions', systemPrompt, userPrompt);
 
       // ── Generate actions ───────────────────────────────────────────────
       // Convert the runtime SceneContent shape to the generation-time shape that

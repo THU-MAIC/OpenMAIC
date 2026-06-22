@@ -9,6 +9,7 @@ import type { NextRequest } from 'next/server';
 import type { AgentEvent, AgentMessage } from '@earendil-works/pi-agent-core';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import type { LlmStage } from '@/lib/server/model-routes';
 import { createCallLlmStreamFn } from '@/lib/agent/runtime/stream-fn';
 import { buildAgent, buildSystemPrompt } from '@/lib/agent/runtime/build-agent';
 import { buildToolset } from '@/lib/agent/tools/registry';
@@ -92,12 +93,25 @@ export async function POST(req: NextRequest) {
     'maic-agent',
   );
 
-  const aiCall = async (system: string, prompt: string): Promise<string> => {
+  // Per-stage model resolution for the generation tools. Each tool is a
+  // self-contained black box that names the generation stage it produces (e.g.
+  // `scene-content:interactive`, `scene-content:slide`, `scene-actions`); we
+  // resolve that stage's model via MODEL_ROUTES (cached per stage for this turn),
+  // independent of the `maic-agent` conversation model that drives streamFn below.
+  // Unrouted stages fall back to the client's active frontend model, so default
+  // behaviour is unchanged unless an operator routes a stage explicitly.
+  const stageCache = new Map<LlmStage, Awaited<ReturnType<typeof resolveModelFromRequest>>>();
+  const aiCall = async (stage: LlmStage, system: string, prompt: string): Promise<string> => {
+    let resolved = stageCache.get(stage);
+    if (!resolved) {
+      resolved = await resolveModelFromRequest(req, body, stage);
+      stageCache.set(stage, resolved);
+    }
     const r = await callLLM(
-      { model, system, prompt, maxOutputTokens: modelInfo?.outputWindow },
+      { model: resolved.model, system, prompt, maxOutputTokens: resolved.modelInfo?.outputWindow },
       'maic-agent-regen',
       undefined,
-      thinkingConfig,
+      resolved.thinkingConfig,
     );
     return r.text;
   };

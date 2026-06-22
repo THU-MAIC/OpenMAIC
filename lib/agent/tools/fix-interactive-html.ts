@@ -97,7 +97,12 @@ export function makeFixInteractiveHtmlTool(
         };
       }
 
-      const fixed = await fixInteractiveHtml(content.html, bugDescription, deps.aiCall);
+      // Self-contained black box: resolve the `scene-content:interactive` stage
+      // model (the same route that generated the page) — independent of the
+      // agent conversation model. The generation fn stays stage-agnostic.
+      const fixed = await fixInteractiveHtml(content.html, bugDescription, (system, prompt) =>
+        deps.aiCall('scene-content:interactive', system, prompt),
+      );
 
       if (!fixed) {
         return {

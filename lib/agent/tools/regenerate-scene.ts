@@ -213,11 +213,19 @@ export function makeRegenerateSceneTool(
         };
       }
 
-      const aiCallFn = (
+      // Self-contained black box: slide content resolves the `scene-content:slide`
+      // stage model and actions resolve `scene-actions` — the same routes the
+      // course-generation path uses — independent of the agent conversation model.
+      const contentAiCall = (
         systemPrompt: string,
         userPrompt: string,
         _images?: Array<{ id: string; src: string }>,
-      ): Promise<string> => deps.aiCall(systemPrompt, userPrompt);
+      ): Promise<string> => deps.aiCall('scene-content:slide', systemPrompt, userPrompt);
+      const actionsAiCall = (
+        systemPrompt: string,
+        userPrompt: string,
+        _images?: Array<{ id: string; src: string }>,
+      ): Promise<string> => deps.aiCall('scene-actions', systemPrompt, userPrompt);
 
       // ── Step 1: regenerate slide content in EDIT MODE ──────────────────────
       // Lift existing images into the generator's resource channel: the baseline
@@ -230,7 +238,7 @@ export function makeRegenerateSceneTool(
         imageMapping,
       } = buildImageResources(slideBase);
 
-      const newContent = await generateSceneContent(outline, aiCallFn, {
+      const newContent = await generateSceneContent(outline, contentAiCall, {
         agents,
         languageDirective,
         editDirective: instruction,
@@ -267,7 +275,7 @@ export function makeRegenerateSceneTool(
         previousSpeeches: [],
       };
 
-      const actions = await generateSceneActions(outline, newContent, aiCallFn, {
+      const actions = await generateSceneActions(outline, newContent, actionsAiCall, {
         ctx,
         agents,
         languageDirective,
