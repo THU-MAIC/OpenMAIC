@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { useStageStore } from '@/lib/store';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import {
   useInteractiveIframePool,
@@ -23,16 +22,17 @@ import {
  * the fullscreen subtree during presentation mode (which calls requestFullscreen
  * on the playback stage, not on body); otherwise it lives on `document.body`.
  * A low z-index keeps it under Radix dialogs (e.g. the scene-switch confirm)
- * while still covering the canvas box during plain interactive playback. Hidden
- * (never unmounted) in edit mode and whenever the placeholder is gone, so the
- * document is preserved for a zero-reload return.
+ * while still covering the canvas box during interactive playback AND Pro-mode
+ * editing — the editor agent fixes interactive HTML, so the teacher must see the
+ * live page while editing. Visibility is driven by the placeholder's ownership
+ * (gone → hidden, never unmounted), so the document is preserved for a
+ * zero-reload return.
  */
 export function InteractiveIframeHost() {
   const entries = useInteractiveIframePool((s) => s.entries);
   const activeSceneId = useInteractiveIframePool((s) => s.activeSceneId);
   const reset = useInteractiveIframePool((s) => s.reset);
   const setActiveScene = useWidgetIframeStore((s) => s.setActiveScene);
-  const mode = useStageStore((s) => s.mode);
 
   // Portal into the fullscreen element when one is active (presentation mode
   // fullscreens the stage, and a body-portaled iframe would not be part of that
@@ -65,7 +65,7 @@ export function InteractiveIframeHost() {
           key={sceneId}
           sceneId={sceneId}
           entry={entry}
-          visible={mode !== 'edit' && entry.owner !== null && sceneId === activeSceneId}
+          visible={entry.owner !== null && sceneId === activeSceneId}
         />
       ))}
     </>,
