@@ -27,6 +27,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
+import type { WidgetType } from '@/lib/types/widgets';
+import { changeOutlineType } from '@/lib/generation/outline-type';
 
 type SceneType = SceneOutline['type'];
 
@@ -151,6 +153,15 @@ export function OutlinesEditor({
   const updateOutline = (index: number, updates: Partial<SceneOutline>) => {
     const next = [...outlines];
     next[index] = { ...next[index], ...updates };
+    onChange(normalizeOrder(next));
+  };
+
+  // Replace the whole outline object (not a partial merge) — used when changing
+  // type, so stale per-type config from the previous type is dropped instead of
+  // lingering and being persisted.
+  const replaceOutline = (index: number, outline: SceneOutline) => {
+    const next = [...outlines];
+    next[index] = outline;
     onChange(normalizeOrder(next));
   };
 
@@ -284,6 +295,7 @@ export function OutlinesEditor({
                       index={index}
                       outline={outline}
                       onUpdate={(updates) => updateOutline(index, updates)}
+                      onReplace={(next) => replaceOutline(index, next)}
                       onRemove={() => removeOutline(index)}
                       onMoveUp={() => moveOutline(index, 'up')}
                       onMoveDown={() => moveOutline(index, 'down')}
@@ -390,6 +402,7 @@ interface SceneRowProps {
   index: number;
   outline: SceneOutline;
   onUpdate: (updates: Partial<SceneOutline>) => void;
+  onReplace: (outline: SceneOutline) => void;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -410,6 +423,7 @@ function SceneRow({
   index,
   outline,
   onUpdate,
+  onReplace,
   onRemove,
   onMoveUp,
   onMoveDown,
@@ -570,7 +584,7 @@ function SceneRow({
             <div className="flex shrink-0 items-center gap-1 pt-0.5">
               <TypePill
                 type={outline.type}
-                onChange={(type) => onUpdate({ type })}
+                onChange={(type) => onReplace(changeOutlineType(outline, type))}
                 disabled={disabled}
                 label={sceneTypeLabel(outline.type)}
                 theme={theme}
@@ -635,9 +649,15 @@ function SceneRow({
             )}
           </div>
 
-          {/* Quiz config (popover) */}
+          {/* Type-specific config (popover) */}
           {outline.type === 'quiz' && !disabled && (
             <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} />
+          )}
+          {outline.type === 'interactive' && !disabled && (
+            <InteractiveConfigDisclosure outline={outline} onUpdate={onUpdate} />
+          )}
+          {outline.type === 'pbl' && !disabled && (
+            <PblConfigDisclosure outline={outline} onUpdate={onUpdate} />
           )}
         </div>
       </div>
@@ -1050,6 +1070,232 @@ function QuizConfigDisclosure({
               );
             })}
           </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const WIDGET_KINDS: ReadonlyArray<readonly [WidgetType, string]> = [
+  ['simulation', 'generation.widgetSimulation'],
+  ['diagram', 'generation.widgetDiagram'],
+  ['code', 'generation.widgetCode'],
+  ['game', 'generation.widgetGame'],
+  ['visualization3d', 'generation.widgetVisualization3d'],
+];
+
+function InteractiveConfigDisclosure({
+  outline,
+  onUpdate,
+}: {
+  outline: SceneOutline;
+  onUpdate: (updates: Partial<SceneOutline>) => void;
+}) {
+  const { t } = useI18n();
+  const widgetType = outline.widgetType ?? 'simulation';
+  const concept = outline.widgetOutline?.concept ?? '';
+
+  const setWidgetType = (next: WidgetType) => {
+    onUpdate({ widgetType: next, widgetOutline: { ...outline.widgetOutline, concept } });
+  };
+  const setConcept = (next: string) => {
+    onUpdate({ widgetType, widgetOutline: { ...outline.widgetOutline, concept: next } });
+  };
+
+  const currentLabel =
+    WIDGET_KINDS.find(([value]) => value === widgetType)?.[1] ?? 'generation.widgetSimulation';
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
+            'text-emerald-600 transition-colors hover:bg-emerald-500/[0.06] dark:text-emerald-300',
+          )}
+        >
+          <span>{t(currentLabel)}</span>
+          <ChevronDown className="size-3 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6} className="w-64 space-y-2.5 p-3">
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.interactiveWidgetKind')}
+          </span>
+          <div className="flex flex-wrap gap-1">
+            {WIDGET_KINDS.map(([value, labelKey]) => {
+              const selected = value === widgetType;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setWidgetType(value)}
+                  className={cn(
+                    'rounded-md border px-2 py-1.5 text-xs font-medium transition-all',
+                    selected
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                      : 'border-border/40 bg-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground',
+                  )}
+                >
+                  {t(labelKey)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.interactiveConcept')}
+          </span>
+          <input
+            type="text"
+            value={concept}
+            onChange={(event) => setConcept(event.target.value)}
+            placeholder={t('generation.interactiveConceptPlaceholder')}
+            className={cn(
+              'w-full rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs',
+              'focus:border-emerald-400/50 focus:outline-none focus:ring-0',
+            )}
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function PblConfigDisclosure({
+  outline,
+  onUpdate,
+}: {
+  outline: SceneOutline;
+  onUpdate: (updates: Partial<SceneOutline>) => void;
+}) {
+  const { t } = useI18n();
+  const [skillDraft, setSkillDraft] = useState('');
+  const projectTopic = outline.pblConfig?.projectTopic ?? '';
+  const projectDescription = outline.pblConfig?.projectDescription ?? '';
+  const skills = outline.pblConfig?.targetSkills ?? [];
+
+  const updateConfig = (updates: {
+    projectTopic?: string;
+    projectDescription?: string;
+    targetSkills?: string[];
+  }) => {
+    onUpdate({
+      pblConfig: {
+        projectTopic,
+        projectDescription,
+        targetSkills: skills,
+        ...(outline.pblConfig?.issueCount !== undefined && {
+          issueCount: outline.pblConfig.issueCount,
+        }),
+        ...updates,
+      },
+    });
+  };
+
+  const addSkill = () => {
+    const value = skillDraft.trim();
+    if (!value || skills.includes(value)) {
+      setSkillDraft('');
+      return;
+    }
+    updateConfig({ targetSkills: [...skills, value] });
+    setSkillDraft('');
+  };
+  const removeSkill = (skill: string) => {
+    updateConfig({ targetSkills: skills.filter((s) => s !== skill) });
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
+            'text-amber-600 transition-colors hover:bg-amber-500/[0.06] dark:text-amber-300',
+          )}
+        >
+          <span>{t('generation.pblConfigSummary')}</span>
+          <ChevronDown className="size-3 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6} className="w-72 space-y-2.5 p-3">
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.pblProjectTopic')}
+          </span>
+          <input
+            type="text"
+            value={projectTopic}
+            onChange={(event) => updateConfig({ projectTopic: event.target.value })}
+            placeholder={t('generation.pblProjectTopicPlaceholder')}
+            className={cn(
+              'w-full rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs',
+              'focus:border-amber-400/50 focus:outline-none focus:ring-0',
+            )}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.pblProjectDescription')}
+          </span>
+          <textarea
+            value={projectDescription}
+            onChange={(event) => updateConfig({ projectDescription: event.target.value })}
+            placeholder={t('generation.pblProjectDescriptionPlaceholder')}
+            rows={2}
+            className={cn(
+              'w-full resize-none rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs',
+              'focus:border-amber-400/50 focus:outline-none focus:ring-0',
+            )}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.pblTargetSkills')}
+          </span>
+          {skills.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {skills.map((skill) => (
+                <span
+                  key={skill}
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-200"
+                >
+                  {skill}
+                  <button
+                    type="button"
+                    onClick={() => removeSkill(skill)}
+                    aria-label={t('generation.removeKeyPoint')}
+                    className="inline-flex size-3 items-center justify-center rounded-full hover:bg-amber-500/20"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            type="text"
+            value={skillDraft}
+            onChange={(event) => setSkillDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addSkill();
+              }
+            }}
+            onBlur={addSkill}
+            placeholder={t('generation.pblAddSkill')}
+            className={cn(
+              'w-full rounded-md border border-dashed border-border/50 bg-background px-2 py-1.5 text-xs',
+              'focus:border-amber-400/50 focus:outline-none focus:ring-0',
+            )}
+          />
         </div>
       </PopoverContent>
     </Popover>
