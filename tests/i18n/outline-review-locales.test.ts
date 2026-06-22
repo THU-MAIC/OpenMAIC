@@ -78,6 +78,8 @@ const outlineReviewKeys = [
   'generation.pblProjectDescriptionPlaceholder',
   'generation.pblTargetSkills',
   'generation.pblAddSkill',
+  'generation.widgetProceduralSkill',
+  'generation.removeSkill',
 ] as const;
 
 const countInterpolatedKeys = [

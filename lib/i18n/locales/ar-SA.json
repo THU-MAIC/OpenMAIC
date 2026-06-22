@@ -485,6 +485,8 @@
     "pblProjectDescriptionPlaceholder": "ما الذي سينشئه الطلاب",
     "pblTargetSkills": "المهارات المستهدفة",
     "pblAddSkill": "إضافة مهارة",
+    "widgetProceduralSkill": "مهارة إجرائية",
+    "removeSkill": "إزالة المهارة",
     "dragSceneHint": "اسحب لإعادة الترتيب أو ركّز ثم اضغط Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "حذف المشهد",
     "backToRequirements": "العودة إلى المتطلبات",

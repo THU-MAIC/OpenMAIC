@@ -1115,7 +1115,16 @@ function InteractiveConfigDisclosure({
   const widgetType = outline.widgetType ?? 'simulation';
   const concept = outline.widgetOutline?.concept ?? '';
 
+  // A gated procedural-skill outline isn't manually selectable, but it can reach
+  // here via preservation; surface it as the current (selected) kind so it isn't
+  // mislabeled, and never clobber its task-engine fields on a same-kind re-select.
+  const kinds: ReadonlyArray<readonly [WidgetType, string]> =
+    widgetType === 'procedural-skill'
+      ? [['procedural-skill', 'generation.widgetProceduralSkill'], ...WIDGET_KINDS]
+      : WIDGET_KINDS;
+
   const setWidgetType = (next: WidgetType) => {
+    if (next === widgetType) return; // same kind — keep the existing widgetOutline as-is
     // Reset to the shared field only — keeping the previous kind's type-specific
     // widgetOutline fields (language/gameType/diagramType/…) would leak stale config.
     onUpdate({ widgetType: next, widgetOutline: { concept } });
@@ -1125,7 +1134,7 @@ function InteractiveConfigDisclosure({
   };
 
   const currentLabel =
-    WIDGET_KINDS.find(([value]) => value === widgetType)?.[1] ?? 'generation.widgetSimulation';
+    kinds.find(([value]) => value === widgetType)?.[1] ?? 'generation.widgetSimulation';
 
   return (
     <Popover>
@@ -1141,7 +1150,7 @@ function InteractiveConfigDisclosure({
             {t('generation.interactiveWidgetKind')}
           </span>
           <div className="flex flex-wrap gap-1">
-            {WIDGET_KINDS.map(([value, labelKey]) => {
+            {kinds.map(([value, labelKey]) => {
               const selected = value === widgetType;
               return (
                 <button
@@ -1282,7 +1291,7 @@ function PblConfigDisclosure({
                   <button
                     type="button"
                     onClick={() => removeSkill(skill)}
-                    aria-label={t('generation.removeKeyPoint')}
+                    aria-label={t('generation.removeSkill')}
                     className="inline-flex size-3 items-center justify-center rounded-full hover:bg-amber-500/20"
                   >
                     <X className="size-2.5" />

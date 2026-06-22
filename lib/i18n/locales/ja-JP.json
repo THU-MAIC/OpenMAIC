@@ -485,6 +485,8 @@
     "pblProjectDescriptionPlaceholder": "生徒が作成するもの",
     "pblTargetSkills": "対象スキル",
     "pblAddSkill": "スキルを追加",
+    "widgetProceduralSkill": "手順スキル",
+    "removeSkill": "スキルを削除",
     "dragSceneHint": "ドラッグして並び替え。フォーカス後 Ctrl/⌘ + ↑ / ↓ でも可",
     "deleteScene": "シーンを削除",
     "backToRequirements": "要件に戻る",

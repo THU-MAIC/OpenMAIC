@@ -470,6 +470,8 @@
     "pblProjectDescriptionPlaceholder": "學生將完成的專案",
     "pblTargetSkills": "目標技能",
     "pblAddSkill": "新增技能",
+    "widgetProceduralSkill": "操作技能",
+    "removeSkill": "移除技能",
     "dragSceneHint": "拖曳排序；或聚焦後按 Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "刪除場景",
     "backToRequirements": "返回修改需求",

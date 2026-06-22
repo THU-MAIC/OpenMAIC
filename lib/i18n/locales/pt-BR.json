@@ -485,6 +485,8 @@
     "pblProjectDescriptionPlaceholder": "O que os alunos vão criar",
     "pblTargetSkills": "Habilidades-alvo",
     "pblAddSkill": "Adicionar habilidade",
+    "widgetProceduralSkill": "Habilidade prática",
+    "removeSkill": "Remover habilidade",
     "dragSceneHint": "Arraste para reordenar; ou foque e pressione Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "Excluir cena",
     "backToRequirements": "Voltar aos objetivos",

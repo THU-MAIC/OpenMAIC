@@ -485,6 +485,8 @@
     "pblProjectDescriptionPlaceholder": "학생이 만들 결과물",
     "pblTargetSkills": "목표 역량",
     "pblAddSkill": "역량 추가",
+    "widgetProceduralSkill": "절차 기술",
+    "removeSkill": "역량 제거",
     "dragSceneHint": "드래그하여 순서 변경, 또는 포커스 후 Ctrl/⌘ + ↑ / ↓ 키 사용",
     "deleteScene": "장면 삭제",
     "backToRequirements": "요구사항으로 돌아가기",

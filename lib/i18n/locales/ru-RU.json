@@ -485,6 +485,8 @@
     "pblProjectDescriptionPlaceholder": "Что создадут учащиеся",
     "pblTargetSkills": "Целевые навыки",
     "pblAddSkill": "Добавить навык",
+    "widgetProceduralSkill": "Практический навык",
+    "removeSkill": "Удалить навык",
     "dragSceneHint": "Перетащите для сортировки или нажмите Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "Удалить сцену",
     "backToRequirements": "Назад к требованиям",

@@ -485,6 +485,8 @@
     "pblProjectDescriptionPlaceholder": "What students will build",
     "pblTargetSkills": "Target skills",
     "pblAddSkill": "Add skill",
+    "widgetProceduralSkill": "Procedural skill",
+    "removeSkill": "Remove skill",
     "dragSceneHint": "Drag to reorder; or focus and press Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "Delete scene",
     "backToRequirements": "Back to requirements",
