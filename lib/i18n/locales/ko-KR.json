@@ -268,7 +268,9 @@
           "examples": "“좀 더 구어체로” “편집한 내용에 맞춰”"
         }
       },
-      "newConversation": "새 대화"
+      "newConversation": "새 대화",
+      "reasoning": "추론 과정",
+      "thought": "생각한 시간"
     },
     "timeline": {
       "title": "내레이션 스크립트",
@@ -324,7 +326,8 @@
       "notGenerated": "생성 안 됨",
       "elementsCount": "요소 {{count}}개",
       "restore": "이전 상태로 복원",
-      "restored": "복원됨"
+      "restored": "복원됨",
+      "resume": "다시 적용"
     },
     "background": {
       "image": "이미지",

@@ -12,10 +12,12 @@
 
 export type PiPart =
   | { type: 'text'; text: string }
+  | { type: 'reasoning'; text: string }
   | { type: 'toolCall'; id: string; name: string; arguments: Record<string, unknown> };
 
 export type AssistantPart =
   | { type: 'text'; text: string }
+  | { type: 'reasoning'; text: string }
   | {
       type: 'tool-call';
       toolCallId: string;
@@ -41,6 +43,10 @@ export function mergeAssistantParts({ turns, toolResults, error }: MergeInput): 
     for (const p of turn) {
       if (p.type === 'text') {
         if (p.text) parts.push({ type: 'text', text: p.text });
+      } else if (p.type === 'reasoning') {
+        // Reasoning/thinking renders as assistant-ui's `reasoning` part (a
+        // collapsible panel), kept separate from the answer text. Empty drops.
+        if (p.text) parts.push({ type: 'reasoning', text: p.text });
       } else {
         const r = toolResults.get(p.id);
         parts.push({

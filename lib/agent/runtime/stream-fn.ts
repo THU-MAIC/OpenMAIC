@@ -18,6 +18,7 @@ import type {
   Context as PiContext,
   Message as PiMessage,
   TextContent,
+  ThinkingContent,
   Tool as PiTool,
   ToolCall,
 } from '@earendil-works/pi-ai';
@@ -111,6 +112,94 @@ export interface CallLlmStreamFnOptions {
   abortSignal?: AbortSignal;
 }
 
+/**
+ * Map AI SDK v6 `fullStream` parts into pi `AssistantMessageEvent`s, threaded
+ * onto a shared `partial` message. Stateful per turn (tracks the open text and
+ * thinking content blocks). Extracted from `pump` so the part→event mapping —
+ * especially the reasoning/thinking channel — is unit-testable without a live
+ * `streamLLM` call.
+ *
+ * Reasoning parts (`reasoning-start`/`reasoning-delta`/`reasoning-end`, produced
+ * by the provider layer's `extractReasoningMiddleware`) become pi
+ * `thinking_*` events plus a `thinking` content block, kept separate from the
+ * answer text so the UI can render a thinking panel and the body stays clean.
+ */
+export function createPartMapper(
+  partial: AssistantMessage,
+  push: (event: AssistantMessageEvent) => void,
+) {
+  let textIndex = -1;
+  let textBuf = '';
+  let thinkingIndex = -1;
+  let thinkingBuf = '';
+  let thinkingClosed = false;
+
+  const closeThinking = () => {
+    if (thinkingIndex >= 0 && !thinkingClosed) {
+      thinkingClosed = true;
+      push({ type: 'thinking_end', contentIndex: thinkingIndex, content: thinkingBuf, partial });
+    }
+  };
+
+  const handle = (part: Record<string, unknown>): void => {
+    const type = part.type as string;
+    if (type === 'text-delta' || type === 'text') {
+      const delta = (part.text ?? part.delta ?? part.textDelta ?? '') as string;
+      if (!delta) return;
+      if (textIndex < 0) {
+        textIndex = partial.content.length;
+        partial.content.push({ type: 'text', text: '' } satisfies TextContent);
+        push({ type: 'text_start', contentIndex: textIndex, partial });
+      }
+      textBuf += delta;
+      (partial.content[textIndex] as TextContent).text = textBuf;
+      push({ type: 'text_delta', contentIndex: textIndex, delta, partial });
+    } else if (type === 'reasoning-delta' || type === 'reasoning') {
+      const delta = (part.text ?? part.delta ?? '') as string;
+      if (!delta) return;
+      if (thinkingIndex < 0) {
+        thinkingIndex = partial.content.length;
+        partial.content.push({ type: 'thinking', thinking: '' } as ThinkingContent);
+        push({ type: 'thinking_start', contentIndex: thinkingIndex, partial });
+      }
+      thinkingBuf += delta;
+      (partial.content[thinkingIndex] as ThinkingContent).thinking = thinkingBuf;
+      push({ type: 'thinking_delta', contentIndex: thinkingIndex, delta, partial });
+    } else if (type === 'reasoning-end') {
+      closeThinking();
+    } else if (type === 'tool-call') {
+      const idx = partial.content.length;
+      const toolCall: ToolCall = {
+        type: 'toolCall',
+        id: (part.toolCallId ?? part.id) as string,
+        name: (part.toolName ?? part.name) as string,
+        arguments: (part.input ?? part.args ?? {}) as Record<string, unknown>,
+      };
+      // Capture provider-specific metadata (e.g. Gemini thought_signature) via
+      // the typed seam so it can be re-emitted on the next turn.
+      const meta = captureToolCallMetadata(part as never);
+      if (meta) (toolCall as { providerMetadata?: ToolCallProviderMetadata }).providerMetadata = meta;
+      partial.content.push(toolCall);
+      push({ type: 'toolcall_start', contentIndex: idx, partial });
+      push({ type: 'toolcall_end', contentIndex: idx, toolCall, partial });
+    } else if (type === 'error') {
+      throw (part.error as Error) ?? new Error('LLM stream error');
+    }
+    // ignore other v6 parts (start/finish-step/source/...)
+  };
+
+  const finalize = (): void => {
+    // Close the thinking block first (if the stream omitted reasoning-end), then
+    // the text block — preserves chronological thinking → text ordering.
+    closeThinking();
+    if (textIndex >= 0) {
+      push({ type: 'text_end', contentIndex: textIndex, content: textBuf, partial });
+    }
+  };
+
+  return { handle, finalize };
+}
+
 /** Build a pi `StreamFn` that calls OpenMAIC's connector instead of pi-ai providers. */
 export function createCallLlmStreamFn(opts: CallLlmStreamFnOptions): StreamFn {
   return ((_piModel, context: PiContext) => {
@@ -155,47 +244,11 @@ async function pump(
 
     stream.push({ type: 'start', partial });
 
-    let textIndex = -1;
-    let textBuf = '';
-
+    const mapper = createPartMapper(partial, (event) => stream.push(event));
     for await (const part of result.fullStream as AsyncIterable<Record<string, unknown>>) {
-      const type = part.type as string;
-      if (type === 'text-delta' || type === 'text') {
-        const delta = (part.text ?? part.delta ?? part.textDelta ?? '') as string;
-        if (!delta) continue;
-        if (textIndex < 0) {
-          textIndex = partial.content.length;
-          partial.content.push({ type: 'text', text: '' } satisfies TextContent);
-          stream.push({ type: 'text_start', contentIndex: textIndex, partial });
-        }
-        textBuf += delta;
-        (partial.content[textIndex] as TextContent).text = textBuf;
-        stream.push({ type: 'text_delta', contentIndex: textIndex, delta, partial });
-      } else if (type === 'tool-call') {
-        const idx = partial.content.length;
-        const toolCall: ToolCall = {
-          type: 'toolCall',
-          id: (part.toolCallId ?? part.id) as string,
-          name: (part.toolName ?? part.name) as string,
-          arguments: (part.input ?? part.args ?? {}) as Record<string, unknown>,
-        };
-        // Capture provider-specific metadata (e.g. Gemini thought_signature) via
-        // the typed seam so it can be re-emitted on the next turn.
-        const meta = captureToolCallMetadata(part as never);
-        if (meta)
-          (toolCall as { providerMetadata?: ToolCallProviderMetadata }).providerMetadata = meta;
-        partial.content.push(toolCall);
-        stream.push({ type: 'toolcall_start', contentIndex: idx, partial });
-        stream.push({ type: 'toolcall_end', contentIndex: idx, toolCall, partial });
-      } else if (type === 'error') {
-        throw (part.error as Error) ?? new Error('LLM stream error');
-      }
-      // ignore other v6 parts (start/finish-step/reasoning/source/...)
+      mapper.handle(part);
     }
-
-    if (textIndex >= 0) {
-      stream.push({ type: 'text_end', contentIndex: textIndex, content: textBuf, partial });
-    }
+    mapper.finalize();
 
     const hasToolCall = partial.content.some((c) => (c as ToolCall).type === 'toolCall');
     partial.stopReason = hasToolCall ? 'toolUse' : 'stop';

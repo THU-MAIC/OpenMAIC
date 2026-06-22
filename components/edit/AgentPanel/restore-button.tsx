@@ -7,7 +7,7 @@
  * card's always-visible bar (ToolCard `barAction`). Returns null when there is
  * no in-memory snapshot (e.g. a card restored from storage after a refresh).
  */
-import { Undo2 } from 'lucide-react';
+import { Redo2, Undo2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useRegenSnapshots } from '@/lib/agent/client/regen-snapshots';
 import { applyScenePatchInSync } from '@/lib/agent/client/apply-slide-content';
@@ -17,7 +17,9 @@ export function RestoreButton({ toolCallId }: { toolCallId: string }) {
   const snap = useRegenSnapshots((s) => s.snapshots[toolCallId]);
   if (!snap) return null;
 
-  if (snap.restored) {
+  // Undone but with no captured post-edit state (e.g. a card restored from
+  // storage after a refresh) → terminal undone state, nothing to resume.
+  if (snap.restored && !snap.redo) {
     return (
       <span
         title={t('edit.regenScene.restored')}
@@ -28,11 +30,15 @@ export function RestoreButton({ toolCallId }: { toolCallId: string }) {
     );
   }
 
+  // Toggle: undo while applied, resume (redo) once undone.
+  const resume = snap.restored;
+  const Icon = resume ? Redo2 : Undo2;
+  const label = resume ? t('edit.regenScene.resume') : t('edit.regenScene.restore');
   return (
     <button
       type="button"
-      title={t('edit.regenScene.restore')}
-      aria-label={t('edit.regenScene.restore')}
+      title={label}
+      aria-label={label}
       onClick={() =>
         useRegenSnapshots
           .getState()
@@ -40,7 +46,7 @@ export function RestoreButton({ toolCallId }: { toolCallId: string }) {
       }
       className="grid size-6 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
-      <Undo2 className="size-3.5" />
+      <Icon className="size-3.5" />
     </button>
   );
 }

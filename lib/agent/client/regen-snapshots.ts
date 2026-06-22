@@ -25,6 +25,12 @@ export interface RegenSnapshot {
    */
   actionsOnly?: boolean;
   restored: boolean;
+  /**
+   * Post-edit state (the patch the tool applied), kept so an undo can be RESUMED
+   * (redo). Absent for cards restored from storage after a refresh, where resume
+   * isn't possible (the in-memory state is gone).
+   */
+  redo?: { content?: SceneContent; actions?: Action[] };
 }
 
 /** Re-applies the snapshot to the stage store (injected so the store stays testable). */
@@ -36,6 +42,12 @@ export type RestoreApplyFn = (
 interface RegenSnapshotsState {
   snapshots: Record<string, RegenSnapshot>;
   setSnapshot: (toolCallId: string, snap: Omit<RegenSnapshot, 'restored'>) => void;
+  /**
+   * Toggle: when not yet restored, applies the pre-edit snapshot (undo) and marks
+   * it restored; when already restored, RE-applies the post-edit state (resume /
+   * redo) and toggles back. A no-op if there's no snapshot, or when resuming but
+   * no `redo` state was captured.
+   */
   restore: (toolCallId: string, apply: RestoreApplyFn) => void;
   /** Drop all snapshots (e.g. on "新对话") so stale entries don't accumulate. */
   clearAll: () => void;
@@ -49,15 +61,31 @@ export const useRegenSnapshots = create<RegenSnapshotsState>((set, get) => ({
     })),
   restore: (toolCallId, apply) => {
     const snap = get().snapshots[toolCallId];
-    if (!snap || snap.restored) return;
+    if (!snap) return;
+    if (!snap.restored) {
+      // Undo → pre-edit state.
+      apply(
+        snap.sceneId,
+        snap.actionsOnly
+          ? { actions: snap.actions }
+          : { content: snap.content, actions: snap.actions },
+      );
+      set((s) => ({
+        snapshots: { ...s.snapshots, [toolCallId]: { ...snap, restored: true } },
+      }));
+      return;
+    }
+    // Resume (redo) → re-apply the post-edit state, if it was captured.
+    const redo = snap.redo;
+    if (!redo) return;
     apply(
       snap.sceneId,
-      snap.actionsOnly
-        ? { actions: snap.actions }
-        : { content: snap.content, actions: snap.actions },
+      redo.content !== undefined
+        ? { content: redo.content, actions: redo.actions ?? [] }
+        : { actions: redo.actions ?? [] },
     );
     set((s) => ({
-      snapshots: { ...s.snapshots, [toolCallId]: { ...snap, restored: true } },
+      snapshots: { ...s.snapshots, [toolCallId]: { ...snap, restored: false } },
     }));
   },
   clearAll: () => set({ snapshots: {} }),

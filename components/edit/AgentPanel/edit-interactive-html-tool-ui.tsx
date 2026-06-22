@@ -2,36 +2,28 @@
 
 /**
  * Tool-call UI for `edit_interactive_html` (interactive-scene str_replace edits).
- * Renders via the shared `ToolCard`; the body reports how many edits applied, or
- * the actionable error when an edit could not be anchored. The "还原 / Restore
- * previous" button lives on the always-visible card row.
+ * A minimal, NON-expandable `ToolCard` — just the title + @scene pill + status
+ * badge, plus the "还原 / Restore previous" button on the always-visible row.
+ * (No expandable body: the edit count / error detail is intentionally omitted.)
  */
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { ToolCard, isStoppedResult, type ToolStatus } from './tool-card';
 import { RestoreButton } from './restore-button';
-
-interface EditInteractiveHtmlResult {
-  content?: { type: string; text?: string }[];
-  details?: { sceneId?: string; html?: string | null; editCount?: number };
-}
+import { deriveEditFailed, type EditInteractiveHtmlResult } from './edit-tool-state';
 
 function EditInteractiveHtmlCard({
   running,
   stopped,
   failed,
   sceneId,
-  editCount,
-  failText,
   toolCallId,
 }: {
   running: boolean;
   stopped: boolean;
   failed: boolean;
   sceneId?: string;
-  editCount: number;
-  failText?: string;
   toolCallId: string;
 }) {
   const { t } = useI18n();
@@ -50,8 +42,6 @@ function EditInteractiveHtmlCard({
         ? t('edit.fixHtml.notFixed')
         : t('edit.fixHtml.fixed');
 
-  const hasBody = (!failed && !stopped && editCount > 0) || (failed && !!failText);
-
   return (
     <ToolCard
       title={t('edit.fixHtml.title')}
@@ -61,18 +51,7 @@ function EditInteractiveHtmlCard({
       statusLabel={statusLabel}
       // No Restore for a stopped/failed run — nothing was applied to revert.
       barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
-    >
-      {hasBody ? (
-        <>
-          {failed && failText ? (
-            <p className="text-amber-600 dark:text-amber-500">{failText}</p>
-          ) : null}
-          {!failed && !stopped && editCount > 0 ? (
-            <p className="font-mono">{t('edit.fixHtml.editsCount', { count: editCount })}</p>
-          ) : null}
-        </>
-      ) : null}
-    </ToolCard>
+    />
   );
 }
 
@@ -85,19 +64,16 @@ export const EditInteractiveHtmlUI = makeAssistantToolUI<
     const running = status.type === 'running' || status.type === 'requires-action';
     // The user cancelled the turn before this tool finished → loud stopped state.
     const stopped = !running && isStoppedResult(result);
-    // pi-agent-core does not propagate a result's `isError` into the event, so a
-    // refusal / unappliable-edit (which returns `details.html === null`, i.e.
-    // nothing applied) would render as a green "Fixed" badge. Derive failure too.
-    const noHtmlApplied = !running && !stopped && result != null && result.details?.html == null;
-    const failed = !running && !stopped && (isError || status.type === 'incomplete' || noHtmlApplied);
+    // Bias-to-success failure derivation (see edit-tool-state): only an explicit
+    // error or a null-html refusal is a failure — a successful apply, or a
+    // missing/slimmed result, is never "failed".
+    const failed = deriveEditFailed({ running, stopped, isError: !!isError, result });
     return (
       <EditInteractiveHtmlCard
         running={running}
         stopped={stopped}
         failed={failed}
         sceneId={args?.sceneId ?? result?.details?.sceneId}
-        editCount={result?.details?.editCount ?? args?.edits?.length ?? 0}
-        failText={result?.content?.[0]?.text}
         toolCallId={toolCallId}
       />
     );

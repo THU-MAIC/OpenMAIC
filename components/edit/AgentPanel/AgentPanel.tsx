@@ -39,6 +39,7 @@ import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { MarkdownText } from './markdown-text';
+import { ReasoningPart } from './reasoning-part';
 import { RegenerateSceneActionsUI } from './regenerate-tool-ui';
 import { RegenerateSceneUI } from './regenerate-scene-tool-ui';
 import { EditInteractiveHtmlUI } from './edit-interactive-html-tool-ui';
@@ -49,13 +50,12 @@ const MAX_WIDTH = 640;
 const DEFAULT_WIDTH = 384;
 
 /** Capability rows shown in the empty state — read-only tips (not clickable),
- *  each a label + example phrasings. Slide vs interactive scenes expose
- *  different agent capabilities, so the tips differ by scene type. */
-const SLIDE_CAPABILITY_KEYS = [
+ *  each a label + example phrasings. One unified list describing what the agent
+ *  can do across scenes (slide content + narration + interactive-page fixing),
+ *  shown regardless of the active scene type. */
+const CAPABILITY_KEYS = [
   { label: 'edit.agent.cap.content.label', examples: 'edit.agent.cap.content.examples' },
   { label: 'edit.agent.cap.narration.label', examples: 'edit.agent.cap.narration.examples' },
-];
-const INTERACTIVE_CAPABILITY_KEYS = [
   { label: 'edit.agent.cap.fixHtml.label', examples: 'edit.agent.cap.fixHtml.examples' },
 ];
 
@@ -72,37 +72,57 @@ function UserMessage() {
 }
 
 function ThinkingIndicator() {
-  // Cursor-style shimmer label instead of bouncing dots — the bright band
-  // sweeps across "Thinking…" while we wait for the first streamed token.
-  return <span className="ai-thinking-shimmer text-[13px] font-medium">Thinking…</span>;
+  const { t } = useI18n();
+  // Cursor-style shimmer label — the bright band sweeps across the word while we
+  // wait for the next API call's first streamed token. Reasoning tokens are never
+  // rendered raw (think-blocks stripped upstream); thinking surfaces only here.
+  return <span className="ai-thinking-shimmer text-[13px] font-medium">{t('edit.agent.thinking')}</span>;
 }
 
 function AssistantMessage() {
   const { t } = useI18n();
-  // Return a primitive (string), not a fresh object — useMessage is backed by
-  // useSyncExternalStore which compares snapshots by Object.is, so a new object
-  // literal each render would loop forever ("Maximum update depth exceeded").
-  // Running with nothing yet → "thinking"; finished with nothing (user hit Stop
-  // before any token) → "stopped"; otherwise render the parts.
-  const phase = useMessage((m) => {
-    const hasContent = m.content.some(
-      (p) => (p.type === 'text' && p.text.length > 0) || p.type === 'tool-call',
-    );
-    if (hasContent) return 'content';
-    return m.status?.type === 'running' ? 'thinking' : 'stopped';
+  // Separate primitive selectors — useMessage is backed by useSyncExternalStore
+  // (Object.is snapshot compare), so returning a fresh object literal would loop.
+  const hasContent = useMessage((m) =>
+    m.content.some(
+      (p) =>
+        (p.type === 'text' && p.text.length > 0) ||
+        p.type === 'tool-call' ||
+        (p.type === 'reasoning' && p.text.length > 0),
+    ),
+  );
+  // Loading shows only while a NEW API call is pending its first token — not while
+  // tokens are streaming. Walk to the last meaningful part: live text → streaming
+  // (no loading); a finished tool call (result present) → next turn pending
+  // (loading); a still-running tool call → its card already spins (no loading);
+  // nothing yet → loading.
+  const showLoading = useMessage((m) => {
+    if (m.status?.type !== 'running') return false;
+    const parts = m.content as Array<{ type: string; text?: string; result?: unknown }>;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
+      if (p.type === 'text' && typeof p.text === 'string' && p.text.length > 0) return false;
+      if (p.type === 'tool-call') return p.result !== undefined;
+      // A reasoning part shows its own live "thinking…" label (with duration),
+      // so the separate shimmer indicator is redundant while reasoning streams.
+      if (p.type === 'reasoning' && typeof p.text === 'string' && p.text.length > 0) return false;
+    }
+    return true;
   });
+  const stopped = useMessage((m) => m.status?.type !== 'running');
 
   return (
-    <MessagePrimitive.Root className="min-w-0">
-      {phase === 'thinking' ? (
-        <ThinkingIndicator />
-      ) : phase === 'stopped' ? (
-        <span className="text-[12px] text-muted-foreground/60">{t('edit.agent.stopped')}</span>
-      ) : (
+    <MessagePrimitive.Root className="min-w-0 space-y-2">
+      {hasContent ? (
         <div className="min-w-0 space-y-2 text-[13px] leading-[1.6] text-foreground/90">
-          <MessagePrimitive.Parts components={{ Text: MarkdownText }} />
+          <MessagePrimitive.Parts components={{ Text: MarkdownText, Reasoning: ReasoningPart }} />
         </div>
-      )}
+      ) : null}
+      {showLoading ? (
+        <ThinkingIndicator />
+      ) : stopped && !hasContent ? (
+        <span className="text-[12px] text-muted-foreground/60">{t('edit.agent.stopped')}</span>
+      ) : null}
     </MessagePrimitive.Root>
   );
 }
@@ -137,13 +157,14 @@ export function AgentPanel({
   // Interactive scenes expose a different agent capability (fix the page's bugs)
   // than slides (regenerate content/narration), so the empty-state copy and the
   // composer placeholder switch by scene type.
+  // Empty-state copy is unified (no slide/interactive split) — the capability
+  // list above already covers fixing interactive pages. The composer placeholder
+  // still adapts to the active scene type.
   const isInteractive = scene?.type === 'interactive';
-  const capabilityKeys = isInteractive ? INTERACTIVE_CAPABILITY_KEYS : SLIDE_CAPABILITY_KEYS;
-  const emptyTitleKey = isInteractive ? 'edit.agent.interactive.emptyTitle' : 'edit.agent.emptyTitle';
-  const emptyLeadKey = isInteractive ? 'edit.agent.interactive.lead' : 'edit.agent.empty.lead';
-  const emptyBoundaryKey = isInteractive
-    ? 'edit.agent.interactive.boundary'
-    : 'edit.agent.empty.boundary';
+  const capabilityKeys = CAPABILITY_KEYS;
+  const emptyTitleKey = 'edit.agent.emptyTitle';
+  const emptyLeadKey = 'edit.agent.empty.lead';
+  const emptyBoundaryKey = 'edit.agent.empty.boundary';
   const placeholderKey = isInteractive ? 'edit.agent.interactive.placeholder' : 'edit.agent.placeholder';
 
   // Drag-to-resize from the left edge (pointer capture, direct DOM write).

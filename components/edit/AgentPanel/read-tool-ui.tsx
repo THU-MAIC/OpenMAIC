@@ -48,7 +48,11 @@ export const ReadSceneContentUI = makeAssistantToolUI<{ sceneId?: string }, Read
     toolName: 'read_scene_content',
     render: ({ args, status, result, isError }) => {
       const running = status.type === 'running' || status.type === 'requires-action';
-      const failed = !running && (isError || status.type === 'incomplete');
+      // Bias to success: a read that ran is "done". Only an explicit `isError`
+      // is a failure — a missing/unpropagated result (which assistant-ui surfaces
+      // as an `incomplete` part status) is NOT, otherwise a successful read shows
+      // a spurious ✕ both live and after a refresh restores it without a result.
+      const failed = !running && !!isError;
       const sceneId = args?.sceneId ?? result?.details?.sceneId;
       return <ReadCard running={running} failed={failed} sceneId={sceneId} />;
     },

@@ -6,20 +6,12 @@
  * optional `@scene` pill, an optional inline bar-action (always visible on the
  * row — e.g. a Restore button), an icon-only status mark (running = violet
  * spinner, done = emerald check ✓, failed = amber cross ✗; the text label is a
- * hover tooltip), and an optional expandable body. Every tool card (regenerate /
+ * hover tooltip). Tool cards are intentionally NOT expandable — they show a
+ * single status row with no detail disclosure. Every tool card (regenerate /
  * read / future) renders through this shell so they stay visually uniform.
  */
 import type { ReactNode } from 'react';
-import { useState } from 'react';
-import {
-  AtSign,
-  Check,
-  ChevronDown,
-  CircleStop,
-  Loader2,
-  X,
-  type LucideIcon,
-} from 'lucide-react';
+import { AtSign, Check, CircleStop, Loader2, X, type LucideIcon } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { useStageStore } from '@/lib/store/stage';
 
@@ -80,7 +72,6 @@ export function ToolCard({
   status,
   statusLabel,
   barAction,
-  children,
 }: {
   title: string;
   icon: LucideIcon;
@@ -90,14 +81,13 @@ export function ToolCard({
   statusLabel: string;
   /** Inline action rendered on the always-visible row (e.g. Restore). */
   barAction?: ReactNode;
-  /** Expandable body; when present a chevron toggles it open. */
+  /** Accepted for source compatibility but IGNORED — cards are non-expandable. */
   children?: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
   const running = status === 'running';
-  const expandable = !running && Boolean(children);
   const StatusIcon = STATUS_ICON[status];
 
+  // Non-expandable by design: a single status row, no detail disclosure.
   return (
     <div
       className={cn(
@@ -105,23 +95,7 @@ export function ToolCard({
         running ? 'border-violet-300 dark:border-violet-500/40' : 'border-border',
       )}
     >
-      {/* Row is a div (not a button) so the inline barAction can be a real,
-          independently-clickable button without invalid nested-button markup. */}
-      <div
-        role={expandable ? 'button' : undefined}
-        tabIndex={expandable ? 0 : undefined}
-        onClick={() => expandable && setOpen((v) => !v)}
-        onKeyDown={(e) => {
-          if (expandable && (e.key === 'Enter' || e.key === ' ')) {
-            e.preventDefault();
-            setOpen((v) => !v);
-          }
-        }}
-        className={cn(
-          'flex w-full items-center gap-2 bg-muted/50 px-2.5 py-2 text-left',
-          expandable ? 'cursor-pointer' : 'cursor-default',
-        )}
-      >
+      <div className="flex w-full items-center gap-2 bg-muted/50 px-2.5 py-2 text-left">
         <Icon className="size-3.5 shrink-0 text-muted-foreground" />
         {/* Title takes the free space and truncates; the @scene pill rides in the
             right cluster next to the status mark, so pills stay right-aligned
@@ -131,28 +105,13 @@ export function ToolCard({
         </span>
 
         <span className="ml-auto flex shrink-0 items-center gap-1.5">
-          {barAction ? (
-            <span onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
-              {barAction}
-            </span>
-          ) : null}
+          {barAction ? <span>{barAction}</span> : null}
           <ScenePill sceneId={sceneId} />
           <span title={statusLabel} className={cn('inline-flex items-center', STATUS_TONE[status])}>
             <StatusIcon className={cn('size-4', running && 'animate-spin')} />
           </span>
-          {expandable && (
-            <ChevronDown
-              className={cn('size-3.5 text-neutral-400 transition-transform', open && 'rotate-180')}
-            />
-          )}
         </span>
       </div>
-
-      {open && expandable && (
-        <div className="space-y-2 border-t border-border px-2.5 py-2 text-[11px] text-muted-foreground">
-          {children}
-        </div>
-      )}
     </div>
   );
 }

@@ -327,7 +327,10 @@
           "examples": "“The start button does nothing”, “Panels overlap on mobile”"
         }
       },
-      "newConversation": "New conversation"
+      "newConversation": "New conversation",
+      "thinking": "Thinking…",
+      "reasoning": "Reasoning",
+      "thought": "Thought for"
     },
     "timeline": {
       "title": "Narration script",
@@ -383,7 +386,8 @@
       "notGenerated": "Not generated",
       "elementsCount": "{{count}} elements",
       "restore": "Restore previous",
-      "restored": "Restored"
+      "restored": "Restored",
+      "resume": "Resume"
     },
     "fixHtml": {
       "title": "Fix interactive page",

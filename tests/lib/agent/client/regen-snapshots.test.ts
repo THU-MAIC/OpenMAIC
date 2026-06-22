@@ -7,6 +7,11 @@ const SNAP = {
   sceneId: 's1',
   content: { type: 'slide', canvas: { id: 'c', elements: [] } } as unknown as SceneContent,
   actions: [{ type: 'speech', id: 'a_old' } as never],
+  // post-edit state, so an undo can be resumed (redo)
+  redo: {
+    content: { type: 'slide', canvas: { id: 'c', elements: [{ id: 'e' }] } } as unknown as SceneContent,
+    actions: [{ type: 'speech', id: 'a_new' } as never],
+  },
 };
 
 describe('regen-snapshots store', () => {
@@ -21,18 +26,37 @@ describe('regen-snapshots store', () => {
     expect(s.restored).toBe(false);
   });
 
-  it('restore re-applies the snapshot once and marks it restored', () => {
+  it('restore toggles: undo applies the pre-edit snapshot, resume re-applies the post-edit (redo)', () => {
     const apply = vi.fn();
     useRegenSnapshots.getState().setSnapshot('call-1', SNAP);
 
+    // First click = undo → pre-edit state.
     useRegenSnapshots.getState().restore('call-1', apply);
-    expect(apply).toHaveBeenCalledTimes(1);
-    expect(apply).toHaveBeenCalledWith('s1', { content: SNAP.content, actions: SNAP.actions });
+    expect(apply).toHaveBeenNthCalledWith(1, 's1', { content: SNAP.content, actions: SNAP.actions });
     expect(useRegenSnapshots.getState().snapshots['call-1'].restored).toBe(true);
 
-    // Second restore is a no-op.
+    // Second click = resume (redo) → post-edit state, toggles back.
     useRegenSnapshots.getState().restore('call-1', apply);
+    expect(apply).toHaveBeenNthCalledWith(2, 's1', {
+      content: SNAP.redo.content,
+      actions: SNAP.redo.actions,
+    });
+    expect(useRegenSnapshots.getState().snapshots['call-1'].restored).toBe(false);
+
+    // Third click = undo again.
+    useRegenSnapshots.getState().restore('call-1', apply);
+    expect(apply).toHaveBeenCalledTimes(3);
+    expect(useRegenSnapshots.getState().snapshots['call-1'].restored).toBe(true);
+  });
+
+  it('restored snapshot without redo data cannot resume (stays restored)', () => {
+    const apply = vi.fn();
+    const { redo: _redo, ...noRedo } = SNAP;
+    useRegenSnapshots.getState().setSnapshot('call-1', noRedo);
+    useRegenSnapshots.getState().restore('call-1', apply); // undo
+    useRegenSnapshots.getState().restore('call-1', apply); // no redo → no-op
     expect(apply).toHaveBeenCalledTimes(1);
+    expect(useRegenSnapshots.getState().snapshots['call-1'].restored).toBe(true);
   });
 
   it('restore is a no-op for an unknown toolCallId', () => {

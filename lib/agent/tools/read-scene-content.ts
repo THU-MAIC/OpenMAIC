@@ -99,8 +99,21 @@ function extractElementText(el: unknown): string {
 // Interactive pages are edited with `edit_interactive_html`, which needs the
 // model to author EXACT `oldText` anchors — so it must see the full, raw,
 // un-escaped HTML (not a truncated JSON projection). Cap only as a pathological
-// safety net; real pages are well under this.
-const INTERACTIVE_HTML_CAP = 60000;
+// safety net; real pages (after eliding base64) are well under this.
+const INTERACTIVE_HTML_CAP = 120000;
+
+// Generated pages often inline vendor libs / media as huge base64 data-URIs
+// (a single page can be ~760KB, ~95% base64). That payload is noise the model
+// can't usefully edit and it pushes the actual code past any cap, so the model
+// never sees the real JS/markup it needs to fix. Elide the base64 body to a tiny
+// marker for the MODEL'S VIEW only — the edit tool still applies against the full
+// stored HTML, and the model authors oldText from the real (non-base64) code.
+function elideDataUris(html: string): string {
+  return html.replace(
+    /(data:[^;,]*;base64,)([A-Za-z0-9+/=]+)/g,
+    (_m, prefix: string, payload: string) => `${prefix}…[${payload.length} base64 chars elided]`,
+  );
+}
 
 function projectContent(content: SceneContext['content']): string {
   const c = content as
@@ -109,13 +122,15 @@ function projectContent(content: SceneContext['content']): string {
 
   // Interactive: return the full page HTML verbatim so edits can anchor exactly.
   if (c?.type === 'interactive') {
-    const html = typeof c.html === 'string' ? c.html : '';
-    if (!html) return '(this interactive scene has no embedded HTML)';
+    const raw = typeof c.html === 'string' ? c.html : '';
+    if (!raw) return '(this interactive scene has no embedded HTML)';
+    // Elide base64 payloads first so the real code is visible within the cap.
+    const html = elideDataUris(raw);
     const capped =
       html.length > INTERACTIVE_HTML_CAP
         ? `${html.slice(0, INTERACTIVE_HTML_CAP)}…(truncated)`
         : html;
-    return `Interactive page HTML (to fix a bug, call edit_interactive_html with exact oldText snippets copied from below):\n${capped}`;
+    return `Interactive page HTML (to fix a bug, call edit_interactive_html with exact oldText snippets copied verbatim from below; base64 payloads are shown elided — never use them as oldText):\n${capped}`;
   }
 
   let projection: string;

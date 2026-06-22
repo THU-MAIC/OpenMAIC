@@ -327,7 +327,10 @@
           "examples": "「開始按鈕點了沒反應」、「手機上排版重疊」"
         }
       },
-      "newConversation": "新對話"
+      "newConversation": "新對話",
+      "thinking": "思考中…",
+      "reasoning": "思考過程",
+      "thought": "已思考"
     },
     "timeline": {
       "title": "講解腳本",
@@ -383,7 +386,8 @@
       "notGenerated": "未生成",
       "elementsCount": "{{count}} 個元素",
       "restore": "還原到重生成前",
-      "restored": "已還原"
+      "restored": "已還原",
+      "resume": "恢復"
     },
     "fixHtml": {
       "title": "修復互動頁",
