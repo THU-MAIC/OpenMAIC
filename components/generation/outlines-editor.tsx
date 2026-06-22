@@ -581,14 +581,27 @@ function SceneRow({
                 disabled && 'cursor-default',
               )}
             />
-            <div className="flex shrink-0 items-center gap-1 pt-0.5">
-              <TypePill
-                type={outline.type}
-                onChange={(type) => onReplace(changeOutlineType(outline, type))}
-                disabled={disabled}
-                label={sceneTypeLabel(outline.type)}
-                theme={theme}
-              />
+            <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+              {/* Cascading control: type-specific config (left) joined to the type selector (right) */}
+              <div className="inline-flex items-center overflow-hidden rounded-full">
+                {!disabled && outline.type === 'quiz' && (
+                  <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
+                )}
+                {!disabled && outline.type === 'interactive' && (
+                  <InteractiveConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
+                )}
+                {!disabled && outline.type === 'pbl' && (
+                  <PblConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
+                )}
+                <TypePill
+                  type={outline.type}
+                  onChange={(type) => onReplace(changeOutlineType(outline, type))}
+                  disabled={disabled}
+                  label={sceneTypeLabel(outline.type)}
+                  theme={theme}
+                  connected={!disabled && outline.type !== 'slide'}
+                />
+              </div>
               {!disabled && <DeleteSceneButton onConfirm={onRemove} />}
             </div>
           </div>
@@ -609,62 +622,43 @@ function SceneRow({
             )}
           />
 
-          {/* Key points (left) + type-specific config (pinned bottom-right, under the type pill) */}
-          <div className="flex items-end justify-between gap-3 pt-1">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              <AnimatePresence initial={false}>
-                {(outline.keyPoints ?? []).filter(Boolean).map((point, idx) => (
-                  <motion.span
-                    key={`${outline.id}-kp-${idx}-${point}`}
-                    layout
-                    initial={{ opacity: 0, scale: 0.85 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.85 }}
-                    transition={{ duration: 0.15 }}
-                    className={cn(
-                      'group/chip inline-flex max-w-[18rem] items-center gap-1 rounded-full px-2.5 py-1 text-xs',
-                      'bg-muted/70 text-foreground/80',
-                    )}
-                  >
-                    <span className="truncate">{point}</span>
-                    {!disabled && (
-                      <button
-                        type="button"
-                        onClick={() => removeKeyPoint(idx)}
-                        aria-label={t('generation.removeKeyPoint')}
-                        className="ml-0.5 inline-flex size-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground/0 transition-colors hover:bg-muted-foreground/20 hover:text-muted-foreground group-hover/chip:text-muted-foreground/70"
-                      >
-                        <X className="size-2.5" />
-                      </button>
-                    )}
-                  </motion.span>
-                ))}
-              </AnimatePresence>
-              {!disabled && (
-                <KeyPointInput
-                  value={keyPointDraft}
-                  onChange={setKeyPointDraft}
-                  onKeyDown={handleKeyPointKeyDown}
-                  placeholder={t('generation.addKeyPoint')}
-                />
-              )}
-            </div>
-
-            {/* Type-specific config (popover) — sits under the TypePill it configures */}
-            {!disabled && outline.type === 'quiz' && (
-              <div className="shrink-0">
-                <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} />
-              </div>
-            )}
-            {!disabled && outline.type === 'interactive' && (
-              <div className="shrink-0">
-                <InteractiveConfigDisclosure outline={outline} onUpdate={onUpdate} />
-              </div>
-            )}
-            {!disabled && outline.type === 'pbl' && (
-              <div className="shrink-0">
-                <PblConfigDisclosure outline={outline} onUpdate={onUpdate} />
-              </div>
+          {/* Key points */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <AnimatePresence initial={false}>
+              {(outline.keyPoints ?? []).filter(Boolean).map((point, idx) => (
+                <motion.span
+                  key={`${outline.id}-kp-${idx}-${point}`}
+                  layout
+                  initial={{ opacity: 0, scale: 0.85 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.85 }}
+                  transition={{ duration: 0.15 }}
+                  className={cn(
+                    'group/chip inline-flex max-w-[18rem] items-center gap-1 rounded-full px-2.5 py-1 text-xs',
+                    'bg-muted/70 text-foreground/80',
+                  )}
+                >
+                  <span className="truncate">{point}</span>
+                  {!disabled && (
+                    <button
+                      type="button"
+                      onClick={() => removeKeyPoint(idx)}
+                      aria-label={t('generation.removeKeyPoint')}
+                      className="ml-0.5 inline-flex size-3.5 shrink-0 items-center justify-center rounded-full text-muted-foreground/0 transition-colors hover:bg-muted-foreground/20 hover:text-muted-foreground group-hover/chip:text-muted-foreground/70"
+                    >
+                      <X className="size-2.5" />
+                    </button>
+                  )}
+                </motion.span>
+              ))}
+            </AnimatePresence>
+            {!disabled && (
+              <KeyPointInput
+                value={keyPointDraft}
+                onChange={setKeyPointDraft}
+                onKeyDown={handleKeyPointKeyDown}
+                placeholder={t('generation.addKeyPoint')}
+              />
             )}
           </div>
         </div>
@@ -722,12 +716,15 @@ function TypePill({
   disabled,
   label,
   theme,
+  connected = false,
 }: {
   type: SceneType;
   onChange: (type: SceneType) => void;
   disabled: boolean;
   label: string;
   theme: (typeof TYPE_THEME)[SceneType];
+  /** When part of a cascading group, drop own rounding so the wrapper clips it. */
+  connected?: boolean;
 }) {
   const { t } = useI18n();
   return (
@@ -736,7 +733,8 @@ function TypePill({
         <button
           type="button"
           className={cn(
-            'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+            'inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+            connected ? 'rounded-none' : 'rounded-full',
             theme.chip,
             !disabled && theme.chipHover,
             disabled && 'cursor-default',
@@ -968,12 +966,24 @@ function KeyPointInput({
   );
 }
 
+// Left segment of the cascading type control: a themed pill chunk that joins the
+// TypePill on its right via a hairline divider (the wrapper clips the corners).
+function cascadeSegmentClass(theme: (typeof TYPE_THEME)[SceneType]) {
+  return cn(
+    'inline-flex items-center gap-1 border-r border-black/[0.07] px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider transition-colors dark:border-white/10',
+    theme.chip,
+    theme.chipHover,
+  );
+}
+
 function QuizConfigDisclosure({
   outline,
   onUpdate,
+  theme,
 }: {
   outline: SceneOutline;
   onUpdate: (updates: Partial<SceneOutline>) => void;
+  theme: (typeof TYPE_THEME)[SceneType];
 }) {
   const { t } = useI18n();
   const config = outline.quizConfig ?? {
@@ -996,14 +1006,10 @@ function QuizConfigDisclosure({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
-            'text-purple-600 transition-colors hover:bg-purple-500/[0.06] dark:text-purple-300',
-          )}
-        >
-          <span>{t('generation.quizConfigSummary', { count: config.questionCount ?? 3 })}</span>
+        <button type="button" className={cascadeSegmentClass(theme)}>
+          <span className="max-w-[8rem] truncate">
+            {t('generation.quizConfigSummary', { count: config.questionCount ?? 3 })}
+          </span>
           <ChevronDown className="size-3 opacity-70" />
         </button>
       </PopoverTrigger>
@@ -1095,9 +1101,11 @@ const WIDGET_KINDS: ReadonlyArray<readonly [WidgetType, string]> = [
 function InteractiveConfigDisclosure({
   outline,
   onUpdate,
+  theme,
 }: {
   outline: SceneOutline;
   onUpdate: (updates: Partial<SceneOutline>) => void;
+  theme: (typeof TYPE_THEME)[SceneType];
 }) {
   const { t } = useI18n();
   const widgetType = outline.widgetType ?? 'simulation';
@@ -1116,14 +1124,8 @@ function InteractiveConfigDisclosure({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
-            'text-emerald-600 transition-colors hover:bg-emerald-500/[0.06] dark:text-emerald-300',
-          )}
-        >
-          <span>{t(currentLabel)}</span>
+        <button type="button" className={cascadeSegmentClass(theme)}>
+          <span className="max-w-[8rem] truncate">{t(currentLabel)}</span>
           <ChevronDown className="size-3 opacity-70" />
         </button>
       </PopoverTrigger>
@@ -1177,9 +1179,11 @@ function InteractiveConfigDisclosure({
 function PblConfigDisclosure({
   outline,
   onUpdate,
+  theme,
 }: {
   outline: SceneOutline;
   onUpdate: (updates: Partial<SceneOutline>) => void;
+  theme: (typeof TYPE_THEME)[SceneType];
 }) {
   const { t } = useI18n();
   const [skillDraft, setSkillDraft] = useState('');
@@ -1221,14 +1225,8 @@ function PblConfigDisclosure({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
-            'text-amber-600 transition-colors hover:bg-amber-500/[0.06] dark:text-amber-300',
-          )}
-        >
-          <span>{t('generation.pblConfigSummary')}</span>
+        <button type="button" className={cascadeSegmentClass(theme)}>
+          <span className="max-w-[8rem] truncate">{t('generation.pblConfigSummary')}</span>
           <ChevronDown className="size-3 opacity-70" />
         </button>
       </PopoverTrigger>
