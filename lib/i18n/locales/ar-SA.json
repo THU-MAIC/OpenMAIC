@@ -1119,10 +1119,6 @@
     "fetchModelsNoEndpoint": "This provider has no model list endpoint — add models manually",
     "fetchModelsAuthError": "API key is invalid or expired",
     "fetchModelsFailed": "Failed to fetch models",
-    "checkBalance": "Check Balance",
-    "balanceRemaining": "Remaining",
-    "balanceInvalid": "Insufficient balance or invalid key",
-    "balanceUnsupported": "Balance query not supported — check the provider console",
     "usage": {
       "title": "Usage",
       "refresh": "Refresh",

@@ -82,6 +82,58 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     },
   },
 
+  // ── Vendor token plans (LLM; one key, often spans many models) ────────────
+  {
+    // Volcengine Ark (Doubao). General OpenAI-compatible endpoint; the
+    // Anthropic-only /api/coding endpoint is intentionally not used here.
+    id: 'volcengine-ark',
+    name: '火山方舟 Volcengine Ark',
+    websiteUrl: 'https://console.volcengine.com/ark',
+    icon: '/logos/doubao.svg',
+    category: 'token_plan',
+    modalities: {
+      llm: {
+        providerId: 'doubao',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        apiFormat: 'openai',
+      },
+    },
+  },
+  {
+    // Tencent TokenHub Token Plan. The plan-specific OpenAI-compatible base is
+    // /plan/v3 (the /v1 path is the pay-as-you-go gateway).
+    id: 'tencent-tokenhub',
+    name: '腾讯 TokenHub Token Plan',
+    websiteUrl: 'https://cloud.tencent.com/product/tokenhub',
+    icon: '/logos/hunyuan.svg',
+    category: 'token_plan',
+    modalities: {
+      llm: {
+        providerId: 'tencent-hunyuan',
+        baseUrl: 'https://tokenhub.tencentmaas.com/plan/v3',
+        apiFormat: 'openai',
+      },
+    },
+  },
+  {
+    // Alibaba Bailian (DashScope) Token Plan. The cross-model plan covers Qwen
+    // plus third-party models (DeepSeek/Kimi/GLM/MiniMax …) on one key via the
+    // OpenAI-compatible endpoint; the model list is probed/entered (no
+    // documented /models listing). Distinct from the single-vendor `qwen` entry.
+    id: 'bailian-tokenplan',
+    name: '阿里百炼 Token Plan',
+    websiteUrl: 'https://bailian.console.aliyun.com',
+    icon: '/logos/bailian.svg',
+    category: 'token_plan',
+    modalities: {
+      llm: {
+        providerId: 'qwen',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        apiFormat: 'openai',
+      },
+    },
+  },
+
   // ── Aggregators / gateways (LLM) ──────────────────────────────────────────
   {
     id: 'openrouter',
@@ -90,7 +142,11 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     icon: '/logos/openrouter.svg',
     category: 'aggregator',
     modalities: {
-      llm: { providerId: 'openrouter', baseUrl: 'https://openrouter.ai/api/v1', apiFormat: 'openai' },
+      llm: {
+        providerId: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiFormat: 'openai',
+      },
     },
   },
   {

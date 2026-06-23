@@ -4,17 +4,7 @@ import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Loader2,
-  Eye,
-  EyeOff,
-  Wallet,
-  CheckCircle2,
-  Circle,
-  XCircle,
-  Zap,
-  Trash2,
-} from 'lucide-react';
+import { Loader2, Eye, EyeOff, CheckCircle2, Circle, XCircle, Zap, Trash2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -44,16 +34,6 @@ const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   webSearch: 'settings.webSearchSettings',
 };
 
-interface BalanceInfo {
-  supported: boolean;
-  planName?: string;
-  remaining?: number;
-  total?: number;
-  unit?: string;
-  isValid?: boolean;
-  invalidMessage?: string;
-}
-
 export function TokenPlanSettings() {
   const { t } = useI18n();
   const setProviderConfig = useSettingsStore((s) => s.setProviderConfig);
@@ -71,8 +51,6 @@ export function TokenPlanSettings() {
   const [applying, setApplying] = useState(false);
   const [results, setResults] = useState<ApplyResult[] | null>(null);
   const [llmModelCount, setLlmModelCount] = useState<number | null>(null);
-  const [balanceStatus, setBalanceStatus] = useState<'idle' | 'loading' | 'done'>('idle');
-  const [balance, setBalance] = useState<BalanceInfo | null>(null);
 
   const grouped = PRESET_CATEGORY_ORDER.map((cat) => ({
     category: cat,
@@ -82,8 +60,6 @@ export function TokenPlanSettings() {
   const resetResults = () => {
     setResults(null);
     setLlmModelCount(null);
-    setBalance(null);
-    setBalanceStatus('idle');
   };
 
   // Whether a preset's LLM provider already has a saved key (= configured).
@@ -127,8 +103,6 @@ export function TokenPlanSettings() {
     setApplying(true);
     setResults(null);
     setLlmModelCount(null);
-    setBalance(null);
-    setBalanceStatus('idle');
 
     // 1. Fill every declared modality synchronously.
     const applied = applyTokenPlan(selected, apiKey, {
@@ -183,26 +157,6 @@ export function TokenPlanSettings() {
     setTTSProviderConfig,
     setWebSearchProviderConfig,
   ]);
-
-  const handleCheckBalance = useCallback(async () => {
-    const llm = selected?.modalities.llm;
-    if (!llm || !apiKey) return;
-    setBalanceStatus('loading');
-    setBalance(null);
-    try {
-      const res = await fetch('/api/provider/balance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseUrl: llm.baseUrl, apiKey }),
-      });
-      const data = await res.json();
-      setBalance(data.balance ?? { supported: false });
-    } catch {
-      setBalance({ supported: false });
-    } finally {
-      setBalanceStatus('done');
-    }
-  }, [selected, apiKey]);
 
   // Modalities NOT declared by the selected plan → "not adapted yet".
   const notAdapted = selected ? MODALITY_ORDER.filter((m) => !selected.modalities[m]) : [];
@@ -304,47 +258,7 @@ export function TokenPlanSettings() {
               )}
               {t('settings.tokenPlan.apply')}
             </Button>
-            {selected.modalities.llm && (
-              <Button
-                variant="outline"
-                onClick={handleCheckBalance}
-                disabled={balanceStatus === 'loading' || !apiKey}
-                className="gap-1.5"
-              >
-                {balanceStatus === 'loading' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Wallet className="h-3.5 w-3.5" />
-                )}
-                {t('settings.checkBalance')}
-              </Button>
-            )}
           </div>
-
-          {/* Balance bar */}
-          {balance && balanceStatus === 'done' && (
-            <div className="text-sm">
-              {balance.supported && balance.isValid !== false ? (
-                <span>
-                  {balance.planName ? `${balance.planName} · ` : ''}
-                  {t('settings.balanceRemaining')}:{' '}
-                  <span className="font-medium">
-                    {balance.remaining?.toLocaleString(undefined, { maximumFractionDigits: 2 })}
-                    {balance.total != null
-                      ? ` / ${balance.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-                      : ''}{' '}
-                    {balance.unit || ''}
-                  </span>
-                </span>
-              ) : balance.supported ? (
-                <span className="text-red-600">
-                  {balance.invalidMessage || t('settings.balanceInvalid')}
-                </span>
-              ) : (
-                <span className="text-muted-foreground">{t('settings.balanceUnsupported')}</span>
-              )}
-            </div>
-          )}
         </div>
       )}
 

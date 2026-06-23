@@ -31,7 +31,6 @@ import {
   FileText,
   Send,
   Download,
-  Wallet,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderConfig } from '@/lib/ai/providers';
@@ -86,20 +85,10 @@ export function ProviderConfigPanel({
   const [showResetDialog, setShowResetDialog] = useState(false);
   const [fetchStatus, setFetchStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle');
   const [fetchMessage, setFetchMessage] = useState('');
-  const [balanceStatus, setBalanceStatus] = useState<'idle' | 'loading' | 'done'>('idle');
-  const [balance, setBalance] = useState<{
-    supported: boolean;
-    planName?: string;
-    remaining?: number;
-    total?: number;
-    used?: number;
-    unit?: string;
-    isValid?: boolean;
-    invalidMessage?: string;
-  } | null>(null);
 
   // Update local state when provider changes or initial values change
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync local state from props on provider change
     setApiKey(initialApiKey);
 
     setBaseUrl(initialBaseUrl);
@@ -111,8 +100,6 @@ export function ProviderConfigPanel({
     setTestMessage('');
     setFetchStatus('idle');
     setFetchMessage('');
-    setBalanceStatus('idle');
-    setBalance(null);
   }, [provider.id, initialApiKey, initialBaseUrl, initialRequiresApiKey]);
 
   // Notify parent of changes
@@ -214,25 +201,6 @@ export function ProviderConfigPanel({
     }
   }, [apiKey, effectiveBaseUrl, modelsUrl, onModelsFetched, t]);
 
-  // Query the provider's balance/quota (auto-detected vendor or billing fallback).
-  const handleCheckBalance = useCallback(async () => {
-    setBalanceStatus('loading');
-    setBalance(null);
-    try {
-      const response = await fetch('/api/provider/balance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseUrl: effectiveBaseUrl, apiKey }),
-      });
-      const data = await response.json();
-      setBalance(data.balance ?? { supported: false });
-    } catch {
-      setBalance({ supported: false });
-    } finally {
-      setBalanceStatus('done');
-    }
-  }, [apiKey, effectiveBaseUrl]);
-
   const models = providersConfig[provider.id]?.models || [];
   const isServerConfigured = providersConfig[provider.id]?.isServerConfigured;
   // When the operator pins an allowed model list (MODELS env/yaml), the model
@@ -328,51 +296,6 @@ export function ProviderConfigPanel({
               >
                 {t('settings.requiresApiKey')}
               </label>
-            </div>
-
-            {/* Balance bar */}
-            <div className="flex items-center gap-2 flex-wrap">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleCheckBalance}
-                disabled={balanceStatus === 'loading' || (requiresApiKey && !apiKey)}
-                className="gap-1.5"
-              >
-                {balanceStatus === 'loading' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Wallet className="h-3.5 w-3.5" />
-                )}
-                {t('settings.checkBalance')}
-              </Button>
-              {balance && balanceStatus === 'done' && (
-                <div className="text-sm">
-                  {balance.supported && balance.isValid !== false ? (
-                    <span className="text-foreground">
-                      {balance.planName ? `${balance.planName} · ` : ''}
-                      {t('settings.balanceRemaining')}:{' '}
-                      <span className="font-medium">
-                        {balance.remaining?.toLocaleString(undefined, {
-                          maximumFractionDigits: 2,
-                        })}
-                        {balance.total != null
-                          ? ` / ${balance.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
-                          : ''}{' '}
-                        {balance.unit || ''}
-                      </span>
-                    </span>
-                  ) : balance.supported && balance.isValid === false ? (
-                    <span className="text-red-600">
-                      {balance.invalidMessage || t('settings.balanceInvalid')}
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground">
-                      {t('settings.balanceUnsupported')}
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
           </div>
 

@@ -1119,10 +1119,6 @@
     "fetchModelsNoEndpoint": "该服务商未提供模型列表接口，请手动「新建模型」",
     "fetchModelsAuthError": "API 密钥无效或已过期",
     "fetchModelsFailed": "拉取模型失败",
-    "checkBalance": "查询余额",
-    "balanceRemaining": "剩余",
-    "balanceInvalid": "余额不足或密钥无效",
-    "balanceUnsupported": "该服务商不支持余额查询，请前往其控制台查看",
     "usage": {
       "title": "用量统计",
       "refresh": "刷新",
