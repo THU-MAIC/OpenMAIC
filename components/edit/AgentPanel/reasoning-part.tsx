@@ -64,6 +64,9 @@ export function ReasoningPart({ text }: { text: string }) {
   const [tickMs, setTickMs] = useState(0);
   useEffect(() => {
     if (!ticking || startedAt == null) return;
+    // Deliberate one-shot init so the counter shows the right elapsed value
+    // before the first 1s tick; the interval below keeps it updated.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setTickMs(Date.now() - startedAt);
     const h = setInterval(() => setTickMs(Date.now() - startedAt), 1000);
     return () => clearInterval(h);
