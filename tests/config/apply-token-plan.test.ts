@@ -1,0 +1,101 @@
+import { describe, expect, it, vi } from 'vitest';
+import { applyTokenPlan, type TokenPlanActions } from '@/lib/config/apply-token-plan';
+import { TOKEN_PLAN_PRESETS } from '@/lib/config/token-plan-presets';
+
+function makeActions(): TokenPlanActions {
+  return {
+    setProviderConfig: vi.fn(),
+    setImageProviderConfig: vi.fn(),
+    setVideoProviderConfig: vi.fn(),
+    setTTSProviderConfig: vi.fn(),
+    setWebSearchProviderConfig: vi.fn(),
+  };
+}
+
+const minimax = TOKEN_PLAN_PRESETS.find((p) => p.id === 'minimax')!;
+const deepseek = TOKEN_PLAN_PRESETS.find((p) => p.id === 'deepseek')!;
+
+describe('applyTokenPlan', () => {
+  it('fills every declared modality for a full-set plan (MiniMax)', () => {
+    const actions = makeActions();
+    const results = applyTokenPlan(minimax, 'sk-test', actions);
+
+    // LLM provider config: apiKey + baseUrl + type + custom name
+    expect(actions.setProviderConfig).toHaveBeenCalledWith(
+      'minimax',
+      expect.objectContaining({
+        apiKey: 'sk-test',
+        baseUrl: 'https://api.minimaxi.com/anthropic/v1',
+        type: 'anthropic',
+      }),
+    );
+    expect(actions.setImageProviderConfig).toHaveBeenCalledWith(
+      'minimax-image',
+      expect.objectContaining({ apiKey: 'sk-test', enabled: true }),
+    );
+    expect(actions.setVideoProviderConfig).toHaveBeenCalledWith(
+      'minimax-video',
+      expect.objectContaining({ apiKey: 'sk-test', enabled: true }),
+    );
+    expect(actions.setTTSProviderConfig).toHaveBeenCalledWith(
+      'minimax-tts',
+      expect.objectContaining({ apiKey: 'sk-test', enabled: true, modelId: 'speech-2.8-hd' }),
+    );
+    expect(actions.setWebSearchProviderConfig).toHaveBeenCalledWith(
+      'minimax',
+      expect.objectContaining({ apiKey: 'sk-test', enabled: true }),
+    );
+
+    // Result reports each declared modality as lit, and includes llm.
+    const lit = results.filter((r) => r.status === 'lit').map((r) => r.modality);
+    expect(lit).toEqual(expect.arrayContaining(['llm', 'image', 'video', 'tts', 'webSearch']));
+  });
+
+  it('only touches declared modalities for an LLM-only plan (DeepSeek)', () => {
+    const actions = makeActions();
+    const results = applyTokenPlan(deepseek, 'sk-ds', actions);
+
+    expect(actions.setProviderConfig).toHaveBeenCalledTimes(1);
+    expect(actions.setImageProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setVideoProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setTTSProviderConfig).not.toHaveBeenCalled();
+    expect(actions.setWebSearchProviderConfig).not.toHaveBeenCalled();
+
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ modality: 'llm', status: 'lit' });
+  });
+
+  it('passes modelsUrl through to the LLM provider config when present', () => {
+    const actions = makeActions();
+    const preset = {
+      ...deepseek,
+      modalities: {
+        llm: {
+          providerId: 'x',
+          baseUrl: 'https://x.com/v1',
+          apiFormat: 'openai' as const,
+          modelsUrl: 'https://x.com/custom/models',
+        },
+      },
+    };
+    applyTokenPlan(preset, 'k', actions);
+    expect(actions.setProviderConfig).toHaveBeenCalledWith(
+      'x',
+      expect.objectContaining({ modelsUrl: 'https://x.com/custom/models' }),
+    );
+  });
+
+  it('isolates a failing modality without aborting the rest', () => {
+    const actions = makeActions();
+    (actions.setImageProviderConfig as ReturnType<typeof vi.fn>).mockImplementation(() => {
+      throw new Error('boom');
+    });
+    const results = applyTokenPlan(minimax, 'sk', actions);
+
+    const image = results.find((r) => r.modality === 'image');
+    expect(image?.status).toBe('failed');
+    // Other modalities still lit
+    expect(results.find((r) => r.modality === 'llm')?.status).toBe('lit');
+    expect(results.find((r) => r.modality === 'tts')?.status).toBe('lit');
+  });
+});

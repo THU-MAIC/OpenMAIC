@@ -27,6 +27,7 @@ import {
   Volume2,
   Mic,
   Plus,
+  CreditCard,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -56,7 +57,7 @@ import { WebSearchSettings } from './web-search-settings';
 import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
 import { GeneralSettings } from './general-settings';
-import { ModelEditDialog } from './model-edit-dialog';
+import { TokenPlanSettings } from './token-plan-settings';import { ModelEditDialog } from './model-edit-dialog';
 import { AddProviderDialog, type NewProviderData } from './add-provider-dialog';
 import { AddAudioProviderDialog, type NewAudioProviderData } from './add-audio-provider-dialog';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
@@ -564,6 +565,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     switch (activeSection) {
       case 'general':
         return <h2 className="text-lg font-semibold">{t('settings.systemSettings')}</h2>;
+      case 'token-plan':
+        return <h2 className="text-lg font-semibold">{t('settings.tokenPlan.nav')}</h2>;
       case 'providers':
         if (selectedProvider) {
           return (
@@ -741,6 +744,19 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         <div className="flex h-full overflow-hidden">
           {/* Left Sidebar - Navigation */}
           <div className="flex-shrink-0 bg-muted/30 p-3 space-y-1" style={{ width: sidebarWidth }}>
+            <button
+              onClick={() => setActiveSection('token-plan')}
+              className={cn(
+                'w-full flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-colors text-left min-w-0',
+                activeSection === 'token-plan'
+                  ? 'bg-primary/10 text-primary font-medium'
+                  : 'hover:bg-muted',
+              )}
+            >
+              <CreditCard className="h-4 w-4 shrink-0" />
+              <span className="truncate">{t('settings.tokenPlan.nav')}</span>
+            </button>
+
             <button
               onClick={() => setActiveSection('providers')}
               className={cn(
@@ -1052,6 +1068,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
             {/* Content */}
             <div className="flex-1 overflow-y-auto p-5">
               {activeSection === 'general' && <GeneralSettings />}
+
+              {activeSection === 'token-plan' && <TokenPlanSettings />}
 
               {activeSection === 'providers' && selectedProvider && (
                 <ProviderConfigPanel

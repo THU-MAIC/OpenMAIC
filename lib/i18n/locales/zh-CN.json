@@ -1138,6 +1138,17 @@
       "model": "模型",
       "reqs": "请求",
       "empty": "暂无用量数据"
+    },
+    "tokenPlan": {
+      "nav": "Token Plan",
+      "title": "Token Plan 一键配置",
+      "desc": "选择你的 Token Plan 服务商并填入密钥，将自动配置并点亮所有已适配的模态(语言模型/图像/视频/语音等)。",
+      "selectPlan": "选择服务商",
+      "apiKey": "API 密钥",
+      "apply": "一键配置",
+      "litUp": "配置结果",
+      "modelsLit": "已拉取 {n} 个模型",
+      "notAdapted": "暂未适配"
     }
   },
   "profile": {

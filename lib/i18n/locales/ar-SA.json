@@ -1138,6 +1138,17 @@
       "model": "Model",
       "reqs": "Reqs",
       "empty": "No usage data yet"
+    },
+    "tokenPlan": {
+      "nav": "Token Plan",
+      "title": "Token Plan Setup",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures and lights up every adapted modality (LLM/image/video/speech).",
+      "selectPlan": "Select Provider",
+      "apiKey": "API Key",
+      "apply": "Apply",
+      "litUp": "Result",
+      "modelsLit": "{n} models fetched",
+      "notAdapted": "not adapted yet"
     }
   },
   "profile": {
