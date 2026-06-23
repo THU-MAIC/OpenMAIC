@@ -202,7 +202,16 @@ export function HeaderControls({
               ? 'opacity-60 cursor-not-allowed'
               : 'cursor-pointer hover:border-violet-400/60 dark:hover:border-violet-500/50',
           )}
-          title={mode === 'edit' ? t('stage.doneEditing') : t('stage.editCourse')}
+          // When disabled (e.g. the course-complete placeholder), explain why
+          // on hover and point the user to a real scene instead of a bare
+          // "Edit course" label they can't act on.
+          title={
+            !canEdit && mode !== 'edit'
+              ? t('stage.proModeDisabledHint')
+              : mode === 'edit'
+                ? t('stage.doneEditing')
+                : t('stage.editCourse')
+          }
         >
           <span
             className={cn(

@@ -58,8 +58,11 @@ describe('isShortAnswer', () => {
     expect(isShortAnswer(q({ type: 'short_answer' }))).toBe(true);
   });
 
-  it('returns true when hasAnswer is false and answer is empty', () => {
-    expect(isShortAnswer(q({ hasAnswer: false, answer: [] }))).toBe(true);
+  it('classifies by type only: an unanswered choice question is still a choice question', () => {
+    // hasAnswer / empty answer must NOT re-route a single/multiple question to
+    // AI grading — the explicit type wins.
+    expect(isShortAnswer(q({ type: 'single', hasAnswer: false, answer: [] }))).toBe(false);
+    expect(isShortAnswer(q({ type: 'multiple', hasAnswer: undefined, answer: [] }))).toBe(false);
   });
 
   it('returns false for a regular choice question', () => {

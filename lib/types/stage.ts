@@ -35,6 +35,11 @@ export type {
 // `undefined` at runtime / "cannot be used as a value" at the type level.
 export { isSlideContent, isQuizContent } from '@maic/dsl';
 
+// `@maic/dsl` inlines the question-type union on `QuizQuestion.type` rather than
+// exporting a named alias; derive it here so editor quiz code can keep importing
+// `QuizQuestionType` from `@/lib/types/stage`.
+export type QuizQuestionType = import('@maic/dsl').QuizQuestion['type'];
+
 // The contract's `SceneContent` is the universal subset (slide | quiz). Reach it
 // under a distinct name; the app's own `SceneContent` (declared below) is the
 // full four-way union so existing `switch (content.type)` call sites keep all

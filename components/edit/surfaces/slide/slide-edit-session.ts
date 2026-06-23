@@ -3,7 +3,7 @@
  * canvas.
  *
  * EditShell invokes a surface's `useSurfaceState()` and renders its
- * `CanvasComponent` as siblings (state hook on the shell, canvas as a child
+ * `SurfaceComponent` as siblings (state hook on the shell, canvas as a child
  * of the frame). They must share one `SlideEditHistory`, so it lives in a
  * store rather than component state — the same idiom the rest of the
  * renderer uses (useCanvasStore / useStageStore).

@@ -28,6 +28,8 @@
 import { createOpenAI } from '@ai-sdk/openai';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { wrapLanguageModel, extractReasoningMiddleware } from 'ai';
+import { wrapResponseWithReasoning } from './reasoning-sse';
 import type { LanguageModel } from 'ai';
 import type {
   ProviderId,
@@ -1406,8 +1408,24 @@ export function getModel(config: ModelConfig): ModelWithInfo {
           }
           const response = await globalThis.fetch(url, init);
 
+          // Recover reasoning that @ai-sdk/openai's chat schema drops: rewrite
+          // streamed `reasoning_content` deltas into an inline <think> block
+          // (the model below is wrapped with extractReasoningMiddleware to split
+          // it back into first-class reasoning parts). No-op when absent.
+          const streamingReasoned = (() => {
+            let streaming = false;
+            if (init?.body && typeof init.body === 'string') {
+              try {
+                streaming = JSON.parse(init.body)?.stream === true;
+              } catch {
+                /* ignore request-body inspection failure */
+              }
+            }
+            return streaming ? wrapResponseWithReasoning(response) : response;
+          })();
+
           if (providerId !== 'lemonade') {
-            return response;
+            return streamingReasoned;
           }
 
           const contentType = response.headers.get('content-type') || '';
@@ -1450,6 +1468,18 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       model = shouldUseOpenAIResponsesApi(config.providerId, config.modelId)
         ? openai.responses(config.modelId)
         : openai.chat(config.modelId);
+      // OpenAI-compatible providers (e.g. DeepSeek, Qwen) stream reasoning
+      // either as a separate `reasoning_content` field (normalized to an inline
+      // <think> block by compatFetch) or as native inline <think>.
+      // Split it into first-class reasoning parts so the agent stream and UI can
+      // show a thinking panel and the answer text stays clean. Native OpenAI
+      // handles reasoning itself, so it is excluded.
+      if (config.providerId !== 'openai') {
+        model = wrapLanguageModel({
+          model,
+          middleware: extractReasoningMiddleware({ tagName: 'think' }),
+        });
+      }
       break;
     }
 

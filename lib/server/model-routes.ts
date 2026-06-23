@@ -119,6 +119,7 @@ export const LLM_STAGES = [
   'chat-adapter',
   'generate-classroom',
   'web-search-query-rewrite',
+  'maic-agent',
 ] as const;
 
 export type LlmStage = (typeof LLM_STAGES)[number];

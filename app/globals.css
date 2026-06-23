@@ -2,6 +2,10 @@
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
 
+/* Streamdown (AI sidebar markdown) styles itself with Tailwind utilities —
+   Tailwind must scan its dist so those classes get generated. */
+@source '../node_modules/streamdown/dist/*.js';
+@source '../node_modules/@streamdown/code/dist/*.js';
 @source "../node_modules/@maic/renderer/dist/**/*.{js,cjs}";
 /* slide-renderer-demo is gitignored (local sandbox), which makes Tailwind v4's
    auto source detection skip it. Re-include it explicitly so the demo's
@@ -295,5 +299,40 @@ body[data-maic-editor='true'] .editable-element-text li,
   50% {
     opacity: 0.7;
     transform: scale(1.08);
+  }
+}
+
+/* Cursor-style "Thinking…" indicator: a bright band sweeps left→right across
+   muted text (gradient clipped to glyphs). Used by the AI sidebar while the
+   agent run streams and nothing has arrived yet. */
+@keyframes ai-thinking-shimmer {
+  0% {
+    background-position: 150% 0;
+  }
+  100% {
+    background-position: -50% 0;
+  }
+}
+.ai-thinking-shimmer {
+  background: linear-gradient(
+    100deg,
+    var(--muted-foreground) 0%,
+    var(--muted-foreground) 40%,
+    var(--foreground) 50%,
+    var(--muted-foreground) 60%,
+    var(--muted-foreground) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: ai-thinking-shimmer 1.8s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ai-thinking-shimmer {
+    animation: none;
+    color: var(--muted-foreground);
+    -webkit-text-fill-color: var(--muted-foreground);
   }
 }
