@@ -32,6 +32,11 @@ export interface TokenPlanActions {
     id: WebSearchProviderId,
     config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
   ) => void;
+  /**
+   * Delete an LLM provider entirely (custom token plans). Optional: when absent,
+   * removeTokenPlan falls back to clearing the LLM provider's key instead.
+   */
+  removeProvider?: (id: ProviderId) => void;
 }
 
 export interface ApplyResult {
@@ -126,6 +131,79 @@ function applyModality(
         apiKey,
         baseUrl: target.baseUrl,
         enabled: true,
+      });
+      break;
+  }
+}
+
+/**
+ * Removes a token plan: clears the API key and disables every modality it
+ * declared. A custom LLM provider (id starting with `custom-`) is deleted
+ * entirely via `removeProvider` when available; otherwise its key is cleared.
+ * Each modality is isolated — a thrown setter doesn't abort the rest.
+ */
+export function removeTokenPlan(preset: TokenPlanPreset, actions: TokenPlanActions): ApplyResult[] {
+  const results: ApplyResult[] = [];
+
+  for (const modality of MODALITY_ORDER) {
+    const target = preset.modalities[modality];
+    if (!target) continue;
+
+    try {
+      removeModality(modality, target, actions);
+      results.push({ modality, status: 'lit', providerId: target.providerId });
+    } catch (err) {
+      results.push({
+        modality,
+        status: 'failed',
+        providerId: target.providerId,
+        detail: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  return results;
+}
+
+function removeModality(
+  modality: TokenPlanModality,
+  target: TokenPlanModalityTarget,
+  actions: TokenPlanActions,
+): void {
+  switch (modality) {
+    case 'llm': {
+      const id = target.providerId as ProviderId;
+      // Custom providers are fully removed; built-ins just have their key cleared
+      // (so they fall back to the unconfigured state rather than vanishing).
+      if (actions.removeProvider && String(id).startsWith('custom-')) {
+        actions.removeProvider(id);
+      } else {
+        actions.setProviderConfig(id, { apiKey: '' });
+      }
+      break;
+    }
+    case 'image':
+      actions.setImageProviderConfig(target.providerId as ImageProviderId, {
+        apiKey: '',
+        enabled: false,
+      });
+      break;
+    case 'video':
+      actions.setVideoProviderConfig(target.providerId as VideoProviderId, {
+        apiKey: '',
+        enabled: false,
+      });
+      break;
+    case 'tts':
+      actions.setTTSProviderConfig(target.providerId as TTSProviderId, {
+        apiKey: '',
+        enabled: false,
+      });
+      break;
+    case 'webSearch':
+      actions.setWebSearchProviderConfig(target.providerId as WebSearchProviderId, {
+        apiKey: '',
+        enabled: false,
       });
       break;
   }

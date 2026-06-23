@@ -1152,7 +1152,8 @@
       "customGroup": "Custom",
       "customName": "Custom Token Plan",
       "customHint": "Manually enter baseURL + protocol (LLM only)",
-      "configured": "Configured"
+      "configured": "Configured",
+      "remove": "Remove"
     }
   },
   "profile": {

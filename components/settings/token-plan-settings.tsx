@@ -14,6 +14,7 @@ import {
   XCircle,
   Zap,
   Plus,
+  Trash2,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
@@ -27,7 +28,11 @@ import {
   type PresetCategory,
   type TokenPlanModality,
 } from '@/lib/config/token-plan-presets';
-import { applyTokenPlan, type ApplyResult } from '@/lib/config/apply-token-plan';
+import {
+  applyTokenPlan,
+  removeTokenPlan,
+  type ApplyResult,
+} from '@/lib/config/apply-token-plan';
 
 const CATEGORY_LABEL_KEYS: Record<PresetCategory, string> = {
   token_plan: 'settings.presetCategory.tokenPlan',
@@ -61,6 +66,7 @@ export function TokenPlanSettings() {
   const setVideoProviderConfig = useSettingsStore((s) => s.setVideoProviderConfig);
   const setTTSProviderConfig = useSettingsStore((s) => s.setTTSProviderConfig);
   const setWebSearchProviderConfig = useSettingsStore((s) => s.setWebSearchProviderConfig);
+  const setProvidersConfig = useSettingsStore((s) => s.setProvidersConfig);
   // Read provider configs so the page can reflect already-persisted state
   // (other settings panels read the store directly; this page must too).
   const providersConfig = useSettingsStore((s) => s.providersConfig);
@@ -112,6 +118,29 @@ export function TokenPlanSettings() {
   const isPresetConfigured = (preset: TokenPlanPreset): boolean => {
     const llmId = preset.modalities.llm?.providerId;
     return !!(llmId && providersConfig[llmId as keyof typeof providersConfig]?.apiKey);
+  };
+
+  // Remove a token plan: clear key + disable across all its modalities.
+  const handleRemove = (preset: TokenPlanPreset, e: React.MouseEvent) => {
+    e.stopPropagation(); // don't also select the card
+    removeTokenPlan(preset, {
+      setProviderConfig,
+      setImageProviderConfig,
+      setVideoProviderConfig,
+      setTTSProviderConfig,
+      setWebSearchProviderConfig,
+      removeProvider: (id) => {
+        const next = { ...providersConfig };
+        delete next[id as keyof typeof next];
+        setProvidersConfig(next);
+      },
+    });
+    // If the removed plan was selected, reset the page state.
+    if (selected?.id === preset.id) {
+      setSelected(null);
+      setApiKey('');
+      resetResults();
+    }
   };
 
   const selectPreset = (preset: TokenPlanPreset) => {
@@ -269,9 +298,23 @@ export function TokenPlanSettings() {
                     </span>
                   </span>
                   {isPresetConfigured(preset) && (
-                    <span className="flex items-center gap-1 shrink-0 text-xs text-green-600">
-                      <CheckCircle2 className="h-3.5 w-3.5" />
-                      {t('settings.tokenPlan.configured')}
+                    <span className="flex items-center gap-2 shrink-0">
+                      <span className="flex items-center gap-1 text-xs text-green-600">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        {t('settings.tokenPlan.configured')}
+                      </span>
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        title={t('settings.tokenPlan.remove')}
+                        onClick={(e) => handleRemove(preset, e)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') handleRemove(preset, e as never);
+                        }}
+                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </span>
                     </span>
                   )}
                 </button>

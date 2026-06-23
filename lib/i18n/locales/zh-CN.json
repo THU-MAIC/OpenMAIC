@@ -1152,7 +1152,8 @@
       "customGroup": "自定义",
       "customName": "自定义 Token Plan",
       "customHint": "手动填入 baseURL 与协议(仅语言模型)",
-      "configured": "已配置"
+      "configured": "已配置",
+      "remove": "移除配置"
     }
   },
   "profile": {
