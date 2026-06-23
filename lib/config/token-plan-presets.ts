@@ -89,7 +89,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     id: 'volcengine-ark',
     name: '火山方舟 Volcengine Ark',
     websiteUrl: 'https://console.volcengine.com/ark',
-    icon: '/logos/doubao.svg',
+    icon: '/logos/volcengine.svg',
     category: 'token_plan',
     modalities: {
       llm: {
@@ -105,7 +105,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     id: 'tencent-tokenhub',
     name: '腾讯 TokenHub Token Plan',
     websiteUrl: 'https://cloud.tencent.com/product/tokenhub',
-    icon: '/logos/hunyuan.svg',
+    icon: '/logos/tencentcloud.svg',
     category: 'token_plan',
     modalities: {
       llm: {
@@ -123,7 +123,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     id: 'bailian-tokenplan',
     name: '阿里百炼 Token Plan',
     websiteUrl: 'https://bailian.console.aliyun.com',
-    icon: '/logos/bailian.svg',
+    icon: '/logos/alibabacloud.svg',
     category: 'token_plan',
     modalities: {
       llm: {
