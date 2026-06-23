@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import * as echarts from 'echarts/core';
 import { LineChart } from 'echarts/charts';
-import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
+import { GridComponent, TooltipComponent } from 'echarts/components';
 import { SVGRenderer } from 'echarts/renderers';
 import { Loader2, RefreshCw, BarChart3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { useTheme } from '@/lib/hooks/use-theme';
 
-echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, SVGRenderer]);
+echarts.use([LineChart, GridComponent, TooltipComponent, SVGRenderer]);
 
 type UsageKind = 'llm' | 'image' | 'video' | 'tts' | 'asr';
 type UsageUnit = 'token' | 'image' | 'second' | 'character';
@@ -51,8 +52,13 @@ const UNIT_LABEL_KEY: Record<UsageUnit, string> = {
   character: 'settings.usage.unitCharacter',
 };
 
+/** Display order of modality sections. */
+const KIND_ORDER: UsageKind[] = ['llm', 'image', 'video', 'tts', 'asr'];
+
 export function UsageDashboard() {
   const { t } = useI18n();
+  const { resolvedTheme } = useTheme();
+  const isDark = resolvedTheme === 'dark';
   const [data, setData] = useState<UsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
@@ -77,30 +83,86 @@ export function UsageDashboard() {
 
   const byDay = useMemo(() => data?.byDay ?? [], [data]);
 
-  // Daily LLM-token trend (single axis, no cost).
+  /** A single usage figure with its unit, for a model/kind bucket. */
+  const usageValue = (b: Bucket): number => (b.kind === 'llm' ? b.totalTokens : b.quantity);
+  const usageDisplay = (b: Bucket): string =>
+    `${fmtNum(usageValue(b))} ${t(UNIT_LABEL_KEY[b.kind === 'llm' ? 'token' : b.unit])}`;
+
+  // Group models by modality, in display order, dropping empty modalities.
+  const sections = useMemo(() => {
+    const byKind = new Map<UsageKind, { kindBucket?: Bucket; models: Bucket[] }>();
+    for (const m of data?.byModel ?? []) {
+      if (!byKind.has(m.kind)) byKind.set(m.kind, { models: [] });
+      byKind.get(m.kind)!.models.push(m);
+    }
+    for (const k of data?.byKind ?? []) {
+      if (byKind.has(k.kind)) byKind.get(k.kind)!.kindBucket = k;
+    }
+    return KIND_ORDER.filter((k) => byKind.has(k)).map((k) => ({
+      kind: k,
+      summary: byKind.get(k)!.kindBucket,
+      models: byKind.get(k)!.models.sort((a, b) => b.requests - a.requests),
+    }));
+  }, [data]);
+
+  // Daily REQUESTS trend — unit-agnostic so it works across all modalities.
+  // Area-only with a soft gradient + faint line, theme-aware, to avoid the
+  // harsh solid stroke in dark mode.
   useEffect(() => {
     if (!chartRef.current) return;
     if (!chartInstance.current) {
       chartInstance.current = echarts.init(chartRef.current, undefined, { renderer: 'svg' });
     }
     const chart = chartInstance.current;
+    const axis = isDark ? 'rgba(255,255,255,0.45)' : 'rgba(0,0,0,0.45)';
+    const split = isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)';
+    const accent = isDark ? '#a78bfa' : '#7c3aed'; // violet, matches primary
+
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      grid: { left: 55, right: 20, top: 20, bottom: 40 },
-      xAxis: { type: 'category', data: byDay.map((b) => b.key) },
-      yAxis: { type: 'value', name: t('settings.usage.tokens') },
+      grid: { left: 44, right: 16, top: 16, bottom: 28 },
+      xAxis: {
+        type: 'category',
+        data: byDay.map((b) => b.key),
+        axisLabel: { color: axis, fontSize: 11 },
+        axisLine: { lineStyle: { color: split } },
+        axisTick: { show: false },
+      },
+      yAxis: {
+        type: 'value',
+        minInterval: 1,
+        axisLabel: { color: axis, fontSize: 11 },
+        splitLine: { lineStyle: { color: split } },
+      },
       series: [
         {
-          name: t('settings.usage.tokens'),
+          name: t('settings.usage.totalRequests'),
           type: 'line',
           smooth: true,
-          areaStyle: {},
-          data: byDay.map((b) => b.totalTokens),
+          symbol: 'circle',
+          symbolSize: 5,
+          itemStyle: { color: accent },
+          // Faint, thin connecting line instead of a hard solid stroke.
+          lineStyle: { color: accent, width: 1, opacity: isDark ? 0.5 : 0.7 },
+          areaStyle: {
+            color: {
+              type: 'linear',
+              x: 0,
+              y: 0,
+              x2: 0,
+              y2: 1,
+              colorStops: [
+                { offset: 0, color: isDark ? 'rgba(167,139,250,0.35)' : 'rgba(124,58,237,0.25)' },
+                { offset: 1, color: isDark ? 'rgba(167,139,250,0.02)' : 'rgba(124,58,237,0.02)' },
+              ],
+            },
+          },
+          data: byDay.map((b) => b.requests),
         },
       ],
     });
     chart.resize();
-  }, [byDay, t]);
+  }, [byDay, t, isDark]);
 
   useEffect(() => {
     const onResize = () => chartInstance.current?.resize();
@@ -113,12 +175,6 @@ export function UsageDashboard() {
   }, []);
 
   const totals = data?.totals;
-
-  /** Usage figure for a model/kind row, with its unit label. */
-  const usageDisplay = (b: Bucket): string => {
-    if (b.kind === 'llm') return `${fmtNum(b.totalTokens)} ${t('settings.usage.unitToken')}`;
-    return `${fmtNum(b.quantity)} ${t(UNIT_LABEL_KEY[b.unit])}`;
-  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -139,36 +195,31 @@ export function UsageDashboard() {
 
       <p className="text-xs text-muted-foreground -mt-3">{t('settings.usage.disclaimer')}</p>
 
-      {/* Totals */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="rounded-lg border p-3">
-          <div className="text-xs text-muted-foreground">{t('settings.usage.totalRequests')}</div>
-          <div className="text-lg font-semibold">{totals?.requests ?? 0}</div>
-        </div>
-        <div className="rounded-lg border p-3">
-          <div className="text-xs text-muted-foreground">{t('settings.usage.totalTokens')}</div>
-          <div className="text-lg font-semibold">{fmtNum(totals?.llmTokens ?? 0)}</div>
-        </div>
-      </div>
-
-      {/* By modality */}
-      {(data?.byKind.length ?? 0) > 0 && (
+      {/* Per-modality summary chips — each with its own unit. */}
+      {sections.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {data!.byKind.map((b) => (
-            <div key={b.kind} className="rounded-lg border px-3 py-2 text-sm">
-              <span className="text-muted-foreground">{t(KIND_LABEL_KEY[b.kind])}</span>
-              <span className="ml-2 font-medium">{usageDisplay(b)}</span>
-              <span className="ml-1 text-xs text-muted-foreground">({b.requests})</span>
-            </div>
-          ))}
+          <div className="rounded-lg border px-3 py-2 text-sm">
+            <span className="text-muted-foreground">{t('settings.usage.totalRequests')}</span>
+            <span className="ml-2 font-medium">{totals?.requests ?? 0}</span>
+          </div>
+          {sections.map(
+            (s) =>
+              s.summary && (
+                <div key={s.kind} className="rounded-lg border px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">{t(KIND_LABEL_KEY[s.kind])}</span>
+                  <span className="ml-2 font-medium">{usageDisplay(s.summary)}</span>
+                  <span className="ml-1 text-xs text-muted-foreground">({s.summary.requests})</span>
+                </div>
+              ),
+          )}
         </div>
-      )}
+      ) : null}
 
-      {/* Daily LLM-token trend */}
+      {/* Daily request trend — unit-agnostic across modalities. */}
       <div className="rounded-lg border p-3">
         <div className="text-xs text-muted-foreground mb-2">{t('settings.usage.dailyTrend')}</div>
         {byDay.length > 0 ? (
-          <div ref={chartRef} style={{ width: '100%', height: 220 }} />
+          <div ref={chartRef} style={{ width: '100%', height: 200 }} />
         ) : (
           <div className="h-[120px] flex items-center justify-center text-sm text-muted-foreground">
             {t('settings.usage.empty')}
@@ -176,26 +227,29 @@ export function UsageDashboard() {
         )}
       </div>
 
-      {/* By model */}
-      {(data?.byModel.length ?? 0) > 0 && (
-        <div className="rounded-lg border overflow-hidden">
-          <div className="text-xs text-muted-foreground px-3 py-2 border-b bg-muted/30">
-            {t('settings.usage.byModel')}
+      {/* Per-modality tables — each section's usage column shares one unit. */}
+      {sections.map((s) => (
+        <div key={s.kind} className="rounded-lg border overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-2 border-b bg-muted/30">
+            <span className="text-xs font-medium">{t(KIND_LABEL_KEY[s.kind])}</span>
+            {s.summary && (
+              <span className="text-xs text-muted-foreground">
+                {usageDisplay(s.summary)} · {s.summary.requests} {t('settings.usage.reqs')}
+              </span>
+            )}
           </div>
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-muted-foreground">
                 <th className="text-left font-medium px-3 py-2">{t('settings.usage.model')}</th>
-                <th className="text-left font-medium px-3 py-2">{t('settings.usage.type')}</th>
                 <th className="text-right font-medium px-3 py-2">{t('settings.usage.reqs')}</th>
                 <th className="text-right font-medium px-3 py-2">{t('settings.usage.usage')}</th>
               </tr>
             </thead>
             <tbody>
-              {data!.byModel.map((m) => (
+              {s.models.map((m) => (
                 <tr key={m.key} className="border-t">
                   <td className="px-3 py-2 font-mono text-xs">{m.key}</td>
-                  <td className="px-3 py-2">{t(KIND_LABEL_KEY[m.kind])}</td>
                   <td className="px-3 py-2 text-right">{m.requests}</td>
                   <td className="px-3 py-2 text-right">{usageDisplay(m)}</td>
                 </tr>
@@ -203,7 +257,7 @@ export function UsageDashboard() {
             </tbody>
           </table>
         </div>
-      )}
+      ))}
     </div>
   );
 }
