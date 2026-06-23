@@ -93,6 +93,9 @@ function applyModality(
         icon: preset.icon,
         requiresApiKey: true,
         isBuiltIn: false,
+        // Seed an empty model list so the provider has a valid shape before the
+        // probe populates it (validators read `models.length`).
+        models: [],
         ...(target.modelsUrl ? { modelsUrl: target.modelsUrl } : {}),
       });
       break;
