@@ -190,21 +190,22 @@ export function makeRegenerateSceneTool(
         };
       }
 
-      // Narrow refusal (this release): whole-slide regeneration can't preserve
-      // video/audio or a slide-level image background through the resource channel
-      // (only element images flow as resources, and background image ids can't be
-      // resolved), so refuse rather than silently dropping them. Element images
-      // are fine.
+      // Narrow refusal (this release): whole-slide regeneration can't preserve a
+      // video element or a slide-level image background through the resource
+      // channel (only element images flow as resources, and background image ids
+      // can't be resolved), so refuse rather than silently dropping them. Element
+      // images are fine. (Audio is never a canvas element — narration audio lives
+      // in the actions/speech layer — so there's nothing to gate there.)
       const slideElements = content.canvas.elements ?? [];
-      const hasAvElement = slideElements.some((el) => el?.type === 'video' || el?.type === 'audio');
+      const hasVideoElement = slideElements.some((el) => el?.type === 'video');
       const hasImageBackground = isImageBackground(content.canvas.background);
-      if (hasAvElement || hasImageBackground) {
+      if (hasVideoElement || hasImageBackground) {
         return {
           content: [
             {
               type: 'text',
               text:
-                'This slide contains video/audio or an image background; whole-slide ' +
+                'This slide contains a video or an image background; whole-slide ' +
                 "regeneration isn't supported for those yet — please edit it on the canvas.",
             },
           ],
