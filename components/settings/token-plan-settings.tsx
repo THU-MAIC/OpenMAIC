@@ -61,6 +61,9 @@ export function TokenPlanSettings() {
   const setVideoProviderConfig = useSettingsStore((s) => s.setVideoProviderConfig);
   const setTTSProviderConfig = useSettingsStore((s) => s.setTTSProviderConfig);
   const setWebSearchProviderConfig = useSettingsStore((s) => s.setWebSearchProviderConfig);
+  // Read provider configs so the page can reflect already-persisted state
+  // (other settings panels read the store directly; this page must too).
+  const providersConfig = useSettingsStore((s) => s.providersConfig);
 
   const [selected, setSelected] = useState<TokenPlanPreset | null>(null);
   const [mode, setMode] = useState<'preset' | 'custom'>('preset');
@@ -105,15 +108,29 @@ export function TokenPlanSettings() {
     setBalanceStatus('idle');
   };
 
+  // Whether a preset's LLM provider already has a saved key (= configured).
+  const isPresetConfigured = (preset: TokenPlanPreset): boolean => {
+    const llmId = preset.modalities.llm?.providerId;
+    return !!(llmId && providersConfig[llmId as keyof typeof providersConfig]?.apiKey);
+  };
+
   const selectPreset = (preset: TokenPlanPreset) => {
     setMode('preset');
     setSelected(preset);
+    // Reflect persisted state: prefill the saved key so the page isn't blank
+    // on return (mirrors how other settings panels read the store).
+    const llmId = preset.modalities.llm?.providerId;
+    const savedKey = llmId
+      ? providersConfig[llmId as keyof typeof providersConfig]?.apiKey
+      : undefined;
+    setApiKey(savedKey || '');
     resetResults();
   };
 
   const enterCustomMode = () => {
     setMode('custom');
     setSelected(null);
+    setApiKey('');
     // Generate a stable custom provider id once per entry.
     setCustomId(`custom-tokenplan-${Date.now()}`);
     resetResults();
@@ -243,7 +260,7 @@ export function TokenPlanSettings() {
                   ) : (
                     <span className="h-5 w-5 shrink-0 rounded bg-muted" />
                   )}
-                  <span className="flex flex-col min-w-0">
+                  <span className="flex flex-col min-w-0 flex-1">
                     <span className="truncate font-medium">{preset.name}</span>
                     <span className="truncate text-xs text-muted-foreground">
                       {MODALITY_ORDER.filter((m) => preset.modalities[m])
@@ -251,6 +268,12 @@ export function TokenPlanSettings() {
                         .join(' · ')}
                     </span>
                   </span>
+                  {isPresetConfigured(preset) && (
+                    <span className="flex items-center gap-1 shrink-0 text-xs text-green-600">
+                      <CheckCircle2 className="h-3.5 w-3.5" />
+                      {t('settings.tokenPlan.configured')}
+                    </span>
+                  )}
                 </button>
               ))}
             </div>

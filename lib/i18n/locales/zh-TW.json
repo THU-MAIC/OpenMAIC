@@ -1136,7 +1136,8 @@
       "notAdapted": "暂未适配",
       "customGroup": "自定义",
       "customName": "自定义 Token Plan",
-      "customHint": "手动填入 baseURL 与协议(仅语言模型)"
+      "customHint": "手动填入 baseURL 与协议(仅语言模型)",
+      "configured": "已配置"
     }
   },
   "profile": {
