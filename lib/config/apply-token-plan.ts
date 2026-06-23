@@ -32,11 +32,6 @@ export interface TokenPlanActions {
     id: WebSearchProviderId,
     config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
   ) => void;
-  /**
-   * Delete an LLM provider entirely (custom token plans). Optional: when absent,
-   * removeTokenPlan falls back to clearing the LLM provider's key instead.
-   */
-  removeProvider?: (id: ProviderId) => void;
 }
 
 export interface ApplyResult {
@@ -138,9 +133,9 @@ function applyModality(
 
 /**
  * Removes a token plan: clears the API key and disables every modality it
- * declared. A custom LLM provider (id starting with `custom-`) is deleted
- * entirely via `removeProvider` when available; otherwise its key is cleared.
- * Each modality is isolated — a thrown setter doesn't abort the rest.
+ * declared. The LLM provider's key is cleared (the built-in provider falls back
+ * to its unconfigured state rather than vanishing). Each modality is isolated —
+ * a thrown setter doesn't abort the rest.
  */
 export function removeTokenPlan(preset: TokenPlanPreset, actions: TokenPlanActions): ApplyResult[] {
   const results: ApplyResult[] = [];
@@ -172,14 +167,9 @@ function removeModality(
 ): void {
   switch (modality) {
     case 'llm': {
-      const id = target.providerId as ProviderId;
-      // Custom providers are fully removed; built-ins just have their key cleared
-      // (so they fall back to the unconfigured state rather than vanishing).
-      if (actions.removeProvider && String(id).startsWith('custom-')) {
-        actions.removeProvider(id);
-      } else {
-        actions.setProviderConfig(id, { apiKey: '' });
-      }
+      // Clear the key so the built-in provider falls back to its unconfigured
+      // state rather than vanishing.
+      actions.setProviderConfig(target.providerId as ProviderId, { apiKey: '' });
       break;
     }
     case 'image':

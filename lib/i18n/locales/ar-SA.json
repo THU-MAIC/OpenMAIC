@@ -1157,9 +1157,6 @@
       "litUp": "Result",
       "modelsLit": "{n} models fetched",
       "notAdapted": "not adapted yet",
-      "customGroup": "Custom",
-      "customName": "Custom Token Plan",
-      "customHint": "Manually enter baseURL + protocol (LLM only)",
       "configured": "Configured",
       "remove": "Remove"
     }

@@ -13,7 +13,6 @@ function makeActions(): TokenPlanActions {
     setVideoProviderConfig: vi.fn(),
     setTTSProviderConfig: vi.fn(),
     setWebSearchProviderConfig: vi.fn(),
-    removeProvider: vi.fn(),
   };
 }
 
@@ -128,37 +127,5 @@ describe('removeTokenPlan', () => {
       'minimax',
       expect.objectContaining({ apiKey: '', enabled: false }),
     );
-    // No custom provider → removeProvider not used
-    expect(actions.removeProvider).not.toHaveBeenCalled();
-  });
-
-  it('deletes a custom LLM provider entirely', () => {
-    const actions = makeActions();
-    const custom = {
-      id: 'custom-tokenplan-1',
-      name: 'Custom',
-      category: 'third_party' as const,
-      modalities: {
-        llm: { providerId: 'custom-tokenplan-1', baseUrl: 'https://x/v1', apiFormat: 'openai' as const },
-      },
-    };
-    removeTokenPlan(custom, actions);
-    expect(actions.removeProvider).toHaveBeenCalledWith('custom-tokenplan-1');
-    expect(actions.setProviderConfig).not.toHaveBeenCalled();
-  });
-
-  it('falls back to clearing the key when removeProvider is absent', () => {
-    const actions = makeActions();
-    delete actions.removeProvider;
-    const custom = {
-      id: 'custom-tokenplan-2',
-      name: 'Custom',
-      category: 'third_party' as const,
-      modalities: {
-        llm: { providerId: 'custom-tokenplan-2', baseUrl: 'https://x/v1', apiFormat: 'openai' as const },
-      },
-    };
-    removeTokenPlan(custom, actions);
-    expect(actions.setProviderConfig).toHaveBeenCalledWith('custom-tokenplan-2', { apiKey: '' });
   });
 });
