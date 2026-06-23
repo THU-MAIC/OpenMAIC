@@ -1104,7 +1104,16 @@
     "viewDocs": "APIドキュメント",
     "webSearchBaseUrl": "ベースURL",
     "webSearchServerConfigured": "サーバー側で検索APIキーが設定済みです",
-    "optional": "任意"
+    "optional": "任意",
+    "selectProvider": "Select Provider",
+    "customProvider": "Custom",
+    "presetPickHint": "Picking a provider auto-fills its base URL and protocol; enter your key then click \"Fetch Models\". Not listed? Use \"Custom\".",
+    "presetCategory": {
+      "tokenPlan": "Token Plans",
+      "aggregator": "Aggregators",
+      "thirdParty": "Vendors",
+      "official": "Official"
+    }
   },
   "profile": {
     "title": "プロフィール",

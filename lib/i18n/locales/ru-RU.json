@@ -1104,7 +1104,16 @@
     "viewDocs": "API документация",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Серверный API-ключ поиска настроен",
-    "optional": "Необязательно"
+    "optional": "Необязательно",
+    "selectProvider": "Select Provider",
+    "customProvider": "Custom",
+    "presetPickHint": "Picking a provider auto-fills its base URL and protocol; enter your key then click \"Fetch Models\". Not listed? Use \"Custom\".",
+    "presetCategory": {
+      "tokenPlan": "Token Plans",
+      "aggregator": "Aggregators",
+      "thirdParty": "Vendors",
+      "official": "Official"
+    }
   },
   "profile": {
     "title": "Профиль",

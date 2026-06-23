@@ -7,6 +7,8 @@ interface NewCustomProviderConfig {
   baseUrl: string;
   icon: string;
   requiresApiKey: boolean;
+  /** Optional explicit /models URL override (from a preset). */
+  modelsUrl?: string;
 }
 
 export function formatContextWindow(size?: number): string {
@@ -51,6 +53,7 @@ export function createCustomProviderSettings(
     icon: providerData.icon || undefined,
     requiresApiKey: providerData.requiresApiKey,
     isBuiltIn: false,
+    modelsUrl: providerData.modelsUrl || undefined,
   };
 }
 

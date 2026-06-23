@@ -466,7 +466,14 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     const newProviderId = `custom-${Date.now()}` as ProviderId;
     const updatedConfig = {
       ...providersConfig,
-      [newProviderId]: createCustomProviderSettings(providerData),
+      [newProviderId]: createCustomProviderSettings({
+        name: providerData.name,
+        type: providerData.type,
+        baseUrl: providerData.baseUrl,
+        icon: providerData.icon,
+        requiresApiKey: providerData.requiresApiKey,
+        modelsUrl: providerData.modelsUrl,
+      }),
     };
     setProvidersConfig(updatedConfig);
     setShowAddProviderDialog(false);

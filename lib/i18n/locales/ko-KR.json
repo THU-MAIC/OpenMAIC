@@ -1104,7 +1104,16 @@
     "viewDocs": "API 문서",
     "webSearchBaseUrl": "기본 URL",
     "webSearchServerConfigured": "서버 측 검색 API 키가 설정되어 있습니다",
-    "optional": "선택 사항"
+    "optional": "선택 사항",
+    "selectProvider": "Select Provider",
+    "customProvider": "Custom",
+    "presetPickHint": "Picking a provider auto-fills its base URL and protocol; enter your key then click \"Fetch Models\". Not listed? Use \"Custom\".",
+    "presetCategory": {
+      "tokenPlan": "Token Plans",
+      "aggregator": "Aggregators",
+      "thirdParty": "Vendors",
+      "official": "Official"
+    }
   },
   "profile": {
     "title": "프로필",

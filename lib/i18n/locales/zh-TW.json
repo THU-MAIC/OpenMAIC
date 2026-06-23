@@ -1089,7 +1089,16 @@
     "voxcpmVoiceSaveFailed": "儲存聲音失敗",
     "voxcpmVoiceSaved": "VoxCPM 聲音已儲存",
     "voxcpmVoicesDescription": "儲存在此瀏覽器中並加入共享的客服人員聲音池。",
-    "voxcpmVoicesTitle": "VoxCPM 聲音"
+    "voxcpmVoicesTitle": "VoxCPM 聲音",
+    "selectProvider": "选择厂商",
+    "customProvider": "自定义",
+    "presetPickHint": "选择厂商后将自动填入接口地址与协议，填好密钥再点「拉取模型」即可。不在列表中可用「自定义」。",
+    "presetCategory": {
+      "tokenPlan": "Token Plan 套餐",
+      "aggregator": "聚合 / 网关",
+      "thirdParty": "厂商直连",
+      "official": "官方"
+    }
   },
   "profile": {
     "title": "個人資料",

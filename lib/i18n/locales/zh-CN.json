@@ -1104,7 +1104,16 @@
     "viewDocs": "API 文档",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "服务端已配置搜索 API Key",
-    "optional": "可选"
+    "optional": "可选",
+    "selectProvider": "选择厂商",
+    "customProvider": "自定义",
+    "presetPickHint": "选择厂商后将自动填入接口地址与协议，填好密钥再点「拉取模型」即可。不在列表中可用「自定义」。",
+    "presetCategory": {
+      "tokenPlan": "Token Plan 套餐",
+      "aggregator": "聚合 / 网关",
+      "thirdParty": "厂商直连",
+      "official": "官方"
+    }
   },
   "profile": {
     "title": "个人资料",
