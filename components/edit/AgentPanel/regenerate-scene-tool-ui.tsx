@@ -80,7 +80,8 @@ export const RegenerateSceneUI = makeAssistantToolUI<
     // finished but produced no content, treat it as failed.
     const noContentApplied =
       !running && !stopped && result != null && result.details?.content == null;
-    const failed = !running && !stopped && (isError || status.type === 'incomplete' || noContentApplied);
+    const failed =
+      !running && !stopped && (isError || status.type === 'incomplete' || noContentApplied);
     return (
       <RegenerateSceneCard
         running={running}

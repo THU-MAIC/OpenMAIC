@@ -13,7 +13,10 @@ describe('nextThinkTimer (per reasoning block)', () => {
 
   it('ends the block when a later part follows it (end=true)', () => {
     const started = { startedAt: 100 };
-    expect(nextThinkTimer(started, { end: true, now: 250 })).toEqual({ startedAt: 100, endedAt: 250 });
+    expect(nextThinkTimer(started, { end: true, now: 250 })).toEqual({
+      startedAt: 100,
+      endedAt: 250,
+    });
   });
 
   it('keeps the first endedAt (does not move once ended)', () => {

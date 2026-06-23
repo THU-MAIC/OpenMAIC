@@ -186,7 +186,8 @@ export function createPartMapper(
       // Capture provider-specific metadata (e.g. Gemini thought_signature) via
       // the typed seam so it can be re-emitted on the next turn.
       const meta = captureToolCallMetadata(part as never);
-      if (meta) (toolCall as { providerMetadata?: ToolCallProviderMetadata }).providerMetadata = meta;
+      if (meta)
+        (toolCall as { providerMetadata?: ToolCallProviderMetadata }).providerMetadata = meta;
       partial.content.push(toolCall);
       push({ type: 'toolcall_start', contentIndex: idx, partial });
       push({ type: 'toolcall_end', contentIndex: idx, toolCall, partial });

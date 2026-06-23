@@ -97,7 +97,11 @@ describe('serializeThread / deserializeThread', () => {
       },
     ];
     const slim = serializeThread(messages, () => 1500);
-    expect(slim[0].content[0]).toEqual({ type: 'reasoning', text: 'let me think', durationMs: 1500 });
+    expect(slim[0].content[0]).toEqual({
+      type: 'reasoning',
+      text: 'let me think',
+      durationMs: 1500,
+    });
     const restored = deserializeThread(slim);
     const parts = restored[0].content as unknown as { type: string; text?: string }[];
     expect(parts[0]).toEqual({ type: 'reasoning', text: 'let me think' });

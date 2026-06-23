@@ -3,7 +3,9 @@ import { patchHtmlForIframe } from '@/lib/utils/iframe';
 
 describe('patchHtmlForIframe', () => {
   it('injects the storage shim and sizing CSS after <head>', () => {
-    const out = patchHtmlForIframe('<!DOCTYPE html><html><head><title>t</title></head><body></body></html>');
+    const out = patchHtmlForIframe(
+      '<!DOCTYPE html><html><head><title>t</title></head><body></body></html>',
+    );
     expect(out).toContain('data-iframe-storage-shim');
     expect(out).toContain('data-iframe-patch');
   });
@@ -55,8 +57,7 @@ describe('patchHtmlForIframe', () => {
   });
 
   it('injects the error-capture shim before the storage shim and page scripts', () => {
-    const html =
-      '<!DOCTYPE html><html><head><script>boom()</script></head><body></body></html>';
+    const html = '<!DOCTYPE html><html><head><script>boom()</script></head><body></body></html>';
     const out = patchHtmlForIframe(html);
     expect(out).toContain('data-iframe-error-shim');
     // error shim runs first → before storage shim → before page scripts, so it

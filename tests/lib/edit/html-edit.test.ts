@@ -6,7 +6,9 @@ const HTML =
 
 describe('applyHtmlEdits (vendored pi edit core)', () => {
   it('applies a single exact str_replace edit', () => {
-    const out = applyHtmlEdits(HTML, [{ oldText: 'getElementById("strt")', newText: 'getElementById("go")' }]);
+    const out = applyHtmlEdits(HTML, [
+      { oldText: 'getElementById("strt")', newText: 'getElementById("go")' },
+    ]);
     expect(out).toContain('getElementById("go").addEventListener');
     expect(out).not.toContain('strt');
     // everything else preserved
@@ -29,13 +31,15 @@ describe('applyHtmlEdits (vendored pi edit core)', () => {
   });
 
   it('throws an ambiguity error when oldText is not unique', () => {
-    expect(() => applyHtmlEdits('<p>x</p>\n<p>x</p>\n', [{ oldText: '<p>x</p>', newText: '<p>y</p>' }])).toThrow(
-      /occurrences|unique/i,
-    );
+    expect(() =>
+      applyHtmlEdits('<p>x</p>\n<p>x</p>\n', [{ oldText: '<p>x</p>', newText: '<p>y</p>' }]),
+    ).toThrow(/occurrences|unique/i);
   });
 
   it('throws when an edit makes no change', () => {
-    expect(() => applyHtmlEdits(HTML, [{ oldText: 'Go', newText: 'Go' }])).toThrow(/No changes|identical/i);
+    expect(() => applyHtmlEdits(HTML, [{ oldText: 'Go', newText: 'Go' }])).toThrow(
+      /No changes|identical/i,
+    );
   });
 
   it('fuzzy-matches smart quotes against ASCII oldText', () => {

@@ -78,7 +78,14 @@ describe('createPartMapper — reasoning/thinking channel', () => {
       { type: 'text', text: 'answer' },
     ]);
     const types = events.map((e) => e.type);
-    expect(types).toEqual(['thinking_start', 'thinking_delta', 'thinking_end', 'text_start', 'text_delta', 'text_end']);
+    expect(types).toEqual([
+      'thinking_start',
+      'thinking_delta',
+      'thinking_end',
+      'text_start',
+      'text_delta',
+      'text_end',
+    ]);
   });
 
   it('finalize closes an unterminated thinking block', () => {

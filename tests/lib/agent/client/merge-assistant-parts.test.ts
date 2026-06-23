@@ -19,7 +19,12 @@ describe('mergeAssistantParts — reasoning', () => {
   });
 
   it('drops an empty reasoning part', () => {
-    const turns: PiPart[][] = [[{ type: 'reasoning', text: '' }, { type: 'text', text: 'hi' }]];
+    const turns: PiPart[][] = [
+      [
+        { type: 'reasoning', text: '' },
+        { type: 'text', text: 'hi' },
+      ],
+    ];
     const parts = mergeAssistantParts({ turns, toolResults: noTools, error: '' });
     expect(parts).toEqual([{ type: 'text', text: 'hi' }]);
   });

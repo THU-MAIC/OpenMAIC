@@ -9,7 +9,10 @@ const SNAP = {
   actions: [{ type: 'speech', id: 'a_old' } as never],
   // post-edit state, so an undo can be resumed (redo)
   redo: {
-    content: { type: 'slide', canvas: { id: 'c', elements: [{ id: 'e' }] } } as unknown as SceneContent,
+    content: {
+      type: 'slide',
+      canvas: { id: 'c', elements: [{ id: 'e' }] },
+    } as unknown as SceneContent,
     actions: [{ type: 'speech', id: 'a_new' } as never],
   },
 };
@@ -32,7 +35,10 @@ describe('regen-snapshots store', () => {
 
     // First click = undo → pre-edit state.
     useRegenSnapshots.getState().restore('call-1', apply);
-    expect(apply).toHaveBeenNthCalledWith(1, 's1', { content: SNAP.content, actions: SNAP.actions });
+    expect(apply).toHaveBeenNthCalledWith(1, 's1', {
+      content: SNAP.content,
+      actions: SNAP.actions,
+    });
     expect(useRegenSnapshots.getState().snapshots['call-1'].restored).toBe(true);
 
     // Second click = resume (redo) → post-edit state, toggles back.

@@ -76,7 +76,9 @@ function ThinkingIndicator() {
   // Cursor-style shimmer label — the bright band sweeps across the word while we
   // wait for the next API call's first streamed token. Reasoning tokens are never
   // rendered raw (think-blocks stripped upstream); thinking surfaces only here.
-  return <span className="ai-thinking-shimmer text-[13px] font-medium">{t('edit.agent.thinking')}</span>;
+  return (
+    <span className="ai-thinking-shimmer text-[13px] font-medium">{t('edit.agent.thinking')}</span>
+  );
 }
 
 function AssistantMessage() {
@@ -146,11 +148,7 @@ function VoiceInputButton() {
   );
 }
 
-export function AgentPanel({
-  scene,
-}: {
-  scene?: { id: string; title: string; type?: string };
-}) {
+export function AgentPanel({ scene }: { scene?: { id: string; title: string; type?: string } }) {
   const { t } = useI18n();
   const { runtime, clearThread, hasMessages } = useAgentRuntime({ scene });
 
@@ -165,7 +163,9 @@ export function AgentPanel({
   const emptyTitleKey = 'edit.agent.emptyTitle';
   const emptyLeadKey = 'edit.agent.empty.lead';
   const emptyBoundaryKey = 'edit.agent.empty.boundary';
-  const placeholderKey = isInteractive ? 'edit.agent.interactive.placeholder' : 'edit.agent.placeholder';
+  const placeholderKey = isInteractive
+    ? 'edit.agent.interactive.placeholder'
+    : 'edit.agent.placeholder';
 
   // Drag-to-resize from the left edge (pointer capture, direct DOM write).
   const railRef = useRef<HTMLElement>(null);

@@ -76,7 +76,6 @@ function toHistory(messages: ThreadMessageLike[]): HistoryTurn[] {
   return out;
 }
 
-
 export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);

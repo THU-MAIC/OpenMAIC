@@ -65,7 +65,9 @@ describe('createReasoningContentRewriter', () => {
   it('closes the block when reasoning is followed directly by a tool call (no content)', () => {
     const rw = createReasoningContentRewriter();
     rw(chunk({ reasoning_content: 'I should call the tool' }));
-    const out = rw(chunk({ tool_calls: [{ index: 0, function: { name: 'edit', arguments: '{' } }] }));
+    const out = rw(
+      chunk({ tool_calls: [{ index: 0, function: { name: 'edit', arguments: '{' } }] }),
+    );
     expect(contentOf(out)).toBe('</think>');
     expect(out.choices?.[0]?.delta?.tool_calls).toBeDefined();
   });
@@ -113,7 +115,9 @@ describe('wrapResponseWithReasoning', () => {
     );
     const text = await readAll(res);
     // Reconstruct the content stream the AI SDK will see.
-    const contents = [...text.matchAll(/"content":"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`));
+    const contents = [...text.matchAll(/"content":"((?:[^"\\]|\\.)*)"/g)].map((m) =>
+      JSON.parse(`"${m[1]}"`),
+    );
     expect(contents.join('')).toBe('<think>We think</think>391');
     expect(text).toContain('data: [DONE]');
     expect(text).not.toContain('reasoning_content');
@@ -123,10 +127,17 @@ describe('wrapResponseWithReasoning', () => {
     const line = dataLine({ reasoning_content: 'hello' });
     const mid = Math.floor(line.length / 2);
     const res = wrapResponseWithReasoning(
-      sseResponse([line.slice(0, mid), line.slice(mid), dataLine({ content: 'x' }), 'data: [DONE]\n\n']),
+      sseResponse([
+        line.slice(0, mid),
+        line.slice(mid),
+        dataLine({ content: 'x' }),
+        'data: [DONE]\n\n',
+      ]),
     );
     const text = await readAll(res);
-    const contents = [...text.matchAll(/"content":"((?:[^"\\]|\\.)*)"/g)].map((m) => JSON.parse(`"${m[1]}"`));
+    const contents = [...text.matchAll(/"content":"((?:[^"\\]|\\.)*)"/g)].map((m) =>
+      JSON.parse(`"${m[1]}"`),
+    );
     expect(contents.join('')).toBe('<think>hello</think>x');
   });
 

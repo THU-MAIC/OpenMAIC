@@ -1,5 +1,9 @@
 import { describe, it, expect } from 'vitest';
-import { isEditApplied, isEditRefused, deriveEditFailed } from '@/components/edit/AgentPanel/edit-tool-state';
+import {
+  isEditApplied,
+  isEditRefused,
+  deriveEditFailed,
+} from '@/components/edit/AgentPanel/edit-tool-state';
 
 describe('isEditApplied', () => {
   it('is true when details.html is a string (edits landed)', () => {
@@ -29,7 +33,12 @@ describe('deriveEditFailed', () => {
   // the wrap-up turn incomplete, but the edit itself applied).
   it('is NOT failed when html applied', () => {
     expect(
-      deriveEditFailed({ running: false, stopped: false, isError: false, result: { details: { html: '<html>fixed</html>', editCount: 2 } } }),
+      deriveEditFailed({
+        running: false,
+        stopped: false,
+        isError: false,
+        result: { details: { html: '<html>fixed</html>', editCount: 2 } },
+      }),
     ).toBe(false);
   });
 
@@ -39,32 +48,48 @@ describe('deriveEditFailed', () => {
         running: false,
         stopped: false,
         isError: false,
-        result: { details: { html: null, editCount: 0 }, content: [{ type: 'text', text: 'could not anchor' }] },
+        result: {
+          details: { html: null, editCount: 0 },
+          content: [{ type: 'text', text: 'could not anchor' }],
+        },
       }),
     ).toBe(true);
   });
 
   it('is failed when isError is set', () => {
-    expect(deriveEditFailed({ running: false, stopped: false, isError: true, result: null })).toBe(true);
+    expect(deriveEditFailed({ running: false, stopped: false, isError: true, result: null })).toBe(
+      true,
+    );
   });
 
   // Bias to success: a missing/unpropagated result (no explicit failure signal)
   // is NOT a failure — it wrongly showed ✕ on edits that actually applied.
   it('is NOT failed when the result is missing / unpropagated', () => {
-    expect(deriveEditFailed({ running: false, stopped: false, isError: false, result: null })).toBe(false);
+    expect(deriveEditFailed({ running: false, stopped: false, isError: false, result: null })).toBe(
+      false,
+    );
   });
 
   it('is NOT failed when a result is present but carries no html marker (slimmed)', () => {
     expect(
-      deriveEditFailed({ running: false, stopped: false, isError: false, result: { details: { sceneId: 's1' } } }),
+      deriveEditFailed({
+        running: false,
+        stopped: false,
+        isError: false,
+        result: { details: { sceneId: 's1' } },
+      }),
     ).toBe(false);
   });
 
   it('is not failed while running', () => {
-    expect(deriveEditFailed({ running: true, stopped: false, isError: false, result: null })).toBe(false);
+    expect(deriveEditFailed({ running: true, stopped: false, isError: false, result: null })).toBe(
+      false,
+    );
   });
 
   it('is not failed when stopped (cancelled) — stopped is its own state', () => {
-    expect(deriveEditFailed({ running: false, stopped: true, isError: true, result: null })).toBe(false);
+    expect(deriveEditFailed({ running: false, stopped: true, isError: true, result: null })).toBe(
+      false,
+    );
   });
 });
