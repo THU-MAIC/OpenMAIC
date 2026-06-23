@@ -307,6 +307,12 @@
         "boundary": "精细编辑请使用编辑器，增删 / 排序页面请用左侧导航。",
         "comingSoon": "更多能力陆续加入中，敬请期待。"
       },
+      "interactive": {
+        "emptyTitle": "这个互动页要修什么？",
+        "lead": "描述这个互动页的问题（比如某个按钮点了没反应），我只修这一处、其它内容原样保留。",
+        "placeholder": "描述这个互动页的问题…",
+        "boundary": "我只做定点修复，不整页重做；切换页面请用左侧导航。"
+      },
       "cap": {
         "content": {
           "label": "重新生成 PPT 页面",
@@ -315,9 +321,16 @@
         "narration": {
           "label": "重新生成讲解脚本",
           "examples": "“讲得更口语一些”、“和画布上的改动对齐”"
+        },
+        "fixHtml": {
+          "label": "修复互动页的 bug",
+          "examples": "“开始按钮点了没反应”、“手机上排版重叠”"
         }
       },
-      "newConversation": "新对话"
+      "newConversation": "新对话",
+      "thinking": "思考中…",
+      "reasoning": "思考过程",
+      "thought": "已思考"
     },
     "timeline": {
       "title": "讲解脚本",
@@ -373,7 +386,15 @@
       "notGenerated": "未生成",
       "elementsCount": "{{count}} 个元素",
       "restore": "还原到重生成前",
-      "restored": "已还原"
+      "restored": "已还原",
+      "resume": "恢复"
+    },
+    "fixHtml": {
+      "title": "修复交互页",
+      "fixing": "修复中",
+      "fixed": "已修复",
+      "notFixed": "未修复",
+      "editsCount": "{{count}} 处修改"
     },
     "readCard": {
       "title": "读取页面内容",

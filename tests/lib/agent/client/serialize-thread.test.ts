@@ -85,6 +85,71 @@ describe('serializeThread / deserializeThread', () => {
     expect(part.result?.details?.content).toBeNull();
   });
 
+  it('round-trips a reasoning part with its duration', () => {
+    const messages: ThreadMessageLike[] = [
+      {
+        role: 'assistant',
+        id: 'a1',
+        content: [
+          { type: 'reasoning', text: 'let me think' },
+          { type: 'text', text: 'answer' },
+        ] as ThreadMessageLike['content'],
+      },
+    ];
+    const slim = serializeThread(messages, () => 1500);
+    expect(slim[0].content[0]).toEqual({ type: 'reasoning', text: 'let me think', durationMs: 1500 });
+    const restored = deserializeThread(slim);
+    const parts = restored[0].content as unknown as { type: string; text?: string }[];
+    expect(parts[0]).toEqual({ type: 'reasoning', text: 'let me think' });
+    expect(parts[1]).toEqual({ type: 'text', text: 'answer' });
+  });
+
+  it('preserves edit_interactive_html success markers (html applied + editCount)', () => {
+    const messages: ThreadMessageLike[] = [
+      {
+        role: 'assistant',
+        id: 'a1',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'tc1',
+            toolName: 'edit_interactive_html',
+            args: { sceneId: 's1' },
+            result: { details: { sceneId: 's1', html: '<html>…huge 745kb…</html>', editCount: 3 } },
+          },
+        ] as ThreadMessageLike['content'],
+      },
+    ];
+    const slim = serializeThread(messages);
+    const part = slim[0].content[0];
+    if (part.type !== 'tool-call') throw new Error('expected tool-call');
+    // html replaced by a non-null placeholder (success survives, payload dropped)
+    expect(typeof part.result?.details?.html).toBe('string');
+    expect(part.result?.details?.editCount).toBe(3);
+    expect(JSON.stringify(slim).length).toBeLessThan(300);
+  });
+
+  it('preserves edit_interactive_html refusal (html === null)', () => {
+    const messages: ThreadMessageLike[] = [
+      {
+        role: 'assistant',
+        id: 'a1',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'tc1',
+            toolName: 'edit_interactive_html',
+            args: { sceneId: 's1' },
+            result: { details: { sceneId: 's1', html: null, editCount: 0 } },
+          },
+        ] as ThreadMessageLike['content'],
+      },
+    ];
+    const part = serializeThread(messages)[0].content[0];
+    if (part.type !== 'tool-call') throw new Error('expected tool-call');
+    expect(part.result?.details?.html).toBeNull();
+  });
+
   it('drops messages with no renderable content', () => {
     const messages: ThreadMessageLike[] = [
       { role: 'assistant', id: 'a1', content: [] },

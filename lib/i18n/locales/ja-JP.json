@@ -317,7 +317,9 @@
           "examples": "「もっと口語的に」「編集内容に合わせて」"
         }
       },
-      "newConversation": "新しい会話"
+      "newConversation": "新しい会話",
+      "reasoning": "思考プロセス",
+      "thought": "思考時間"
     },
     "timeline": {
       "title": "ナレーション台本",
@@ -373,7 +375,8 @@
       "notGenerated": "未生成",
       "elementsCount": "{{count}} 個の要素",
       "restore": "再生成前に戻す",
-      "restored": "復元しました"
+      "restored": "復元しました",
+      "resume": "再適用"
     },
     "readCard": {
       "title": "ページ内容を読み取り",

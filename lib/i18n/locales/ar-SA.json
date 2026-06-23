@@ -317,7 +317,9 @@
           "examples": "“Make it more conversational”, “Align with my canvas edits”"
         }
       },
-      "newConversation": "New conversation"
+      "newConversation": "New conversation",
+      "reasoning": "الاستدلال",
+      "thought": "فكّر لمدة"
     },
     "timeline": {
       "title": "نص السرد",
@@ -373,7 +375,8 @@
       "notGenerated": "لم يُولّد",
       "elementsCount": "{{count}} عناصر",
       "restore": "استعادة السابق",
-      "restored": "تمت الاستعادة"
+      "restored": "تمت الاستعادة",
+      "resume": "إعادة"
     },
     "readCard": {
       "title": "Read slide content",

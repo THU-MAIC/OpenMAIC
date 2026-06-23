@@ -317,7 +317,9 @@
           "examples": "“Make it more conversational”, “Align with my canvas edits”"
         }
       },
-      "newConversation": "New conversation"
+      "newConversation": "New conversation",
+      "reasoning": "Рассуждение",
+      "thought": "Думал"
     },
     "timeline": {
       "title": "Сценарий закадрового текста",
@@ -373,7 +375,8 @@
       "notGenerated": "Не сгенерировано",
       "elementsCount": "{{count}} элементов",
       "restore": "Вернуть прежний вариант",
-      "restored": "Восстановлено"
+      "restored": "Восстановлено",
+      "resume": "Вернуть"
     },
     "readCard": {
       "title": "Read slide content",

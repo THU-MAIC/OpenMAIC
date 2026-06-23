@@ -2,12 +2,12 @@
 
 import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { createPortal } from 'react-dom';
-import { useStageStore } from '@/lib/store';
 import { useWidgetIframeStore } from '@/lib/store/widget-iframe';
 import {
   useInteractiveIframePool,
   type IframePoolEntry,
 } from '@/lib/store/interactive-iframe-pool';
+import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 
 /**
  * Stable host for interactive scene iframes (#619).
@@ -23,16 +23,17 @@ import {
  * the fullscreen subtree during presentation mode (which calls requestFullscreen
  * on the playback stage, not on body); otherwise it lives on `document.body`.
  * A low z-index keeps it under Radix dialogs (e.g. the scene-switch confirm)
- * while still covering the canvas box during plain interactive playback. Hidden
- * (never unmounted) in edit mode and whenever the placeholder is gone, so the
- * document is preserved for a zero-reload return.
+ * while still covering the canvas box during interactive playback AND Pro-mode
+ * editing — the editor agent fixes interactive HTML, so the teacher must see the
+ * live page while editing. Visibility is driven by the placeholder's ownership
+ * (gone → hidden, never unmounted), so the document is preserved for a
+ * zero-reload return.
  */
 export function InteractiveIframeHost() {
   const entries = useInteractiveIframePool((s) => s.entries);
   const activeSceneId = useInteractiveIframePool((s) => s.activeSceneId);
   const reset = useInteractiveIframePool((s) => s.reset);
   const setActiveScene = useWidgetIframeStore((s) => s.setActiveScene);
-  const mode = useStageStore((s) => s.mode);
 
   // Portal into the fullscreen element when one is active (presentation mode
   // fullscreens the stage, and a body-portaled iframe would not be part of that
@@ -65,7 +66,7 @@ export function InteractiveIframeHost() {
           key={sceneId}
           sceneId={sceneId}
           entry={entry}
-          visible={mode !== 'edit' && entry.owner !== null && sceneId === activeSceneId}
+          visible={entry.owner !== null && sceneId === activeSceneId}
         />
       ))}
     </>,
@@ -110,6 +111,38 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
     registerIframe(sceneId, send);
     return () => registerIframe(sceneId, null);
   }, [sceneId, registerIframe]);
+
+  // Capture runtime errors the iframe's error shim posts out (see iframe.ts), so
+  // the editor agent can diagnose a blank/broken page. Matched to THIS iframe by
+  // event.source (sandboxed null-origin iframes still postMessage to the parent).
+  //
+  // The errors that matter most (a JSON.parse that aborts setup) fire while srcDoc
+  // parses — possibly BEFORE this passive effect subscribes. The shim buffers every
+  // error and re-emits it on request, so after subscribing we ask for a replay to
+  // recover anything posted pre-subscription. Re-subscribed per document version
+  // (entry.srcDoc) so each fresh page gets its own replay request; addError dedups
+  // the live + replayed copies. iframeRef is read lazily, so the handler is stable.
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const d = e.data as
+        | { __maicInteractive?: boolean; kind?: string; errorKind?: string; message?: unknown }
+        | undefined;
+      if (!d || d.__maicInteractive !== true || d.kind !== 'runtime-error') return;
+      const kind = typeof d.errorKind === 'string' ? d.errorKind : 'error';
+      const msg = typeof d.message === 'string' ? d.message : String(d.message ?? '');
+      useSceneRuntimeErrors.getState().addError(sceneId, `[${kind}] ${msg}`);
+    };
+    window.addEventListener('message', onMessage);
+    iframeRef.current?.contentWindow?.postMessage({ __maicErrorReplayRequest: true }, '*');
+    return () => window.removeEventListener('message', onMessage);
+  }, [sceneId, entry.srcDoc]);
+
+  // A content change reloads the iframe; drop the previous render's errors so the
+  // captured set reflects the CURRENT page (e.g. after the agent applies a fix).
+  useEffect(() => {
+    useSceneRuntimeErrors.getState().clearScene(sceneId);
+  }, [sceneId, entry.srcDoc]);
 
   const rect = entry.rect;
   // Require a real measured box before showing — a null or zero-size rect means

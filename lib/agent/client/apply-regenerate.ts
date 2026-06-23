@@ -9,7 +9,7 @@
  */
 import { nanoid } from 'nanoid';
 import type { Action } from '@/lib/types/action';
-import type { Scene, SceneContent } from '@/lib/types/stage';
+import type { Scene, SceneContent, InteractiveContent } from '@/lib/types/stage';
 import type { GeneratedSlideContent } from '@/lib/types/generation';
 import { CURRENT_SLIDE_CONTENT_SCHEMA_VERSION } from '@/lib/edit/slide-schema';
 
@@ -64,6 +64,8 @@ export interface RegenerateDetails {
   sceneId?: string;
   /** Present for `regenerate_scene` (whole-slide); absent for actions-only. */
   content?: GeneratedSlideContent | null;
+  /** Present for `edit_interactive_html` — the edited interactive page HTML. */
+  html?: string | null;
   actions?: Action[];
 }
 
@@ -97,6 +99,20 @@ export function planRegenerateApply(
   if (!sceneId) return { snapshot: null, patch: null };
 
   const actions = Array.isArray(details.actions) ? details.actions : [];
+
+  // `edit_interactive_html` carries the edited interactive-page HTML. Snapshot
+  // the current scene, then write the new html onto the existing
+  // InteractiveContent — preserving the page's other fields (url / widgetType /
+  // widgetConfig / teacherActions). The iframe reloads when content.html changes.
+  if (toolName === 'edit_interactive_html' && typeof details.html === 'string') {
+    const prev = scene?.content as InteractiveContent | undefined;
+    if (!prev || prev.type !== 'interactive') return { snapshot: null, patch: null };
+    const runtime: InteractiveContent = { ...prev, html: details.html };
+    const snapshot = scene
+      ? { sceneId, content: scene.content, actions: scene.actions ?? [] }
+      : null;
+    return { snapshot, patch: { content: runtime as SceneContent } };
+  }
 
   // Defensive: only `regenerate_scene` carries whole-slide content. When the
   // tool name is known and is anything else, treat the result as actions-only

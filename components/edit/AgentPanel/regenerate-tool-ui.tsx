@@ -1,58 +1,51 @@
 'use client';
 
 /**
- * Tool-call UI for `regenerate_scene_actions`. Renders via the shared `ToolCard`;
- * the body shows the resulting action breakdown (the board's red/green line diff
- * isn't rendered — this tool regenerates a scene's actions wholesale rather than
- * producing a text diff).
+ * Tool-call UI for `regenerate_scene_actions`. Renders via the shared `ToolCard`
+ * as a single non-expandable status row (only an actionable failure reason is
+ * surfaced inline). The "还原 / Restore previous" button lives on the card row.
  */
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { cueLabel } from '@/components/edit/ActionsBar/cue-meta';
-import { ToolCard, type ToolStatus } from './tool-card';
+import { ToolCard, isStoppedResult, type ToolStatus } from './tool-card';
 import { RestoreButton } from './restore-button';
-
-type TFn = (key: string, options?: Record<string, unknown>) => string;
 
 interface RegenerateResult {
   content?: { type: string; text?: string }[];
   details?: { sceneId?: string; actions?: { type?: string }[] };
 }
 
-function summarize(actions: { type?: string }[], t: TFn): string {
-  const counts = new Map<string, number>();
-  for (const a of actions) {
-    const type = a?.type ?? 'action';
-    counts.set(type, (counts.get(type) ?? 0) + 1);
-  }
-  return [...counts.entries()].map(([type, n]) => `${n} ${cueLabel(type, t)}`).join(' · ');
-}
-
 function RegenerateActionsCard({
   running,
+  stopped,
   failed,
   sceneId,
-  actions,
   failText,
   toolCallId,
 }: {
   running: boolean;
+  stopped: boolean;
   failed: boolean;
   sceneId?: string;
-  actions: { type?: string }[];
   failText?: string;
   toolCallId: string;
 }) {
   const { t } = useI18n();
-  const toolStatus: ToolStatus = running ? 'running' : failed ? 'failed' : 'done';
+  const toolStatus: ToolStatus = running
+    ? 'running'
+    : stopped
+      ? 'stopped'
+      : failed
+        ? 'failed'
+        : 'done';
   const statusLabel = running
     ? t('edit.regen.generating')
-    : failed
-      ? t('edit.regen.notGenerated')
-      : t('edit.regen.updated');
-
-  const hasBody = actions.length > 0 || (failed && !!failText);
+    : stopped
+      ? t('edit.agent.stopped')
+      : failed
+        ? t('edit.regen.notGenerated')
+        : t('edit.regen.updated');
 
   return (
     <ToolCard
@@ -61,17 +54,11 @@ function RegenerateActionsCard({
       sceneId={sceneId}
       status={toolStatus}
       statusLabel={statusLabel}
-      barAction={!failed ? <RestoreButton toolCallId={toolCallId} /> : undefined}
-    >
-      {hasBody ? (
-        <>
-          {failed && failText ? (
-            <p className="text-amber-600 dark:text-amber-500">{failText}</p>
-          ) : null}
-          {actions.length > 0 ? <p className="font-mono">{summarize(actions, t)}</p> : null}
-        </>
-      ) : null}
-    </ToolCard>
+      // No Restore for a stopped/failed run — nothing was applied to revert.
+      barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
+      // Non-expandable card: surface only the actionable failure reason inline.
+      failText={failed ? failText : undefined}
+    />
   );
 }
 
@@ -80,17 +67,20 @@ export const RegenerateSceneActionsUI = makeAssistantToolUI<{ sceneId?: string }
     toolName: 'regenerate_scene_actions',
     render: ({ args, status, result, isError, toolCallId }) => {
       const running = status.type === 'running' || status.type === 'requires-action';
+      // The user cancelled the turn before this tool finished → loud stopped state.
+      const stopped = !running && isStoppedResult(result);
       // pi-agent-core 0.78.0 doesn't propagate a result's isError into the event,
       // so derive failure from the result too: a finished call that produced no
       // actions changed nothing — show "not generated", not a green "Updated".
-      const noActions = !running && result != null && (result.details?.actions?.length ?? 0) === 0;
-      const failed = !running && (isError || status.type === 'incomplete' || noActions);
+      const noActions =
+        !running && !stopped && result != null && (result.details?.actions?.length ?? 0) === 0;
+      const failed = !running && !stopped && (isError || status.type === 'incomplete' || noActions);
       return (
         <RegenerateActionsCard
           running={running}
+          stopped={stopped}
           failed={failed}
           sceneId={args?.sceneId ?? result?.details?.sceneId}
-          actions={result?.details?.actions ?? []}
           failText={result?.content?.[0]?.text}
           toolCallId={toolCallId}
         />

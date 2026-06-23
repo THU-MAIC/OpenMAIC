@@ -152,7 +152,7 @@ export function makeRegenerateSceneTool(
       'the current slide is loaded automatically as the editing baseline.',
     parameters: RegenerateSceneParams,
 
-    execute: async (_toolCallId, params) => {
+    execute: async (_toolCallId, params, signal) => {
       const { sceneId, instruction } = params;
 
       const ctxData: SceneContext | undefined = deps.getSceneContext(sceneId);
@@ -190,21 +190,22 @@ export function makeRegenerateSceneTool(
         };
       }
 
-      // Narrow refusal (this release): whole-slide regeneration can't preserve
-      // video/audio or a slide-level image background through the resource channel
-      // (only element images flow as resources, and background image ids can't be
-      // resolved), so refuse rather than silently dropping them. Element images
-      // are fine.
+      // Narrow refusal (this release): whole-slide regeneration can't preserve a
+      // video element or a slide-level image background through the resource
+      // channel (only element images flow as resources, and background image ids
+      // can't be resolved), so refuse rather than silently dropping them. Element
+      // images are fine. (Audio is never a canvas element — narration audio lives
+      // in the actions/speech layer — so there's nothing to gate there.)
       const slideElements = content.canvas.elements ?? [];
-      const hasAvElement = slideElements.some((el) => el?.type === 'video' || el?.type === 'audio');
+      const hasVideoElement = slideElements.some((el) => el?.type === 'video');
       const hasImageBackground = isImageBackground(content.canvas.background);
-      if (hasAvElement || hasImageBackground) {
+      if (hasVideoElement || hasImageBackground) {
         return {
           content: [
             {
               type: 'text',
               text:
-                'This slide contains video/audio or an image background; whole-slide ' +
+                'This slide contains a video or an image background; whole-slide ' +
                 "regeneration isn't supported for those yet — please edit it on the canvas.",
             },
           ],
@@ -213,11 +214,19 @@ export function makeRegenerateSceneTool(
         };
       }
 
-      const aiCallFn = (
+      // Self-contained black box: slide content resolves the `scene-content:slide`
+      // stage model and actions resolve `scene-actions` — the same routes the
+      // course-generation path uses — independent of the agent conversation model.
+      const contentAiCall = (
         systemPrompt: string,
         userPrompt: string,
         _images?: Array<{ id: string; src: string }>,
-      ): Promise<string> => deps.aiCall(systemPrompt, userPrompt);
+      ): Promise<string> => deps.aiCall('scene-content:slide', systemPrompt, userPrompt, signal);
+      const actionsAiCall = (
+        systemPrompt: string,
+        userPrompt: string,
+        _images?: Array<{ id: string; src: string }>,
+      ): Promise<string> => deps.aiCall('scene-actions', systemPrompt, userPrompt, signal);
 
       // ── Step 1: regenerate slide content in EDIT MODE ──────────────────────
       // Lift existing images into the generator's resource channel: the baseline
@@ -230,7 +239,7 @@ export function makeRegenerateSceneTool(
         imageMapping,
       } = buildImageResources(slideBase);
 
-      const newContent = await generateSceneContent(outline, aiCallFn, {
+      const newContent = await generateSceneContent(outline, contentAiCall, {
         agents,
         languageDirective,
         editDirective: instruction,
@@ -267,7 +276,7 @@ export function makeRegenerateSceneTool(
         previousSpeeches: [],
       };
 
-      const actions = await generateSceneActions(outline, newContent, aiCallFn, {
+      const actions = await generateSceneActions(outline, newContent, actionsAiCall, {
         ctx,
         agents,
         languageDirective,

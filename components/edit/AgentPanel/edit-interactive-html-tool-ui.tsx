@@ -1,24 +1,19 @@
 'use client';
 
 /**
- * Tool-call UI for `regenerate_scene` (whole-slide regeneration). Renders via the
- * shared `ToolCard`; the expandable body reports the regenerated slide (element
- * count) + the instruction. The "还原到重生成前 / Restore previous" button lives
- * on the always-visible card row (ToolCard `barAction`): whole-slide regeneration
- * applies directly to the canvas, so revert is one tap — no Ctrl+Z, no expanding.
+ * Tool-call UI for `edit_interactive_html` (interactive-scene str_replace edits).
+ * A minimal, NON-expandable `ToolCard` — just the title + @scene pill + status
+ * badge, plus the "还原 / Restore previous" button on the always-visible row.
+ * (No expandable body: the edit count / error detail is intentionally omitted.)
  */
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { ToolCard, isStoppedResult, type ToolStatus } from './tool-card';
 import { RestoreButton } from './restore-button';
+import { deriveEditFailed, type EditInteractiveHtmlResult } from './edit-tool-state';
 
-interface RegenerateSceneResult {
-  content?: { type: string; text?: string }[];
-  details?: { sceneId?: string; content?: { elements?: unknown[] } | null; actions?: unknown[] };
-}
-
-function RegenerateSceneCard({
+function EditInteractiveHtmlCard({
   running,
   stopped,
   failed,
@@ -42,16 +37,16 @@ function RegenerateSceneCard({
         ? 'failed'
         : 'done';
   const statusLabel = running
-    ? t('edit.regenScene.generating')
+    ? t('edit.fixHtml.fixing')
     : stopped
       ? t('edit.agent.stopped')
       : failed
-        ? t('edit.regenScene.notGenerated')
-        : t('edit.regenScene.updated');
+        ? t('edit.fixHtml.notFixed')
+        : t('edit.fixHtml.fixed');
 
   return (
     <ToolCard
-      title={t('edit.regenScene.title')}
+      title={t('edit.fixHtml.title')}
       icon={Wrench}
       sceneId={sceneId}
       status={toolStatus}
@@ -64,25 +59,21 @@ function RegenerateSceneCard({
   );
 }
 
-export const RegenerateSceneUI = makeAssistantToolUI<
-  { sceneId?: string; instruction?: string },
-  RegenerateSceneResult
+export const EditInteractiveHtmlUI = makeAssistantToolUI<
+  { sceneId?: string; edits?: { oldText: string; newText: string }[] },
+  EditInteractiveHtmlResult
 >({
-  toolName: 'regenerate_scene',
+  toolName: 'edit_interactive_html',
   render: ({ args, status, result, isError, toolCallId }) => {
     const running = status.type === 'running' || status.type === 'requires-action';
     // The user cancelled the turn before this tool finished → loud stopped state.
     const stopped = !running && isStoppedResult(result);
-    // pi-agent-core 0.78.0 does NOT propagate a tool result's `isError` into
-    // `tool_execution_end.isError`, so refusals / generation-failures (which
-    // return `details.content === null`, i.e. nothing was applied) would render
-    // as a green "Updated" badge. Derive failure from the result too: if the run
-    // finished but produced no content, treat it as failed.
-    const noContentApplied =
-      !running && !stopped && result != null && result.details?.content == null;
-    const failed = !running && !stopped && (isError || status.type === 'incomplete' || noContentApplied);
+    // Bias-to-success failure derivation (see edit-tool-state): only an explicit
+    // error or a null-html refusal is a failure — a successful apply, or a
+    // missing/slimmed result, is never "failed".
+    const failed = deriveEditFailed({ running, stopped, isError: !!isError, result });
     return (
-      <RegenerateSceneCard
+      <EditInteractiveHtmlCard
         running={running}
         stopped={stopped}
         failed={failed}

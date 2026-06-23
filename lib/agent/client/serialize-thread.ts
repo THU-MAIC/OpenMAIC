@@ -17,11 +17,20 @@ export interface SlimToolResult {
     /** null = nothing applied (failure); {elements} = length-only placeholder. */
     content?: { elements: unknown[] } | null;
     actions?: { type?: string }[];
+    /**
+     * edit_interactive_html success marker: a non-null string when edits applied
+     * (the heavy ~745 KB payload is replaced by a placeholder), `null` on a
+     * refusal/unappliable edit. Without this the restored card mistakes a
+     * successful edit for a failure. `editCount` survives for the count line.
+     */
+    html?: string | null;
+    editCount?: number;
   };
 }
 
 export type SerializedPart =
   | { type: 'text'; text: string }
+  | { type: 'reasoning'; text: string; durationMs?: number }
   | {
       type: 'tool-call';
       toolCallId: string;
@@ -64,6 +73,12 @@ function slimResult(result: unknown): SlimToolResult | undefined {
       const els = (d.content as { elements?: unknown }).elements;
       details.content = { elements: Array.isArray(els) ? els.map(() => ({})) : [] };
     }
+    // edit_interactive_html: keep the success/failure signal, drop the payload.
+    const dh = (d as { html?: unknown }).html;
+    if (dh === null) details.html = null;
+    else if (typeof dh === 'string') details.html = dh.length > 0 ? '…' : '';
+    const ec = (d as { editCount?: unknown }).editCount;
+    if (typeof ec === 'number') details.editCount = ec;
     if (Array.isArray(d.actions)) {
       details.actions = d.actions.map((a) => ({
         type: (a as AnyPart)?.type as string | undefined,
@@ -75,10 +90,17 @@ function slimResult(result: unknown): SlimToolResult | undefined {
   return out;
 }
 
-function serializePart(part: unknown): SerializedPart | null {
+function serializePart(part: unknown, durationMs?: number): SerializedPart | null {
   const p = part as AnyPart;
   if (p?.type === 'text' && typeof p.text === 'string') {
     return { type: 'text', text: p.text };
+  }
+  if (p?.type === 'reasoning' && typeof p.text === 'string') {
+    return {
+      type: 'reasoning',
+      text: p.text as string,
+      ...(typeof durationMs === 'number' ? { durationMs } : {}),
+    };
   }
   if (p?.type === 'tool-call' && typeof p.toolCallId === 'string') {
     return {
@@ -93,14 +115,27 @@ function serializePart(part: unknown): SerializedPart | null {
   return null;
 }
 
-export function serializeThread(messages: ThreadMessageLike[]): SerializedMessage[] {
+export function serializeThread(
+  messages: ThreadMessageLike[],
+  /** Final reasoning durations: (messageId, reasoningOrdinal) → ms. Lets the
+   *  restored "已思考 N s" survive a refresh (the live timer store is in-memory). */
+  reasoningDurationMs?: (messageId: string | undefined, ordinal: number) => number | undefined,
+): SerializedMessage[] {
   const out: SerializedMessage[] = [];
   for (const m of messages) {
-    const content = Array.isArray(m.content)
-      ? (m.content.map(serializePart).filter(Boolean) as SerializedPart[])
-      : typeof m.content === 'string'
-        ? [{ type: 'text', text: m.content } as SerializedPart]
-        : [];
+    let content: SerializedPart[] = [];
+    if (Array.isArray(m.content)) {
+      let ord = 0;
+      content = m.content
+        .map((part) => {
+          const isReasoning = (part as AnyPart)?.type === 'reasoning';
+          const dur = isReasoning ? reasoningDurationMs?.(m.id, ord++) : undefined;
+          return serializePart(part, dur);
+        })
+        .filter(Boolean) as SerializedPart[];
+    } else if (typeof m.content === 'string') {
+      content = [{ type: 'text', text: m.content } as SerializedPart];
+    }
     if (content.length === 0) continue;
     out.push({ role: m.role === 'user' ? 'user' : 'assistant', id: m.id, content });
   }
@@ -112,7 +147,12 @@ export function deserializeThread(saved: SerializedMessage[] | undefined): Threa
   return saved
     .filter((m) => m && (m.role === 'user' || m.role === 'assistant') && Array.isArray(m.content))
     .map((m) => {
-      const base = { role: m.role, id: m.id, content: m.content as ThreadMessageLike['content'] };
+      // Reasoning parts carry our `durationMs` (re-seeded into the timer store on
+      // restore, see use-agent-runtime); assistant-ui only accepts {type, text}.
+      const content = m.content.map((p) =>
+        p.type === 'reasoning' ? { type: 'reasoning', text: p.text } : p,
+      ) as ThreadMessageLike['content'];
+      const base = { role: m.role, id: m.id, content };
       // assistant-ui rejects a `status` on user messages ("status is only
       // supported for assistant messages") — only assistant turns carry it.
       return m.role === 'assistant'

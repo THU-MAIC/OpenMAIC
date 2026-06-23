@@ -32,14 +32,9 @@ import { useRegenSnapshots } from './regen-snapshots';
 import { useAgentThreadStore } from './agent-thread-store';
 import { serializeThread, deserializeThread } from './serialize-thread';
 export type { AssistantPart, PiPart } from './merge-assistant-parts';
-
-interface PiAssistantContent {
-  type: string;
-  text?: string;
-  id?: string;
-  name?: string;
-  arguments?: Record<string, unknown>;
-}
+import { toPiParts, type PiAssistantContent } from './to-pi-parts';
+import { useThinkingTimers } from './thinking-timers';
+import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
@@ -81,22 +76,6 @@ function toHistory(messages: ThreadMessageLike[]): HistoryTurn[] {
   return out;
 }
 
-function toPiParts(content: PiAssistantContent[]): PiPart[] {
-  const parts: PiPart[] = [];
-  for (const c of content) {
-    if (c.type === 'text') {
-      parts.push({ type: 'text', text: c.text ?? '' });
-    } else if (c.type === 'toolCall' && c.id) {
-      parts.push({
-        type: 'toolCall',
-        id: c.id,
-        name: c.name ?? 'tool',
-        arguments: c.arguments ?? {},
-      });
-    }
-  }
-  return parts;
-}
 
 export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
@@ -121,7 +100,23 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
     // the stage id was known): keep the live thread, don't clobber it with the
     // saved (likely empty) one. A genuine course SWITCH still loads its thread.
     if (firstResolve && messagesRef.current.length > 0) return;
-    setMessages(deserializeThread(useAgentThreadStore.getState().load(stageId)?.messages));
+    const saved = useAgentThreadStore.getState().load(stageId)?.messages;
+    setMessages(deserializeThread(saved));
+    // Re-seed reasoning durations (the live timer store is in-memory, lost on
+    // refresh) so restored panels show "已思考 N s" instead of a blank label.
+    if (Array.isArray(saved)) {
+      for (const m of saved) {
+        if (m.role !== 'assistant' || !Array.isArray(m.content)) continue;
+        let ord = 0;
+        for (const p of m.content) {
+          if (p.type === 'reasoning') {
+            if (typeof p.durationMs === 'number')
+              useThinkingTimers.getState().seed(`${m.id}:${ord}`, p.durationMs);
+            ord++;
+          }
+        }
+      }
+    }
   }, [stageId]);
 
   // Persist the thread whenever it settles (after a turn completes, not mid-run),
@@ -132,9 +127,16 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
     if (isRunning || messages.length === 0) return;
     const sid = useStageStore.getState().stage?.id;
     if (sid) {
+      // Supply each reasoning block's final duration (keyed messageId:ordinal) so
+      // "已思考 N s" survives a refresh.
+      const timers = useThinkingTimers.getState().timers;
+      const getDuration = (messageId: string | undefined, ordinal: number): number | undefined => {
+        const tmr = timers[`${messageId}:${ordinal}`];
+        return tmr && tmr.endedAt != null ? tmr.endedAt - tmr.startedAt : undefined;
+      };
       useAgentThreadStore
         .getState()
-        .save(sid, { messages: serializeThread(messages), updatedAt: Date.now() });
+        .save(sid, { messages: serializeThread(messages, getDuration), updatedAt: Date.now() });
     }
   }, [messages, isRunning]);
 
@@ -142,7 +144,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   const turnsRef = useRef<PiPart[][]>([]);
   const toolResultsRef = useRef<Map<string, { result: unknown; isError: boolean }>>(new Map());
   const errorRef = useRef<string>('');
-  const phaseRef = useRef<'running' | 'complete' | 'error'>('complete');
+  const phaseRef = useRef<'running' | 'complete' | 'error' | 'cancelled'>('complete');
   // Aborts the in-flight run; closing the fetch body cancels the server stream
   // (the route's ReadableStream.cancel() calls agent.abort()).
   const abortRef = useRef<AbortController | null>(null);
@@ -157,6 +159,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
     setIsRunning(false);
     setMessages([]);
     useRegenSnapshots.getState().clearAll();
+    useThinkingTimers.getState().clear();
     const sid = useStageStore.getState().stage?.id;
     if (sid) useAgentThreadStore.getState().clear(sid);
   }, []);
@@ -172,11 +175,13 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         ? { type: 'running' }
         : phaseRef.current === 'error'
           ? { type: 'incomplete', reason: 'error' }
-          : { type: 'complete', reason: 'stop' };
+          : phaseRef.current === 'cancelled'
+            ? { type: 'incomplete', reason: 'cancelled' }
+            : { type: 'complete', reason: 'stop' };
     return { role: 'assistant', id, content: parts as ThreadMessageLike['content'], status };
   }, []);
 
-  const handleEvent = useCallback((event: AgentEvent, refresh: () => void) => {
+  const handleEvent = useCallback((event: AgentEvent, refresh: () => void, assistantId: string) => {
     switch (event.type) {
       case 'message_start': {
         const msg = (event as { message?: { role?: string } }).message;
@@ -201,6 +206,25 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
           // accumulated turn on each update) — order within the turn is kept.
           turnsRef.current[turnsRef.current.length - 1] = toPiParts(msg.content);
         }
+        // Per-block reasoning timing for the thinking panels' durations. Compute
+        // over the SAME merged view the UI renders so block ordinals align: each
+        // reasoning block ends (freezes) once a later part follows it; the last
+        // one stays open and ticks live until something follows or the run ends.
+        const merged = mergeAssistantParts({
+          turns: turnsRef.current,
+          toolResults: toolResultsRef.current,
+          error: errorRef.current,
+        });
+        const nowTs = Date.now();
+        let ord = 0;
+        for (let i = 0; i < merged.length; i++) {
+          if (merged[i].type === 'reasoning') {
+            useThinkingTimers
+              .getState()
+              .observe(`${assistantId}:${ord}`, { end: i < merged.length - 1, now: nowTs });
+            ord++;
+          }
+        }
         refresh();
         break;
       }
@@ -220,7 +244,12 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
           ? useStageStore.getState().getSceneById(details.sceneId)
           : null;
         const { snapshot, patch } = planRegenerateApply(details, scene, e.toolName);
-        if (snapshot) useRegenSnapshots.getState().setSnapshot(e.toolCallId, snapshot);
+        // Capture the applied patch as the snapshot's `redo` so an undo can be
+        // resumed (the Restore button toggles undo ↔ resume).
+        if (snapshot)
+          useRegenSnapshots
+            .getState()
+            .setSnapshot(e.toolCallId, patch ? { ...snapshot, redo: patch } : snapshot);
         if (patch && details.sceneId) {
           // Apply to the stage store and keep the OPEN slide edit session in
           // lockstep — else the canvas keeps rendering its stale history.present
@@ -306,6 +335,9 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             content: scene.content,
             stageId: scene.stageId,
             languageDirective: stage?.languageDirective,
+            // Runtime errors the interactive iframe reported, so read_scene_content
+            // can show the agent why a page is blank instead of it guessing.
+            runtimeErrors: useSceneRuntimeErrors.getState().errors[scene.id],
           };
         }
 
@@ -359,13 +391,26 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             }
             // Skip late events from a superseded run (don't apply stale tool
             // results to the stage or rewrite the new run's message).
-            if (isCurrent()) handleEvent(event, refresh);
+            if (isCurrent()) handleEvent(event, refresh, assistantId);
           }
         }
       } catch (err) {
         // User-initiated stop — keep whatever streamed, don't surface an error.
         if (abort.signal.aborted) {
-          phaseRef.current = 'complete';
+          // Only finalize if this run still owns the state (a newer run may have
+          // taken over). Mark any tool call that never produced a result as
+          // stopped, so its card shows a clear "stopped" state instead of a
+          // misleading green check, and flag the message as cancelled.
+          if (abortRef.current === abort) {
+            for (const turn of turnsRef.current) {
+              for (const p of turn) {
+                if (p.type === 'toolCall' && !toolResultsRef.current.has(p.id)) {
+                  toolResultsRef.current.set(p.id, { result: { __stopped: true }, isError: true });
+                }
+              }
+            }
+            phaseRef.current = 'cancelled';
+          }
         } else {
           errorRef.current = `⚠️ ${err instanceof Error ? err.message : String(err)}`;
           phaseRef.current = 'error';
@@ -379,6 +424,9 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         if (!superseded) {
           abortRef.current = null;
           if (phaseRef.current === 'running') phaseRef.current = 'complete';
+          // Close any reasoning block still open (e.g. the run ended with the
+          // last block as its final phase) so its duration is final.
+          useThinkingTimers.getState().endAll(`${assistantId}:`, Date.now());
           setIsRunning(false);
           setMessages((prev) => {
             const next = prev.slice();

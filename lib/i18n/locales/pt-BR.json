@@ -302,7 +302,9 @@
           "examples": "“Make it more conversational”, “Align with my canvas edits”"
         }
       },
-      "newConversation": "New conversation"
+      "newConversation": "New conversation",
+      "reasoning": "Raciocínio",
+      "thought": "Pensou por"
     },
     "timeline": {
       "title": "Roteiro de narração",
@@ -358,7 +360,8 @@
       "notGenerated": "Não gerado",
       "elementsCount": "{{count}} elementos",
       "restore": "Restaurar anterior",
-      "restored": "Restaurado"
+      "restored": "Restaurado",
+      "resume": "Refazer"
     },
     "readCard": {
       "title": "Read slide content",

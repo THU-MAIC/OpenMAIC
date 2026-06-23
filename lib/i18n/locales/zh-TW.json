@@ -307,6 +307,12 @@
         "boundary": "精細編輯請使用編輯器，增刪 / 排序頁面請用左側導覽。",
         "comingSoon": "更多能力陸續加入中，敬請期待。"
       },
+      "interactive": {
+        "emptyTitle": "這個互動頁要修什麼？",
+        "lead": "描述這個互動頁的問題（例如某個按鈕點了沒反應），我只修這一處、其它內容原樣保留。",
+        "placeholder": "描述這個互動頁的問題…",
+        "boundary": "我只做定點修復，不整頁重做；切換頁面請用左側導覽。"
+      },
       "cap": {
         "content": {
           "label": "重新生成 PPT 頁面",
@@ -315,9 +321,16 @@
         "narration": {
           "label": "重新生成講解腳本",
           "examples": "「講得更口語一些」、「和畫布上的改動對齊」"
+        },
+        "fixHtml": {
+          "label": "修復互動頁的 bug",
+          "examples": "「開始按鈕點了沒反應」、「手機上排版重疊」"
         }
       },
-      "newConversation": "新對話"
+      "newConversation": "新對話",
+      "thinking": "思考中…",
+      "reasoning": "思考過程",
+      "thought": "已思考"
     },
     "timeline": {
       "title": "講解腳本",
@@ -373,7 +386,15 @@
       "notGenerated": "未生成",
       "elementsCount": "{{count}} 個元素",
       "restore": "還原到重生成前",
-      "restored": "已還原"
+      "restored": "已還原",
+      "resume": "恢復"
+    },
+    "fixHtml": {
+      "title": "修復互動頁",
+      "fixing": "修復中",
+      "fixed": "已修復",
+      "notFixed": "未修復",
+      "editsCount": "{{count}} 處修改"
     },
     "readCard": {
       "title": "讀取頁面內容",

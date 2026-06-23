@@ -96,8 +96,43 @@ function extractElementText(el: unknown): string {
   }
 }
 
+// Interactive pages are edited with `edit_interactive_html`, which needs the
+// model to author EXACT `oldText` anchors — so it must see the full, raw,
+// un-escaped HTML (not a truncated JSON projection). Cap only as a pathological
+// safety net; real pages (after eliding base64) are well under this.
+const INTERACTIVE_HTML_CAP = 120000;
+
+// Generated pages often inline vendor libs / media as huge base64 data-URIs
+// (a single page can be ~760KB, ~95% base64). That payload is noise the model
+// can't usefully edit and it pushes the actual code past any cap, so the model
+// never sees the real JS/markup it needs to fix. Elide the base64 body to a tiny
+// marker for the MODEL'S VIEW only — the edit tool still applies against the full
+// stored HTML, and the model authors oldText from the real (non-base64) code.
+function elideDataUris(html: string): string {
+  return html.replace(
+    /(data:[^;,]*;base64,)([A-Za-z0-9+/=]+)/g,
+    (_m, prefix: string, payload: string) => `${prefix}…[${payload.length} base64 chars elided]`,
+  );
+}
+
 function projectContent(content: SceneContext['content']): string {
-  const c = content as { type?: string; canvas?: { elements?: unknown[] } } | undefined;
+  const c = content as
+    | { type?: string; canvas?: { elements?: unknown[] }; html?: unknown }
+    | undefined;
+
+  // Interactive: return the full page HTML verbatim so edits can anchor exactly.
+  if (c?.type === 'interactive') {
+    const raw = typeof c.html === 'string' ? c.html : '';
+    if (!raw) return '(this interactive scene has no embedded HTML)';
+    // Elide base64 payloads first so the real code is visible within the cap.
+    const html = elideDataUris(raw);
+    const capped =
+      html.length > INTERACTIVE_HTML_CAP
+        ? `${html.slice(0, INTERACTIVE_HTML_CAP)}…(truncated)`
+        : html;
+    return `Interactive page HTML (to fix a bug, call edit_interactive_html with exact oldText snippets copied verbatim from below; base64 payloads are shown elided — never use them as oldText):\n${capped}`;
+  }
+
   let projection: string;
   if (c?.type === 'slide') {
     const elements = Array.isArray(c.canvas?.elements) ? c.canvas!.elements : [];
@@ -181,9 +216,17 @@ export function makeReadSceneContentTool(
         };
       }
 
-      const { outline, content } = ctx;
+      const { outline, content, runtimeErrors } = ctx;
       const keyPoints = (outline.keyPoints ?? []).join('; ');
       const projection = projectContent(content);
+      // Surface any runtime errors the page threw when it rendered — for an
+      // interactive scene these are usually the real reason it's blank/broken, so
+      // the agent fixes the root cause instead of guessing from the static HTML.
+      const errorsSection =
+        runtimeErrors && runtimeErrors.length > 0
+          ? `\n\nRuntime errors this page reported when it rendered (these are the likely reason it is blank/broken — fix the ROOT CAUSE shown here, do not guess):\n` +
+            runtimeErrors.map((e) => `- ${e}`).join('\n')
+          : '';
       return {
         content: [
           {
@@ -192,7 +235,7 @@ export function makeReadSceneContentTool(
               `Scene "${outline.title}" (type: ${outline.type}). ` +
               `Description: ${outline.description || '(none)'}. ` +
               `Key points: ${keyPoints || '(none)'}.\n` +
-              `Slide content:\n${projection}`,
+              `Scene content:\n${projection}${errorsSection}`,
           },
         ],
         details: {
