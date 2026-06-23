@@ -9,6 +9,8 @@
  * safe sandbox boundary; revisit with a worker/subprocess isolate later.
  */
 
+import { fetchWithTimeout } from '@/lib/server/fetch-with-timeout';
+
 /** Normalized balance result, mirroring cc-switch `UsageData`. */
 export interface BalanceResult {
   supported: boolean;
@@ -94,12 +96,21 @@ export function parseOpenRouter(body: Record<string, unknown>): BalanceResult {
  *   GET /v1/dashboard/billing/subscription → { hard_limit_usd }
  *   GET /v1/dashboard/billing/usage        → { total_usage }  (in cents)
  * remaining = hard_limit_usd - total_usage/100.
+ *
+ * When the usage endpoint is unavailable, `usage` is null: we report the total
+ * quota but leave `used`/`remaining` undefined rather than implying zero spend.
  */
 export function parseOneApiBilling(
   subscription: Record<string, unknown>,
-  usage: Record<string, unknown>,
+  usage: Record<string, unknown> | null,
 ): BalanceResult {
   const total = toNum(subscription.hard_limit_usd) ?? 0;
+
+  if (!usage) {
+    // Usage unknown — surface the quota without a misleading "full balance".
+    return { supported: true, planName: 'Token Plan', total, unit: 'USD' };
+  }
+
   const usedCents = toNum(usage.total_usage) ?? 0;
   const used = usedCents / 100;
   const remaining = total - used;
@@ -128,23 +139,18 @@ interface BalanceProviderDef {
 const TIMEOUT_MS = 15_000;
 
 async function getJson(url: string, apiKey: string): Promise<Record<string, unknown>> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
-  try {
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' },
-      signal: controller.signal,
-    });
-    if (res.status === 401 || res.status === 403) {
-      throw new BalanceAuthError(res.status);
-    }
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
-    }
-    return (await res.json()) as Record<string, unknown>;
-  } finally {
-    clearTimeout(timer);
+  const res = await fetchWithTimeout(
+    url,
+    { headers: { Authorization: `Bearer ${apiKey}`, Accept: 'application/json' } },
+    TIMEOUT_MS,
+  );
+  if (res.status === 401 || res.status === 403) {
+    throw new BalanceAuthError(res.status);
   }
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}`);
+  }
+  return (await res.json()) as Record<string, unknown>;
 }
 
 /** Thrown on 401/403 so the route can return an isValid:false auth error. */
@@ -160,7 +166,8 @@ export const BALANCE_PROVIDERS: BalanceProviderDef[] = [
     id: 'deepseek',
     label: 'DeepSeek',
     pattern: /api\.deepseek\.com/i,
-    query: async (key) => parseDeepSeek(await getJson('https://api.deepseek.com/user/balance', key)),
+    query: async (key) =>
+      parseDeepSeek(await getJson('https://api.deepseek.com/user/balance', key)),
   },
   {
     id: 'siliconflow',
@@ -210,10 +217,15 @@ export async function queryBalance(baseUrl: string, apiKey: string): Promise<Bal
   }
 
   // Fallback: OpenAI legacy billing endpoints (one-api / new-api / MAIC gateway).
+  // The two endpoints are independent — fetch in parallel. Subscription is
+  // required (its failure means "unsupported"); usage is best-effort and
+  // resolves to null when unavailable so we don't imply zero spend.
   const root = baseUrl.trim().replace(/\/+$/, '');
   try {
-    const sub = await getJson(`${root}/dashboard/billing/subscription`, apiKey);
-    const usage = await getJson(`${root}/dashboard/billing/usage`, apiKey).catch(() => ({}));
+    const [sub, usage] = await Promise.all([
+      getJson(`${root}/dashboard/billing/subscription`, apiKey),
+      getJson(`${root}/dashboard/billing/usage`, apiKey).catch(() => null),
+    ]);
     return parseOneApiBilling(sub, usage);
   } catch (e) {
     if (e instanceof BalanceAuthError) {

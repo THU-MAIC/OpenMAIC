@@ -28,11 +28,8 @@ import {
   type PresetCategory,
   type TokenPlanModality,
 } from '@/lib/config/token-plan-presets';
-import {
-  applyTokenPlan,
-  removeTokenPlan,
-  type ApplyResult,
-} from '@/lib/config/apply-token-plan';
+import { applyTokenPlan, removeTokenPlan, type ApplyResult } from '@/lib/config/apply-token-plan';
+import { modelInfoFromId } from './utils';
 
 const CATEGORY_LABEL_KEYS: Record<PresetCategory, string> = {
   token_plan: 'settings.presetCategory.tokenPlan',
@@ -200,17 +197,12 @@ export function TokenPlanSettings() {
         if (res.ok && data.success) {
           const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
           if (ids.length > 0) {
-            setProviderConfig(llm.providerId as never, {
-              models: ids.map((id) => ({
-                id,
-                name: id,
-                capabilities: {
-                  streaming: true,
-                  tools: true,
-                  vision: /vision|vl|omni|4o|gpt-5|gemini|claude/i.test(id),
-                },
-              })),
-            } as never);
+            setProviderConfig(
+              llm.providerId as never,
+              {
+                models: ids.map((id) => modelInfoFromId(id)),
+              } as never,
+            );
           }
           setLlmModelCount(ids.length);
         } else {
@@ -332,9 +324,7 @@ export function TokenPlanSettings() {
             onClick={enterCustomMode}
             className={cn(
               'flex items-center gap-2.5 p-3 rounded-lg border text-left text-sm transition-colors w-full',
-              mode === 'custom'
-                ? 'bg-primary/5 border-primary/50'
-                : 'hover:bg-muted/50',
+              mode === 'custom' ? 'bg-primary/5 border-primary/50' : 'hover:bg-muted/50',
             )}
           >
             <Plus className="h-5 w-5 shrink-0 text-muted-foreground" />

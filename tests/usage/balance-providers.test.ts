@@ -59,6 +59,14 @@ describe('balance parsers', () => {
     expect(r.remaining).toBeCloseTo(75);
   });
 
+  it('reports quota without remaining when usage endpoint is unavailable', () => {
+    const r = parseOneApiBilling({ hard_limit_usd: 100 }, null);
+    expect(r.total).toBeCloseTo(100);
+    expect(r.used).toBeUndefined();
+    expect(r.remaining).toBeUndefined();
+    expect(r.isValid).toBeUndefined();
+  });
+
   it('marks invalid balance when remaining <= 0', () => {
     const r = parseOpenRouter({ data: { total_credits: 5, total_usage: 5 } });
     expect(r.isValid).toBe(false);

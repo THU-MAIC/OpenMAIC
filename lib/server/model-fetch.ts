@@ -7,6 +7,8 @@
  * suffix-strip fallback) and try each until one returns a model list.
  */
 
+import { fetchWithTimeout } from './fetch-with-timeout';
+
 /** A model id discovered from a provider's /models endpoint. */
 export interface FetchedModel {
   id: string;
@@ -117,18 +119,14 @@ export async function fetchModels(
   const candidates = buildModelsUrlCandidates(baseUrl, opts);
 
   for (const url of candidates) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
-    let res: Response;
-    try {
-      res = await fetch(url, {
+    const res = await fetchWithTimeout(
+      url,
+      {
         method: 'GET',
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+      },
+      FETCH_TIMEOUT_MS,
+    );
 
     if (res.ok) {
       const body = (await res.json()) as ModelsApiResponse;

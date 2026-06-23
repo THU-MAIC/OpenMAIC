@@ -86,7 +86,10 @@ const ZERO_USAGE: NormalizedUsage = {
  *   OpenAI-compatible response that omitted usage).
  * - Non-LLM rows (image/video/tts/asr): require quantity > 0.
  */
-export async function recordUsage(input: UsageRecordInput, opts: RecordOptions = {}): Promise<void> {
+export async function recordUsage(
+  input: UsageRecordInput,
+  opts: RecordOptions = {},
+): Promise<void> {
   try {
     const kind: UsageKind = input.kind ?? 'llm';
     const usage = input.usage ?? ZERO_USAGE;
@@ -121,6 +124,35 @@ export async function recordUsage(input: UsageRecordInput, opts: RecordOptions =
   } catch (err) {
     log.warn('Failed to record usage (ignored):', err);
   }
+}
+
+/** A non-LLM modality usage event (image / video / tts / asr). */
+export interface GenerationUsageInput {
+  kind: Exclude<UsageKind, 'llm'>;
+  unit: UsageUnit;
+  providerId: string;
+  /** The client-requested model id; falls back to providerId when absent. */
+  modelId?: string;
+  quantity: number;
+}
+
+/**
+ * Records a non-LLM generation's usage. Thin wrapper over {@link recordUsage}
+ * that derives `source` (= kind) and `modelString` (`provider:model`) from the
+ * modality, so the generate routes don't each repeat that construction.
+ * Fire-and-forget like `recordUsage`.
+ */
+export function recordGenerationUsage(input: GenerationUsageInput): Promise<void> {
+  const modelId = input.modelId || input.providerId;
+  return recordUsage({
+    kind: input.kind,
+    unit: input.unit,
+    source: input.kind,
+    providerId: input.providerId,
+    modelId,
+    modelString: `${input.providerId}:${modelId}`,
+    quantity: input.quantity,
+  });
 }
 
 interface ReadOptions {

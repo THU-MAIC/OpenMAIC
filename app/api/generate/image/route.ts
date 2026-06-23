@@ -16,7 +16,7 @@
  */
 
 import { NextRequest } from 'next/server';
-import { recordUsage } from '@/lib/server/usage-storage';
+import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import {
   generateImage,
   aspectRatioToDimensions,
@@ -84,13 +84,11 @@ export async function POST(request: NextRequest) {
 
     const result = await generateImage({ providerId, apiKey, baseUrl, model: clientModel }, body);
 
-    void recordUsage({
+    void recordGenerationUsage({
       kind: 'image',
       unit: 'image',
-      source: 'image',
       providerId,
-      modelId: clientModel || providerId,
-      modelString: `${providerId}:${clientModel || providerId}`,
+      modelId: clientModel,
       quantity: 1,
     });
 

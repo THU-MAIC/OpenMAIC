@@ -1,5 +1,25 @@
-import type { ProviderId, ProviderType } from '@/lib/types/provider';
+import type { ProviderId, ProviderType, ModelInfo } from '@/lib/types/provider';
 import type { ProviderSettings } from '@/lib/types/settings';
+
+/** Heuristic: model ids matching this are treated as vision-capable. */
+const VISION_MODEL_PATTERN = /vision|vl|omni|4o|gpt-5|gemini|claude/i;
+
+/**
+ * Builds a default ModelInfo from a probed model id. Vision capability is
+ * inferred from the id via {@link VISION_MODEL_PATTERN}. Shared by the provider
+ * panel and the token-plan apply flow so the heuristic stays in one place.
+ */
+export function modelInfoFromId(id: string): ModelInfo {
+  return {
+    id,
+    name: id,
+    capabilities: {
+      streaming: true,
+      tools: true,
+      vision: VISION_MODEL_PATTERN.test(id),
+    },
+  };
+}
 
 interface NewCustomProviderConfig {
   name: string;
