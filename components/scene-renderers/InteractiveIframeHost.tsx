@@ -115,6 +115,13 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
   // Capture runtime errors the iframe's error shim posts out (see iframe.ts), so
   // the editor agent can diagnose a blank/broken page. Matched to THIS iframe by
   // event.source (sandboxed null-origin iframes still postMessage to the parent).
+  //
+  // The errors that matter most (a JSON.parse that aborts setup) fire while srcDoc
+  // parses — possibly BEFORE this passive effect subscribes. The shim buffers every
+  // error and re-emits it on request, so after subscribing we ask for a replay to
+  // recover anything posted pre-subscription. Re-subscribed per document version
+  // (entry.srcDoc) so each fresh page gets its own replay request; addError dedups
+  // the live + replayed copies. iframeRef is read lazily, so the handler is stable.
   useEffect(() => {
     const onMessage = (e: MessageEvent) => {
       if (e.source !== iframeRef.current?.contentWindow) return;
@@ -127,8 +134,9 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
       useSceneRuntimeErrors.getState().addError(sceneId, `[${kind}] ${msg}`);
     };
     window.addEventListener('message', onMessage);
+    iframeRef.current?.contentWindow?.postMessage({ __maicErrorReplayRequest: true }, '*');
     return () => window.removeEventListener('message', onMessage);
-  }, [sceneId]);
+  }, [sceneId, entry.srcDoc]);
 
   // A content change reloads the iframe; drop the previous render's errors so the
   // captured set reflects the CURRENT page (e.g. after the agent applies a fix).

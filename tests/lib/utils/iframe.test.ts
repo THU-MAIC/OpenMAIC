@@ -98,4 +98,38 @@ describe('patchHtmlForIframe', () => {
     expect(posts[3][0]).toMatchObject({ errorKind: 'console.error' });
     expect(String(posts[3][0].message)).toContain('console boom');
   });
+
+  it('the error shim buffers errors and re-emits them on a parent replay request', () => {
+    // Guards the subscribe-after-insert race: a page that throws synchronously
+    // while srcDoc parses may post before the parent subscribes. The shim must
+    // re-emit the whole buffer when the parent asks, so nothing is lost.
+    const out = patchHtmlForIframe('<html><head></head><body></body></html>');
+    const shim = out.match(/<script data-iframe-error-shim>([\s\S]*?)<\/script>/)?.[1];
+    const posts: Array<[Record<string, unknown>, string]> = [];
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const win = {
+      parent: { postMessage: (m: Record<string, unknown>, o: string) => posts.push([m, o]) },
+      addEventListener: (t: string, cb: (e: unknown) => void) => {
+        handlers[t] = cb;
+      },
+      console: { error: (..._args: unknown[]) => {} },
+    };
+    new Function('window', shim as string)(win);
+
+    // Two errors fire "before the parent subscribed".
+    handlers.error({ message: 'first boom' });
+    handlers.unhandledrejection({ reason: { message: 'second boom' } });
+    expect(posts).toHaveLength(2);
+
+    // Parent now subscribes and requests a replay.
+    handlers.message({ data: { __maicErrorReplayRequest: true } });
+    expect(posts).toHaveLength(4);
+    expect(String(posts[2][0].message)).toContain('first boom');
+    expect(String(posts[3][0].message)).toContain('second boom');
+    expect(posts[2][0]).toMatchObject({ kind: 'runtime-error', errorKind: 'error' });
+
+    // An unrelated message must NOT trigger a replay.
+    handlers.message({ data: { foo: 1 } });
+    expect(posts).toHaveLength(4);
+  });
 });

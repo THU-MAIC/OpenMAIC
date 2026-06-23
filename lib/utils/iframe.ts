@@ -43,17 +43,37 @@ const STORAGE_SHIM = `<script data-iframe-storage-shim>
  * rejections and `console.error` to the parent, which stores them per scene and
  * feeds them to the editor agent — so it can diagnose a blank page instead of
  * guessing. Only touches `window.*` so it stays sandbox-safe and unit-testable.
+ *
+ * The most important errors (a `JSON.parse` that aborts setup) fire SYNCHRONOUSLY
+ * while srcDoc parses — potentially before the parent has subscribed its `message`
+ * listener (which it installs from a passive effect after inserting the iframe).
+ * To avoid losing exactly the errors this feature exists to surface, every post is
+ * also buffered, and the shim re-emits the whole buffer when the parent sends a
+ * `{ __maicErrorReplayRequest: true }` message once its listener is ready. The
+ * parent dedups, so the live + replayed copies collapse to one.
  */
 const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
 (function () {
-  function post(errorKind, message) {
+  var buffer = [];
+  function emit(errorKind, message) {
     try {
       window.parent.postMessage(
-        { __maicInteractive: true, kind: 'runtime-error', errorKind: errorKind, message: String(message).slice(0, 1200) },
+        { __maicInteractive: true, kind: 'runtime-error', errorKind: errorKind, message: message },
         '*'
       );
     } catch (e) {}
   }
+  function post(errorKind, message) {
+    message = String(message).slice(0, 1200);
+    if (buffer.length < 50) buffer.push([errorKind, message]);
+    emit(errorKind, message);
+  }
+  window.addEventListener('message', function (e) {
+    var d = e && e.data;
+    if (d && d.__maicErrorReplayRequest === true) {
+      for (var i = 0; i < buffer.length; i++) emit(buffer[i][0], buffer[i][1]);
+    }
+  });
   window.addEventListener('error', function (e) {
     if (e && e.message) {
       post('error', e.message + (e.filename ? ' (' + e.filename + ':' + (e.lineno || 0) + ')' : ''));
