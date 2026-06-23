@@ -1,12 +1,23 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Eye, EyeOff, Wallet, CheckCircle2, Circle, XCircle, Zap } from 'lucide-react';
+import {
+  Loader2,
+  Eye,
+  EyeOff,
+  Wallet,
+  CheckCircle2,
+  Circle,
+  XCircle,
+  Zap,
+  Plus,
+} from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
+import type { ProviderType } from '@/lib/types/provider';
 import { useSettingsStore } from '@/lib/store/settings';
 import {
   TOKEN_PLAN_PRESETS,
@@ -52,6 +63,12 @@ export function TokenPlanSettings() {
   const setWebSearchProviderConfig = useSettingsStore((s) => s.setWebSearchProviderConfig);
 
   const [selected, setSelected] = useState<TokenPlanPreset | null>(null);
+  const [mode, setMode] = useState<'preset' | 'custom'>('preset');
+  // Stable id for a custom token plan's LLM provider (generated when entering custom mode).
+  const [customId, setCustomId] = useState('');
+  const [customName, setCustomName] = useState('');
+  const [customBaseUrl, setCustomBaseUrl] = useState('');
+  const [customProtocol, setCustomProtocol] = useState<ProviderType>('openai');
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [applying, setApplying] = useState(false);
@@ -65,8 +82,45 @@ export function TokenPlanSettings() {
     presets: TOKEN_PLAN_PRESETS.filter((p) => p.category === cat),
   })).filter((g) => g.presets.length > 0);
 
+  // The plan that apply/balance act on: a chosen preset, or a custom LLM-only
+  // plan built from the manual fields. null until enough is filled to apply.
+  const effectivePreset: TokenPlanPreset | null = useMemo(() => {
+    if (mode === 'custom') {
+      const base = customBaseUrl.trim();
+      if (!base || !customId) return null;
+      return {
+        id: customId,
+        name: customName.trim() || 'Custom Token Plan',
+        category: 'third_party',
+        modalities: { llm: { providerId: customId, baseUrl: base, apiFormat: customProtocol } },
+      };
+    }
+    return selected;
+  }, [mode, customId, customName, customBaseUrl, customProtocol, selected]);
+
+  const resetResults = () => {
+    setResults(null);
+    setLlmModelCount(null);
+    setBalance(null);
+    setBalanceStatus('idle');
+  };
+
+  const selectPreset = (preset: TokenPlanPreset) => {
+    setMode('preset');
+    setSelected(preset);
+    resetResults();
+  };
+
+  const enterCustomMode = () => {
+    setMode('custom');
+    setSelected(null);
+    // Generate a stable custom provider id once per entry.
+    setCustomId(`custom-tokenplan-${Date.now()}`);
+    resetResults();
+  };
+
   const handleApply = useCallback(async () => {
-    if (!selected || !apiKey) return;
+    if (!effectivePreset || !apiKey) return;
     setApplying(true);
     setResults(null);
     setLlmModelCount(null);
@@ -74,7 +128,7 @@ export function TokenPlanSettings() {
     setBalanceStatus('idle');
 
     // 1. Fill every declared modality synchronously.
-    const applied = applyTokenPlan(selected, apiKey, {
+    const applied = applyTokenPlan(effectivePreset, apiKey, {
       setProviderConfig,
       setImageProviderConfig,
       setVideoProviderConfig,
@@ -84,7 +138,7 @@ export function TokenPlanSettings() {
     setResults(applied);
 
     // 2. For the LLM modality, probe the model list and light models up.
-    const llm = selected.modalities.llm;
+    const llm = effectivePreset.modalities.llm;
     if (llm) {
       try {
         const res = await fetch('/api/provider/probe-models', {
@@ -123,7 +177,7 @@ export function TokenPlanSettings() {
 
     setApplying(false);
   }, [
-    selected,
+    effectivePreset,
     apiKey,
     setProviderConfig,
     setImageProviderConfig,
@@ -133,14 +187,15 @@ export function TokenPlanSettings() {
   ]);
 
   const handleCheckBalance = useCallback(async () => {
-    if (!selected?.modalities.llm || !apiKey) return;
+    const llm = effectivePreset?.modalities.llm;
+    if (!llm || !apiKey) return;
     setBalanceStatus('loading');
     setBalance(null);
     try {
       const res = await fetch('/api/provider/balance', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseUrl: selected.modalities.llm.baseUrl, apiKey }),
+        body: JSON.stringify({ baseUrl: llm.baseUrl, apiKey }),
       });
       const data = await res.json();
       setBalance(data.balance ?? { supported: false });
@@ -149,11 +204,11 @@ export function TokenPlanSettings() {
     } finally {
       setBalanceStatus('done');
     }
-  }, [selected, apiKey]);
+  }, [effectivePreset, apiKey]);
 
-  // Modalities NOT declared by the selected preset → "not adapted yet".
-  const notAdapted = selected
-    ? MODALITY_ORDER.filter((m) => !selected.modalities[m])
+  // Modalities NOT declared by the effective plan → "not adapted yet".
+  const notAdapted = effectivePreset
+    ? MODALITY_ORDER.filter((m) => !effectivePreset.modalities[m])
     : [];
 
   return (
@@ -175,15 +230,10 @@ export function TokenPlanSettings() {
               {group.presets.map((preset) => (
                 <button
                   key={preset.id}
-                  onClick={() => {
-                    setSelected(preset);
-                    setResults(null);
-                    setBalance(null);
-                    setBalanceStatus('idle');
-                  }}
+                  onClick={() => selectPreset(preset)}
                   className={cn(
                     'flex items-center gap-2.5 p-3 rounded-lg border text-left text-sm transition-colors',
-                    selected?.id === preset.id
+                    mode === 'preset' && selected?.id === preset.id
                       ? 'bg-primary/5 border-primary/50'
                       : 'hover:bg-muted/50',
                   )}
@@ -206,10 +256,84 @@ export function TokenPlanSettings() {
             </div>
           </div>
         ))}
+
+        {/* Custom token plan */}
+        <div className="space-y-2">
+          <div className="text-xs font-medium text-muted-foreground">
+            {t('settings.tokenPlan.customGroup')}
+          </div>
+          <button
+            onClick={enterCustomMode}
+            className={cn(
+              'flex items-center gap-2.5 p-3 rounded-lg border text-left text-sm transition-colors w-full',
+              mode === 'custom'
+                ? 'bg-primary/5 border-primary/50'
+                : 'hover:bg-muted/50',
+            )}
+          >
+            <Plus className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <span className="flex flex-col min-w-0">
+              <span className="truncate font-medium">{t('settings.tokenPlan.customName')}</span>
+              <span className="truncate text-xs text-muted-foreground">
+                {t('settings.tokenPlan.customHint')}
+              </span>
+            </span>
+          </button>
+        </div>
       </div>
 
+      {/* Custom-mode manual fields */}
+      {mode === 'custom' && (
+        <div className="space-y-3 border-t pt-4">
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.providerName')}</Label>
+            <Input
+              placeholder={t('settings.providerNamePlaceholder')}
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              className="h-8"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.providerApiMode')}</Label>
+            <div className="grid grid-cols-3 gap-2">
+              {(['openai', 'anthropic', 'google'] as const).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setCustomProtocol(p)}
+                  className={cn(
+                    'p-2 rounded-lg border text-left text-sm transition-colors',
+                    customProtocol === p
+                      ? 'bg-primary/5 border-primary/50'
+                      : 'hover:bg-muted/50 border-transparent',
+                  )}
+                >
+                  {t(
+                    p === 'openai'
+                      ? 'settings.apiModeOpenAI'
+                      : p === 'anthropic'
+                        ? 'settings.apiModeAnthropic'
+                        : 'settings.apiModeGoogle',
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label className="text-sm">{t('settings.defaultBaseUrl')}</Label>
+            <Input
+              type="url"
+              placeholder="https://api.example.com/v1"
+              value={customBaseUrl}
+              onChange={(e) => setCustomBaseUrl(e.target.value)}
+              className="h-8"
+            />
+          </div>
+        </div>
+      )}
+
       {/* Key + apply */}
-      {selected && (
+      {effectivePreset && (
         <div className="space-y-3 border-t pt-4">
           <Label className="text-sm">{t('settings.tokenPlan.apiKey')}</Label>
           <div className="flex gap-2">
@@ -238,7 +362,7 @@ export function TokenPlanSettings() {
               )}
               {t('settings.tokenPlan.apply')}
             </Button>
-            {selected.modalities.llm && (
+            {effectivePreset.modalities.llm && (
               <Button
                 variant="outline"
                 onClick={handleCheckBalance}
