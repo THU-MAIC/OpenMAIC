@@ -30,6 +30,8 @@ import {
   Wrench,
   FileText,
   Send,
+  Download,
+  Wallet,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { ProviderConfig } from '@/lib/ai/providers';
@@ -48,6 +50,10 @@ interface ProviderConfigPanelProps {
   onEditModel: (index: number) => void;
   onDeleteModel: (index: number) => void;
   onAddModel: () => void;
+  /** Merge probed model ids into the provider's list; returns the count added. */
+  onModelsFetched?: (ids: string[]) => number;
+  /** Optional explicit /models URL override (from a preset). */
+  modelsUrl?: string;
   onResetToDefault?: () => void; // Reset provider to default configuration
   isBuiltIn: boolean; // To determine if reset button should be shown
 }
@@ -63,6 +69,8 @@ export function ProviderConfigPanel({
   onEditModel,
   onDeleteModel,
   onAddModel,
+  onModelsFetched,
+  modelsUrl,
   onResetToDefault,
   isBuiltIn,
 }: ProviderConfigPanelProps) {
@@ -76,10 +84,22 @@ export function ProviderConfigPanel({
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
   const [testMessage, setTestMessage] = useState('');
   const [showResetDialog, setShowResetDialog] = useState(false);
+  const [fetchStatus, setFetchStatus] = useState<'idle' | 'fetching' | 'success' | 'error'>('idle');
+  const [fetchMessage, setFetchMessage] = useState('');
+  const [balanceStatus, setBalanceStatus] = useState<'idle' | 'loading' | 'done'>('idle');
+  const [balance, setBalance] = useState<{
+    supported: boolean;
+    planName?: string;
+    remaining?: number;
+    total?: number;
+    used?: number;
+    unit?: string;
+    isValid?: boolean;
+    invalidMessage?: string;
+  } | null>(null);
 
   // Update local state when provider changes or initial values change
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Sync local state from props on provider change
     setApiKey(initialApiKey);
 
     setBaseUrl(initialBaseUrl);
@@ -89,6 +109,10 @@ export function ProviderConfigPanel({
     setTestStatus('idle');
 
     setTestMessage('');
+    setFetchStatus('idle');
+    setFetchMessage('');
+    setBalanceStatus('idle');
+    setBalance(null);
   }, [provider.id, initialApiKey, initialBaseUrl, initialRequiresApiKey]);
 
   // Notify parent of changes
@@ -151,6 +175,63 @@ export function ProviderConfigPanel({
       setTestMessage(t('settings.connectionFailed'));
     }
   }, [apiKey, baseUrl, provider.id, provider.type, requiresApiKey, providersConfig, t]);
+
+  const effectiveBaseUrl = baseUrl || provider.defaultBaseUrl || '';
+
+  // Probe the provider's /models endpoint and merge results into the model list.
+  const handleFetchModels = useCallback(async () => {
+    setFetchStatus('fetching');
+    setFetchMessage('');
+    try {
+      const response = await fetch('/api/provider/probe-models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: effectiveBaseUrl, apiKey, modelsUrl }),
+      });
+      const data = await response.json();
+      if (response.ok && data.success) {
+        const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
+        const added = onModelsFetched?.(ids) ?? 0;
+        setFetchStatus('success');
+        setFetchMessage(
+          t('settings.fetchModelsResult')
+            .replace('{added}', String(added))
+            .replace('{total}', String(ids.length)),
+        );
+      } else if (response.status === 404) {
+        setFetchStatus('error');
+        setFetchMessage(t('settings.fetchModelsNoEndpoint'));
+      } else if (response.status === 401) {
+        setFetchStatus('error');
+        setFetchMessage(t('settings.fetchModelsAuthError'));
+      } else {
+        setFetchStatus('error');
+        setFetchMessage(data.error || t('settings.fetchModelsFailed'));
+      }
+    } catch {
+      setFetchStatus('error');
+      setFetchMessage(t('settings.fetchModelsFailed'));
+    }
+  }, [apiKey, effectiveBaseUrl, modelsUrl, onModelsFetched, t]);
+
+  // Query the provider's balance/quota (auto-detected vendor or billing fallback).
+  const handleCheckBalance = useCallback(async () => {
+    setBalanceStatus('loading');
+    setBalance(null);
+    try {
+      const response = await fetch('/api/provider/balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: effectiveBaseUrl, apiKey }),
+      });
+      const data = await response.json();
+      setBalance(data.balance ?? { supported: false });
+    } catch {
+      setBalance({ supported: false });
+    } finally {
+      setBalanceStatus('done');
+    }
+  }, [apiKey, effectiveBaseUrl]);
 
   const models = providersConfig[provider.id]?.models || [];
   const isServerConfigured = providersConfig[provider.id]?.isServerConfigured;
@@ -247,6 +328,51 @@ export function ProviderConfigPanel({
               >
                 {t('settings.requiresApiKey')}
               </label>
+            </div>
+
+            {/* Balance bar */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCheckBalance}
+                disabled={balanceStatus === 'loading' || (requiresApiKey && !apiKey)}
+                className="gap-1.5"
+              >
+                {balanceStatus === 'loading' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wallet className="h-3.5 w-3.5" />
+                )}
+                {t('settings.checkBalance')}
+              </Button>
+              {balance && balanceStatus === 'done' && (
+                <div className="text-sm">
+                  {balance.supported && balance.isValid !== false ? (
+                    <span className="text-foreground">
+                      {balance.planName ? `${balance.planName} · ` : ''}
+                      {t('settings.balanceRemaining')}:{' '}
+                      <span className="font-medium">
+                        {balance.remaining?.toLocaleString(undefined, {
+                          maximumFractionDigits: 2,
+                        })}
+                        {balance.total != null
+                          ? ` / ${balance.total.toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+                          : ''}{' '}
+                        {balance.unit || ''}
+                      </span>
+                    </span>
+                  ) : balance.supported && balance.isValid === false ? (
+                    <span className="text-red-600">
+                      {balance.invalidMessage || t('settings.balanceInvalid')}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">
+                      {t('settings.balanceUnsupported')}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
@@ -347,6 +473,20 @@ export function ProviderConfigPanel({
                   {t('settings.reset')}
                 </Button>
               )}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleFetchModels}
+                disabled={fetchStatus === 'fetching' || (requiresApiKey && !apiKey)}
+                className="gap-1.5"
+              >
+                {fetchStatus === 'fetching' ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                {t('settings.fetchModels')}
+              </Button>
               <Button variant="outline" size="sm" onClick={onAddModel} className="gap-1.5">
                 <Plus className="h-3.5 w-3.5" />
                 {t('settings.addNewModel')}
@@ -354,6 +494,20 @@ export function ProviderConfigPanel({
             </div>
           )}
         </div>
+
+        {/* Fetch-models result message */}
+        {fetchMessage && (
+          <div
+            className={cn(
+              'rounded-lg p-2.5 text-xs',
+              fetchStatus === 'success' && 'bg-green-50 text-green-700 border border-green-200',
+              fetchStatus === 'error' && 'bg-amber-50 text-amber-700 border border-amber-200',
+            )}
+          >
+            {fetchMessage}
+          </div>
+        )}
+
         <div className="space-y-1.5">
           {models.map((model, index) => {
             return (

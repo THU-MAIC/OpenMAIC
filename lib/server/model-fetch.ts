@@ -115,7 +115,6 @@ export async function fetchModels(
   opts: { modelsUrlOverride?: string } = {},
 ): Promise<FetchedModel[]> {
   const candidates = buildModelsUrlCandidates(baseUrl, opts);
-  let lastNotFound: string | null = null;
 
   for (const url of candidates) {
     const controller = new AbortController();
@@ -139,7 +138,6 @@ export async function fetchModels(
     }
 
     if (res.status === 404 || res.status === 405) {
-      lastNotFound = `HTTP ${res.status}`;
       continue;
     }
 

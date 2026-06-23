@@ -410,6 +410,28 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     setProviderConfig(pid, { models: newModels });
   };
 
+  // Merge probed model ids into the provider's model list, keeping any models
+  // the user added manually (dedupe by id). Returns the count newly added.
+  const handleModelsFetched = (pid: ProviderId, fetchedIds: string[]): number => {
+    const currentModels = providersConfig[pid]?.models || [];
+    const existing = new Set(currentModels.map((m) => m.id));
+    const additions = fetchedIds
+      .filter((id) => !existing.has(id))
+      .map((id) => ({
+        id,
+        name: id,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: /vision|vl|omni|4o|gpt-5|gemini|claude/i.test(id),
+        },
+      }));
+    if (additions.length > 0) {
+      setProviderConfig(pid, { models: [...currentModels, ...additions] });
+    }
+    return additions.length;
+  };
+
   const handleAutoSaveModel = () => {
     if (!editingModel) return;
     const { providerId: pid, modelIndex, model } = editingModel;
@@ -1047,6 +1069,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
                   onEditModel={(index) => handleEditModel(selectedProviderId, index)}
                   onDeleteModel={(index) => handleDeleteModel(selectedProviderId, index)}
                   onAddModel={handleAddModel}
+                  onModelsFetched={(ids) => handleModelsFetched(selectedProviderId, ids)}
+                  modelsUrl={providersConfig[selectedProviderId]?.modelsUrl}
                   onResetToDefault={() => handleResetProvider(selectedProviderId)}
                   isBuiltIn={providersConfig[selectedProviderId]?.isBuiltIn ?? true}
                 />

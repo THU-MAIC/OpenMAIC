@@ -1098,7 +1098,16 @@
       "aggregator": "聚合 / 网关",
       "thirdParty": "厂商直连",
       "official": "官方"
-    }
+    },
+    "fetchModels": "拉取模型",
+    "fetchModelsResult": "已拉取 {total} 个模型，新增 {added} 个",
+    "fetchModelsNoEndpoint": "该服务商未提供模型列表接口，请手动「新建模型」",
+    "fetchModelsAuthError": "API 密钥无效或已过期",
+    "fetchModelsFailed": "拉取模型失败",
+    "checkBalance": "查询余额",
+    "balanceRemaining": "剩余",
+    "balanceInvalid": "余额不足或密钥无效",
+    "balanceUnsupported": "该服务商不支持余额查询，请前往其控制台查看"
   },
   "profile": {
     "title": "個人資料",
