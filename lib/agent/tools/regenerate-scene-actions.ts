@@ -51,6 +51,13 @@ export interface SceneContext {
   agents?: AgentInfo[];
   /** Optional language directive forwarded to the generator. */
   languageDirective?: string;
+  /**
+   * Runtime errors the interactive iframe reported for this scene (captured by
+   * the error shim, see lib/utils/iframe.ts). Surfaced to the model by
+   * read_scene_content so it can diagnose a blank/broken page from the real
+   * error instead of guessing.
+   */
+  runtimeErrors?: string[];
 }
 
 // ── Deps injection interface ─────────────────────────────────────────────────

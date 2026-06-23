@@ -34,6 +34,7 @@ import { serializeThread, deserializeThread } from './serialize-thread';
 export type { AssistantPart, PiPart } from './merge-assistant-parts';
 import { toPiParts, type PiAssistantContent } from './to-pi-parts';
 import { useThinkingTimers } from './thinking-timers';
+import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
@@ -334,6 +335,9 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             content: scene.content,
             stageId: scene.stageId,
             languageDirective: stage?.languageDirective,
+            // Runtime errors the interactive iframe reported, so read_scene_content
+            // can show the agent why a page is blank instead of it guessing.
+            runtimeErrors: useSceneRuntimeErrors.getState().errors[scene.id],
           };
         }
 

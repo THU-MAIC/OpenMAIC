@@ -34,12 +34,58 @@ const STORAGE_SHIM = `<script data-iframe-storage-shim>
 </script>`;
 
 /**
+ * Runtime-error capture, injected as the VERY FIRST script so it observes errors
+ * from the storage shim and every page script that follows. Generated interactive
+ * pages frequently die on a runtime error (a `JSON.parse` of malformed config, a
+ * reference to a CDN lib that failed to load, …) → the script aborts and the
+ * widget renders blank. The sandboxed (null-origin) iframe can't be read by the
+ * editor, but it CAN `postMessage` out: this forwards `window.onerror`, unhandled
+ * rejections and `console.error` to the parent, which stores them per scene and
+ * feeds them to the editor agent — so it can diagnose a blank page instead of
+ * guessing. Only touches `window.*` so it stays sandbox-safe and unit-testable.
+ */
+const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
+(function () {
+  function post(errorKind, message) {
+    try {
+      window.parent.postMessage(
+        { __maicInteractive: true, kind: 'runtime-error', errorKind: errorKind, message: String(message).slice(0, 1200) },
+        '*'
+      );
+    } catch (e) {}
+  }
+  window.addEventListener('error', function (e) {
+    if (e && e.message) {
+      post('error', e.message + (e.filename ? ' (' + e.filename + ':' + (e.lineno || 0) + ')' : ''));
+    } else if (e && e.target && (e.target.src || e.target.href)) {
+      post('resource', 'Failed to load resource: ' + (e.target.src || e.target.href));
+    }
+  }, true);
+  window.addEventListener('unhandledrejection', function (e) {
+    var r = e && e.reason;
+    post('unhandledrejection', (r && (r.stack || r.message)) || r || 'unhandled promise rejection');
+  });
+  try {
+    var c = window.console;
+    if (c && c.error) {
+      var _ce = c.error;
+      c.error = function () {
+        try { post('console.error', Array.prototype.map.call(arguments, function (a) { return (a && a.stack) || String(a); }).join(' ')); } catch (e) {}
+        return _ce.apply(c, arguments);
+      };
+    }
+  } catch (e) {}
+})();
+</script>`;
+
+/**
  * Patch embedded HTML to display correctly inside an iframe.
  *
- * Injects a storage shim (so sandboxed pages that use localStorage don't crash)
- * plus CSS that ensures proper sizing and scrolling behavior when HTML content is
- * rendered via srcDoc in an iframe. The shim is placed first so it runs before
- * the page's own scripts.
+ * Injects a runtime-error capture shim + a storage shim (so sandboxed pages that
+ * use localStorage don't crash) plus CSS that ensures proper sizing and scrolling
+ * behavior when HTML content is rendered via srcDoc in an iframe. The shims are
+ * placed first so they run before the page's own scripts (error capture first, so
+ * it also observes the storage shim).
  */
 export function patchHtmlForIframe(html: string): string {
   const iframeCss = `<style data-iframe-patch>
@@ -56,7 +102,7 @@ export function patchHtmlForIframe(html: string): string {
   body { min-height: 100vh; }
 </style>`;
 
-  const injection = '\n' + STORAGE_SHIM + '\n' + iframeCss;
+  const injection = '\n' + ERROR_CAPTURE_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
 
   // Insert right after <head> or at the start of the document
   const headIdx = html.indexOf('<head>');

@@ -216,9 +216,17 @@ export function makeReadSceneContentTool(
         };
       }
 
-      const { outline, content } = ctx;
+      const { outline, content, runtimeErrors } = ctx;
       const keyPoints = (outline.keyPoints ?? []).join('; ');
       const projection = projectContent(content);
+      // Surface any runtime errors the page threw when it rendered — for an
+      // interactive scene these are usually the real reason it's blank/broken, so
+      // the agent fixes the root cause instead of guessing from the static HTML.
+      const errorsSection =
+        runtimeErrors && runtimeErrors.length > 0
+          ? `\n\nRuntime errors this page reported when it rendered (these are the likely reason it is blank/broken — fix the ROOT CAUSE shown here, do not guess):\n` +
+            runtimeErrors.map((e) => `- ${e}`).join('\n')
+          : '';
       return {
         content: [
           {
@@ -227,7 +235,7 @@ export function makeReadSceneContentTool(
               `Scene "${outline.title}" (type: ${outline.type}). ` +
               `Description: ${outline.description || '(none)'}. ` +
               `Key points: ${keyPoints || '(none)'}.\n` +
-              `Scene content:\n${projection}`,
+              `Scene content:\n${projection}${errorsSection}`,
           },
         ],
         details: {

@@ -50,6 +50,52 @@ describe('patchHtmlForIframe', () => {
 
   it('falls back to prepending when there is no <head>', () => {
     const out = patchHtmlForIframe('<div>no head</div>');
-    expect(out.startsWith('\n<script data-iframe-storage-shim>')).toBe(true);
+    // The error-capture shim is injected first, so it leads the prepended block.
+    expect(out.startsWith('\n<script data-iframe-error-shim>')).toBe(true);
+  });
+
+  it('injects the error-capture shim before the storage shim and page scripts', () => {
+    const html =
+      '<!DOCTYPE html><html><head><script>boom()</script></head><body></body></html>';
+    const out = patchHtmlForIframe(html);
+    expect(out).toContain('data-iframe-error-shim');
+    // error shim runs first → before storage shim → before page scripts, so it
+    // catches errors from everything that follows.
+    expect(out.indexOf('data-iframe-error-shim')).toBeLessThan(
+      out.indexOf('data-iframe-storage-shim'),
+    );
+    expect(out.indexOf('data-iframe-storage-shim')).toBeLessThan(out.indexOf('boom()'));
+  });
+
+  it('the error shim posts runtime errors (onerror / resource / rejection / console.error) to the parent', () => {
+    const out = patchHtmlForIframe('<html><head></head><body></body></html>');
+    const shim = out.match(/<script data-iframe-error-shim>([\s\S]*?)<\/script>/)?.[1];
+    expect(shim).toBeTruthy();
+
+    const posts: Array<[Record<string, unknown>, string]> = [];
+    const handlers: Record<string, (e: unknown) => void> = {};
+    const win = {
+      parent: { postMessage: (m: Record<string, unknown>, o: string) => posts.push([m, o]) },
+      addEventListener: (t: string, cb: (e: unknown) => void) => {
+        handlers[t] = cb;
+      },
+      console: { error: (..._args: unknown[]) => {} },
+    };
+    new Function('window', shim as string)(win);
+
+    handlers.error({ message: 'JSON.parse boom', filename: 'p.html', lineno: 12 });
+    expect(posts[0][0]).toMatchObject({ kind: 'runtime-error', errorKind: 'error' });
+    expect(posts[0][0].message).toContain('JSON.parse boom');
+    expect(posts[0][1]).toBe('*');
+
+    handlers.error({ target: { src: 'https://cdn/katex.js' } });
+    expect(String(posts[1][0].message)).toContain('Failed to load resource');
+
+    handlers.unhandledrejection({ reason: { message: 'rej' } });
+    expect(posts[2][0]).toMatchObject({ errorKind: 'unhandledrejection' });
+
+    win.console.error('console boom');
+    expect(posts[3][0]).toMatchObject({ errorKind: 'console.error' });
+    expect(String(posts[3][0].message)).toContain('console boom');
   });
 });

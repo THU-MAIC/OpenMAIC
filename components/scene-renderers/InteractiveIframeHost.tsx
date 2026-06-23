@@ -7,6 +7,7 @@ import {
   useInteractiveIframePool,
   type IframePoolEntry,
 } from '@/lib/store/interactive-iframe-pool';
+import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 
 /**
  * Stable host for interactive scene iframes (#619).
@@ -110,6 +111,30 @@ function PooledIframe({ sceneId, entry, visible }: PooledIframeProps) {
     registerIframe(sceneId, send);
     return () => registerIframe(sceneId, null);
   }, [sceneId, registerIframe]);
+
+  // Capture runtime errors the iframe's error shim posts out (see iframe.ts), so
+  // the editor agent can diagnose a blank/broken page. Matched to THIS iframe by
+  // event.source (sandboxed null-origin iframes still postMessage to the parent).
+  useEffect(() => {
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== iframeRef.current?.contentWindow) return;
+      const d = e.data as
+        | { __maicInteractive?: boolean; kind?: string; errorKind?: string; message?: unknown }
+        | undefined;
+      if (!d || d.__maicInteractive !== true || d.kind !== 'runtime-error') return;
+      const kind = typeof d.errorKind === 'string' ? d.errorKind : 'error';
+      const msg = typeof d.message === 'string' ? d.message : String(d.message ?? '');
+      useSceneRuntimeErrors.getState().addError(sceneId, `[${kind}] ${msg}`);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [sceneId]);
+
+  // A content change reloads the iframe; drop the previous render's errors so the
+  // captured set reflects the CURRENT page (e.g. after the agent applies a fix).
+  useEffect(() => {
+    useSceneRuntimeErrors.getState().clearScene(sceneId);
+  }, [sceneId, entry.srcDoc]);
 
   const rect = entry.rect;
   // Require a real measured box before showing — a null or zero-size rect means
