@@ -9,6 +9,7 @@
 
 import { NextRequest } from 'next/server';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
+import { recordUsage } from '@/lib/server/usage-storage';
 import {
   isServerConfiguredProvider,
   isServerTTSProviderDisabled,
@@ -117,6 +118,16 @@ export async function POST(req: NextRequest) {
 
     // Generate audio
     const { audio, format } = await generateTTS(config, text);
+
+    void recordUsage({
+      kind: 'tts',
+      unit: 'character',
+      source: 'tts',
+      providerId: ttsProviderId,
+      modelId: config.modelId || ttsProviderId,
+      modelString: `${ttsProviderId}:${config.modelId || ttsProviderId}`,
+      quantity: text.length,
+    });
 
     // Convert to base64
     const base64 = Buffer.from(audio).toString('base64');

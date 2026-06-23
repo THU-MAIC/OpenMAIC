@@ -1,32 +1,47 @@
 import { NextRequest } from 'next/server';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
-import { readUsageRecords, type UsageRecord } from '@/lib/server/usage-storage';
+import {
+  readUsageRecords,
+  type UsageRecord,
+  type UsageKind,
+  type UsageUnit,
+} from '@/lib/server/usage-storage';
 
 const log = createLogger('UsageAPI');
 
 interface Bucket {
   key: string;
+  kind: UsageKind;
+  unit: UsageUnit;
   requests: number;
+  // LLM token totals (0 for non-LLM).
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   totalTokens: number;
-  totalCostUsd: number;
+  // Non-token quantity (images / seconds / characters).
+  quantity: number;
 }
 
-function emptyBucket(key: string): Bucket {
+function emptyBucket(key: string, kind: UsageKind, unit: UsageUnit): Bucket {
   return {
     key,
+    kind,
+    unit,
     requests: 0,
     inputTokens: 0,
     outputTokens: 0,
     cacheReadTokens: 0,
     cacheCreationTokens: 0,
     totalTokens: 0,
-    totalCostUsd: 0,
+    quantity: 0,
   };
+}
+
+function unitOf(r: UsageRecord): UsageUnit {
+  return r.unit ?? 'token';
 }
 
 function addTo(bucket: Bucket, r: UsageRecord): void {
@@ -37,7 +52,7 @@ function addTo(bucket: Bucket, r: UsageRecord): void {
   bucket.cacheCreationTokens += r.cacheCreationTokens;
   bucket.totalTokens +=
     r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens;
-  bucket.totalCostUsd += r.totalCostUsd;
+  bucket.quantity += r.quantity ?? 0;
 }
 
 function dayKey(createdAt: number): string {
@@ -48,7 +63,7 @@ function dayKey(createdAt: number): string {
  * GET /api/usage
  *
  * Aggregates the deployment-wide usage log (data/usage/*.jsonl) by model, by
- * day, and by source. Optional `?months=YYYY-MM,YYYY-MM` limits the range.
+ * day, and by modality. Pure usage — no cost. Optional `?months=YYYY-MM,...`.
  */
 export async function GET(req: NextRequest) {
   try {
@@ -59,34 +74,33 @@ export async function GET(req: NextRequest) {
 
     const byModel = new Map<string, Bucket>();
     const byDay = new Map<string, Bucket>();
-    const bySource = new Map<string, Bucket>();
-    const totals = emptyBucket('total');
-    let costIncomplete = false;
+    const byKind = new Map<UsageKind, Bucket>();
+    let totalRequests = 0;
+    let totalLlmTokens = 0;
 
     for (const r of records) {
-      addTo(totals, r);
-      if (r.costNull) costIncomplete = true;
+      totalRequests += 1;
+      if (r.kind === 'llm') {
+        totalLlmTokens += r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens;
+      }
 
       const mk = r.modelString || r.modelId;
-      if (!byModel.has(mk)) byModel.set(mk, emptyBucket(mk));
+      if (!byModel.has(mk)) byModel.set(mk, emptyBucket(mk, r.kind, unitOf(r)));
       addTo(byModel.get(mk)!, r);
 
       const dk = dayKey(r.createdAt);
-      if (!byDay.has(dk)) byDay.set(dk, emptyBucket(dk));
+      if (!byDay.has(dk)) byDay.set(dk, emptyBucket(dk, 'llm', 'token'));
       addTo(byDay.get(dk)!, r);
 
-      const sk = r.source || 'unknown';
-      if (!bySource.has(sk)) bySource.set(sk, emptyBucket(sk));
-      addTo(bySource.get(sk)!, r);
+      if (!byKind.has(r.kind)) byKind.set(r.kind, emptyBucket(r.kind, r.kind, unitOf(r)));
+      addTo(byKind.get(r.kind)!, r);
     }
 
     return apiSuccess({
-      totals,
-      byModel: [...byModel.values()].sort((a, b) => b.totalCostUsd - a.totalCostUsd),
+      totals: { requests: totalRequests, llmTokens: totalLlmTokens },
+      byModel: [...byModel.values()].sort((a, b) => b.requests - a.requests),
       byDay: [...byDay.values()].sort((a, b) => a.key.localeCompare(b.key)),
-      bySource: [...bySource.values()].sort((a, b) => b.totalTokens - a.totalTokens),
-      // True if any record had an unknown model price — the cost total understates reality.
-      costIncomplete,
+      byKind: [...byKind.values()],
     });
   } catch (error) {
     log.error('Usage aggregation failed:', error);

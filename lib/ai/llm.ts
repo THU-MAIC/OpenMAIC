@@ -263,6 +263,7 @@ function recordUsageSafe(
       const { normalizeUsage } = await import('@/lib/usage/normalize');
       const { recordUsage } = await import('@/lib/server/usage-storage');
       await recordUsage({
+        kind: 'llm',
         source: meta.source,
         providerId: meta.providerId,
         modelId: meta.modelId,

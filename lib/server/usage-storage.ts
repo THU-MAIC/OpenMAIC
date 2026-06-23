@@ -2,7 +2,6 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { createLogger } from '@/lib/logger';
 import { hasBillableTokens, type NormalizedUsage } from '@/lib/usage/normalize';
-import { computeCost, resolveModelPricing, type ModelPricing } from '@/lib/usage/pricing';
 
 const log = createLogger('UsageStorage');
 
@@ -18,41 +17,49 @@ function monthlyFile(dir: string, now: Date): string {
   return path.join(dir, `${y}-${m}.jsonl`);
 }
 
-/** Input to record one LLM call's usage. */
+/** What kind of generation produced this usage. */
+export type UsageKind = 'llm' | 'image' | 'video' | 'tts' | 'asr';
+/** Unit of the non-token quantity. */
+export type UsageUnit = 'token' | 'image' | 'second' | 'character';
+
+/** Input to record one generation's usage. */
 export interface UsageRecordInput {
+  /** Modality. Defaults to 'llm'. */
+  kind?: UsageKind;
   source: string;
   providerId: string;
   modelId: string;
   modelString: string;
-  usage: NormalizedUsage;
+  /** Token usage (LLM only). */
+  usage?: NormalizedUsage;
+  /** Non-token quantity: images count / seconds / characters. */
+  quantity?: number;
+  /** Unit for `quantity`. */
+  unit?: UsageUnit;
 }
 
-/** A persisted usage row — self-describing (carries a pricing snapshot via costs). */
+/** A persisted usage row — pure usage, no cost. */
 export interface UsageRecord {
   id: string;
   createdAt: number;
+  kind: UsageKind;
   source: string;
   providerId: string;
   modelId: string;
   modelString: string;
+  // LLM token counts (0 for non-LLM rows).
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
   reasoningTokens: number;
-  inputCostUsd: number;
-  outputCostUsd: number;
-  cacheReadCostUsd: number;
-  cacheCreationCostUsd: number;
-  totalCostUsd: number;
-  /** True when the model had no pricing entry — tokens recorded, cost is 0/unknown. */
-  costNull?: boolean;
+  // Non-token usage (e.g. image count, video seconds, TTS characters).
+  quantity?: number;
+  unit?: UsageUnit;
 }
 
 interface RecordOptions {
   baseDir?: string;
-  /** Override pricing table (defaults to bundled DEFAULT_PRICING). */
-  pricingTable?: ModelPricing[];
   /** Injected clock for deterministic tests. */
   now?: Date;
 }
@@ -63,37 +70,49 @@ function makeId(now: Date): string {
   return `${now.getTime()}-${counter.toString(36)}`;
 }
 
+const ZERO_USAGE: NormalizedUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheCreationTokens: 0,
+  reasoningTokens: 0,
+};
+
 /**
- * Records one LLM call's usage as a jsonl line. Fire-and-forget: never throws —
- * a logging failure must not break generation. Skips rows with no billable
- * tokens (e.g. an OpenAI-compatible stream that omitted usage).
+ * Records one generation's usage as a jsonl line. Fire-and-forget: never throws —
+ * a logging failure must not break generation.
+ *
+ * - LLM rows: require billable tokens (skips empty usage, e.g. a streamed
+ *   OpenAI-compatible response that omitted usage).
+ * - Non-LLM rows (image/video/tts/asr): require quantity > 0.
  */
 export async function recordUsage(input: UsageRecordInput, opts: RecordOptions = {}): Promise<void> {
   try {
-    if (!hasBillableTokens(input.usage)) return;
+    const kind: UsageKind = input.kind ?? 'llm';
+    const usage = input.usage ?? ZERO_USAGE;
+
+    if (kind === 'llm') {
+      if (!hasBillableTokens(usage)) return;
+    } else if (!input.quantity || input.quantity <= 0) {
+      return;
+    }
 
     const now = opts.now ?? new Date();
-    const pricing = resolveModelPricing(input.modelId, opts.pricingTable);
-    const cost = computeCost(input.usage, pricing);
-
     const record: UsageRecord = {
       id: makeId(now),
       createdAt: now.getTime(),
+      kind,
       source: input.source,
       providerId: input.providerId,
       modelId: input.modelId,
       modelString: input.modelString,
-      inputTokens: input.usage.inputTokens,
-      outputTokens: input.usage.outputTokens,
-      cacheReadTokens: input.usage.cacheReadTokens,
-      cacheCreationTokens: input.usage.cacheCreationTokens,
-      reasoningTokens: input.usage.reasoningTokens,
-      inputCostUsd: cost?.inputCostUsd ?? 0,
-      outputCostUsd: cost?.outputCostUsd ?? 0,
-      cacheReadCostUsd: cost?.cacheReadCostUsd ?? 0,
-      cacheCreationCostUsd: cost?.cacheCreationCostUsd ?? 0,
-      totalCostUsd: cost?.totalCostUsd ?? 0,
-      costNull: cost === null ? true : undefined,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheCreationTokens: usage.cacheCreationTokens,
+      reasoningTokens: usage.reasoningTokens,
+      ...(input.quantity != null ? { quantity: input.quantity } : {}),
+      ...(input.unit ? { unit: input.unit } : {}),
     };
 
     const dir = usageDir(opts.baseDir);
@@ -112,7 +131,8 @@ interface ReadOptions {
 
 /**
  * Reads all usage records (across monthly files). Returns [] when the dir is
- * absent. Malformed lines are skipped, not fatal.
+ * absent. Malformed lines are skipped. Legacy rows without `kind` are treated as
+ * 'llm'; any legacy cost fields are simply ignored.
  */
 export async function readUsageRecords(opts: ReadOptions = {}): Promise<UsageRecord[]> {
   const dir = usageDir(opts.baseDir);
@@ -138,7 +158,9 @@ export async function readUsageRecords(opts: ReadOptions = {}): Promise<UsageRec
       const trimmed = line.trim();
       if (!trimmed) continue;
       try {
-        records.push(JSON.parse(trimmed) as UsageRecord);
+        const row = JSON.parse(trimmed) as UsageRecord;
+        if (!row.kind) row.kind = 'llm'; // backward-compat
+        records.push(row);
       } catch {
         // skip malformed line
       }
