@@ -1122,7 +1122,23 @@
     "checkBalance": "Check Balance",
     "balanceRemaining": "Remaining",
     "balanceInvalid": "Insufficient balance or invalid key",
-    "balanceUnsupported": "Balance query not supported — check the provider console"
+    "balanceUnsupported": "Balance query not supported — check the provider console",
+    "usage": {
+      "title": "Usage",
+      "refresh": "Refresh",
+      "disclaimer": "Usage is system-tracked; actual billing is per the provider. Only server-side calls are counted.",
+      "totalRequests": "Requests",
+      "totalTokens": "Total Tokens",
+      "totalCost": "Est. Cost",
+      "costIncomplete": "* Some models have no price; cost is understated",
+      "dailyTrend": "Daily Trend",
+      "tokens": "Tokens",
+      "cost": "Cost",
+      "byModel": "By Model",
+      "model": "Model",
+      "reqs": "Reqs",
+      "empty": "No usage data yet"
+    }
   },
   "profile": {
     "title": "Профиль",

@@ -1122,7 +1122,23 @@
     "checkBalance": "查询余额",
     "balanceRemaining": "剩余",
     "balanceInvalid": "余额不足或密钥无效",
-    "balanceUnsupported": "该服务商不支持余额查询，请前往其控制台查看"
+    "balanceUnsupported": "该服务商不支持余额查询，请前往其控制台查看",
+    "usage": {
+      "title": "用量统计",
+      "refresh": "刷新",
+      "disclaimer": "用量为系统统计，实际计费以服务商为准。仅统计经服务端的调用。",
+      "totalRequests": "总请求数",
+      "totalTokens": "总 Token",
+      "totalCost": "预估花费",
+      "costIncomplete": "* 部分模型无单价，花费被低估",
+      "dailyTrend": "每日趋势",
+      "tokens": "Token",
+      "cost": "花费",
+      "byModel": "按模型",
+      "model": "模型",
+      "reqs": "请求",
+      "empty": "暂无用量数据"
+    }
   },
   "profile": {
     "title": "个人资料",
