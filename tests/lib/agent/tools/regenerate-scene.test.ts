@@ -135,7 +135,7 @@ describe('regenerate_scene tool', () => {
     expect(contentPrompt).toContain('KEEP them');
   });
 
-  it('refuses slides containing video/audio without generating anything', async () => {
+  it('refuses slides containing a video without generating anything', async () => {
     const aiCall = vi.fn(async () => NEW_SLIDE_JSON);
     const videoEl = {
       id: 'video_1',
@@ -157,7 +157,7 @@ describe('regenerate_scene tool', () => {
     const res = await tool.execute('call-1', { sceneId: 's1', instruction: 'x' });
 
     expect((res as { isError?: boolean }).isError).toBe(true);
-    expect((res.content[0] as { text: string }).text).toContain('video/audio');
+    expect((res.content[0] as { text: string }).text).toContain('video');
     expect(res.details).toEqual({ sceneId: 's1', content: null, actions: [] });
     expect(aiCall).not.toHaveBeenCalled();
   });

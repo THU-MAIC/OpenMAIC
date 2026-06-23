@@ -315,11 +315,22 @@
         "narration": {
           "label": "Regenerate the narration script",
           "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "examples": "«زر البدء لا يفعل شيئًا»، «تتداخل اللوحات على الجوال»",
+          "label": "إصلاح خطأ في الصفحة"
         }
       },
       "newConversation": "New conversation",
       "reasoning": "الاستدلال",
-      "thought": "فكّر لمدة"
+      "thought": "فكّر لمدة",
+      "interactive": {
+        "boundary": "أُجري إصلاحات محدّدة على الصفحة، ولا أعيد بناء الصفحة بالكامل. بدّل المشاهد من شريط التنقّل على اليسار.",
+        "emptyTitle": "ما الذي يحتاج إلى إصلاح في هذه الصفحة؟",
+        "lead": "صِف خطأً في هذه الصفحة التفاعلية — مثل زر لا يفعل شيئًا — وسأُصلح ذلك فقط مع الإبقاء على كل شيء آخر.",
+        "placeholder": "صِف الخطأ في هذه الصفحة التفاعلية…"
+      },
+      "thinking": "جارٍ التفكير…"
     },
     "timeline": {
       "title": "نص السرد",
@@ -383,6 +394,13 @@
       "reading": "Reading",
       "done": "Read",
       "failed": "Not read"
+    },
+    "fixHtml": {
+      "editsCount": "{{count}} تعديل",
+      "fixed": "تم الإصلاح",
+      "fixing": "جارٍ الإصلاح",
+      "notFixed": "لم يُصلَح",
+      "title": "إصلاح الصفحة التفاعلية"
     }
   },
   "classroomComplete": {

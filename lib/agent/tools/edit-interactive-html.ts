@@ -93,7 +93,7 @@ export function makeEditInteractiveHtmlTool(
           content: [
             {
               type: 'text',
-              text: `Error: scene context not found for sceneId "${sceneId}". Cannot edit the page.`,
+              text: `Error: scene context not found for sceneId ${JSON.stringify(String(sceneId).slice(0, 200))}. Cannot edit the page.`,
             },
           ],
           details: { sceneId, html: null, editCount: 0 },

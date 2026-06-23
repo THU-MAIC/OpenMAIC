@@ -203,7 +203,7 @@ export function makeReadSceneContentTool(
           content: [
             {
               type: 'text',
-              text: `Error: scene context not found for sceneId "${sceneId}". Cannot read the scene.`,
+              text: `Error: scene context not found for sceneId ${JSON.stringify(String(sceneId).slice(0, 200))}. Cannot read the scene.`,
             },
           ],
           details: {

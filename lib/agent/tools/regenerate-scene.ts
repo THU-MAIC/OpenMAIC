@@ -161,7 +161,7 @@ export function makeRegenerateSceneTool(
           content: [
             {
               type: 'text',
-              text: `Error: scene context not found for sceneId "${sceneId}". Cannot regenerate the slide.`,
+              text: `Error: scene context not found for sceneId ${JSON.stringify(String(sceneId).slice(0, 200))}. Cannot regenerate the slide.`,
             },
           ],
           details: { sceneId, content: null, actions: [] },

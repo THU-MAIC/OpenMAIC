@@ -19,7 +19,11 @@ import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
 
 const log = createLogger('MAIC Agent');
 
-export const maxDuration = 60;
+// A single `regenerate_scene` tool call runs slide content generation *and*
+// action generation inside this SSE turn, matching the dedicated scene-content
+// route's budget (300s) — not the 60s a plain chat turn needs. Cap to 300 so
+// slow models / media-heavy slides aren't terminated mid-stream.
+export const maxDuration = 300;
 
 /**
  * Scene/stage context map sent by the client.

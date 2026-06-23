@@ -266,11 +266,22 @@
         "narration": {
           "label": "내레이션 스크립트 다시 생성",
           "examples": "“좀 더 구어체로” “편집한 내용에 맞춰”"
+        },
+        "fixHtml": {
+          "examples": "\"시작 버튼을 눌러도 반응이 없음\", \"모바일에서 패널이 겹침\"",
+          "label": "페이지 버그 수정"
         }
       },
       "newConversation": "새 대화",
       "reasoning": "추론 과정",
-      "thought": "생각한 시간"
+      "thought": "생각한 시간",
+      "interactive": {
+        "boundary": "페이지를 부분적으로만 수정하며, 페이지 전체를 다시 만들지 않습니다. 장면 전환은 왼쪽 내비게이션을 사용하세요.",
+        "emptyTitle": "이 페이지에서 무엇을 수정할까요?",
+        "lead": "이 인터랙티브 페이지의 버그(예: 눌러도 반응 없는 버튼)를 설명해 주세요. 해당 부분만 수정하고 나머지는 그대로 둡니다.",
+        "placeholder": "이 인터랙티브 페이지의 버그를 설명하세요…"
+      },
+      "thinking": "생각 중…"
     },
     "timeline": {
       "title": "내레이션 스크립트",
@@ -383,6 +394,13 @@
       "reading": "읽는 중",
       "done": "읽음",
       "failed": "읽지 못함"
+    },
+    "fixHtml": {
+      "editsCount": "수정 {{count}}건",
+      "fixed": "수정됨",
+      "fixing": "수정 중",
+      "notFixed": "수정 안 됨",
+      "title": "인터랙티브 페이지 수정"
     }
   },
   "classroomComplete": {

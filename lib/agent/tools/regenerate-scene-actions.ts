@@ -183,7 +183,7 @@ export function makeRegenerateSceneActionsTool(
           content: [
             {
               type: 'text',
-              text: `Error: scene context not found for sceneId "${sceneId}". Cannot regenerate actions.`,
+              text: `Error: scene context not found for sceneId ${JSON.stringify(String(sceneId).slice(0, 200))}. Cannot regenerate actions.`,
             },
           ],
           details: { sceneId, actions: [] },

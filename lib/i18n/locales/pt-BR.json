@@ -300,11 +300,22 @@
         "narration": {
           "label": "Regenerate the narration script",
           "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "examples": "\"O botão de iniciar não faz nada\", \"Os painéis se sobrepõem no celular\"",
+          "label": "Corrigir um bug na página"
         }
       },
       "newConversation": "New conversation",
       "reasoning": "Raciocínio",
-      "thought": "Pensou por"
+      "thought": "Pensou por",
+      "interactive": {
+        "boundary": "Faço correções pontuais na página; não recrio a página inteira. Troque de cena pela navegação à esquerda.",
+        "emptyTitle": "O que precisa ser corrigido nesta página?",
+        "lead": "Descreva um bug nesta página interativa — por exemplo, um botão que não faz nada — e eu corrijo apenas isso, mantendo o resto.",
+        "placeholder": "Descreva o bug desta página interativa…"
+      },
+      "thinking": "Pensando…"
     },
     "timeline": {
       "title": "Roteiro de narração",
@@ -368,6 +379,13 @@
       "reading": "Reading",
       "done": "Read",
       "failed": "Not read"
+    },
+    "fixHtml": {
+      "editsCount": "{{count}} edição(ões)",
+      "fixed": "Corrigido",
+      "fixing": "Corrigindo",
+      "notFixed": "Não corrigido",
+      "title": "Corrigir página interativa"
     }
   },
   "stage": {

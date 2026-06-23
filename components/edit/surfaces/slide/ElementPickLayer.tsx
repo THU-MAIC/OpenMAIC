@@ -145,9 +145,19 @@ export function ElementPickLayer() {
     return () => window.removeEventListener('keydown', onKey);
   }, [pickTarget, finish]);
 
+  // Unmount cleanup: cancel any pending rAF, and — if this layer unmounts while
+  // still armed (scene switch / leaving the slide surface before the user picks)
+  // — clear the global pick target + preview. pickTarget lives in the canvas
+  // store, so without this it survives the unmount and the next slide mount
+  // renders a stale picker bound to the old scene/action. A normal finish()
+  // already nulled pickTarget, so this is a no-op in that case.
   useEffect(
     () => () => {
       if (moveRafRef.current != null) cancelAnimationFrame(moveRafRef.current);
+      if (useCanvasStore.getState().pickTarget) {
+        clearCuePreview();
+        useCanvasStore.getState().setPickTarget(null);
+      }
     },
     [],
   );

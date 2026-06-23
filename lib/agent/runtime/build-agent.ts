@@ -61,8 +61,13 @@ export function buildAgent(opts: BuildAgentOptions): Agent {
 }
 
 export function buildSystemPrompt(scene?: { id: string; title: string }): string {
+  // scene.id/title originate from the (untrusted) client POST body. Quote them
+  // with JSON.stringify rather than raw interpolation so a crafted title can't
+  // break out of the surrounding quotes and inject instructions into the system
+  // prompt. Capabilities are already enforced server-side by the tool allowlist;
+  // this is defense-in-depth for the prompt text. Cap length to bound abuse.
   const sceneLine = scene
-    ? `The current slide is id="${scene.id}" with title "${scene.title}".`
+    ? `The current slide is id=${JSON.stringify(String(scene.id).slice(0, 200))} with title ${JSON.stringify(String(scene.title).slice(0, 300))}.`
     : 'There is no active slide.';
   return [
     'You are the MAIC Editor assistant, embedded in the slide editor sidebar.',

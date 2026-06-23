@@ -315,11 +315,22 @@
         "narration": {
           "label": "Regenerate the narration script",
           "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "examples": "«Кнопка запуска не работает», «Панели накладываются на мобильном»",
+          "label": "Исправить ошибку на странице"
         }
       },
       "newConversation": "New conversation",
       "reasoning": "Рассуждение",
-      "thought": "Думал"
+      "thought": "Думал",
+      "interactive": {
+        "boundary": "Я вношу точечные исправления на странице и не пересоздаю её целиком. Переключайте сцены через навигацию слева.",
+        "emptyTitle": "Что нужно исправить на этой странице?",
+        "lead": "Опишите ошибку на этой интерактивной странице — например, кнопку, которая не реагирует, — и я исправлю только её, сохранив всё остальное.",
+        "placeholder": "Опишите ошибку на этой интерактивной странице…"
+      },
+      "thinking": "Думаю…"
     },
     "timeline": {
       "title": "Сценарий закадрового текста",
@@ -383,6 +394,13 @@
       "reading": "Reading",
       "done": "Read",
       "failed": "Not read"
+    },
+    "fixHtml": {
+      "editsCount": "Правок: {{count}}",
+      "fixed": "Исправлено",
+      "fixing": "Исправляю",
+      "notFixed": "Не исправлено",
+      "title": "Исправить интерактивную страницу"
     }
   },
   "classroomComplete": {
