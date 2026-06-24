@@ -1,0 +1,97 @@
+name: Publish @openmaic packages
+
+# Publishes the @openmaic/* package family (dsl, renderer, importer) to npm.
+#
+# Scope is pinned to those three packages by name on purpose: the workspace also
+# contains vendored forks (mathml2omml, pptxgenjs) whose names we do NOT own, so
+# a recursive publish must never touch them.
+#
+# Triggers:
+#   - push a tag like `@openmaic/dsl@0.1.0` (real publish). NOTE: any @openmaic/*
+#     tag runs `pnpm -r publish` over all three packages — pnpm skips versions
+#     already on the registry, so in steady state this is idempotent. The tag is a
+#     release marker, not a per-package gate: an unpublished version bump for a
+#     sibling package sitting in the repo will also be published by any tag. Bump
+#     only the package(s) you intend to release in the same change.
+#   - manual run via the Actions tab (dry-run by default; uncheck to publish)
+#
+# Prerequisites (one-time, see issue #778):
+#   - npm org `openmaic` created and owning the `@openmaic` scope
+#   - repo secret NPM_TOKEN: an automation/granular token with publish rights
+#     to @openmaic/*, 2FA set to "auth only" (not "auth and writes") so CI can publish
+
+on:
+  push:
+    tags:
+      - "@openmaic/*@*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and validate only, do not publish"
+        type: boolean
+        default: true
+
+concurrency:
+  group: publish-openmaic-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    name: Build, validate & publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # required for npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      # Build in dependency order (dsl first); renderer/importer resolve
+      # @openmaic/dsl through the workspace link.
+      - name: Build @openmaic packages
+        run: >-
+          pnpm -r
+          --filter "@openmaic/dsl"
+          --filter "@openmaic/renderer"
+          --filter "@openmaic/importer"
+          run build
+
+      # Gate BEFORE any publish: a failure here aborts before a single package
+      # reaches the registry. npm versions are immutable, so this prevents a
+      # partial release (e.g. dsl published, then a sibling's test fails).
+      - name: Test & typecheck (pre-publish gate)
+        run: |
+          pnpm --filter "@openmaic/dsl" --filter "@openmaic/importer" run test
+          pnpm --filter "@openmaic/dsl" --filter "@openmaic/renderer" run typecheck
+
+      # Always review tarball contents before any publish.
+      - name: Inspect tarball contents (dry-run pack)
+        run: |
+          for pkg in dsl renderer importer; do
+            echo "::group::@openmaic/$pkg"
+            ( cd "packages/@openmaic/$pkg" && pnpm pack --dry-run )
+            echo "::endgroup::"
+          done
+
+      # Real publish. pnpm rewrites the workspace:* dep on @openmaic/dsl to the
+      # concrete published version and publishes in topological order.
+      - name: Publish to npm
+        if: github.event_name == 'push' || inputs.dry_run == false
+        run: >-
+          pnpm -r
+          --filter "@openmaic/dsl"
+          --filter "@openmaic/renderer"
+          --filter "@openmaic/importer"
+          publish --access public --provenance --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"

@@ -2,10 +2,10 @@
 
 /**
  * Tool-call UI for `regenerate_scene` (whole-slide regeneration). Renders via the
- * shared `ToolCard`; the expandable body reports the regenerated slide (element
- * count) + the instruction. The "还原到重生成前 / Restore previous" button lives
- * on the always-visible card row (ToolCard `barAction`): whole-slide regeneration
- * applies directly to the canvas, so revert is one tap — no Ctrl+Z, no expanding.
+ * shared `ToolCard` as a single non-expandable status row (status mark + tooltip
+ * only — no inline detail body). The "还原到重生成前 / Restore previous" button
+ * lives on the always-visible card row (ToolCard `barAction`): whole-slide
+ * regeneration applies directly to the canvas, so revert is one tap.
  */
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
@@ -23,14 +23,12 @@ function RegenerateSceneCard({
   stopped,
   failed,
   sceneId,
-  failText,
   toolCallId,
 }: {
   running: boolean;
   stopped: boolean;
   failed: boolean;
   sceneId?: string;
-  failText?: string;
   toolCallId: string;
 }) {
   const { t } = useI18n();
@@ -58,8 +56,6 @@ function RegenerateSceneCard({
       statusLabel={statusLabel}
       // No Restore for a stopped/failed run — nothing was applied to revert.
       barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
-      // Non-expandable card: surface only the actionable failure reason inline.
-      failText={failed ? failText : undefined}
     />
   );
 }
@@ -88,7 +84,6 @@ export const RegenerateSceneUI = makeAssistantToolUI<
         stopped={stopped}
         failed={failed}
         sceneId={args?.sceneId ?? result?.details?.sceneId}
-        failText={result?.content?.[0]?.text}
         toolCallId={toolCallId}
       />
     );

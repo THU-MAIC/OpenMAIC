@@ -4,7 +4,7 @@ import {
   toggleImageFlip,
 } from '@/components/edit/surfaces/slide/use-slide-surface';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
-import type { PPTImageElement } from '@maic/dsl';
+import type { PPTImageElement } from '@openmaic/dsl';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 function seedImage() {

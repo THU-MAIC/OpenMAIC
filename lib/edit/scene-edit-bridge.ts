@@ -16,7 +16,7 @@
 
 import { isEqual } from 'lodash';
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 import { applySlideEditOperation, MAX_HISTORY } from '@/lib/edit/slide-ops';
 import type { SlideEditHistory, SlideEditOperation } from '@/lib/edit/slide-ops';
 

@@ -1,7 +1,7 @@
 // Stage and Scene data types.
 //
 // The universal lesson skeleton (Stage / Scene / SceneContent / Whiteboard /
-// VideoManifest / SlideContent / QuizContent / …) now lives in `@maic/dsl` and
+// VideoManifest / SlideContent / QuizContent / …) now lives in `@openmaic/dsl` and
 // is re-exported below. `Scene` is generic there: the contract owns only the
 // structure + the slide/quiz content kinds, while the playback `Action` set and
 // the richer feature content (interactive widgets, PBL) are app-side and get
@@ -10,7 +10,7 @@
 // `Scene` is re-exported as an alias of the app's fully-instantiated
 // `Scene<Action, AppSceneContent>`, so existing `import { Scene }` callers keep
 // the same semantics (actions are `Action[]`, content spans all four kinds).
-import type { Scene as DslScene, SceneContent as DslSceneContent } from '@maic/dsl';
+import type { Scene as DslScene, SceneContent as DslSceneContent } from '@openmaic/dsl';
 import type { Action } from '@/lib/types/action';
 import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
 import type { PBLProjectConfig } from '@/lib/pbl/types';
@@ -28,32 +28,32 @@ export type {
   QuizOption,
   QuizQuestion,
   QuizContent,
-} from '@maic/dsl';
+} from '@openmaic/dsl';
 
 // The two discriminant guards are runtime functions, so they must be value
 // re-exported — a bare `export type {}` erases them and leaves the import as
 // `undefined` at runtime / "cannot be used as a value" at the type level.
-export { isSlideContent, isQuizContent } from '@maic/dsl';
+export { isSlideContent, isQuizContent } from '@openmaic/dsl';
 
-// `@maic/dsl` inlines the question-type union on `QuizQuestion.type` rather than
+// `@openmaic/dsl` inlines the question-type union on `QuizQuestion.type` rather than
 // exporting a named alias; derive it here so editor quiz code can keep importing
 // `QuizQuestionType` from `@/lib/types/stage`.
-export type QuizQuestionType = import('@maic/dsl').QuizQuestion['type'];
+export type QuizQuestionType = import('@openmaic/dsl').QuizQuestion['type'];
 
 // The contract's `SceneContent` is the universal subset (slide | quiz). Reach it
 // under a distinct name; the app's own `SceneContent` (declared below) is the
 // full four-way union so existing `switch (content.type)` call sites keep all
 // four cases.
-export type { SceneContent as SceneContentBase } from '@maic/dsl';
+export type { SceneContent as SceneContentBase } from '@openmaic/dsl';
 
 // The raw, generic contract Scene is reachable under a distinct name for
 // callers (e.g. read-only renderers) that want the feature-free skeleton.
-export type { Scene as SceneShape } from '@maic/dsl';
+export type { Scene as SceneShape } from '@openmaic/dsl';
 
 /**
  * Interactive content - Interactive web page (iframe).
  *
- * App-level feature surface: kept here rather than in `@maic/dsl` because it
+ * App-level feature surface: kept here rather than in `@openmaic/dsl` because it
  * couples to Ultra-mode widget configs (`WidgetType` / `WidgetConfig`).
  */
 export interface InteractiveContent {
@@ -70,7 +70,7 @@ export interface InteractiveContent {
 /**
  * PBL content - Project-based learning.
  *
- * App-level feature surface: kept here rather than in `@maic/dsl` because it
+ * App-level feature surface: kept here rather than in `@openmaic/dsl` because it
  * couples to the project-based-learning config (`PBLProjectConfig`).
  */
 export interface PBLContent {

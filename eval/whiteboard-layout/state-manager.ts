@@ -3,7 +3,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { ActionEngine } from '@/lib/action/engine';
 import type { Action } from '@/lib/types/action';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 import type { Stage, Scene } from '@/lib/types/stage';
 
 interface InitialState {

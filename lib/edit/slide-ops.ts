@@ -1,6 +1,6 @@
 import { current, produce } from 'immer';
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement, Slide } from '@maic/dsl';
+import type { PPTElement, Slide } from '@openmaic/dsl';
 import { getElementListRange } from '@/lib/utils/element';
 
 type ElementPatch = Partial<PPTElement>;

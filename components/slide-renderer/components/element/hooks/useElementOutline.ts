@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { PPTElementOutline } from '@maic/dsl';
+import type { PPTElementOutline } from '@openmaic/dsl';
 
 /**
  * Calculate element outline (border) styles

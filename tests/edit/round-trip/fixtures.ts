@@ -1,6 +1,6 @@
 import { createDefaultSlide, createDefaultTextElement } from '@/lib/edit/slide-edit-elements';
 import type { Scene, SlideContent } from '@/lib/types/stage';
-import type { Slide } from '@maic/dsl';
+import type { Slide } from '@openmaic/dsl';
 
 /**
  * Build a minimal valid Scene/SlideContent/Slide trio for the round-trip

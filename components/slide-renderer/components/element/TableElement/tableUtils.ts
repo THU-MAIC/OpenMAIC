@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react';
-import type { TableCell, TableCellStyle } from '@maic/dsl';
+import type { TableCell, TableCellStyle } from '@openmaic/dsl';
 
 /**
  * Convert TableCellStyle to CSS properties

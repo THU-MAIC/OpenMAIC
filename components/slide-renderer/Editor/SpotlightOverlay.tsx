@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { useCanvasStore } from '@/lib/store/canvas';
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 
 interface SpotlightRect {
   x: number;

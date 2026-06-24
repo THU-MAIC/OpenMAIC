@@ -36,7 +36,7 @@ import {
   formatImageDescription,
   formatImagePlaceholder,
 } from './prompt-formatters';
-import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@maic/dsl';
+import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@openmaic/dsl';
 import type { QuizQuestion } from '@/lib/types/stage';
 import type {
   Action,

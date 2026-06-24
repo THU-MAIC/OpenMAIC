@@ -2,8 +2,8 @@
 
 /**
  * Tool-call UI for `regenerate_scene_actions`. Renders via the shared `ToolCard`
- * as a single non-expandable status row (only an actionable failure reason is
- * surfaced inline). The "还原 / Restore previous" button lives on the card row.
+ * as a single non-expandable status row (status mark + tooltip only — no inline
+ * detail body). The "还原 / Restore previous" button lives on the card row.
  */
 import { Wrench } from 'lucide-react';
 import { makeAssistantToolUI } from '@assistant-ui/react';
@@ -21,14 +21,12 @@ function RegenerateActionsCard({
   stopped,
   failed,
   sceneId,
-  failText,
   toolCallId,
 }: {
   running: boolean;
   stopped: boolean;
   failed: boolean;
   sceneId?: string;
-  failText?: string;
   toolCallId: string;
 }) {
   const { t } = useI18n();
@@ -56,8 +54,6 @@ function RegenerateActionsCard({
       statusLabel={statusLabel}
       // No Restore for a stopped/failed run — nothing was applied to revert.
       barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
-      // Non-expandable card: surface only the actionable failure reason inline.
-      failText={failed ? failText : undefined}
     />
   );
 }
@@ -81,7 +77,6 @@ export const RegenerateSceneActionsUI = makeAssistantToolUI<{ sceneId?: string }
           stopped={stopped}
           failed={failed}
           sceneId={args?.sceneId ?? result?.details?.sceneId}
-          failText={result?.content?.[0]?.text}
           toolCallId={toolCallId}
         />
       );

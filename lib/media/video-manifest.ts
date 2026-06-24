@@ -1,5 +1,5 @@
 import type { SceneOutline } from '@/lib/types/generation';
-import type { PPTVideoElement } from '@maic/dsl';
+import type { PPTVideoElement } from '@openmaic/dsl';
 import type { Stage, VideoManifest, VideoManifestEntry } from '@/lib/types/stage';
 
 function isGeneratedVideoRef(value: string): boolean {

@@ -46,7 +46,7 @@ function truncate(s: string, max: number): string {
 
 /**
  * Pull the human-readable text out of a single slide element. Mirrors the
- * @maic/dsl `PPTElement` union — each variant stashes its text differently:
+ * @openmaic/dsl `PPTElement` union — each variant stashes its text differently:
  *   - text:  `content` (HTML string)
  *   - shape: `text.content` (ShapeText, HTML string)
  *   - table: `data` (TableCell[][], each cell carries `text`)

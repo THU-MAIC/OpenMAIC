@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useCanvasStore } from '@/lib/store';
-import type { PPTTableElement } from '@maic/dsl';
+import type { PPTTableElement } from '@openmaic/dsl';
 import type { OperateResizeHandlers } from '@/lib/types/edit';
 import { useCommonOperate } from '../hooks/useCommonOperate';
 import { RotateHandler } from './RotateHandler';

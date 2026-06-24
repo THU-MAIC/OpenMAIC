@@ -6,7 +6,7 @@
    Tailwind must scan its dist so those classes get generated. */
 @source '../node_modules/streamdown/dist/*.js';
 @source '../node_modules/@streamdown/code/dist/*.js';
-@source "../node_modules/@maic/renderer/dist/**/*.{js,cjs}";
+@source "../node_modules/@openmaic/renderer/dist/**/*.{js,cjs}";
 /* slide-renderer-demo is gitignored (local sandbox), which makes Tailwind v4's
    auto source detection skip it. Re-include it explicitly so the demo's
    Tailwind classes (e.g. bg-violet-600) still get generated. */

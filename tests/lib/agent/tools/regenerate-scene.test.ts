@@ -4,7 +4,7 @@ import { makeRegenerateSceneTool } from '@/lib/agent/tools/regenerate-scene';
 import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { SceneContent } from '@/lib/types/stage';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 
 function slideOutline(id: string): SceneOutline {
   return { id, type: 'slide', title: 'Slide Title', description: 'd', keyPoints: ['a'], order: 0 };

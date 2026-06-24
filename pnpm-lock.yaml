@@ -89,21 +89,21 @@ importers:
       '@langchain/langgraph':
         specifier: ^1.1.1
         version: 1.2.2(@langchain/core@1.1.31(@opentelemetry/api@1.9.0)(openai@4.104.0(ws@8.19.0)(zod@4.3.6)))(zod-to-json-schema@3.25.1(zod@4.3.6))(zod@4.3.6)
-      '@maic/dsl':
-        specifier: workspace:*
-        version: link:packages/@maic/dsl
-      '@maic/importer':
-        specifier: workspace:*
-        version: link:packages/@maic/importer
-      '@maic/renderer':
-        specifier: workspace:*
-        version: link:packages/@maic/renderer
       '@modelcontextprotocol/sdk':
         specifier: ^1.27.1
         version: 1.27.1(@cfworker/json-schema@4.1.1)(zod@4.3.6)
       '@napi-rs/canvas':
         specifier: ^0.1.88
         version: 0.1.96
+      '@openmaic/dsl':
+        specifier: workspace:*
+        version: link:packages/@openmaic/dsl
+      '@openmaic/importer':
+        specifier: workspace:*
+        version: link:packages/@openmaic/importer
+      '@openmaic/renderer':
+        specifier: workspace:*
+        version: link:packages/@openmaic/renderer
       '@radix-ui/react-checkbox':
         specifier: ^1.3.3
         version: 1.3.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)
@@ -388,7 +388,7 @@ importers:
         specifier: ^1.0.0
         version: 1.0.0
 
-  packages/@maic/dsl:
+  packages/@openmaic/dsl:
     devDependencies:
       typescript:
         specifier: ^5
@@ -397,9 +397,9 @@ importers:
         specifier: ^4.1.8
         version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.19.15)(jsdom@9.12.0)(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3))(vite@8.0.0(@emnapi/core@1.8.1)(@emnapi/runtime@1.8.1)(@types/node@22.19.15)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))
 
-  packages/@maic/importer:
+  packages/@openmaic/importer:
     dependencies:
-      '@maic/dsl':
+      '@openmaic/dsl':
         specifier: workspace:*
         version: link:../dsl
       '@xmldom/xmldom':
@@ -494,9 +494,9 @@ importers:
         specifier: ^4.1.8
         version: 4.1.8(@opentelemetry/api@1.9.0)(@types/node@22.19.15)(jsdom@9.12.0)(msw@2.12.10(@types/node@22.19.15)(typescript@5.9.3))(vite@8.0.0(@emnapi/core@1.8.1)(@emnapi/runtime@1.8.1)(@types/node@22.19.15)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.48.0)(tsx@4.21.0)(yaml@2.9.0))
 
-  packages/@maic/renderer:
+  packages/@openmaic/renderer:
     dependencies:
-      '@maic/dsl':
+      '@openmaic/dsl':
         specifier: workspace:*
         version: link:../dsl
       clsx:

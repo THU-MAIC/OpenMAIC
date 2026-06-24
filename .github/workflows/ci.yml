@@ -42,7 +42,7 @@ jobs:
         run: pnpm test
 
       - name: Unit Tests (importer)
-        run: pnpm --filter @maic/importer test
+        run: pnpm --filter @openmaic/importer test
 
   e2e:
     name: E2E Tests

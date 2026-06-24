@@ -24,7 +24,7 @@ import { ElementCreateSelection } from './ElementCreateSelection';
 import { ShapeCreateCanvas } from './ShapeCreateCanvas';
 import { Ruler } from './Ruler';
 import { GridLines } from './GridLines';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 import type { AlignmentLineProps } from '@/lib/types/edit';
 import type { ContextmenuItem } from './EditableElement';
 import type { SlideContent } from '@/lib/types/stage';

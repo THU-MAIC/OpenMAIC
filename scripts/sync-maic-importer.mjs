@@ -14,14 +14,14 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
-const srcDir = path.join(root, 'packages/@maic/importer/dist');
+const srcDir = path.join(root, 'packages/@openmaic/importer/dist');
 const destDir = path.join(root, 'public/vendor/maic-importer');
 
 try {
   await stat(srcDir);
 } catch {
   console.error(`[sync-maic-importer] missing dist: ${srcDir}`);
-  console.error('Run `cd packages/@maic/importer && pnpm run build` first.');
+  console.error('Run `cd packages/@openmaic/importer && pnpm run build` first.');
   process.exit(1);
 }
 

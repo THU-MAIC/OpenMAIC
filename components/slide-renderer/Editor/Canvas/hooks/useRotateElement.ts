@@ -5,7 +5,7 @@ import type {
   PPTVideoElement,
   PPTAudioElement,
   PPTChartElement,
-} from '@maic/dsl';
+} from '@openmaic/dsl';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';
 

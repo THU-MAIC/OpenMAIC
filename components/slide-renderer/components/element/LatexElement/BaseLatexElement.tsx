@@ -1,7 +1,7 @@
 'use client';
 
 import { useRef, useState, useLayoutEffect } from 'react';
-import type { PPTLatexElement } from '@maic/dsl';
+import type { PPTLatexElement } from '@openmaic/dsl';
 
 export interface BaseLatexElementProps {
   elementInfo: PPTLatexElement;

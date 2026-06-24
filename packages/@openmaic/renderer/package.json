@@ -1,0 +1,98 @@
+{
+  "name": "@openmaic/renderer",
+  "version": "0.1.0",
+  "description": "React component for rendering PPTist-style Slide JSON, extracted from OpenMAIC.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./elements": {
+      "types": "./dist/elements/index.d.ts",
+      "import": "./dist/elements/index.js"
+    },
+    "./types": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/types/index.js"
+    },
+    "./snapshot": {
+      "types": "./dist/snapshot/index.d.ts",
+      "import": "./dist/snapshot/index.js"
+    },
+    "./fonts.css": "./fonts.css"
+  },
+  "files": [
+    "dist",
+    "fonts.css",
+    "README.md",
+    "DESIGN.md",
+    "LICENSE",
+    "FONTS.md",
+    "font-licenses"
+  ],
+  "scripts": {
+    "clean": "rm -rf dist",
+    "genfonts": "node scripts/generate-fonts-css.mjs",
+    "build": "node scripts/generate-fonts-css.mjs && rm -rf dist && rollup -c && tsc --emitDeclarationOnly --declarationDir dist",
+    "dev": "rollup -c -w",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm run build"
+  },
+  "keywords": [
+    "slide",
+    "renderer",
+    "pptist",
+    "canvas",
+    "react"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "peerDependencies": {
+    "echarts": ">=5",
+    "motion": ">=11",
+    "react": ">=18",
+    "react-dom": ">=18",
+    "shiki": ">=1.0.0",
+    "tailwindcss": ">=4"
+  },
+  "peerDependenciesMeta": {
+    "echarts": {
+      "optional": true
+    },
+    "shiki": {
+      "optional": true
+    }
+  },
+  "dependencies": {
+    "@openmaic/dsl": "workspace:*",
+    "clsx": "^2.1.1",
+    "html-to-image": "^1.11.13",
+    "html2canvas-pro": "^2.0.4",
+    "katex": "^0.16.33",
+    "lucide-react": "^0.562.0",
+    "tailwind-merge": "^3.4.0",
+    "tinycolor2": "^1.6.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-commonjs": "^28.0.1",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.0",
+    "@types/katex": "^0.16.8",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@types/tinycolor2": "^1.4.6",
+    "rollup": "^4.35.0",
+    "tslib": "^2.8.0",
+    "typescript": "^5"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": []
+  }
+}

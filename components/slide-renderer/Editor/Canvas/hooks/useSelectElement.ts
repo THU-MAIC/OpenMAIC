@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 import { uniq } from 'lodash';
 import { useCanvasStore } from '@/lib/store';
 import { useKeyboardStore } from '@/lib/store/keyboard';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 
 /**
  * Hook for handling element selection in Canvas

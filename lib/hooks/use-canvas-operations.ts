@@ -24,7 +24,7 @@ import {
   type HighlightOverlayOptions,
 } from '@/lib/store/canvas';
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement, Slide } from '@maic/dsl';
+import type { PPTElement, Slide } from '@openmaic/dsl';
 import { useCallback, useMemo } from 'react';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import { toast } from 'sonner';

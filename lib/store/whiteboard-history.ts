@@ -9,7 +9,7 @@
  */
 
 import { create } from 'zustand';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 import { elementFingerprint } from '@/lib/utils/element-fingerprint';
 
 export interface WhiteboardSnapshot {

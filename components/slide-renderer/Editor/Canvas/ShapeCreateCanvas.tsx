@@ -3,7 +3,7 @@ import { useKeyboardStore } from '@/lib/store/keyboard';
 import { useCanvasStore, useSceneSelector } from '@/lib/store';
 import type { CreateCustomShapeData } from '@/lib/types/edit';
 import type { SlideContent } from '@/lib/types/stage';
-import type { SlideTheme } from '@maic/dsl';
+import type { SlideTheme } from '@openmaic/dsl';
 import { toast } from 'sonner';
 
 interface ShapeCreateCanvasProps {

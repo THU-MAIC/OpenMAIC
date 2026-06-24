@@ -185,7 +185,7 @@ type ThumbnailMediaElement = {
   poster?: string;
 };
 
-type ThumbnailSlide = import('@maic/dsl').Slide;
+type ThumbnailSlide = import('@openmaic/dsl').Slide;
 
 function isGeneratedMediaRef(value: unknown): value is string {
   return typeof value === 'string' && /^gen_(img|vid)_[\w-]+$/i.test(value);

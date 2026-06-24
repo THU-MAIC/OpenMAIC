@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useMemo } from 'react';
 import tinycolor from 'tinycolor2';
-import type { ChartData, ChartOptions, ChartType } from '@maic/dsl';
+import type { ChartData, ChartOptions, ChartType } from '@openmaic/dsl';
 import { getChartOption } from './chartOption';
 
 import * as echarts from 'echarts/core';

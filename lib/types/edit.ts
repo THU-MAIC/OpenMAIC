@@ -1,6 +1,11 @@
 import type { ShapePoolItem } from '@/configs/shapes';
 import type { LinePoolItem } from '@/configs/lines';
-import type { ImageClipDataRange, PPTElementOutline, PPTElementShadow, Gradient } from '@maic/dsl';
+import type {
+  ImageClipDataRange,
+  PPTElementOutline,
+  PPTElementShadow,
+  Gradient,
+} from '@openmaic/dsl';
 
 export enum ElementOrderCommands {
   UP = 'up',

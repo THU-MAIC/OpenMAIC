@@ -4,7 +4,7 @@ import type {
   PPTShapeElement,
   PPTTextElement,
   Slide,
-} from '@maic/dsl';
+} from '@openmaic/dsl';
 
 export interface ShapeSpec {
   viewBox: [number, number];

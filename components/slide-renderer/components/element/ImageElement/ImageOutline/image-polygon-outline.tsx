@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTElementOutline } from '@maic/dsl';
+import type { PPTElementOutline } from '@openmaic/dsl';
 import { useElementOutline } from '../../hooks/useElementOutline';
 
 export interface ImagePolygonOutlineProps {

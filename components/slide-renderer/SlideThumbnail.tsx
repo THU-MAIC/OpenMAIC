@@ -2,11 +2,11 @@
 
 import { useMemo } from 'react';
 import { Play } from 'lucide-react';
-import type { Slide, PPTElement, PPTVideoElement } from '@maic/dsl';
+import type { Slide, PPTElement, PPTVideoElement } from '@openmaic/dsl';
 import { isMediaPlaceholder, useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import { getVideoMediaRefForElement } from '@/lib/media/video-manifest';
-import { SlideCanvas } from '@maic/renderer';
+import { SlideCanvas } from '@openmaic/renderer';
 
 interface SlideThumbnailProps {
   /** Slide data */
@@ -43,7 +43,7 @@ function mediaTaskKeyFor(el: PPTElement): string | undefined {
  * Resolve a slide's generated-media refs against the media-generation store so
  * the thumbnail stays in sync as generation (and retries) complete.
  *
- * `@maic/renderer` is a pure package: it renders `element.src` as-is and knows
+ * `@openmaic/renderer` is a pure package: it renders `element.src` as-is and knows
  * nothing about this app's async media generation. The store never mutates the
  * slide's elements (it keeps the `gen_*`/`mediaRef` key and tracks the
  * generated `objectUrl` in a task), so a static render would show the raw
@@ -105,7 +105,7 @@ function useResolvedSlide(slide: Slide): Slide {
 }
 
 /**
- * Read-only thumbnail rendering for a video element. Replaces `@maic/renderer`'s
+ * Read-only thumbnail rendering for a video element. Replaces `@openmaic/renderer`'s
  * default `<video controls>` with a muted, play-badged treatment suited to
  * thumbnails. `BaseVideoElement` already supplies the absolutely-positioned,
  * rotated wrapper, so this only paints the inner content. The `src` it receives
@@ -145,7 +145,7 @@ function renderThumbnailVideo(element: PPTVideoElement) {
 }
 
 /**
- * Read-only slide thumbnail rendered via the extracted `@maic/renderer`
+ * Read-only slide thumbnail rendered via the extracted `@openmaic/renderer`
  * package (`SlideCanvas`) instead of the in-app `ThumbnailSlide`/element
  * renderers. `SlideCanvas` fills its parent and auto-fits the slide, so this
  * wrapper owns the outer box sizing (explicit `size` vs parent-filling), the
@@ -157,7 +157,7 @@ function renderThumbnailVideo(element: PPTVideoElement) {
  * Scope note: this covers all read-only slide-thumbnail surfaces — the playback
  * scene sidebar, the home-page recent-course cards, and the editor nav rail
  * (which renders through `SceneThumbnailContent`). The full-size editing canvas
- * is intentionally untouched (`@maic/renderer` v1 is read-only; editing is v2).
+ * is intentionally untouched (`@openmaic/renderer` v1 is read-only; editing is v2).
  */
 export function SlideThumbnail({
   slide,

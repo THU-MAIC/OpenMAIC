@@ -10,7 +10,7 @@ import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { Slide, PPTElementOutline, PPTElementShadow, PPTElementLink } from '@maic/dsl';
+import type { Slide, PPTElementOutline, PPTElementShadow, PPTElementLink } from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { getElementRange, getLineElementPath, getTableSubThemeColor } from '@/lib/utils/element';

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import type { PPTImageElement } from '@maic/dsl';
+import type { PPTImageElement } from '@openmaic/dsl';
 import { CLIPPATHS, ClipPathTypes } from '@/configs/image-clip';
 
 /**

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
 import { SceneProvider } from '@/lib/contexts/scene-context';
 import { useStageStore } from '@/lib/store/stage';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 
 const EVAL_STAGE_ID = '__eval_stage__';
 const EVAL_SCENE_ID = '__eval_scene__';

@@ -3,7 +3,7 @@
 import { useSceneSelector } from '@/lib/contexts/scene-context';
 import { useSlideBackgroundStyle } from '@/lib/hooks/use-slide-background-style';
 import type { SlideContent } from '@/lib/types/stage';
-import type { SlideBackground } from '@maic/dsl';
+import type { SlideBackground } from '@openmaic/dsl';
 
 /**
  * Viewport background component using Scene Context

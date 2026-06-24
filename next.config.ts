@@ -2,8 +2,15 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   output: process.env.VERCEL ? undefined : 'standalone',
-  transpilePackages: ['mathml2omml', 'pptxgenjs', '@maic/importer'],
-  serverExternalPackages: [],
+  transpilePackages: ['mathml2omml', 'pptxgenjs', '@openmaic/importer'],
+  // These agent packages do a runtime `import(specifier)` with a computed
+  // specifier (to lazily load node:fs/os/path without breaking browser/Vite
+  // builds). webpack can't statically analyze that and bundling it throws
+  // "Cannot find module as expression is too dynamic" at runtime on the server
+  // (the "Edit with AI" Pro-mode path), which broke the #619 keep-alive e2e.
+  // Mark them server-external so Next loads them natively and the dynamic
+  // import resolves as a real Node call.
+  serverExternalPackages: ['@earendil-works/pi-ai', '@earendil-works/pi-agent-core'],
   experimental: {
     proxyClientMaxBodySize: '200mb',
   },

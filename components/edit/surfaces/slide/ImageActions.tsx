@@ -3,7 +3,7 @@
 import { FlipHorizontal, FlipVertical, ImageUp } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type { PPTImageElement } from '@maic/dsl';
+import type { PPTImageElement } from '@openmaic/dsl';
 import { ImagePicker } from './ImagePicker';
 import { replaceImageSrc, toggleImageFlip } from './use-slide-surface';
 

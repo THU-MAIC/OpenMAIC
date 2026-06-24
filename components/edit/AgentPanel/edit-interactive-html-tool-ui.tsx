@@ -18,14 +18,12 @@ function EditInteractiveHtmlCard({
   stopped,
   failed,
   sceneId,
-  failText,
   toolCallId,
 }: {
   running: boolean;
   stopped: boolean;
   failed: boolean;
   sceneId?: string;
-  failText?: string;
   toolCallId: string;
 }) {
   const { t } = useI18n();
@@ -53,8 +51,6 @@ function EditInteractiveHtmlCard({
       statusLabel={statusLabel}
       // No Restore for a stopped/failed run — nothing was applied to revert.
       barAction={!failed && !stopped ? <RestoreButton toolCallId={toolCallId} /> : undefined}
-      // Non-expandable card: surface only the actionable failure reason inline.
-      failText={failed ? failText : undefined}
     />
   );
 }
@@ -78,7 +74,6 @@ export const EditInteractiveHtmlUI = makeAssistantToolUI<
         stopped={stopped}
         failed={failed}
         sceneId={args?.sceneId ?? result?.details?.sceneId}
-        failText={result?.content?.[0]?.text}
         toolCallId={toolCallId}
       />
     );

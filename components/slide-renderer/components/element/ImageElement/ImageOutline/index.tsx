@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTImageElement } from '@maic/dsl';
+import type { PPTImageElement } from '@openmaic/dsl';
 import { useClipImage } from '../useClipImage';
 import { ImageRectOutline } from './image-rect-outline';
 import { ImageEllipseOutline } from './image-ellipse-outline';

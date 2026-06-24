@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { ElementTypes, type PPTElement } from '@maic/dsl';
+import { ElementTypes, type PPTElement } from '@openmaic/dsl';
 import { ImageElement } from '../../components/element/ImageElement';
 import { TextElement } from '../../components/element/TextElement';
 import { LineElement } from '../../components/element/LineElement';

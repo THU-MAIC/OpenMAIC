@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import { useCanvasStore, useSceneSelector } from '@/lib/store';
 import type { SlideContent } from '@/lib/types/stage';
-import type { SlideBackground } from '@maic/dsl';
+import type { SlideBackground } from '@openmaic/dsl';
 
 export function GridLines() {
   const gridLineSize = useCanvasStore.use.gridLineSize();

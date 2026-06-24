@@ -10,7 +10,7 @@ import {
 } from '@/lib/agent/tools/regenerate-scene-actions';
 import { generateSceneActions } from '@/lib/generation/generation-pipeline';
 import type { SlideContent } from '@/lib/types/stage';
-import type { PPTElement, Slide } from '@maic/dsl';
+import type { PPTElement, Slide } from '@openmaic/dsl';
 
 /** Minimal SceneOutline stub */
 const stubOutline = (id: string, title: string, order = 1) => ({

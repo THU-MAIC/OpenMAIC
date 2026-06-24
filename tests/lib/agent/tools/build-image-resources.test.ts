@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 import { buildImageResources } from '@/lib/agent/tools/regenerate-scene';
 import type { GeneratedSlideContent } from '@/lib/types/generation';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 
 function img(id: string, src: string): PPTElement {
   return {

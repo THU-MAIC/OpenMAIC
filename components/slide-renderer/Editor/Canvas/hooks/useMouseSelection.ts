@@ -1,7 +1,7 @@
 import { useState, useCallback, type RefObject } from 'react';
 import { useKeyboardStore } from '@/lib/store/keyboard';
 import { useCanvasStore } from '@/lib/store';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 import { getElementRange } from '@/lib/utils/element';
 
 export function useMouseSelection(

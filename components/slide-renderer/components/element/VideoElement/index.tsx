@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTVideoElement } from '@maic/dsl';
+import type { PPTVideoElement } from '@openmaic/dsl';
 import { isMediaPlaceholder } from '@/lib/store/media-generation';
 
 export interface VideoElementProps {

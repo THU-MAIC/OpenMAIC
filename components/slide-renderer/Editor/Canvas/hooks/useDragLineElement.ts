@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useKeyboardStore } from '@/lib/store/keyboard';
 import { useCanvasStore } from '@/lib/store';
-import type { PPTElement, PPTLineElement } from '@maic/dsl';
+import type { PPTElement, PPTLineElement } from '@openmaic/dsl';
 import { OperateLineHandlers } from '@/lib/types/edit';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
 import { useCanvasOperations } from '@/lib/hooks/use-canvas-operations';

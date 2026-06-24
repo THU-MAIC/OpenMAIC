@@ -1,4 +1,4 @@
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 
 /**
  * Extract the semantic payload for each element type.

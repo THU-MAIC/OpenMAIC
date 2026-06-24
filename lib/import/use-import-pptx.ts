@@ -4,12 +4,12 @@ import { useState, useCallback, useRef } from 'react';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
-import type { Slide } from '@maic/dsl';
+import type { Slide } from '@openmaic/dsl';
 // Type-only import: stripped at compile time, never reaches the bundler.
 // pdfjs-dist (transitively pulled by `maic-importer/src`) uses dynamic
 // `require()` patterns Turbopack refuses to bundle, so values flow through
 // the URL-loaded dist instead. The workspace package only contributes types.
-import type * as MaicImport from '@maic/importer';
+import type * as MaicImport from '@openmaic/importer';
 
 const log = createLogger('ImportPptx');
 

@@ -642,7 +642,9 @@ function SceneRow({
                     'bg-muted/70 text-foreground/80',
                   )}
                 >
-                  <span className="truncate">{point}</span>
+                  <span className="whitespace-normal break-words" title={point}>
+                    {point}
+                  </span>
                   {!disabled && (
                     <button
                       type="button"

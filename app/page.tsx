@@ -50,7 +50,7 @@ import {
   revokeThumbnailSlideMediaUrls,
 } from '@/lib/utils/stage-storage';
 import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
-import type { Slide } from '@maic/dsl';
+import type { Slide } from '@openmaic/dsl';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';

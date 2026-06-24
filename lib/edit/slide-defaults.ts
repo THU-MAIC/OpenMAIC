@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import type { Slide, SlideTheme, PPTElement } from '@maic/dsl';
+import type { Slide, SlideTheme, PPTElement } from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import { createElementIdMap } from '@/lib/utils/element';

@@ -14,7 +14,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { ScreenElement } from '@/components/slide-renderer/Editor/ScreenElement';
-import type { PPTElement } from '@maic/dsl';
+import type { PPTElement } from '@openmaic/dsl';
 import { useI18n } from '@/lib/hooks/use-i18n';
 
 export type WhiteboardCanvasHandle = {
