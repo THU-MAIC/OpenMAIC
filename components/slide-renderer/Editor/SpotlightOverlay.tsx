@@ -20,7 +20,17 @@ interface SpotlightRect {
  * Uses DOM measurement (getBoundingClientRect) to compute spotlight position,
  * avoiding alignment offsets from percentage coordinate conversion.
  */
-export function SpotlightOverlay() {
+interface SpotlightOverlayProps {
+  /**
+   * DOM id prefix used to locate the target element. Playback screens render
+   * elements as `screen-element-<id>` (default); the editor canvas renders
+   * them as `editable-element-<id>` and passes that prefix so the exact same
+   * spotlight effect plays in Pro mode.
+   */
+  domIdPrefix?: string;
+}
+
+export function SpotlightOverlay({ domIdPrefix = 'screen-element-' }: SpotlightOverlayProps = {}) {
   const spotlightElementId = useCanvasStore.use.spotlightElementId();
   const spotlightOptions = useCanvasStore.use.spotlightOptions();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,7 +47,7 @@ export function SpotlightOverlay() {
       return;
     }
 
-    const domElement = document.getElementById(`screen-element-${spotlightElementId}`);
+    const domElement = document.getElementById(`${domIdPrefix}${spotlightElementId}`);
     if (!domElement) {
       setRect(null);
       return;
@@ -62,7 +72,7 @@ export function SpotlightOverlay() {
       w: (targetRect.width / containerRect.width) * 100,
       h: (targetRect.height / containerRect.height) * 100,
     });
-  }, [spotlightElementId]);
+  }, [spotlightElementId, domIdPrefix]);
 
   useLayoutEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- DOM measurement requires effect

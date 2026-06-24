@@ -8,10 +8,11 @@ const log = createLogger('AudioRecorder');
 // TypeScript declarations for Web Speech API
 declare global {
   interface Window {
+    // optional `?` to match @assistant-ui/core's global Window augmentation (identical modifiers)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed in lib.dom
-    SpeechRecognition: any;
+    SpeechRecognition?: any;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed in lib.dom
-    webkitSpeechRecognition: any;
+    webkitSpeechRecognition?: any;
   }
 }
 
