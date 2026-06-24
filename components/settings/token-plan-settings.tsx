@@ -191,10 +191,60 @@ export function TokenPlanSettings() {
       }
     }
 
+    // 3. For verify-able media modalities (image/video), probe whether this
+    // plan tier actually supports the model. applyTokenPlan lit them up
+    // optimistically; here we either prune to the verified subset (and re-select
+    // a working model) or, if none pass, disable the modality so it isn't
+    // falsely shown as available (e.g. video on a Small tier).
+    for (const kind of ['image', 'video'] as const) {
+      const target = selected.modalities[kind];
+      if (!target?.verifyModels || !target.defaultModels?.length) continue;
+      try {
+        const res = await fetch('/api/provider/probe-chat-models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            baseUrl: target.baseUrl,
+            apiKey,
+            models: target.defaultModels,
+            kind,
+          }),
+        });
+        const data = await res.json();
+        const ids: string[] =
+          res.ok && data.success ? (data.models || []).map((m: { id: string }) => m.id) : [];
+        const setCfg = kind === 'image' ? setImageProviderConfig : setVideoProviderConfig;
+        const setModelId = kind === 'image' ? setImageModelId : setVideoModelId;
+        if (ids.length === 0) {
+          setCfg(target.providerId as never, { enabled: false } as never);
+          setResults(
+            (prev) =>
+              prev?.map((r) =>
+                r.modality === kind
+                  ? { ...r, status: 'failed', detail: t('settings.tokenPlan.tierUnsupported') }
+                  : r,
+              ) ?? prev,
+          );
+        } else {
+          // Keep only verified models and select the first working one.
+          setCfg(
+            target.providerId as never,
+            {
+              customModels: ids.map((id) => ({ id, name: id })),
+            } as never,
+          );
+          setModelId(ids[0]);
+        }
+      } catch {
+        // Network error — leave the optimistic state from applyTokenPlan.
+      }
+    }
+
     setApplying(false);
   }, [
     selected,
     apiKey,
+    t,
     setProviderConfig,
     setImageProviderConfig,
     setVideoProviderConfig,

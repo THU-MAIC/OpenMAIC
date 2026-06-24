@@ -1337,7 +1337,8 @@
       "modelsLit": "已拉取 {n} 个模型",
       "notAdapted": "暂未适配",
       "configured": "已配置",
-      "remove": "移除配置"
+      "remove": "移除配置",
+      "tierUnsupported": "目前套餐等級不支援"
     },
     "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。"
   },

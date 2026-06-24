@@ -1352,7 +1352,8 @@
       "modelsLit": "{n} models fetched",
       "notAdapted": "not adapted yet",
       "configured": "Configured",
-      "remove": "Remove"
+      "remove": "Remove",
+      "tierUnsupported": "플랜 등급에서 지원되지 않음"
     },
     "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다."
   },

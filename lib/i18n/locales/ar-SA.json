@@ -1352,7 +1352,8 @@
       "modelsLit": "{n} models fetched",
       "notAdapted": "not adapted yet",
       "configured": "Configured",
-      "remove": "Remove"
+      "remove": "Remove",
+      "tierUnsupported": "غير متاح في باقتك"
     },
     "ttsBrowserNativeTimelineNotice": "لا يدعم تحويل النص إلى كلام المدمج في المتصفح ميزات الصوت في الخط الزمني للمحرر (المعاينة وإعادة التوليد والتعليق الصوتي الجماعي). بدّل إلى مزود TTS مُدار لتوليد صوت كل سطر وإدارته."
   },

@@ -1352,7 +1352,8 @@
       "modelsLit": "已拉取 {n} 个模型",
       "notAdapted": "暂未适配",
       "configured": "已配置",
-      "remove": "移除配置"
+      "remove": "移除配置",
+      "tierUnsupported": "当前套餐档位不支持"
     },
     "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。"
   },

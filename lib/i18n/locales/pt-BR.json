@@ -1352,7 +1352,8 @@
       "modelsLit": "{n} models fetched",
       "notAdapted": "not adapted yet",
       "configured": "Configured",
-      "remove": "Remove"
+      "remove": "Remove",
+      "tierUnsupported": "não incluído no seu plano"
     },
     "ttsBrowserNativeTimelineNotice": "O TTS nativo do navegador não suporta os recursos de áudio da linha do tempo do editor (pré-visualizar, regenerar e narração em lote). Mude para um provedor de TTS gerenciado para gerar e gerenciar o áudio de cada linha."
   },

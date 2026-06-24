@@ -1352,7 +1352,8 @@
       "modelsLit": "{n} models fetched",
       "notAdapted": "not adapted yet",
       "configured": "Configured",
-      "remove": "Remove"
+      "remove": "Remove",
+      "tierUnsupported": "not in your plan tier"
     },
     "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio."
   },

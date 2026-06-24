@@ -138,13 +138,17 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       image: {
         providerId: 'seedream',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+        verifyModels: true,
         defaultModels: ['doubao-seedream-5.0-lite'],
       },
       // Video: only Medium+ tiers include video; lower tiers reject these at
-      // call time. Declared so an upgraded plan works without a code change.
+      // call time. verifyModels probes on apply so an unsupported tier simply
+      // isn't lit up (no false "available" that 404s on first use), and an
+      // upgraded plan works without a code change.
       video: {
         providerId: 'seedance',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+        verifyModels: true,
         defaultModels: ['doubao-seedance-2.0', 'doubao-seedance-1.5-pro'],
       },
     },
