@@ -37,6 +37,7 @@ import type {
   WidgetRevealAction,
 } from '@/lib/types/action';
 import type { CodeLine } from '@maic/dsl';
+import { applyCodeLineEdit } from '@/lib/action/code-line-edit';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
 
@@ -589,46 +590,9 @@ export class ActionEngine {
     const element = elementResult.data as any;
     if (element.type !== 'code') return;
 
-    let lines: CodeLine[] = [...element.lines];
     const newContentLines = action.content ? action.content.split('\n') : [];
-    const newLineIds = generateLineIds(newContentLines.length);
-
-    switch (action.operation) {
-      case 'insert_after': {
-        const idx = lines.findIndex((l) => l.id === action.lineId);
-        if (idx === -1) return;
-        const newLines = newContentLines.map((content, i) => ({ id: newLineIds[i], content }));
-        lines.splice(idx + 1, 0, ...newLines);
-        break;
-      }
-      case 'insert_before': {
-        const idx = lines.findIndex((l) => l.id === action.lineId);
-        if (idx === -1) return;
-        const newLines = newContentLines.map((content, i) => ({ id: newLineIds[i], content }));
-        lines.splice(idx, 0, ...newLines);
-        break;
-      }
-      case 'delete_lines': {
-        if (!action.lineIds?.length) return;
-        const deleteSet = new Set(action.lineIds);
-        lines = lines.filter((l) => !deleteSet.has(l.id));
-        break;
-      }
-      case 'replace_lines': {
-        if (!action.lineIds?.length) return;
-        const replaceIds = action.lineIds;
-        const firstIdx = lines.findIndex((l) => l.id === replaceIds[0]);
-        if (firstIdx === -1) return;
-        const deleteSet = new Set(replaceIds);
-        lines = lines.filter((l) => !deleteSet.has(l.id));
-        const newLines = newContentLines.map((content, i) => ({
-          id: i < replaceIds.length ? replaceIds[i] : newLineIds[i],
-          content,
-        }));
-        lines.splice(firstIdx, 0, ...newLines);
-        break;
-      }
-    }
+    const lines = applyCodeLineEdit(element.lines, action, generateLineIds(newContentLines.length));
+    if (lines === null) return;
 
     this.stageAPI.whiteboard.updateElement(
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
