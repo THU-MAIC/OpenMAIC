@@ -1,0 +1,603 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e4]:
+    - generic [ref=e12]:
+      - generic [ref=e13]:
+        - link [ref=e14] [cursor=pointer]:
+          - /url: //www.volcengine.com
+        - generic [ref=e16] [cursor=pointer]: 文档中心
+      - img [ref=e21] [cursor=pointer]
+      - generic [ref=e26]:
+        - combobox [ref=e28] [cursor=pointer]:
+          - generic "简体" [ref=e29]:
+            - img [ref=e31]
+            - generic [ref=e34]:
+              - textbox:
+                - /placeholder: Select language
+              - generic [ref=e35]: 简体
+            - img [ref=e38]
+        - link "文档" [ref=e40] [cursor=pointer]:
+          - /url: https://www.volcengine.com/docs
+        - link "控制台" [ref=e41] [cursor=pointer]:
+          - /url: https://console.volcengine.com
+        - generic [ref=e43]:
+          - link "登录" [ref=e44] [cursor=pointer]:
+            - /url: //console.volcengine.com/auth/login?redirectURI=%2F%2Fwww.volcengine.com%2Fdocs%2F82379%2F2373738%3Flang%3Dzh
+          - link "免费开始使用" [ref=e45] [cursor=pointer]:
+            - /url: //console.volcengine.com/auth/signup?redirectURI=%2F%2Fwww.volcengine.com%2Fdocs%2F82379%2F2373738%3Flang%3Dzh
+    - generic [ref=e48]:
+      - generic [ref=e52]:
+        - generic [ref=e53]:
+          - button "open" [ref=e54] [cursor=pointer]:
+            - img "open" [ref=e55]
+          - generic [ref=e56] [cursor=pointer]: 火山方舟
+        - generic [ref=e58]:
+          - generic [ref=e59] [cursor=pointer]: 文档指南
+          - generic [ref=e60] [cursor=pointer]: 订阅 [Agent/Coding Plan]
+          - generic [ref=e61] [cursor=pointer]: API参考
+          - generic [ref=e62] [cursor=pointer]: 资源
+      - generic [ref=e63]:
+        - generic [ref=e66]:
+          - generic [ref=e68] [cursor=pointer]:
+            - img [ref=e69]
+            - generic [ref=e71]: 请输入
+          - menu [ref=e74]:
+            - generic [ref=e75]:
+              - generic [ref=e76]:
+                - generic [ref=e77]: Agent Plan 个人版
+                - menuitem "套餐概览" [ref=e78] [cursor=pointer]:
+                  - link "套餐概览" [ref=e79]:
+                    - /url: /docs/82379/2366394?lang=zh
+                    - generic [ref=e81]: 套餐概览
+                - generic [ref=e83] [cursor=pointer]:
+                  - generic [ref=e86]: 计费说明
+                  - img [ref=e88]
+                - menuitem "快速开始" [ref=e90] [cursor=pointer]:
+                  - link "快速开始" [ref=e91]:
+                    - /url: /docs/82379/2373738?lang=zh
+                    - generic [ref=e93]: 快速开始
+                - generic [ref=e95] [cursor=pointer]:
+                  - generic [ref=e98]: 接入 AI 工具
+                  - img [ref=e100]
+                - generic [ref=e103] [cursor=pointer]:
+                  - generic [ref=e106]: 接入多模态生成模型
+                  - img [ref=e108]
+                - generic [ref=e111] [cursor=pointer]:
+                  - generic [ref=e114]: 配置 Harness
+                  - img [ref=e116]
+                - generic [ref=e119] [cursor=pointer]:
+                  - generic [ref=e122]: 实践指南
+                  - img [ref=e124]
+                - menuitem "常见问题" [ref=e126] [cursor=pointer]:
+                  - link "常见问题" [ref=e127]:
+                    - /url: /docs/82379/2377895?lang=zh
+                    - generic [ref=e129]: 常见问题
+                - generic [ref=e131] [cursor=pointer]:
+                  - generic [ref=e134]: 活动及公告
+                  - img [ref=e136]
+              - generic [ref=e138]:
+                - generic [ref=e139]: Coding Plan 个人版
+                - menuitem "套餐概览" [ref=e140] [cursor=pointer]:
+                  - link "套餐概览" [ref=e141]:
+                    - /url: /docs/82379/1925114?lang=zh
+                    - generic [ref=e143]: 套餐概览
+                - menuitem "快速开始" [ref=e144] [cursor=pointer]:
+                  - link "快速开始" [ref=e145]:
+                    - /url: /docs/82379/1928261?lang=zh
+                    - generic [ref=e147]: 快速开始
+                - generic [ref=e149] [cursor=pointer]:
+                  - generic [ref=e152]: 接入 AI 工具
+                  - img [ref=e154]
+                - generic [ref=e157] [cursor=pointer]:
+                  - generic [ref=e160]: 专属权益
+                  - img [ref=e162]
+                - menuitem "常见问题" [ref=e164] [cursor=pointer]:
+                  - link "常见问题" [ref=e165]:
+                    - /url: /docs/82379/2165245?lang=zh
+                    - generic [ref=e167]: 常见问题
+                - generic [ref=e169] [cursor=pointer]:
+                  - generic [ref=e172]: 活动及公告
+                  - img [ref=e174]
+        - generic [ref=e179]:
+          - generic [ref=e180]:
+            - list [ref=e181]:
+              - listitem [ref=e182] [cursor=pointer]: 文档首页
+              - generic [ref=e184] [cursor=pointer]: 火山方舟
+              - generic [ref=e186] [cursor=pointer]: Agent Plan 个人版
+              - generic [ref=e188] [cursor=pointer]: 快速开始
+            - generic [ref=e191]:
+              - generic [ref=e192]:
+                - generic [ref=e194] [cursor=pointer]:
+                  - generic [ref=e196]: 复制全文
+                  - img [ref=e198]
+                - generic [ref=e201] [cursor=pointer]:
+                  - generic [ref=e203]: 下载 pdf
+                  - img [ref=e205]
+              - generic [ref=e207]:
+                - img [ref=e209] [cursor=pointer]
+                - img [ref=e213] [cursor=pointer]
+              - link "我的收藏" [ref=e217] [cursor=pointer]:
+                - /url: /docs/favorite?lang=zh
+          - generic [ref=e218]: 快速开始
+          - generic [ref=e224]:
+            - generic [ref=e225]: 本文介绍如何在 AI 工具中快速配置和使用 Agent Plan。
+            - generic [ref=e227]: 一、购买 Agent Plan
+            - generic [ref=e228]:
+              - text: 进入
+              - link "Agent Plan 控制台" [ref=e231] [cursor=pointer]:
+                - /url: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=agentPlan
+                - generic [ref=e232]: Agent Plan 控制台
+              - text: ，按需购买套餐。套餐介绍参见
+              - link "套餐概览" [ref=e235] [cursor=pointer]:
+                - /url: /docs/82379/2366394?lang=zh
+                - generic [ref=e236]: 套餐概览
+              - text: 。
+            - generic [ref=e238]: 二、选择 AI 工具
+            - generic [ref=e239]: Agent Plan 支持主流的 AI 工具，可按需选择。
+            - generic [ref=e243]:
+              - generic [ref=e245]:
+                - generic [ref=e250] [cursor=pointer]:
+                  - generic [ref=e251]: Claude Code
+                  - generic [ref=e252]: AI 终端编程助手，自然语言编程
+                - generic [ref=e257] [cursor=pointer]:
+                  - generic [ref=e258]: TRAE
+                  - generic [ref=e259]: 智能 IDE，构建新一代编程工作流
+                - generic [ref=e264] [cursor=pointer]:
+                  - generic [ref=e265]: Roo Code
+                  - generic [ref=e266]: 轻量级编程助手
+                - generic [ref=e271] [cursor=pointer]:
+                  - generic [ref=e272]: Codex CLI
+                  - generic [ref=e273]: OpenAI 推出的命令行编程工具
+              - generic [ref=e275]:
+                - generic [ref=e280] [cursor=pointer]:
+                  - generic [ref=e281]: OpenCode
+                  - generic [ref=e282]: 开源 AI 编程代理工具
+                - generic [ref=e287] [cursor=pointer]:
+                  - generic [ref=e288]: Cline
+                  - generic [ref=e289]: VSCode 扩展，代码补全和调试
+                - generic [ref=e294] [cursor=pointer]:
+                  - generic [ref=e295]: Kilo Code
+                  - generic [ref=e296]: 轻量高性能编程工具
+              - generic [ref=e298]:
+                - generic [ref=e303] [cursor=pointer]:
+                  - generic [ref=e304]: OpenClaw
+                  - generic [ref=e305]: 开源、自托管个人 AI 助手
+                - generic [ref=e310] [cursor=pointer]:
+                  - generic [ref=e311]: Cursor
+                  - generic [ref=e312]: AI 原生代码编辑器
+                - generic [ref=e317] [cursor=pointer]:
+                  - generic [ref=e318]: Hermes Agent
+                  - generic [ref=e319]: 开源自主 AI 智能体
+            - generic [ref=e321]: 三、配置 AI 工具
+            - generic [ref=e322]: 下面以 Claude Code 为例介绍如何使用 Agent Plan。
+            - generic [ref=e324]: 1.安装 Claude Code
+            - generic [ref=e325]:
+              - text: 请参考
+              - link "官方文档的安装章节" [ref=e328] [cursor=pointer]:
+                - /url: https://code.claude.com/docs/zh-CN/quickstart#%E6%AD%A5%E9%AA%A4-1%EF%BC%9A%E5%AE%89%E8%A3%85-claude-code
+                - generic [ref=e329]: 官方文档的安装章节
+              - text: 完成 Claude Code 安装 。
+            - generic [ref=e331]: 2. 配置 Claude Code
+            - generic [ref=e333]: 需配置的信息
+            - generic [ref=e334]: 如您对 Claude Code 熟悉 / 使用 cc-switch 等配置工具 / 本地已有配置 / 已有本地 Agent等，可获取下列信息直接配置/让本地 Agent 帮您配置。
+            - list [ref=e336]:
+              - listitem [ref=e337]:
+                - text: • ANTHROPIC_BASE_URL：
+                - generic [ref=e339]: https://ark.cn-beijing.volces.com/api/plan
+                - text: ，为专属 Base URL，其他 Base URL 无法在 Agent Plan 中使用。
+            - list [ref=e341]:
+              - listitem [ref=e342]:
+                - text: • ANTHROPIC_AUTH_TOKEN：
+                - link "获取 Agent Plan API Key" [ref=e345] [cursor=pointer]:
+                  - /url: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&OpenModelVisible=false&advancedActiveKey=agentPlan
+                  - generic [ref=e346]: 获取 Agent Plan API Key
+                - text: ，为专属 API Key，其他方舟 API Key 如Coding Plan API Key 无法在 Agent Plan 中使用。
+            - list [ref=e348]:
+              - listitem [ref=e349]:
+                - generic [ref=e353]:
+                  - img
+            - list [ref=e355]:
+              - listitem [ref=e356]:
+                - text: • ANTHROPIC_MODEL：见
+                - link "支持模型及 Harness" [ref=e359] [cursor=pointer]:
+                  - /url: /docs/82379/2366394?lang=zh#3d801f5f
+                  - generic [ref=e360]: 支持模型及 Harness
+                - text: ，不同 Agent Plan 套餐支持的模型不同。请先配置文本生成模型，后续图片生成模型、视频生成模型等可在 Claude Code 中使用自然语言/Skill 等方式完成配置。
+            - generic [ref=e361]:
+              - generic [ref=e362]: 注意
+              - generic [ref=e363]:
+                - text: 若您本地已有Claude Code配置（如终端启动命令
+                - generic [ref=e365]: .bashrc
+                - text: /
+                - generic [ref=e367]: .zshrc
+                - text: 等），可能因为配置冲突导致 Claude Code 不生效，可以尝试备份并清理本地配置后再次运行。
+            - generic [ref=e369]: 方式 1：自动化助手（推荐）
+            - generic [ref=e370]: Ark Helper 是一个编码工具助手，支持快速配置选择的工具接入 Agent Plan。安装并运行该助手，根据界面提示操作可自动完成工具配置，降低手动配置的时间成本和出错风险。
+            - generic [ref=e371]:
+              - generic [ref=e372]: 注意
+              - list [ref=e374]:
+                - listitem [ref=e375]: • Ark Helper 仅支持 macOS、Linux 系统，暂不支持 Windows 系统。
+              - list [ref=e377]:
+                - listitem [ref=e378]: • 以下配置步骤及截图为 Ark Helper 首次使用指引；非首次使用请按界面提示完成套餐配置和工具配置。
+            - list [ref=e380]:
+              - listitem [ref=e381]: 1. 执行以下命令安装 Ark Helper。
+            - list [ref=e383]:
+              - listitem [ref=e384]:
+                - generic [ref=e387]:
+                  - generic [ref=e388]:
+                    - button "Bash" [ref=e390]:
+                      - generic [ref=e391]: Bash
+                    - button "复制" [ref=e392] [cursor=pointer]:
+                      - img [ref=e393]
+                      - generic [ref=e395]: 复制
+                  - generic [ref=e399]: 1 curl -fsSL https://lf3-static.bytednsdoc.com/obj/eden-cn/ylwslo-yrh/ljhwZthlaukjlkulzlp/install.sh | sh
+            - list [ref=e401]:
+              - listitem [ref=e402]: 安装完成后，执行以下命令查看安装的版本号。
+            - list [ref=e404]:
+              - listitem [ref=e405]:
+                - generic [ref=e408]:
+                  - generic [ref=e409]:
+                    - button "Bash" [ref=e411]:
+                      - generic [ref=e412]: Bash
+                    - button "复制" [ref=e413] [cursor=pointer]:
+                      - img [ref=e414]
+                      - generic [ref=e416]: 复制
+                  - generic [ref=e420]: 1 ark-helper --version
+            - list [ref=e422]:
+              - listitem [ref=e423]:
+                - text: 2. 在命令行界面输入
+                - generic [ref=e425]: ark-helper
+                - text: 命令，启动 Ark Helper。默认选择中文。
+            - list [ref=e427]:
+              - listitem [ref=e428]:
+                - generic [ref=e432]:
+                  - img
+            - list [ref=e434]:
+              - listitem [ref=e435]: 3. 根据界面提示完成套餐配置。
+            - list [ref=e437]:
+              - listitem [ref=e438]:
+                - text: a. 选择要配置的套餐：
+                - generic [ref=e440]: "[Volcano] Volcano Engine (国内)"
+                - text: "-"
+                - generic [ref=e442]: Agent Plan
+                - text: 。
+            - list [ref=e444]:
+              - listitem [ref=e445]:
+                - generic [ref=e449]:
+                  - img
+            - list [ref=e451]:
+              - listitem [ref=e452]:
+                - text: b. 配置 API Key：推荐选择
+                - generic [ref=e454]: SSO 登录自动获取 API Key 和联网密钥
+                - text: 。根据界面提示完成登录并选择要使用的联网密钥。
+            - list [ref=e456]:
+              - listitem [ref=e457]:
+                - generic [ref=e461]:
+                  - img
+            - list [ref=e463]:
+              - listitem [ref=e464]: c. 选择默认模型。
+            - list [ref=e466]:
+              - listitem [ref=e467]:
+                - generic [ref=e471]:
+                  - img
+            - list [ref=e473]:
+              - listitem [ref=e474]: 4. 根据界面提示点击返回，完成 Claude Code 工具配置。
+            - list [ref=e476]:
+              - listitem [ref=e477]:
+                - text: a. 选择编码工具：
+                - generic [ref=e479]: Claude Code
+                - text: 。
+            - list [ref=e481]:
+              - listitem [ref=e482]:
+                - generic [ref=e486]:
+                  - img
+            - list [ref=e488]:
+              - listitem [ref=e489]:
+                - text: b. 选择操作：
+                - generic [ref=e491]: 设置 Volcano Agent Plan (API Key + Skills + MCP) 到 Claude Code
+                - text: ，配置完成后，选择
+                - generic [ref=e493]: 退出
+                - text: 。如果需要重新配置工具，可先选择
+                - generic [ref=e495]: 卸载 Claude Code 配置
+                - text: ，再重新进行配置流程。
+            - list [ref=e497]:
+              - listitem [ref=e498]:
+                - generic [ref=e502]:
+                  - img
+            - generic [ref=e503]: 完成上述操作后，将自动完成视觉模型 Skill、豆包搜索 Skill / MCP、专业数据集 MCP 的安装，无需手动安装。
+            - generic [ref=e505]: 方式 2：手动配置
+            - generic [ref=e506]: 下面详细介绍如何手动完成上述信息配置。
+            - list [ref=e508]:
+              - listitem [ref=e509]:
+                - text: 1. 创建并打开
+                - generic [ref=e511]: settings.json
+                - text: 配置文件。文件路径因系统而异，具体操作如下：
+            - list [ref=e513]:
+              - listitem [ref=e514]:
+                - generic [ref=e516]:
+                  - generic [ref=e521]:
+                    - generic [ref=e522] [cursor=pointer]: macOS/Linux
+                    - generic [ref=e523] [cursor=pointer]: Windows
+                  - generic [ref=e525]:
+                    - generic [ref=e526]:
+                      - text: macOS/Linux 系统 Claude Code 配置文件路径：
+                      - generic [ref=e528]: ~/.claude/settings.json
+                      - text: 。
+                    - list [ref=e530]:
+                      - listitem [ref=e531]:
+                        - text: a. 如果在主目录下没有
+                        - generic [ref=e533]: .claude
+                        - text: 目录，执行以下命令创建目录。
+                    - list [ref=e535]:
+                      - listitem [ref=e536]:
+                        - generic [ref=e539]:
+                          - generic [ref=e540]:
+                            - button "Bash" [ref=e542]:
+                              - generic [ref=e543]: Bash
+                            - button "复制" [ref=e544] [cursor=pointer]:
+                              - img [ref=e545]
+                              - generic [ref=e547]: 复制
+                          - generic [ref=e551]: 1 mkdir -p ~/.claude
+                    - list [ref=e553]:
+                      - listitem [ref=e554]: b. 创建并打开配置文件。
+                    - list [ref=e556]:
+                      - listitem [ref=e557]:
+                        - generic [ref=e560]:
+                          - generic [ref=e561]:
+                            - button "Bash" [ref=e563]:
+                              - generic [ref=e564]: Bash
+                            - button "复制" [ref=e565] [cursor=pointer]:
+                              - img [ref=e566]
+                              - generic [ref=e568]: 复制
+                          - generic [ref=e572]: 1 nano ~/.claude/settings.json
+                  - generic: a. 1 b. 1
+            - list [ref=e574]:
+              - listitem [ref=e575]:
+                - text: 2. 编辑
+                - generic [ref=e577]: settings.json
+                - text: ，需修改的配置信息如下：
+            - list [ref=e579]:
+              - listitem [ref=e580]:
+                - text: ◦
+                - generic [ref=e582]: <ARK_API_KEY>
+                - text: ：替换为您的
+                - link "ARK Agent Plan API Key" [ref=e585] [cursor=pointer]:
+                  - /url: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&OpenModelVisible=false&advancedActiveKey=agentPlan
+                  - generic [ref=e586]: ARK Agent Plan API Key
+            - list [ref=e588]:
+              - listitem [ref=e589]:
+                - text: ◦
+                - generic [ref=e591]: <MODEL_NAME>
+                - text: ：结合套餐及您的需求，更新文本生成模型的名称，如
+                - generic [ref=e593]: ark-code-latest
+                - text: ，详细模型名称参见
+                - link "支持模型及 Harness" [ref=e596] [cursor=pointer]:
+                  - /url: /docs/82379/2366394?lang=zh#3d801f5f
+                  - generic [ref=e597]: 支持模型及 Harness
+                - text: 。
+            - list [ref=e599]:
+              - listitem [ref=e600]:
+                - generic [ref=e603]:
+                  - generic [ref=e604]:
+                    - button "JSON" [ref=e606]:
+                      - generic [ref=e607]: JSON
+                    - button "复制" [ref=e608] [cursor=pointer]:
+                      - img [ref=e609]
+                      - generic [ref=e611]: 复制
+                  - generic [ref=e613]:
+                    - generic [ref=e615]: "1 {"
+                    - generic [ref=e617]: "2 \"env\": {"
+                    - generic [ref=e619]: "3 \"ANTHROPIC_AUTH_TOKEN\": \"<ARK_API_KEY>\","
+                    - generic [ref=e621]: "4 \"ANTHROPIC_BASE_URL\": \"https://ark.cn-beijing.volces.com/api/plan\","
+                    - generic [ref=e623]: "5 \"ANTHROPIC_MODEL\": \"<MODEL_NAME>\","
+                    - generic [ref=e625]: "6 \"ANTHROPIC_DEFAULT_HAIKU_MODEL\": \"<MODEL_NAME>\","
+                    - generic [ref=e627]: "7 \"ANTHROPIC_DEFAULT_SONNET_MODEL\": \"<MODEL_NAME>\","
+                    - generic [ref=e629]: "8 \"ANTHROPIC_DEFAULT_OPUS_MODEL\": \"<MODEL_NAME>\","
+                    - generic [ref=e631]: "9 \"CLAUDE_CODE_SUBAGENT_MODEL\": \"<MODEL_NAME>\""
+                    - generic [ref=e633]: "10 }"
+                    - generic [ref=e635]: "11 }"
+            - generic [ref=e636]:
+              - generic [ref=e637]: 说明
+              - list [ref=e639]:
+                - listitem [ref=e640]:
+                  - text: • 要开启 1M 上下文窗口，配置参见
+                  - link "扩展上下文" [ref=e643] [cursor=pointer]:
+                    - /url: /docs/82379/2373740?lang=zh#5f3c8a1d
+                    - generic [ref=e644]: 扩展上下文
+                  - text: 。
+              - list [ref=e646]:
+                - listitem [ref=e647]: • 推荐使用完整模型配置，并按任务复杂度选择模型：Haiku（轻量）、Sonnet（日常）、Opus（复杂）。
+              - list [ref=e649]:
+                - listitem [ref=e650]:
+                  - text: •
+                  - generic [ref=e652]: CLAUDE_CODE_SUBAGENT_MODEL
+                  - text: 建议与主模型保持一致。
+              - list [ref=e654]:
+                - listitem [ref=e655]:
+                  - text: •
+                  - generic [ref=e657]: ANTHROPIC_DEFAULT_HAIKU_MODEL
+                  - text: 建议设置为小尺寸模型，通常不会影响整体使用效果。
+            - list [ref=e659]:
+              - listitem [ref=e660]:
+                - text: 3. 编辑或新增
+                - generic [ref=e662]: .claude.json
+                - text: 文件，修改或新增 hasCompletedOnboarding 字段值为
+                - generic [ref=e664]: "true"
+                - text: ，设置状态为完成入门引导。
+            - list [ref=e666]:
+              - listitem [ref=e667]:
+                - generic [ref=e669]:
+                  - generic [ref=e674]:
+                    - generic [ref=e675] [cursor=pointer]: macOS/Linux
+                    - generic [ref=e676] [cursor=pointer]: Windows
+                  - generic [ref=e678]:
+                    - list [ref=e680]:
+                      - listitem [ref=e681]: a. 创建并打开配置文件。
+                    - list [ref=e683]:
+                      - listitem [ref=e684]:
+                        - generic [ref=e687]:
+                          - generic [ref=e688]:
+                            - button "Bash" [ref=e690]:
+                              - generic [ref=e691]: Bash
+                            - button "复制" [ref=e692] [cursor=pointer]:
+                              - img [ref=e693]
+                              - generic [ref=e695]: 复制
+                          - generic [ref=e699]: 1 nano ~/.claude.json
+                    - list [ref=e701]:
+                      - listitem [ref=e702]: b. 修改或新增的字段信息如下：
+                    - list [ref=e704]:
+                      - listitem [ref=e705]:
+                        - generic [ref=e708]:
+                          - generic [ref=e709]:
+                            - button "JSON" [ref=e711]:
+                              - generic [ref=e712]: JSON
+                            - button "复制" [ref=e713] [cursor=pointer]:
+                              - img [ref=e714]
+                              - generic [ref=e716]: 复制
+                          - generic [ref=e718]:
+                            - generic [ref=e720]: "1 {"
+                            - generic [ref=e722]: "2 \"hasCompletedOnboarding\": true"
+                            - generic [ref=e724]: "3 }"
+                  - generic: a. 1 b. 1 2 3
+            - generic [ref=e726]: 3.启动并使用 Claude Code
+            - list [ref=e728]:
+              - listitem [ref=e729]:
+                - text: 1. 启动Claude Code：进入项目目录，执行
+                - generic [ref=e731]: claude
+                - text: 命令，即可开始使用 Claude Code。
+            - list [ref=e733]:
+              - listitem [ref=e734]:
+                - generic [ref=e737]:
+                  - generic [ref=e738]:
+                    - button "Bash" [ref=e740]:
+                      - generic [ref=e741]: Bash
+                    - button "复制" [ref=e742] [cursor=pointer]:
+                      - img [ref=e743]
+                      - generic [ref=e745]: 复制
+                  - generic [ref=e747]:
+                    - generic [ref=e749]: 1 cd my-project
+                    - generic [ref=e751]: 2 claude
+            - list [ref=e753]:
+              - listitem [ref=e754]: 启动后，选择信任此文件夹，允许 Claude Code 访问该文件夹中的文件。
+            - list [ref=e756]:
+              - listitem [ref=e757]:
+                - generic [ref=e761]:
+                  - img
+            - list [ref=e763]:
+              - listitem [ref=e764]:
+                - text: 2. 模型状态验证：输入
+                - generic [ref=e766]: /model
+                - text: 确认使用的模型指定正确。
+            - list [ref=e768]:
+              - listitem [ref=e769]: 3. 在 Claude Code 中对话。
+            - generic [ref=e771]:
+              - text: 更多使用教程请参见
+              - link "Claude Code 官网" [ref=e774] [cursor=pointer]:
+                - /url: https://code.claude.com/docs/zh-CN/quickstart#%E6%AD%A5%E9%AA%A4-4%EF%BC%9A%E6%8F%90%E5%87%BA%E6%82%A8%E7%9A%84%E7%AC%AC%E4%B8%80%E4%B8%AA%E9%97%AE%E9%A2%98
+                - generic [ref=e775]: Claude Code 官网
+              - text: 。
+            - generic [ref=e777]: 其他操作
+            - generic [ref=e779]: 添加图片生成/视频生成能力
+            - generic [ref=e780]: 方舟 Agent Plan Medium 及以上套餐提供图片生成、视频生成模型配额。方舟提供 Skill 帮助 AI 工具快速接入并使用。具体配置方法请参见：
+            - list [ref=e782]:
+              - listitem [ref=e783]:
+                - text: •
+                - link "方式 2：手动配置" [ref=e786] [cursor=pointer]:
+                  - /url: /docs/82379/2375486?lang=zh#72de147a
+                  - generic [ref=e787]: 方式 2：手动配置
+            - list [ref=e789]:
+              - listitem [ref=e790]:
+                - text: •
+                - link "配置图片生成模型" [ref=e793] [cursor=pointer]:
+                  - /url: /docs/82379/2375486?lang=zh#aef48a5c
+                  - generic [ref=e794]: 配置图片生成模型
+            - generic [ref=e795]:
+              - generic [ref=e796]: 注意
+              - list [ref=e798]:
+                - listitem [ref=e799]:
+                  - text: • 不同的套餐支持的视觉模型有所不同，具体参见
+                  - link "支持模型及 Harness" [ref=e802] [cursor=pointer]:
+                    - /url: /docs/82379/2366394?lang=zh#3d801f5f
+                    - generic [ref=e803]: 支持模型及 Harness
+                  - text: 。
+              - list [ref=e805]:
+                - listitem [ref=e806]: • 视觉模型不支持通过 Auto 及控制台切换使用。
+            - generic [ref=e808]: 切换模型
+            - generic [ref=e809]: 你可以随时根据需求切换文本生成模型。方舟支持多种方式切换模型。
+            - table [ref=e817]:
+              - rowgroup [ref=e823]:
+                - row "配置方式 通过控制台 通过命令参数 修改配置文件" [ref=e824]:
+                  - cell "配置方式" [ref=e825]:
+                    - generic [ref=e829]: 配置方式
+                  - cell "通过控制台" [ref=e830]:
+                    - generic [ref=e834]: 通过控制台
+                  - cell "通过命令参数" [ref=e835]:
+                    - generic [ref=e839]: 通过命令参数
+                  - cell "修改配置文件" [ref=e840]:
+                    - generic [ref=e844]: 修改配置文件
+                - row "切换模型操作 1. 参考2. 配置 Claude Code配置模型名称为ark-code-latest。 2. 在开通管理页面选择要使用的模型，切换后3-5分钟即可生效。 3. 在命令行窗口，启动 Claude Code 后，输入/model确认模型状态。 • 启动时：执行claude --model <MODEL_NAME>，可指定本次对话使用的文本生成模型。 • 对话期间：执行/model <MODEL_NAME>切换模型。 参考2. 配置 Claude Code配置模型名称为您需要的模型。" [ref=e845]:
+                  - cell "切换模型操作" [ref=e846]:
+                    - generic [ref=e850]: 切换模型操作
+                  - cell "1. 参考2. 配置 Claude Code配置模型名称为ark-code-latest。 2. 在开通管理页面选择要使用的模型，切换后3-5分钟即可生效。 3. 在命令行窗口，启动 Claude Code 后，输入/model确认模型状态。" [ref=e851]:
+                    - generic [ref=e854]:
+                      - list [ref=e856]:
+                        - listitem [ref=e857]:
+                          - text: 1. 参考
+                          - link "2. 配置 Claude Code" [ref=e860] [cursor=pointer]:
+                            - /url: /docs/82379/2373738?lang=zh#2bfb05a3
+                            - generic [ref=e861]: 2. 配置 Claude Code
+                          - text: 配置模型名称为
+                          - generic [ref=e863]: ark-code-latest
+                          - text: 。
+                      - list [ref=e865]:
+                        - listitem [ref=e866]:
+                          - text: 2. 在
+                          - link "开通管理页面" [ref=e869] [cursor=pointer]:
+                            - /url: https://console.volcengine.com/ark/region:ark+cn-beijing/openManagement?LLM=%7B%7D&advancedActiveKey=agentPlan
+                            - generic [ref=e870]: 开通管理页面
+                          - text: 选择要使用的模型，切换后3-5分钟即可生效。
+                      - list [ref=e872]:
+                        - listitem [ref=e873]:
+                          - text: 3. 在命令行窗口，启动 Claude Code 后，输入
+                          - generic [ref=e875]: /model
+                          - text: 确认模型状态。
+                  - cell "• 启动时：执行claude --model <MODEL_NAME>，可指定本次对话使用的文本生成模型。 • 对话期间：执行/model <MODEL_NAME>切换模型。" [ref=e876]:
+                    - generic [ref=e879]:
+                      - list [ref=e881]:
+                        - listitem [ref=e882]:
+                          - text: • 启动时：执行
+                          - generic [ref=e884]: claude --model <MODEL_NAME>
+                          - text: ，可指定本次对话使用的文本生成模型。
+                      - list [ref=e886]:
+                        - listitem [ref=e887]:
+                          - text: • 对话期间：执行
+                          - generic [ref=e889]: /model <MODEL_NAME>
+                          - text: 切换模型。
+                  - cell "参考2. 配置 Claude Code配置模型名称为您需要的模型。" [ref=e890]:
+                    - generic [ref=e894]:
+                      - text: 参考
+                      - link "2. 配置 Claude Code" [ref=e897] [cursor=pointer]:
+                        - /url: /docs/82379/2373738?lang=zh#2bfb05a3
+                        - generic [ref=e898]: 2. 配置 Claude Code
+                      - text: 配置模型名称为您需要的模型。
+          - generic [ref=e905]:
+            - generic [ref=e907]: 最近更新时间：2026.06.23 12:16:50
+            - generic [ref=e909]:
+              - generic [ref=e910]: 这个页面对您有帮助吗？
+              - generic [ref=e913] [cursor=pointer]:
+                - img [ref=e914]
+                - generic [ref=e916]: 有用
+              - generic [ref=e919] [cursor=pointer]:
+                - img [ref=e920]
+                - generic [ref=e922]: 无用
+          - generic [ref=e923]:
+            - link "上一篇： 超额后付费管理" [ref=e924] [cursor=pointer]:
+              - /url: /docs/82379/2516285?lang=zh
+              - img [ref=e925]
+              - generic [ref=e927]: 上一篇：
+              - generic [ref=e930]: 超额后付费管理
+            - link "Claude Code 下一篇" [ref=e931] [cursor=pointer]:
+              - /url: /docs/82379/2373740?lang=zh
+              - generic [ref=e934]: Claude Code
+              - generic [ref=e936]: 下一篇
+              - img [ref=e937]
+  - generic: rangeDom

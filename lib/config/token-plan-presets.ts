@@ -84,19 +84,21 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
 
   // ── Vendor token plans (LLM; one key, often spans many models) ────────────
   {
-    // Volcengine Ark Coding Plan. The plan's `ark-`-prefixed keys authenticate
-    // only against the /api/coding/v3 gateway (OpenAI-compatible); the general
-    // /api/v3 endpoint rejects them as "API key format is incorrect".
+    // Volcengine Ark Agent Plan. The plan's ark--prefixed keys authenticate
+    // ONLY against the dedicated Anthropic-compatible /api/plan endpoint — both
+    // the general /api/v3 and the Coding Plan /api/coding endpoints reject them
+    // ("API key format is incorrect"). baseUrl carries /v1 because the Anthropic
+    // SDK appends /messages; the request lands on /api/plan/v1/messages.
     id: 'volcengine-ark',
-    name: '火山方舟 Volcengine Ark',
+    name: '火山方舟 Agent Plan',
     websiteUrl: 'https://console.volcengine.com/ark',
     icon: '/logos/volcengine.svg',
     category: 'token_plan',
     modalities: {
       llm: {
         providerId: 'doubao',
-        baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
-        apiFormat: 'openai',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v1',
+        apiFormat: 'anthropic',
       },
     },
   },
