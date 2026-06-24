@@ -375,7 +375,24 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/glm.svg',
     models: [
-      // GLM-5.1 Series - Latest flagship model
+      // GLM-5.2 Series - Long-horizon coding model
+      {
+        id: 'glm-5.2',
+        name: 'GLM-5.2',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: false,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      // GLM-5.1 Series
       {
         id: 'glm-5.1',
         name: 'GLM-5.1',
@@ -667,6 +684,38 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/kimi.png',
     models: [
+      {
+        id: 'kimi-k2.7-code',
+        name: 'Kimi K2.7 Code',
+        contextWindow: 256000,
+        outputWindow: 32768,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'kimi-k2.7-code-highspeed',
+        name: 'Kimi K2.7 Code HighSpeed',
+        contextWindow: 256000,
+        outputWindow: 32768,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
       {
         id: 'kimi-k2.6',
         name: 'Kimi K2.6',
@@ -1196,11 +1245,32 @@ function getCompatThinkingBodyParams(
 
   switch (capability.requestAdapter) {
     case 'kimi':
-    case 'glm':
     case 'xiaomi':
       if (mode === 'disabled') return { thinking: { type: 'disabled' } };
       if (mode === 'enabled') return { thinking: { type: 'enabled' } };
       return undefined;
+
+    case 'glm': {
+      if (capability.control === 'effort') {
+        if (mode === 'disabled' || config.effort === 'none') {
+          return { thinking: { type: 'disabled' } };
+        }
+
+        const effort =
+          config.effort && capability.effortValues?.includes(config.effort)
+            ? config.effort
+            : mode === 'enabled'
+              ? capability.defaultEffort
+              : undefined;
+        const body: Record<string, unknown> = {};
+        if (mode === 'enabled' || effort) body.thinking = { type: 'enabled' };
+        if (effort) body.reasoning_effort = effort;
+        return Object.keys(body).length > 0 ? body : undefined;
+      }
+      if (mode === 'disabled') return { thinking: { type: 'disabled' } };
+      if (mode === 'enabled') return { thinking: { type: 'enabled' } };
+      return undefined;
+    }
 
     case 'deepseek': {
       if (mode === 'disabled' || config.effort === 'none') {
