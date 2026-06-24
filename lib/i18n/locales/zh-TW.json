@@ -157,7 +157,8 @@
     "exitFullscreen": "離開全螢幕",
     "courseComplete": "課程完成",
     "editCourse": "編輯課程",
-    "doneEditing": "完成編輯"
+    "doneEditing": "完成編輯",
+    "proModeDisabledHint": "本頁不支援編輯——開啟任一課程頁即可使用 Pro 模式編輯。"
   },
   "edit": {
     "proMode": "專業模式",
@@ -220,6 +221,186 @@
       "deckLabel": "場景",
       "moreActions": "更多操作",
       "rename": "重新命名"
+    },
+    "zorder": {
+      "toFront": "移至最上層",
+      "toBack": "移至最下層"
+    },
+    "image": {
+      "replace": "替換圖片",
+      "flipH": "水平翻轉",
+      "flipV": "垂直翻轉"
+    },
+    "background": {
+      "label": "背景",
+      "solid": "純色",
+      "image": "圖片"
+    },
+    "quiz": {
+      "addQuestion": "新增題目",
+      "reorder": "拖曳排序",
+      "deleteQuestion": "刪除題目",
+      "untitledQuestion": "未命名題目",
+      "questionLabel": "題幹",
+      "questionPlaceholder": "輸入題目…",
+      "typeLabel": "類型",
+      "pointsLabel": "分數",
+      "optionsLabel": "選項",
+      "optionPlaceholder": "選項內容",
+      "addOption": "新增選項",
+      "deleteOption": "刪除選項",
+      "markCorrect": "標記為正確答案",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "analysisLabel": "解析",
+      "analysisPlaceholder": "評分後顯示…",
+      "commentPromptLabel": "評分指引",
+      "commentPromptPlaceholder": "應如何評判這道主觀題？",
+      "empty": "尚無題目",
+      "emptyHint": "點選上方「新增題目」建立第一題。",
+      "type": {
+        "single": "單選",
+        "multiple": "多選",
+        "short_answer": "簡答"
+      },
+      "shortAnswerGradingNote": "簡答題由 AI 依據下方評分指引自動評分。",
+      "hint": {
+        "emptyText": "第 {{n}} 題：請填寫題幹",
+        "fewOptions": "第 {{n}} 題：至少需要兩個選項",
+        "emptyOption": "第 {{n}} 題：有選項內容為空",
+        "noCorrect": "第 {{n}} 題：請標記正確答案"
+      }
+    },
+    "cue": {
+      "speech": "講解",
+      "spotlight": "聚光",
+      "laser": "雷射",
+      "whiteboardOpen": "畫板",
+      "whiteboardText": "板書",
+      "whiteboardShape": "圖形",
+      "whiteboardLatex": "公式",
+      "whiteboardTable": "表格",
+      "action": "動作"
+    },
+    "element": {
+      "text": "文字",
+      "image": "圖片",
+      "shape": "形狀",
+      "line": "線條",
+      "chart": "圖表",
+      "table": "表格",
+      "latex": "公式",
+      "video": "影片",
+      "audio": "音訊",
+      "code": "程式碼"
+    },
+    "agent": {
+      "expand": "展開 AI 助手",
+      "collapse": "收起",
+      "stopped": "已停止",
+      "emptyTitle": "有什麼想改的？",
+      "emptyHint": "在畫布上編輯好這一頁後，讓 AI 重新生成與內容相符的講解旁白。",
+      "placeholder": "描述對這一頁的修改…",
+      "stop": "停止生成",
+      "empty": {
+        "lead": "告訴我這一頁怎麼改，我會重做內容並對齊講解。",
+        "boundary": "精細編輯請使用編輯器，增刪 / 排序頁面請用左側導覽。",
+        "comingSoon": "更多能力陸續加入中，敬請期待。"
+      },
+      "interactive": {
+        "emptyTitle": "這個互動頁要修什麼？",
+        "lead": "描述這個互動頁的問題（例如某個按鈕點了沒反應），我只修這一處、其它內容原樣保留。",
+        "placeholder": "描述這個互動頁的問題…",
+        "boundary": "我只做定點修復，不整頁重做；切換頁面請用左側導覽。"
+      },
+      "cap": {
+        "content": {
+          "label": "重新生成 PPT 頁面",
+          "examples": "「精簡成三個要點」、「加個生活化例子」"
+        },
+        "narration": {
+          "label": "重新生成講解腳本",
+          "examples": "「講得更口語一些」、「和畫布上的改動對齊」"
+        },
+        "fixHtml": {
+          "label": "修復互動頁的 bug",
+          "examples": "「開始按鈕點了沒反應」、「手機上排版重疊」"
+        }
+      },
+      "newConversation": "新對話",
+      "thinking": "思考中…",
+      "reasoning": "思考過程",
+      "thought": "已思考"
+    },
+    "timeline": {
+      "title": "講解腳本",
+      "dragToAdd": "拖入新增",
+      "regenAllTts": "重新生成全部配音",
+      "voiceAll": "全部配音",
+      "counts": "{{speech}} 講解 · {{cue}} 動作",
+      "panLeft": "左移視口",
+      "panRight": "右移視口",
+      "collapseAxis": "收起為軸線",
+      "expandTrack": "展開軌道",
+      "emptyHint": "把上方的動作拖到軸上開始編排，或讓 MAIC Agent 生成講解。",
+      "speechPlaceholder": "輸入這一句講解…",
+      "reorder": "拖動重排",
+      "moveLeft": "左移",
+      "moveRight": "右移",
+      "pickElement": "選元素",
+      "bound": "已綁定",
+      "fieldAction": "動作",
+      "fieldElement": "元素",
+      "fieldContent": "內容"
+    },
+    "tts": {
+      "preview": "試聽",
+      "regenerate": "重新生成配音",
+      "statusReady": "已配音",
+      "statusNone": "未配音",
+      "statusGenerating": "生成中",
+      "statusError": "失敗"
+    },
+    "pick": {
+      "pickFor": "為「{{label}}」選擇元素",
+      "pickHint": "點高亮元素或下方清單 · Esc 取消",
+      "pageElements": "頁面元素 · {{count}}",
+      "expand": "展開",
+      "collapse": "摺疊",
+      "noElements": "這一頁沒有可定位的元素。",
+      "bindHint": "點畫布上高亮的元素綁定"
+    },
+    "regen": {
+      "title": "重新生成講解",
+      "running": "正在生成…",
+      "noActions": "未生成動作",
+      "actionsCount": "{{count}} 個動作",
+      "generating": "生成中",
+      "notGenerated": "未生成",
+      "updated": "已更新"
+    },
+    "regenScene": {
+      "title": "重新生成頁面",
+      "generating": "生成中",
+      "updated": "已更新",
+      "notGenerated": "未生成",
+      "elementsCount": "{{count}} 個元素",
+      "restore": "還原到重生成前",
+      "restored": "已還原",
+      "resume": "恢復"
+    },
+    "fixHtml": {
+      "title": "修復互動頁",
+      "fixing": "修復中",
+      "fixed": "已修復",
+      "notFixed": "未修復",
+      "editsCount": "{{count}} 處修改"
+    },
+    "readCard": {
+      "title": "讀取頁面內容",
+      "reading": "讀取中",
+      "done": "已讀取",
+      "failed": "未讀取"
     }
   },
   "whiteboard": {
@@ -455,6 +636,23 @@
     "deleteSceneConfirmAction": "刪除",
     "collapseEditor": "收起",
     "quizConfigSummary": "{{count}} 道題",
+    "interactiveWidgetKind": "元件類型",
+    "widgetSimulation": "模擬",
+    "widgetDiagram": "圖示",
+    "widgetCode": "程式碼",
+    "widgetGame": "遊戲",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "概念",
+    "interactiveConceptPlaceholder": "要探索的概念",
+    "pblConfigSummary": "專案",
+    "pblProjectTopic": "專案主題",
+    "pblProjectTopicPlaceholder": "專案主題",
+    "pblProjectDescription": "專案描述",
+    "pblProjectDescriptionPlaceholder": "學生將完成的專案",
+    "pblTargetSkills": "目標技能",
+    "pblAddSkill": "新增技能",
+    "widgetProceduralSkill": "操作技能",
+    "removeSkill": "移除技能",
     "dragSceneHint": "拖曳排序；或聚焦後按 Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "刪除場景",
     "backToRequirements": "返回修改需求",
@@ -1089,7 +1287,8 @@
     "voxcpmVoiceSaveFailed": "儲存聲音失敗",
     "voxcpmVoiceSaved": "VoxCPM 聲音已儲存",
     "voxcpmVoicesDescription": "儲存在此瀏覽器中並加入共享的客服人員聲音池。",
-    "voxcpmVoicesTitle": "VoxCPM 聲音"
+    "voxcpmVoicesTitle": "VoxCPM 聲音",
+    "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。"
   },
   "profile": {
     "title": "個人資料",

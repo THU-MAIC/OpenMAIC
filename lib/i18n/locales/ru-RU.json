@@ -157,7 +157,8 @@
     "fullscreen": "Полный экран",
     "exitFullscreen": "Свернуть",
     "editCourse": "Редактировать курс",
-    "doneEditing": "Завершить редактирование"
+    "doneEditing": "Завершить редактирование",
+    "proModeDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы редактировать в Pro-режиме."
   },
   "edit": {
     "proMode": "Pro",
@@ -220,6 +221,186 @@
       "deckLabel": "Сцены",
       "moreActions": "Ещё действия",
       "rename": "Переименовать"
+    },
+    "zorder": {
+      "toFront": "На передний план",
+      "toBack": "На задний план"
+    },
+    "image": {
+      "replace": "Заменить изображение",
+      "flipH": "Отразить по горизонтали",
+      "flipV": "Отразить по вертикали"
+    },
+    "background": {
+      "label": "Фон",
+      "solid": "Сплошной цвет",
+      "image": "Изображение"
+    },
+    "quiz": {
+      "addQuestion": "Добавить вопрос",
+      "reorder": "Перетащите для сортировки",
+      "deleteQuestion": "Удалить вопрос",
+      "untitledQuestion": "Вопрос без названия",
+      "questionLabel": "Вопрос",
+      "questionPlaceholder": "Введите вопрос…",
+      "typeLabel": "Тип",
+      "pointsLabel": "Баллы",
+      "optionsLabel": "Варианты",
+      "optionPlaceholder": "Текст варианта",
+      "addOption": "Добавить вариант",
+      "deleteOption": "Удалить вариант",
+      "markCorrect": "Отметить как правильный",
+      "moveUp": "Вверх",
+      "moveDown": "Вниз",
+      "analysisLabel": "Пояснение",
+      "analysisPlaceholder": "Показывается после проверки…",
+      "commentPromptLabel": "Указания по оценке",
+      "commentPromptPlaceholder": "Как оценивать этот развёрнутый ответ?",
+      "empty": "Пока нет вопросов",
+      "emptyHint": "Нажмите «Добавить вопрос» выше, чтобы создать первый.",
+      "type": {
+        "single": "Один выбор",
+        "multiple": "Несколько вариантов",
+        "short_answer": "Краткий ответ"
+      },
+      "shortAnswerGradingNote": "Краткие ответы всегда оцениваются ИИ по указаниям ниже.",
+      "hint": {
+        "emptyText": "Вопрос {{n}}: добавьте текст вопроса",
+        "fewOptions": "Вопрос {{n}}: нужно не менее двух вариантов",
+        "emptyOption": "Вопрос {{n}}: есть пустой вариант",
+        "noCorrect": "Вопрос {{n}}: отметьте правильный ответ"
+      }
+    },
+    "cue": {
+      "speech": "Закадровый текст",
+      "spotlight": "Прожектор",
+      "laser": "Лазер",
+      "whiteboardOpen": "Доска",
+      "whiteboardText": "Запись",
+      "whiteboardShape": "Фигура",
+      "whiteboardLatex": "Формула",
+      "whiteboardTable": "Таблица",
+      "action": "Действие"
+    },
+    "element": {
+      "text": "Текст",
+      "image": "Изображение",
+      "shape": "Фигура",
+      "line": "Линия",
+      "chart": "Диаграмма",
+      "table": "Таблица",
+      "latex": "Формула",
+      "video": "Видео",
+      "audio": "Аудио",
+      "code": "Код"
+    },
+    "agent": {
+      "expand": "Развернуть ИИ-помощника",
+      "collapse": "Свернуть",
+      "stopped": "Остановлено",
+      "emptyTitle": "Что вы хотите изменить?",
+      "emptyHint": "Отредактировав этот слайд на холсте, позвольте ИИ заново сгенерировать закадровый текст, соответствующий содержанию.",
+      "placeholder": "Опишите изменения для этого слайда…",
+      "stop": "Остановить генерацию",
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "examples": "«Кнопка запуска не работает», «Панели накладываются на мобильном»",
+          "label": "Исправить ошибку на странице"
+        }
+      },
+      "newConversation": "New conversation",
+      "reasoning": "Рассуждение",
+      "thought": "Думал",
+      "interactive": {
+        "boundary": "Я вношу точечные исправления на странице и не пересоздаю её целиком. Переключайте сцены через навигацию слева.",
+        "emptyTitle": "Что нужно исправить на этой странице?",
+        "lead": "Опишите ошибку на этой интерактивной странице — например, кнопку, которая не реагирует, — и я исправлю только её, сохранив всё остальное.",
+        "placeholder": "Опишите ошибку на этой интерактивной странице…"
+      },
+      "thinking": "Думаю…"
+    },
+    "timeline": {
+      "title": "Сценарий закадрового текста",
+      "dragToAdd": "Перетащите, чтобы добавить",
+      "regenAllTts": "Сгенерировать всю озвучку заново",
+      "voiceAll": "Озвучить всё",
+      "counts": "{{speech}} реплик · {{cue}} действий",
+      "panLeft": "Прокрутить влево",
+      "panRight": "Прокрутить вправо",
+      "collapseAxis": "Свернуть до оси",
+      "expandTrack": "Развернуть дорожку",
+      "emptyHint": "Перетащите действия на ось, чтобы начать, или позвольте MAIC Agent сгенерировать закадровый текст.",
+      "speechPlaceholder": "Введите эту реплику…",
+      "reorder": "Перетащите для изменения порядка",
+      "moveLeft": "Влево",
+      "moveRight": "Вправо",
+      "pickElement": "Выбрать элемент",
+      "bound": "Привязано",
+      "fieldAction": "Действие",
+      "fieldElement": "Элемент",
+      "fieldContent": "Содержимое"
+    },
+    "tts": {
+      "preview": "Прослушать",
+      "regenerate": "Сгенерировать озвучку заново",
+      "statusReady": "Озвучено",
+      "statusNone": "Не озвучено",
+      "statusGenerating": "Генерация",
+      "statusError": "Ошибка"
+    },
+    "pick": {
+      "pickFor": "Выберите элемент для «{{label}}»",
+      "pickHint": "Нажмите на подсвеченный элемент или список ниже · Esc для отмены",
+      "pageElements": "Элементы страницы · {{count}}",
+      "expand": "Развернуть",
+      "collapse": "Свернуть",
+      "noElements": "На этом слайде нет элементов для выбора.",
+      "bindHint": "Нажмите на подсвеченный элемент на холсте для привязки"
+    },
+    "regen": {
+      "title": "Сгенерировать закадровый текст заново",
+      "running": "Генерация…",
+      "noActions": "Действия не сгенерированы",
+      "actionsCount": "{{count}} действий",
+      "generating": "Генерация",
+      "notGenerated": "Не сгенерировано",
+      "updated": "Обновлено"
+    },
+    "regenScene": {
+      "title": "Сгенерировать слайд заново",
+      "generating": "Генерация",
+      "updated": "Обновлено",
+      "notGenerated": "Не сгенерировано",
+      "elementsCount": "{{count}} элементов",
+      "restore": "Вернуть прежний вариант",
+      "restored": "Восстановлено",
+      "resume": "Вернуть"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
+    },
+    "fixHtml": {
+      "editsCount": "Правок: {{count}}",
+      "fixed": "Исправлено",
+      "fixing": "Исправляю",
+      "notFixed": "Не исправлено",
+      "title": "Исправить интерактивную страницу"
     }
   },
   "classroomComplete": {
@@ -470,6 +651,23 @@
     "deleteSceneConfirmAction": "Удалить",
     "collapseEditor": "Свернуть",
     "quizConfigSummary": "{{count}} вопросов",
+    "interactiveWidgetKind": "Тип виджета",
+    "widgetSimulation": "Симуляция",
+    "widgetDiagram": "Диаграмма",
+    "widgetCode": "Код",
+    "widgetGame": "Игра",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "Концепция",
+    "interactiveConceptPlaceholder": "Изучаемая концепция",
+    "pblConfigSummary": "Проект",
+    "pblProjectTopic": "Тема проекта",
+    "pblProjectTopicPlaceholder": "Тема проекта",
+    "pblProjectDescription": "Описание",
+    "pblProjectDescriptionPlaceholder": "Что создадут учащиеся",
+    "pblTargetSkills": "Целевые навыки",
+    "pblAddSkill": "Добавить навык",
+    "widgetProceduralSkill": "Практический навык",
+    "removeSkill": "Удалить навык",
     "dragSceneHint": "Перетащите для сортировки или нажмите Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "Удалить сцену",
     "backToRequirements": "Назад к требованиям",
@@ -1104,7 +1302,8 @@
     "viewDocs": "API документация",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Серверный API-ключ поиска настроен",
-    "optional": "Необязательно"
+    "optional": "Необязательно",
+    "ttsBrowserNativeTimelineNotice": "Встроенный в браузер TTS не поддерживает функции аудио на таймлайне редактора (прослушивание, повторная генерация и массовая озвучка). Переключитесь на управляемый TTS-провайдер, чтобы генерировать и управлять аудио для каждой строки."
   },
   "profile": {
     "title": "Профиль",

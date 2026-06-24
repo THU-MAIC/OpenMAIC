@@ -157,7 +157,8 @@
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏",
     "editCourse": "编辑课程",
-    "doneEditing": "完成编辑"
+    "doneEditing": "完成编辑",
+    "proModeDisabledHint": "本页不支持编辑——打开任意课程页即可使用 Pro 模式编辑。"
   },
   "edit": {
     "proMode": "专业模式",
@@ -220,6 +221,186 @@
       "deckLabel": "场景",
       "moreActions": "更多操作",
       "rename": "重命名"
+    },
+    "zorder": {
+      "toFront": "置于顶层",
+      "toBack": "置于底层"
+    },
+    "image": {
+      "replace": "替换图片",
+      "flipH": "水平翻转",
+      "flipV": "垂直翻转"
+    },
+    "background": {
+      "label": "背景",
+      "solid": "纯色",
+      "image": "图片"
+    },
+    "quiz": {
+      "addQuestion": "添加题目",
+      "reorder": "拖动排序",
+      "deleteQuestion": "删除题目",
+      "untitledQuestion": "未命名题目",
+      "questionLabel": "题干",
+      "questionPlaceholder": "输入题目…",
+      "typeLabel": "类型",
+      "pointsLabel": "分值",
+      "optionsLabel": "选项",
+      "optionPlaceholder": "选项内容",
+      "addOption": "添加选项",
+      "deleteOption": "删除选项",
+      "markCorrect": "标记为正确答案",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "analysisLabel": "解析",
+      "analysisPlaceholder": "评分后显示…",
+      "commentPromptLabel": "评分指引",
+      "commentPromptPlaceholder": "应如何评判这道主观题？",
+      "empty": "暂无题目",
+      "emptyHint": "点击上方“添加题目”创建第一道题。",
+      "type": {
+        "single": "单选",
+        "multiple": "多选",
+        "short_answer": "简答"
+      },
+      "shortAnswerGradingNote": "简答题由 AI 依据下方评分指引自动打分。",
+      "hint": {
+        "emptyText": "第 {{n}} 题：请填写题干",
+        "fewOptions": "第 {{n}} 题：至少需要两个选项",
+        "emptyOption": "第 {{n}} 题：有选项内容为空",
+        "noCorrect": "第 {{n}} 题：请标记正确答案"
+      }
+    },
+    "cue": {
+      "speech": "讲解",
+      "spotlight": "聚光",
+      "laser": "激光",
+      "whiteboardOpen": "画板",
+      "whiteboardText": "板书",
+      "whiteboardShape": "图形",
+      "whiteboardLatex": "公式",
+      "whiteboardTable": "表格",
+      "action": "动作"
+    },
+    "element": {
+      "text": "文本",
+      "image": "图片",
+      "shape": "形状",
+      "line": "线条",
+      "chart": "图表",
+      "table": "表格",
+      "latex": "公式",
+      "video": "视频",
+      "audio": "音频",
+      "code": "代码"
+    },
+    "agent": {
+      "expand": "展开 AI 助手",
+      "collapse": "收起",
+      "stopped": "已停止",
+      "emptyTitle": "有什么想改的？",
+      "emptyHint": "在画布上编辑好这一页后，让 AI 重新生成与内容匹配的讲解旁白。",
+      "placeholder": "描述对这一页的修改…",
+      "stop": "停止生成",
+      "empty": {
+        "lead": "告诉我这一页怎么改，我会重做内容并对齐讲解。",
+        "boundary": "精细编辑请使用编辑器，增删 / 排序页面请用左侧导航。",
+        "comingSoon": "更多能力陆续加入中，敬请期待。"
+      },
+      "interactive": {
+        "emptyTitle": "这个互动页要修什么？",
+        "lead": "描述这个互动页的问题（比如某个按钮点了没反应），我只修这一处、其它内容原样保留。",
+        "placeholder": "描述这个互动页的问题…",
+        "boundary": "我只做定点修复，不整页重做；切换页面请用左侧导航。"
+      },
+      "cap": {
+        "content": {
+          "label": "重新生成 PPT 页面",
+          "examples": "“精简成三个要点”、“加个生活化例子”"
+        },
+        "narration": {
+          "label": "重新生成讲解脚本",
+          "examples": "“讲得更口语一些”、“和画布上的改动对齐”"
+        },
+        "fixHtml": {
+          "label": "修复互动页的 bug",
+          "examples": "“开始按钮点了没反应”、“手机上排版重叠”"
+        }
+      },
+      "newConversation": "新对话",
+      "thinking": "思考中…",
+      "reasoning": "思考过程",
+      "thought": "已思考"
+    },
+    "timeline": {
+      "title": "讲解脚本",
+      "dragToAdd": "拖入添加",
+      "regenAllTts": "重新生成全部配音",
+      "voiceAll": "全部配音",
+      "counts": "{{speech}} 讲解 · {{cue}} 动作",
+      "panLeft": "左移视口",
+      "panRight": "右移视口",
+      "collapseAxis": "收起为轴线",
+      "expandTrack": "展开轨道",
+      "emptyHint": "把上方的动作拖到轴上开始编排，或让 MAIC Agent 生成讲解。",
+      "speechPlaceholder": "输入这一句讲解…",
+      "reorder": "拖动重排",
+      "moveLeft": "左移",
+      "moveRight": "右移",
+      "pickElement": "选元素",
+      "bound": "已绑定",
+      "fieldAction": "动作",
+      "fieldElement": "元素",
+      "fieldContent": "内容"
+    },
+    "tts": {
+      "preview": "试听",
+      "regenerate": "重新生成配音",
+      "statusReady": "已配音",
+      "statusNone": "未配音",
+      "statusGenerating": "生成中",
+      "statusError": "失败"
+    },
+    "pick": {
+      "pickFor": "为「{{label}}」选择元素",
+      "pickHint": "点高亮元素或下方列表 · Esc 取消",
+      "pageElements": "页面元素 · {{count}}",
+      "expand": "展开",
+      "collapse": "折叠",
+      "noElements": "这一页没有可定位的元素。",
+      "bindHint": "点画布上高亮的元素绑定"
+    },
+    "regen": {
+      "title": "重新生成讲解",
+      "running": "正在生成…",
+      "noActions": "未生成动作",
+      "actionsCount": "{{count}} 个动作",
+      "generating": "生成中",
+      "notGenerated": "未生成",
+      "updated": "已更新"
+    },
+    "regenScene": {
+      "title": "重新生成页面",
+      "generating": "生成中",
+      "updated": "已更新",
+      "notGenerated": "未生成",
+      "elementsCount": "{{count}} 个元素",
+      "restore": "还原到重生成前",
+      "restored": "已还原",
+      "resume": "恢复"
+    },
+    "fixHtml": {
+      "title": "修复交互页",
+      "fixing": "修复中",
+      "fixed": "已修复",
+      "notFixed": "未修复",
+      "editsCount": "{{count}} 处修改"
+    },
+    "readCard": {
+      "title": "读取页面内容",
+      "reading": "读取中",
+      "done": "已读取",
+      "failed": "未读取"
     }
   },
   "classroomComplete": {
@@ -470,6 +651,23 @@
     "deleteSceneConfirmAction": "删除",
     "collapseEditor": "收起",
     "quizConfigSummary": "{{count}} 道题",
+    "interactiveWidgetKind": "组件类型",
+    "widgetSimulation": "仿真模拟",
+    "widgetDiagram": "图示",
+    "widgetCode": "代码",
+    "widgetGame": "游戏",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "概念",
+    "interactiveConceptPlaceholder": "要探索的概念",
+    "pblConfigSummary": "项目",
+    "pblProjectTopic": "项目主题",
+    "pblProjectTopicPlaceholder": "项目主题",
+    "pblProjectDescription": "项目描述",
+    "pblProjectDescriptionPlaceholder": "学生将完成的项目",
+    "pblTargetSkills": "目标技能",
+    "pblAddSkill": "添加技能",
+    "widgetProceduralSkill": "操作技能",
+    "removeSkill": "移除技能",
     "dragSceneHint": "拖动排序；或聚焦后按 Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "删除场景",
     "backToRequirements": "返回修改需求",
@@ -1104,7 +1302,8 @@
     "viewDocs": "API 文档",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "服务端已配置搜索 API Key",
-    "optional": "可选"
+    "optional": "可选",
+    "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。"
   },
   "profile": {
     "title": "个人资料",

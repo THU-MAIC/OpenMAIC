@@ -157,7 +157,8 @@
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit Fullscreen",
     "editCourse": "Edit course",
-    "doneEditing": "Done editing"
+    "doneEditing": "Done editing",
+    "proModeDisabledHint": "Editing isn't available on this page — open a course slide to edit with Pro mode."
   },
   "edit": {
     "proMode": "Pro",
@@ -220,6 +221,186 @@
       "deckLabel": "Scenes",
       "moreActions": "More actions",
       "rename": "Rename"
+    },
+    "zorder": {
+      "toFront": "Bring to front",
+      "toBack": "Send to back"
+    },
+    "image": {
+      "replace": "Replace image",
+      "flipH": "Flip horizontal",
+      "flipV": "Flip vertical"
+    },
+    "background": {
+      "label": "Background",
+      "solid": "Solid",
+      "image": "Image"
+    },
+    "quiz": {
+      "addQuestion": "Add question",
+      "reorder": "Drag to reorder",
+      "deleteQuestion": "Delete question",
+      "untitledQuestion": "Untitled question",
+      "questionLabel": "Question",
+      "questionPlaceholder": "Enter the question…",
+      "typeLabel": "Type",
+      "pointsLabel": "Points",
+      "optionsLabel": "Options",
+      "optionPlaceholder": "Option text",
+      "addOption": "Add option",
+      "deleteOption": "Remove option",
+      "markCorrect": "Mark as correct answer",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "analysisLabel": "Explanation",
+      "analysisPlaceholder": "Shown after the question is graded…",
+      "commentPromptLabel": "Grading guidance",
+      "commentPromptPlaceholder": "How should this open response be graded?",
+      "empty": "No questions yet",
+      "emptyHint": "Use the “Add question” button above to create the first one.",
+      "type": {
+        "single": "Single choice",
+        "multiple": "Multiple choice",
+        "short_answer": "Short answer"
+      },
+      "shortAnswerGradingNote": "Short answers are always graded by AI from the guidance below.",
+      "hint": {
+        "emptyText": "Question {{n}}: add question text",
+        "fewOptions": "Question {{n}}: add at least two options",
+        "emptyOption": "Question {{n}}: an option label is empty",
+        "noCorrect": "Question {{n}}: mark a correct answer"
+      }
+    },
+    "cue": {
+      "speech": "Narration",
+      "spotlight": "Spotlight",
+      "laser": "Laser",
+      "whiteboardOpen": "Whiteboard",
+      "whiteboardText": "Writing",
+      "whiteboardShape": "Shape",
+      "whiteboardLatex": "Formula",
+      "whiteboardTable": "Table",
+      "action": "Action"
+    },
+    "element": {
+      "text": "Text",
+      "image": "Image",
+      "shape": "Shape",
+      "line": "Line",
+      "chart": "Chart",
+      "table": "Table",
+      "latex": "Formula",
+      "video": "Video",
+      "audio": "Audio",
+      "code": "Code"
+    },
+    "agent": {
+      "expand": "Expand AI assistant",
+      "collapse": "Collapse",
+      "stopped": "Stopped",
+      "emptyTitle": "What would you like to change?",
+      "emptyHint": "After editing this slide on the canvas, let AI regenerate narration that matches the content.",
+      "placeholder": "Describe your changes to this slide…",
+      "stop": "Stop generating",
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "interactive": {
+        "emptyTitle": "What needs fixing on this page?",
+        "lead": "Describe a bug on this interactive page — e.g. a button that does nothing — and I'll fix just that, keeping everything else.",
+        "placeholder": "Describe the bug on this interactive page…",
+        "boundary": "I make targeted fixes to the page; I won't rebuild the whole page. Switch scenes from the left nav."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "label": "Fix a bug on the page",
+          "examples": "“The start button does nothing”, “Panels overlap on mobile”"
+        }
+      },
+      "newConversation": "New conversation",
+      "thinking": "Thinking…",
+      "reasoning": "Reasoning",
+      "thought": "Thought for"
+    },
+    "timeline": {
+      "title": "Narration script",
+      "dragToAdd": "Drag to add",
+      "regenAllTts": "Regenerate all voiceover",
+      "voiceAll": "Voice all",
+      "counts": "{{speech}} narration · {{cue}} cues",
+      "panLeft": "Pan left",
+      "panRight": "Pan right",
+      "collapseAxis": "Collapse to axis",
+      "expandTrack": "Expand track",
+      "emptyHint": "Drag actions onto the axis to start, or let MAIC Agent generate narration.",
+      "speechPlaceholder": "Enter this narration line…",
+      "reorder": "Drag to reorder",
+      "moveLeft": "Move left",
+      "moveRight": "Move right",
+      "pickElement": "Pick element",
+      "bound": "Bound",
+      "fieldAction": "Action",
+      "fieldElement": "Element",
+      "fieldContent": "Content"
+    },
+    "tts": {
+      "preview": "Preview",
+      "regenerate": "Regenerate voiceover",
+      "statusReady": "Voiced",
+      "statusNone": "Not voiced",
+      "statusGenerating": "Generating",
+      "statusError": "Failed"
+    },
+    "pick": {
+      "pickFor": "Pick an element for \"{{label}}\"",
+      "pickHint": "Click a highlighted element or the list below · Esc to cancel",
+      "pageElements": "Page elements · {{count}}",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "noElements": "No locatable elements on this slide.",
+      "bindHint": "Click a highlighted element on the canvas to bind"
+    },
+    "regen": {
+      "title": "Regenerate narration",
+      "running": "Generating…",
+      "noActions": "No actions generated",
+      "actionsCount": "{{count}} actions",
+      "generating": "Generating",
+      "notGenerated": "Not generated",
+      "updated": "Updated"
+    },
+    "regenScene": {
+      "title": "Regenerate slide",
+      "generating": "Generating",
+      "updated": "Updated",
+      "notGenerated": "Not generated",
+      "elementsCount": "{{count}} elements",
+      "restore": "Restore previous",
+      "restored": "Restored",
+      "resume": "Resume"
+    },
+    "fixHtml": {
+      "title": "Fix interactive page",
+      "fixing": "Fixing",
+      "fixed": "Fixed",
+      "notFixed": "Not fixed",
+      "editsCount": "{{count}} edit(s)"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
     }
   },
   "classroomComplete": {
@@ -470,6 +651,23 @@
     "deleteSceneConfirmAction": "Delete",
     "collapseEditor": "Collapse",
     "quizConfigSummary": "{{count}} questions",
+    "interactiveWidgetKind": "Widget kind",
+    "widgetSimulation": "Simulation",
+    "widgetDiagram": "Diagram",
+    "widgetCode": "Code",
+    "widgetGame": "Game",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "Concept",
+    "interactiveConceptPlaceholder": "Concept to explore",
+    "pblConfigSummary": "Project",
+    "pblProjectTopic": "Project topic",
+    "pblProjectTopicPlaceholder": "Project topic",
+    "pblProjectDescription": "Description",
+    "pblProjectDescriptionPlaceholder": "What students will build",
+    "pblTargetSkills": "Target skills",
+    "pblAddSkill": "Add skill",
+    "widgetProceduralSkill": "Procedural skill",
+    "removeSkill": "Remove skill",
     "dragSceneHint": "Drag to reorder; or focus and press Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "Delete scene",
     "backToRequirements": "Back to requirements",
@@ -1104,7 +1302,8 @@
     "viewDocs": "API Docs",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Server-side search API key is configured",
-    "optional": "Optional"
+    "optional": "Optional",
+    "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio."
   },
   "profile": {
     "title": "Profile",

@@ -206,6 +206,186 @@
       "deckLabel": "Cenas",
       "moreActions": "Mais ações",
       "rename": "Renomear"
+    },
+    "zorder": {
+      "toFront": "Trazer para a frente",
+      "toBack": "Enviar para trás"
+    },
+    "image": {
+      "replace": "Substituir imagem",
+      "flipH": "Inverter horizontalmente",
+      "flipV": "Inverter verticalmente"
+    },
+    "background": {
+      "label": "Fundo",
+      "solid": "Cor sólida",
+      "image": "Imagem"
+    },
+    "quiz": {
+      "addQuestion": "Adicionar pergunta",
+      "reorder": "Arraste para reordenar",
+      "deleteQuestion": "Excluir pergunta",
+      "untitledQuestion": "Pergunta sem título",
+      "questionLabel": "Pergunta",
+      "questionPlaceholder": "Digite a pergunta…",
+      "typeLabel": "Tipo",
+      "pointsLabel": "Pontos",
+      "optionsLabel": "Opções",
+      "optionPlaceholder": "Texto da opção",
+      "addOption": "Adicionar opção",
+      "deleteOption": "Remover opção",
+      "markCorrect": "Marcar como correta",
+      "moveUp": "Mover para cima",
+      "moveDown": "Mover para baixo",
+      "analysisLabel": "Explicação",
+      "analysisPlaceholder": "Exibida após a correção…",
+      "commentPromptLabel": "Orientação de correção",
+      "commentPromptPlaceholder": "Como esta resposta aberta deve ser avaliada?",
+      "empty": "Nenhuma pergunta ainda",
+      "emptyHint": "Use “Adicionar pergunta” acima para criar a primeira.",
+      "type": {
+        "single": "Escolha única",
+        "multiple": "Múltipla escolha",
+        "short_answer": "Resposta curta"
+      },
+      "shortAnswerGradingNote": "Respostas curtas são sempre avaliadas por IA com base na orientação abaixo.",
+      "hint": {
+        "emptyText": "Pergunta {{n}}: adicione o texto da pergunta",
+        "fewOptions": "Pergunta {{n}}: adicione ao menos duas opções",
+        "emptyOption": "Pergunta {{n}}: há uma opção vazia",
+        "noCorrect": "Pergunta {{n}}: marque a resposta correta"
+      }
+    },
+    "cue": {
+      "speech": "Narração",
+      "spotlight": "Destaque",
+      "laser": "Laser",
+      "whiteboardOpen": "Quadro",
+      "whiteboardText": "Escrita",
+      "whiteboardShape": "Forma",
+      "whiteboardLatex": "Fórmula",
+      "whiteboardTable": "Tabela",
+      "action": "Ação"
+    },
+    "element": {
+      "text": "Texto",
+      "image": "Imagem",
+      "shape": "Forma",
+      "line": "Linha",
+      "chart": "Gráfico",
+      "table": "Tabela",
+      "latex": "Fórmula",
+      "video": "Vídeo",
+      "audio": "Áudio",
+      "code": "Código"
+    },
+    "agent": {
+      "expand": "Expandir assistente de IA",
+      "collapse": "Recolher",
+      "stopped": "Interrompido",
+      "emptyTitle": "O que você gostaria de mudar?",
+      "emptyHint": "Depois de editar este slide no canvas, deixe a IA regenerar a narração correspondente ao conteúdo.",
+      "placeholder": "Descreva suas alterações neste slide…",
+      "stop": "Parar geração",
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "examples": "\"O botão de iniciar não faz nada\", \"Os painéis se sobrepõem no celular\"",
+          "label": "Corrigir um bug na página"
+        }
+      },
+      "newConversation": "New conversation",
+      "reasoning": "Raciocínio",
+      "thought": "Pensou por",
+      "interactive": {
+        "boundary": "Faço correções pontuais na página; não recrio a página inteira. Troque de cena pela navegação à esquerda.",
+        "emptyTitle": "O que precisa ser corrigido nesta página?",
+        "lead": "Descreva um bug nesta página interativa — por exemplo, um botão que não faz nada — e eu corrijo apenas isso, mantendo o resto.",
+        "placeholder": "Descreva o bug desta página interativa…"
+      },
+      "thinking": "Pensando…"
+    },
+    "timeline": {
+      "title": "Roteiro de narração",
+      "dragToAdd": "Arraste para adicionar",
+      "regenAllTts": "Regenerar toda a narração",
+      "voiceAll": "Narrar tudo",
+      "counts": "{{speech}} narração · {{cue}} ações",
+      "panLeft": "Mover para a esquerda",
+      "panRight": "Mover para a direita",
+      "collapseAxis": "Recolher para o eixo",
+      "expandTrack": "Expandir trilha",
+      "emptyHint": "Arraste as ações para o eixo para começar, ou deixe o MAIC Agent gerar a narração.",
+      "speechPlaceholder": "Digite esta linha de narração…",
+      "reorder": "Arraste para reordenar",
+      "moveLeft": "Mover à esquerda",
+      "moveRight": "Mover à direita",
+      "pickElement": "Escolher elemento",
+      "bound": "Vinculado",
+      "fieldAction": "Ação",
+      "fieldElement": "Elemento",
+      "fieldContent": "Conteúdo"
+    },
+    "tts": {
+      "preview": "Pré-visualizar",
+      "regenerate": "Regenerar narração",
+      "statusReady": "Narrado",
+      "statusNone": "Sem narração",
+      "statusGenerating": "Gerando",
+      "statusError": "Falhou"
+    },
+    "pick": {
+      "pickFor": "Escolha um elemento para \"{{label}}\"",
+      "pickHint": "Clique em um elemento destacado ou na lista abaixo · Esc para cancelar",
+      "pageElements": "Elementos da página · {{count}}",
+      "expand": "Expandir",
+      "collapse": "Recolher",
+      "noElements": "Nenhum elemento localizável neste slide.",
+      "bindHint": "Clique em um elemento destacado no canvas para vincular"
+    },
+    "regen": {
+      "title": "Regenerar narração",
+      "running": "Gerando…",
+      "noActions": "Nenhuma ação gerada",
+      "actionsCount": "{{count}} ações",
+      "generating": "Gerando",
+      "notGenerated": "Não gerado",
+      "updated": "Atualizado"
+    },
+    "regenScene": {
+      "title": "Regenerar slide",
+      "generating": "Gerando",
+      "updated": "Atualizado",
+      "notGenerated": "Não gerado",
+      "elementsCount": "{{count}} elementos",
+      "restore": "Restaurar anterior",
+      "restored": "Restaurado",
+      "resume": "Refazer"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
+    },
+    "fixHtml": {
+      "editsCount": "{{count}} edição(ões)",
+      "fixed": "Corrigido",
+      "fixing": "Corrigindo",
+      "notFixed": "Não corrigido",
+      "title": "Corrigir página interativa"
     }
   },
   "stage": {
@@ -220,7 +400,8 @@
     "fullscreen": "Tela cheia",
     "exitFullscreen": "Sair da tela cheia",
     "editCourse": "Editar curso",
-    "doneEditing": "Concluir edição"
+    "doneEditing": "Concluir edição",
+    "proModeDisabledHint": "A edição não está disponível nesta página — abra um slide do curso para editar no modo Pro."
   },
   "classroomComplete": {
     "title": "Curso concluído",
@@ -470,6 +651,23 @@
     "deleteSceneConfirmAction": "Excluir",
     "collapseEditor": "Recolher",
     "quizConfigSummary": "{{count}} questões",
+    "interactiveWidgetKind": "Tipo de widget",
+    "widgetSimulation": "Simulação",
+    "widgetDiagram": "Diagrama",
+    "widgetCode": "Código",
+    "widgetGame": "Jogo",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "Conceito",
+    "interactiveConceptPlaceholder": "Conceito a explorar",
+    "pblConfigSummary": "Projeto",
+    "pblProjectTopic": "Tema do projeto",
+    "pblProjectTopicPlaceholder": "Tema do projeto",
+    "pblProjectDescription": "Descrição",
+    "pblProjectDescriptionPlaceholder": "O que os alunos vão criar",
+    "pblTargetSkills": "Habilidades-alvo",
+    "pblAddSkill": "Adicionar habilidade",
+    "widgetProceduralSkill": "Habilidade prática",
+    "removeSkill": "Remover habilidade",
     "dragSceneHint": "Arraste para reordenar; ou foque e pressione Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "Excluir cena",
     "backToRequirements": "Voltar aos objetivos",
@@ -1104,7 +1302,8 @@
     "viewDocs": "Documentação da API",
     "webSearchBaseUrl": "URL Base",
     "webSearchServerConfigured": "Chave de API de busca configurada no servidor",
-    "optional": "Opcional"
+    "optional": "Opcional",
+    "ttsBrowserNativeTimelineNotice": "O TTS nativo do navegador não suporta os recursos de áudio da linha do tempo do editor (pré-visualizar, regenerar e narração em lote). Mude para um provedor de TTS gerenciado para gerar e gerenciar o áudio de cada linha."
   },
   "profile": {
     "title": "Perfil",

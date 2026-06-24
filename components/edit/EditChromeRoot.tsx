@@ -3,9 +3,12 @@
 import { useEffect } from 'react';
 import { EditShell } from '@/components/edit/EditShell';
 import { SlideNavRail } from '@/components/edit/SlideNavRail';
+import { AgentPanel } from '@/components/edit/AgentPanel/AgentPanel';
+import { ActionsBar } from '@/components/edit/ActionsBar/ActionsBar';
 import { HeaderControls } from '@/components/stage/header-controls';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
+import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import type { Scene } from '@/lib/types/stage';
 
 interface EditChromeRootProps {
@@ -59,10 +62,28 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     void preloadEditor();
   }, []);
 
+  // The narration timeline (ActionsBar) is a slide-narration authoring tool — it
+  // only applies to scene types with a registered editor surface (slide/quiz).
+  // Read-only canvas scenes (no surface → NOOP + the "· view-only" badge, e.g.
+  // interactive/PBL) get no timeline.
+  const authoringEnabled = !!sceneEditorRegistry.resolve(scene.type);
+
+  // The AI edit panel (AgentPanel) is decoupled from the canvas surface: it
+  // renders wherever the agent has an edit capability — slides (regenerate) AND
+  // interactive scenes (edit_interactive_html), even though the interactive canvas
+  // itself stays view-only. PBL has neither a surface nor an agent edit tool.
+  const agentEnabled = authoringEnabled || scene.type === 'interactive';
+
   return (
     <EditShell
       scene={scene}
       leftRail={<SlideNavRail />}
+      rightRail={
+        agentEnabled ? (
+          <AgentPanel scene={{ id: scene.id, title: scene.title, type: scene.type }} />
+        ) : undefined
+      }
+      bottomRail={authoringEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
       commandTrailing={
         <HeaderControls
           mode="edit"

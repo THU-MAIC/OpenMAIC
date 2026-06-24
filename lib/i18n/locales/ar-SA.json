@@ -157,7 +157,8 @@
     "fullscreen": "ملء الشاشة",
     "exitFullscreen": "الخروج من ملء الشاشة",
     "editCourse": "تحرير الدورة",
-    "doneEditing": "إنهاء التحرير"
+    "doneEditing": "إنهاء التحرير",
+    "proModeDisabledHint": "التحرير غير متاح في هذه الصفحة — افتح شريحة من الدورة للتحرير باستخدام وضع Pro."
   },
   "edit": {
     "proMode": "احترافي",
@@ -220,6 +221,186 @@
       "deckLabel": "المشاهد",
       "moreActions": "إجراءات إضافية",
       "rename": "إعادة تسمية"
+    },
+    "zorder": {
+      "toFront": "إحضار إلى الأمام",
+      "toBack": "إرسال إلى الخلف"
+    },
+    "image": {
+      "replace": "استبدال الصورة",
+      "flipH": "قلب أفقي",
+      "flipV": "قلب رأسي"
+    },
+    "background": {
+      "label": "الخلفية",
+      "solid": "لون خالص",
+      "image": "صورة"
+    },
+    "quiz": {
+      "addQuestion": "إضافة سؤال",
+      "reorder": "اسحب لإعادة الترتيب",
+      "deleteQuestion": "حذف السؤال",
+      "untitledQuestion": "سؤال بلا عنوان",
+      "questionLabel": "السؤال",
+      "questionPlaceholder": "أدخل السؤال…",
+      "typeLabel": "النوع",
+      "pointsLabel": "النقاط",
+      "optionsLabel": "الخيارات",
+      "optionPlaceholder": "نص الخيار",
+      "addOption": "إضافة خيار",
+      "deleteOption": "حذف الخيار",
+      "markCorrect": "تحديد كإجابة صحيحة",
+      "moveUp": "تحريك لأعلى",
+      "moveDown": "تحريك لأسفل",
+      "analysisLabel": "الشرح",
+      "analysisPlaceholder": "يظهر بعد التصحيح…",
+      "commentPromptLabel": "إرشادات التصحيح",
+      "commentPromptPlaceholder": "كيف ينبغي تقييم هذه الإجابة المفتوحة؟",
+      "empty": "لا توجد أسئلة بعد",
+      "emptyHint": "استخدم «إضافة سؤال» أعلاه لإنشاء أول سؤال.",
+      "type": {
+        "single": "اختيار واحد",
+        "multiple": "اختيار متعدد",
+        "short_answer": "إجابة قصيرة"
+      },
+      "shortAnswerGradingNote": "تُقيّم الإجابات القصيرة دائمًا بواسطة الذكاء الاصطناعي وفق إرشادات التصحيح أدناه.",
+      "hint": {
+        "emptyText": "السؤال {{n}}: أضف نص السؤال",
+        "fewOptions": "السؤال {{n}}: يلزم خياران على الأقل",
+        "emptyOption": "السؤال {{n}}: يوجد خيار فارغ",
+        "noCorrect": "السؤال {{n}}: حدّد الإجابة الصحيحة"
+      }
+    },
+    "cue": {
+      "speech": "السرد",
+      "spotlight": "تسليط الضوء",
+      "laser": "ليزر",
+      "whiteboardOpen": "السبورة",
+      "whiteboardText": "الكتابة",
+      "whiteboardShape": "شكل",
+      "whiteboardLatex": "صيغة",
+      "whiteboardTable": "جدول",
+      "action": "إجراء"
+    },
+    "element": {
+      "text": "نص",
+      "image": "صورة",
+      "shape": "شكل",
+      "line": "خط",
+      "chart": "مخطط",
+      "table": "جدول",
+      "latex": "صيغة",
+      "video": "فيديو",
+      "audio": "صوت",
+      "code": "شفرة"
+    },
+    "agent": {
+      "expand": "توسيع مساعد الذكاء الاصطناعي",
+      "collapse": "طي",
+      "stopped": "تم الإيقاف",
+      "emptyTitle": "ما الذي تريد تغييره؟",
+      "emptyHint": "بعد تحرير هذه الشريحة على اللوحة، دع الذكاء الاصطناعي يعيد إنشاء سرد يطابق المحتوى.",
+      "placeholder": "صف تغييراتك على هذه الشريحة…",
+      "stop": "إيقاف التوليد",
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "examples": "«زر البدء لا يفعل شيئًا»، «تتداخل اللوحات على الجوال»",
+          "label": "إصلاح خطأ في الصفحة"
+        }
+      },
+      "newConversation": "New conversation",
+      "reasoning": "الاستدلال",
+      "thought": "فكّر لمدة",
+      "interactive": {
+        "boundary": "أُجري إصلاحات محدّدة على الصفحة، ولا أعيد بناء الصفحة بالكامل. بدّل المشاهد من شريط التنقّل على اليسار.",
+        "emptyTitle": "ما الذي يحتاج إلى إصلاح في هذه الصفحة؟",
+        "lead": "صِف خطأً في هذه الصفحة التفاعلية — مثل زر لا يفعل شيئًا — وسأُصلح ذلك فقط مع الإبقاء على كل شيء آخر.",
+        "placeholder": "صِف الخطأ في هذه الصفحة التفاعلية…"
+      },
+      "thinking": "جارٍ التفكير…"
+    },
+    "timeline": {
+      "title": "نص السرد",
+      "dragToAdd": "اسحب للإضافة",
+      "regenAllTts": "إعادة توليد كل التعليق الصوتي",
+      "voiceAll": "صوّت الكل",
+      "counts": "{{speech}} سرد · {{cue}} إجراءات",
+      "panLeft": "تحريك لليسار",
+      "panRight": "تحريك لليمين",
+      "collapseAxis": "طي إلى المحور",
+      "expandTrack": "توسيع المسار",
+      "emptyHint": "اسحب الإجراءات إلى المحور للبدء، أو دع MAIC Agent يولّد السرد.",
+      "speechPlaceholder": "أدخل سطر السرد هذا…",
+      "reorder": "اسحب لإعادة الترتيب",
+      "moveLeft": "تحريك لليسار",
+      "moveRight": "تحريك لليمين",
+      "pickElement": "اختر عنصرًا",
+      "bound": "مرتبط",
+      "fieldAction": "إجراء",
+      "fieldElement": "عنصر",
+      "fieldContent": "المحتوى"
+    },
+    "tts": {
+      "preview": "معاينة",
+      "regenerate": "إعادة توليد التعليق الصوتي",
+      "statusReady": "مُصوّت",
+      "statusNone": "غير مُصوّت",
+      "statusGenerating": "جارٍ التوليد",
+      "statusError": "فشل"
+    },
+    "pick": {
+      "pickFor": "اختر عنصرًا لـ \"{{label}}\"",
+      "pickHint": "انقر على عنصر مميز أو القائمة أدناه · Esc للإلغاء",
+      "pageElements": "عناصر الصفحة · {{count}}",
+      "expand": "توسيع",
+      "collapse": "طي",
+      "noElements": "لا توجد عناصر يمكن تحديدها في هذه الشريحة.",
+      "bindHint": "انقر على عنصر مميز على اللوحة للربط"
+    },
+    "regen": {
+      "title": "إعادة توليد السرد",
+      "running": "جارٍ التوليد…",
+      "noActions": "لم يتم توليد إجراءات",
+      "actionsCount": "{{count}} إجراءات",
+      "generating": "جارٍ التوليد",
+      "notGenerated": "لم يُولّد",
+      "updated": "تم التحديث"
+    },
+    "regenScene": {
+      "title": "إعادة توليد الشريحة",
+      "generating": "جارٍ التوليد",
+      "updated": "تم التحديث",
+      "notGenerated": "لم يُولّد",
+      "elementsCount": "{{count}} عناصر",
+      "restore": "استعادة السابق",
+      "restored": "تمت الاستعادة",
+      "resume": "إعادة"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
+    },
+    "fixHtml": {
+      "editsCount": "{{count}} تعديل",
+      "fixed": "تم الإصلاح",
+      "fixing": "جارٍ الإصلاح",
+      "notFixed": "لم يُصلَح",
+      "title": "إصلاح الصفحة التفاعلية"
     }
   },
   "classroomComplete": {
@@ -470,6 +651,23 @@
     "deleteSceneConfirmAction": "حذف",
     "collapseEditor": "طيّ",
     "quizConfigSummary": "{{count}} أسئلة",
+    "interactiveWidgetKind": "نوع العنصر التفاعلي",
+    "widgetSimulation": "محاكاة",
+    "widgetDiagram": "مخطط",
+    "widgetCode": "شيفرة برمجية",
+    "widgetGame": "لعبة",
+    "widgetVisualization3d": "ثلاثي الأبعاد",
+    "interactiveConcept": "المفهوم",
+    "interactiveConceptPlaceholder": "المفهوم المراد استكشافه",
+    "pblConfigSummary": "المشروع",
+    "pblProjectTopic": "موضوع المشروع",
+    "pblProjectTopicPlaceholder": "موضوع المشروع",
+    "pblProjectDescription": "الوصف",
+    "pblProjectDescriptionPlaceholder": "ما الذي سينشئه الطلاب",
+    "pblTargetSkills": "المهارات المستهدفة",
+    "pblAddSkill": "إضافة مهارة",
+    "widgetProceduralSkill": "مهارة إجرائية",
+    "removeSkill": "إزالة المهارة",
     "dragSceneHint": "اسحب لإعادة الترتيب أو ركّز ثم اضغط Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "حذف المشهد",
     "backToRequirements": "العودة إلى المتطلبات",
@@ -1104,7 +1302,8 @@
     "viewDocs": "مستندات API",
     "webSearchBaseUrl": "العنوان الأساسي",
     "webSearchServerConfigured": "تم تكوين مفتاح API للبحث على الخادم",
-    "optional": "اختياري"
+    "optional": "اختياري",
+    "ttsBrowserNativeTimelineNotice": "لا يدعم تحويل النص إلى كلام المدمج في المتصفح ميزات الصوت في الخط الزمني للمحرر (المعاينة وإعادة التوليد والتعليق الصوتي الجماعي). بدّل إلى مزود TTS مُدار لتوليد صوت كل سطر وإدارته."
   },
   "profile": {
     "title": "الملف الشخصي",

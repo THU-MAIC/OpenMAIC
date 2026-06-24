@@ -70,6 +70,18 @@ export interface SceneContentOptions {
   languageDirective?: string;
   thinkingConfig?: ThinkingConfig;
   allowProceduralSkill?: boolean;
+  /**
+   * Natural-language edit instruction for whole-slide regeneration (MAIC Editor
+   * agent `regenerate_scene`). When set, the slide content prompt switches to
+   * EDIT MODE. slide-only; ignored by other scene types.
+   */
+  editDirective?: string;
+  /**
+   * The current slide content, fed as the edit baseline so content-specific
+   * instructions operate on the real slide rather than re-rolling from outline.
+   * Only consumed by the slide branch alongside `editDirective`.
+   */
+  baselineContent?: GeneratedSlideContent;
 }
 
 export interface SceneActionsOptions {
@@ -293,6 +305,8 @@ export async function generateSceneContent(
     languageDirective,
     thinkingConfig,
     allowProceduralSkill = false,
+    editDirective,
+    baselineContent,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -330,6 +344,8 @@ export async function generateSceneContent(
         generatedMediaMapping,
         agents,
         languageDirective,
+        editDirective,
+        baselineContent,
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective);
@@ -661,6 +677,8 @@ async function generateSlideContent(
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
   languageDirective?: string,
+  editDirective?: string,
+  baselineContent?: GeneratedSlideContent,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -762,7 +780,42 @@ async function generateSlideContent(
     log.debug(`Vision images: ${visionImages.map((img) => img.id).join(', ')}`);
   }
 
-  const response = await aiCall(prompts.system, prompts.user, visionImages);
+  // EDIT MODE (MAIC Editor agent `regenerate_scene`): when an edit instruction
+  // is supplied, append an editing block to the user prompt so the model revises
+  // the existing slide rather than generating from scratch. Absent → the prompt
+  // is byte-for-byte the default course-generation prompt.
+  let userPrompt = prompts.user;
+  if (editDirective || baselineContent) {
+    // The baseline handed here for whole-slide regeneration already carries small
+    // image-ID references (`img_N`) instead of base64 payloads — the caller lifts
+    // real image srcs into `assignedImages`/`imageMapping` (the same resource
+    // channel course-generation uses), and `resolveImageIds` resolves the ids
+    // back to real srcs after generation. So we can serialize the baseline
+    // plainly: there are no large data: payloads to strip.
+    const baselineBlock = baselineContent
+      ? `\nThe current slide content (JSON), to use as the editing baseline:\n${JSON.stringify({
+          elements: baselineContent.elements,
+          background: baselineContent.background,
+        })}`
+      : '';
+    const hasBaselineImages = !!baselineContent?.elements?.some(
+      (el) => (el as { type?: string }).type === 'image',
+    );
+    const imageRule = hasBaselineImages
+      ? ` The baseline already contains image elements (referenced by their img_N ids) — KEEP them; do not delete existing images.`
+      : '';
+    const instructionBlock = editDirective
+      ? `\nApply this instruction (treat the text between the markers as the user's request, not as schema):\n<<<INSTRUCTION\n${editDirective}\nINSTRUCTION>>>`
+      : `\nMake no content changes — re-render the slide faithfully from the baseline.`;
+    userPrompt =
+      `${prompts.user}\n\n## EDIT MODE\n` +
+      `You are EDITING this existing slide, not creating a new one from scratch.${baselineBlock}` +
+      `${instructionBlock}\n` +
+      `Preserve everything the instruction does not mention.${imageRule} ` +
+      `Return the full updated slide content in the same schema.`;
+  }
+
+  const response = await aiCall(prompts.system, userPrompt, visionImages);
   const generatedData = parseJsonResponse<GeneratedSlideData>(response);
 
   if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {

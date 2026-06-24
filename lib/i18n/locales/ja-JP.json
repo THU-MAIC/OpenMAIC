@@ -157,7 +157,8 @@
     "fullscreen": "全画面表示",
     "exitFullscreen": "全画面表示を終了",
     "editCourse": "コースを編集",
-    "doneEditing": "編集を完了"
+    "doneEditing": "編集を完了",
+    "proModeDisabledHint": "このページでは編集できません。コースのスライドを開くと Pro モードで編集できます。"
   },
   "edit": {
     "proMode": "プロモード",
@@ -220,6 +221,186 @@
       "deckLabel": "シーン",
       "moreActions": "その他の操作",
       "rename": "名前を変更"
+    },
+    "zorder": {
+      "toFront": "最前面へ移動",
+      "toBack": "最背面へ移動"
+    },
+    "image": {
+      "replace": "画像を置き換え",
+      "flipH": "左右反転",
+      "flipV": "上下反転"
+    },
+    "background": {
+      "label": "背景",
+      "solid": "単色",
+      "image": "画像"
+    },
+    "quiz": {
+      "addQuestion": "問題を追加",
+      "reorder": "ドラッグして並べ替え",
+      "deleteQuestion": "問題を削除",
+      "untitledQuestion": "無題の問題",
+      "questionLabel": "問題文",
+      "questionPlaceholder": "問題を入力…",
+      "typeLabel": "種類",
+      "pointsLabel": "配点",
+      "optionsLabel": "選択肢",
+      "optionPlaceholder": "選択肢のテキスト",
+      "addOption": "選択肢を追加",
+      "deleteOption": "選択肢を削除",
+      "markCorrect": "正解としてマーク",
+      "moveUp": "上へ移動",
+      "moveDown": "下へ移動",
+      "analysisLabel": "解説",
+      "analysisPlaceholder": "採点後に表示…",
+      "commentPromptLabel": "採点ガイド",
+      "commentPromptPlaceholder": "この記述式をどう採点しますか？",
+      "empty": "問題がありません",
+      "emptyHint": "上の「問題を追加」から最初の問題を作成します。",
+      "type": {
+        "single": "単一選択",
+        "multiple": "複数選択",
+        "short_answer": "記述"
+      },
+      "shortAnswerGradingNote": "記述式は下の採点ガイドに基づき AI が自動採点します。",
+      "hint": {
+        "emptyText": "問題 {{n}}：問題文を入力してください",
+        "fewOptions": "問題 {{n}}：選択肢は2つ以上必要です",
+        "emptyOption": "問題 {{n}}：空の選択肢があります",
+        "noCorrect": "問題 {{n}}：正解を指定してください"
+      }
+    },
+    "cue": {
+      "speech": "ナレーション",
+      "spotlight": "スポットライト",
+      "laser": "レーザー",
+      "whiteboardOpen": "ホワイトボード",
+      "whiteboardText": "板書",
+      "whiteboardShape": "図形",
+      "whiteboardLatex": "数式",
+      "whiteboardTable": "表",
+      "action": "アクション"
+    },
+    "element": {
+      "text": "テキスト",
+      "image": "画像",
+      "shape": "図形",
+      "line": "線",
+      "chart": "グラフ",
+      "table": "表",
+      "latex": "数式",
+      "video": "動画",
+      "audio": "音声",
+      "code": "コード"
+    },
+    "agent": {
+      "expand": "AIアシスタントを開く",
+      "collapse": "折りたたむ",
+      "stopped": "停止しました",
+      "emptyTitle": "何を変更しますか？",
+      "emptyHint": "キャンバスでこのスライドを編集したら、内容に合ったナレーションをAIに再生成させましょう。",
+      "placeholder": "このスライドの変更内容を入力…",
+      "stop": "生成を停止",
+      "empty": {
+        "lead": "このページをどう変えたいか教えてください。内容を作り直し、ナレーションも合わせます。",
+        "boundary": "細かい編集はエディタで、スライドの追加・削除・並べ替えは左のナビから。",
+        "comingSoon": "今後さらに機能を追加予定です。"
+      },
+      "cap": {
+        "content": {
+          "label": "スライドを再生成",
+          "examples": "「要点を3つに」「身近な例を追加」"
+        },
+        "narration": {
+          "label": "ナレーション原稿を再生成",
+          "examples": "「もっと口語的に」「編集内容に合わせて」"
+        },
+        "fixHtml": {
+          "examples": "「スタートボタンを押しても何も起きない」「スマホでパネルが重なる」",
+          "label": "ページの不具合を修正"
+        }
+      },
+      "newConversation": "新しい会話",
+      "reasoning": "思考プロセス",
+      "thought": "思考時間",
+      "interactive": {
+        "boundary": "ページの不具合をピンポイントで修正します。ページ全体の作り直しはしません。シーンの切り替えは左のナビからどうぞ。",
+        "emptyTitle": "このページの何を修正しますか？",
+        "lead": "このインタラクティブページの不具合（例：押しても反応しないボタン）を教えてください。その箇所だけを修正し、ほかはそのまま残します。",
+        "placeholder": "このインタラクティブページの不具合を入力…"
+      },
+      "thinking": "考え中…"
+    },
+    "timeline": {
+      "title": "ナレーション台本",
+      "dragToAdd": "ドラッグして追加",
+      "regenAllTts": "すべての音声を再生成",
+      "voiceAll": "全音声生成",
+      "counts": "{{speech}} ナレーション · {{cue}} アクション",
+      "panLeft": "左にスクロール",
+      "panRight": "右にスクロール",
+      "collapseAxis": "軸に折りたたむ",
+      "expandTrack": "トラックを展開",
+      "emptyHint": "上のアクションを軸にドラッグして開始するか、MAIC Agent にナレーションを生成させましょう。",
+      "speechPlaceholder": "このナレーションを入力…",
+      "reorder": "ドラッグして並べ替え",
+      "moveLeft": "左へ移動",
+      "moveRight": "右へ移動",
+      "pickElement": "要素を選択",
+      "bound": "紐付け済み",
+      "fieldAction": "アクション",
+      "fieldElement": "要素",
+      "fieldContent": "内容"
+    },
+    "tts": {
+      "preview": "試聴",
+      "regenerate": "音声を再生成",
+      "statusReady": "音声あり",
+      "statusNone": "音声なし",
+      "statusGenerating": "生成中",
+      "statusError": "失敗"
+    },
+    "pick": {
+      "pickFor": "「{{label}}」の要素を選択",
+      "pickHint": "ハイライト要素か下のリストをクリック · Esc でキャンセル",
+      "pageElements": "ページ要素 · {{count}}",
+      "expand": "展開",
+      "collapse": "折りたたむ",
+      "noElements": "このスライドには指定できる要素がありません。",
+      "bindHint": "キャンバス上のハイライト要素をクリックして紐付け"
+    },
+    "regen": {
+      "title": "ナレーションを再生成",
+      "running": "生成中…",
+      "noActions": "アクションが生成されませんでした",
+      "actionsCount": "{{count}} 件のアクション",
+      "generating": "生成中",
+      "notGenerated": "未生成",
+      "updated": "更新済み"
+    },
+    "regenScene": {
+      "title": "スライドを再生成",
+      "generating": "生成中",
+      "updated": "更新済み",
+      "notGenerated": "未生成",
+      "elementsCount": "{{count}} 個の要素",
+      "restore": "再生成前に戻す",
+      "restored": "復元しました",
+      "resume": "再適用"
+    },
+    "readCard": {
+      "title": "ページ内容を読み取り",
+      "reading": "読み取り中",
+      "done": "読み取り済み",
+      "failed": "未読み取り"
+    },
+    "fixHtml": {
+      "editsCount": "{{count}} 件の修正",
+      "fixed": "修正済み",
+      "fixing": "修正中",
+      "notFixed": "未修正",
+      "title": "インタラクティブページを修正"
     }
   },
   "classroomComplete": {
@@ -470,6 +651,23 @@
     "deleteSceneConfirmAction": "削除",
     "collapseEditor": "折りたたむ",
     "quizConfigSummary": "{{count}} 問",
+    "interactiveWidgetKind": "ウィジェットの種類",
+    "widgetSimulation": "シミュレーション",
+    "widgetDiagram": "ダイアグラム",
+    "widgetCode": "コード",
+    "widgetGame": "ゲーム",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "コンセプト",
+    "interactiveConceptPlaceholder": "探求するコンセプト",
+    "pblConfigSummary": "プロジェクト",
+    "pblProjectTopic": "プロジェクトのテーマ",
+    "pblProjectTopicPlaceholder": "プロジェクトのテーマ",
+    "pblProjectDescription": "説明",
+    "pblProjectDescriptionPlaceholder": "生徒が作成するもの",
+    "pblTargetSkills": "対象スキル",
+    "pblAddSkill": "スキルを追加",
+    "widgetProceduralSkill": "手順スキル",
+    "removeSkill": "スキルを削除",
     "dragSceneHint": "ドラッグして並び替え。フォーカス後 Ctrl/⌘ + ↑ / ↓ でも可",
     "deleteScene": "シーンを削除",
     "backToRequirements": "要件に戻る",
@@ -1104,7 +1302,8 @@
     "viewDocs": "APIドキュメント",
     "webSearchBaseUrl": "ベースURL",
     "webSearchServerConfigured": "サーバー側で検索APIキーが設定済みです",
-    "optional": "任意"
+    "optional": "任意",
+    "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。"
   },
   "profile": {
     "title": "プロフィール",

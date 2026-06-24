@@ -157,7 +157,8 @@
     "fullscreen": "전체화면",
     "exitFullscreen": "전체화면 종료",
     "editCourse": "강좌 편집",
-    "doneEditing": "편집 완료"
+    "doneEditing": "편집 완료",
+    "proModeDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 Pro 모드로 편집할 수 있습니다."
   },
   "edit": {
     "proMode": "프로 모드",
@@ -220,6 +221,186 @@
       "deckLabel": "장면",
       "moreActions": "더 보기",
       "rename": "이름 바꾸기"
+    },
+    "cue": {
+      "speech": "내레이션",
+      "spotlight": "스포트라이트",
+      "laser": "레이저",
+      "whiteboardOpen": "화이트보드",
+      "whiteboardText": "판서",
+      "whiteboardShape": "도형",
+      "whiteboardLatex": "수식",
+      "whiteboardTable": "표",
+      "action": "동작"
+    },
+    "element": {
+      "text": "텍스트",
+      "image": "이미지",
+      "shape": "도형",
+      "line": "선",
+      "chart": "차트",
+      "table": "표",
+      "latex": "수식",
+      "video": "비디오",
+      "audio": "오디오",
+      "code": "코드"
+    },
+    "agent": {
+      "expand": "AI 어시스턴트 펼치기",
+      "collapse": "접기",
+      "stopped": "중지됨",
+      "emptyTitle": "무엇을 바꿀까요?",
+      "emptyHint": "캔버스에서 이 슬라이드를 편집한 뒤, 내용에 맞는 내레이션을 AI가 다시 생성하도록 하세요.",
+      "placeholder": "이 슬라이드에 대한 변경 사항을 설명하세요…",
+      "stop": "생성 중지",
+      "empty": {
+        "lead": "이 페이지를 어떻게 바꿀지 알려주세요. 내용을 다시 만들고 내레이션도 맞춥니다.",
+        "boundary": "세부 편집은 에디터에서, 슬라이드 추가 / 삭제 / 정렬은 왼쪽 내비에서.",
+        "comingSoon": "더 많은 기능이 곧 추가됩니다."
+      },
+      "cap": {
+        "content": {
+          "label": "슬라이드 다시 생성",
+          "examples": "“핵심 3가지로” “실생활 예시 추가”"
+        },
+        "narration": {
+          "label": "내레이션 스크립트 다시 생성",
+          "examples": "“좀 더 구어체로” “편집한 내용에 맞춰”"
+        },
+        "fixHtml": {
+          "examples": "\"시작 버튼을 눌러도 반응이 없음\", \"모바일에서 패널이 겹침\"",
+          "label": "페이지 버그 수정"
+        }
+      },
+      "newConversation": "새 대화",
+      "reasoning": "추론 과정",
+      "thought": "생각한 시간",
+      "interactive": {
+        "boundary": "페이지를 부분적으로만 수정하며, 페이지 전체를 다시 만들지 않습니다. 장면 전환은 왼쪽 내비게이션을 사용하세요.",
+        "emptyTitle": "이 페이지에서 무엇을 수정할까요?",
+        "lead": "이 인터랙티브 페이지의 버그(예: 눌러도 반응 없는 버튼)를 설명해 주세요. 해당 부분만 수정하고 나머지는 그대로 둡니다.",
+        "placeholder": "이 인터랙티브 페이지의 버그를 설명하세요…"
+      },
+      "thinking": "생각 중…"
+    },
+    "timeline": {
+      "title": "내레이션 스크립트",
+      "dragToAdd": "끌어서 추가",
+      "regenAllTts": "전체 음성 다시 생성",
+      "voiceAll": "전체 음성",
+      "counts": "내레이션 {{speech}}개 · 동작 {{cue}}개",
+      "panLeft": "왼쪽으로 이동",
+      "panRight": "오른쪽으로 이동",
+      "collapseAxis": "축으로 접기",
+      "expandTrack": "트랙 펼치기",
+      "emptyHint": "위의 동작을 축으로 끌어 시작하거나, MAIC Agent가 내레이션을 생성하도록 하세요.",
+      "speechPlaceholder": "이 내레이션을 입력하세요…",
+      "reorder": "끌어서 순서 변경",
+      "moveLeft": "왼쪽으로",
+      "moveRight": "오른쪽으로",
+      "pickElement": "요소 선택",
+      "bound": "연결됨",
+      "fieldAction": "동작",
+      "fieldElement": "요소",
+      "fieldContent": "내용"
+    },
+    "tts": {
+      "preview": "미리듣기",
+      "regenerate": "음성 다시 생성",
+      "statusReady": "음성 있음",
+      "statusNone": "음성 없음",
+      "statusGenerating": "생성 중",
+      "statusError": "실패"
+    },
+    "pick": {
+      "pickFor": "「{{label}}」에 사용할 요소 선택",
+      "pickHint": "강조된 요소 또는 아래 목록을 클릭 · Esc 취소",
+      "pageElements": "페이지 요소 · {{count}}",
+      "expand": "펼치기",
+      "collapse": "접기",
+      "noElements": "이 슬라이드에는 지정할 수 있는 요소가 없습니다.",
+      "bindHint": "캔버스에서 강조된 요소를 클릭하여 연결"
+    },
+    "regen": {
+      "title": "내레이션 다시 생성",
+      "running": "생성 중…",
+      "noActions": "동작이 생성되지 않음",
+      "actionsCount": "동작 {{count}}개",
+      "generating": "생성 중",
+      "notGenerated": "생성 안 됨",
+      "updated": "업데이트됨"
+    },
+    "regenScene": {
+      "title": "슬라이드 다시 생성",
+      "generating": "생성 중",
+      "updated": "업데이트됨",
+      "notGenerated": "생성 안 됨",
+      "elementsCount": "요소 {{count}}개",
+      "restore": "이전 상태로 복원",
+      "restored": "복원됨",
+      "resume": "다시 적용"
+    },
+    "background": {
+      "image": "이미지",
+      "label": "배경",
+      "solid": "단색"
+    },
+    "image": {
+      "flipH": "좌우 반전",
+      "flipV": "상하 반전",
+      "replace": "이미지 교체"
+    },
+    "quiz": {
+      "addOption": "선택지 추가",
+      "addQuestion": "문항 추가",
+      "analysisLabel": "해설",
+      "analysisPlaceholder": "문항이 채점된 후 표시됩니다…",
+      "commentPromptLabel": "채점 기준",
+      "commentPromptPlaceholder": "이 주관식 답안을 어떻게 채점해야 하나요?",
+      "deleteOption": "선택지 삭제",
+      "deleteQuestion": "문항 삭제",
+      "empty": "아직 문항이 없습니다",
+      "emptyHint": "위의 “문항 추가” 버튼으로 첫 문항을 만드세요.",
+      "markCorrect": "정답으로 표시",
+      "moveDown": "아래로 이동",
+      "moveUp": "위로 이동",
+      "optionPlaceholder": "선택지 내용",
+      "optionsLabel": "선택지",
+      "pointsLabel": "배점",
+      "questionLabel": "문항",
+      "questionPlaceholder": "문항을 입력하세요…",
+      "reorder": "끌어서 순서 변경",
+      "shortAnswerGradingNote": "주관식은 아래 기준에 따라 항상 AI가 채점합니다.",
+      "typeLabel": "유형",
+      "untitledQuestion": "제목 없는 문항",
+      "hint": {
+        "emptyOption": "문항 {{n}}: 선택지 내용이 비어 있습니다",
+        "emptyText": "문항 {{n}}: 문항 내용을 입력하세요",
+        "fewOptions": "문항 {{n}}: 선택지를 두 개 이상 추가하세요",
+        "noCorrect": "문항 {{n}}: 정답을 표시하세요"
+      },
+      "type": {
+        "multiple": "복수 선택",
+        "short_answer": "주관식",
+        "single": "단일 선택"
+      }
+    },
+    "zorder": {
+      "toFront": "맨 앞으로 가져오기",
+      "toBack": "맨 뒤로 보내기"
+    },
+    "readCard": {
+      "title": "페이지 내용 읽기",
+      "reading": "읽는 중",
+      "done": "읽음",
+      "failed": "읽지 못함"
+    },
+    "fixHtml": {
+      "editsCount": "수정 {{count}}건",
+      "fixed": "수정됨",
+      "fixing": "수정 중",
+      "notFixed": "수정 안 됨",
+      "title": "인터랙티브 페이지 수정"
     }
   },
   "classroomComplete": {
@@ -470,6 +651,23 @@
     "deleteSceneConfirmAction": "삭제",
     "collapseEditor": "접기",
     "quizConfigSummary": "{{count}}문제",
+    "interactiveWidgetKind": "위젯 종류",
+    "widgetSimulation": "시뮬레이션",
+    "widgetDiagram": "다이어그램",
+    "widgetCode": "코드",
+    "widgetGame": "게임",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "개념",
+    "interactiveConceptPlaceholder": "탐구할 개념",
+    "pblConfigSummary": "프로젝트",
+    "pblProjectTopic": "프로젝트 주제",
+    "pblProjectTopicPlaceholder": "프로젝트 주제",
+    "pblProjectDescription": "설명",
+    "pblProjectDescriptionPlaceholder": "학생이 만들 결과물",
+    "pblTargetSkills": "목표 역량",
+    "pblAddSkill": "역량 추가",
+    "widgetProceduralSkill": "절차 기술",
+    "removeSkill": "역량 제거",
     "dragSceneHint": "드래그하여 순서 변경, 또는 포커스 후 Ctrl/⌘ + ↑ / ↓ 키 사용",
     "deleteScene": "장면 삭제",
     "backToRequirements": "요구사항으로 돌아가기",
@@ -1104,7 +1302,8 @@
     "viewDocs": "API 문서",
     "webSearchBaseUrl": "기본 URL",
     "webSearchServerConfigured": "서버 측 검색 API 키가 설정되어 있습니다",
-    "optional": "선택 사항"
+    "optional": "선택 사항",
+    "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다."
   },
   "profile": {
     "title": "프로필",
