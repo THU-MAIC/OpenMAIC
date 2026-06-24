@@ -18,11 +18,21 @@ export interface TokenPlanActions {
   setProviderConfig: (id: ProviderId, config: Record<string, unknown>) => void;
   setImageProviderConfig: (
     id: ImageProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      customModels: Array<{ id: string; name: string }>;
+    }>,
   ) => void;
   setVideoProviderConfig: (
     id: VideoProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      customModels: Array<{ id: string; name: string }>;
+    }>,
   ) => void;
   setTTSProviderConfig: (
     id: TTSProviderId,
@@ -32,6 +42,16 @@ export interface TokenPlanActions {
     id: WebSearchProviderId,
     config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
   ) => void;
+  /**
+   * Optional model-selection setters. When provided, applying an image/video
+   * modality that declares `defaultModels` also makes that provider+model the
+   * active selection, so the plan's model is used out of the box. Optional so
+   * `applyTokenPlan` stays usable in tests/headless callers without them.
+   */
+  setImageProvider?: (id: ImageProviderId) => void;
+  setImageModelId?: (modelId: string) => void;
+  setVideoProvider?: (id: VideoProviderId) => void;
+  setVideoModelId?: (modelId: string) => void;
 }
 
 export interface ApplyResult {
@@ -104,20 +124,37 @@ function applyModality(
         ...(target.modelsUrl ? { modelsUrl: target.modelsUrl } : {}),
       });
       break;
-    case 'image':
+    case 'image': {
+      // Inject the plan's model ids as custom models (the registry defaults may
+      // not be valid on this plan's endpoint), and make the first the active
+      // selection so image generation works out of the box.
+      const customModels = (target.defaultModels ?? []).map((id) => ({ id, name: id }));
       actions.setImageProviderConfig(target.providerId as ImageProviderId, {
         apiKey,
         baseUrl: target.baseUrl,
         enabled: true,
+        ...(customModels.length ? { customModels } : {}),
       });
+      if (customModels.length) {
+        actions.setImageProvider?.(target.providerId as ImageProviderId);
+        actions.setImageModelId?.(customModels[0].id);
+      }
       break;
-    case 'video':
+    }
+    case 'video': {
+      const customModels = (target.defaultModels ?? []).map((id) => ({ id, name: id }));
       actions.setVideoProviderConfig(target.providerId as VideoProviderId, {
         apiKey,
         baseUrl: target.baseUrl,
         enabled: true,
+        ...(customModels.length ? { customModels } : {}),
       });
+      if (customModels.length) {
+        actions.setVideoProvider?.(target.providerId as VideoProviderId);
+        actions.setVideoModelId?.(customModels[0].id);
+      }
       break;
+    }
     case 'tts':
       actions.setTTSProviderConfig(target.providerId as TTSProviderId, {
         apiKey,

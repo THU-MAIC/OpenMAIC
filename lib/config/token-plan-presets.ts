@@ -132,6 +132,21 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
           'kimi-k2.6',
         ],
       },
+      // Image: the plan's seedream model differs from the seedream registry
+      // default (5.0-lite vs the pay-as-you-go id), so declare it explicitly.
+      // The adapter routes by baseUrl path (/api/plan/v3 → /images/generations).
+      image: {
+        providerId: 'seedream',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+        defaultModels: ['doubao-seedream-5.0-lite'],
+      },
+      // Video: only Medium+ tiers include video; lower tiers reject these at
+      // call time. Declared so an upgraded plan works without a code change.
+      video: {
+        providerId: 'seedance',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+        defaultModels: ['doubao-seedance-2.0', 'doubao-seedance-1.5-pro'],
+      },
     },
   },
 

@@ -41,6 +41,10 @@ export function TokenPlanSettings() {
   const setVideoProviderConfig = useSettingsStore((s) => s.setVideoProviderConfig);
   const setTTSProviderConfig = useSettingsStore((s) => s.setTTSProviderConfig);
   const setWebSearchProviderConfig = useSettingsStore((s) => s.setWebSearchProviderConfig);
+  const setImageProvider = useSettingsStore((s) => s.setImageProvider);
+  const setImageModelId = useSettingsStore((s) => s.setImageModelId);
+  const setVideoProvider = useSettingsStore((s) => s.setVideoProvider);
+  const setVideoModelId = useSettingsStore((s) => s.setVideoModelId);
   // Read provider configs so the page can reflect already-persisted state
   // (other settings panels read the store directly; this page must too).
   const providersConfig = useSettingsStore((s) => s.providersConfig);
@@ -111,6 +115,10 @@ export function TokenPlanSettings() {
       setVideoProviderConfig,
       setTTSProviderConfig,
       setWebSearchProviderConfig,
+      setImageProvider,
+      setImageModelId,
+      setVideoProvider,
+      setVideoModelId,
     });
     setResults(applied);
 
@@ -192,6 +200,10 @@ export function TokenPlanSettings() {
     setVideoProviderConfig,
     setTTSProviderConfig,
     setWebSearchProviderConfig,
+    setImageProvider,
+    setImageModelId,
+    setVideoProvider,
+    setVideoModelId,
   ]);
 
   // Modalities NOT declared by the selected plan → "not adapted yet".

@@ -23,6 +23,18 @@ const DEFAULT_MODEL = 'doubao-seedream-5-0-260128';
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
 
 /**
+ * Resolves the Ark API root. A bare host (e.g. the default
+ * `https://ark.cn-beijing.volces.com`) gets the standard `/api/v3` appended; a
+ * baseUrl that already carries an `/api/...` path (e.g. a token plan's
+ * `https://ark.cn-beijing.volces.com/api/plan/v3`) is used verbatim. Trailing
+ * slashes are trimmed.
+ */
+function resolveArkRoot(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '');
+  return /\/api\//.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
+}
+
+/**
  * Map our aspect ratio + size to Seedream size format "WxH".
  * Seedream requires minimum 3,686,400 pixels total.
  * Common sizes: 2048x2048 (2K), 2560x1440 (16:9), 1920x1920.
@@ -53,7 +65,7 @@ export async function testSeedreamConnectivity(
   try {
     // Send a request with empty prompt — auth failure (401/403) means bad key,
     // any other error (400) means key is valid but request is intentionally bad
-    const response = await fetch(`${baseUrl}/api/v3/images/generations`, {
+    const response = await fetch(`${resolveArkRoot(baseUrl)}/images/generations`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -84,7 +96,7 @@ export async function generateWithSeedream(
 ): Promise<ImageGenerationResult> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  const response = await fetch(`${baseUrl}/api/v3/images/generations`, {
+  const response = await fetch(`${resolveArkRoot(baseUrl)}/images/generations`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
