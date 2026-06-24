@@ -50,8 +50,7 @@ function addTo(bucket: Bucket, r: UsageRecord): void {
   bucket.outputTokens += r.outputTokens;
   bucket.cacheReadTokens += r.cacheReadTokens;
   bucket.cacheCreationTokens += r.cacheCreationTokens;
-  bucket.totalTokens +=
-    r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens;
+  bucket.totalTokens += r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens;
   bucket.quantity += r.quantity ?? 0;
 }
 
@@ -81,7 +80,8 @@ export async function GET(req: NextRequest) {
     for (const r of records) {
       totalRequests += 1;
       if (r.kind === 'llm') {
-        totalLlmTokens += r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens;
+        totalLlmTokens +=
+          r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens;
       }
 
       const mk = r.modelString || r.modelId;

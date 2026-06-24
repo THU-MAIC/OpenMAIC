@@ -47,12 +47,15 @@ describe('token plan apply + probe model write', () => {
     expect(cfg?.baseUrl).toBe('https://gw.example.com/v1');
 
     // Step 2: probe success writes ONLY models (what handleApply does next).
-    useSettingsStore.getState().setProviderConfig(CUSTOM_ID as never, {
-      models: [
-        { id: 'm1', name: 'm1' },
-        { id: 'm2', name: 'm2' },
-      ],
-    } as never);
+    useSettingsStore.getState().setProviderConfig(
+      CUSTOM_ID as never,
+      {
+        models: [
+          { id: 'm1', name: 'm1' },
+          { id: 'm2', name: 'm2' },
+        ],
+      } as never,
+    );
 
     cfg = useSettingsStore.getState().providersConfig[CUSTOM_ID as never] as typeof cfg;
     // The key must survive the models-only merge.

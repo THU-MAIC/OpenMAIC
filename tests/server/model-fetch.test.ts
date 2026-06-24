@@ -21,9 +21,7 @@ describe('buildModelsUrlCandidates', () => {
   });
 
   it('zhipu coding paas/v4 → /models first, /v1/models fallback', () => {
-    expect(
-      buildModelsUrlCandidates('https://open.bigmodel.cn/api/coding/paas/v4'),
-    ).toEqual([
+    expect(buildModelsUrlCandidates('https://open.bigmodel.cn/api/coding/paas/v4')).toEqual([
       'https://open.bigmodel.cn/api/coding/paas/v4/models',
       'https://open.bigmodel.cn/api/coding/paas/v4/v1/models',
     ]);

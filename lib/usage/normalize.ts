@@ -38,11 +38,9 @@ export function normalizeUsage(usage: LanguageModelUsage | undefined | null): No
     };
   }
 
-  const cacheRead =
-    num(usage.inputTokenDetails?.cacheReadTokens) || num(usage.cachedInputTokens);
+  const cacheRead = num(usage.inputTokenDetails?.cacheReadTokens) || num(usage.cachedInputTokens);
   const cacheCreation = num(usage.inputTokenDetails?.cacheWriteTokens);
-  const reasoning =
-    num(usage.outputTokenDetails?.reasoningTokens) || num(usage.reasoningTokens);
+  const reasoning = num(usage.outputTokenDetails?.reasoningTokens) || num(usage.reasoningTokens);
 
   return {
     inputTokens: num(usage.inputTokens),
