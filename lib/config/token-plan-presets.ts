@@ -84,8 +84,9 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
 
   // ── Vendor token plans (LLM; one key, often spans many models) ────────────
   {
-    // Volcengine Ark (Doubao). General OpenAI-compatible endpoint; the
-    // Anthropic-only /api/coding endpoint is intentionally not used here.
+    // Volcengine Ark Coding Plan. The plan's `ark-`-prefixed keys authenticate
+    // only against the /api/coding/v3 gateway (OpenAI-compatible); the general
+    // /api/v3 endpoint rejects them as "API key format is incorrect".
     id: 'volcengine-ark',
     name: '火山方舟 Volcengine Ark',
     websiteUrl: 'https://console.volcengine.com/ark',
@@ -94,7 +95,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     modalities: {
       llm: {
         providerId: 'doubao',
-        baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/coding/v3',
         apiFormat: 'openai',
       },
     },
