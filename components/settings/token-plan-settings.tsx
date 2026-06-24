@@ -114,12 +114,43 @@ export function TokenPlanSettings() {
     });
     setResults(applied);
 
-    // 2. For the LLM modality, light up its models. A preset with fixed
-    // `defaultModels` (endpoints without a /models list, e.g. Volcengine Agent
-    // Plan) is already seeded by applyTokenPlan — just report the count and skip
-    // probing. Otherwise probe the /models endpoint.
+    // 2. For the LLM modality, light up its models. Three cases:
+    //  a) verifyModels — `defaultModels` are CANDIDATES; verify each via a
+    //     minimal chat request and keep the ones that work (auto-prunes
+    //     retired/tier-gated models). Falls back to the seeded list on failure.
+    //  b) fixed `defaultModels` (no verify) — already seeded by applyTokenPlan.
+    //  c) otherwise — probe the /models endpoint.
     const llm = selected.modalities.llm;
-    if (llm?.defaultModels?.length) {
+    if (llm?.verifyModels && llm.defaultModels?.length) {
+      try {
+        const res = await fetch('/api/provider/probe-chat-models', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            baseUrl: llm.baseUrl,
+            apiKey,
+            models: llm.defaultModels,
+            apiFormat: llm.apiFormat,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
+          if (ids.length > 0) {
+            setProviderConfig(
+              llm.providerId as never,
+              { models: ids.map((id) => modelInfoFromId(id)) } as never,
+            );
+          }
+          // If none verified (e.g. all timed out), keep the seeded fallback.
+          setLlmModelCount(ids.length || llm.defaultModels.length);
+        } else {
+          setLlmModelCount(llm.defaultModels.length);
+        }
+      } catch {
+        setLlmModelCount(llm.defaultModels.length);
+      }
+    } else if (llm?.defaultModels?.length) {
       setLlmModelCount(llm.defaultModels.length);
     } else if (llm) {
       try {

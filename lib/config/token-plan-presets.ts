@@ -35,6 +35,14 @@ export interface TokenPlanModalityTarget {
    * models are named, not listed). Applied directly; probing is skipped.
    */
   defaultModels?: string[];
+  /**
+   * LLM only: treat `defaultModels` as CANDIDATES to verify rather than a fixed
+   * list. On apply, each candidate gets a minimal chat request; only the ones
+   * that succeed are kept. Use for plans with a published-but-tier-varying model
+   * set and no /models endpoint (e.g. Volcengine Agent Plan) — auto-prunes
+   * retired/unavailable models without code changes.
+   */
+  verifyModels?: boolean;
   /** TTS only: default model id to enable. */
   defaultModelId?: string;
 }
@@ -94,8 +102,10 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     // against the dedicated /api/plan endpoint (OpenAI-compatible at
     // /api/plan/v3); the general /api/v3 and Coding Plan /api/coding endpoints
     // reject it ("API key format is incorrect"). The plan exposes no /models
-    // list (404), so seed ark-code-latest — an auto-routing alias valid on every
-    // plan tier. Users can add specific model ids manually if needed.
+    // list (404), so we carry the published model set as CANDIDATES and verify
+    // each on apply (verifyModels) — this auto-prunes retired models (the docs
+    // flag deepseek-v3.2 / glm-5.1 as 即将下线) and tier-gated ones without code
+    // changes. ark-code-latest is an auto-routing alias valid on every tier.
     id: 'volcengine-ark',
     name: '火山方舟 Agent Plan',
     websiteUrl: 'https://console.volcengine.com/ark',
@@ -106,7 +116,21 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         providerId: 'doubao',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
         apiFormat: 'openai',
-        defaultModels: ['ark-code-latest'],
+        verifyModels: true,
+        defaultModels: [
+          'ark-code-latest',
+          'doubao-seed-2.0-pro',
+          'doubao-seed-2.0-code',
+          'doubao-seed-2.0-lite',
+          'doubao-seed-2.0-mini',
+          'deepseek-v4-pro',
+          'deepseek-v4-flash',
+          'minimax-m3',
+          'minimax-m2.7',
+          'glm-5.2',
+          'kimi-k2.7-code',
+          'kimi-k2.6',
+        ],
       },
     },
   },
