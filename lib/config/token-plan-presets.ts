@@ -99,6 +99,76 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       },
     },
   },
+
+  // ── Aggregators / gateways (LLM) ──────────────────────────────────────────
+  {
+    id: 'openrouter',
+    name: 'OpenRouter',
+    websiteUrl: 'https://openrouter.ai',
+    icon: '/logos/openrouter.svg',
+    category: 'aggregator',
+    modalities: {
+      llm: {
+        providerId: 'openrouter',
+        baseUrl: 'https://openrouter.ai/api/v1',
+        apiFormat: 'openai',
+      },
+    },
+  },
+  {
+    id: 'siliconflow',
+    name: 'SiliconFlow 硅基流动',
+    websiteUrl: 'https://siliconflow.cn',
+    icon: '/logos/siliconflow.svg',
+    category: 'aggregator',
+    modalities: {
+      llm: {
+        providerId: 'siliconflow',
+        baseUrl: 'https://api.siliconflow.cn/v1',
+        apiFormat: 'openai',
+      },
+    },
+  },
+
+  // ── Vendor-direct (LLM) ───────────────────────────────────────────────────
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    websiteUrl: 'https://platform.deepseek.com',
+    icon: '/logos/deepseek.svg',
+    category: 'third_party',
+    modalities: {
+      llm: { providerId: 'deepseek', baseUrl: 'https://api.deepseek.com', apiFormat: 'openai' },
+    },
+  },
+  {
+    id: 'glm',
+    name: '智谱 GLM',
+    websiteUrl: 'https://bigmodel.cn',
+    icon: '/logos/glm.svg',
+    category: 'third_party',
+    modalities: {
+      llm: {
+        providerId: 'glm',
+        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
+        apiFormat: 'openai',
+      },
+    },
+  },
+  {
+    id: 'qwen',
+    name: '通义千问 Qwen',
+    websiteUrl: 'https://bailian.console.aliyun.com',
+    icon: '/logos/qwen.svg',
+    category: 'third_party',
+    modalities: {
+      llm: {
+        providerId: 'qwen',
+        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
+        apiFormat: 'openai',
+      },
+    },
+  },
 ];
 
 /** Preset category display order. */
