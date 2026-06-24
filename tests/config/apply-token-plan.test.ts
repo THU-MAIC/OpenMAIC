@@ -17,7 +17,7 @@ function makeActions(): TokenPlanActions {
 }
 
 const minimax = TOKEN_PLAN_PRESETS.find((p) => p.id === 'minimax')!;
-const deepseek = TOKEN_PLAN_PRESETS.find((p) => p.id === 'deepseek')!;
+const llmOnly = TOKEN_PLAN_PRESETS.find((p) => p.id === 'volcengine-ark')!;
 
 describe('applyTokenPlan', () => {
   it('fills every declared modality for a full-set plan (MiniMax)', () => {
@@ -55,9 +55,9 @@ describe('applyTokenPlan', () => {
     expect(lit).toEqual(expect.arrayContaining(['llm', 'image', 'video', 'tts', 'webSearch']));
   });
 
-  it('only touches declared modalities for an LLM-only plan (DeepSeek)', () => {
+  it('only touches declared modalities for an LLM-only plan (Volcengine Ark)', () => {
     const actions = makeActions();
-    const results = applyTokenPlan(deepseek, 'sk-ds', actions);
+    const results = applyTokenPlan(llmOnly, 'sk-ds', actions);
 
     expect(actions.setProviderConfig).toHaveBeenCalledTimes(1);
     expect(actions.setImageProviderConfig).not.toHaveBeenCalled();
@@ -72,7 +72,7 @@ describe('applyTokenPlan', () => {
   it('passes modelsUrl through to the LLM provider config when present', () => {
     const actions = makeActions();
     const preset = {
-      ...deepseek,
+      ...llmOnly,
       modalities: {
         llm: {
           providerId: 'x',
