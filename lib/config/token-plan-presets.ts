@@ -29,6 +29,12 @@ export interface TokenPlanModalityTarget {
   apiFormat?: ProviderType;
   /** LLM only: explicit /models URL override (optional). */
   modelsUrl?: string;
+  /**
+   * LLM only: fixed model ids to seed when the endpoint exposes no probable
+   * /models list (e.g. Volcengine Agent Plan, an Anthropic-style gateway whose
+   * models are named, not listed). Applied directly; probing is skipped.
+   */
+  defaultModels?: string[];
   /** TTS only: default model id to enable. */
   defaultModelId?: string;
 }
@@ -84,11 +90,12 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
 
   // ── Vendor token plans (LLM; one key, often spans many models) ────────────
   {
-    // Volcengine Ark Agent Plan. The plan's ark--prefixed keys authenticate
-    // ONLY against the dedicated Anthropic-compatible /api/plan endpoint — both
-    // the general /api/v3 and the Coding Plan /api/coding endpoints reject them
-    // ("API key format is incorrect"). baseUrl carries /v1 because the Anthropic
-    // SDK appends /messages; the request lands on /api/plan/v1/messages.
+    // Volcengine Ark Agent Plan. The ark--prefixed plan key authenticates only
+    // against the dedicated /api/plan endpoint (OpenAI-compatible at
+    // /api/plan/v3); the general /api/v3 and Coding Plan /api/coding endpoints
+    // reject it ("API key format is incorrect"). The plan exposes no /models
+    // list (404), so seed ark-code-latest — an auto-routing alias valid on every
+    // plan tier. Users can add specific model ids manually if needed.
     id: 'volcengine-ark',
     name: '火山方舟 Agent Plan',
     websiteUrl: 'https://console.volcengine.com/ark',
@@ -97,8 +104,9 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     modalities: {
       llm: {
         providerId: 'doubao',
-        baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v1',
-        apiFormat: 'anthropic',
+        baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+        apiFormat: 'openai',
+        defaultModels: ['ark-code-latest'],
       },
     },
   },

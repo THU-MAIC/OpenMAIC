@@ -114,9 +114,14 @@ export function TokenPlanSettings() {
     });
     setResults(applied);
 
-    // 2. For the LLM modality, probe the model list and light models up.
+    // 2. For the LLM modality, light up its models. A preset with fixed
+    // `defaultModels` (endpoints without a /models list, e.g. Volcengine Agent
+    // Plan) is already seeded by applyTokenPlan — just report the count and skip
+    // probing. Otherwise probe the /models endpoint.
     const llm = selected.modalities.llm;
-    if (llm) {
+    if (llm?.defaultModels?.length) {
+      setLlmModelCount(llm.defaultModels.length);
+    } else if (llm) {
       try {
         const res = await fetch('/api/provider/probe-models', {
           method: 'POST',

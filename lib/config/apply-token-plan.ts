@@ -93,9 +93,14 @@ function applyModality(
         icon: preset.icon,
         requiresApiKey: true,
         isBuiltIn: false,
-        // Seed an empty model list so the provider has a valid shape before the
-        // probe populates it (validators read `models.length`).
-        models: [],
+        // Seed the model list: a preset's fixed `defaultModels` when given
+        // (endpoints without a probable /models list), else an empty list that
+        // the UI's probe step populates. Validators read `models.length`.
+        models: (target.defaultModels ?? []).map((id) => ({
+          id,
+          name: id,
+          capabilities: { streaming: true, tools: true, vision: false },
+        })),
         ...(target.modelsUrl ? { modelsUrl: target.modelsUrl } : {}),
       });
       break;

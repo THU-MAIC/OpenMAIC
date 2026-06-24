@@ -89,6 +89,26 @@ describe('applyTokenPlan', () => {
     );
   });
 
+  it('seeds defaultModels into the LLM provider config when present', () => {
+    const actions = makeActions();
+    const preset = {
+      ...deepseek,
+      modalities: {
+        llm: {
+          providerId: 'x',
+          baseUrl: 'https://x.com/api/plan/v1',
+          apiFormat: 'anthropic' as const,
+          defaultModels: ['ark-code-latest', 'kimi-k2.5'],
+        },
+      },
+    };
+    applyTokenPlan(preset, 'k', actions);
+    const cfg = (actions.setProviderConfig as ReturnType<typeof vi.fn>).mock.calls[0][1] as {
+      models: Array<{ id: string }>;
+    };
+    expect(cfg.models.map((m) => m.id)).toEqual(['ark-code-latest', 'kimi-k2.5']);
+  });
+
   it('isolates a failing modality without aborting the rest', () => {
     const actions = makeActions();
     (actions.setImageProviderConfig as ReturnType<typeof vi.fn>).mockImplementation(() => {
