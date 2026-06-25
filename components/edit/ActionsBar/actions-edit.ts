@@ -26,6 +26,44 @@ export function makeAction(type: AddableType, id: string): Action {
   }
 }
 
+/**
+ * Build a fresh discussion action with an empty topic. A discussion isn't
+ * drag-addable like the palette cues: it must be the LAST action and there is
+ * at most one per scene (mirrors the `action-parser` post-processing invariant),
+ * so it's appended via {@link appendDiscussion} rather than dropped at a slot.
+ */
+export function makeDiscussion(id: string): Action {
+  return { id, type: 'discussion', topic: '' } as unknown as Action;
+}
+
+/** Index of the scene's discussion action, or -1 when there is none. */
+export function discussionIndex(actions: Action[]): number {
+  return actions.findIndex((a) => a.type === 'discussion');
+}
+
+/** Whether the scene already has a discussion (at most one is allowed). */
+export function hasDiscussion(actions: Action[]): boolean {
+  return discussionIndex(actions) !== -1;
+}
+
+/**
+ * Append a discussion to the very end of the scene. No-op when one already
+ * exists, enforcing the at-most-one + terminal invariant.
+ */
+export function appendDiscussion(actions: Action[], id: string): Action[] {
+  if (hasDiscussion(actions)) return actions;
+  return [...actions, makeDiscussion(id)];
+}
+
+/**
+ * Cap an insertion slot so nothing can land AFTER the discussion — it stays
+ * terminal. Returns the slot unchanged when there is no discussion.
+ */
+export function clampInsertSlot(actions: Action[], slot: number): number {
+  const d = discussionIndex(actions);
+  return d === -1 ? slot : Math.min(slot, d);
+}
+
 /** Insert `action` so it lands at position `index` (clamped). */
 export function insertAt(actions: Action[], index: number, action: Action): Action[] {
   const i = Math.max(0, Math.min(index, actions.length));
@@ -136,4 +174,46 @@ export function setAudioId(actions: Action[], index: number, audioId: string): A
 export function setAudioIdById(actions: Action[], id: string, audioId: string): Action[] {
   const index = actions.findIndex((a) => a.id === id);
   return index < 0 ? actions : setAudioId(actions, index, audioId);
+}
+
+/** Set a discussion's `topic` by id (no-op for a missing id / non-discussion). */
+export function setDiscussionTopicById(actions: Action[], id: string, topic: string): Action[] {
+  const index = actions.findIndex((a) => a.id === id);
+  const a = actions[index];
+  if (!a || a.type !== 'discussion') return actions;
+  const next = actions.slice();
+  next[index] = { ...a, topic } as Action;
+  return next;
+}
+
+/**
+ * Set (or, for an empty value, clear) one of a discussion's optional fields by
+ * id. `prompt` / `agentId` are optional, so an empty string drops the key
+ * rather than persisting a blank — keeping the serialized action clean.
+ */
+function setDiscussionOptionalById(
+  actions: Action[],
+  id: string,
+  field: 'prompt' | 'agentId',
+  value: string,
+): Action[] {
+  const index = actions.findIndex((a) => a.id === id);
+  const a = actions[index];
+  if (!a || a.type !== 'discussion') return actions;
+  const next = actions.slice();
+  const updated = { ...a } as Action & { prompt?: string; agentId?: string };
+  if (value) updated[field] = value;
+  else delete updated[field];
+  next[index] = updated;
+  return next;
+}
+
+/** Set a discussion's `prompt` by id; an empty string clears it. */
+export function setDiscussionPromptById(actions: Action[], id: string, prompt: string): Action[] {
+  return setDiscussionOptionalById(actions, id, 'prompt', prompt);
+}
+
+/** Set a discussion's initiating `agentId` by id; an empty string clears it. */
+export function setDiscussionAgentById(actions: Action[], id: string, agentId: string): Action[] {
+  return setDiscussionOptionalById(actions, id, 'agentId', agentId);
 }

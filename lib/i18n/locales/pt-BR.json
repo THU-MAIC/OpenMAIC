@@ -265,7 +265,8 @@
       "whiteboardShape": "Forma",
       "whiteboardLatex": "Fórmula",
       "whiteboardTable": "Tabela",
-      "action": "Ação"
+      "action": "Ação",
+      "discussion": "Discussão"
     },
     "element": {
       "text": "Texto",
@@ -336,7 +337,15 @@
       "bound": "Vinculado",
       "fieldAction": "Ação",
       "fieldElement": "Elemento",
-      "fieldContent": "Conteúdo"
+      "fieldContent": "Conteúdo",
+      "addDiscussion": "Adicionar discussão",
+      "addDiscussionExists": "Apenas uma discussão por cena",
+      "discussionTerminal": "FIM",
+      "discussionTerminalHint": "A discussão fica no final da cena (uma por cena)",
+      "discussionTopicPlaceholder": "Tópico da discussão (obrigatório)",
+      "discussionPromptPlaceholder": "Orientação (opcional)",
+      "discussionAgent": "Iniciador",
+      "discussionAgentUnset": "Não especificado"
     },
     "tts": {
       "preview": "Pré-visualizar",

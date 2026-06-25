@@ -280,7 +280,8 @@
       "whiteboardShape": "Shape",
       "whiteboardLatex": "Formula",
       "whiteboardTable": "Table",
-      "action": "Action"
+      "action": "Action",
+      "discussion": "Discussion"
     },
     "element": {
       "text": "Text",
@@ -351,7 +352,15 @@
       "bound": "Bound",
       "fieldAction": "Action",
       "fieldElement": "Element",
-      "fieldContent": "Content"
+      "fieldContent": "Content",
+      "addDiscussion": "Add discussion",
+      "addDiscussionExists": "Only one discussion per scene",
+      "discussionTerminal": "END",
+      "discussionTerminalHint": "A discussion stays at the end of the scene (one per scene)",
+      "discussionTopicPlaceholder": "Discussion topic (required)",
+      "discussionPromptPlaceholder": "Guidance prompt (optional)",
+      "discussionAgent": "Initiator",
+      "discussionAgentUnset": "Unspecified"
     },
     "tts": {
       "preview": "Preview",

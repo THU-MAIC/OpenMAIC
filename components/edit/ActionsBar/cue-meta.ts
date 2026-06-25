@@ -11,6 +11,7 @@ import {
   Circle,
   Crosshair,
   Focus,
+  MessagesSquare,
   PenLine,
   Presentation,
   Quote,
@@ -81,6 +82,12 @@ const META: Record<string, CueMeta> = {
     labelKey: 'edit.cue.whiteboardTable',
     glyph: 'text-sky-600 bg-sky-500/10 dark:text-sky-400',
     accent: 'bg-sky-400/70',
+  },
+  discussion: {
+    icon: MessagesSquare,
+    labelKey: 'edit.cue.discussion',
+    glyph: 'text-violet-600 bg-violet-500/10 dark:text-violet-400',
+    accent: 'bg-violet-400/70',
   },
 };
 

@@ -280,7 +280,8 @@
       "whiteboardShape": "図形",
       "whiteboardLatex": "数式",
       "whiteboardTable": "表",
-      "action": "アクション"
+      "action": "アクション",
+      "discussion": "ディスカッション"
     },
     "element": {
       "text": "テキスト",
@@ -351,7 +352,15 @@
       "bound": "紐付け済み",
       "fieldAction": "アクション",
       "fieldElement": "要素",
-      "fieldContent": "内容"
+      "fieldContent": "内容",
+      "addDiscussion": "ディスカッションを追加",
+      "addDiscussionExists": "各シーンにディスカッションは1つまで",
+      "discussionTerminal": "末尾",
+      "discussionTerminalHint": "ディスカッションはシーンの末尾に固定され、各シーンに1つだけです",
+      "discussionTopicPlaceholder": "ディスカッションの主題（必須）",
+      "discussionPromptPlaceholder": "ガイドプロンプト（任意）",
+      "discussionAgent": "開始者",
+      "discussionAgentUnset": "指定なし"
     },
     "tts": {
       "preview": "試聴",

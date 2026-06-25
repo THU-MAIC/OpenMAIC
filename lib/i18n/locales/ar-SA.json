@@ -280,7 +280,8 @@
       "whiteboardShape": "شكل",
       "whiteboardLatex": "صيغة",
       "whiteboardTable": "جدول",
-      "action": "إجراء"
+      "action": "إجراء",
+      "discussion": "مناقشة"
     },
     "element": {
       "text": "نص",
@@ -351,7 +352,15 @@
       "bound": "مرتبط",
       "fieldAction": "إجراء",
       "fieldElement": "عنصر",
-      "fieldContent": "المحتوى"
+      "fieldContent": "المحتوى",
+      "addDiscussion": "إضافة مناقشة",
+      "addDiscussionExists": "مناقشة واحدة فقط لكل مشهد",
+      "discussionTerminal": "النهاية",
+      "discussionTerminalHint": "تبقى المناقشة في نهاية المشهد (واحدة لكل مشهد)",
+      "discussionTopicPlaceholder": "موضوع المناقشة (مطلوب)",
+      "discussionPromptPlaceholder": "توجيه (اختياري)",
+      "discussionAgent": "المُبادر",
+      "discussionAgentUnset": "غير محدد"
     },
     "tts": {
       "preview": "معاينة",
