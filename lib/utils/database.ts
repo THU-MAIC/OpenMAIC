@@ -11,6 +11,7 @@ import type {
 import type { SceneOutline } from '@/lib/types/generation';
 import type { VoiceDesign } from '@/lib/audio/voice-design';
 import type { UIMessage } from 'ai';
+import type { AgentEditSessionRecord } from '@/lib/agent/client/agent-edit-session-types';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('Database');
@@ -213,7 +214,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 11;
+const _DATABASE_VERSION = 12;
 
 /**
  * MAIC Database Instance
@@ -232,6 +233,7 @@ class MAICDatabase extends Dexie {
   generatedAgents!: EntityTable<GeneratedAgentRecord, 'id'>;
   voiceProfiles!: EntityTable<VoiceProfileRecord, 'id'>;
   autoVoiceCache!: EntityTable<AutoVoiceCacheRecord, 'voiceId'>;
+  agentEditSessions!: EntityTable<AgentEditSessionRecord, 'id'>;
 
   constructor() {
     super(DATABASE_NAME);
@@ -414,6 +416,24 @@ class MAICDatabase extends Dexie {
       voiceProfiles: 'id, providerId, kind, updatedAt',
       autoVoiceCache: 'voiceId, updatedAt',
     });
+
+    // Version 12: Add agentEditSessions — multi-session AI-editing conversation
+    // history per stage (replaces the single-thread localStorage store).
+    this.version(12).stores({
+      stages: 'id, updatedAt',
+      scenes: 'id, stageId, order, [stageId+order]',
+      audioFiles: 'id, createdAt',
+      imageFiles: 'id, createdAt',
+      snapshots: '++id',
+      chatSessions: 'id, stageId, [stageId+createdAt]',
+      playbackState: 'stageId',
+      stageOutlines: 'stageId',
+      mediaFiles: 'id, stageId, [stageId+type]',
+      generatedAgents: 'id, stageId',
+      voiceProfiles: 'id, providerId, kind, updatedAt',
+      autoVoiceCache: 'voiceId, updatedAt',
+      agentEditSessions: 'id, stageId, [stageId+updatedAt]',
+    });
   }
 }
 
@@ -510,6 +530,7 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
       db.stageOutlines,
       db.mediaFiles,
       db.generatedAgents,
+      db.agentEditSessions,
     ],
     async () => {
       await db.stages.delete(stageId);
@@ -519,6 +540,7 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
       await db.stageOutlines.delete(stageId);
       await db.mediaFiles.where('stageId').equals(stageId).delete();
       await db.generatedAgents.where('stageId').equals(stageId).delete();
+      await db.agentEditSessions.where('stageId').equals(stageId).delete();
     },
   );
 }

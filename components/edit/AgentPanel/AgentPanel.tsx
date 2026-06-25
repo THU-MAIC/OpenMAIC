@@ -28,13 +28,16 @@ import {
   ArrowUp,
   AtSign,
   ChevronDown,
+  History,
   PanelRightClose,
   PanelRightOpen,
   Sparkles,
   Square,
   SquarePen,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SpeechButton } from '@/components/audio/speech-button';
@@ -150,7 +153,16 @@ function VoiceInputButton() {
 
 export function AgentPanel({ scene }: { scene?: { id: string; title: string; type?: string } }) {
   const { t } = useI18n();
-  const { runtime, clearThread, hasMessages } = useAgentRuntime({ scene });
+  const {
+    runtime,
+    clearThread,
+    hasMessages,
+    sessions,
+    activeSessionId,
+    switchSession,
+    deleteSessionAndRefresh,
+    refreshSessions,
+  } = useAgentRuntime({ scene });
 
   // Interactive scenes expose a different agent capability (fix the page's bugs)
   // than slides (regenerate content/narration), so the empty-state copy and the
@@ -256,13 +268,60 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
         <span className="text-[13px] font-semibold text-[#5b1fa8] dark:text-violet-300">
           Edit with AI
         </span>
+        <Popover onOpenChange={(open) => open && void refreshSessions()}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              title={t('edit.agent.sessionHistory')}
+              aria-label={t('edit.agent.sessionHistory')}
+              className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <History className="size-4" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-1">
+            {sessions.length === 0 ? (
+              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                {t('edit.agent.sessionEmpty')}
+              </p>
+            ) : (
+              <ul className="max-h-80 overflow-y-auto">
+                {sessions.map((s) => (
+                  <li key={s.id} className="group flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => void switchSession(s.id)}
+                      className={cn(
+                        'flex-1 truncate rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted',
+                        s.id === activeSessionId
+                          ? 'bg-muted font-medium text-foreground'
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      {s.title || t('edit.agent.sessionUntitled')}
+                    </button>
+                    <button
+                      type="button"
+                      title={t('edit.agent.sessionDelete')}
+                      aria-label={t('edit.agent.sessionDelete')}
+                      onClick={() => void deleteSessionAndRefresh(s.id)}
+                      className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/40 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </PopoverContent>
+        </Popover>
         {hasMessages ? (
           <button
             type="button"
             onClick={clearThread}
             title={t('edit.agent.newConversation')}
             aria-label={t('edit.agent.newConversation')}
-            className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+            className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
           >
             <SquarePen className="size-4" />
           </button>
@@ -272,10 +331,7 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
           onClick={() => setCollapsed(true)}
           title={t('edit.agent.collapse')}
           aria-label={t('edit.agent.collapse')}
-          className={cn(
-            'grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground',
-            hasMessages ? '' : 'ml-auto',
-          )}
+          className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
         >
           <PanelRightClose className="size-4" />
         </button>

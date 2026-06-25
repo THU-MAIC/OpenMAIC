@@ -322,6 +322,10 @@
         }
       },
       "newConversation": "New conversation",
+      "sessionHistory": "История",
+      "sessionUntitled": "Без названия",
+      "sessionDelete": "Удалить",
+      "sessionEmpty": "Нет истории",
       "reasoning": "Рассуждение",
       "thought": "Думал",
       "interactive": {
