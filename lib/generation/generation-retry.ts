@@ -11,7 +11,8 @@ export interface GenerationRetryOptions<T> {
   maxRetries?: number;
   baseDelayMs?: number;
   maxDelayMs?: number;
-  sleep?: (ms: number) => Promise<void>;
+  signal?: AbortSignal;
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   random?: () => number;
   shouldRetryResult?: (result: T) => boolean;
   onRetry?: (event: GenerationRetryEvent) => Promise<void> | void;
@@ -23,7 +24,32 @@ const DEFAULT_MAX_DELAY_MS = 16000;
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 425, 429]);
 const NON_RETRYABLE_STATUS_CODES = new Set([400, 401, 403, 404, 422]);
 
-const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const defaultSleep = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+
+    const onAbort = () => {
+      clearTimeout(timeoutId);
+      signal?.removeEventListener('abort', onAbort);
+      reject(new DOMException('Aborted', 'AbortError'));
+    };
+
+    const timeoutId = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, ms);
+
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+
+function throwIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -160,8 +186,12 @@ export async function withGenerationRetry<T>(
   const random = options.random ?? Math.random;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    throwIfAborted(options.signal);
+
     try {
       const result = await operation(attempt);
+      throwIfAborted(options.signal);
+
       if (!options.shouldRetryResult?.(result) || attempt >= maxAttempts) {
         return result;
       }
@@ -174,8 +204,15 @@ export async function withGenerationRetry<T>(
         nextDelayMs,
         reason: 'empty result',
       });
-      await sleep(nextDelayMs);
+      throwIfAborted(options.signal);
+      await sleep(nextDelayMs, options.signal);
     } catch (error) {
+      if (isAbortError(error)) {
+        throw error;
+      }
+
+      throwIfAborted(options.signal);
+
       if (attempt >= maxAttempts || !isRetryableGenerationError(error)) {
         throw error;
       }
@@ -188,7 +225,8 @@ export async function withGenerationRetry<T>(
         nextDelayMs,
         reason: retryReason(error),
       });
-      await sleep(nextDelayMs);
+      throwIfAborted(options.signal);
+      await sleep(nextDelayMs, options.signal);
     }
   }
 

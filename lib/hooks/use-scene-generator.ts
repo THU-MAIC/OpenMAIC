@@ -45,7 +45,7 @@ interface SceneActionsResult {
 }
 
 type ClientRetryOptions<T> = Partial<
-  Omit<GenerationRetryOptions<T>, 'label' | 'shouldRetryResult'>
+  Omit<GenerationRetryOptions<T>, 'label' | 'shouldRetryResult' | 'signal'>
 >;
 
 function getApiHeaders(): HeadersInit {
@@ -149,6 +149,7 @@ export async function fetchSceneContent(
         label: `scene content "${params.outline.title}"`,
         shouldRetryResult: (result) => !result.success || !result.content,
         ...retryOptions,
+        signal,
       },
     );
   } catch (error) {
@@ -193,6 +194,7 @@ export async function fetchSceneActions(
         label: `scene actions "${params.outline.title}"`,
         shouldRetryResult: (result) => !result.success || !result.scene,
         ...retryOptions,
+        signal,
       },
     );
   } catch (error) {
@@ -270,6 +272,7 @@ export async function generateAndStoreTTS(
       label: `tts "${audioId}"`,
       shouldRetryResult: (result) => !result.success || !result.base64 || !result.format,
       ...retryOptions,
+      signal,
     },
   );
   if (!data.success || !data.base64 || !data.format) {

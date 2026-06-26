@@ -28,7 +28,7 @@ describe('generation retry helper', () => {
 
     expect(result).toBe('scene-ok');
     expect(attempts).toBe(2);
-    expect(sleep).toHaveBeenCalledWith(1000);
+    expect(sleep).toHaveBeenCalledWith(1000, undefined);
     expect(onRetry).toHaveBeenCalledWith({
       label: 'scene 1 content',
       attempt: 1,
@@ -79,6 +79,81 @@ describe('generation retry helper', () => {
     const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
 
     expect(isAbortError(abort)).toBe(true);
+  });
+
+  it('does not call the operation when its signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const operation = vi.fn(async () => 'scene-ok');
+
+    await expect(
+      withGenerationRetry(operation, {
+        label: 'scene content',
+        signal: controller.signal,
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(operation).not.toHaveBeenCalled();
+  });
+
+  it('passes its signal to a custom backoff sleep and stops before another attempt', async () => {
+    const controller = new AbortController();
+    const sleep = vi.fn(
+      (_ms: number, signal?: AbortSignal) =>
+        new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener('abort', () => {
+            reject(new DOMException('Aborted', 'AbortError'));
+          });
+          controller.abort();
+        }),
+    );
+    const operation = vi.fn(async () => {
+      throw Object.assign(new Error('Rate limited'), { statusCode: 429 });
+    });
+
+    await expect(
+      withGenerationRetry(operation, {
+        label: 'scene content',
+        signal: controller.signal,
+        maxRetries: 1,
+        random: () => 0,
+        sleep,
+      }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
+
+    expect(sleep).toHaveBeenCalledWith(1000, controller.signal);
+    expect(operation).toHaveBeenCalledTimes(1);
+  });
+
+  it('aborts the default backoff sleep without waiting for its timer', async () => {
+    vi.useFakeTimers();
+
+    try {
+      const controller = new AbortController();
+      const operation = vi.fn(async () => {
+        throw Object.assign(new Error('Rate limited'), { statusCode: 429 });
+      });
+      const pending = withGenerationRetry(operation, {
+        label: 'scene content',
+        signal: controller.signal,
+        maxRetries: 1,
+        random: () => 0,
+      });
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(vi.getTimerCount()).toBe(1);
+
+      const rejection = pending.then(
+        () => undefined,
+        (error) => error,
+      );
+      controller.abort();
+
+      await expect(rejection).resolves.toMatchObject({ name: 'AbortError' });
+      expect(operation).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('unwraps retry error containers before classifying', () => {
