@@ -501,6 +501,12 @@ const getDefaultWebSearchConfig = () => ({
       enabled: true,
       requiresApiKey: true,
     },
+    doubao: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.doubao.defaultBaseUrl || '',
+      enabled: true,
+      requiresApiKey: true,
+    },
   } as Record<
     WebSearchProviderId,
     { apiKey: string; baseUrl: string; enabled: boolean; requiresApiKey?: boolean }
