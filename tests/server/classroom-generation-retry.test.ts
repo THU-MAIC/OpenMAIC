@@ -138,6 +138,31 @@ describe('classroom scene generation retries', () => {
     );
   });
 
+  it('forwards classroom thinking config to scene retry LLM calls', async () => {
+    const thinkingConfig = { enabled: true, effort: 'high' };
+    mocks.resolveModel.mockResolvedValue({
+      model: { id: 'language-model' },
+      modelInfo: {},
+      modelString: 'test:model',
+      providerId: 'test',
+      apiKey: '',
+      thinkingConfig,
+    });
+    mocks.generateSceneContent.mockImplementation(async (_outline, aiCall) => {
+      await aiCall('system', 'user');
+      return slideContent;
+    });
+
+    await generateWithProgress();
+
+    expect(mocks.callLLM).toHaveBeenCalledWith(
+      expect.objectContaining({ maxRetries: 0 }),
+      'generate-classroom-scene',
+      undefined,
+      thinkingConfig,
+    );
+  });
+
   it('retries retryable action generation errors', async () => {
     mocks.generateSceneContent.mockResolvedValue(slideContent);
     mocks.generateSceneActions

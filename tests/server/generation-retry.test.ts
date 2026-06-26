@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
-import { isRetryableGenerationError, withGenerationRetry } from '@/lib/generation/generation-retry';
+import {
+  isAbortError,
+  isRetryableGenerationError,
+  withGenerationRetry,
+} from '@/lib/generation/generation-retry';
 
 describe('generation retry helper', () => {
   it('retries retryable null results and reports the next backoff delay', async () => {
@@ -68,6 +72,13 @@ describe('generation retry helper', () => {
     expect(isRetryableGenerationError({ statusCode: 403 })).toBe(false);
     expect(isRetryableGenerationError({ isRetryable: false, statusCode: 503 })).toBe(false);
     expect(isRetryableGenerationError({ name: 'AbortError' })).toBe(false);
+    expect(isRetryableGenerationError({ name: 'AbortError', isRetryable: true })).toBe(false);
+  });
+
+  it('recognizes Error-shaped aborts outside the DOMException prototype chain', () => {
+    const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+
+    expect(isAbortError(abort)).toBe(true);
   });
 
   it('unwraps retry error containers before classifying', () => {

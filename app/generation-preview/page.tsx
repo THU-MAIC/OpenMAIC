@@ -21,6 +21,8 @@ import {
   fetchSceneContent,
   generateAndStoreTTS,
 } from '@/lib/hooks/use-scene-generator';
+import { isAbortError } from '@/lib/generation/generation-retry';
+import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
   loadPdfBlob,
@@ -863,6 +865,7 @@ function GenerationPreviewContent() {
           requirements: currentSession.requirements,
         },
         signal,
+        FOREGROUND_SCENE_RETRY_OPTIONS,
       );
 
       if (!contentData.success || !contentData.content) {
@@ -885,6 +888,7 @@ function GenerationPreviewContent() {
           languageDirective,
         },
         signal,
+        FOREGROUND_SCENE_RETRY_OPTIONS,
       );
 
       if (!data.success || !data.scene) {
@@ -919,8 +923,16 @@ function GenerationPreviewContent() {
           const audioId = `tts_${action.id}`;
           action.audioId = audioId;
           try {
-            await generateAndStoreTTS(audioId, action.text, languageDirective, signal);
+            await generateAndStoreTTS(
+              audioId,
+              action.text,
+              languageDirective,
+              signal,
+              FOREGROUND_SCENE_RETRY_OPTIONS,
+            );
           } catch (err) {
+            if (isAbortError(err)) throw err;
+
             log.warn(`[TTS] Failed for ${audioId}:`, err);
             ttsFailCount++;
           }
@@ -956,7 +968,7 @@ function GenerationPreviewContent() {
     } catch (err) {
       setIsOutlineStreaming(false);
       // AbortError is expected when navigating away — don't show as error
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if (isAbortError(err)) {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }

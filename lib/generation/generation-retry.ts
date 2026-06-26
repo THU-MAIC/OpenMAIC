@@ -29,6 +29,25 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
+/**
+ * Detect cancellation consistently across browser, Node, and test runtimes.
+ * Some runtimes expose AbortError as a DOMException, while others use a plain
+ * Error-shaped value, so relying on one prototype is not sufficient.
+ */
+export function isAbortError(error: unknown): boolean {
+  if (error instanceof Error && error.name === 'AbortError') return true;
+
+  if (
+    typeof DOMException !== 'undefined' &&
+    error instanceof DOMException &&
+    error.name === 'AbortError'
+  ) {
+    return true;
+  }
+
+  return isRecord(error) && stringField(error, 'name') === 'AbortError';
+}
+
 function stringField(record: Record<string, unknown>, key: string): string | undefined {
   const value = record[key];
   return typeof value === 'string' ? value : undefined;
@@ -85,14 +104,12 @@ export function isRetryableGenerationError(error: unknown, seen = new Set<unknow
   if (!error || seen.has(error)) return false;
   seen.add(error);
 
+  if (isAbortError(error)) return false;
+
   if (isRecord(error)) {
     const explicitRetryable = booleanField(error, 'isRetryable');
     if (explicitRetryable !== undefined) return explicitRetryable;
-
-    if (stringField(error, 'name') === 'AbortError') return false;
   }
-
-  if (error instanceof Error && error.name === 'AbortError') return false;
 
   const statusCode = statusCodeFrom(error);
   if (statusCode !== undefined) {

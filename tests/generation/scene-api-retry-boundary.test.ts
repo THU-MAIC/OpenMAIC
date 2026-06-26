@@ -107,6 +107,90 @@ describe('scene API retry boundary', () => {
     expect(body.success).toBe(true);
     expect(mocks.callLLM.mock.calls[0][0].maxRetries).toBe(0);
   });
+
+  it('preserves an upstream 401 from the scene-content route', async () => {
+    vi.resetModules();
+    const unauthorized = Object.assign(new Error('provider key rejected'), { statusCode: 401 });
+    mocks.generateSceneContent.mockImplementation(async (_outline, aiCall) => {
+      await aiCall('system', 'user');
+      return { elements: [], remark: 'ok' };
+    });
+    mocks.callLLM.mockRejectedValueOnce(unauthorized);
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(mockRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body).toMatchObject({
+      success: false,
+      errorCode: 'UPSTREAM_ERROR',
+      error: 'Upstream authentication or authorization failed.',
+    });
+  });
+
+  it('preserves an upstream 503 from the scene-content route', async () => {
+    vi.resetModules();
+    const unavailable = Object.assign(new Error('provider overloaded'), { statusCode: 503 });
+    mocks.generateSceneContent.mockImplementation(async (_outline, aiCall) => {
+      await aiCall('system', 'user');
+      return { elements: [], remark: 'ok' };
+    });
+    mocks.callLLM.mockRejectedValueOnce(unavailable);
+
+    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const response = await POST(mockRequest());
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({
+      success: false,
+      errorCode: 'UPSTREAM_ERROR',
+      error: 'Upstream model provider is temporarily unavailable. Please try again.',
+    });
+  });
+
+  it('preserves an upstream 401 from the scene-actions route', async () => {
+    vi.resetModules();
+    const unauthorized = Object.assign(new Error('provider key rejected'), { statusCode: 401 });
+    mocks.generateSceneActions.mockImplementation(async (_outline, _content, aiCall) => {
+      await aiCall('system', 'user');
+      return [];
+    });
+    mocks.callLLM.mockRejectedValueOnce(unauthorized);
+
+    const { POST } = await import('@/app/api/generate/scene-actions/route');
+    const response = await POST(mockRequest({ content: { elements: [], remark: 'ok' } }));
+    const body = await response.json();
+
+    expect(response.status).toBe(401);
+    expect(body).toMatchObject({
+      success: false,
+      errorCode: 'UPSTREAM_ERROR',
+      error: 'Upstream authentication or authorization failed.',
+    });
+  });
+
+  it('preserves an upstream 503 from the scene-actions route', async () => {
+    vi.resetModules();
+    const unavailable = Object.assign(new Error('provider overloaded'), { statusCode: 503 });
+    mocks.generateSceneActions.mockImplementation(async (_outline, _content, aiCall) => {
+      await aiCall('system', 'user');
+      return [];
+    });
+    mocks.callLLM.mockRejectedValueOnce(unavailable);
+
+    const { POST } = await import('@/app/api/generate/scene-actions/route');
+    const response = await POST(mockRequest({ content: { elements: [], remark: 'ok' } }));
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toMatchObject({
+      success: false,
+      errorCode: 'UPSTREAM_ERROR',
+      error: 'Upstream model provider is temporarily unavailable. Please try again.',
+    });
+  });
 });
 
 function mockRequest(extraBody: Record<string, unknown> = {}) {

@@ -141,6 +141,48 @@ describe('browser scene generation retry wrappers', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('rethrows an aborted scene content request', async () => {
+    const { fetchSceneContent } = await import('@/lib/hooks/use-scene-generator');
+    const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    mockFetch.mockRejectedValueOnce(abort);
+
+    await expect(
+      fetchSceneContent(
+        {
+          outline,
+          allOutlines: [outline],
+          stageId: 'stage-1',
+          stageInfo: { name: 'Retry Course' },
+        },
+        undefined,
+        retryOptions,
+      ),
+    ).rejects.toBe(abort);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('rethrows an aborted scene actions request', async () => {
+    const { fetchSceneActions } = await import('@/lib/hooks/use-scene-generator');
+    const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
+    mockFetch.mockRejectedValueOnce(abort);
+
+    await expect(
+      fetchSceneActions(
+        {
+          outline,
+          allOutlines: [outline],
+          content: { elements: [] },
+          stageId: 'stage-1',
+        },
+        undefined,
+        retryOptions,
+      ),
+    ).rejects.toBe(abort);
+
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   it('retries transient TTS failures before storing audio', async () => {
     const { generateAndStoreTTS } = await import('@/lib/hooks/use-scene-generator');
     mockFetch

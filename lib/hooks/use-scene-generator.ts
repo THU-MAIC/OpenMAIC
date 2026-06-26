@@ -23,6 +23,7 @@ import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import {
+  isAbortError,
   withGenerationRetry,
   type GenerationRetryOptions,
 } from '@/lib/generation/generation-retry';
@@ -151,6 +152,7 @@ export async function fetchSceneContent(
       },
     );
   } catch (error) {
+    if (isAbortError(error)) throw error;
     return { success: false, error: messageFromError(error, 'Content generation failed') };
   }
 }
@@ -194,6 +196,7 @@ export async function fetchSceneActions(
       },
     );
   } catch (error) {
+    if (isAbortError(error)) throw error;
     return { success: false, error: messageFromError(error, 'Actions generation failed') };
   }
 }
@@ -318,6 +321,8 @@ async function generateTTSForScene(
     try {
       await generateAndStoreTTS(audioId, action.text, language, signal);
     } catch (error) {
+      if (isAbortError(error)) throw error;
+
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
       log.warn('TTS generation failed:', {
@@ -628,7 +633,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
       } catch (err: unknown) {
         // AbortError is expected when stop() is called — don't treat as failure
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (isAbortError(err)) {
           log.info('Generation aborted');
           store.getState().setGenerationStatus('paused');
         } else {
@@ -779,7 +784,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           store.getState().markGenerationCompleteIfDone();
         }
       } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        if (!isAbortError(err)) {
           store.getState().addFailedOutline(outline);
         }
       }

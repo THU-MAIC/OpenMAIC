@@ -235,6 +235,8 @@ export async function generateClassroom(
         maxRetries: 0,
       },
       'generate-classroom-scene',
+      undefined,
+      classroomThinking,
     );
     return result.text;
   };
