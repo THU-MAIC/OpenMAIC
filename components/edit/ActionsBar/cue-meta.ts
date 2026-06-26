@@ -86,8 +86,8 @@ const META: Record<string, CueMeta> = {
   discussion: {
     icon: MessagesSquare,
     labelKey: 'edit.cue.discussion',
-    glyph: 'text-violet-600 bg-violet-500/10 dark:text-violet-400',
-    accent: 'bg-violet-400/70',
+    glyph: 'text-yellow-600 bg-yellow-500/10 dark:text-yellow-400',
+    accent: 'bg-yellow-400/70',
   },
 };
 

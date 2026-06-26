@@ -26,6 +26,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Flag,
   FoldVertical,
   GripVertical,
   Play,
@@ -41,6 +42,14 @@ import { useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { AvatarDisplay } from '@/components/ui/avatar-display';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import type { Action, DiscussionAction } from '@/lib/types/action';
 import { ELEMENT_BOUND, cueLabel, cueMeta } from './cue-meta';
 import { applyCuePreview, clearCuePreview, cuePreviewFor } from './cue-preview';
@@ -82,6 +91,10 @@ const AXIS_FROM_TOP = 20; // px from track top to the axis center (nodes hang be
  * them and they render in the timeline). Cue icon/label/tint live in cue-meta.
  */
 const PALETTE: AddableType[] = ['speech', 'spotlight', 'laser'];
+
+// Radix Select forbids an empty-string item value, so the discussion's
+// "unspecified agent" choice rides a sentinel that maps back to '' on change.
+const DISCUSSION_AGENT_NONE = '__none__';
 
 type DragPayload = { kind: 'new'; type: AddableType } | { kind: 'move'; id: string };
 
@@ -489,7 +502,7 @@ function DiscussionClip({
   topic: string;
   prompt: string;
   agentId: string;
-  agents: Array<{ id: string; name: string }>;
+  agents: Array<{ id: string; name: string; avatar?: string }>;
   onTopicChange: (v: string) => void;
   onPromptChange: (v: string) => void;
   onAgentChange: (v: string) => void;
@@ -497,7 +510,6 @@ function DiscussionClip({
 }) {
   const { t } = useI18n();
   const m = cueMeta('discussion');
-  const Icon = m.icon;
   const needsTopic = !topic.trim();
 
   // Local drafts committed on blur; synced from props when not mid-edit so a
@@ -521,19 +533,19 @@ function DiscussionClip({
         'group/disc relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border bg-white/70 shadow-sm transition-colors dark:bg-slate-800/50',
         needsTopic
           ? 'border-dashed border-amber-400/70'
-          : 'border-gray-200/80 focus-within:border-violet-400 hover:border-violet-300/70 dark:border-gray-700/60 dark:hover:border-violet-500/40',
+          : 'border-gray-200/80 focus-within:border-yellow-400 hover:border-yellow-300/70 dark:border-gray-700/60 dark:hover:border-yellow-500/40',
       )}
     >
       <span className={cn('absolute inset-x-0 top-0 h-[3px]', m.accent)} />
-      <div className="flex items-center gap-1.5 border-b border-gray-100 bg-gray-50/70 px-2 py-1 dark:border-gray-700/50 dark:bg-slate-900/40">
-        <span className={cn('flex size-4 items-center justify-center rounded-full', m.glyph)}>
-          <Icon className="size-2.5" />
+      <div className="flex items-center gap-1.5 border-b border-yellow-300/50 bg-yellow-400/15 px-2 py-1 dark:border-yellow-500/25 dark:bg-yellow-500/10">
+        <span className="flex size-4 items-center justify-center rounded-md bg-yellow-400 text-yellow-950 dark:bg-yellow-500 dark:text-slate-900">
+          <Flag className="size-2.5" />
         </span>
-        <span className="text-[8.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/45">
+        <span className="text-[8.5px] font-semibold uppercase tracking-[0.12em] text-yellow-700 dark:text-yellow-400">
           {t('edit.cue.discussion')}
         </span>
         <span
-          className="ml-auto text-[8.5px] font-medium uppercase tracking-[0.1em] text-violet-500/55"
+          className="ml-auto text-[8.5px] font-medium uppercase tracking-[0.1em] text-yellow-600/70 dark:text-yellow-500/60"
           title={t('edit.timeline.discussionTerminalHint')}
         >
           {t('edit.timeline.discussionTerminal')}
@@ -566,27 +578,47 @@ function DiscussionClip({
         placeholder={t('edit.timeline.discussionPromptPlaceholder')}
         className="min-h-0 flex-1 resize-none bg-transparent px-3 text-[11px] leading-[1.6] text-muted-foreground outline-none placeholder:text-muted-foreground/35 [scrollbar-width:thin]"
       />
-      <label className="flex items-center gap-1 border-t border-gray-100 px-2 py-1 dark:border-gray-700/50">
+      <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-1 dark:border-gray-700/50">
         <span className="shrink-0 text-[9px] text-muted-foreground/50">
           {t('edit.timeline.discussionAgent')}
         </span>
-        <select
-          value={agentId}
-          onChange={(e) => onAgentChange(e.target.value)}
-          className="ml-auto max-w-[130px] truncate rounded border border-border bg-transparent px-1 py-0.5 text-[10px] text-foreground/80 outline-none focus:border-violet-400"
+        <Select
+          value={agentId || DISCUSSION_AGENT_NONE}
+          onValueChange={(v) => onAgentChange(v === DISCUSSION_AGENT_NONE ? '' : v)}
         >
-          <option value="">{t('edit.timeline.discussionAgentUnset')}</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-          {/* keep a set agent visible even if it's no longer in the scene roster */}
-          {agentId && !agents.some((a) => a.id === agentId) && (
-            <option value={agentId}>{agentId}</option>
-          )}
-        </select>
-      </label>
+          <SelectTrigger
+            size="sm"
+            className="ml-auto h-6 max-w-[150px] gap-1 rounded border-border px-1.5 py-0 text-[10px] shadow-none focus-visible:ring-yellow-400/40 [&_svg]:size-3"
+          >
+            <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
+          </SelectTrigger>
+          <SelectContent className="max-h-56">
+            <SelectItem value={DISCUSSION_AGENT_NONE} className="text-[11px]">
+              <span className="text-muted-foreground">
+                {t('edit.timeline.discussionAgentUnset')}
+              </span>
+            </SelectItem>
+            {agents.map((a) => (
+              <SelectItem key={a.id} value={a.id} className="text-[11px]">
+                <span className="flex items-center gap-1.5">
+                  {a.avatar && (
+                    <span className="size-4 shrink-0 overflow-hidden rounded-full bg-muted">
+                      <AvatarDisplay src={a.avatar} alt={a.name} />
+                    </span>
+                  )}
+                  {a.name}
+                </span>
+              </SelectItem>
+            ))}
+            {/* keep a set agent visible even if it's no longer in the scene roster */}
+            {agentId && !agents.some((a) => a.id === agentId) && (
+              <SelectItem value={agentId} className="text-[11px]">
+                {agentId}
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
     </div>
   );
 }
@@ -716,12 +748,15 @@ function NodeDot({
 }) {
   const { t } = useI18n();
   const isSpeech = action.type === 'speech';
+  // A discussion is the scene's terminal anchor — give its node a distinct flag
+  // marker (square, filled yellow) so it reads as the end stop, not a regular cue.
+  const isDiscussion = action.type === 'discussion';
   const bound = ELEMENT_BOUND.has(action.type);
   const elementId = (action as { elementId?: string }).elementId ?? '';
   const needsTarget = bound && !elementId;
   const m = cueMeta(action.type);
   const label = cueLabel(action.type, t);
-  const Icon = m.icon;
+  const Icon = isDiscussion ? Flag : m.icon;
   return (
     <span
       draggable={canDrag}
@@ -742,10 +777,13 @@ function NodeDot({
         if (bound) onPick();
       }}
       className={cn(
-        'grid size-6 place-items-center rounded-full ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
+        'grid size-6 place-items-center ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
+        isDiscussion ? 'rounded-md' : 'rounded-full',
         needsTarget
           ? 'text-amber-600 bg-amber-100 ring-amber-200 animate-pulse dark:bg-amber-500/20 dark:text-amber-400'
-          : m.glyph,
+          : isDiscussion
+            ? 'bg-yellow-400 text-yellow-950 ring-yellow-200 dark:bg-yellow-500 dark:text-slate-900 dark:ring-yellow-500/30'
+            : m.glyph,
         bound
           ? 'cursor-pointer'
           : canDrag
@@ -822,7 +860,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     const ids = (sceneAgentIds?.length ? sceneAgentIds : stageAgentIds) ?? [];
     const fromIds = ids.map((id) => agentsRecord[id]).filter(Boolean);
     const source = fromIds.length ? fromIds : Object.values(agentsRecord);
-    return source.map((a) => ({ id: a.id, name: a.name }));
+    return source.map((a) => ({ id: a.id, name: a.name, avatar: a.avatar }));
   }, [sceneAgentIds, stageAgentIds, agentsRecord]);
 
   const [lineMode, setLineMode] = useState(false); // collapse to just the axis line of node icons
@@ -1066,7 +1104,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                     : t('edit.timeline.addDiscussion')
                 }
                 aria-label={t('edit.timeline.addDiscussion')}
-                className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-violet-400/40 hover:text-foreground disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground"
+                className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-yellow-400/50 hover:text-foreground disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground"
               >
                 <DiscussionIcon className="size-3" />
                 {t('edit.timeline.addDiscussion')}
