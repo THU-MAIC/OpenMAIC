@@ -66,10 +66,16 @@ export const MODALITY_ORDER: TokenPlanModality[] = ['llm', 'image', 'video', 'tt
 
 /**
  * Built-in token plans.
- * - MiniMax is the full-set template: every modality already has a working
- *   adapter in OpenMAIC (LLM/image/video/TTS/web-search).
- * - The rest declare LLM only for now (balance auto-detected where supported);
- *   extend to more modalities by adding entries as adapters land.
+ *
+ * Scoped to TRUE token plans — a single key that spans multiple modalities.
+ * Single-modality LLM providers (aggregators like OpenRouter, vendor-direct like
+ * DeepSeek/GLM/Qwen) are deliberately NOT here: they're ordinary API providers
+ * already covered by the add-provider flow, and listing them under "Token Plan"
+ * muddied the "one key, every modality" promise.
+ *
+ * - MiniMax: full-set template — every modality has a working adapter
+ *   (LLM/image/video/TTS/web-search).
+ * - Volcengine Ark Agent Plan: LLM/image/video/TTS/web-search via the plan key.
  */
 export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
   // ── Full-set token plan (template) ────────────────────────────────────────
@@ -179,76 +185,6 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
       tts: {
         providerId: 'doubao-tts',
         baseUrl: 'https://openspeech.bytedance.com/api/v3/plan/tts',
-      },
-    },
-  },
-
-  // ── Aggregators / gateways (LLM) ──────────────────────────────────────────
-  {
-    id: 'openrouter',
-    name: 'OpenRouter',
-    websiteUrl: 'https://openrouter.ai',
-    icon: '/logos/openrouter.svg',
-    category: 'aggregator',
-    modalities: {
-      llm: {
-        providerId: 'openrouter',
-        baseUrl: 'https://openrouter.ai/api/v1',
-        apiFormat: 'openai',
-      },
-    },
-  },
-  {
-    id: 'siliconflow',
-    name: 'SiliconFlow 硅基流动',
-    websiteUrl: 'https://siliconflow.cn',
-    icon: '/logos/siliconflow.svg',
-    category: 'aggregator',
-    modalities: {
-      llm: {
-        providerId: 'siliconflow',
-        baseUrl: 'https://api.siliconflow.cn/v1',
-        apiFormat: 'openai',
-      },
-    },
-  },
-
-  // ── Vendor-direct (LLM) ───────────────────────────────────────────────────
-  {
-    id: 'deepseek',
-    name: 'DeepSeek',
-    websiteUrl: 'https://platform.deepseek.com',
-    icon: '/logos/deepseek.svg',
-    category: 'third_party',
-    modalities: {
-      llm: { providerId: 'deepseek', baseUrl: 'https://api.deepseek.com', apiFormat: 'openai' },
-    },
-  },
-  {
-    id: 'glm',
-    name: '智谱 GLM',
-    websiteUrl: 'https://bigmodel.cn',
-    icon: '/logos/glm.svg',
-    category: 'third_party',
-    modalities: {
-      llm: {
-        providerId: 'glm',
-        baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-        apiFormat: 'openai',
-      },
-    },
-  },
-  {
-    id: 'qwen',
-    name: '通义千问 Qwen',
-    websiteUrl: 'https://bailian.console.aliyun.com',
-    icon: '/logos/qwen.svg',
-    category: 'third_party',
-    modalities: {
-      llm: {
-        providerId: 'qwen',
-        baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-        apiFormat: 'openai',
       },
     },
   },

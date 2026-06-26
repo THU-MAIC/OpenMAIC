@@ -4,7 +4,7 @@ import {
   removeTokenPlan,
   type TokenPlanActions,
 } from '@/lib/config/apply-token-plan';
-import { TOKEN_PLAN_PRESETS } from '@/lib/config/token-plan-presets';
+import { TOKEN_PLAN_PRESETS, type TokenPlanPreset } from '@/lib/config/token-plan-presets';
 
 function makeActions(): TokenPlanActions {
   return {
@@ -17,7 +17,17 @@ function makeActions(): TokenPlanActions {
 }
 
 const minimax = TOKEN_PLAN_PRESETS.find((p) => p.id === 'minimax')!;
-const deepseek = TOKEN_PLAN_PRESETS.find((p) => p.id === 'deepseek')!;
+// An LLM-only plan shape. The shipped presets are all multi-modal token plans
+// now, so use a local fixture to exercise the "only touch declared modalities"
+// path without coupling to a particular shipped entry.
+const deepseek: TokenPlanPreset = {
+  id: 'deepseek',
+  name: 'DeepSeek',
+  category: 'third_party',
+  modalities: {
+    llm: { providerId: 'deepseek', baseUrl: 'https://api.deepseek.com', apiFormat: 'openai' },
+  },
+};
 
 describe('applyTokenPlan', () => {
   it('fills every declared modality for a full-set plan (MiniMax)', () => {
