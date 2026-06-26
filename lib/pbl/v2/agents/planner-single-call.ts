@@ -56,6 +56,33 @@ const log = createLogger('PBL v2 Planner (single-call)');
 const SINGLE_CALL_PROMPT = 'planner-single-call-system';
 const SCENARIO_PROMPT = 'planner-scenario-single-call-system';
 
+function buildSingleCallUserPrompt(scenarioRoleplay: boolean): string {
+  const sharedChecklist = [
+    'projectInfo has non-empty title, description, learningObjective, 3-5 gains, and the exact requested proficiency',
+    'instructorRole.name is non-empty',
+    'milestones is a non-empty array',
+    'every milestone has title, briefing, completionCriteria, debrief, and at least one microtask',
+    'every microtask has a non-empty title',
+  ];
+  const scenarioChecklist = scenarioRoleplay
+    ? [
+        'scenario exists with setting, at least one character (name/persona/situation), and sceneVisual.caption plus emoji motifs',
+        'milestones follow the exact skeleton: first scenarioStage "prep", last "wrapup", and at least one middle "roleplay"',
+        'every roleplay microtask has non-empty successWhen',
+      ]
+    : [];
+  const checklist = [...sharedChecklist, ...scenarioChecklist]
+    .map((item) => `- ${item}`)
+    .join('\n');
+
+  return [
+    'Design the PBL project now. Output the single JSON object described in the system prompt — no prose, no code fences.',
+    '',
+    'Before output, verify it passes this exact structural validator:',
+    checklist,
+  ].join('\n');
+}
+
 // ---------------------------------------------------------------------------
 // LLM output shape
 // ---------------------------------------------------------------------------
@@ -476,8 +503,7 @@ export async function generatePBLV2ProjectSingleCall(
     scenarioRoleplay ? SCENARIO_PROMPT : SINGLE_CALL_PROMPT,
   );
 
-  const basePrompt =
-    'Design the PBL project now. Output the single JSON object described in the system prompt — no prose, no code fences.';
+  const basePrompt = buildSingleCallUserPrompt(scenarioRoleplay);
 
   const callModel = async (prompt: string): Promise<PlannerLLMOutput | null> => {
     const result = await callLLM(
@@ -495,7 +521,9 @@ export async function generatePBLV2ProjectSingleCall(
 
   // One targeted retry: hand the model its concrete problems back.
   if (gaps.length > 0) {
-    log.warn(`Single-call planner first attempt had ${gaps.length} gap(s); retrying once.`);
+    log.warn(
+      `Single-call planner first attempt had ${gaps.length} gap(s); retrying once: ${gaps.join('; ')}`,
+    );
     const retryPrompt = `${basePrompt}\n\nYour previous output had these problems:\n${gaps
       .map((g) => `- ${g}`)
       .join('\n')}\n\nFix every one of them and output the corrected single JSON object.`;

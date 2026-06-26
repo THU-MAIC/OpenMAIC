@@ -12,7 +12,7 @@
  * per the model's capability by callLLM. e.g.
  *
  *   DEFAULT_MODEL=openai:gpt-5.4-mini
- *   MODEL_ROUTES='{"scene-content":"openai:gpt-5.4","pbl-chat":{"model":"anthropic:claude-sonnet-4","thinking":{"enabled":false}}}'
+ *   MODEL_ROUTES='{"scene-content":"openai:gpt-5.4","pbl-chat":{"model":"anthropic:claude-sonnet-4","thinking":{"enabled":false}},"pbl-v2-runtime":"deepseek:deepseek-v4-pro"}'
  *
  * Only the *routable* stages below are valid keys — each is backed by a real
  * `resolveModel` call site. Downstream sub-calls (e.g. `pbl-generate`,
@@ -104,6 +104,10 @@ function parseThinking(key: string, raw: unknown): ThinkingConfig | undefined {
  * request carries an `outline.type`, it routes via the composite key and falls
  * back to the base `scene-content` route (see getStageModel). Only the four
  * core scene types are routable; interactive widget sub-types are not split.
+ *
+ * `pbl-v2-runtime:<route>` keys follow the same composite fallback pattern:
+ * a specific runtime endpoint can be routed independently, or inherit the base
+ * `pbl-v2-runtime` model when no endpoint-specific route is configured.
  */
 export const LLM_STAGES = [
   'scene-outlines-stream',
@@ -116,6 +120,11 @@ export const LLM_STAGES = [
   'agent-profiles',
   'quiz-grade',
   'pbl-chat',
+  'pbl-v2-runtime',
+  'pbl-v2-runtime:instructor',
+  'pbl-v2-runtime:open-task',
+  'pbl-v2-runtime:evaluate',
+  'pbl-v2-runtime:simulator',
   'chat-adapter',
   'generate-classroom',
   'web-search-query-rewrite',

@@ -19,10 +19,12 @@ declare global {
 export interface UseAudioRecorderOptions {
   onTranscription?: (text: string) => void;
   onError?: (error: string) => void;
+  /** When true and using browser-native ASR, recognition stays active until explicitly stopped. */
+  continuous?: boolean;
 }
 
 export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
-  const { onTranscription, onError } = options;
+  const { onTranscription, onError, continuous = false } = options;
 
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -121,7 +123,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           const recognition = new SpeechRecognition();
 
           recognition.lang = asrLanguage || 'zh-CN';
-          recognition.continuous = false;
+          recognition.continuous = continuous;
           recognition.interimResults = false;
 
           recognition.onstart = () => {
@@ -135,12 +137,25 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
           };
 
           recognition.onresult = (event: {
+            resultIndex: number;
             results: {
-              [index: number]: { [index: number]: { transcript: string } };
+              [index: number]: {
+                isFinal: boolean;
+                [index: number]: { transcript: string };
+              };
+              length: number;
             };
           }) => {
-            const transcript = event.results[0][0].transcript;
-            onTranscription?.(transcript);
+            let transcript = '';
+            for (let i = event.resultIndex; i < event.results.length; i++) {
+              const result = event.results[i];
+              if (result.isFinal && result[0]?.transcript) {
+                transcript += result[0].transcript;
+              }
+            }
+            if (transcript) {
+              onTranscription?.(transcript);
+            }
           };
 
           recognition.onerror = (event: { error: string }) => {
@@ -246,7 +261,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
       log.error('Failed to start recording:', error);
       onError?.('无法访问麦克风，请检查权限设置');
     }
-  }, [onTranscription, onError, transcribeAudio]);
+  }, [onTranscription, onError, transcribeAudio, continuous]);
 
   // Stop recording
   const stopRecording = useCallback(() => {

@@ -14,6 +14,16 @@ interface SpeechButtonProps {
   className?: string;
   disabled?: boolean;
   size?: 'sm' | 'md';
+  /** Keep browser-native ASR active until the user manually stops it. */
+  continuous?: boolean;
+}
+
+export function shouldCancelRecordingOnDisable(args: {
+  continuous?: boolean;
+  disabled?: boolean;
+  isRecording: boolean;
+}): boolean {
+  return !!args.continuous && !!args.disabled && args.isRecording;
 }
 
 export function SpeechButton({
@@ -21,6 +31,7 @@ export function SpeechButton({
   className,
   disabled,
   size = 'sm',
+  continuous,
 }: SpeechButtonProps) {
   const { t } = useI18n();
 
@@ -38,10 +49,18 @@ export function SpeechButton({
     toast.error(error);
   }, []);
 
-  const { isRecording, isProcessing, startRecording, stopRecording } = useAudioRecorder({
-    onTranscription: stableOnTranscription,
-    onError: handleError,
-  });
+  const { isRecording, isProcessing, startRecording, stopRecording, cancelRecording } =
+    useAudioRecorder({
+      onTranscription: stableOnTranscription,
+      onError: handleError,
+      continuous,
+    });
+
+  useEffect(() => {
+    if (shouldCancelRecordingOnDisable({ continuous, disabled, isRecording })) {
+      cancelRecording();
+    }
+  }, [continuous, disabled, isRecording, cancelRecording]);
 
   const active = isRecording || isProcessing;
 

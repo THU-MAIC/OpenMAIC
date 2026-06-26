@@ -54,6 +54,23 @@ function pblOutline(): SceneOutline {
   };
 }
 
+function scenarioPblOutline(): SceneOutline {
+  const outline = pblOutline();
+  return {
+    ...outline,
+    title: 'Difficult feedback conversation',
+    description: 'Practice giving feedback to a teammate.',
+    pblConfig: {
+      ...outline.pblConfig!,
+      projectTopic: 'Difficult feedback conversation',
+      projectDescription: 'Practice giving feedback to a teammate.',
+      targetSkills: ['active listening', 'clear feedback'],
+      scenarioRoleplay: true,
+      scenarioBrief: 'The learner gives feedback to a teammate after a missed deadline.',
+    },
+  };
+}
+
 function mockModel() {
   return { provider: 'test', modelId: 'test-model' } as never;
 }
@@ -143,5 +160,57 @@ describe('generateSceneContent — PBL v2 planner routing', () => {
       projectConfig: legacyConfig,
       projectV2,
     });
+  });
+
+  it('falls back to legacy v1 for ordinary PBL when both v2 attempts fail', async () => {
+    const legacyConfig = { agents: [{ id: 'coach' }], issueboard: { issues: [{ id: 'issue-1' }] } };
+
+    generatePBLV2ProjectSingleCallMock.mockRejectedValueOnce(new Error('single-call failed'));
+    generatePBLV2ProjectMock.mockRejectedValueOnce(new Error('loop failed'));
+    generatePBLContentMock.mockResolvedValue(legacyConfig);
+
+    const { generateSceneContent } = await import('@/lib/generation/scene-generator');
+    const content = (await generateSceneContent(pblOutline(), vi.fn(), {
+      languageModel: mockModel(),
+      languageDirective: 'Reply in English.',
+    })) as GeneratedPBLContent | null;
+
+    expect(generatePBLV2ProjectSingleCallMock).toHaveBeenCalledTimes(1);
+    expect(generatePBLV2ProjectMock).toHaveBeenCalledTimes(1);
+    expect(generatePBLContentMock).toHaveBeenCalledTimes(1);
+    expect(content).toEqual({ projectConfig: legacyConfig });
+  });
+
+  it('does not fall back to legacy v1 when scenario PBL v2 generation fails', async () => {
+    generatePBLV2ProjectSingleCallMock.mockRejectedValueOnce(new Error('single-call failed'));
+    generatePBLV2ProjectMock.mockRejectedValueOnce(new Error('loop failed'));
+    generatePBLContentMock.mockResolvedValue({ agents: [], issueboard: { issues: [] } });
+
+    const { generateSceneContent } = await import('@/lib/generation/scene-generator');
+    const content = (await generateSceneContent(scenarioPblOutline(), vi.fn(), {
+      languageModel: mockModel(),
+      languageDirective: 'Reply in English.',
+    })) as GeneratedPBLContent | null;
+
+    expect(generatePBLV2ProjectSingleCallMock).toHaveBeenCalledTimes(1);
+    expect(generatePBLV2ProjectMock).toHaveBeenCalledTimes(1);
+    expect(generatePBLContentMock).not.toHaveBeenCalled();
+    expect(content).toBeNull();
+  });
+
+  it('does not fall back to legacy v1 when scenario PBL is requested and v2 is disabled', async () => {
+    process.env.PBL_V2_DISABLED = 'true';
+    generatePBLContentMock.mockResolvedValue({ agents: [], issueboard: { issues: [] } });
+
+    const { generateSceneContent } = await import('@/lib/generation/scene-generator');
+    const content = (await generateSceneContent(scenarioPblOutline(), vi.fn(), {
+      languageModel: mockModel(),
+      languageDirective: 'Reply in English.',
+    })) as GeneratedPBLContent | null;
+
+    expect(generatePBLV2ProjectSingleCallMock).not.toHaveBeenCalled();
+    expect(generatePBLV2ProjectMock).not.toHaveBeenCalled();
+    expect(generatePBLContentMock).not.toHaveBeenCalled();
+    expect(content).toBeNull();
   });
 });
