@@ -4,7 +4,20 @@ import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Eye, EyeOff, CheckCircle2, Circle, Zap, Trash2 } from 'lucide-react';
+import {
+  Loader2,
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  Zap,
+  Trash2,
+  Brain,
+  Image as ImageIcon,
+  Video,
+  AudioLines,
+  Globe,
+  type LucideIcon,
+} from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -34,6 +47,16 @@ const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   webSearch: 'settings.webSearchSettings',
 };
 
+// Each modality carries its own identity icon in the result tiles, so a row is
+// recognizable at a glance rather than reading as an anonymous status dot.
+const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
+  llm: Brain,
+  image: ImageIcon,
+  video: Video,
+  tts: AudioLines,
+  webSearch: Globe,
+};
+
 export function TokenPlanSettings() {
   const { t } = useI18n();
   const setProviderConfig = useSettingsStore((s) => s.setProviderConfig);
@@ -48,6 +71,10 @@ export function TokenPlanSettings() {
   // Read provider configs so the page can reflect already-persisted state
   // (other settings panels read the store directly; this page must too).
   const providersConfig = useSettingsStore((s) => s.providersConfig);
+  const imageProvidersConfig = useSettingsStore((s) => s.imageProvidersConfig);
+  const videoProvidersConfig = useSettingsStore((s) => s.videoProvidersConfig);
+  const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
+  const webSearchProvidersConfig = useSettingsStore((s) => s.webSearchProvidersConfig);
 
   const [selected, setSelected] = useState<TokenPlanPreset | null>(null);
   const [apiKey, setApiKey] = useState('');
@@ -174,7 +201,7 @@ export function TokenPlanSettings() {
             if (ids.length > 0) {
               setProviderConfig(
                 llm.providerId as never,
-                { models: ids.map((id) => modelInfoFromId(id)) } as never,
+                { models: ids.map((id) => modelInfoFromId(id, llm.providerId)) } as never,
               );
             }
             // If none verified (e.g. all timed out), keep the seeded fallback.
@@ -202,7 +229,7 @@ export function TokenPlanSettings() {
             if (ids.length > 0) {
               setProviderConfig(
                 llm.providerId as never,
-                { models: ids.map((id) => modelInfoFromId(id)) } as never,
+                { models: ids.map((id) => modelInfoFromId(id, llm.providerId)) } as never,
               );
             }
             setLlmModelCount(ids.length);
@@ -277,8 +304,48 @@ export function TokenPlanSettings() {
     setVideoModelId,
   ]);
 
-  // Modalities NOT declared by the selected plan → "not adapted yet".
-  const notAdapted = selected ? MODALITY_ORDER.filter((m) => !selected.modalities[m]) : [];
+  // Live status for one of a preset's capability chips. Only the selected preset
+  // mid/post-apply has probe results; every other chip stays 'idle' (neutral).
+  // Whether a modality's provider is persisted as configured + enabled in the
+  // store (survives navigating away and reopening — the store is persisted, the
+  // transient `results` state is not). A modality probed as unavailable was
+  // disabled on apply, so it reads as not-configured here.
+  const isModalityConfigured = (preset: TokenPlanPreset, m: TokenPlanModality): boolean => {
+    const id = preset.modalities[m]?.providerId;
+    if (!id) return false;
+    const enabledAndKeyed = (c?: { apiKey?: string; enabled?: boolean }) =>
+      !!c?.apiKey && c.enabled !== false;
+    switch (m) {
+      case 'llm':
+        return !!providersConfig[id as keyof typeof providersConfig]?.apiKey;
+      case 'image':
+        return enabledAndKeyed(imageProvidersConfig[id as keyof typeof imageProvidersConfig]);
+      case 'video':
+        return enabledAndKeyed(videoProvidersConfig[id as keyof typeof videoProvidersConfig]);
+      case 'tts':
+        return enabledAndKeyed(ttsProvidersConfig[id as keyof typeof ttsProvidersConfig]);
+      case 'webSearch':
+        return enabledAndKeyed(
+          webSearchProvidersConfig[id as keyof typeof webSearchProvidersConfig],
+        );
+      default:
+        return false;
+    }
+  };
+
+  // Live status for one of a preset's capability chips. The selected preset's
+  // in-flight probe results win (pending/lit/failed this session); otherwise we
+  // fall back to the persisted store config so a previously-lit plan stays lit
+  // after navigating away and back.
+  const chipStatus = (
+    preset: TokenPlanPreset,
+    m: TokenPlanModality,
+  ): ApplyResult['status'] | 'idle' => {
+    if (selected?.id === preset.id && results) {
+      return results.find((r) => r.modality === m)?.status ?? 'idle';
+    }
+    return isModalityConfigured(preset, m) ? 'lit' : 'idle';
+  };
 
   return (
     <div className="flex flex-col gap-6 max-w-3xl">
@@ -312,12 +379,42 @@ export function TokenPlanSettings() {
                   ) : (
                     <span className="h-5 w-5 shrink-0 rounded bg-muted" />
                   )}
-                  <span className="flex flex-col min-w-0 flex-1">
+                  <span className="flex flex-col min-w-0 flex-1 gap-1">
                     <span className="truncate font-medium">{preset.name}</span>
-                    <span className="truncate text-xs text-muted-foreground">
-                      {MODALITY_ORDER.filter((m) => preset.modalities[m])
-                        .map((m) => t(MODALITY_LABEL_KEYS[m]))
-                        .join(' · ')}
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                      {MODALITY_ORDER.filter((m) => preset.modalities[m]).map((m) => {
+                        const st = chipStatus(preset, m);
+                        const ChipIcon = MODALITY_ICONS[m];
+                        const showCount =
+                          st === 'lit' && m === 'llm' && llmModelCount != null
+                            ? ` ${llmModelCount}`
+                            : '';
+                        return (
+                          <span
+                            key={m}
+                            className={cn(
+                              'inline-flex items-center gap-1 text-xs transition-colors',
+                              st === 'lit'
+                                ? 'text-green-600 dark:text-green-500'
+                                : st === 'failed'
+                                  ? 'text-muted-foreground/40 line-through'
+                                  : st === 'pending'
+                                    ? 'text-foreground'
+                                    : 'text-muted-foreground',
+                            )}
+                          >
+                            {st === 'pending' ? (
+                              <Loader2 className="size-3 shrink-0 animate-spin motion-reduce:animate-none" />
+                            ) : st === 'lit' ? (
+                              <CheckCircle2 className="size-3 shrink-0" />
+                            ) : (
+                              <ChipIcon className="size-3 shrink-0" />
+                            )}
+                            {t(MODALITY_LABEL_KEYS[m])}
+                            {showCount}
+                          </span>
+                        );
+                      })}
                     </span>
                   </span>
                   {isPresetConfigured(preset) && (
@@ -378,48 +475,6 @@ export function TokenPlanSettings() {
               {t('settings.tokenPlan.apply')}
             </Button>
           </div>
-        </div>
-      )}
-
-      {/* Apply results — rendered as soon as Apply runs (progressive reveal):
-          rows appear immediately, modalities with a live probe in flight show a
-          spinner ('pending') and resolve to lit/failed independently as each
-          probe returns. A row only turns green once its own probe confirms, so
-          this shows structure + live progress without a premature green. */}
-      {results && (
-        <div className="space-y-2 border-t pt-4">
-          <div className="text-xs font-medium text-muted-foreground">
-            {t('settings.tokenPlan.litUp')}
-          </div>
-          {results.map((r) => (
-            <div key={r.modality} className="flex items-center gap-2 text-sm">
-              {r.status === 'pending' ? (
-                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-              ) : r.status === 'lit' ? (
-                <CheckCircle2 className="h-4 w-4 text-green-600" />
-              ) : (
-                <Circle className="h-4 w-4 text-muted-foreground" />
-              )}
-              <span className={r.status === 'lit' ? '' : 'text-muted-foreground'}>
-                {t(MODALITY_LABEL_KEYS[r.modality])}
-              </span>
-              {r.status === 'lit' && r.modality === 'llm' && llmModelCount != null && (
-                <span className="text-xs text-muted-foreground">
-                  ({t('settings.tokenPlan.modelsLit').replace('{n}', String(llmModelCount))})
-                </span>
-              )}
-              {r.status === 'failed' && r.detail && (
-                <span className="text-xs text-muted-foreground">{r.detail}</span>
-              )}
-            </div>
-          ))}
-          {notAdapted.map((m) => (
-            <div key={m} className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Circle className="h-4 w-4" />
-              <span>{t(MODALITY_LABEL_KEYS[m])}</span>
-              <span className="text-xs">({t('settings.tokenPlan.notAdapted')})</span>
-            </div>
-          ))}
         </div>
       )}
     </div>

@@ -119,6 +119,30 @@ describe('applyTokenPlan', () => {
     expect(cfg.models.map((m) => m.id)).toEqual(['ark-code-latest', 'kimi-k2.5']);
   });
 
+  it('enriches seeded models with their built-in thinking capability', () => {
+    const actions = makeActions();
+    const preset = {
+      ...deepseek,
+      modalities: {
+        llm: {
+          providerId: 'doubao',
+          baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
+          apiFormat: 'openai' as const,
+          // dotted plan alias of a native Doubao Seed 2.0 model + a cross-vendor
+          // model the Ark plan serves through its OpenAI-compatible endpoint
+          defaultModels: ['doubao-seed-2.0-pro', 'deepseek-v4-pro'],
+        },
+      },
+    };
+    applyTokenPlan(preset, 'k', actions);
+    const cfg = (actions.setProviderConfig as ReturnType<typeof vi.fn>).mock.calls[0][1] as {
+      models: Array<{ id: string; capabilities?: { thinking?: unknown } }>;
+    };
+    // Both keep thinking support instead of silently dropping it.
+    expect(cfg.models[0].capabilities?.thinking).toBeDefined();
+    expect(cfg.models[1].capabilities?.thinking).toBeDefined();
+  });
+
   it('isolates a failing modality without aborting the rest', () => {
     const actions = makeActions();
     (actions.setImageProviderConfig as ReturnType<typeof vi.fn>).mockImplementation(() => {

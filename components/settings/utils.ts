@@ -1,5 +1,6 @@
 import type { ProviderId, ProviderType, ModelInfo } from '@/lib/types/provider';
 import type { ProviderSettings } from '@/lib/types/settings';
+import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
 
 /** Heuristic: model ids matching this are treated as vision-capable. */
 const VISION_MODEL_PATTERN = /vision|vl|omni|4o|gpt-5|gemini|claude/i;
@@ -8,8 +9,14 @@ const VISION_MODEL_PATTERN = /vision|vl|omni|4o|gpt-5|gemini|claude/i;
  * Builds a default ModelInfo from a probed model id. Vision capability is
  * inferred from the id via {@link VISION_MODEL_PATTERN}. Shared by the provider
  * panel and the token-plan apply flow so the heuristic stays in one place.
+ *
+ * When `providerId` is given, the built-in thinking capability for that
+ * (provider, model) pair is overlaid — so a model that supports configurable
+ * thinking keeps its `capabilities.thinking` instead of silently losing it
+ * (which would hide InlineThinkingControl). Unknown pairs are unaffected.
  */
-export function modelInfoFromId(id: string): ModelInfo {
+export function modelInfoFromId(id: string, providerId?: string): ModelInfo {
+  const thinking = providerId ? getCatalogThinkingCapability(providerId, id) : undefined;
   return {
     id,
     name: id,
@@ -17,6 +24,7 @@ export function modelInfoFromId(id: string): ModelInfo {
       streaming: true,
       tools: true,
       vision: VISION_MODEL_PATTERN.test(id),
+      ...(thinking ? { thinking } : {}),
     },
   };
 }

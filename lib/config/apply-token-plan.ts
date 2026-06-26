@@ -8,6 +8,7 @@ import type {
   TokenPlanPreset,
 } from './token-plan-presets';
 import { MODALITY_ORDER } from './token-plan-presets';
+import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
 
 /**
  * The subset of settings-store setters needed to fill a token plan across
@@ -118,11 +119,22 @@ function applyModality(
         // Seed the model list: a preset's fixed `defaultModels` when given
         // (endpoints without a probable /models list), else an empty list that
         // the UI's probe step populates. Validators read `models.length`.
-        models: (target.defaultModels ?? []).map((id) => ({
-          id,
-          name: id,
-          capabilities: { streaming: true, tools: true, vision: false },
-        })),
+        // Overlay the built-in thinking capability so seeded models keep their
+        // thinking control instead of silently losing it (the probe step does
+        // the same when it replaces this list).
+        models: (target.defaultModels ?? []).map((id) => {
+          const thinking = getCatalogThinkingCapability(target.providerId, id);
+          return {
+            id,
+            name: id,
+            capabilities: {
+              streaming: true,
+              tools: true,
+              vision: false,
+              ...(thinking ? { thinking } : {}),
+            },
+          };
+        }),
         ...(target.modelsUrl ? { modelsUrl: target.modelsUrl } : {}),
       });
       break;
