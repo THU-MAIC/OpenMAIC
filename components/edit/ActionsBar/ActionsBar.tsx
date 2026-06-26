@@ -748,15 +748,16 @@ function NodeDot({
 }) {
   const { t } = useI18n();
   const isSpeech = action.type === 'speech';
-  // A discussion is the scene's terminal anchor — give its node a distinct flag
-  // marker (square, filled yellow) so it reads as the end stop, not a regular cue.
+  // A discussion is the scene's terminal anchor — give its node a distinct
+  // marker (square, filled yellow) so it reads as the end stop, not a regular
+  // cue. Its flag glyph comes from cue-meta like every other type's.
   const isDiscussion = action.type === 'discussion';
   const bound = ELEMENT_BOUND.has(action.type);
   const elementId = (action as { elementId?: string }).elementId ?? '';
   const needsTarget = bound && !elementId;
   const m = cueMeta(action.type);
   const label = cueLabel(action.type, t);
-  const Icon = isDiscussion ? Flag : m.icon;
+  const Icon = m.icon;
   return (
     <span
       draggable={canDrag}
@@ -850,18 +851,23 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     (s) => s.ttsEnabled && s.ttsProviderId !== 'browser-native-tts',
   );
 
-  // Agents a discussion can be initiated by: this scene's multi-agent roster,
-  // else the stage-level selection, else every registered agent — resolved to
-  // { id, name } for the picker (matches the runtime `agentId` lookup).
+  // Agents a discussion can be initiated by — sourced from the user's currently
+  // SELECTED agents, the exact set the playback engine gates on: it skips (and
+  // consumes) any discussion whose `agentId` isn't selected. Offering the same
+  // set here means whatever the author picks will actually fire at playback;
+  // anything else (scene/stage roster) could let them save an initiator that the
+  // engine silently drops. With nothing selected only "unspecified" remains,
+  // which is correct since an unset `agentId` is never skipped.
   const agentsRecord = useAgentRegistry((s) => s.agents);
-  const sceneAgentIds = scene?.multiAgent?.agentIds;
-  const stageAgentIds = useStageStore((s) => s.stage?.agentIds);
-  const discussionAgents = useMemo(() => {
-    const ids = (sceneAgentIds?.length ? sceneAgentIds : stageAgentIds) ?? [];
-    const fromIds = ids.map((id) => agentsRecord[id]).filter(Boolean);
-    const source = fromIds.length ? fromIds : Object.values(agentsRecord);
-    return source.map((a) => ({ id: a.id, name: a.name, avatar: a.avatar }));
-  }, [sceneAgentIds, stageAgentIds, agentsRecord]);
+  const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
+  const discussionAgents = useMemo(
+    () =>
+      selectedAgentIds
+        .map((id) => agentsRecord[id])
+        .filter(Boolean)
+        .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar })),
+    [selectedAgentIds, agentsRecord],
+  );
 
   const [lineMode, setLineMode] = useState(false); // collapse to just the axis line of node icons
   const [tip, setTip] = useState<TooltipState | null>(null);
@@ -1088,29 +1094,26 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
           </button>
         )}
 
-        {!lineMode &&
-          (() => {
-            // A discussion is terminal + at-most-one, so it's appended here
-            // rather than dragged in. Disabled once the scene already has one.
-            const DiscussionIcon = cueMeta('discussion').icon;
-            return (
-              <button
-                type="button"
-                onClick={addDiscussion}
-                disabled={discussionPresent}
-                title={
-                  discussionPresent
-                    ? t('edit.timeline.addDiscussionExists')
-                    : t('edit.timeline.addDiscussion')
-                }
-                aria-label={t('edit.timeline.addDiscussion')}
-                className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-yellow-400/50 hover:text-foreground disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground"
-              >
-                <DiscussionIcon className="size-3" />
-                {t('edit.timeline.addDiscussion')}
-              </button>
-            );
-          })()}
+        {/* A discussion is terminal + at-most-one, so it's appended here rather
+            than dragged in. Disabled once the scene already has one. The flag
+            icon matches the discussion's terminal-anchor node on the track. */}
+        {!lineMode && (
+          <button
+            type="button"
+            onClick={addDiscussion}
+            disabled={discussionPresent}
+            title={
+              discussionPresent
+                ? t('edit.timeline.addDiscussionExists')
+                : t('edit.timeline.addDiscussion')
+            }
+            aria-label={t('edit.timeline.addDiscussion')}
+            className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-yellow-400/50 hover:text-foreground disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground"
+          >
+            <Flag className="size-3" />
+            {t('edit.timeline.addDiscussion')}
+          </button>
+        )}
 
         <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/60">
           {t('edit.timeline.counts', { speech: speechCount, cue: cueCount })}

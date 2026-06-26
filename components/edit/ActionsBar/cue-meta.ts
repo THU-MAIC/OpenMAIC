@@ -10,8 +10,8 @@
 import {
   Circle,
   Crosshair,
+  Flag,
   Focus,
-  MessagesSquare,
   PenLine,
   Presentation,
   Quote,
@@ -84,7 +84,7 @@ const META: Record<string, CueMeta> = {
     accent: 'bg-sky-400/70',
   },
   discussion: {
-    icon: MessagesSquare,
+    icon: Flag,
     labelKey: 'edit.cue.discussion',
     glyph: 'text-yellow-600 bg-yellow-500/10 dark:text-yellow-400',
     accent: 'bg-yellow-400/70',
