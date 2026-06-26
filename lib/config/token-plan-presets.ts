@@ -132,24 +132,53 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
           'kimi-k2.6',
         ],
       },
-      // Image: the plan's seedream model differs from the seedream registry
-      // default (5.0-lite vs the pay-as-you-go id), so declare it explicitly.
-      // The adapter routes by baseUrl path (/api/plan/v3 → /images/generations).
+      // Image: the Agent Plan publishes the Seedream 4.0–5.0 family on the /plan
+      // endpoint (docs: Seedream 4.0-5.0 教程; the curl example uses the dotted
+      // alias `doubao-seedream-5.0-lite`, NOT the pay-as-you-go catalog id). List
+      // them best-first so the verified `customModels[0]` is the strongest the
+      // plan tier allows: a high tier keeps `5.0`, a lite tier prunes down to
+      // `5.0-lite`. The adapter routes by baseUrl path (/api/plan/v3 →
+      // /images/generations).
       image: {
         providerId: 'seedream',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
         verifyModels: true,
-        defaultModels: ['doubao-seedream-5.0-lite'],
+        defaultModels: [
+          'doubao-seedream-5.0',
+          'doubao-seedream-5.0-lite',
+          'doubao-seedream-4.5',
+          'doubao-seedream-4.0',
+        ],
       },
-      // Video: only Medium+ tiers include video; lower tiers reject these at
-      // call time. verifyModels probes on apply so an unsupported tier simply
-      // isn't lit up (no false "available" that 404s on first use), and an
-      // upgraded plan works without a code change.
+      // Video: the Agent Plan publishes the Seedance 2.0 + 1.5 family (docs: the
+      // curl example uses `doubao-seedance-2.0`). Tier-gated — a lower tier
+      // rejects 2.0 with `UnsupportedModel` ("does not support the agent plan
+      // feature") while still allowing 1.5-pro. verifyModels probes each on apply
+      // (best-first), so a high tier keeps 2.0 and a lower tier prunes to 1.5-pro
+      // — no false "available" that fails on first use, and an upgraded plan
+      // lights up 2.0 with no code change.
       video: {
         providerId: 'seedance',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
         verifyModels: true,
         defaultModels: ['doubao-seedance-2.0', 'doubao-seedance-1.5-pro'],
+      },
+      // Web search: 豆包搜索 (Custom 版). Unlike the LLM/image/video modalities,
+      // this lives on its OWN host (open.feedcoopapi.com, not the ark plan
+      // endpoint) and authenticates with the same Agent Plan key as a Bearer
+      // token (verified). 500 free calls/month per Volcengine account.
+      webSearch: {
+        providerId: 'doubao',
+        baseUrl: 'https://open.feedcoopapi.com',
+      },
+      // TTS: Doubao Seed-TTS 2.0. Yet another host (openspeech.bytedance.com)
+      // with its own auth — the Agent Plan single key goes in `X-Api-Key` on the
+      // /api/plan/tts endpoint (verified: the normal /api/v3/tts endpoint 401s a
+      // plan key, and the plan endpoint rejects Bearer). The doubao-tts adapter
+      // detects the single-key (no colon) shape and switches to X-Api-Key auth.
+      tts: {
+        providerId: 'doubao-tts',
+        baseUrl: 'https://openspeech.bytedance.com/api/v3/plan/tts',
       },
     },
   },
