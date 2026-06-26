@@ -55,9 +55,12 @@ async function submitTask(
 
   const model = config.model || 'MiniMax-Hailuo-2.3';
   const duration = options.duration || 6;
-  // Map OpenMAIC resolution to MiniMax format
+  // Map OpenMAIC resolution to MiniMax format. MiniMax's mid tier is 768P, not
+  // 720P — Hailuo 2.3 rejects 720P with "2013 ... does not support resolution
+  // 720P". Our shared resolution enum has no 768p, so the UI's "720p" maps to
+  // MiniMax 768P here (and 768P is also the safe fallback for any other value).
   const resolutionMap: Record<string, string> = {
-    '720p': '720P',
+    '720p': '768P',
     '1080p': '1080P',
   };
   const resolution = resolutionMap[options.resolution || ''] || '768P';
