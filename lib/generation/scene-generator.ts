@@ -1012,8 +1012,8 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 /**
  * Generate PBL project content.
  *
- * Routes to v2 by default; falls back to legacy v1 when v2 fails or when
- * explicitly disabled via `PBL_V2_DISABLED=true`.
+ * Routes to v2 by default. Ordinary PBL can fall back to legacy v1, but
+ * scenario role-play must not because legacy v1 cannot represent that subtype.
  */
 async function generatePBLSceneContent(
   outline: SceneOutline,
@@ -1037,6 +1037,14 @@ async function generatePBLSceneContent(
   log.info(`Generating PBL content for: ${outline.title}`);
 
   const v2Disabled = process.env.PBL_V2_DISABLED === 'true';
+  const scenarioRoleplay = pblConfig.scenarioRoleplay === true;
+
+  if (v2Disabled && scenarioRoleplay) {
+    log.error(
+      `PBL scenario role-play requested for "${outline.title}" but PBL v2 is disabled; refusing to generate legacy ordinary PBL.`,
+    );
+    return null;
+  }
 
   if (!v2Disabled) {
     const plannerInput: PBLPlannerV2Input = {
@@ -1095,6 +1103,13 @@ async function generatePBLSceneContent(
         log.warn(`PBL v2 generation failed (${attempt.label}: ${msg}).`);
       }
     }
+    if (scenarioRoleplay) {
+      log.error(
+        `PBL v2 scenario generation failed for "${outline.title}"; refusing to fall back to legacy ordinary PBL.`,
+      );
+      return null;
+    }
+
     log.warn('All PBL v2 attempts failed; falling back to v1 generator.');
   }
 
