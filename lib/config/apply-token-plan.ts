@@ -56,7 +56,9 @@ export interface TokenPlanActions {
 
 export interface ApplyResult {
   modality: TokenPlanModality;
-  status: 'lit' | 'failed';
+  // 'pending' is a UI-only state the settings page sets while a live probe is in
+  // flight; applyTokenPlan itself only ever returns 'lit' or 'failed'.
+  status: 'pending' | 'lit' | 'failed';
   providerId: string;
   detail?: string;
 }

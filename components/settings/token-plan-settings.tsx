@@ -102,6 +102,14 @@ export function TokenPlanSettings() {
     resetResults();
   };
 
+  // Patch a single modality's result row by modality key (probes resolve
+  // independently and out of order, so each updates only its own row).
+  const patchResult = (modality: TokenPlanModality, patch: Partial<ApplyResult>) => {
+    setResults(
+      (prev) => prev?.map((r) => (r.modality === modality ? { ...r, ...patch } : r)) ?? prev,
+    );
+  };
+
   const handleApply = useCallback(async () => {
     if (!selected || !apiKey) return;
     setApplying(true);
@@ -120,85 +128,101 @@ export function TokenPlanSettings() {
       setVideoProvider,
       setVideoModelId,
     });
-    setResults(applied);
 
-    // 2. For the LLM modality, light up its models. Three cases:
+    // Which modalities run a live probe (and so start in a 'pending' spinner
+    // state, resolving to lit/failed on their own). Everything else is just
+    // "configured" and shows lit immediately. The panel renders right away so
+    // the rows + spinners give live progress instead of dead air.
+    const llm = selected.modalities.llm;
+    // An LLM probe runs unless the preset ships a fixed model list with no
+    // verification (case b) — that path makes no request, so no spinner.
+    const llmProbes = !!llm && !(llm.defaultModels?.length && !llm.verifyModels);
+    const mediaProbes = (['image', 'video'] as const).filter(
+      (k) => selected.modalities[k]?.verifyModels && selected.modalities[k]?.defaultModels?.length,
+    );
+    const pendingModalities = new Set<TokenPlanModality>([
+      ...(llmProbes ? (['llm'] as const) : []),
+      ...mediaProbes,
+    ]);
+    setResults(
+      applied.map((r) => (pendingModalities.has(r.modality) ? { ...r, status: 'pending' } : r)),
+    );
+
+    // 2. LLM: light up its models. Three cases:
     //  a) verifyModels — `defaultModels` are CANDIDATES; verify each via a
     //     minimal chat request and keep the ones that work (auto-prunes
     //     retired/tier-gated models). Falls back to the seeded list on failure.
     //  b) fixed `defaultModels` (no verify) — already seeded by applyTokenPlan.
     //  c) otherwise — probe the /models endpoint.
-    const llm = selected.modalities.llm;
-    if (llm?.verifyModels && llm.defaultModels?.length) {
-      try {
-        const res = await fetch('/api/provider/probe-chat-models', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            baseUrl: llm.baseUrl,
-            apiKey,
-            models: llm.defaultModels,
-            apiFormat: llm.apiFormat,
-          }),
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
-          if (ids.length > 0) {
-            setProviderConfig(
-              llm.providerId as never,
-              { models: ids.map((id) => modelInfoFromId(id)) } as never,
-            );
+    const llmProbe = async () => {
+      if (!llm) return;
+      if (llm.verifyModels && llm.defaultModels?.length) {
+        try {
+          const res = await fetch('/api/provider/probe-chat-models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              baseUrl: llm.baseUrl,
+              apiKey,
+              models: llm.defaultModels,
+              apiFormat: llm.apiFormat,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
+            if (ids.length > 0) {
+              setProviderConfig(
+                llm.providerId as never,
+                { models: ids.map((id) => modelInfoFromId(id)) } as never,
+              );
+            }
+            // If none verified (e.g. all timed out), keep the seeded fallback.
+            setLlmModelCount(ids.length || llm.defaultModels.length);
+          } else {
+            setLlmModelCount(llm.defaultModels.length);
           }
-          // If none verified (e.g. all timed out), keep the seeded fallback.
-          setLlmModelCount(ids.length || llm.defaultModels.length);
-        } else {
+        } catch {
           setLlmModelCount(llm.defaultModels.length);
         }
-      } catch {
+        patchResult('llm', { status: 'lit' });
+      } else if (llm.defaultModels?.length) {
         setLlmModelCount(llm.defaultModels.length);
-      }
-    } else if (llm?.defaultModels?.length) {
-      setLlmModelCount(llm.defaultModels.length);
-    } else if (llm) {
-      try {
-        const res = await fetch('/api/provider/probe-models', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            baseUrl: llm.baseUrl,
-            apiKey,
-            modelsUrl: llm.modelsUrl,
-          }),
-        });
-        const data = await res.json();
-        if (res.ok && data.success) {
-          const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
-          if (ids.length > 0) {
-            setProviderConfig(
-              llm.providerId as never,
-              {
-                models: ids.map((id) => modelInfoFromId(id)),
-              } as never,
-            );
+        patchResult('llm', { status: 'lit' });
+      } else {
+        try {
+          const res = await fetch('/api/provider/probe-models', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ baseUrl: llm.baseUrl, apiKey, modelsUrl: llm.modelsUrl }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
+            if (ids.length > 0) {
+              setProviderConfig(
+                llm.providerId as never,
+                { models: ids.map((id) => modelInfoFromId(id)) } as never,
+              );
+            }
+            setLlmModelCount(ids.length);
+          } else {
+            setLlmModelCount(0);
           }
-          setLlmModelCount(ids.length);
-        } else {
+        } catch {
           setLlmModelCount(0);
         }
-      } catch {
-        setLlmModelCount(0);
+        patchResult('llm', { status: 'lit' });
       }
-    }
+    };
 
-    // 3. For verify-able media modalities (image/video), probe whether this
-    // plan tier actually supports the model. applyTokenPlan lit them up
-    // optimistically; here we either prune to the verified subset (and re-select
-    // a working model) or, if none pass, disable the modality so it isn't
-    // falsely shown as available (e.g. video on a Small tier).
-    for (const kind of ['image', 'video'] as const) {
+    // 3. Media (image/video): probe whether this plan tier actually supports the
+    // model. applyTokenPlan lit them up optimistically; here we prune to the
+    // verified subset (and re-select a working model), or disable + mark the row
+    // failed if none pass (e.g. video on a Small tier).
+    const mediaProbe = async (kind: 'image' | 'video') => {
       const target = selected.modalities[kind];
-      if (!target?.verifyModels || !target.defaultModels?.length) continue;
+      if (!target?.verifyModels || !target.defaultModels?.length) return;
       try {
         const res = await fetch('/api/provider/probe-chat-models', {
           method: 'POST',
@@ -217,16 +241,8 @@ export function TokenPlanSettings() {
         const setModelId = kind === 'image' ? setImageModelId : setVideoModelId;
         if (ids.length === 0) {
           setCfg(target.providerId as never, { enabled: false } as never);
-          setResults(
-            (prev) =>
-              prev?.map((r) =>
-                r.modality === kind
-                  ? { ...r, status: 'failed', detail: t('settings.tokenPlan.tierUnsupported') }
-                  : r,
-              ) ?? prev,
-          );
+          patchResult(kind, { status: 'failed', detail: t('settings.tokenPlan.tierUnsupported') });
         } else {
-          // Keep only verified models and select the first working one.
           setCfg(
             target.providerId as never,
             {
@@ -234,11 +250,16 @@ export function TokenPlanSettings() {
             } as never,
           );
           setModelId(ids[0]);
+          patchResult(kind, { status: 'lit' });
         }
       } catch {
-        // Network error — leave the optimistic state from applyTokenPlan.
+        // Network error — leave the optimistic 'lit' state from applyTokenPlan.
+        patchResult(kind, { status: 'lit' });
       }
-    }
+    };
+
+    // Run every probe in parallel; each row resolves on its own.
+    await Promise.all([llmProbe(), ...mediaProbes.map((k) => mediaProbe(k))]);
 
     setApplying(false);
   }, [
@@ -360,19 +381,21 @@ export function TokenPlanSettings() {
         </div>
       )}
 
-      {/* Apply results — shown only once probing finishes (button leaves its
-          loading state), so the panel reflects the final set rather than
-          flashing pre-probe placeholders. Two states only: a configured
-          modality is green; one a live probe proved unavailable (e.g. video on
-          a tier that doesn't include it) is muted, like "not configured". */}
-      {results && !applying && (
+      {/* Apply results — rendered as soon as Apply runs (progressive reveal):
+          rows appear immediately, modalities with a live probe in flight show a
+          spinner ('pending') and resolve to lit/failed independently as each
+          probe returns. A row only turns green once its own probe confirms, so
+          this shows structure + live progress without a premature green. */}
+      {results && (
         <div className="space-y-2 border-t pt-4">
           <div className="text-xs font-medium text-muted-foreground">
             {t('settings.tokenPlan.litUp')}
           </div>
           {results.map((r) => (
             <div key={r.modality} className="flex items-center gap-2 text-sm">
-              {r.status === 'lit' ? (
+              {r.status === 'pending' ? (
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              ) : r.status === 'lit' ? (
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
               ) : (
                 <Circle className="h-4 w-4 text-muted-foreground" />
