@@ -73,12 +73,27 @@ function extractStringValues(refNode: SafeXmlNode): string[] {
   return values;
 }
 
+function formatExcelSerialDate(raw: string, formatCode: string): string {
+  if (!/m.*月.*d.*日/i.test(formatCode)) return raw;
+  if (raw.trim() === '') return raw;
+  const serial = Number(raw);
+  if (!Number.isFinite(serial)) return raw;
+  const utc = Date.UTC(1899, 11, 30) + serial * 24 * 60 * 60 * 1000;
+  const d = new Date(utc);
+  return `${d.getUTCMonth() + 1}月${d.getUTCDate()}日`;
+}
+
 function extractNumCacheAsStrings(cache: SafeXmlNode): string[] {
   const ptCount = cache.child('ptCount').numAttr('val') ?? 0;
+  const defaultFormatCode = cache.child('formatCode').text();
   const values: string[] = new Array(ptCount).fill('');
   for (const pt of cache.children('pt')) {
     const idx = pt.numAttr('idx');
-    if (idx !== undefined) values[idx] = pt.child('v').text();
+    if (idx !== undefined) {
+      const raw = pt.child('v').text();
+      const formatCode = pt.attr('formatCode') ?? pt.attr('c:formatCode') ?? defaultFormatCode;
+      values[idx] = formatExcelSerialDate(raw, formatCode);
+    }
   }
   return values;
 }
@@ -261,12 +276,19 @@ export function chartToElement(
     const chart = chartRoot.child('chart');
     plotArea = chart.exists() ? chart.child('plotArea') : chartRoot.child('plotArea');
     if (plotArea?.exists()) {
-      for (const name of OOXML_CHART_TYPES) {
-        const el = plotArea.child(name);
-        if (el.exists()) {
-          chartType = mapToChartType(name);
-          chartTypeNode = el;
-          break;
+      const lineChart = plotArea.child('lineChart');
+      const areaChart = plotArea.child('areaChart');
+      if (lineChart.exists() && areaChart.exists()) {
+        chartType = 'areaChart';
+        chartTypeNode = lineChart;
+      } else {
+        for (const name of OOXML_CHART_TYPES) {
+          const el = plotArea.child(name);
+          if (el.exists()) {
+            chartType = mapToChartType(name);
+            chartTypeNode = el;
+            break;
+          }
         }
       }
     }

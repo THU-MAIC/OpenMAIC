@@ -14,6 +14,7 @@ import type {
   GeneratedQuizContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
+  UserRequirements,
   PdfImage,
   ImageMapping,
   WidgetOutline,
@@ -24,6 +25,10 @@ import type { LanguageModel } from 'ai';
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { generatePBLContent } from '@/lib/pbl/generate-pbl';
+import { generatePBLV2Project, PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
+import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
+import { projectV2ToLegacyProjectConfig } from '@/lib/pbl/v2/compat';
+import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator';
 import { postProcessInteractiveHtml } from './interactive-post-processor';
@@ -69,6 +74,10 @@ export interface SceneContentOptions {
   agents?: AgentInfo[];
   languageDirective?: string;
   thinkingConfig?: ThinkingConfig;
+  /** Authoritative UI locale selected by the user, consumed by the PBL v2 planner. */
+  targetLanguage?: string;
+  /** Original course request/profile, used by PBL v2 for explicit learner-level signals. */
+  userRequirements?: UserRequirements;
   allowProceduralSkill?: boolean;
   /**
    * Natural-language edit instruction for whole-slide regeneration (MAIC Editor
@@ -304,6 +313,8 @@ export async function generateSceneContent(
     agents,
     languageDirective,
     thinkingConfig,
+    targetLanguage,
+    userRequirements,
     allowProceduralSkill = false,
     editDirective,
     baselineContent,
@@ -350,7 +361,14 @@ export async function generateSceneContent(
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective);
     case 'pbl':
-      return generatePBLSceneContent(outline, languageModel, languageDirective, thinkingConfig);
+      return generatePBLSceneContent(
+        outline,
+        languageModel,
+        languageDirective,
+        thinkingConfig,
+        targetLanguage,
+        userRequirements,
+      );
     default:
       return null;
   }
@@ -992,14 +1010,18 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 }
 
 /**
- * Generate PBL project content
- * Uses the agentic loop from lib/pbl/generate-pbl.ts
+ * Generate PBL project content.
+ *
+ * Routes to v2 by default; falls back to legacy v1 when v2 fails or when
+ * explicitly disabled via `PBL_V2_DISABLED=true`.
  */
 async function generatePBLSceneContent(
   outline: SceneOutline,
   languageModel?: LanguageModel,
   languageDirective?: string,
   thinkingConfig?: ThinkingConfig,
+  targetLanguage?: string,
+  userRequirements?: UserRequirements,
 ): Promise<GeneratedPBLContent | null> {
   if (!languageModel) {
     log.error('LanguageModel required for PBL generation');
@@ -1013,6 +1035,68 @@ async function generatePBLSceneContent(
   }
 
   log.info(`Generating PBL content for: ${outline.title}`);
+
+  const v2Disabled = process.env.PBL_V2_DISABLED === 'true';
+
+  if (!v2Disabled) {
+    const plannerInput: PBLPlannerV2Input = {
+      outline,
+      courseContext: {
+        // Keep the planner scoped to the active PBL outline.
+        allOutlines: [outline],
+        languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
+      },
+      user: userRequirements
+        ? {
+            nickname: userRequirements.userNickname,
+            bio: userRequirements.userBio,
+            requirement: userRequirements.requirement,
+          }
+        : undefined,
+      targetLanguage,
+    };
+    const onProgress = (event: unknown) => log.info(`PBL v2 progress: ${JSON.stringify(event)}`);
+
+    const attempts: Array<{ label: string; run: () => Promise<PBLProjectV2> }> = [
+      {
+        label: 'single-call',
+        run: () =>
+          generatePBLV2ProjectSingleCall(
+            plannerInput,
+            languageModel,
+            { onProgress },
+            thinkingConfig,
+          ),
+      },
+      {
+        label: 'loop',
+        run: () =>
+          generatePBLV2Project(plannerInput, languageModel, { onProgress }, thinkingConfig),
+      },
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        const projectV2 = await attempt.run();
+        log.info(
+          `PBL v2 generated (${attempt.label}): ${projectV2.milestones.length} milestones, ${projectV2.roles.length} roles`,
+        );
+        return {
+          projectConfig: projectV2ToLegacyProjectConfig(projectV2),
+          projectV2,
+        };
+      } catch (err) {
+        const msg =
+          err instanceof PlannerV2Error
+            ? `validation failed: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        log.warn(`PBL v2 generation failed (${attempt.label}: ${msg}).`);
+      }
+    }
+    log.warn('All PBL v2 attempts failed; falling back to v1 generator.');
+  }
 
   try {
     const projectConfig = await generatePBLContent(
@@ -1030,12 +1114,12 @@ async function generatePBLSceneContent(
       thinkingConfig,
     );
     log.info(
-      `PBL generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,
+      `PBL v1 generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,
     );
 
     return { projectConfig };
   } catch (error) {
-    log.error(`Failed:`, error);
+    log.error(`PBL v1 generation also failed:`, error);
     return null;
   }
 }
@@ -1801,6 +1885,7 @@ export function createSceneWithActions(
       content: {
         type: 'pbl',
         projectConfig: content.projectConfig,
+        ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
       },
       actions,
     });

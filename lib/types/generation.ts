@@ -125,6 +125,10 @@ export interface SceneOutline {
     projectDescription: string;
     targetSkills: string[];
     issueCount?: number;
+    /** Opt into role-play scenario planning on top of the standard PBL v2 structure. */
+    scenarioRoleplay?: boolean;
+    /** Optional scenario brief used only when scenarioRoleplay is true. */
+    scenarioBrief?: string;
   };
   // Widget fields (required for type === 'interactive' in unified mode)
   widgetType?: WidgetType;
@@ -155,12 +159,17 @@ export interface GeneratedQuizContent {
 // ==================== PBL Generation Types ====================
 
 import type { PBLProjectConfig } from '@/lib/pbl/types';
+import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 /**
- * AI-generated PBL content
+ * AI-generated PBL content.
+ *
+ * PBL v2 generation returns a legacy-compatible `projectConfig` plus the full
+ * v2 payload so existing storage/rendering paths can migrate incrementally.
  */
 export interface GeneratedPBLContent {
   projectConfig: PBLProjectConfig;
+  projectV2?: PBLProjectV2;
 }
 
 // ==================== Interactive Generation Types ====================

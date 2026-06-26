@@ -14,7 +14,12 @@ import {
   buildVisionUserContent,
 } from '@/lib/generation/generation-pipeline';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
-import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
+import type {
+  SceneOutline,
+  PdfImage,
+  ImageMapping,
+  UserRequirements,
+} from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
@@ -52,7 +57,7 @@ export async function POST(req: NextRequest) {
       stageId: string;
       agents?: AgentInfo[];
       languageDirective?: string;
-      requirements?: { taskEngineMode?: boolean };
+      requirements?: UserRequirements;
     };
 
     // Validate required fields
@@ -155,6 +160,8 @@ export async function POST(req: NextRequest) {
       `Generating content: "${effectiveOutline.title}" (${effectiveOutline.type}) [model=${modelString}]`,
     );
 
+    const userLocale = req.headers?.get('x-user-locale') ?? '';
+
     const content = await generateSceneContent(effectiveOutline, aiCall, {
       assignedImages,
       imageMapping,
@@ -164,6 +171,8 @@ export async function POST(req: NextRequest) {
       agents,
       languageDirective,
       thinkingConfig,
+      targetLanguage: userLocale || undefined,
+      userRequirements: requirements,
       allowProceduralSkill: vocationalActive,
     });
 

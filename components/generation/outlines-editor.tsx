@@ -1207,23 +1207,38 @@ function PblConfigDisclosure({
   const projectTopic = outline.pblConfig?.projectTopic ?? '';
   const projectDescription = outline.pblConfig?.projectDescription ?? '';
   const skills = outline.pblConfig?.targetSkills ?? [];
+  const scenarioRoleplay = outline.pblConfig?.scenarioRoleplay === true;
+  const scenarioBrief = outline.pblConfig?.scenarioBrief ?? '';
 
-  const updateConfig = (updates: {
-    projectTopic?: string;
-    projectDescription?: string;
-    targetSkills?: string[];
-  }) => {
+  const baseConfig = (): NonNullable<SceneOutline['pblConfig']> => ({
+    ...outline.pblConfig,
+    projectTopic,
+    projectDescription,
+    targetSkills: skills,
+  });
+
+  const updateConfig = (updates: Partial<NonNullable<SceneOutline['pblConfig']>>) => {
+    const nextConfig = { ...baseConfig(), ...updates };
+    if (nextConfig.scenarioRoleplay !== true) {
+      delete nextConfig.scenarioRoleplay;
+      delete nextConfig.scenarioBrief;
+    }
     onUpdate({
-      pblConfig: {
-        projectTopic,
-        projectDescription,
-        targetSkills: skills,
-        ...(outline.pblConfig?.issueCount !== undefined && {
-          issueCount: outline.pblConfig.issueCount,
-        }),
-        ...updates,
-      },
+      pblConfig: nextConfig,
     });
+  };
+
+  const updateSubtype = (nextScenarioRoleplay: boolean) => {
+    const nextConfig = baseConfig();
+    if (nextScenarioRoleplay) {
+      nextConfig.scenarioRoleplay = true;
+      nextConfig.scenarioBrief =
+        scenarioBrief.trim() || projectDescription || outline.description || projectTopic;
+    } else {
+      delete nextConfig.scenarioRoleplay;
+      delete nextConfig.scenarioBrief;
+    }
+    onUpdate({ pblConfig: nextConfig });
   };
 
   const addSkill = () => {
@@ -1243,11 +1258,44 @@ function PblConfigDisclosure({
     <Popover>
       <PopoverTrigger asChild>
         <button type="button" className={cascadeSegmentClass(theme)}>
-          <span className="max-w-[8rem] truncate">{t('generation.pblConfigSummary')}</span>
+          <span className="max-w-[8rem] truncate">
+            {scenarioRoleplay
+              ? t('generation.pblSubtypeScenario')
+              : t('generation.pblSubtypeProject')}
+          </span>
           <ChevronDown className="size-3 opacity-70" />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" sideOffset={6} className="w-72 space-y-2.5 p-3">
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.pblSubtype')}
+          </span>
+          <div className="grid grid-cols-2 overflow-hidden rounded-md border border-border/50 bg-muted/30 p-0.5">
+            {[
+              { value: false, label: t('generation.pblSubtypeProject') },
+              { value: true, label: t('generation.pblSubtypeScenario') },
+            ].map((option) => {
+              const active = scenarioRoleplay === option.value;
+              return (
+                <button
+                  key={String(option.value)}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => updateSubtype(option.value)}
+                  className={cn(
+                    'rounded px-2 py-1 text-xs font-medium transition-colors',
+                    active
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="space-y-1.5">
           <span className="text-xs font-medium text-muted-foreground">
             {t('generation.pblProjectTopic')}
@@ -1278,6 +1326,23 @@ function PblConfigDisclosure({
             )}
           />
         </div>
+        {scenarioRoleplay && (
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              {t('generation.pblScenarioBrief')}
+            </span>
+            <textarea
+              value={scenarioBrief}
+              onChange={(event) => updateConfig({ scenarioBrief: event.target.value })}
+              placeholder={t('generation.pblScenarioBriefPlaceholder')}
+              rows={2}
+              className={cn(
+                'w-full resize-none rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs',
+                'focus:border-amber-400/50 focus:outline-none focus:ring-0',
+              )}
+            />
+          </div>
+        )}
         <div className="space-y-1.5">
           <span className="text-xs font-medium text-muted-foreground">
             {t('generation.pblTargetSkills')}

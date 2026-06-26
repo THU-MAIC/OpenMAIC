@@ -75,14 +75,8 @@ export function SlideElement({
 
   const fontColor = theme?.fontColor ?? DEFAULT_THEME.fontColor;
   const fontName = theme?.fontName ?? DEFAULT_THEME.fontName;
-
-  return (
-    <div
-      className="slide-element"
-      id={`${idPrefix}${elementInfo.id}`}
-      style={{ zIndex: elementIndex, color: fontColor, fontFamily: fontName }}
-      onClick={onElementClick ? (e) => onElementClick(elementInfo, e) : undefined}
-    >
+  const renderedElement = (
+    <>
       {Component === 'text' && elementInfo.type === 'text' && (
         <BaseTextElement elementInfo={elementInfo} />
       )}
@@ -110,6 +104,29 @@ export function SlideElement({
       {Component === 'code' && elementInfo.type === 'code' && (
         <BaseCodeElement elementInfo={elementInfo} animate={animate} />
       )}
+    </>
+  );
+
+  return (
+    <div
+      className="slide-element"
+      id={`${idPrefix}${elementInfo.id}`}
+      style={{
+        position: 'absolute',
+        inset: 0,
+        zIndex: elementIndex,
+        color: fontColor,
+        fontFamily: fontName,
+        pointerEvents: 'none',
+      }}
+      onClick={onElementClick ? (e) => onElementClick(elementInfo, e) : undefined}
+    >
+      <div
+        className="slide-element-hit-target"
+        style={onElementClick ? { pointerEvents: 'auto' } : undefined}
+      >
+        {renderedElement}
+      </div>
     </div>
   );
 }

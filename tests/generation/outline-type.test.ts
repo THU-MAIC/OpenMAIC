@@ -50,11 +50,19 @@ describe('changeOutlineType', () => {
       {
         ...base,
         type: 'pbl',
-        pblConfig: { projectTopic: 'Custom', projectDescription: 'd', targetSkills: ['x'] },
+        pblConfig: {
+          projectTopic: 'Custom',
+          projectDescription: 'd',
+          targetSkills: ['x'],
+          scenarioRoleplay: true,
+          scenarioBrief: 'A realistic conversation.',
+        },
       },
       'pbl',
     );
     expect(withPbl.pblConfig?.projectTopic).toBe('Custom');
+    expect(withPbl.pblConfig?.scenarioRoleplay).toBe(true);
+    expect(withPbl.pblConfig?.scenarioBrief).toBe('A realistic conversation.');
   });
 
   it('preserves shared fields', () => {

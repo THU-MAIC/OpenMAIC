@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Stage, Scene, StageMode } from '@/lib/types/stage';
+import type { PBLContent, Stage, Scene, SceneContent, StageMode } from '@/lib/types/stage';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -37,6 +37,21 @@ function debounce<T extends (...args: Parameters<T>) => ReturnType<T>>(
 }
 
 type ToolbarState = 'design' | 'ai';
+
+function mergeSceneContentForUpdate(
+  current: SceneContent,
+  incoming: SceneContent | undefined,
+): SceneContent | undefined {
+  if (!incoming) return incoming;
+  if (current.type !== 'pbl' || incoming.type !== 'pbl') return incoming;
+  const currentPBL = current as PBLContent;
+  const incomingPBL = incoming as PBLContent;
+  if ('projectV2' in incomingPBL || !currentPBL.projectV2) return incoming;
+  return {
+    ...incomingPBL,
+    projectV2: currentPBL.projectV2,
+  };
+}
 
 interface StageState {
   // Stage info
@@ -192,9 +207,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   updateScene: (sceneId, updates) => {
-    const scenes = get().scenes.map((scene) =>
-      scene.id === sceneId ? { ...scene, ...updates } : scene,
-    );
+    const scenes = get().scenes.map((scene) => {
+      if (scene.id !== sceneId) return scene;
+      return {
+        ...scene,
+        ...updates,
+        content: mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content,
+      };
+    });
     set({ scenes });
     debouncedSave();
   },

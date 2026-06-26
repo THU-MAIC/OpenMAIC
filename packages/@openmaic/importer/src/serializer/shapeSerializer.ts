@@ -803,6 +803,7 @@ export async function renderShape(
   const top = pxToPt(node.position.y);
 
   const presetKey = node.presetGeometry?.toLowerCase() ?? '';
+  const hasPresetGeometry = !!node.presetGeometry;
   const outlineOnlyPresets = new Set([
     'arc',
     'leftbracket',
@@ -819,9 +820,16 @@ export async function renderShape(
       presetKey.includes('connector') ||
       outlineOnlyPresets.has(presetKey));
   const isConnectorShape = node.source.localName === 'cxnSp';
-  // Treat sub-pixel extents as flat — some PPTX shapes use cx=1 EMU (≈0.0001px)
-  // for nearly perfect vertical/horizontal lines, which still need a visible viewBox.
-  const flatExtent = (node.size.w >= 1 && node.size.h < 1) || (node.size.w < 1 && node.size.h >= 1);
+  const fillKind = node.fill?.localName;
+  const hasAreaFill =
+    !!fillKind && fillKind !== 'noFill' && (fillKind !== 'grpFill' || !!ctx.groupFillNode);
+  // Treat sub-pixel extents as flat only for stroke-like shapes. Group-local
+  // custom geometries can have tiny raw extents and later scale into large
+  // filled polygons; clearing their fill makes whole bands/maps disappear.
+  const flatExtent =
+    !hasPresetGeometry &&
+    !hasAreaFill &&
+    ((node.size.w >= 1 && node.size.h < 1) || (node.size.w < 1 && node.size.h >= 1));
   const isLineLike = presetIsLine || isConnectorShape || flatExtent;
   // 判定线段方向：水平 ('h')、垂直 ('v') 或对角线 (null)。
   // 仅对 line-like preset 生效；用于决定哪一轴需要 bump。
@@ -948,7 +956,7 @@ export async function renderShape(
     fillCss = '';
     gradientFillData = null;
   }
-  if (hasGrpFill) {
+  if (hasGrpFill && !ctx.groupFillNode) {
     fillCss = '';
     gradientFillData = null;
   }
@@ -1226,6 +1234,7 @@ function textBodyRenderOptions(
   // Frame width is always useful (clamps the leading tab-fold indent for narrow
   // boxes), independent of whether the shape carries a style/fontRef.
   const frameWidthPx = node.size.w > 0 ? node.size.w : undefined;
+  const frameHeightPx = node.size.h > 0 ? node.size.h : undefined;
   const shapeStyle = node.source.child('style');
   const fontRef = shapeStyle.exists() ? shapeStyle.child('fontRef') : undefined;
   const fontRefColor =
@@ -1233,8 +1242,23 @@ function textBodyRenderOptions(
       ? resolveColorToCss(fontRef, ctx)
       : undefined;
 
-  if (frameWidthPx === undefined && fontRefColor === undefined) return undefined;
-  return { frameWidthPx, fontRefColor };
+  const normalizedRotation = ((node.rotation % 360) + 360) % 360;
+  const quarterTurn =
+    Math.abs(normalizedRotation - 90) < 0.01 || Math.abs(normalizedRotation - 270) < 0.01;
+  const forceNoWrap =
+    quarterTurn &&
+    node.textBody?.paragraphs.length === 1 &&
+    !!node.textBody.bodyProperties?.child('spAutoFit').exists();
+
+  if (
+    frameWidthPx === undefined &&
+    frameHeightPx === undefined &&
+    fontRefColor === undefined &&
+    !forceNoWrap
+  ) {
+    return undefined;
+  }
+  return { frameWidthPx, frameHeightPx, fontRefColor, forceNoWrap };
 }
 
 /** @deprecated Use `renderShape` — same name as `ShapeRenderer` for diff-friendly comparison. */

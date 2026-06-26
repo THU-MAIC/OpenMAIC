@@ -349,6 +349,23 @@ const calculateRotatedPosition = (
 // 现在字体白名单 + serializer 已经较好地保持宽度，恢复 1.0（严格按 PPT 文本框尺寸）。
 const SAFE_PADDING = 1.0;
 
+const isQuarterTurnRotation = (rotate: number | undefined) => {
+  const normalized = (((rotate || 0) % 360) + 360) % 360;
+  return Math.abs(normalized - 90) < 0.01 || Math.abs(normalized - 270) < 0.01;
+};
+
+const shouldPreserveRotatedTextFrame = (
+  el: Element,
+  autoFit: { type?: string; fontScale?: number } | undefined,
+) => {
+  return (
+    el.type === 'text' &&
+    autoFit?.type === 'shape' &&
+    isQuarterTurnRotation(el.rotate) &&
+    /white-space:\s*nowrap/.test(el.content)
+  );
+};
+
 export async function transformParsedToSlides(
   json: ParsedPptxJson,
   ctx: ImportContext,
@@ -561,8 +578,13 @@ export async function transformParsedToSlides(
             slide.elements.push(shapeEl);
           } else {
             // 普通文本元素：仅应用安全放大系数吸收字体差异，padding 已在渲染器侧移除，无需再补偿
-            el.width = Math.min(el.width * SAFE_PADDING, viewportWidth - el.left);
-            el.height = Math.min(el.height * SAFE_PADDING, viewportHeight - el.top);
+            const preserveRotatedFrame = shouldPreserveRotatedTextFrame(el, autoFit);
+            el.width = preserveRotatedFrame
+              ? el.width * SAFE_PADDING
+              : Math.min(el.width * SAFE_PADDING, viewportWidth - el.left);
+            el.height = preserveRotatedFrame
+              ? el.height * SAFE_PADDING
+              : Math.min(el.height * SAFE_PADDING, viewportHeight - el.top);
 
             const textEl: PPTTextElement = {
               type: 'text',

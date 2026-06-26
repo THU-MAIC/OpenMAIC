@@ -215,6 +215,17 @@ Use `pbl` type when the course involves complex, multi-step project work that be
 - The `pblConfig.targetSkills` should list 2-5 specific skills students will develop
 - The `pblConfig.issueCount` should typically be 2-5 issues
 
+**Role-play scenario PBL (optional PBL sub-type)**:
+
+Some PBL projects are best learned by *practising an interpersonal or situational interaction* rather than by building an artefact — for example practising a difficult conversation, a negotiation, a job interview, a customer-service exchange, a debate, a role-play game (e.g. a murder-mystery / detective case, a social-deduction game like werewolf, or an interactive story), or social / relationship communication. When the core of the learning really is the interaction itself (the learner will converse with one or more in-character roles inside an immersive scene), additionally set inside `pblConfig`:
+
+- `scenarioRoleplay: true` — marks this PBL as a role-play scenario.
+- `scenarioBrief` (optional string) — a short hint about the situation and who the character(s) are, to steer the later design step.
+
+Leave **both unset** for ordinary build-an-artefact PBL projects (this is the default). Only use `scenarioRoleplay` when the practice of the interaction is the point. This does not change how you choose the scene `type` — it is still `pbl`; these two fields are an optional flavour *inside* a PBL scene.
+
+**Important:** `pblConfig.scenarioRoleplay` is the downstream runtime switch. If the user explicitly asks for a role-play / scenario-simulation PBL, do not return an ordinary PBL; set `scenarioRoleplay: true` and include a concrete `scenarioBrief`.
+
 ---
 
 ## Output Format
@@ -337,6 +348,21 @@ Rules:
   "issueCount": 3
 }
 ```
+
+For a **role-play scenario** PBL (see PBL Scene Guidelines), additionally include the two optional fields:
+
+```json
+{
+  "projectTopic": "Practise comforting a stressed friend",
+  "projectDescription": "Have a supportive conversation with a friend who is going through a hard week",
+  "targetSkills": ["Active listening", "Empathetic responding", "De-escalation"],
+  "issueCount": 3,
+  "scenarioRoleplay": true,
+  "scenarioBrief": "The character is a close friend overwhelmed by exams and a part-time job; the learner practises listening and offering support"
+}
+```
+
+Omit `scenarioRoleplay` and `scenarioBrief` entirely for ordinary build-an-artefact PBL projects.
 
 ---
 
