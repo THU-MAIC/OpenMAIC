@@ -5,19 +5,27 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   ArrowUp,
+  Bell,
+  BriefcaseBusiness,
   Check,
   ChevronDown,
-  Clock,
   Copy,
+  FileText,
+  FolderKanban,
+  Home,
   ImagePlus,
+  MessageSquareText,
+  MoreVertical,
   Pencil,
+  Search,
+  Shield,
+  ShoppingBag,
+  Sparkles,
   Trash2,
   Settings,
-  Sun,
-  Moon,
-  Monitor,
   BotOff,
   ChevronUp,
+  Users,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { createLogger } from '@/lib/logger';
@@ -27,7 +35,6 @@ import { cn } from '@/lib/utils';
 import { SettingsDialog } from '@/components/settings';
 import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
-import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
 import type { UserRequirements } from '@/lib/types/generation';
@@ -51,13 +58,24 @@ const log = createLogger('Home');
 
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const LANGUAGE_STORAGE_KEY = 'generationLanguage';
-const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 
 interface FormState {
   pdfFile: File | null;
   requirement: string;
   language: 'zh-CN' | 'en-US';
   webSearch: boolean;
+}
+
+interface SidebarItem {
+  label: string;
+  icon: typeof Home;
+  active: boolean;
+  inset?: boolean;
+}
+
+interface SidebarGroup {
+  title: string;
+  items: SidebarItem[];
 }
 
 const initialFormState: FormState = {
@@ -67,9 +85,40 @@ const initialFormState: FormState = {
   webSearch: false,
 };
 
+const SIDEBAR_GROUPS: SidebarGroup[] = [
+  {
+    title: 'Home',
+    items: [{ label: 'Home', icon: Home, active: false }],
+  },
+  {
+    title: 'Pages',
+    items: [
+      { label: 'Profile', icon: FileText, active: false },
+      { label: 'Profile overview', icon: Home, active: false, inset: true },
+      { label: 'Teams', icon: Users, active: false, inset: true },
+      { label: 'All projects', icon: FolderKanban, active: true, inset: true },
+    ],
+  },
+  {
+    title: 'Workspace',
+    items: [
+      { label: 'Users', icon: Users, active: false },
+      { label: 'Projects', icon: BriefcaseBusiness, active: false },
+      { label: 'Notification', icon: Bell, active: false },
+      { label: 'Chat', icon: MessageSquareText, active: false },
+    ],
+  },
+  {
+    title: 'Admin',
+    items: [
+      { label: 'Applications', icon: ShoppingBag, active: false },
+      { label: 'Authentication', icon: Shield, active: false },
+    ],
+  },
+];
+
 function HomePage() {
-  const { t, locale, setLocale } = useI18n();
-  const { theme, setTheme } = useTheme();
+  const { t } = useI18n();
   const router = useRouter();
   const [form, setForm] = useState<FormState>(initialFormState);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -83,17 +132,14 @@ function HomePage() {
 
   // Model setup state
   const currentModelId = useSettingsStore((s) => s.modelId);
-  const [recentOpen, setRecentOpen] = useState(true);
+  const profileAvatar = useUserProfileStore((s) => s.avatar);
+  const profileName = useUserProfileStore((s) => s.nickname) || t('profile.defaultNickname');
+  const profileBio = useUserProfileStore((s) => s.bio) || 'Interactive classroom builder';
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Hydrate client-only state after mount (avoids SSR mismatch)
   /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(RECENT_OPEN_STORAGE_KEY);
-      if (saved !== null) setRecentOpen(saved !== 'false');
-    } catch {
-      /* localStorage unavailable */
-    }
     try {
       const savedWebSearch = localStorage.getItem(WEB_SEARCH_STORAGE_KEY);
       const savedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
@@ -123,27 +169,11 @@ function HomePage() {
     }
   }
 
-  const [languageOpen, setLanguageOpen] = useState(false);
-  const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [classrooms, setClassrooms] = useState<StageListItem[]>([]);
   const [thumbnails, setThumbnails] = useState<Record<string, Slide>>({});
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
-  const toolbarRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  // Close dropdowns when clicking outside
-  useEffect(() => {
-    if (!languageOpen && !themeOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (toolbarRef.current && !toolbarRef.current.contains(e.target as Node)) {
-        setLanguageOpen(false);
-        setThemeOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [languageOpen, themeOpen]);
 
   const loadClassrooms = async () => {
     try {
@@ -311,6 +341,53 @@ function HomePage() {
   };
 
   const canGenerate = !!form.requirement.trim();
+  const filteredClassrooms = classrooms.filter((classroom) => {
+    const needle = searchQuery.trim().toLowerCase();
+    if (!needle) return true;
+    return classroom.name.toLowerCase().includes(needle);
+  });
+  const latestClassroom = classrooms[0];
+  const dashboardActions = [
+    {
+      label: 'Student enroll',
+      caption: 'Open agent and roster setup',
+      icon: Users,
+      onClick: () => {
+        setSettingsSection('agents');
+        setSettingsOpen(true);
+      },
+    },
+    {
+      label: 'Upload content',
+      caption: 'Jump straight into source intake',
+      icon: FileText,
+      onClick: () => textareaRef.current?.focus(),
+    },
+    {
+      label: 'Export data',
+      caption: 'Open the latest classroom export lane',
+      icon: BriefcaseBusiness,
+      onClick: () => {
+        if (latestClassroom) {
+          router.push(`/classroom/${latestClassroom.id}`);
+        } else {
+          toast.message('Create a classroom first, then export from the classroom header.');
+        }
+      },
+    },
+    {
+      label: 'One on one',
+      caption: 'Resume the newest classroom session',
+      icon: MessageSquareText,
+      onClick: () => {
+        if (latestClassroom) {
+          router.push(`/classroom/${latestClassroom.id}`);
+        } else {
+          toast.message('Your 1:1 flow starts after the first classroom is generated.');
+        }
+      },
+    },
+  ] as const;
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
@@ -320,130 +397,7 @@ function HomePage() {
   };
 
   return (
-    <div className="min-h-[100dvh] w-full bg-gradient-to-b from-slate-50 to-slate-100 dark:from-slate-950 dark:to-slate-900 flex flex-col items-center p-4 pt-16 md:p-8 md:pt-16 overflow-x-hidden">
-      {/* ═══ Top-right pill (unchanged) ═══ */}
-      <div
-        ref={toolbarRef}
-        className="fixed top-4 right-4 z-50 flex items-center gap-1 bg-white/60 dark:bg-gray-800/60 backdrop-blur-md px-2 py-1.5 rounded-full border border-gray-100/50 dark:border-gray-700/50 shadow-sm"
-      >
-        {/* Language Selector */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setLanguageOpen(!languageOpen);
-              setThemeOpen(false);
-            }}
-            className="flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-bold text-gray-500 dark:text-gray-400 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
-          >
-            {locale === 'zh-CN' ? 'CN' : 'EN'}
-          </button>
-          {languageOpen && (
-            <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[120px]">
-              <button
-                onClick={() => {
-                  setLocale('zh-CN');
-                  setLanguageOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
-                  locale === 'zh-CN' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                简体中文
-              </button>
-              <button
-                onClick={() => {
-                  setLocale('en-US');
-                  setLanguageOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors',
-                  locale === 'en-US' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                English
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
-
-        {/* Theme Selector */}
-        <div className="relative">
-          <button
-            onClick={() => {
-              setThemeOpen(!themeOpen);
-              setLanguageOpen(false);
-            }}
-            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all"
-          >
-            {theme === 'light' && <Sun className="w-4 h-4" />}
-            {theme === 'dark' && <Moon className="w-4 h-4" />}
-            {theme === 'system' && <Monitor className="w-4 h-4" />}
-          </button>
-          {themeOpen && (
-            <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[140px]">
-              <button
-                onClick={() => {
-                  setTheme('light');
-                  setThemeOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                  theme === 'light' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                <Sun className="w-4 h-4" />
-                {t('settings.themeOptions.light')}
-              </button>
-              <button
-                onClick={() => {
-                  setTheme('dark');
-                  setThemeOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                  theme === 'dark' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                <Moon className="w-4 h-4" />
-                {t('settings.themeOptions.dark')}
-              </button>
-              <button
-                onClick={() => {
-                  setTheme('system');
-                  setThemeOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                  theme === 'system' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                <Monitor className="w-4 h-4" />
-                {t('settings.themeOptions.system')}
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="w-[1px] h-4 bg-gray-200 dark:bg-gray-700" />
-
-        {/* Settings Button */}
-        <div className="relative">
-          <button
-            onClick={() => setSettingsOpen(true)}
-            className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
-          >
-            <Settings className="w-4 h-4 group-hover:rotate-90 transition-transform duration-500" />
-          </button>
-        </div>
-      </div>
+    <div className="min-h-[100dvh] bg-[#f5f6fb] text-slate-950 dark:bg-slate-950 dark:text-slate-100">
       <SettingsDialog
         open={settingsOpen}
         onOpenChange={(open) => {
@@ -452,224 +406,271 @@ function HomePage() {
         }}
         initialSection={settingsSection}
       />
-
-      {/* ═══ Background Decor ═══ */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        <div
-          className="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: '4s' }}
-        />
-        <div
-          className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: '6s' }}
-        />
-      </div>
-
-      {/* ═══ Hero section: title + input (centered, wider) ═══ */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, ease: 'easeOut' }}
-        className={cn(
-          'relative z-20 w-full max-w-[800px] flex flex-col items-center',
-          classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
-        )}
-      >
-        {/* ── Logo ── */}
-        <motion.img
-          src="/logo-horizontal.png"
-          alt="OpenMAIC"
-          initial={{ opacity: 0, scale: 0.9 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{
-            delay: 0.1,
-            type: 'spring',
-            stiffness: 200,
-            damping: 20,
-          }}
-          className="h-12 md:h-16 mb-2 -ml-2 md:-ml-3"
-        />
-
-        {/* ── Slogan ── */}
-        <motion.p
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.25 }}
-          className="text-sm text-muted-foreground/60 mb-8"
-        >
-          {t('home.slogan')}
-        </motion.p>
-
-        {/* ── Unified input area ── */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.97 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.35 }}
-          className="w-full"
-        >
-          <div className="w-full rounded-2xl border border-border/60 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl shadow-xl shadow-black/[0.03] dark:shadow-black/20 transition-shadow focus-within:shadow-2xl focus-within:shadow-violet-500/[0.06]">
-            {/* ── Greeting + Profile + Agents ── */}
-            <div className="relative z-20 flex items-start justify-between">
-              <GreetingBar />
-              <div className="pr-3 pt-3.5 shrink-0">
-                <AgentBar />
-              </div>
-            </div>
-
-            {/* Textarea */}
-            <textarea
-              ref={textareaRef}
-              placeholder={t('upload.requirementPlaceholder')}
-              className="w-full resize-none border-0 bg-transparent px-4 pt-1 pb-2 text-[13px] leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none min-h-[140px] max-h-[300px]"
-              value={form.requirement}
-              onChange={(e) => updateForm('requirement', e.target.value)}
-              onKeyDown={handleKeyDown}
-              rows={4}
-            />
-
-            {/* Toolbar row */}
-            <div className="px-3 pb-3 flex items-end gap-2">
-              <div className="flex-1 min-w-0">
-                <GenerationToolbar
-                  language={form.language}
-                  onLanguageChange={(lang) => updateForm('language', lang)}
-                  webSearch={form.webSearch}
-                  onWebSearchChange={(v) => updateForm('webSearch', v)}
-                  onSettingsOpen={(section) => {
-                    setSettingsSection(section);
-                    setSettingsOpen(true);
-                  }}
-                  pdfFile={form.pdfFile}
-                  onPdfFileChange={(f) => updateForm('pdfFile', f)}
-                  onPdfError={setError}
-                />
-              </div>
-
-              {/* Voice input */}
-              <SpeechButton
-                size="md"
-                onTranscription={(text) => {
-                  setForm((prev) => {
-                    const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
-                    updateRequirementCache(next);
-                    return { ...prev, requirement: next };
-                  });
-                }}
-              />
-
-              {/* Send button */}
-              <button
-                onClick={handleGenerate}
-                disabled={!canGenerate}
-                className={cn(
-                  'shrink-0 h-8 rounded-lg flex items-center justify-center gap-1.5 transition-all px-3',
-                  canGenerate
-                    ? 'bg-primary text-primary-foreground hover:opacity-90 shadow-sm cursor-pointer'
-                    : 'bg-muted text-muted-foreground/40 cursor-not-allowed',
-                )}
-              >
-                <span className="text-xs font-medium">{t('toolbar.enterClassroom')}</span>
-                <ArrowUp className="size-3.5" />
-              </button>
-            </div>
+      <div className="flex min-h-[100dvh]">
+        <aside className="hidden w-[218px] shrink-0 border-r border-slate-200/80 bg-white/96 px-3 py-6 dark:border-slate-800 dark:bg-slate-900/95 lg:flex lg:flex-col">
+          <div className="px-4 pb-8 pt-2">
+            <img src="/logo-horizontal.png" alt="OpenMAIC" className="h-11 w-auto" />
           </div>
-        </motion.div>
 
-        {/* ── Error ── */}
-        <AnimatePresence>
-          {error && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mt-3 w-full p-3 bg-destructive/10 border border-destructive/20 rounded-lg"
-            >
-              <p className="text-sm text-destructive">{error}</p>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
-
-      {/* ═══ Recent classrooms — collapsible ═══ */}
-      {classrooms.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.5 }}
-          className="relative z-10 mt-10 w-full max-w-6xl flex flex-col items-center"
-        >
-          {/* Trigger — divider-line with centered text */}
-          <button
-            onClick={() => {
-              const next = !recentOpen;
-              setRecentOpen(next);
-              try {
-                localStorage.setItem(RECENT_OPEN_STORAGE_KEY, String(next));
-              } catch {
-                /* ignore */
-              }
-            }}
-            className="group w-full flex items-center gap-4 py-2 cursor-pointer"
-          >
-            <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-            <span className="shrink-0 flex items-center gap-2 text-[13px] text-muted-foreground/60 group-hover:text-foreground/70 transition-colors select-none">
-              <Clock className="size-3.5" />
-              {t('classroom.recentClassrooms')}
-              <span className="text-[11px] tabular-nums opacity-60">{classrooms.length}</span>
-              <motion.div
-                animate={{ rotate: recentOpen ? 180 : 0 }}
-                transition={{ duration: 0.3, ease: 'easeInOut' }}
-              >
-                <ChevronDown className="size-3.5" />
-              </motion.div>
-            </span>
-            <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
-          </button>
-
-          {/* Expandable content */}
-          <AnimatePresence>
-            {recentOpen && (
-              <motion.div
-                initial={{ height: 0, opacity: 0 }}
-                animate={{ height: 'auto', opacity: 1 }}
-                exit={{ height: 0, opacity: 0 }}
-                transition={{ duration: 0.4, ease: [0.25, 0.1, 0.25, 1] }}
-                className="w-full overflow-hidden"
-              >
-                <div className="pt-8 grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-x-5 gap-y-8">
-                  {classrooms.map((classroom, i) => (
-                    <motion.div
-                      key={classroom.id}
-                      initial={{ opacity: 0, y: 16 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{
-                        delay: i * 0.04,
-                        duration: 0.35,
-                        ease: 'easeOut',
-                      }}
-                    >
-                      <ClassroomCard
-                        classroom={classroom}
-                        slide={thumbnails[classroom.id]}
-                        formatDate={formatDate}
-                        onDelete={handleDelete}
-                        confirmingDelete={pendingDeleteId === classroom.id}
-                        onConfirmDelete={() => confirmDelete(classroom.id)}
-                        onCancelDelete={() => setPendingDeleteId(null)}
-                        onClick={() => router.push(`/classroom/${classroom.id}`)}
-                      />
-                    </motion.div>
-                  ))}
+          <div className="flex-1 space-y-7 overflow-y-auto pr-1">
+            {SIDEBAR_GROUPS.map((group) => (
+              <div key={group.title} className="space-y-3">
+                <div
+                  className={cn(
+                    'flex items-center justify-between rounded-xl px-4 py-3 text-sm font-medium',
+                    group.title === 'Pages'
+                      ? 'bg-[#d9c7ff] text-[#5f2bd8]'
+                      : 'text-slate-700 dark:text-slate-300',
+                  )}
+                >
+                  <span className="flex items-center gap-3">
+                    <FolderKanban className="size-4" />
+                    {group.title}
+                  </span>
+                  <ChevronDown className="size-4" />
                 </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </motion.div>
-      )}
+                <div className="space-y-1 px-2">
+                  {group.items.map((item) => {
+                    const Icon = item.icon;
+                    return (
+                      <div
+                        key={item.label}
+                        className={cn(
+                          'flex items-center gap-3 rounded-lg px-3 py-2.5 text-[14px] transition-colors',
+                          item.inset && 'ml-6',
+                          item.active
+                            ? 'text-[#6c39de]'
+                            : 'text-slate-700 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800/70',
+                        )}
+                      >
+                        <Icon className={cn('size-4', item.active && 'text-[#6c39de]')} />
+                        <span>{item.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
 
-      {/* Footer — flows with content, at the very end */}
-      <div className="mt-auto pt-12 pb-4 text-center text-xs text-muted-foreground/40">
-        OpenMAIC Open Source Project
+          <div className="mt-6">
+            <GreetingBar />
+          </div>
+        </aside>
+
+        <main className="min-w-0 flex-1">
+          <div className="px-5 pb-8 pt-7 sm:px-8 lg:px-10">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-[18px] font-semibold tracking-[-0.03em] text-[#6c39de] sm:text-[20px]">
+                  Profile/All projects
+                </p>
+              </div>
+              <label className="flex h-12 w-full max-w-[330px] items-center gap-3 rounded-full border border-slate-200 bg-white px-4 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                <Search className="size-4 text-slate-400" />
+                <input
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search anything here..."
+                  className="w-full border-0 bg-transparent text-sm text-slate-600 outline-none placeholder:text-slate-400 dark:text-slate-200"
+                />
+              </label>
+            </div>
+
+            <motion.section
+              initial={{ opacity: 0, y: 18 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.45, ease: 'easeOut' }}
+              className="mt-6 rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_16px_48px_rgba(15,23,42,0.05)] dark:border-slate-800 dark:bg-slate-900"
+            >
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex items-center gap-3">
+                  <img
+                    src={profileAvatar}
+                    alt=""
+                    className="size-10 rounded-full border border-slate-200 object-cover dark:border-slate-700"
+                  />
+                  <div>
+                    <p className="text-[14px] font-semibold text-slate-900 dark:text-slate-100">
+                      {profileName}
+                    </p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{profileBio}</p>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <button className="rounded-md bg-[#6c39de] px-7 py-2 text-sm font-medium text-white shadow-sm">
+                    App
+                  </button>
+                  <button className="rounded-md border border-[#b999ff] px-7 py-2 text-sm font-medium text-[#6c39de]">
+                    Messages
+                  </button>
+                  <button
+                    onClick={() => setSettingsOpen(true)}
+                    className="rounded-md border border-[#b999ff] px-7 py-2 text-sm font-medium text-[#6c39de]"
+                  >
+                    Settings
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-[16px] border border-slate-100 bg-[#fafaff] p-4 shadow-inner dark:border-slate-800 dark:bg-slate-950/60">
+                <div className="flex flex-col gap-4 rounded-[14px] bg-[#f3f1ff] p-5 dark:bg-slate-900/80">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <p className="text-[15px] font-medium text-slate-900 dark:text-slate-100">
+                        Some of Our Awesome classrooms
+                      </p>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Swap the kit demo data for real OpenMAIC classrooms and launch the next one
+                        from here.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <Sparkles className="size-4 text-[#6c39de]" />
+                      {filteredClassrooms.length} active spaces
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                    {dashboardActions.map((action) => {
+                      const Icon = action.icon;
+                      return (
+                        <button
+                          key={action.label}
+                          onClick={action.onClick}
+                          className="flex items-start gap-3 rounded-[16px] border border-slate-200 bg-white px-4 py-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#c5b1ff] dark:border-slate-800 dark:bg-slate-900"
+                        >
+                          <div className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-[#f1ebff] text-[#6c39de]">
+                            <Icon className="size-4" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                              {action.label}
+                            </p>
+                            <p className="mt-1 text-xs leading-5 text-slate-500 dark:text-slate-400">
+                              {action.caption}
+                            </p>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="rounded-[18px] border border-white/90 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <img src="/logo-horizontal.png" alt="" aria-hidden="true" className="h-8 w-auto" />
+                        <p className="mt-4 text-[18px] font-semibold text-slate-900 dark:text-slate-100">
+                          Create a new classroom
+                        </p>
+                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                          Keep the dashboard light, but wire it to the real generation flow.
+                        </p>
+                      </div>
+                      <div className="hidden pt-1 lg:block">
+                        <AgentBar />
+                      </div>
+                    </div>
+
+                    <div className="mt-4 overflow-hidden rounded-[16px] border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/80">
+                      <textarea
+                        ref={textareaRef}
+                        placeholder={t('upload.requirementPlaceholder')}
+                        className="min-h-[128px] w-full resize-none border-0 bg-transparent px-4 py-4 text-[13px] leading-relaxed text-slate-700 outline-none placeholder:text-slate-400 dark:text-slate-200"
+                        value={form.requirement}
+                        onChange={(e) => updateForm('requirement', e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        rows={4}
+                      />
+                      <div className="flex flex-col gap-3 border-t border-slate-200 px-3 py-3 dark:border-slate-800 xl:flex-row xl:items-end">
+                        <div className="min-w-0 flex-1">
+                          <GenerationToolbar
+                            language={form.language}
+                            onLanguageChange={(lang) => updateForm('language', lang)}
+                            webSearch={form.webSearch}
+                            onWebSearchChange={(v) => updateForm('webSearch', v)}
+                            onSettingsOpen={(section) => {
+                              setSettingsSection(section);
+                              setSettingsOpen(true);
+                            }}
+                            pdfFile={form.pdfFile}
+                            onPdfFileChange={(f) => updateForm('pdfFile', f)}
+                            onPdfError={setError}
+                          />
+                        </div>
+                        <div className="flex items-center justify-end gap-2">
+                          <SpeechButton
+                            size="md"
+                            onTranscription={(text) => {
+                              setForm((prev) => {
+                                const next = prev.requirement + (prev.requirement ? ' ' : '') + text;
+                                updateRequirementCache(next);
+                                return { ...prev, requirement: next };
+                              });
+                            }}
+                          />
+                          <button
+                            onClick={handleGenerate}
+                            disabled={!canGenerate}
+                            className={cn(
+                              'inline-flex h-10 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-all',
+                              canGenerate
+                                ? 'bg-[#6c39de] text-white shadow-sm hover:bg-[#5f2bd8]'
+                                : 'bg-slate-200 text-slate-400 dark:bg-slate-800 dark:text-slate-500',
+                            )}
+                          >
+                            {t('toolbar.enterClassroom')}
+                            <ArrowUp className="size-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <AnimatePresence>
+                      {error && (
+                        <motion.div
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: 'auto' }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="mt-3 rounded-xl border border-destructive/20 bg-destructive/10 px-4 py-3"
+                        >
+                          <p className="text-sm text-destructive">{error}</p>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+                  {filteredClassrooms.map((classroom) => (
+                    <ClassroomCard
+                      key={classroom.id}
+                      classroom={classroom}
+                      slide={thumbnails[classroom.id]}
+                      formatDate={formatDate}
+                      onDelete={handleDelete}
+                      confirmingDelete={pendingDeleteId === classroom.id}
+                      onConfirmDelete={() => confirmDelete(classroom.id)}
+                      onCancelDelete={() => setPendingDeleteId(null)}
+                      onClick={() => router.push(`/classroom/${classroom.id}`)}
+                    />
+                  ))}
+                  {filteredClassrooms.length === 0 && (
+                    <div className="col-span-full rounded-[18px] border border-dashed border-slate-300 bg-white px-6 py-16 text-center dark:border-slate-700 dark:bg-slate-900">
+                      <p className="text-base font-medium text-slate-700 dark:text-slate-200">
+                        No classrooms match that search yet.
+                      </p>
+                      <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                        Try another title or create a fresh classroom from the composer above.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.section>
+          </div>
+        </main>
       </div>
     </div>
   );
@@ -988,6 +989,11 @@ function ClassroomCard({
   const { t } = useI18n();
   const thumbRef = useRef<HTMLDivElement>(null);
   const [thumbWidth, setThumbWidth] = useState(0);
+  const classroomInitials = classroom.name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? '')
+    .join('');
 
   useEffect(() => {
     const el = thumbRef.current;
@@ -1000,11 +1006,13 @@ function ClassroomCard({
   }, []);
 
   return (
-    <div className="group cursor-pointer" onClick={confirmingDelete ? undefined : onClick}>
-      {/* Thumbnail — large radius, no border, subtle bg */}
+    <div
+      className="group relative rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-[#c5b1ff] dark:border-slate-800 dark:bg-slate-900"
+      onClick={confirmingDelete ? undefined : onClick}
+    >
       <div
         ref={thumbRef}
-        className="relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
+        className="relative mb-4 h-[184px] overflow-hidden rounded-[14px] border border-slate-100 bg-white dark:border-slate-800 dark:bg-slate-950"
       >
         {slide && thumbWidth > 0 ? (
           <ThumbnailSlide
@@ -1014,14 +1022,15 @@ function ClassroomCard({
             viewportRatio={slide.viewportRatio ?? 0.5625}
           />
         ) : !slide ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="size-12 rounded-2xl bg-gradient-to-br from-violet-100 to-blue-100 dark:from-violet-900/30 dark:to-blue-900/30 flex items-center justify-center">
-              <span className="text-xl opacity-50">📄</span>
+          <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-[#fff1f5] via-white to-[#f2eeff] dark:from-slate-900 dark:via-slate-950 dark:to-slate-900">
+            <div className="flex size-12 items-center justify-center rounded-2xl bg-[#ffdfe9] text-sm font-semibold uppercase tracking-[0.18em] text-[#ff5c8a]">
+              {classroomInitials || 'CL'}
             </div>
           </div>
         ) : null}
 
-        {/* Delete — top-right, only on hover */}
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t from-white/92 via-white/35 to-transparent dark:from-slate-950/92" />
+
         <AnimatePresence>
           {!confirmingDelete && (
             <motion.div
@@ -1033,19 +1042,18 @@ function ClassroomCard({
               <Button
                 size="icon"
                 variant="ghost"
-                className="absolute top-2 right-2 size-7 opacity-0 group-hover:opacity-100 transition-opacity bg-black/30 hover:bg-destructive/80 text-white hover:text-white backdrop-blur-sm rounded-full"
+                className="absolute right-2 top-2 size-8 rounded-full border border-white/80 bg-white/90 text-slate-500 opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive dark:border-slate-700 dark:bg-slate-900/90"
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(classroom.id, e);
                 }}
               >
-                <Trash2 className="size-3.5" />
+                <MoreVertical className="size-4" />
               </Button>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Inline delete confirmation overlay */}
         <AnimatePresence>
           {confirmingDelete && (
             <motion.div
@@ -1053,7 +1061,7 @@ function ClassroomCard({
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.15 }}
-              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/50 backdrop-blur-[6px]"
+              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-slate-950/60 backdrop-blur-[6px]"
               onClick={(e) => e.stopPropagation()}
             >
               <span className="text-[13px] font-medium text-white/90">
@@ -1078,37 +1086,73 @@ function ClassroomCard({
         </AnimatePresence>
       </div>
 
-      {/* Info — outside the thumbnail */}
-      <div className="mt-2.5 px-1 flex items-center gap-2">
-        <span className="shrink-0 inline-flex items-center rounded-full bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 text-[11px] font-medium text-violet-600 dark:text-violet-400">
-          {classroom.sceneCount} {t('classroom.slides')} · {formatDate(classroom.updatedAt)}
-        </span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <p className="font-medium text-[15px] truncate text-foreground/90 min-w-0">
-              {classroom.name}
-            </p>
-          </TooltipTrigger>
-          <TooltipContent
-            side="bottom"
-            sideOffset={4}
-            className="!max-w-[min(90vw,32rem)] break-words whitespace-normal"
-          >
-            <div className="flex items-center gap-1.5">
-              <span className="break-all">{classroom.name}</span>
-              <button
-                className="shrink-0 p-0.5 rounded hover:bg-foreground/10 transition-colors"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigator.clipboard.writeText(classroom.name);
-                  toast.success(t('classroom.nameCopied'));
-                }}
+      <div className="flex items-start gap-3">
+        <div className="flex size-10 shrink-0 items-center justify-center rounded-[12px] bg-[#ffe5ee] text-xs font-semibold uppercase tracking-[0.18em] text-[#ff5c8a]">
+          {classroomInitials || 'CL'}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <p className="truncate text-[18px] font-medium tracking-[-0.02em] text-slate-900 dark:text-slate-100">
+                  {classroom.name}
+                </p>
+              </TooltipTrigger>
+              <TooltipContent
+                side="bottom"
+                sideOffset={4}
+                className="!max-w-[min(90vw,32rem)] break-words whitespace-normal"
               >
-                <Copy className="size-3 opacity-60" />
-              </button>
+                <div className="flex items-center gap-1.5">
+                  <span className="break-all">{classroom.name}</span>
+                  <button
+                    className="shrink-0 rounded p-0.5 transition-colors hover:bg-foreground/10"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigator.clipboard.writeText(classroom.name);
+                      toast.success(t('classroom.nameCopied'));
+                    }}
+                  >
+                    <Copy className="size-3 opacity-60" />
+                  </button>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </div>
+
+          <div className="mt-2 flex -space-x-1.5">
+            {AVATAR_OPTIONS.slice(0, 4).map((avatar, index) => (
+              <img
+                key={`${classroom.id}-${avatar}-${index}`}
+                src={avatar}
+                alt=""
+                className="size-5 rounded-full border border-white object-cover dark:border-slate-900"
+              />
+            ))}
+          </div>
+
+          <p className="mt-3 min-h-[44px] text-[13px] leading-5 text-slate-500 dark:text-slate-400">
+            {classroom.sceneCount} {t('classroom.slides')} ready for presentation, discussion, and
+            interactive simulation flow.
+          </p>
+
+          <div className="mt-4 border-t border-slate-200 pt-3 text-[12px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-[18px] leading-none text-slate-800 dark:text-slate-100">
+                  {classroom.sceneCount}
+                </p>
+                <p className="mt-1">{t('classroom.slides')}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[15px] leading-none text-slate-800 dark:text-slate-100">
+                  {formatDate(classroom.updatedAt)}
+                </p>
+                <p className="mt-1">Updated</p>
+              </div>
             </div>
-          </TooltipContent>
-        </Tooltip>
+          </div>
+        </div>
       </div>
     </div>
   );
