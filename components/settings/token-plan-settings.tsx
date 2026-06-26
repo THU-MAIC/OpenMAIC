@@ -4,7 +4,7 @@ import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Eye, EyeOff, CheckCircle2, Circle, XCircle, Zap, Trash2 } from 'lucide-react';
+import { Loader2, Eye, EyeOff, CheckCircle2, Circle, Zap, Trash2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -360,8 +360,12 @@ export function TokenPlanSettings() {
         </div>
       )}
 
-      {/* Apply results */}
-      {results && (
+      {/* Apply results — shown only once probing finishes (button leaves its
+          loading state), so the panel reflects the final set rather than
+          flashing pre-probe placeholders. Two states only: a configured
+          modality is green; one a live probe proved unavailable (e.g. video on
+          a tier that doesn't include it) is muted, like "not configured". */}
+      {results && !applying && (
         <div className="space-y-2 border-t pt-4">
           <div className="text-xs font-medium text-muted-foreground">
             {t('settings.tokenPlan.litUp')}
@@ -371,16 +375,18 @@ export function TokenPlanSettings() {
               {r.status === 'lit' ? (
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
               ) : (
-                <XCircle className="h-4 w-4 text-red-600" />
+                <Circle className="h-4 w-4 text-muted-foreground" />
               )}
-              <span>{t(MODALITY_LABEL_KEYS[r.modality])}</span>
-              {r.modality === 'llm' && llmModelCount != null && (
+              <span className={r.status === 'lit' ? '' : 'text-muted-foreground'}>
+                {t(MODALITY_LABEL_KEYS[r.modality])}
+              </span>
+              {r.status === 'lit' && r.modality === 'llm' && llmModelCount != null && (
                 <span className="text-xs text-muted-foreground">
                   ({t('settings.tokenPlan.modelsLit').replace('{n}', String(llmModelCount))})
                 </span>
               )}
               {r.status === 'failed' && r.detail && (
-                <span className="text-xs text-red-600">{r.detail}</span>
+                <span className="text-xs text-muted-foreground">{r.detail}</span>
               )}
             </div>
           ))}
