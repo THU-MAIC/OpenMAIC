@@ -280,7 +280,8 @@
       "whiteboardShape": "Фигура",
       "whiteboardLatex": "Формула",
       "whiteboardTable": "Таблица",
-      "action": "Действие"
+      "action": "Действие",
+      "discussion": "Обсуждение"
     },
     "element": {
       "text": "Текст",
@@ -351,7 +352,15 @@
       "bound": "Привязано",
       "fieldAction": "Действие",
       "fieldElement": "Элемент",
-      "fieldContent": "Содержимое"
+      "fieldContent": "Содержимое",
+      "addDiscussion": "Добавить обсуждение",
+      "addDiscussionExists": "Только одно обсуждение на сцену",
+      "discussionTerminal": "КОНЕЦ",
+      "discussionTerminalHint": "Обсуждение закрепляется в конце сцены (одно на сцену)",
+      "discussionTopicPlaceholder": "Тема обсуждения (обязательно)",
+      "discussionPromptPlaceholder": "Подсказка (необязательно)",
+      "discussionAgent": "Инициатор",
+      "discussionAgentUnset": "Не указан"
     },
     "tts": {
       "preview": "Прослушать",

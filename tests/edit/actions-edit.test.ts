@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import {
+  appendDiscussion,
+  clampInsertSlot,
+  discussionIndex,
+  hasDiscussion,
   insertAt,
   makeAction,
+  makeDiscussion,
   move,
   moveById,
   moveByIdDir,
@@ -9,6 +14,9 @@ import {
   removeById,
   setAudioId,
   setAudioIdById,
+  setDiscussionAgentById,
+  setDiscussionPromptById,
+  setDiscussionTopicById,
   setElementId,
   setElementIdById,
   setSpeechText,
@@ -78,6 +86,70 @@ describe('by-id ops (index-stale-safe)', () => {
     const xs = [A('s', 'speech')];
     expect((setSpeechTextById(xs, 's', 'hi')[0] as { text?: string }).text).toBe('hi');
     expect(setSpeechTextById(xs, 'zzz', 'no')).toBe(xs);
+  });
+});
+
+describe('discussion ops (append-only, terminal, at most one)', () => {
+  const disc = (id: string, extra: Record<string, unknown> = {}): Action =>
+    ({ id, type: 'discussion', topic: '', ...extra }) as unknown as Action;
+
+  test('makeDiscussion carries an empty topic', () => {
+    expect(makeDiscussion('d')).toEqual({ id: 'd', type: 'discussion', topic: '' });
+  });
+
+  test('appendDiscussion adds a discussion at the very end', () => {
+    const base = [A('a'), A('b')];
+    const out = appendDiscussion(base, 'd');
+    expect(ids(out)).toEqual(['a', 'b', 'd']);
+    expect(out[2]).toEqual({ id: 'd', type: 'discussion', topic: '' });
+  });
+
+  test('appendDiscussion is a no-op when one already exists (at most one)', () => {
+    const base = [A('a'), disc('d', { topic: 'x' })];
+    expect(appendDiscussion(base, 'd2')).toBe(base);
+  });
+
+  test('hasDiscussion / discussionIndex locate the discussion', () => {
+    const base = [A('a'), disc('d')];
+    expect(hasDiscussion(base)).toBe(true);
+    expect(discussionIndex(base)).toBe(1);
+    expect(hasDiscussion([A('a')])).toBe(false);
+    expect(discussionIndex([A('a')])).toBe(-1);
+  });
+
+  test('clampInsertSlot caps inserts before the discussion (keeps it terminal)', () => {
+    const base = [A('a'), A('b'), disc('d')];
+    expect(clampInsertSlot(base, 3)).toBe(2); // can't land after the discussion
+    expect(clampInsertSlot(base, 2)).toBe(2); // right before it is the cap
+    expect(clampInsertSlot(base, 1)).toBe(1); // earlier slots untouched
+    expect(clampInsertSlot([A('a'), A('b')], 2)).toBe(2); // no discussion → unchanged
+  });
+
+  test('setDiscussionTopicById sets topic; missing id / non-discussion are no-ops', () => {
+    const xs = [disc('d', { topic: 'old' }), A('a')];
+    expect((setDiscussionTopicById(xs, 'd', 'new')[0] as { topic?: string }).topic).toBe('new');
+    expect(setDiscussionTopicById(xs, 'zzz', 'x')).toBe(xs);
+    expect(setDiscussionTopicById(xs, 'a', 'x')).toBe(xs); // 'a' is not a discussion
+  });
+
+  test('setDiscussionPromptById sets prompt; empty string clears it', () => {
+    const xs = [disc('d')];
+    const withPrompt = setDiscussionPromptById(xs, 'd', 'guide');
+    expect((withPrompt[0] as { prompt?: string }).prompt).toBe('guide');
+    expect(
+      (setDiscussionPromptById(withPrompt, 'd', '')[0] as { prompt?: string }).prompt,
+    ).toBeUndefined();
+    expect(setDiscussionPromptById(xs, 'missing', 'x')).toBe(xs);
+  });
+
+  test('setDiscussionAgentById sets agentId; empty string clears it', () => {
+    const xs = [disc('d')];
+    const withAgent = setDiscussionAgentById(xs, 'd', 'agent_1');
+    expect((withAgent[0] as { agentId?: string }).agentId).toBe('agent_1');
+    expect(
+      (setDiscussionAgentById(withAgent, 'd', '')[0] as { agentId?: string }).agentId,
+    ).toBeUndefined();
+    expect(setDiscussionAgentById(xs, 'missing', 'x')).toBe(xs);
   });
 });
 

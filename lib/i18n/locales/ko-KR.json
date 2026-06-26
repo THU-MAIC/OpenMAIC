@@ -231,7 +231,8 @@
       "whiteboardShape": "도형",
       "whiteboardLatex": "수식",
       "whiteboardTable": "표",
-      "action": "동작"
+      "action": "동작",
+      "discussion": "토론"
     },
     "element": {
       "text": "텍스트",
@@ -302,7 +303,15 @@
       "bound": "연결됨",
       "fieldAction": "동작",
       "fieldElement": "요소",
-      "fieldContent": "내용"
+      "fieldContent": "내용",
+      "addDiscussion": "토론 추가",
+      "addDiscussionExists": "장면당 토론은 하나만 가능합니다",
+      "discussionTerminal": "끝",
+      "discussionTerminalHint": "토론은 장면의 끝에 고정되며 장면당 하나만 허용됩니다",
+      "discussionTopicPlaceholder": "토론 주제(필수)",
+      "discussionPromptPlaceholder": "안내 프롬프트(선택)",
+      "discussionAgent": "시작자",
+      "discussionAgentUnset": "지정 안 함"
     },
     "tts": {
       "preview": "미리듣기",

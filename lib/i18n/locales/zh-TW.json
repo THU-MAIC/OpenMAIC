@@ -280,7 +280,8 @@
       "whiteboardShape": "圖形",
       "whiteboardLatex": "公式",
       "whiteboardTable": "表格",
-      "action": "動作"
+      "action": "動作",
+      "discussion": "討論"
     },
     "element": {
       "text": "文字",
@@ -351,7 +352,15 @@
       "bound": "已綁定",
       "fieldAction": "動作",
       "fieldElement": "元素",
-      "fieldContent": "內容"
+      "fieldContent": "內容",
+      "addDiscussion": "新增討論",
+      "addDiscussionExists": "每個場景僅支援一個討論",
+      "discussionTerminal": "結尾",
+      "discussionTerminalHint": "討論固定在場景結尾，每個場景僅一個",
+      "discussionTopicPlaceholder": "討論主題（必填）",
+      "discussionPromptPlaceholder": "引導語（選填）",
+      "discussionAgent": "發起",
+      "discussionAgentUnset": "不指定"
     },
     "tts": {
       "preview": "試聽",

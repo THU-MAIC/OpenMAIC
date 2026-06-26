@@ -19,13 +19,14 @@
  *
  * Collapsible; height-resizable from the top edge; reactive to the stage store.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Flag,
   FoldVertical,
   GripVertical,
   Play,
@@ -40,16 +41,31 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
-import type { Action } from '@/lib/types/action';
+import { useAgentRegistry } from '@/lib/orchestration/registry/store';
+import { AvatarDisplay } from '@/components/ui/avatar-display';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import type { Action, DiscussionAction } from '@/lib/types/action';
 import { ELEMENT_BOUND, cueLabel, cueMeta } from './cue-meta';
 import { applyCuePreview, clearCuePreview, cuePreviewFor } from './cue-preview';
 import {
+  appendDiscussion,
+  clampInsertSlot,
+  hasDiscussion,
   insertAt,
   makeAction,
   moveById,
   moveByIdDir,
   removeById,
   setAudioIdById,
+  setDiscussionAgentById,
+  setDiscussionPromptById,
+  setDiscussionTopicById,
   setSpeechTextClearAudioById,
   type AddableType,
 } from './actions-edit';
@@ -75,6 +91,10 @@ const AXIS_FROM_TOP = 20; // px from track top to the axis center (nodes hang be
  * them and they render in the timeline). Cue icon/label/tint live in cue-meta.
  */
 const PALETTE: AddableType[] = ['speech', 'spotlight', 'laser'];
+
+// Radix Select forbids an empty-string item value, so the discussion's
+// "unspecified agent" choice rides a sentinel that maps back to '' on change.
+const DISCUSSION_AGENT_NONE = '__none__';
 
 type DragPayload = { kind: 'new'; type: AddableType } | { kind: 'move'; id: string };
 
@@ -463,6 +483,147 @@ function SpeechClip({
 }
 
 /**
+ * A discussion node — the scene's terminal roundtable trigger. Unlike the other
+ * cues it isn't drag-addable or movable: a discussion must be the LAST action and
+ * there is at most one per scene (mirrors the action-parser invariant), so it's
+ * appended via the toolbar and pinned at the end. Inline-edits topic (required),
+ * prompt (optional) and the initiating agent. Topic/prompt commit on blur.
+ */
+function DiscussionClip({
+  topic,
+  prompt,
+  agentId,
+  agents,
+  onTopicChange,
+  onPromptChange,
+  onAgentChange,
+  onDelete,
+}: {
+  topic: string;
+  prompt: string;
+  agentId: string;
+  agents: Array<{ id: string; name: string; avatar?: string }>;
+  onTopicChange: (v: string) => void;
+  onPromptChange: (v: string) => void;
+  onAgentChange: (v: string) => void;
+  onDelete: () => void;
+}) {
+  const { t } = useI18n();
+  const m = cueMeta('discussion');
+  const needsTopic = !topic.trim();
+
+  // Local drafts committed on blur; synced from props when not mid-edit so a
+  // concurrent store update can't clobber an in-flight edit (mirrors SpeechClip).
+  const [topicVal, setTopicVal] = useState(topic);
+  const [promptVal, setPromptVal] = useState(prompt);
+  const topicDirty = useRef(false);
+  const promptDirty = useRef(false);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- adopt external topic only when not mid-edit
+    if (!topicDirty.current) setTopicVal(topic);
+  }, [topic]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- adopt external prompt only when not mid-edit
+    if (!promptDirty.current) setPromptVal(prompt);
+  }, [prompt]);
+
+  return (
+    <div
+      className={cn(
+        'group/disc relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border bg-white/70 shadow-sm transition-colors dark:bg-slate-800/50',
+        needsTopic
+          ? 'border-dashed border-amber-400/70'
+          : 'border-gray-200/80 focus-within:border-yellow-400 hover:border-yellow-300/70 dark:border-gray-700/60 dark:hover:border-yellow-500/40',
+      )}
+    >
+      <span className={cn('absolute inset-x-0 top-0 h-[3px]', m.accent)} />
+      <div className="flex items-center gap-1.5 border-b border-yellow-300/50 bg-yellow-400/15 px-2 py-1 dark:border-yellow-500/25 dark:bg-yellow-500/10">
+        <span className="flex size-4 items-center justify-center rounded-md bg-yellow-400 text-yellow-950 dark:bg-yellow-500 dark:text-slate-900">
+          <Flag className="size-2.5" />
+        </span>
+        <span className="text-[8.5px] font-semibold uppercase tracking-[0.12em] text-yellow-700 dark:text-yellow-400">
+          {t('edit.cue.discussion')}
+        </span>
+        <span
+          className="ml-auto text-[8.5px] font-medium uppercase tracking-[0.1em] text-yellow-600/70 dark:text-yellow-500/60"
+          title={t('edit.timeline.discussionTerminalHint')}
+        >
+          {t('edit.timeline.discussionTerminal')}
+        </span>
+        <DeleteButton onDelete={onDelete} />
+      </div>
+      <textarea
+        value={topicVal}
+        onChange={(e) => {
+          topicDirty.current = true;
+          setTopicVal(e.target.value);
+        }}
+        onBlur={() => {
+          if (topicDirty.current) onTopicChange(topicVal);
+          topicDirty.current = false;
+        }}
+        placeholder={t('edit.timeline.discussionTopicPlaceholder')}
+        className="h-[46px] shrink-0 resize-none bg-transparent px-3 pt-2 text-[12.5px] font-medium leading-[1.55] text-foreground/85 outline-none placeholder:font-normal placeholder:text-amber-500/60 [scrollbar-width:thin]"
+      />
+      <textarea
+        value={promptVal}
+        onChange={(e) => {
+          promptDirty.current = true;
+          setPromptVal(e.target.value);
+        }}
+        onBlur={() => {
+          if (promptDirty.current) onPromptChange(promptVal);
+          promptDirty.current = false;
+        }}
+        placeholder={t('edit.timeline.discussionPromptPlaceholder')}
+        className="min-h-0 flex-1 resize-none bg-transparent px-3 text-[11px] leading-[1.6] text-muted-foreground outline-none placeholder:text-muted-foreground/35 [scrollbar-width:thin]"
+      />
+      <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-1 dark:border-gray-700/50">
+        <span className="shrink-0 text-[9px] text-muted-foreground/50">
+          {t('edit.timeline.discussionAgent')}
+        </span>
+        <Select
+          value={agentId || DISCUSSION_AGENT_NONE}
+          onValueChange={(v) => onAgentChange(v === DISCUSSION_AGENT_NONE ? '' : v)}
+        >
+          <SelectTrigger
+            size="sm"
+            className="ml-auto h-6 max-w-[150px] gap-1 rounded border-border px-1.5 py-0 text-[10px] shadow-none focus-visible:ring-yellow-400/40 [&_svg]:size-3"
+          >
+            <SelectValue placeholder={t('edit.timeline.discussionAgentUnset')} />
+          </SelectTrigger>
+          <SelectContent className="max-h-56">
+            <SelectItem value={DISCUSSION_AGENT_NONE} className="text-[11px]">
+              <span className="text-muted-foreground">
+                {t('edit.timeline.discussionAgentUnset')}
+              </span>
+            </SelectItem>
+            {agents.map((a) => (
+              <SelectItem key={a.id} value={a.id} className="text-[11px]">
+                <span className="flex items-center gap-1.5">
+                  {a.avatar && (
+                    <span className="size-4 shrink-0 overflow-hidden rounded-full bg-muted">
+                      <AvatarDisplay src={a.avatar} alt={a.name} />
+                    </span>
+                  )}
+                  {a.name}
+                </span>
+              </SelectItem>
+            ))}
+            {/* keep a set agent visible even if it's no longer in the scene roster */}
+            {agentId && !agents.some((a) => a.id === agentId) && (
+              <SelectItem value={agentId} className="text-[11px]">
+                {agentId}
+              </SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+/**
  * A non-speech cue — its own compact card on the timeline (the action's implicit
  * container, made explicit). Carries a delete button; clicking an element-bound
  * cue arms canvas pick mode so the target is chosen on the slide itself.
@@ -576,15 +737,21 @@ function NodeDot({
   onPick,
   onDragStart,
   onDragEnd,
+  canDrag = true,
 }: {
   action: Action;
   onTip: (t: TooltipState | null) => void;
   onPick: () => void;
   onDragStart: (e: React.DragEvent) => void;
   onDragEnd: () => void;
+  canDrag?: boolean;
 }) {
   const { t } = useI18n();
   const isSpeech = action.type === 'speech';
+  // A discussion is the scene's terminal anchor — give its node a distinct
+  // marker (square, filled yellow) so it reads as the end stop, not a regular
+  // cue. Its flag glyph comes from cue-meta like every other type's.
+  const isDiscussion = action.type === 'discussion';
   const bound = ELEMENT_BOUND.has(action.type);
   const elementId = (action as { elementId?: string }).elementId ?? '';
   const needsTarget = bound && !elementId;
@@ -593,7 +760,7 @@ function NodeDot({
   const Icon = m.icon;
   return (
     <span
-      draggable
+      draggable={canDrag}
       onDragStart={onDragStart}
       onDragEnd={onDragEnd}
       title={isSpeech ? (action as { text?: string }).text?.slice(0, 60) : label}
@@ -611,11 +778,18 @@ function NodeDot({
         if (bound) onPick();
       }}
       className={cn(
-        'grid size-6 place-items-center rounded-full ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
+        'grid size-6 place-items-center ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
+        isDiscussion ? 'rounded-md' : 'rounded-full',
         needsTarget
           ? 'text-amber-600 bg-amber-100 ring-amber-200 animate-pulse dark:bg-amber-500/20 dark:text-amber-400'
-          : m.glyph,
-        bound ? 'cursor-pointer' : 'cursor-grab active:cursor-grabbing',
+          : isDiscussion
+            ? 'bg-yellow-400 text-yellow-950 ring-yellow-200 dark:bg-yellow-500 dark:text-slate-900 dark:ring-yellow-500/30'
+            : m.glyph,
+        bound
+          ? 'cursor-pointer'
+          : canDrag
+            ? 'cursor-grab active:cursor-grabbing'
+            : 'cursor-default',
       )}
       aria-label={label}
     >
@@ -675,6 +849,24 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   // Managed TTS on → speech clips show audio status + 试听 / 重新生成.
   const ttsActive = useSettingsStore(
     (s) => s.ttsEnabled && s.ttsProviderId !== 'browser-native-tts',
+  );
+
+  // Agents a discussion can be initiated by — sourced from the user's currently
+  // SELECTED agents, the exact set the playback engine gates on: it skips (and
+  // consumes) any discussion whose `agentId` isn't selected. Offering the same
+  // set here means whatever the author picks will actually fire at playback;
+  // anything else (scene/stage roster) could let them save an initiator that the
+  // engine silently drops. With nothing selected only "unspecified" remains,
+  // which is correct since an unset `agentId` is never skipped.
+  const agentsRecord = useAgentRegistry((s) => s.agents);
+  const selectedAgentIds = useSettingsStore((s) => s.selectedAgentIds);
+  const discussionAgents = useMemo(
+    () =>
+      selectedAgentIds
+        .map((id) => agentsRecord[id])
+        .filter(Boolean)
+        .map((a) => ({ id: a.id, name: a.name, avatar: a.avatar })),
+    [selectedAgentIds, agentsRecord],
   );
 
   const [lineMode, setLineMode] = useState(false); // collapse to just the axis line of node icons
@@ -799,10 +991,11 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
             ? crypto.randomUUID()
             : `a-${Date.now()}`;
         const action = makeAction(p.type, id);
-        commit((cur) => insertAt(cur, slot, action));
+        // A discussion must stay last, so cap every insert/move before it.
+        commit((cur) => insertAt(cur, clampInsertSlot(cur, slot), action));
         if (p.type === 'speech') setFocusId(id);
       } else {
-        commit((cur) => moveById(cur, p.id, slot));
+        commit((cur) => moveById(cur, p.id, clampInsertSlot(cur, slot)));
       }
     },
     [commit],
@@ -810,6 +1003,17 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
 
   const speechCount = actions.filter((a) => a.type === 'speech').length;
   const cueCount = actions.length - speechCount;
+
+  // A discussion is pinned at the end (at most one), so ordinary actions can move
+  // right only up to the slot before it; the discussion node itself can't move.
+  const discussionPresent = hasDiscussion(actions);
+  const lastMovableIndex = discussionPresent ? actions.length - 2 : actions.length - 1;
+
+  const addDiscussion = useCallback(() => {
+    const id =
+      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `a-${Date.now()}`;
+    commit((cur) => appendDiscussion(cur, id));
+  }, [commit]);
 
   let speechIndex = 0;
   const items = actions.map((action, index) => {
@@ -890,6 +1094,27 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
           </button>
         )}
 
+        {/* A discussion is terminal + at-most-one, so it's appended here rather
+            than dragged in. Disabled once the scene already has one. The flag
+            icon matches the discussion's terminal-anchor node on the track. */}
+        {!lineMode && (
+          <button
+            type="button"
+            onClick={addDiscussion}
+            disabled={discussionPresent}
+            title={
+              discussionPresent
+                ? t('edit.timeline.addDiscussionExists')
+                : t('edit.timeline.addDiscussion')
+            }
+            aria-label={t('edit.timeline.addDiscussion')}
+            className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-yellow-400/50 hover:text-foreground disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground"
+          >
+            <Flag className="size-3" />
+            {t('edit.timeline.addDiscussion')}
+          </button>
+        )}
+
         <span className="ml-auto font-mono text-[11px] tabular-nums text-muted-foreground/60">
           {t('edit.timeline.counts', { speech: speechCount, cue: cueCount })}
         </span>
@@ -950,10 +1175,14 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
               onDrop={() => handleDrop(0)}
             />
             {items.map(({ action, index, key, speechIndex: si }) => {
-              const onDragStart = (e: React.DragEvent) => {
-                dragRef.current = { kind: 'move', id: key };
-                setBlankDragImage(e);
-              };
+              // A discussion is pinned terminal, so it can't be drag-reordered.
+              const isDiscussion = action.type === 'discussion';
+              const onDragStart = isDiscussion
+                ? () => {}
+                : (e: React.DragEvent) => {
+                    dragRef.current = { kind: 'move', id: key };
+                    setBlankDragImage(e);
+                  };
               const onDragEnd = () => {
                 dragRef.current = null;
                 setDragOver(null);
@@ -969,6 +1198,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                   onPick={onPick}
                   onDragStart={onDragStart}
                   onDragEnd={onDragEnd}
+                  canDrag={!isDiscussion}
                 />
               );
               return (
@@ -1028,9 +1258,26 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
                               onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
                               canMoveLeft={index > 0}
-                              canMoveRight={index < actions.length - 1}
+                              canMoveRight={index < lastMovableIndex}
                               onDragStart={onDragStart}
                               onDragEnd={onDragEnd}
+                            />
+                          ) : isDiscussion ? (
+                            <DiscussionClip
+                              topic={(action as DiscussionAction).topic ?? ''}
+                              prompt={(action as DiscussionAction).prompt ?? ''}
+                              agentId={(action as DiscussionAction).agentId ?? ''}
+                              agents={discussionAgents}
+                              onTopicChange={(v) =>
+                                commit((cur) => setDiscussionTopicById(cur, key, v))
+                              }
+                              onPromptChange={(v) =>
+                                commit((cur) => setDiscussionPromptById(cur, key, v))
+                              }
+                              onAgentChange={(v) =>
+                                commit((cur) => setDiscussionAgentById(cur, key, v))
+                              }
+                              onDelete={() => commit((cur) => removeById(cur, key))}
                             />
                           ) : (
                             <CueMarker
@@ -1041,7 +1288,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               onMoveLeft={() => commit((cur) => moveByIdDir(cur, key, -1))}
                               onMoveRight={() => commit((cur) => moveByIdDir(cur, key, 1))}
                               canMoveLeft={index > 0}
-                              canMoveRight={index < actions.length - 1}
+                              canMoveRight={index < lastMovableIndex}
                               onDragStart={onDragStart}
                               onDragEnd={onDragEnd}
                             />
