@@ -4,20 +4,7 @@ import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Loader2,
-  Eye,
-  EyeOff,
-  CheckCircle2,
-  Zap,
-  Trash2,
-  Brain,
-  Image as ImageIcon,
-  Video,
-  AudioLines,
-  Globe,
-  type LucideIcon,
-} from 'lucide-react';
+import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Zap, Trash2 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -47,15 +34,20 @@ const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   webSearch: 'settings.webSearchSettings',
 };
 
-// Each modality carries its own identity icon in the result tiles, so a row is
-// recognizable at a glance rather than reading as an anonymous status dot.
-const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
-  llm: Brain,
-  image: ImageIcon,
-  video: Video,
-  tts: AudioLines,
-  webSearch: Globe,
+const statusIcon = (status: ApplyResult['status'] | 'idle') => {
+  if (status === 'pending') {
+    return <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />;
+  }
+  if (status === 'failed') return <AlertCircle className="size-3" />;
+  if (status === 'lit') return <CheckCircle2 className="size-3" />;
+  return null;
 };
+
+const SERIAL_VERIFY_STEP_MS = 380;
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+type ProbePatch = Partial<ApplyResult> & { modality: TokenPlanModality };
 
 export function TokenPlanSettings() {
   const { t } = useI18n();
@@ -129,13 +121,27 @@ export function TokenPlanSettings() {
     resetResults();
   };
 
-  // Patch a single modality's result row by modality key (probes resolve
-  // independently and out of order, so each updates only its own row).
-  const patchResult = (modality: TokenPlanModality, patch: Partial<ApplyResult>) => {
-    setResults(
-      (prev) => prev?.map((r) => (r.modality === modality ? { ...r, ...patch } : r)) ?? prev,
-    );
-  };
+  // Patch one modality row. During serial apply, rows are added only when their
+  // turn starts, so unreached capabilities stay idle instead of looking enabled.
+  const patchResult = useCallback(
+    (modality: TokenPlanModality, patch: Partial<ApplyResult>) => {
+      setResults((prev) => {
+        const providerId = selected?.modalities[modality]?.providerId;
+        if (!providerId) return prev;
+        const next: ApplyResult = {
+          modality,
+          providerId,
+          status: patch.status ?? 'lit',
+          detail: patch.detail,
+        };
+        if (!prev) return [next];
+        return prev.some((r) => r.modality === modality)
+          ? prev.map((r) => (r.modality === modality ? { ...r, ...patch } : r))
+          : [...prev, next];
+      });
+    },
+    [selected],
+  );
 
   const handleApply = useCallback(async () => {
     if (!selected || !apiKey) return;
@@ -156,33 +162,23 @@ export function TokenPlanSettings() {
       setVideoModelId,
     });
 
-    // Which modalities run a live probe (and so start in a 'pending' spinner
-    // state, resolving to lit/failed on their own). Everything else is just
-    // "configured" and shows lit immediately. The panel renders right away so
-    // the rows + spinners give live progress instead of dead air.
     const llm = selected.modalities.llm;
-    // An LLM probe runs unless the preset ships a fixed model list with no
-    // verification (case b) — that path makes no request, so no spinner.
     const llmProbes = !!llm && !(llm.defaultModels?.length && !llm.verifyModels);
     const mediaProbes = (['image', 'video'] as const).filter(
       (k) => selected.modalities[k]?.verifyModels && selected.modalities[k]?.defaultModels?.length,
     );
-    const pendingModalities = new Set<TokenPlanModality>([
-      ...(llmProbes ? (['llm'] as const) : []),
-      ...mediaProbes,
-    ]);
-    setResults(
-      applied.map((r) => (pendingModalities.has(r.modality) ? { ...r, status: 'pending' } : r)),
-    );
+    const appliedByModality = new Map(applied.map((r) => [r.modality, r]));
+    const revealModalities = MODALITY_ORDER.filter((m) => appliedByModality.has(m));
+    setResults([]);
 
-    // 2. LLM: light up its models. Three cases:
+    // 2. LLM: verify/light up its models. Three cases:
     //  a) verifyModels — `defaultModels` are CANDIDATES; verify each via a
     //     minimal chat request and keep the ones that work (auto-prunes
     //     retired/tier-gated models). Falls back to the seeded list on failure.
     //  b) fixed `defaultModels` (no verify) — already seeded by applyTokenPlan.
     //  c) otherwise — probe the /models endpoint.
-    const llmProbe = async () => {
-      if (!llm) return;
+    const llmProbe = async (): Promise<ProbePatch | null> => {
+      if (!llm) return null;
       if (llm.verifyModels && llm.defaultModels?.length) {
         try {
           const res = await fetch('/api/provider/probe-chat-models', {
@@ -212,10 +208,10 @@ export function TokenPlanSettings() {
         } catch {
           setLlmModelCount(llm.defaultModels.length);
         }
-        patchResult('llm', { status: 'lit' });
+        return { modality: 'llm', status: 'lit' };
       } else if (llm.defaultModels?.length) {
         setLlmModelCount(llm.defaultModels.length);
-        patchResult('llm', { status: 'lit' });
+        return { modality: 'llm', status: 'lit' };
       } else {
         try {
           const res = await fetch('/api/provider/probe-models', {
@@ -239,7 +235,7 @@ export function TokenPlanSettings() {
         } catch {
           setLlmModelCount(0);
         }
-        patchResult('llm', { status: 'lit' });
+        return { modality: 'llm', status: 'lit' };
       }
     };
 
@@ -247,9 +243,9 @@ export function TokenPlanSettings() {
     // model. applyTokenPlan lit them up optimistically; here we prune to the
     // verified subset (and re-select a working model), or disable + mark the row
     // failed if none pass (e.g. video on a Small tier).
-    const mediaProbe = async (kind: 'image' | 'video') => {
+    const mediaProbe = async (kind: 'image' | 'video'): Promise<ProbePatch | null> => {
       const target = selected.modalities[kind];
-      if (!target?.verifyModels || !target.defaultModels?.length) return;
+      if (!target?.verifyModels || !target.defaultModels?.length) return null;
       try {
         const res = await fetch('/api/provider/probe-chat-models', {
           method: 'POST',
@@ -268,7 +264,11 @@ export function TokenPlanSettings() {
         const setModelId = kind === 'image' ? setImageModelId : setVideoModelId;
         if (ids.length === 0) {
           setCfg(target.providerId as never, { enabled: false } as never);
-          patchResult(kind, { status: 'failed', detail: t('settings.tokenPlan.tierUnsupported') });
+          return {
+            modality: kind,
+            status: 'failed',
+            detail: t('settings.tokenPlan.tierUnsupported'),
+          };
         } else {
           setCfg(
             target.providerId as never,
@@ -277,16 +277,43 @@ export function TokenPlanSettings() {
             } as never,
           );
           setModelId(ids[0]);
-          patchResult(kind, { status: 'lit' });
+          return { modality: kind, status: 'lit' };
         }
       } catch {
         // Network error — leave the optimistic 'lit' state from applyTokenPlan.
-        patchResult(kind, { status: 'lit' });
+        return { modality: kind, status: 'lit' };
       }
     };
 
-    // Run every probe in parallel; each row resolves on its own.
-    await Promise.all([llmProbe(), ...mediaProbes.map((k) => mediaProbe(k))]);
+    const resolveModality = async (modality: TokenPlanModality): Promise<ProbePatch | null> => {
+      const appliedPatch = appliedByModality.get(modality);
+      if (!appliedPatch) return null;
+
+      if (modality === 'llm' && llmProbes) {
+        return llmProbe();
+      }
+      if ((modality === 'image' || modality === 'video') && mediaProbes.includes(modality)) {
+        return mediaProbe(modality);
+      }
+      if (modality === 'llm' && llm?.defaultModels?.length) {
+        setLlmModelCount(llm.defaultModels.length);
+      }
+      return appliedPatch;
+    };
+
+    // Verify and reveal one row at a time. Non-probed modalities such as TTS and
+    // web search still pause briefly before they switch from Verifying to Enabled.
+    for (const modality of revealModalities) {
+      const stepStartedAt = Date.now();
+      patchResult(modality, { status: 'pending', detail: undefined });
+      const patch = await resolveModality(modality);
+      const elapsed = Date.now() - stepStartedAt;
+      if (elapsed < SERIAL_VERIFY_STEP_MS) {
+        await wait(SERIAL_VERIFY_STEP_MS - elapsed);
+      }
+      if (!patch) continue;
+      patchResult(modality, patch);
+    }
 
     setApplying(false);
   }, [
@@ -302,6 +329,7 @@ export function TokenPlanSettings() {
     setImageModelId,
     setVideoProvider,
     setVideoModelId,
+    patchResult,
   ]);
 
   // Live status for one of a preset's capability chips. Only the selected preset
@@ -348,135 +376,170 @@ export function TokenPlanSettings() {
   };
 
   return (
-    <div className="flex flex-col gap-6 max-w-3xl">
+    <div className="flex max-w-4xl flex-col gap-6">
       <div>
         <h3 className="text-sm font-semibold mb-1">{t('settings.tokenPlan.title')}</h3>
         <p className="text-xs text-muted-foreground">{t('settings.tokenPlan.desc')}</p>
       </div>
 
-      {/* Provider selection */}
-      <div className="space-y-3">
-        <Label className="text-sm">{t('settings.tokenPlan.selectPlan')}</Label>
-        {grouped.map((group) => (
-          <div key={group.category} className="space-y-2">
-            <div className="text-xs font-medium text-muted-foreground">
-              {t(CATEGORY_LABEL_KEYS[group.category])}
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              {group.presets.map((preset) => (
-                <button
-                  key={preset.id}
-                  onClick={() => selectPreset(preset)}
-                  className={cn(
-                    'flex items-center gap-2.5 p-3 rounded-lg border text-left text-sm transition-colors',
-                    selected?.id === preset.id
-                      ? 'bg-primary/5 border-primary/50'
-                      : 'hover:bg-muted/50',
-                  )}
-                >
-                  {preset.icon ? (
-                    <img src={preset.icon} alt="" className="h-5 w-5 shrink-0" />
-                  ) : (
-                    <span className="h-5 w-5 shrink-0 rounded bg-muted" />
-                  )}
-                  <span className="flex flex-col min-w-0 flex-1 gap-1">
-                    <span className="truncate font-medium">{preset.name}</span>
-                    <span className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                      {MODALITY_ORDER.filter((m) => preset.modalities[m]).map((m) => {
-                        const st = chipStatus(preset, m);
-                        const ChipIcon = MODALITY_ICONS[m];
-                        const showCount =
-                          st === 'lit' && m === 'llm' && llmModelCount != null
-                            ? ` ${llmModelCount}`
-                            : '';
-                        return (
-                          <span
-                            key={m}
-                            className={cn(
-                              'inline-flex items-center gap-1 text-xs transition-colors',
-                              st === 'lit'
-                                ? 'text-green-600 dark:text-green-500'
-                                : st === 'failed'
-                                  ? 'text-muted-foreground/40 line-through'
-                                  : st === 'pending'
-                                    ? 'text-foreground'
-                                    : 'text-muted-foreground',
-                            )}
-                          >
-                            {st === 'pending' ? (
-                              <Loader2 className="size-3 shrink-0 animate-spin motion-reduce:animate-none" />
-                            ) : st === 'lit' ? (
-                              <CheckCircle2 className="size-3 shrink-0" />
-                            ) : (
-                              <ChipIcon className="size-3 shrink-0" />
-                            )}
-                            {t(MODALITY_LABEL_KEYS[m])}
-                            {showCount}
-                          </span>
-                        );
-                      })}
-                    </span>
-                  </span>
-                  {isPresetConfigured(preset) && (
-                    <span className="flex items-center gap-2 shrink-0">
-                      <span className="flex items-center gap-1 text-xs text-green-600">
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                        {t('settings.tokenPlan.configured')}
-                      </span>
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        title={t('settings.tokenPlan.remove')}
-                        onClick={(e) => handleRemove(preset, e)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') handleRemove(preset, e as never);
-                        }}
-                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </span>
-                    </span>
-                  )}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Key + apply */}
-      {selected && (
-        <div className="space-y-3 border-t pt-4">
-          <Label className="text-sm">{t('settings.tokenPlan.apiKey')}</Label>
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Input
-                type={showKey ? 'text' : 'password'}
-                autoComplete="new-password"
-                placeholder="sk-..."
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                className="h-8 pr-8"
-              />
-              <button
-                type="button"
-                onClick={() => setShowKey(!showKey)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-              >
-                {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </button>
-            </div>
-            <Button onClick={handleApply} disabled={applying || !apiKey} className="gap-1.5">
-              {applying ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Zap className="h-3.5 w-3.5" />
-              )}
-              {t('settings.tokenPlan.apply')}
-            </Button>
+      <div className="grid gap-6 lg:grid-cols-[280px_minmax(0,1fr)]">
+        <div className="space-y-4">
+          <Label className="text-sm">{t('settings.tokenPlan.selectPlan')}</Label>
+          <div className="space-y-4">
+            {grouped.map((group) => (
+              <div key={group.category} className="space-y-1">
+                <div className="px-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {t(CATEGORY_LABEL_KEYS[group.category])}
+                </div>
+                <div className="space-y-0.5">
+                  {group.presets.map((preset) => (
+                    <button
+                      key={preset.id}
+                      onClick={() => selectPreset(preset)}
+                      className={cn(
+                        'flex w-full items-center gap-2 rounded-md px-2 py-2 text-left text-sm transition-colors',
+                        selected?.id === preset.id
+                          ? 'bg-muted text-foreground'
+                          : 'hover:bg-muted/60',
+                      )}
+                    >
+                      {preset.icon ? (
+                        <img src={preset.icon} alt="" className="size-5 shrink-0 rounded" />
+                      ) : (
+                        <span className="size-5 shrink-0 rounded bg-muted" />
+                      )}
+                      <span className="min-w-0 flex-1 truncate font-medium">{preset.name}</span>
+                      {isPresetConfigured(preset) && (
+                        <CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
-      )}
+
+        <div className="min-w-0 border-l pl-6">
+          {!selected ? (
+            <div className="py-8 text-sm text-muted-foreground">
+              {t('settings.tokenPlan.selectPlan')}
+            </div>
+          ) : (
+            <div className="space-y-5">
+              <div className="flex items-center justify-between gap-4 border-b pb-3">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-semibold">{selected.name}</div>
+                </div>
+                {isPresetConfigured(selected) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1.5 px-2 text-muted-foreground hover:text-destructive"
+                    onClick={(e) => handleRemove(selected, e)}
+                  >
+                    <Trash2 className="size-3.5" />
+                    {t('settings.tokenPlan.remove')}
+                  </Button>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-sm">{t('settings.tokenPlan.apiKey')}</Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      type={showKey ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      placeholder={selected.apiKeyPlaceholder ?? 'sk-...'}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      className="h-8 pr-8"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey(!showKey)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
+                      {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <Button onClick={handleApply} disabled={applying || !apiKey} className="gap-1.5">
+                    <Zap className="h-3.5 w-3.5" />
+                    {t('settings.tokenPlan.apply')}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {(() => {
+                  const capabilities = MODALITY_ORDER.filter((m) => selected.modalities[m]);
+                  const enabledCount = capabilities.filter(
+                    (m) => chipStatus(selected, m) === 'lit',
+                  ).length;
+
+                  return (
+                    <>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-medium">
+                          {t('settings.tokenPlan.capabilities')}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {t('settings.tokenPlan.configuredSummary', {
+                            enabled: enabledCount,
+                            total: capabilities.length,
+                          })}
+                        </div>
+                      </div>
+                      <div className="border-y text-xs">
+                        {capabilities.map((m) => {
+                          const status = chipStatus(selected, m);
+                          const result = results?.find((r) => r.modality === m);
+                          const providerId = selected.modalities[m]?.providerId;
+                          const statusLabel =
+                            status === 'pending'
+                              ? t('settings.tokenPlan.checking')
+                              : status === 'failed'
+                                ? t('settings.tokenPlan.unavailable')
+                                : status === 'lit'
+                                  ? t('settings.tokenPlan.enabled')
+                                  : t('settings.tokenPlan.pending');
+                          const detail =
+                            status === 'failed' && result?.detail
+                              ? result.detail
+                              : status === 'lit' && m === 'llm' && llmModelCount != null
+                                ? t('settings.tokenPlan.modelsCount', { n: llmModelCount })
+                                : providerId;
+
+                          return (
+                            <div
+                              key={m}
+                              className="grid grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_auto] items-center gap-3 border-b py-2.5 last:border-b-0"
+                            >
+                              <div className="min-w-0 font-medium">{t(MODALITY_LABEL_KEYS[m])}</div>
+                              <div className="min-w-0 truncate text-muted-foreground">{detail}</div>
+                              <div
+                                className={cn(
+                                  'inline-flex items-center gap-1.5 justify-self-end font-medium',
+                                  status === 'pending' ? 'text-primary' : 'text-muted-foreground',
+                                  status === 'lit' && 'text-foreground',
+                                )}
+                              >
+                                {statusIcon(status)}
+                                {statusLabel}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

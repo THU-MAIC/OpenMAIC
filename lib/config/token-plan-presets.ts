@@ -54,6 +54,8 @@ export interface TokenPlanPreset {
   name: string;
   /** Optional vendor/docs link. */
   websiteUrl?: string;
+  /** Example key prefix shown in the settings input placeholder. */
+  apiKeyPlaceholder?: string;
   /** Icon path under /public (optional). */
   icon?: string;
   category: PresetCategory;
@@ -83,6 +85,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     id: 'minimax',
     name: 'MiniMax',
     websiteUrl: 'https://platform.minimaxi.com',
+    apiKeyPlaceholder: 'sk-...',
     icon: '/logos/minimax.svg',
     category: 'token_plan',
     modalities: {
@@ -115,6 +118,7 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     id: 'volcengine-ark',
     name: '火山方舟 Agent Plan',
     websiteUrl: 'https://console.volcengine.com/ark',
+    apiKeyPlaceholder: 'ark-...',
     icon: '/logos/volcengine.svg',
     category: 'token_plan',
     modalities: {
