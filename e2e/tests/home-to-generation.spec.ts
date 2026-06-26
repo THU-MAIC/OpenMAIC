@@ -1,15 +1,14 @@
 import { test, expect } from '../fixtures/base';
 import { HomePage } from '../pages/home.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
+import { setSettingsStorage } from '../fixtures/browser-storage';
 
 // Inject settings with modelId so the "enter classroom" button works
 const SETTINGS_STORAGE = createSettingsStorage();
 
 test.describe('Home → Generation', () => {
   test.beforeEach(async ({ page }) => {
-    await page.addInitScript((settings) => {
-      localStorage.setItem('settings-storage', settings);
-    }, SETTINGS_STORAGE);
+    await setSettingsStorage(page, SETTINGS_STORAGE);
   });
 
   test('home page loads with core UI elements and submits requirement', async ({ page }) => {

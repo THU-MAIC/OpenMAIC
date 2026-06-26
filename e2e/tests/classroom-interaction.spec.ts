@@ -2,6 +2,7 @@ import { test, expect } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
 import { defaultTheme } from '../fixtures/test-data/scene-content';
+import { ensureMaicDatabase, setSettingsStorage } from '../fixtures/browser-storage';
 
 const TEST_STAGE_ID = 'e2e-test-stage';
 
@@ -9,14 +10,8 @@ const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 
 /** Seed IndexedDB with stage + 3 scenes using raw IndexedDB API */
 async function seedDatabase(page: import('@playwright/test').Page) {
-  // Inject settings before navigating so it's available immediately on load
-  await page.addInitScript((settings) => {
-    localStorage.setItem('settings-storage', settings);
-  }, SETTINGS_STORAGE);
-
-  // Navigate to home page first — this causes Dexie to open/create the DB at v8
-  // with the correct schema. We wait for network idle to ensure Dexie is done.
-  await page.goto('/', { waitUntil: 'networkidle' });
+  await setSettingsStorage(page, SETTINGS_STORAGE);
+  await ensureMaicDatabase(page);
 
   // Now seed data by opening the DB at its current version (no upgrade).
   // Opening without a version number returns the current version without triggering

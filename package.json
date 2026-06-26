@@ -99,7 +99,7 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.61.1",
     "@rollup/plugin-commonjs": "^28.0.1",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@tailwindcss/postcss": "^4",

@@ -1,6 +1,7 @@
 import { test, expect } from '../fixtures/base';
 import { ClassroomPage } from '../pages/classroom.page';
 import { createSettingsStorage } from '../fixtures/test-data/settings';
+import { ensureMaicDatabase, setSettingsStorage } from '../fixtures/browser-storage';
 
 const TEST_STAGE_ID = 'e2e-interactive-stage';
 const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
@@ -128,30 +129,8 @@ const INTERACTIVE_HTML = String.raw`<!doctype html>
 </html>`;
 
 async function seedInteractiveStage(page: import('@playwright/test').Page) {
-  await page.addInitScript((settings) => {
-    localStorage.setItem('settings-storage', settings);
-  }, SETTINGS_STORAGE);
-
-  await page.goto(`/classroom/${TEST_STAGE_ID}`, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(
-    () =>
-      new Promise<boolean>((resolve) => {
-        const request = indexedDB.open('MAIC-Database');
-
-        request.onsuccess = (event) => {
-          const db = (event.target as IDBOpenDBRequest).result;
-          const hasStores = ['stages', 'scenes', 'stageOutlines'].every((name) =>
-            db.objectStoreNames.contains(name),
-          );
-          db.close();
-          resolve(hasStores);
-        };
-
-        request.onerror = () => resolve(false);
-      }),
-    undefined,
-    { timeout: 15_000 },
-  );
+  await setSettingsStorage(page, SETTINGS_STORAGE);
+  await ensureMaicDatabase(page);
 
   await page.evaluate(
     ({ stageId, html }) => {
@@ -209,7 +188,7 @@ async function seedInteractiveStage(page: import('@playwright/test').Page) {
     { stageId: TEST_STAGE_ID, html: INTERACTIVE_HTML },
   );
 
-  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.goto(`/classroom/${TEST_STAGE_ID}`, { waitUntil: 'domcontentloaded' });
 }
 
 test.describe('Interactive simulation layout', () => {
