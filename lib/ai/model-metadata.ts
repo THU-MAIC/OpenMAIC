@@ -324,7 +324,7 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('kimi', 'kimi-k2.5')]: toggleCapability('kimi'),
   [getModelMetadataKey('kimi', 'kimi-k2-thinking')]: toggleCapability('kimi'),
 
-  [getModelMetadataKey('siliconflow', 'deepseek-ai/DeepSeek-V3.2')]: siliconflowBudget,
+  [getModelMetadataKey('siliconflow', 'deepseek-ai/DeepSeek-V3.2')]: siliconflowToggleBudget,
   [getModelMetadataKey('siliconflow', 'deepseek-ai/DeepSeek-R1')]: siliconflowBudget,
   [getModelMetadataKey('siliconflow', 'deepseek-ai/DeepSeek-R1-Distill-Qwen-7B')]:
     siliconflowBudget,
