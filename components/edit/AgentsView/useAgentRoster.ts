@@ -78,14 +78,13 @@ export function useAgentRoster(): AgentRosterController {
     () => histState.present[0]?.id ?? null,
   );
 
-  // Sync roster changes to the stage store (persisted via debounced save).
-  // The effect only fires when `present` reference changes — immer returns the
-  // same reference when nothing changed, so no-ops are cheap.
+  // Persist roster edits to the store. Depends only on `histState.present`.
+  // `stage` is intentionally excluded: setStageAgents mutates `stage`, so
+  // depending on it would re-trigger this effect in an infinite loop (React #185).
+  // setStageAgents already no-ops when there is no stage (lib/store/stage.ts:287).
   useEffect(() => {
-    if (stage) {
-      setStageAgents(histState.present);
-    }
-  }, [histState.present, setStageAgents, stage]);
+    setStageAgents(histState.present);
+  }, [histState.present, setStageAgents]);
 
   /**
    * Apply an operation to the history, swallowing LAST_TEACHER guard errors.
