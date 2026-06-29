@@ -4,6 +4,7 @@ import {
   createAgentConfig, priorityForRole, teacherCount,
   type AgentRoster, type AgentRosterHistory,
 } from '@/lib/edit/agent-ops';
+import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 
 const T = (id: string, role = 'teacher'): GeneratedAgentConfig =>
@@ -63,5 +64,32 @@ describe('history overload + undo/redo', () => {
     expect(h.present.map((x) => x.id)).toEqual(['a']);
     h = redoAgentEditOperation(h);
     expect(h.present.map((x) => x.id)).toEqual(['a', 'b']);
+  });
+
+  it('caps past history at 50 after 60 adds', () => {
+    let h: AgentRosterHistory = { past: [], present: [T('seed')], future: [] };
+    for (let i = 0; i < 60; i++) {
+      h = applyAgentEditOperation(h, { type: 'agent.add', agent: T(`cap-${i}`, 'student') });
+    }
+    expect(h.past.length).toBe(50);
+  });
+});
+
+describe('createAgentConfig', () => {
+  it('assigns color from AGENT_COLOR_PALETTE by index', () => {
+    // index 13: 13 % 12 === 1 → AGENT_COLOR_PALETTE[1]
+    const a = createAgentConfig('student', 13, 'color-test');
+    expect(a.color).toBe(AGENT_COLOR_PALETTE[13 % 12]);
+  });
+});
+
+describe('teacherCount', () => {
+  it('returns 0 for empty roster', () => {
+    expect(teacherCount([])).toBe(0);
+  });
+
+  it('counts only teachers in a mixed roster', () => {
+    const roster: AgentRoster = [T('t1', 'teacher'), T('t2', 'teacher'), T('s1', 'student')];
+    expect(teacherCount(roster)).toBe(2);
   });
 });

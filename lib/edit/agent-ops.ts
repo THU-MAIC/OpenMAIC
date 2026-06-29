@@ -136,15 +136,15 @@ function applyOperationToRoster(roster: AgentRoster, op: AgentEditOperation): Ag
         return;
       }
       case 'agent.delete': {
-        const agent = draft.find((a) => a.id === op.id);
-        if (!agent) return;
+        const idx = draft.findIndex((a) => a.id === op.id);
+        if (idx === -1) return;
+        const agent = draft[idx];
 
         // Guard: cannot delete the last teacher.
         if (agent.role === 'teacher' && teacherCount(roster) <= 1) {
           throw new Error('LAST_TEACHER');
         }
 
-        const idx = draft.findIndex((a) => a.id === op.id);
         draft.splice(idx, 1);
         return;
       }
