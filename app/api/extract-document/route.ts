@@ -33,6 +33,16 @@ function isSelfHostedMinerUProvider(
   return providerId === 'mineru';
 }
 
+function requestedTypeLabel(mimeType: string): string {
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    return 'DOCX';
+  }
+  if (mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation') {
+    return 'PPTX';
+  }
+  return mimeType;
+}
+
 export async function POST(req: NextRequest) {
   let fileName: string | undefined;
   let resolvedProviderId: string | undefined;
@@ -99,19 +109,27 @@ export async function POST(req: NextRequest) {
     }
     resolvedProviderId = provider.id;
 
-    const managed = isPdfProviderId(provider.id) && isServerConfiguredProvider('pdf', provider.id);
-    const clientBaseUrl = managed ? undefined : baseUrl || undefined;
+    let managed = isPdfProviderId(provider.id) && isServerConfiguredProvider('pdf', provider.id);
+    let clientBaseUrl = managed ? undefined : baseUrl || undefined;
     if (isSelfHostedMinerUProvider(provider.id) && !managed && !clientBaseUrl) {
-      const requestedType =
-        mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-          ? 'DOCX'
-          : mimeType === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-            ? 'PPTX'
-            : mimeType;
+      const cloudProvider = getDocumentExtractorProvider('mineru-cloud');
+      const cloudManaged = isServerConfiguredProvider('pdf', 'mineru-cloud');
+      const cloudApiKey = resolvePDFApiKey(
+        'mineru-cloud',
+        cloudManaged ? undefined : apiKey || undefined,
+      );
+      if (cloudProvider && supportsMimeType(cloudProvider, mimeType) && cloudApiKey) {
+        provider = cloudProvider;
+        managed = cloudManaged;
+        clientBaseUrl = managed ? undefined : baseUrl || undefined;
+        resolvedProviderId = provider.id;
+      }
+    }
+    if (isSelfHostedMinerUProvider(provider.id) && !managed && !clientBaseUrl) {
       return apiError(
         'INVALID_REQUEST',
         422,
-        `${requestedType} extraction requires a configured MinerU document extractor. Configure MinerU on the server or provide a MinerU base URL in PDF provider settings.`,
+        `${requestedTypeLabel(mimeType)} extraction requires a configured MinerU document extractor. Configure a self-hosted MinerU base URL or a MinerU Cloud API key in PDF provider settings.`,
       );
     }
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {

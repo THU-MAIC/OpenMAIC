@@ -133,6 +133,7 @@ describe('POST /api/extract-document', () => {
       errorCode: 'INVALID_REQUEST',
     });
     expect(json.error).toContain('DOCX extraction requires a configured MinerU document extractor');
+    expect(json.error).toContain('self-hosted MinerU base URL or a MinerU Cloud API key');
   });
 
   it('allows MinerU Cloud PDF extraction with an API key and no base URL', async () => {
@@ -160,6 +161,38 @@ describe('POST /api/extract-document', () => {
         baseUrl: undefined,
       }),
       expect.any(Buffer),
+      'lesson.pdf',
+    );
+  });
+
+  it('falls back to MinerU Cloud for DOCX when self-hosted MinerU is unavailable and a cloud key is provided', async () => {
+    const res = await postExtractDocument({
+      file: new File(['not really docx'], 'lesson.docx', {
+        type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      }),
+      apiKey: 'cloud-key',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toMatchObject({
+      success: true,
+      data: {
+        text: 'cloud parsed text',
+        metadata: {
+          parser: 'mineru-cloud',
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        },
+      },
+    });
+    expect(mocks.parseWithMinerUCloud).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerId: 'mineru-cloud',
+        apiKey: 'cloud-key',
+        baseUrl: undefined,
+      }),
+      expect.any(Buffer),
+      'lesson.docx',
     );
   });
 });

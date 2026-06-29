@@ -46,6 +46,7 @@ describe('document extractor registry', () => {
 
   it('declares MinerU capabilities and supported course material formats', () => {
     const mineru = getDocumentExtractorProvider('mineru');
+    const mineruCloud = getDocumentExtractorProvider('mineru-cloud');
 
     expect(mineru).toBeDefined();
     expect(mineru?.displayName).toBe('MinerU');
@@ -62,6 +63,17 @@ describe('document extractor registry', () => {
       layout: true,
       ocr: true,
       async: false,
+    });
+    expect(mineruCloud).toBeDefined();
+    expect(mineruCloud?.supportedMimeTypes).toEqual(mineru?.supportedMimeTypes);
+    expect(mineruCloud?.capabilities).toMatchObject({
+      text: true,
+      images: true,
+      tables: true,
+      formulas: true,
+      layout: true,
+      ocr: true,
+      async: true,
     });
   });
 
@@ -120,6 +132,14 @@ describe('document extractor registry', () => {
         requiredCapabilities: { text: true },
       }).id,
     ).toBe('mineru');
+
+    expect(
+      selectDocumentExtractorProvider({
+        mimeType: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        preferredProviderId: 'mineru-cloud',
+        requiredCapabilities: { text: true },
+      }).id,
+    ).toBe('mineru-cloud');
   });
 
   it('can capability-match text course material locally', () => {
