@@ -7,6 +7,7 @@ import {
   PanelRightOpen,
   SquarePen,
   Trash2,
+  UsersRound,
 } from 'lucide-react';
 import type { AssistantRuntime } from '@assistant-ui/react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -156,7 +157,8 @@ export function RightRailTabs({
             onClick={() => setActiveTab('ai')}
           />
           <RailTabButton
-            label="角色"
+            label="课堂阵容"
+            icon={<UsersRound className="size-[15px]" />}
             active={activeTab === 'agents'}
             onClick={() => setActiveTab('agents')}
           />
@@ -254,10 +256,12 @@ export function RightRailTabs({
 
 function RailTabButton({
   label,
+  icon,
   active,
   onClick,
 }: {
   readonly label: string;
+  readonly icon?: React.ReactNode;
   readonly active: boolean;
   readonly onClick: () => void;
 }) {
@@ -268,12 +272,13 @@ function RailTabButton({
       aria-selected={active}
       onClick={onClick}
       className={cn(
-        'rounded-md px-2.5 py-0.5 text-[11.5px] font-semibold transition-all',
+        'flex items-center gap-1 rounded-md px-2.5 py-0.5 text-[11.5px] font-semibold transition-all',
         active
           ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
           : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200',
       )}
     >
+      {icon}
       {label}
     </button>
   );
