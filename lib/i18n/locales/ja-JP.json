@@ -323,6 +323,10 @@
         }
       },
       "newConversation": "新しい会話",
+      "sessionHistory": "履歴",
+      "sessionUntitled": "無題の会話",
+      "sessionDelete": "削除",
+      "sessionEmpty": "履歴はありません",
       "reasoning": "思考プロセス",
       "thought": "思考時間",
       "interactive": {

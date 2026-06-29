@@ -329,6 +329,10 @@
         }
       },
       "newConversation": "新对话",
+      "sessionHistory": "历史对话",
+      "sessionUntitled": "未命名对话",
+      "sessionDelete": "删除",
+      "sessionEmpty": "暂无历史对话",
       "thinking": "思考中…",
       "reasoning": "思考过程",
       "thought": "已思考"

@@ -205,7 +205,6 @@ export function buildCompleteScene(
         // Ultra Mode widget fields
         widgetType: content.widgetType,
         widgetConfig: content.widgetConfig,
-        teacherActions: content.teacherActions,
       },
       actions,
       createdAt: Date.now(),

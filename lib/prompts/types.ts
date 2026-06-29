@@ -21,7 +21,6 @@ export type PromptId =
   | 'game-content'
   | 'visualization3d-content'
   | 'procedural-skill-content'
-  | 'widget-teacher-actions'
   | 'pbl-actions'
   | 'agent-system'
   | 'agent-system-wb-teacher'

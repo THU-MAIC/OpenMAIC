@@ -329,6 +329,10 @@
         }
       },
       "newConversation": "New conversation",
+      "sessionHistory": "History",
+      "sessionUntitled": "Untitled chat",
+      "sessionDelete": "Delete",
+      "sessionEmpty": "No past conversations",
       "thinking": "Thinking…",
       "reasoning": "Reasoning",
       "thought": "Thought for"

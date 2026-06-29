@@ -274,6 +274,10 @@
         }
       },
       "newConversation": "새 대화",
+      "sessionHistory": "기록",
+      "sessionUntitled": "제목 없는 대화",
+      "sessionDelete": "삭제",
+      "sessionEmpty": "대화 기록 없음",
       "reasoning": "추론 과정",
       "thought": "생각한 시간",
       "interactive": {

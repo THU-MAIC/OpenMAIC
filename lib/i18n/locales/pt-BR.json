@@ -308,6 +308,10 @@
         }
       },
       "newConversation": "New conversation",
+      "sessionHistory": "Histórico",
+      "sessionUntitled": "Conversa sem título",
+      "sessionDelete": "Excluir",
+      "sessionEmpty": "Nenhuma conversa",
       "reasoning": "Raciocínio",
       "thought": "Pensou por",
       "interactive": {

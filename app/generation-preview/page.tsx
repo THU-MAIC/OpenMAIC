@@ -15,8 +15,14 @@ import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getEnabledProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
-import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import {
+  fetchSceneActions,
+  fetchSceneContent,
+  generateAndStoreTTS,
+} from '@/lib/hooks/use-scene-generator';
+import { isAbortError } from '@/lib/generation/generation-retry';
+import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
   loadPdfBlob,
@@ -24,7 +30,6 @@ import {
   storeImages,
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import { db } from '@/lib/utils/database';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
@@ -847,31 +852,22 @@ function GenerationPreviewContent() {
       const firstOutline = outlines[0];
 
       // Step 2: Generate content (currentStepIndex is already 2)
-      const contentResp = await fetch('/api/generate/scene-content', {
-        method: 'POST',
-        headers: getApiHeaders(),
-        body: JSON.stringify(
-          withThinkingConfig({
-            outline: firstOutline,
-            allOutlines: outlines,
-            pdfImages: currentSession.pdfImages,
-            imageMapping,
-            stageInfo,
-            stageId: stage.id,
-            agents,
-            languageDirective,
-            requirements: currentSession.requirements,
-          }),
-        ),
+      const contentData = await fetchSceneContent(
+        {
+          outline: firstOutline,
+          allOutlines: outlines,
+          pdfImages: currentSession.pdfImages,
+          imageMapping,
+          stageInfo,
+          stageId: stage.id,
+          agents,
+          languageDirective,
+          requirements: currentSession.requirements,
+        },
         signal,
-      });
+        FOREGROUND_SCENE_RETRY_OPTIONS,
+      );
 
-      if (!contentResp.ok) {
-        const errorData = await contentResp.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(errorData.error || t('generation.sceneGenerateFailed'));
-      }
-
-      const contentData = await contentResp.json();
       if (!contentData.success || !contentData.content) {
         throw new Error(contentData.error || t('generation.sceneGenerateFailed'));
       }
@@ -880,33 +876,25 @@ function GenerationPreviewContent() {
       const actionsStepIdx = activeSteps.findIndex((s) => s.id === 'actions');
       setCurrentStepIndex(actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
 
-      const actionsResp = await fetch('/api/generate/scene-actions', {
-        method: 'POST',
-        headers: getApiHeaders(),
-        body: JSON.stringify(
-          withThinkingConfig({
-            outline: contentData.effectiveOutline || firstOutline,
-            allOutlines: outlines,
-            content: contentData.content,
-            stageId: stage.id,
-            agents,
-            previousSpeeches: [],
-            userProfile,
-            languageDirective,
-          }),
-        ),
+      const data = await fetchSceneActions(
+        {
+          outline: contentData.effectiveOutline || firstOutline,
+          allOutlines: outlines,
+          content: contentData.content,
+          stageId: stage.id,
+          agents,
+          previousSpeeches: [],
+          userProfile,
+          languageDirective,
+        },
         signal,
-      });
+        FOREGROUND_SCENE_RETRY_OPTIONS,
+      );
 
-      if (!actionsResp.ok) {
-        const errorData = await actionsResp.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(errorData.error || t('generation.sceneGenerateFailed'));
-      }
-
-      const data = await actionsResp.json();
       if (!data.success || !data.scene) {
         throw new Error(data.error || t('generation.sceneGenerateFailed'));
       }
+      const firstScene = data.scene;
 
       // Generate TTS for first scene (part of actions step — blocking)
       if (
@@ -917,17 +905,17 @@ function GenerationPreviewContent() {
           settings.ttsProvidersConfig?.[settings.ttsProviderId],
         )
       ) {
-        const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
-        // Narration uses the teacher agent's voice (single resolver → stable timbre).
-        const teacherAgent = pickNarratorAgent(useAgentRegistry.getState().listAgents());
-        const providerOptions = await resolveAgentVoiceOptions(teacherAgent, {
-          providerId: settings.ttsProviderId,
-          providerConfig: ttsProviderConfig,
-          voiceId: settings.ttsVoice,
-          language: languageDirective,
-        });
-        const speechActions = (data.scene.actions || []).filter(
-          (a: { type: string; text?: string }) => a.type === 'speech' && a.text,
+        const speechActions = (firstScene.actions || []).filter(
+          (a: {
+            id: string;
+            type: string;
+            text?: string;
+          }): a is {
+            id: string;
+            type: 'speech';
+            text: string;
+            audioId?: string;
+          } => a.type === 'speech' && !!a.text,
         );
 
         let ttsFailCount = 0;
@@ -935,47 +923,16 @@ function GenerationPreviewContent() {
           const audioId = `tts_${action.id}`;
           action.audioId = audioId;
           try {
-            const resp = await fetch('/api/generate/tts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                text: action.text,
-                audioId,
-                ttsProviderId: settings.ttsProviderId,
-                ttsModelId: ttsProviderConfig?.modelId,
-                ttsVoice: settings.ttsVoice,
-                ttsSpeed: settings.ttsSpeed,
-                ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-                // Managed providers resolve their base URL server-side; only
-                // send the client's own base URL (custom providers).
-                ttsBaseUrl:
-                  ttsProviderConfig?.baseUrl ||
-                  ttsProviderConfig?.customDefaultBaseUrl ||
-                  undefined,
-                ttsProviderOptions: providerOptions,
-              }),
+            await generateAndStoreTTS(
+              audioId,
+              action.text,
+              languageDirective,
               signal,
-            });
-            if (!resp.ok) {
-              ttsFailCount++;
-              continue;
-            }
-            const ttsData = await resp.json();
-            if (!ttsData.success) {
-              ttsFailCount++;
-              continue;
-            }
-            const binary = atob(ttsData.base64);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            const blob = new Blob([bytes], { type: `audio/${ttsData.format}` });
-            await db.audioFiles.put({
-              id: audioId,
-              blob,
-              format: ttsData.format,
-              createdAt: Date.now(),
-            });
+              FOREGROUND_SCENE_RETRY_OPTIONS,
+            );
           } catch (err) {
+            if (isAbortError(err)) throw err;
+
             log.warn(`[TTS] Failed for ${audioId}:`, err);
             ttsFailCount++;
           }
@@ -987,11 +944,11 @@ function GenerationPreviewContent() {
       }
 
       // Add scene to store and navigate
-      store.addScene(data.scene);
-      store.setCurrentSceneId(data.scene.id);
+      store.addScene(firstScene);
+      store.setCurrentSceneId(firstScene.id);
 
       // Set remaining outlines as skeleton placeholders
-      const remaining = outlines.filter((o) => o.order !== data.scene.order);
+      const remaining = outlines.filter((o) => o.order !== firstScene.order);
       store.setGeneratingOutlines(remaining);
 
       // Store generation params for classroom to continue generation
@@ -1011,7 +968,7 @@ function GenerationPreviewContent() {
     } catch (err) {
       setIsOutlineStreaming(false);
       // AbortError is expected when navigating away — don't show as error
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if (isAbortError(err)) {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
