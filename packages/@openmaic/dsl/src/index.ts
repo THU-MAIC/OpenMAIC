@@ -11,13 +11,15 @@
  * validators / type-guards, and version/migration helpers. It must never gain
  * a runtime dependency on React, pptx, echarts, etc.
  *
- * The lesson skeleton (`Stage` / `Scene` / `SceneContent`) lives here. `Scene`
- * is generic: the contract owns only the universal structure + the slide/quiz
- * content kinds, while playback `Action`s, Ultra-mode widgets, and PBL configs
- * are app-side feature surfaces that consumers inject via `Scene`'s type
- * parameters.
+ * The lesson skeleton (`Stage` / `Scene` / `SceneContent`) and the playback
+ * verb set (`Action` and its variants) both live here. `Scene` is generic: the
+ * contract owns the universal structure, the slide/quiz content kinds, and the
+ * standard `Action` union (which `TAction` now defaults to). PBL configs and
+ * the app's richer content kinds remain app-side feature surfaces that
+ * consumers inject via `Scene`'s type parameters.
  */
 export * from './slides.js';
 export * from './guards.js';
 export * from './stage.js';
+export * from './action.js';
 export * from './version.js';

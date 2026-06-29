@@ -26,12 +26,13 @@ nothing.
 | ------------- | ------------------------------------------------------------------- |
 | `slides.ts`   | The slide object model: `Slide`, `PPTElement` and all variants, theme, background, animation, table/chart/code types, plus `ElementTypes` / `ShapePathFormulasKeys` enums. |
 | `stage.ts`    | The lesson skeleton: `Stage`, generic `Scene<TAction, TContent>`, `SceneType`, `StageMode`, `Whiteboard`, `VideoManifest`, `SlideContent`, `QuizContent`, `MultiAgentConfig`, `GeneratedAgentConfig`, plus `isSlideContent` / `isQuizContent` guards. |
+| `action.ts`   | The playback verb set: `Action` and all variants (spotlight, laser, speech, the `Wb*` whiteboard family, `play_video`, `discussion`, and the `widget_*` interaction actions), `ActionType`, the `FIRE_AND_FORGET_ACTIONS` / `SLIDE_ONLY_ACTIONS` / `SYNC_ACTIONS` category lists, plus the `PercentageGeometry` overlay type. |
 | `guards.ts`   | Pure discriminant type-guards (`isTextElement`, …) and `PPT_ELEMENT_TYPES`. |
 | `version.ts`  | `DSL_VERSION` + the `DslMigration` shape and (empty) migration registry. |
 
 ```ts
-import type { Slide, PPTElement } from '@openmaic/dsl';
-import { isTextElement, DSL_VERSION } from '@openmaic/dsl';
+import type { Slide, PPTElement, Action } from '@openmaic/dsl';
+import { isTextElement, DSL_VERSION, SYNC_ACTIONS } from '@openmaic/dsl';
 ```
 
 ## Status
@@ -53,31 +54,39 @@ of the slide types:
 - [x] Wire `@openmaic/renderer` to import types from `@openmaic/dsl` (vendored copy deleted).
 - [ ] Add the JSON Schema for the slide contract + a pure schema validator.
 - [x] Promote the `stage` / `scene` / `scene-content` types into the DSL (the
-      universal skeleton now lives in `stage.ts`; `Action`, Ultra-mode widgets,
-      and PBL stay app-side and plug in via `Scene<TAction, TContent>`).
+      universal skeleton now lives in `stage.ts`).
+- [x] Bring the `Action` playback verb set into the DSL (`action.ts`); the
+      widget interaction actions graduated into the contract once they decoupled
+      from widget configs, so the standard `Action` union now covers them too.
+      `Scene<TAction>` defaults to that union; PBL configs and the app's richer
+      content kinds still plug in via `Scene`'s generics.
 - [ ] Reserve `@openmaic/exporter` as the 4th family member.
 
 ### Stage / Scene split
 
-`stage.ts` owns only the **universal lesson skeleton**: `Stage`, the
-discriminated `SceneContent` (`SlideContent | QuizContent`), and a generic
+`stage.ts` owns the **universal lesson skeleton**: `Stage`, the discriminated
+`SceneContent` (`SlideContent | QuizContent`), and a generic
 
 ```ts
-interface Scene<TAction = never, TContent extends { type: SceneType } = SlideContent | QuizContent>
+interface Scene<TAction = Action, TContent extends { type: SceneType } = SlideContent | QuizContent>
 ```
 
-so the contract carries no dependency on the playback action set or the richer
-feature surfaces. Apps compose their full scene type by injecting their own
-types:
+`TAction` defaults to the contract's standard `Action` union (defined in
+`action.ts`), so a scene carries playback actions out of the box; skeleton-only
+consumers that reject actions opt out with `Scene<never, …>`. Apps widen the
+content union (and, if they add their own actions, the action union) by
+injecting their own types:
 
 ```ts
-import type { Scene } from '@openmaic/dsl';
-type AppScene = Scene<AppAction, SlideContent | QuizContent | InteractiveContent | PBLContent>;
+import type { Scene, Action } from '@openmaic/dsl';
+type AppScene = Scene<Action, SlideContent | QuizContent | InteractiveContent | PBLContent>;
 ```
 
-`Action`, widget configs (`WidgetType` / `WidgetConfig`), and `PBLProjectConfig`
-are deliberately out of scope here — they're faster-moving product surfaces and
-may graduate to sibling packages (`@openmaic/actions`, …) later.
+Widget *configs* (`WidgetType` / `WidgetConfig`) and `PBLProjectConfig` remain
+out of scope here — they're faster-moving product surfaces that stay app-side
+and plug in via `Scene`'s generics. The widget *actions* (`widget_highlight`,
+`widget_setState`, …), by contrast, are config-free playback verbs and live in
+`action.ts` with the rest of the `Action` union.
 
 ## Divergence reconciled (seed provenance)
 
