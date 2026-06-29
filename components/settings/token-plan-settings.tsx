@@ -4,7 +4,19 @@ import { useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, Eye, EyeOff, CheckCircle2, AlertCircle, Zap, Trash2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import {
+  Eye,
+  EyeOff,
+  CheckCircle2,
+  Zap,
+  MessageSquare,
+  Image as ImageIcon,
+  Video,
+  Volume2,
+  Search,
+  type LucideIcon,
+} from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/lib/store/settings';
@@ -16,8 +28,7 @@ import {
   type PresetCategory,
   type TokenPlanModality,
 } from '@/lib/config/token-plan-presets';
-import { applyTokenPlan, removeTokenPlan, type ApplyResult } from '@/lib/config/apply-token-plan';
-import { modelInfoFromId } from './utils';
+import { applyTokenPlan, removeTokenPlan } from '@/lib/config/apply-token-plan';
 
 const CATEGORY_LABEL_KEYS: Record<PresetCategory, string> = {
   token_plan: 'settings.presetCategory.tokenPlan',
@@ -34,20 +45,22 @@ const MODALITY_LABEL_KEYS: Record<TokenPlanModality, string> = {
   webSearch: 'settings.webSearchSettings',
 };
 
-const statusIcon = (status: ApplyResult['status'] | 'idle') => {
-  if (status === 'pending') {
-    return <Loader2 className="size-3 animate-spin motion-reduce:animate-none" />;
-  }
-  if (status === 'failed') return <AlertCircle className="size-3" />;
-  if (status === 'lit') return <CheckCircle2 className="size-3" />;
-  return null;
+const MODALITY_ICONS: Record<TokenPlanModality, LucideIcon> = {
+  llm: MessageSquare,
+  image: ImageIcon,
+  video: Video,
+  tts: Volume2,
+  webSearch: Search,
 };
 
-const SERIAL_VERIFY_STEP_MS = 380;
-
-const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-type ProbePatch = Partial<ApplyResult> & { modality: TokenPlanModality };
+/** The models a preset declares for one modality (display-only, no probing). */
+function modalityModels(preset: TokenPlanPreset, m: TokenPlanModality): string[] {
+  const target = preset.modalities[m];
+  if (!target) return [];
+  if (target.defaultModels?.length) return target.defaultModels;
+  if (target.defaultModelId) return [target.defaultModelId];
+  return [target.providerId];
+}
 
 export function TokenPlanSettings() {
   const { t } = useI18n();
@@ -63,37 +76,30 @@ export function TokenPlanSettings() {
   // Read provider configs so the page can reflect already-persisted state
   // (other settings panels read the store directly; this page must too).
   const providersConfig = useSettingsStore((s) => s.providersConfig);
-  const imageProvidersConfig = useSettingsStore((s) => s.imageProvidersConfig);
-  const videoProvidersConfig = useSettingsStore((s) => s.videoProvidersConfig);
-  const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
-  const webSearchProvidersConfig = useSettingsStore((s) => s.webSearchProvidersConfig);
 
   const [selected, setSelected] = useState<TokenPlanPreset | null>(null);
   const [apiKey, setApiKey] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [applying, setApplying] = useState(false);
-  const [results, setResults] = useState<ApplyResult[] | null>(null);
-  const [llmModelCount, setLlmModelCount] = useState<number | null>(null);
+  const [activeTab, setActiveTab] = useState<TokenPlanModality>('llm');
 
   const grouped = PRESET_CATEGORY_ORDER.map((cat) => ({
     category: cat,
     presets: TOKEN_PLAN_PRESETS.filter((p) => p.category === cat),
   })).filter((g) => g.presets.length > 0);
 
-  const resetResults = () => {
-    setResults(null);
-    setLlmModelCount(null);
-  };
-
-  // Whether a preset's LLM provider already has a saved key (= configured).
-  const isPresetConfigured = (preset: TokenPlanPreset): boolean => {
+  const presetSavedKey = (preset: TokenPlanPreset): string => {
     const llmId = preset.modalities.llm?.providerId;
-    return !!(llmId && providersConfig[llmId as keyof typeof providersConfig]?.apiKey);
+    return llmId ? (providersConfig[llmId as keyof typeof providersConfig]?.apiKey ?? '') : '';
   };
 
-  // Remove a token plan: clear key + disable across all its modalities.
-  const handleRemove = (preset: TokenPlanPreset, e: React.MouseEvent) => {
-    e.stopPropagation(); // don't also select the card
+  // Whether a preset's LLM provider already has a saved key (= enabled).
+  const isPresetEnabled = (preset: TokenPlanPreset): boolean => !!presetSavedKey(preset);
+
+  // The modalities a preset declares, in display order — drives the tab bar.
+  const presetModalities = (preset: TokenPlanPreset): TokenPlanModality[] =>
+    MODALITY_ORDER.filter((m) => preset.modalities[m]);
+
+  const disablePreset = (preset: TokenPlanPreset) => {
     removeTokenPlan(preset, {
       setProviderConfig,
       setImageProviderConfig,
@@ -101,56 +107,23 @@ export function TokenPlanSettings() {
       setTTSProviderConfig,
       setWebSearchProviderConfig,
     });
-    // If the removed plan was selected, reset the page state.
-    if (selected?.id === preset.id) {
-      setSelected(null);
-      setApiKey('');
-      resetResults();
-    }
   };
 
   const selectPreset = (preset: TokenPlanPreset) => {
     setSelected(preset);
+    setActiveTab(presetModalities(preset)[0] ?? 'llm');
     // Reflect persisted state: prefill the saved key so the page isn't blank
     // on return (mirrors how other settings panels read the store).
-    const llmId = preset.modalities.llm?.providerId;
-    const savedKey = llmId
-      ? providersConfig[llmId as keyof typeof providersConfig]?.apiKey
-      : undefined;
-    setApiKey(savedKey || '');
-    resetResults();
+    setApiKey(presetSavedKey(preset));
   };
 
-  // Patch one modality row. During serial apply, rows are added only when their
-  // turn starts, so unreached capabilities stay idle instead of looking enabled.
-  const patchResult = useCallback(
-    (modality: TokenPlanModality, patch: Partial<ApplyResult>) => {
-      setResults((prev) => {
-        const providerId = selected?.modalities[modality]?.providerId;
-        if (!providerId) return prev;
-        const next: ApplyResult = {
-          modality,
-          providerId,
-          status: patch.status ?? 'lit',
-          detail: patch.detail,
-        };
-        if (!prev) return [next];
-        return prev.some((r) => r.modality === modality)
-          ? prev.map((r) => (r.modality === modality ? { ...r, ...patch } : r))
-          : [...prev, next];
-      });
-    },
-    [selected],
-  );
-
-  const handleApply = useCallback(async () => {
-    if (!selected || !apiKey) return;
-    setApplying(true);
-    setResults(null);
-    setLlmModelCount(null);
-
-    // 1. Fill every declared modality synchronously.
-    const applied = applyTokenPlan(selected, apiKey, {
+  // Apply is synchronous: seed every declared modality's config + select the
+  // first image/video model, then we're done. No probing — the models a plan
+  // offers are listed as-is, and the user picks/toggles on the generation bar.
+  const handleApply = useCallback(() => {
+    const trimmedKey = apiKey.trim();
+    if (!selected || !trimmedKey) return;
+    applyTokenPlan(selected, trimmedKey, {
       setProviderConfig,
       setImageProviderConfig,
       setVideoProviderConfig,
@@ -161,165 +134,9 @@ export function TokenPlanSettings() {
       setVideoProvider,
       setVideoModelId,
     });
-
-    const llm = selected.modalities.llm;
-    const llmProbes = !!llm && !(llm.defaultModels?.length && !llm.verifyModels);
-    const mediaProbes = (['image', 'video'] as const).filter(
-      (k) => selected.modalities[k]?.verifyModels && selected.modalities[k]?.defaultModels?.length,
-    );
-    const appliedByModality = new Map(applied.map((r) => [r.modality, r]));
-    const revealModalities = MODALITY_ORDER.filter((m) => appliedByModality.has(m));
-    setResults([]);
-
-    // 2. LLM: verify/light up its models. Three cases:
-    //  a) verifyModels — `defaultModels` are CANDIDATES; verify each via a
-    //     minimal chat request and keep the ones that work (auto-prunes
-    //     retired/tier-gated models). Falls back to the seeded list on failure.
-    //  b) fixed `defaultModels` (no verify) — already seeded by applyTokenPlan.
-    //  c) otherwise — probe the /models endpoint.
-    const llmProbe = async (): Promise<ProbePatch | null> => {
-      if (!llm) return null;
-      if (llm.verifyModels && llm.defaultModels?.length) {
-        try {
-          const res = await fetch('/api/provider/probe-chat-models', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              baseUrl: llm.baseUrl,
-              apiKey,
-              models: llm.defaultModels,
-              apiFormat: llm.apiFormat,
-            }),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
-            if (ids.length > 0) {
-              setProviderConfig(
-                llm.providerId as never,
-                { models: ids.map((id) => modelInfoFromId(id, llm.providerId)) } as never,
-              );
-            }
-            // If none verified (e.g. all timed out), keep the seeded fallback.
-            setLlmModelCount(ids.length || llm.defaultModels.length);
-          } else {
-            setLlmModelCount(llm.defaultModels.length);
-          }
-        } catch {
-          setLlmModelCount(llm.defaultModels.length);
-        }
-        return { modality: 'llm', status: 'lit' };
-      } else if (llm.defaultModels?.length) {
-        setLlmModelCount(llm.defaultModels.length);
-        return { modality: 'llm', status: 'lit' };
-      } else {
-        try {
-          const res = await fetch('/api/provider/probe-models', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ baseUrl: llm.baseUrl, apiKey, modelsUrl: llm.modelsUrl }),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            const ids: string[] = (data.models || []).map((m: { id: string }) => m.id);
-            if (ids.length > 0) {
-              setProviderConfig(
-                llm.providerId as never,
-                { models: ids.map((id) => modelInfoFromId(id, llm.providerId)) } as never,
-              );
-            }
-            setLlmModelCount(ids.length);
-          } else {
-            setLlmModelCount(0);
-          }
-        } catch {
-          setLlmModelCount(0);
-        }
-        return { modality: 'llm', status: 'lit' };
-      }
-    };
-
-    // 3. Media (image/video): probe whether this plan tier actually supports the
-    // model. applyTokenPlan lit them up optimistically; here we prune to the
-    // verified subset (and re-select a working model), or disable + mark the row
-    // failed if none pass (e.g. video on a Small tier).
-    const mediaProbe = async (kind: 'image' | 'video'): Promise<ProbePatch | null> => {
-      const target = selected.modalities[kind];
-      if (!target?.verifyModels || !target.defaultModels?.length) return null;
-      try {
-        const res = await fetch('/api/provider/probe-chat-models', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            baseUrl: target.baseUrl,
-            apiKey,
-            models: target.defaultModels,
-            kind,
-          }),
-        });
-        const data = await res.json();
-        const ids: string[] =
-          res.ok && data.success ? (data.models || []).map((m: { id: string }) => m.id) : [];
-        const setCfg = kind === 'image' ? setImageProviderConfig : setVideoProviderConfig;
-        const setModelId = kind === 'image' ? setImageModelId : setVideoModelId;
-        if (ids.length === 0) {
-          setCfg(target.providerId as never, { enabled: false } as never);
-          return {
-            modality: kind,
-            status: 'failed',
-            detail: t('settings.tokenPlan.tierUnsupported'),
-          };
-        } else {
-          setCfg(
-            target.providerId as never,
-            {
-              customModels: ids.map((id) => ({ id, name: id })),
-            } as never,
-          );
-          setModelId(ids[0]);
-          return { modality: kind, status: 'lit' };
-        }
-      } catch {
-        // Network error — leave the optimistic 'lit' state from applyTokenPlan.
-        return { modality: kind, status: 'lit' };
-      }
-    };
-
-    const resolveModality = async (modality: TokenPlanModality): Promise<ProbePatch | null> => {
-      const appliedPatch = appliedByModality.get(modality);
-      if (!appliedPatch) return null;
-
-      if (modality === 'llm' && llmProbes) {
-        return llmProbe();
-      }
-      if ((modality === 'image' || modality === 'video') && mediaProbes.includes(modality)) {
-        return mediaProbe(modality);
-      }
-      if (modality === 'llm' && llm?.defaultModels?.length) {
-        setLlmModelCount(llm.defaultModels.length);
-      }
-      return appliedPatch;
-    };
-
-    // Verify and reveal one row at a time. Non-probed modalities such as TTS and
-    // web search still pause briefly before they switch from Verifying to Enabled.
-    for (const modality of revealModalities) {
-      const stepStartedAt = Date.now();
-      patchResult(modality, { status: 'pending', detail: undefined });
-      const patch = await resolveModality(modality);
-      const elapsed = Date.now() - stepStartedAt;
-      if (elapsed < SERIAL_VERIFY_STEP_MS) {
-        await wait(SERIAL_VERIFY_STEP_MS - elapsed);
-      }
-      if (!patch) continue;
-      patchResult(modality, patch);
-    }
-
-    setApplying(false);
   }, [
     selected,
     apiKey,
-    t,
     setProviderConfig,
     setImageProviderConfig,
     setVideoProviderConfig,
@@ -329,51 +146,7 @@ export function TokenPlanSettings() {
     setImageModelId,
     setVideoProvider,
     setVideoModelId,
-    patchResult,
   ]);
-
-  // Live status for one of a preset's capability chips. Only the selected preset
-  // mid/post-apply has probe results; every other chip stays 'idle' (neutral).
-  // Whether a modality's provider is persisted as configured + enabled in the
-  // store (survives navigating away and reopening — the store is persisted, the
-  // transient `results` state is not). A modality probed as unavailable was
-  // disabled on apply, so it reads as not-configured here.
-  const isModalityConfigured = (preset: TokenPlanPreset, m: TokenPlanModality): boolean => {
-    const id = preset.modalities[m]?.providerId;
-    if (!id) return false;
-    const enabledAndKeyed = (c?: { apiKey?: string; enabled?: boolean }) =>
-      !!c?.apiKey && c.enabled !== false;
-    switch (m) {
-      case 'llm':
-        return !!providersConfig[id as keyof typeof providersConfig]?.apiKey;
-      case 'image':
-        return enabledAndKeyed(imageProvidersConfig[id as keyof typeof imageProvidersConfig]);
-      case 'video':
-        return enabledAndKeyed(videoProvidersConfig[id as keyof typeof videoProvidersConfig]);
-      case 'tts':
-        return enabledAndKeyed(ttsProvidersConfig[id as keyof typeof ttsProvidersConfig]);
-      case 'webSearch':
-        return enabledAndKeyed(
-          webSearchProvidersConfig[id as keyof typeof webSearchProvidersConfig],
-        );
-      default:
-        return false;
-    }
-  };
-
-  // Live status for one of a preset's capability chips. The selected preset's
-  // in-flight probe results win (pending/lit/failed this session); otherwise we
-  // fall back to the persisted store config so a previously-lit plan stays lit
-  // after navigating away and back.
-  const chipStatus = (
-    preset: TokenPlanPreset,
-    m: TokenPlanModality,
-  ): ApplyResult['status'] | 'idle' => {
-    if (selected?.id === preset.id && results) {
-      return results.find((r) => r.modality === m)?.status ?? 'idle';
-    }
-    return isModalityConfigured(preset, m) ? 'lit' : 'idle';
-  };
 
   return (
     <div className="flex max-w-4xl flex-col gap-6">
@@ -409,7 +182,7 @@ export function TokenPlanSettings() {
                         <span className="size-5 shrink-0 rounded bg-muted" />
                       )}
                       <span className="min-w-0 flex-1 truncate font-medium">{preset.name}</span>
-                      {isPresetConfigured(preset) && (
+                      {isPresetEnabled(preset) && (
                         <CheckCircle2 className="size-3.5 shrink-0 text-muted-foreground" />
                       )}
                     </button>
@@ -431,17 +204,6 @@ export function TokenPlanSettings() {
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">{selected.name}</div>
                 </div>
-                {isPresetConfigured(selected) && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 gap-1.5 px-2 text-muted-foreground hover:text-destructive"
-                    onClick={(e) => handleRemove(selected, e)}
-                  >
-                    <Trash2 className="size-3.5" />
-                    {t('settings.tokenPlan.remove')}
-                  </Button>
-                )}
               </div>
 
               <div className="space-y-2">
@@ -464,77 +226,102 @@ export function TokenPlanSettings() {
                       {showKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
-                  <Button onClick={handleApply} disabled={applying || !apiKey} className="gap-1.5">
-                    <Zap className="h-3.5 w-3.5" />
-                    {t('settings.tokenPlan.apply')}
-                  </Button>
+                  {(() => {
+                    const enabled = isPresetEnabled(selected);
+                    const savedKey = presetSavedKey(selected);
+                    const trimmedKey = apiKey.trim();
+                    const updatingKey = enabled && trimmedKey.length > 0 && trimmedKey !== savedKey;
+                    return (
+                      <div className="flex items-center gap-2">
+                        {updatingKey && (
+                          <Button onClick={handleApply} size="sm" className="h-8 gap-1.5">
+                            <Zap className="h-3.5 w-3.5" />
+                            {t('settings.tokenPlan.updateKey')}
+                          </Button>
+                        )}
+                        <div className="flex h-8 items-center gap-2 rounded-md border px-2">
+                          <span className="text-xs text-muted-foreground">
+                            {t('settings.tokenPlan.enable')}
+                          </span>
+                          <Switch
+                            checked={enabled}
+                            disabled={!enabled && !trimmedKey}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                handleApply();
+                              } else {
+                                disablePreset(selected);
+                              }
+                            }}
+                            aria-label={t('settings.tokenPlan.enable')}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
-              <div className="space-y-2">
+              {/* Capabilities: a display-only tab list of the models the plan
+                  offers per modality. No status, no probing — selection and
+                  enable/disable happen on the generation bar. */}
+              <div className="space-y-3">
+                <div className="text-sm font-medium">{t('settings.tokenPlan.capabilities')}</div>
+
+                {/* Tab bar (segmented control) */}
+                <div className="flex gap-0.5 rounded-lg bg-muted/60 p-0.5">
+                  {presetModalities(selected).map((m) => {
+                    const Icon = MODALITY_ICONS[m];
+                    const isActive = activeTab === m;
+                    return (
+                      <button
+                        key={m}
+                        onClick={() => setActiveTab(m)}
+                        className={cn(
+                          'relative flex flex-1 items-center justify-center gap-1.5 rounded-md py-1.5 text-[11px] font-medium transition-all',
+                          isActive
+                            ? 'bg-background text-foreground shadow-sm'
+                            : 'text-muted-foreground hover:text-foreground/80',
+                        )}
+                      >
+                        <Icon className="size-3.5" />
+                        <span className="hidden truncate sm:inline">
+                          {t(MODALITY_LABEL_KEYS[m])}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Tab content: static model list for the active modality */}
                 {(() => {
-                  const capabilities = MODALITY_ORDER.filter((m) => selected.modalities[m]);
-                  const enabledCount = capabilities.filter(
-                    (m) => chipStatus(selected, m) === 'lit',
-                  ).length;
-
+                  const models = modalityModels(selected, activeTab);
                   return (
-                    <>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="text-sm font-medium">
-                          {t('settings.tokenPlan.capabilities')}
-                        </div>
-                        <div className="text-xs text-muted-foreground">
-                          {t('settings.tokenPlan.configuredSummary', {
-                            enabled: enabledCount,
-                            total: capabilities.length,
-                          })}
-                        </div>
+                    <div className="space-y-2 rounded-md border p-3">
+                      <div className="flex items-center justify-between gap-3 text-xs">
+                        <span className="font-medium">{t(MODALITY_LABEL_KEYS[activeTab])}</span>
+                        <span className="text-muted-foreground">
+                          {t('settings.tokenPlan.modelsCount', { n: models.length })}
+                        </span>
                       </div>
-                      <div className="border-y text-xs">
-                        {capabilities.map((m) => {
-                          const status = chipStatus(selected, m);
-                          const result = results?.find((r) => r.modality === m);
-                          const providerId = selected.modalities[m]?.providerId;
-                          const statusLabel =
-                            status === 'pending'
-                              ? t('settings.tokenPlan.checking')
-                              : status === 'failed'
-                                ? t('settings.tokenPlan.unavailable')
-                                : status === 'lit'
-                                  ? t('settings.tokenPlan.enabled')
-                                  : t('settings.tokenPlan.pending');
-                          const detail =
-                            status === 'failed' && result?.detail
-                              ? result.detail
-                              : status === 'lit' && m === 'llm' && llmModelCount != null
-                                ? t('settings.tokenPlan.modelsCount', { n: llmModelCount })
-                                : providerId;
-
-                          return (
-                            <div
-                              key={m}
-                              className="grid grid-cols-[minmax(0,1fr)_minmax(120px,0.8fr)_auto] items-center gap-3 border-b py-2.5 last:border-b-0"
-                            >
-                              <div className="min-w-0 font-medium">{t(MODALITY_LABEL_KEYS[m])}</div>
-                              <div className="min-w-0 truncate text-muted-foreground">{detail}</div>
-                              <div
-                                className={cn(
-                                  'inline-flex items-center gap-1.5 justify-self-end font-medium',
-                                  status === 'pending' ? 'text-primary' : 'text-muted-foreground',
-                                  status === 'lit' && 'text-foreground',
-                                )}
-                              >
-                                {statusIcon(status)}
-                                {statusLabel}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </>
+                      <ul className="space-y-1">
+                        {models.map((id) => (
+                          <li
+                            key={id}
+                            className="flex items-center gap-2 text-xs text-muted-foreground"
+                          >
+                            <span className="size-1 shrink-0 rounded-full bg-muted-foreground/40" />
+                            <span className="truncate font-mono">{id}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   );
                 })()}
+
+                <p className="text-[11px] leading-relaxed text-muted-foreground">
+                  {t('settings.tokenPlan.offeredNote')}
+                </p>
               </div>
             </div>
           )}

@@ -9,6 +9,8 @@ import type {
 } from './token-plan-presets';
 import { MODALITY_ORDER } from './token-plan-presets';
 import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
+import { PROVIDERS } from '@/lib/ai/providers';
+import type { ModelInfo } from '@/lib/types/provider';
 
 /**
  * The subset of settings-store setters needed to fill a token plan across
@@ -24,6 +26,7 @@ export interface TokenPlanActions {
       baseUrl: string;
       enabled: boolean;
       customModels: Array<{ id: string; name: string }>;
+      replaceBuiltInModels: boolean;
     }>,
   ) => void;
   setVideoProviderConfig: (
@@ -33,6 +36,7 @@ export interface TokenPlanActions {
       baseUrl: string;
       enabled: boolean;
       customModels: Array<{ id: string; name: string }>;
+      replaceBuiltInModels: boolean;
     }>,
   ) => void;
   setTTSProviderConfig: (
@@ -99,6 +103,43 @@ export function applyTokenPlan(
   return results;
 }
 
+function catalogModelFor(target: TokenPlanModalityTarget, id: string): ModelInfo | undefined {
+  const direct = PROVIDERS[target.providerId as ProviderId]?.models.find((m) => m.id === id);
+  if (direct) return direct;
+
+  const allModels = Object.values(PROVIDERS).flatMap((provider) => provider.models);
+  return (
+    allModels.find((m) => m.id === id) ??
+    allModels.find((m) => m.id.toLowerCase() === id.toLowerCase())
+  );
+}
+
+function tokenPlanModelInfo(target: TokenPlanModalityTarget, id: string): ModelInfo {
+  const catalog = catalogModelFor(target, id);
+  const thinking = getCatalogThinkingCapability(target.providerId, id);
+  if (catalog) {
+    return {
+      ...catalog,
+      id,
+      name: catalog.name || id,
+      capabilities: {
+        ...catalog.capabilities,
+        ...(thinking ? { thinking } : {}),
+      },
+    };
+  }
+  return {
+    id,
+    name: id,
+    capabilities: {
+      streaming: true,
+      tools: true,
+      vision: false,
+      ...(thinking ? { thinking } : {}),
+    },
+  };
+}
+
 function applyModality(
   modality: TokenPlanModality,
   target: TokenPlanModalityTarget,
@@ -116,25 +157,13 @@ function applyModality(
         icon: preset.icon,
         requiresApiKey: true,
         isBuiltIn: false,
-        // Seed the model list: a preset's fixed `defaultModels` when given
-        // (endpoints without a probable /models list), else an empty list that
-        // the UI's probe step populates. Validators read `models.length`.
+        // Seed the model list from the preset's curated `defaultModels`.
+        // Token-plan apply never probes individual models; unsupported tier
+        // picks surface at generation time instead of being silently pruned.
         // Overlay the built-in thinking capability so seeded models keep their
         // thinking control instead of silently losing it (the probe step does
         // the same when it replaces this list).
-        models: (target.defaultModels ?? []).map((id) => {
-          const thinking = getCatalogThinkingCapability(target.providerId, id);
-          return {
-            id,
-            name: id,
-            capabilities: {
-              streaming: true,
-              tools: true,
-              vision: false,
-              ...(thinking ? { thinking } : {}),
-            },
-          };
-        }),
+        models: (target.defaultModels ?? []).map((id) => tokenPlanModelInfo(target, id)),
         ...(target.modelsUrl ? { modelsUrl: target.modelsUrl } : {}),
       });
       break;
@@ -147,7 +176,7 @@ function applyModality(
         apiKey,
         baseUrl: target.baseUrl,
         enabled: true,
-        ...(customModels.length ? { customModels } : {}),
+        ...(customModels.length ? { customModels, replaceBuiltInModels: true } : {}),
       });
       if (customModels.length) {
         actions.setImageProvider?.(target.providerId as ImageProviderId);
@@ -161,7 +190,7 @@ function applyModality(
         apiKey,
         baseUrl: target.baseUrl,
         enabled: true,
-        ...(customModels.length ? { customModels } : {}),
+        ...(customModels.length ? { customModels, replaceBuiltInModels: true } : {}),
       });
       if (customModels.length) {
         actions.setVideoProvider?.(target.providerId as VideoProviderId);
@@ -189,9 +218,13 @@ function applyModality(
 
 /**
  * Removes a token plan: clears the API key and disables every modality it
- * declared. The LLM provider's key is cleared (the built-in provider falls back
- * to its unconfigured state rather than vanishing). Each modality is isolated —
- * a thrown setter doesn't abort the rest.
+ * declared. For LLM, applying overwrote the shared built-in provider in place
+ * (baseUrl, models, name, icon, isBuiltIn: false, …), so removal must restore
+ * those built-in defaults — not just clear the key — or the provider stays
+ * pointed at the plan endpoint with plan-specific model ids. For image/video,
+ * the store switches the active selection away when the provider is disabled
+ * (see setImageProviderConfig/setVideoProviderConfig). Each modality is isolated
+ * — a thrown setter doesn't abort the rest.
  */
 export function removeTokenPlan(preset: TokenPlanPreset, actions: TokenPlanActions): ApplyResult[] {
   const results: ApplyResult[] = [];
@@ -223,32 +256,59 @@ function removeModality(
 ): void {
   switch (modality) {
     case 'llm': {
-      // Clear the key so the built-in provider falls back to its unconfigured
-      // state rather than vanishing.
-      actions.setProviderConfig(target.providerId as ProviderId, { apiKey: '' });
+      // Applying overwrote the built-in provider in place. Restore its built-in
+      // defaults so it doesn't linger on the plan endpoint with plan model ids
+      // and isBuiltIn:false. The store's LLM resolver then switches the active
+      // selection away since the restored config has no key. Custom (non-built-
+      // in) providers aren't in the registry — just clear the key for those.
+      const builtIn = PROVIDERS[target.providerId as ProviderId];
+      if (builtIn) {
+        actions.setProviderConfig(target.providerId as ProviderId, {
+          apiKey: '',
+          baseUrl: '',
+          models: builtIn.models,
+          name: builtIn.name,
+          type: builtIn.type,
+          defaultBaseUrl: builtIn.defaultBaseUrl,
+          icon: builtIn.icon,
+          requiresApiKey: builtIn.requiresApiKey,
+          isBuiltIn: true,
+          modelsUrl: undefined,
+        });
+      } else {
+        actions.setProviderConfig(target.providerId as ProviderId, { apiKey: '' });
+      }
       break;
     }
     case 'image':
       actions.setImageProviderConfig(target.providerId as ImageProviderId, {
         apiKey: '',
+        baseUrl: '',
         enabled: false,
+        customModels: [],
+        replaceBuiltInModels: false,
       });
       break;
     case 'video':
       actions.setVideoProviderConfig(target.providerId as VideoProviderId, {
         apiKey: '',
+        baseUrl: '',
         enabled: false,
+        customModels: [],
+        replaceBuiltInModels: false,
       });
       break;
     case 'tts':
       actions.setTTSProviderConfig(target.providerId as TTSProviderId, {
         apiKey: '',
+        baseUrl: '',
         enabled: false,
       });
       break;
     case 'webSearch':
       actions.setWebSearchProviderConfig(target.providerId as WebSearchProviderId, {
         apiKey: '',
+        baseUrl: '',
         enabled: false,
       });
       break;

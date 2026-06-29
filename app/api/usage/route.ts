@@ -50,7 +50,11 @@ function addTo(bucket: Bucket, r: UsageRecord): void {
   bucket.outputTokens += r.outputTokens;
   bucket.cacheReadTokens += r.cacheReadTokens;
   bucket.cacheCreationTokens += r.cacheCreationTokens;
-  bucket.totalTokens += r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens;
+  // `inputTokens` is the provider-reported prompt token total; for
+  // OpenAI-compatible providers it already includes cached input tokens. Keep
+  // cache read/write counts as separate breakdown fields, but don't add them
+  // again to the displayed aggregate.
+  bucket.totalTokens += r.inputTokens + r.outputTokens;
   bucket.quantity += r.quantity ?? 0;
 }
 
@@ -80,8 +84,7 @@ export async function GET(req: NextRequest) {
     for (const r of records) {
       totalRequests += 1;
       if (r.kind === 'llm') {
-        totalLlmTokens +=
-          r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheCreationTokens;
+        totalLlmTokens += r.inputTokens + r.outputTokens;
       }
 
       const mk = r.modelString || r.modelId;

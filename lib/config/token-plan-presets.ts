@@ -27,22 +27,17 @@ export interface TokenPlanModalityTarget {
   baseUrl: string;
   /** LLM only: API protocol → app providerType. */
   apiFormat?: ProviderType;
-  /** LLM only: explicit /models URL override (optional). */
+  /**
+   * LLM only: explicit /models URL override (optional). */
   modelsUrl?: string;
   /**
-   * LLM only: fixed model ids to seed when the endpoint exposes no probable
-   * /models list (e.g. Volcengine Agent Plan, an Anthropic-style gateway whose
-   * models are named, not listed). Applied directly; probing is skipped.
+   * Model ids the plan offers in this modality, listed best-first. These are
+   * seeded directly into the provider config as the plan's curated catalogue —
+   * NOT probed. Tier-gated ids (a lower plan tier may not include the top model)
+   * stay in the list and simply error at generation time if the tier excludes
+   * them; we never silently drop a model the user paid for.
    */
   defaultModels?: string[];
-  /**
-   * LLM only: treat `defaultModels` as CANDIDATES to verify rather than a fixed
-   * list. On apply, each candidate gets a minimal chat request; only the ones
-   * that succeed are kept. Use for plans with a published-but-tier-varying model
-   * set and no /models endpoint (e.g. Volcengine Agent Plan) — auto-prunes
-   * retired/unavailable models without code changes.
-   */
-  verifyModels?: boolean;
   /** TTS only: default model id to enable. */
   defaultModelId?: string;
 }
@@ -93,13 +88,39 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         providerId: 'minimax',
         baseUrl: 'https://api.minimaxi.com/anthropic/v1',
         apiFormat: 'anthropic',
+        defaultModels: [
+          'MiniMax-M3',
+          'MiniMax-M2.7',
+          'MiniMax-M2.7-highspeed',
+          'MiniMax-M2.5',
+          'MiniMax-M2.5-highspeed',
+          'MiniMax-M2.1',
+          'MiniMax-M2.1-highspeed',
+          'MiniMax-M2',
+        ],
       },
-      image: { providerId: 'minimax-image', baseUrl: 'https://api.minimaxi.com' },
-      video: { providerId: 'minimax-video', baseUrl: 'https://api.minimaxi.com' },
+      image: {
+        providerId: 'minimax-image',
+        baseUrl: 'https://api.minimaxi.com',
+        defaultModels: ['image-01', 'image-01-live'],
+      },
+      video: {
+        providerId: 'minimax-video',
+        baseUrl: 'https://api.minimaxi.com',
+        defaultModels: ['MiniMax-Hailuo-2.3', 'MiniMax-Hailuo-02', 'T2V-01-Director', 'T2V-01'],
+      },
       tts: {
         providerId: 'minimax-tts',
         baseUrl: 'https://api.minimaxi.com',
         defaultModelId: 'speech-2.8-hd',
+        defaultModels: [
+          'speech-2.8-hd',
+          'speech-2.8-turbo',
+          'speech-2.6-hd',
+          'speech-2.6-turbo',
+          'speech-02-hd',
+          'speech-02-turbo',
+        ],
       },
       webSearch: { providerId: 'minimax', baseUrl: 'https://api.minimaxi.com' },
     },
@@ -111,10 +132,10 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
     // against the dedicated /api/plan endpoint (OpenAI-compatible at
     // /api/plan/v3); the general /api/v3 and Coding Plan /api/coding endpoints
     // reject it ("API key format is incorrect"). The plan exposes no /models
-    // list (404), so we carry the published model set as CANDIDATES and verify
-    // each on apply (verifyModels) — this auto-prunes retired models (the docs
-    // flag deepseek-v3.2 / glm-5.1 as 即将下线) and tier-gated ones without code
-    // changes. ark-code-latest is an auto-routing alias valid on every tier.
+    // list (404), so we carry the published model set as the curated catalogue.
+    // ark-code-latest is an auto-routing alias valid on every tier; lower tiers
+    // may not include every model below — those simply error at generation, no
+    // silent pruning.
     id: 'volcengine-ark',
     name: '火山方舟 Agent Plan',
     websiteUrl: 'https://console.volcengine.com/ark',
@@ -126,7 +147,6 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
         providerId: 'doubao',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
         apiFormat: 'openai',
-        verifyModels: true,
         defaultModels: [
           'ark-code-latest',
           'doubao-seed-2.0-pro',
@@ -135,42 +155,31 @@ export const TOKEN_PLAN_PRESETS: TokenPlanPreset[] = [
           'doubao-seed-2.0-mini',
           'deepseek-v4-pro',
           'deepseek-v4-flash',
+          'deepseek-v3.2',
           'minimax-m3',
           'minimax-m2.7',
           'glm-5.2',
+          'glm-5.1',
           'kimi-k2.7-code',
           'kimi-k2.6',
         ],
       },
-      // Image: the Agent Plan publishes the Seedream 4.0–5.0 family on the /plan
-      // endpoint (docs: Seedream 4.0-5.0 教程; the curl example uses the dotted
-      // alias `doubao-seedream-5.0-lite`, NOT the pay-as-you-go catalog id). List
-      // them best-first so the verified `customModels[0]` is the strongest the
-      // plan tier allows: a high tier keeps `5.0`, a lite tier prunes down to
-      // `5.0-lite`. The adapter routes by baseUrl path (/api/plan/v3 →
+      // Image: Agent Plan documentation and user-facing guides consistently
+      // expose Seedream 5.0 Lite via the dotted plan alias, not the pay-as-you-go
+      // dated catalog id. The adapter routes by baseUrl path (/api/plan/v3 →
       // /images/generations).
       image: {
         providerId: 'seedream',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
-        verifyModels: true,
-        defaultModels: [
-          'doubao-seedream-5.0',
-          'doubao-seedream-5.0-lite',
-          'doubao-seedream-4.5',
-          'doubao-seedream-4.0',
-        ],
+        defaultModels: ['doubao-seedream-5.0-lite'],
       },
-      // Video: the Agent Plan publishes the Seedance 2.0 + 1.5 family (docs: the
-      // curl example uses `doubao-seedance-2.0`). Tier-gated — a lower tier
-      // rejects 2.0 with `UnsupportedModel` ("does not support the agent plan
-      // feature") while still allowing 1.5-pro. verifyModels probes each on apply
-      // (best-first), so a high tier keeps 2.0 and a lower tier prunes to 1.5-pro
-      // — no false "available" that fails on first use, and an upgraded plan
-      // lights up 2.0 with no code change.
+      // Video: list the highest Agent Plan offering first. Lower tiers can
+      // reject 2.0 with UnsupportedModel while still allowing 1.5-pro; we keep
+      // both in the catalogue and let generation-time errors reflect the user's
+      // actual plan tier.
       video: {
         providerId: 'seedance',
         baseUrl: 'https://ark.cn-beijing.volces.com/api/plan/v3',
-        verifyModels: true,
         defaultModels: ['doubao-seedance-2.0', 'doubao-seedance-1.5-pro'],
       },
       // Web search: 豆包搜索 (Custom 版). Unlike the LLM/image/video modalities,

@@ -412,14 +412,23 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
     setProviderConfig(pid, { models: newModels });
   };
 
-  // Merge probed model ids into the provider's model list, keeping any models
-  // the user added manually (dedupe by id). Returns the count newly added.
+  // Merge probed model ids into the provider's model list. Previously
+  // probe-derived entries (`source: 'probed'`) are dropped first so a re-fetch
+  // (after the user changes base URL / API key) REPLACES the stale set instead
+  // of accumulating dead ids. Catalog and manually-added models are preserved.
+  // `modelInfoFromId(id, pid)` keeps built-in thinking capability so the
+  // thinking control isn't silently hidden for fetched built-in models.
   const handleModelsFetched = (pid: ProviderId, fetchedIds: string[]): number => {
     const currentModels = providersConfig[pid]?.models || [];
-    const existing = new Set(currentModels.map((m) => m.id));
-    const additions = fetchedIds.filter((id) => !existing.has(id)).map((id) => modelInfoFromId(id));
-    if (additions.length > 0) {
-      setProviderConfig(pid, { models: [...currentModels, ...additions] });
+    const kept = currentModels.filter((m) => m.source !== 'probed');
+    const keptIds = new Set(kept.map((m) => m.id));
+    const additions = fetchedIds
+      .filter((id) => !keptIds.has(id))
+      .map((id) => ({ ...modelInfoFromId(id, pid), source: 'probed' as const }));
+    const next = [...kept, ...additions];
+    // Write when the set changed at all — additions, or stale probed ids pruned.
+    if (additions.length > 0 || next.length !== currentModels.length) {
+      setProviderConfig(pid, { models: next });
     }
     return additions.length;
   };

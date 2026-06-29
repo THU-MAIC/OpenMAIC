@@ -41,15 +41,22 @@ describe('applyTokenPlan', () => {
         apiKey: 'sk-test',
         baseUrl: 'https://api.minimaxi.com/anthropic/v1',
         type: 'anthropic',
+        models: expect.arrayContaining([
+          expect.objectContaining({
+            id: 'MiniMax-M3',
+            contextWindow: 1000000,
+            capabilities: expect.objectContaining({ vision: true }),
+          }),
+        ]),
       }),
     );
     expect(actions.setImageProviderConfig).toHaveBeenCalledWith(
       'minimax-image',
-      expect.objectContaining({ apiKey: 'sk-test', enabled: true }),
+      expect.objectContaining({ apiKey: 'sk-test', enabled: true, replaceBuiltInModels: true }),
     );
     expect(actions.setVideoProviderConfig).toHaveBeenCalledWith(
       'minimax-video',
-      expect.objectContaining({ apiKey: 'sk-test', enabled: true }),
+      expect.objectContaining({ apiKey: 'sk-test', enabled: true, replaceBuiltInModels: true }),
     );
     expect(actions.setTTSProviderConfig).toHaveBeenCalledWith(
       'minimax-tts',
@@ -159,27 +166,66 @@ describe('applyTokenPlan', () => {
 });
 
 describe('removeTokenPlan', () => {
-  it('clears key + disables every declared modality (MiniMax)', () => {
+  it('restores the built-in LLM provider + disables every declared modality (MiniMax)', () => {
     const actions = makeActions();
     removeTokenPlan(minimax, actions);
 
-    // Built-in LLM provider: key cleared (not deleted)
-    expect(actions.setProviderConfig).toHaveBeenCalledWith('minimax', { apiKey: '' });
+    // Built-in LLM provider: restored to its registry defaults (not just key
+    // cleared), so it no longer points at the plan endpoint / plan model ids.
+    expect(actions.setProviderConfig).toHaveBeenCalledWith(
+      'minimax',
+      expect.objectContaining({
+        apiKey: '',
+        baseUrl: '',
+        isBuiltIn: true,
+        modelsUrl: undefined,
+      }),
+    );
     expect(actions.setImageProviderConfig).toHaveBeenCalledWith(
       'minimax-image',
-      expect.objectContaining({ apiKey: '', enabled: false }),
+      expect.objectContaining({
+        apiKey: '',
+        baseUrl: '',
+        enabled: false,
+        customModels: [],
+        replaceBuiltInModels: false,
+      }),
     );
     expect(actions.setVideoProviderConfig).toHaveBeenCalledWith(
       'minimax-video',
-      expect.objectContaining({ apiKey: '', enabled: false }),
+      expect.objectContaining({
+        apiKey: '',
+        baseUrl: '',
+        enabled: false,
+        customModels: [],
+        replaceBuiltInModels: false,
+      }),
     );
     expect(actions.setTTSProviderConfig).toHaveBeenCalledWith(
       'minimax-tts',
-      expect.objectContaining({ apiKey: '', enabled: false }),
+      expect.objectContaining({ apiKey: '', baseUrl: '', enabled: false }),
     );
     expect(actions.setWebSearchProviderConfig).toHaveBeenCalledWith(
       'minimax',
-      expect.objectContaining({ apiKey: '', enabled: false }),
+      expect.objectContaining({ apiKey: '', baseUrl: '', enabled: false }),
     );
+  });
+
+  it('falls back to clearing only the key for a non-built-in LLM provider', () => {
+    const actions = makeActions();
+    const custom: TokenPlanPreset = {
+      id: 'custom-plan',
+      name: 'Custom',
+      category: 'third_party',
+      modalities: {
+        llm: {
+          providerId: 'not-a-real-provider',
+          baseUrl: 'https://x.com/v1',
+          apiFormat: 'openai',
+        },
+      },
+    };
+    removeTokenPlan(custom, actions);
+    expect(actions.setProviderConfig).toHaveBeenCalledWith('not-a-real-provider', { apiKey: '' });
   });
 });

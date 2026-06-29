@@ -100,4 +100,17 @@ describe('Doubao TTS dual auth', () => {
 
     expect(Array.from(result.audio)).toEqual([1, 2, 3, 4, 5]);
   });
+
+  it('parses concatenated JSON errors whose message contains braces', async () => {
+    mockFetch.mockResolvedValueOnce(
+      okResponse(
+        JSON.stringify({ code: 0, data: helloB64 }) +
+          JSON.stringify({ code: 40000001, message: 'bad payload: {"field":"text"}' }),
+      ),
+    );
+
+    await expect(
+      generateTTS({ providerId: 'doubao-tts', apiKey: 'ark-k', voice: 'v' }, 'hi'),
+    ).rejects.toThrow(/bad payload: \{"field":"text"\}/);
+  });
 });
