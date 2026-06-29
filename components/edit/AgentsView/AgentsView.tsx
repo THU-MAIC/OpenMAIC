@@ -33,7 +33,7 @@ interface AgentsViewProps {
  */
 export function AgentsView({ commandTrailing, commandLeading }: AgentsViewProps) {
   const controller = useAgentRoster();
-  const { roster, selectedId, select, add, update, remove, reorder, canRemove, history } =
+  const { roster, selectedId, select, add, update, remove, reorder, canRemove, canChangeRole, history } =
     controller;
 
   const selectedAgent = selectedId ? roster.find((a) => a.id === selectedId) : undefined;
@@ -66,6 +66,7 @@ export function AgentsView({ commandTrailing, commandLeading }: AgentsViewProps)
           <AgentInspector
             agent={selectedAgent}
             onUpdate={(patch) => update(selectedAgent.id, patch)}
+            canChangeRole={canChangeRole}
           />
         )}
       </div>

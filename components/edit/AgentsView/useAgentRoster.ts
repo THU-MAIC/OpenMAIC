@@ -55,6 +55,7 @@ export interface AgentRosterController {
   remove: (id: string) => void;
   reorder: (id: string, index: number) => void;
   canRemove: (id: string) => boolean;
+  canChangeRole: (id: string, nextRole: string) => boolean;
   history: { canUndo: boolean; canRedo: boolean; undo: () => void; redo: () => void };
 }
 
@@ -88,32 +89,37 @@ export function useAgentRoster(): AgentRosterController {
 
   /**
    * Apply an operation to the history, swallowing LAST_TEACHER guard errors.
+   * Uses a functional updater so rapid calls (fast typing, add+reorder in one
+   * render) always see the latest state rather than a stale closure snapshot.
    * Returns true if the operation succeeded.
    */
-  const applyOp = useCallback(
-    (op: AgentEditOperation): boolean => {
+  const applyOp = useCallback((op: AgentEditOperation): boolean => {
+    let succeeded = true;
+    setHistState((prev) => {
       try {
-        const next = applyAgentEditOperation(histState, op);
-        setHistState(next);
-        return true;
+        return applyAgentEditOperation(prev, op);
       } catch {
-        return false;
+        succeeded = false;
+        return prev;
       }
-    },
-    [histState],
-  );
+    });
+    return succeeded;
+  }, []);
 
   const select = useCallback((id: string | null) => setSelectedId(id), []);
 
-  const add = useCallback(
-    (role = 'teacher') => {
-      const id = makeId();
-      const agent = createAgentConfig(role, histState.present.length, id);
-      applyOp({ type: 'agent.add', agent });
-      setSelectedId(id);
-    },
-    [applyOp, histState.present.length],
-  );
+  const add = useCallback((role = 'teacher') => {
+    const id = makeId();
+    setHistState((prev) => {
+      try {
+        const agent = createAgentConfig(role, prev.present.length, id);
+        return applyAgentEditOperation(prev, { type: 'agent.add', agent });
+      } catch {
+        return prev;
+      }
+    });
+    setSelectedId(id);
+  }, []);
 
   const update = useCallback(
     (id: string, patch: AgentConfigPatch) => {
@@ -153,6 +159,21 @@ export function useAgentRoster(): AgentRosterController {
     [histState.present],
   );
 
+  const canChangeRole = useCallback(
+    (id: string, nextRole: string): boolean => {
+      const agent = histState.present.find((a) => a.id === id);
+      if (!agent) return true;
+      if (
+        agent.role === 'teacher' &&
+        nextRole !== 'teacher' &&
+        teacherCount(histState.present) <= 1
+      )
+        return false;
+      return true;
+    },
+    [histState.present],
+  );
+
   const undo = useCallback(() => {
     setHistState((prev) => undoAgentEditOperation(prev));
   }, []);
@@ -170,6 +191,7 @@ export function useAgentRoster(): AgentRosterController {
     remove,
     reorder,
     canRemove,
+    canChangeRole,
     history: {
       canUndo: histState.past.length > 0,
       canRedo: histState.future.length > 0,

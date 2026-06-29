@@ -22,13 +22,15 @@ const FOCUS =
 interface AgentInspectorProps {
   readonly agent: GeneratedAgentConfig;
   readonly onUpdate: (patch: AgentConfigPatch) => void;
+  readonly canChangeRole: (id: string, nextRole: string) => boolean;
 }
 
 /**
  * Right-panel inspector for the selected agent.
  * Allows editing name, role, avatar, and persona.
  */
-export function AgentInspector({ agent, onUpdate }: AgentInspectorProps) {
+export function AgentInspector({ agent, onUpdate, canChangeRole }: AgentInspectorProps) {
+  const isLastTeacher = !canChangeRole(agent.id, 'assistant');
   return (
     <div className="flex w-80 shrink-0 flex-col gap-0 border-l border-zinc-200/60 dark:border-zinc-800/60">
       {/* Header strip showing avatar + name */}
@@ -67,8 +69,20 @@ export function AgentInspector({ agent, onUpdate }: AgentInspectorProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="teacher">教师</SelectItem>
-              <SelectItem value="assistant">助教</SelectItem>
-              <SelectItem value="student">学生</SelectItem>
+              <SelectItem
+                value="assistant"
+                disabled={isLastTeacher}
+                title={isLastTeacher ? '需保留至少一位老师' : undefined}
+              >
+                助教
+              </SelectItem>
+              <SelectItem
+                value="student"
+                disabled={isLastTeacher}
+                title={isLastTeacher ? '需保留至少一位老师' : undefined}
+              >
+                学生
+              </SelectItem>
             </SelectContent>
           </Select>
         </Field>
@@ -82,9 +96,9 @@ export function AgentInspector({ agent, onUpdate }: AgentInspectorProps) {
         </Field>
 
         {/* Persona */}
-        <Field label={`人设 (${agent.persona.length} / ${PERSONA_MAX})`}>
+        <Field label={`人设 (${(agent.persona ?? '').length} / ${PERSONA_MAX})`}>
           <Textarea
-            value={agent.persona}
+            value={agent.persona ?? ''}
             onChange={(e) => {
               const val = e.target.value.slice(0, PERSONA_MAX);
               onUpdate({ persona: val });
