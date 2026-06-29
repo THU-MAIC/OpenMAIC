@@ -14,7 +14,6 @@ import { createStageAPI } from '@/lib/api/stage-api';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
-import { getClientTranslation } from '@/lib/i18n';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 import type {
   Action,
@@ -691,6 +690,7 @@ export class ActionEngine {
   private async executeWidgetHighlight(action: WidgetHighlightAction): Promise<void> {
     this.sendWidgetMessage('HIGHLIGHT_ELEMENT', {
       target: action.target,
+      content: action.content,
     });
     // Quick delay for visual effect
     await delay(300);
@@ -698,7 +698,7 @@ export class ActionEngine {
 
   /** Execute widget setState action */
   private async executeWidgetSetState(action: WidgetSetStateAction): Promise<void> {
-    this.sendWidgetMessage('SET_WIDGET_STATE', { state: action.state });
+    this.sendWidgetMessage('SET_WIDGET_STATE', { state: action.state, content: action.content });
     // Quick delay for state change to propagate
     await delay(300);
   }
@@ -707,13 +707,14 @@ export class ActionEngine {
   private async executeWidgetAnnotation(action: WidgetAnnotationAction): Promise<void> {
     this.sendWidgetMessage('ANNOTATE_ELEMENT', {
       target: action.target,
+      content: action.content,
     });
     await delay(300);
   }
 
   /** Execute widget reveal action */
   private async executeWidgetReveal(action: WidgetRevealAction): Promise<void> {
-    this.sendWidgetMessage('REVEAL_ELEMENT', { target: action.target });
+    this.sendWidgetMessage('REVEAL_ELEMENT', { target: action.target, content: action.content });
     await delay(300);
   }
 }

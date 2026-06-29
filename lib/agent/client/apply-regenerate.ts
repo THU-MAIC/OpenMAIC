@@ -103,7 +103,7 @@ export function planRegenerateApply(
   // `edit_interactive_html` carries the edited interactive-page HTML. Snapshot
   // the current scene, then write the new html onto the existing
   // InteractiveContent — preserving the page's other fields (url / widgetType /
-  // widgetConfig / teacherActions). The iframe reloads when content.html changes.
+  // widgetConfig). The iframe reloads when content.html changes.
   if (toolName === 'edit_interactive_html' && typeof details.html === 'string') {
     const prev = scene?.content as InteractiveContent | undefined;
     if (!prev || prev.type !== 'interactive') return { snapshot: null, patch: null };

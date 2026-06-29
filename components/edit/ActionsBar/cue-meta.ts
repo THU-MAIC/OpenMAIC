@@ -10,6 +10,7 @@
 import {
   Circle,
   Crosshair,
+  Flag,
   Focus,
   PenLine,
   Presentation,
@@ -81,6 +82,12 @@ const META: Record<string, CueMeta> = {
     labelKey: 'edit.cue.whiteboardTable',
     glyph: 'text-sky-600 bg-sky-500/10 dark:text-sky-400',
     accent: 'bg-sky-400/70',
+  },
+  discussion: {
+    icon: Flag,
+    labelKey: 'edit.cue.discussion',
+    glyph: 'text-yellow-600 bg-yellow-500/10 dark:text-yellow-400',
+    accent: 'bg-yellow-400/70',
   },
 };
 

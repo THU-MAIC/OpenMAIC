@@ -279,6 +279,227 @@ body[data-maic-editor='true'] .editable-element-text li,
   scrollbar-width: none;
 }
 
+/* PBL v2 workspace scrollbars: scoped so the rest of OpenMAIC keeps native behavior. */
+[data-pbl-workspace='true'] .pbl-v2-scrollbar,
+[data-pbl-workspace='true'] .pbl-v2-scroll-fade {
+  scrollbar-color: rgb(224 231 255 / 0.44) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-scrollbar::-webkit-scrollbar,
+[data-pbl-workspace='true'] .pbl-v2-scroll-fade::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-scrollbar::-webkit-scrollbar-track,
+[data-pbl-workspace='true'] .pbl-v2-scroll-fade::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 999px;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-scrollbar::-webkit-scrollbar-corner,
+[data-pbl-workspace='true'] .pbl-v2-scroll-fade::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-scrollbar::-webkit-scrollbar-thumb,
+[data-pbl-workspace='true'] .pbl-v2-scroll-fade::-webkit-scrollbar-thumb {
+  background-color: rgb(224 231 255 / 0.38);
+  background: linear-gradient(
+      180deg,
+      rgb(224 231 255 / 0.08) 0,
+      rgb(224 231 255 / 0.26) 15%,
+      rgb(199 210 254 / 0.5) 34%,
+      rgb(165 243 252 / 0.42) 52%,
+      rgb(199 210 254 / 0.5) 70%,
+      rgb(224 231 255 / 0.26) 86%,
+      rgb(224 231 255 / 0.08) 100%
+    )
+    content-box;
+  background-clip: content-box;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  min-height: 48px;
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.06),
+    0 0 12px rgb(125 211 252 / 0.16);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-scrollbar::-webkit-scrollbar-thumb:hover,
+[data-pbl-workspace='true'] .pbl-v2-scroll-fade::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+      180deg,
+      rgb(224 231 255 / 0.12) 0,
+      rgb(224 231 255 / 0.34) 14%,
+      rgb(216 203 255 / 0.62) 32%,
+      rgb(165 243 252 / 0.5) 52%,
+      rgb(216 203 255 / 0.62) 70%,
+      rgb(224 231 255 / 0.34) 86%,
+      rgb(224 231 255 / 0.12) 100%
+    )
+    content-box;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-light-card-markdown {
+  color: rgb(51 65 85);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-light-card-markdown :where(p, li, blockquote) {
+  color: rgb(51 65 85);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-light-card-markdown :where(strong, b) {
+  color: rgb(15 23 42);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-light-card-markdown :where(code):not(pre code) {
+  background: rgb(226 232 240 / 0.9);
+  border: 1px solid rgb(148 163 184 / 0.28);
+  border-radius: 0.375rem;
+  color: rgb(30 41 59);
+  font-weight: 600;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-light-card-markdown div[data-streamdown='code-block'] {
+  border-color: rgb(148 163 184 / 0.22);
+  box-shadow: 0 12px 24px rgb(15 23 42 / 0.16);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-light-card-markdown div[data-streamdown='code-block-body'],
+[data-pbl-workspace='true'] .pbl-v2-light-card-markdown div[data-streamdown='code-block-body'] pre {
+  background: rgb(15 23 42) !important;
+  color: rgb(248 250 252) !important;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-light-card-markdown div[data-streamdown='code-block-body'] code,
+[data-pbl-workspace='true']
+  .pbl-v2-light-card-markdown
+  div[data-streamdown='code-block-body']
+  span {
+  color: rgb(248 250 252) !important;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-task-review-markdown :where(code):not(pre code) {
+  background: rgb(255 255 255 / 0.34);
+  border: 1px solid rgb(165 180 252 / 0.34);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.35),
+    0 6px 14px rgb(51 65 85 / 0.1);
+  color: rgb(36 50 76);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-task-review-markdown :where(li)::marker {
+  color: rgb(99 102 241 / 0.65);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-instructor-bubble {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(147 197 253 / 0.2);
+  background:
+    radial-gradient(circle at 8% 0%, rgb(157 140 255 / 0.16), transparent 34%),
+    radial-gradient(circle at 96% 15%, rgb(34 211 238 / 0.1), transparent 30%),
+    linear-gradient(145deg, rgb(22 35 62 / 0.78), rgb(17 31 56 / 0.72) 58%, rgb(15 28 50 / 0.8));
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.1),
+    inset 0 0 0 1px rgb(255 255 255 / 0.025),
+    0 18px 42px rgb(3 10 26 / 0.32),
+    0 0 34px rgb(96 165 250 / 0.08);
+  backdrop-filter: blur(18px);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-instructor-bubble::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgb(165 180 252 / 0.55),
+    rgb(103 232 249 / 0.34),
+    transparent
+  );
+}
+
+[data-pbl-workspace='true'] .pbl-v2-instructor-bubble::after {
+  content: '';
+  position: absolute;
+  right: -48px;
+  top: -48px;
+  height: 120px;
+  width: 120px;
+  border-radius: 999px;
+  background: rgb(125 211 252 / 0.08);
+  filter: blur(20px);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-instructor-bubble > * {
+  position: relative;
+  z-index: 1;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-instructor-label {
+  color: rgb(165 180 252 / 0.82);
+  letter-spacing: 0.04em;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-task-review-shell {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(199 210 254 / 0.55);
+  background:
+    radial-gradient(circle at 12% 0%, rgb(167 139 250 / 0.26), transparent 34%),
+    radial-gradient(circle at 92% 12%, rgb(103 232 249 / 0.2), transparent 28%),
+    linear-gradient(
+      145deg,
+      rgb(245 243 255 / 0.7),
+      rgb(239 246 255 / 0.5) 54%,
+      rgb(236 254 255 / 0.56)
+    );
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.65),
+    0 20px 54px rgb(3 10 26 / 0.3),
+    0 0 0 1px rgb(139 92 246 / 0.12),
+    0 0 42px rgb(99 102 241 / 0.14);
+  backdrop-filter: blur(20px) saturate(1.08);
+}
+
+[data-pbl-workspace='true'] .pbl-v2-task-review-shell::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(135deg, rgb(255 255 255 / 0.5), transparent 34%),
+    linear-gradient(90deg, rgb(167 139 250 / 0.72), rgb(103 232 249 / 0.42), transparent) top / 100%
+      1px no-repeat;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-task-review-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+[data-pbl-workspace='true'] .pbl-v2-task-review-card {
+  border: 1px solid rgb(199 210 254 / 0.52);
+  background:
+    linear-gradient(
+      145deg,
+      rgb(255 255 255 / 0.48),
+      rgb(238 242 255 / 0.34),
+      rgb(236 254 255 / 0.3)
+    ),
+    rgb(255 255 255 / 0.2);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.58),
+    0 16px 38px rgb(4 20 28 / 0.14),
+    0 0 30px rgb(129 140 248 / 0.12);
+  backdrop-filter: blur(12px) saturate(1.05);
+}
+
 /* Shimmer sweep for skeleton loading */
 @keyframes shimmer {
   0% {
@@ -299,6 +520,17 @@ body[data-maic-editor='true'] .editable-element-text li,
   50% {
     opacity: 0.7;
     transform: scale(1.08);
+  }
+}
+
+/* PBL v2 — thinking dots pulse (wider swing for visibility on dark bg) */
+@keyframes think-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.15;
   }
 }
 

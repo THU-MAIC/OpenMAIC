@@ -23,6 +23,7 @@ import {
   ThreadPrimitive,
   useComposerRuntime,
   useMessage,
+  type AssistantRuntime,
 } from '@assistant-ui/react';
 import {
   ArrowUp,
@@ -38,7 +39,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
+import type { AgentEditSessionRecord } from '@/lib/agent/client/agent-edit-session-types';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { MarkdownText } from './markdown-text';
@@ -135,12 +136,13 @@ function AssistantMessage() {
 /** Mic button that dictates into the composer. Lives inside ComposerPrimitive.Root
  *  so it can append the transcription to the composer text via the composer
  *  runtime. SpeechButton self-gates on ASR availability (disabled when off). */
-function VoiceInputButton() {
+function VoiceInputButton({ disabled }: { readonly disabled?: boolean }) {
   const composer = useComposerRuntime();
   return (
     <SpeechButton
       size="md"
       className="size-[30px]"
+      disabled={disabled}
       onTranscription={(text) => {
         if (!text) return;
         const cur = composer.getState().text ?? '';
@@ -151,18 +153,32 @@ function VoiceInputButton() {
   );
 }
 
-export function AgentPanel({ scene }: { scene?: { id: string; title: string; type?: string } }) {
+interface AgentPanelProps {
+  readonly scene?: { id: string; title: string; type?: string };
+  readonly runtime: AssistantRuntime;
+  readonly clearThread: () => void;
+  readonly hasMessages: boolean;
+  readonly canSend: boolean;
+  readonly sessions: AgentEditSessionRecord[];
+  readonly activeSessionId: string | undefined;
+  readonly switchSession: (id: string) => Promise<void>;
+  readonly deleteSessionAndRefresh: (id: string) => Promise<void>;
+  readonly refreshSessions: () => Promise<void>;
+}
+
+export function AgentPanel({
+  scene,
+  runtime,
+  clearThread,
+  hasMessages,
+  canSend,
+  sessions,
+  activeSessionId,
+  switchSession,
+  deleteSessionAndRefresh,
+  refreshSessions,
+}: AgentPanelProps) {
   const { t } = useI18n();
-  const {
-    runtime,
-    clearThread,
-    hasMessages,
-    sessions,
-    activeSessionId,
-    switchSession,
-    deleteSessionAndRefresh,
-    refreshSessions,
-  } = useAgentRuntime({ scene });
 
   // Interactive scenes expose a different agent capability (fix the page's bugs)
   // than slides (regenerate content/narration), so the empty-state copy and the
@@ -178,6 +194,11 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
   const placeholderKey = isInteractive
     ? 'edit.agent.interactive.placeholder'
     : 'edit.agent.placeholder';
+  const sceneTypeLabel =
+    scene?.type && ['slide', 'quiz', 'interactive', 'pbl'].includes(scene.type)
+      ? t(`edit.sceneType.${scene.type}`)
+      : (scene?.type ?? 'Scene');
+  const unsupportedMessage = t('edit.unsupportedScene', { type: sceneTypeLabel });
 
   // Drag-to-resize from the left edge (pointer capture, direct DOM write).
   const railRef = useRef<HTMLElement>(null);
@@ -225,7 +246,7 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
   const [collapsed, setCollapsed] = useState(false);
 
   // Collapsed: a slim rail with the brand mark — click anywhere to reopen. The
-  // runtime stays alive in useAgentRuntime, so the conversation is preserved.
+  // runtime is owned above this panel, so the conversation is preserved.
   if (collapsed) {
     return (
       <aside
@@ -388,6 +409,11 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
           {/* Composer (design .ae-composer): a bordered input shell with an
               @-scene context chip, a voice-input mic, and a square violet send. */}
           <div className="px-3 pb-3 pt-1">
+            {!canSend ? (
+              <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11.5px] leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                {unsupportedMessage}
+              </p>
+            ) : null}
             <ComposerPrimitive.Root className="rounded-[10px] border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-violet-400 focus-within:ring-[3px] focus-within:ring-violet-500/10 dark:focus-within:ring-violet-500/20">
               {scene?.title ? (
                 <div className="px-2 pt-2">
@@ -403,20 +429,24 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
               <ComposerPrimitive.Input
                 minRows={1}
                 maxRows={6}
-                autoFocus
+                autoFocus={canSend}
+                disabled={!canSend}
                 placeholder={t(placeholderKey)}
-                className="block w-full resize-none bg-transparent px-3 pb-1 pt-2 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/50"
+                className="block w-full resize-none bg-transparent px-3 pb-1 pt-2 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-60"
               />
 
               <div className="flex items-center px-2 pb-2 pt-0.5">
                 {/* Voice + send cluster on the right; the mic sits immediately
                     left of the send/stop button. Voice self-gates on ASR. */}
                 <div className="ml-auto flex items-center gap-1">
-                  <VoiceInputButton />
+                  <VoiceInputButton disabled={!canSend} />
                   {/* Send while idle; Stop while a response streams. Stop calls the
                       thread runtime's cancelRun → our onCancel aborts the fetch. */}
                   <ThreadPrimitive.If running={false}>
-                    <ComposerPrimitive.Send className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50">
+                    <ComposerPrimitive.Send
+                      disabled={!canSend}
+                      className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50"
+                    >
                       <ArrowUp className="size-4" />
                     </ComposerPrimitive.Send>
                   </ThreadPrimitive.If>

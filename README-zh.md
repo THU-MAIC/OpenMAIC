@@ -39,6 +39,7 @@
 
 ## 🗞️ 动态
 
+- **2026-06-28** — [v0.3.0 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0) 项目式学习（PBL）v2 与课堂界面；“Edit with AI”专业模式编辑智能体；`@openmaic/*` SDK 系列（DSL/渲染器/导入器）发布至 npm；可选的分阶段模型路由；新增 GLM-5.2 / Kimi K2.7 Code / Qwen3.7 Plus·Max 等模型；职业学习任务引擎；新增韩语（ko-KR）；并将开源协议由 AGPL-3.0 调整为 MIT。查看[更新日志](CHANGELOG.md)。
 - **2026-06-02** — [v0.2.2 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2) MAIC Editor（v0）专业模式，可轻量编辑生成的幻灯片；生成前可编辑大纲；交互课堂离线导出；新增 Brave/百度/博查/MiniMax 搜索与 Azure STT；新增 Claude Opus 4.8 / MiniMax M3 / Gemini 3.5 Flash 等模型；新增繁体中文（zh-TW）与巴西葡萄牙语（pt-BR）。查看[更新日志](CHANGELOG.md)。
 - **2026-04-26** — [v0.2.1 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1) 接入 [VoxCPM2](https://github.com/OpenBMB/VoxCPM) TTS，支持音色克隆与自动生成音色；新增按模型思考配置；新增课程完成页与作答状态持久化；新增 DeepSeek-V4 / GPT-5.5 / GPT-Image-2 / 小米 MiMo / Hy3 等最新发布的模型。查看[更新日志](CHANGELOG.md)。
 - **2026-04-20** — **v0.2.0 发布！** 深度交互模式 — 3D 可视化、模拟实验、游戏、思维导图、在线编程，动手学习新体验。详见[功能特性](#-功能特性)。

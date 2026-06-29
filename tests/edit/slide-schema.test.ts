@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
   CURRENT_SLIDE_CONTENT_SCHEMA_VERSION,
+  migrateInteractiveContent,
   migrateScene,
   migrateSlideContent,
 } from '@/lib/edit/slide-schema';
-import type { Scene, SlideContent } from '@/lib/types/stage';
+import type { InteractiveContent, Scene, SlideContent } from '@/lib/types/stage';
 import type { Slide } from '@openmaic/dsl';
+
+// `teacherActions` was removed from InteractiveContent and from every
+// WidgetConfig variant; legacy persisted documents still carry it both at the
+// top level and nested inside widgetConfig.
+type LegacyInteractiveContent = Omit<InteractiveContent, 'widgetConfig'> & {
+  teacherActions?: unknown[];
+  widgetConfig?: Record<string, unknown>;
+};
 
 function makeSlide(): Slide {
   return {
@@ -34,6 +43,29 @@ function makeSlideScene(overrides: Partial<Scene> = {}): Scene {
     title: 'Test slide',
     order: 1,
     content: makeSlideContent(),
+    ...overrides,
+  };
+}
+
+function makeInteractiveContent(
+  overrides: Partial<LegacyInteractiveContent> = {},
+): InteractiveContent {
+  return {
+    type: 'interactive',
+    url: 'about:blank',
+    widgetType: 'simulation',
+    ...overrides,
+  } as InteractiveContent;
+}
+
+function makeInteractiveScene(overrides: Partial<Scene> = {}): Scene {
+  return {
+    id: 'scene-i1',
+    stageId: 'stage-1',
+    type: 'interactive',
+    title: 'Test widget',
+    order: 1,
+    content: makeInteractiveContent(),
     ...overrides,
   };
 }
@@ -80,7 +112,93 @@ describe('migrateSlideContent', () => {
   });
 });
 
+describe('migrateInteractiveContent', () => {
+  it('drops the legacy teacherActions field from existing content', () => {
+    const legacy = makeInteractiveContent({
+      teacherActions: [{ id: 'a', type: 'highlight', target: '#x' }],
+    });
+    expect('teacherActions' in legacy).toBe(true);
+    const result = migrateInteractiveContent(legacy);
+    expect('teacherActions' in result).toBe(false);
+  });
+
+  it('preserves the surviving interactive fields', () => {
+    const legacy = makeInteractiveContent({
+      html: '<div id="x"></div>',
+      teacherActions: [{ id: 'a' }],
+    });
+    expect(migrateInteractiveContent(legacy)).toEqual({
+      type: 'interactive',
+      url: 'about:blank',
+      widgetType: 'simulation',
+      html: '<div id="x"></div>',
+    });
+  });
+
+  it('returns the same reference when there is nothing to drop', () => {
+    const clean = makeInteractiveContent();
+    expect(migrateInteractiveContent(clean)).toBe(clean);
+  });
+
+  it('drops teacherActions nested inside widgetConfig, preserving other config', () => {
+    const legacy = makeInteractiveContent({
+      widgetConfig: { teacherActions: [{ id: 'a' }], variables: [{ name: 'x' }] },
+    });
+    const result = migrateInteractiveContent(legacy) as InteractiveContent & {
+      widgetConfig?: Record<string, unknown>;
+    };
+    expect('teacherActions' in (result.widgetConfig ?? {})).toBe(false);
+    expect(result.widgetConfig).toEqual({ variables: [{ name: 'x' }] });
+  });
+
+  it('drops both top-level and widgetConfig teacherActions', () => {
+    const legacy = makeInteractiveContent({
+      teacherActions: [{ id: 'top' }],
+      widgetConfig: { teacherActions: [{ id: 'nested' }] },
+    });
+    const result = migrateInteractiveContent(legacy) as InteractiveContent & {
+      widgetConfig?: Record<string, unknown>;
+    };
+    expect('teacherActions' in result).toBe(false);
+    expect('teacherActions' in (result.widgetConfig ?? {})).toBe(false);
+  });
+
+  it('returns the same reference when widgetConfig has no teacherActions', () => {
+    const clean = makeInteractiveContent({ widgetConfig: { variables: [] } });
+    expect(migrateInteractiveContent(clean)).toBe(clean);
+  });
+
+  it('does not mutate its input', () => {
+    const input = makeInteractiveContent({ teacherActions: [{ id: 'a' }] });
+    const snapshot = JSON.parse(JSON.stringify(input));
+    migrateInteractiveContent(input);
+    expect(input).toEqual(snapshot);
+  });
+
+  it('is idempotent', () => {
+    const input = makeInteractiveContent({ teacherActions: [{ id: 'a' }] });
+    const once = migrateInteractiveContent(input);
+    const twice = migrateInteractiveContent(once);
+    expect(twice).toBe(once);
+  });
+});
+
 describe('migrateScene', () => {
+  it('drops teacherActions for interactive scenes', () => {
+    const scene = makeInteractiveScene({
+      content: makeInteractiveContent({ teacherActions: [{ id: 'a' }] }),
+    });
+    const out = migrateScene(scene);
+    expect(out).not.toBe(scene);
+    if (out.content.type !== 'interactive') throw new Error('expected interactive content');
+    expect('teacherActions' in out.content).toBe(false);
+  });
+
+  it('returns the same reference for interactive scenes with no legacy field', () => {
+    const scene = makeInteractiveScene();
+    expect(migrateScene(scene)).toBe(scene);
+  });
+
   it('migrates the slide content for slide scenes', () => {
     const scene = makeSlideScene();
     const out = migrateScene(scene);

@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { apiSuccess } from '@/lib/server/api-response';
-import { verifyAccessToken } from '@/app/api/access-code/verify/route';
+import { verifyAccessToken } from '@/lib/server/access-token';
 
 export async function GET() {
   const accessCode = process.env.ACCESS_CODE;

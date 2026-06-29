@@ -205,7 +205,6 @@ export function buildCompleteScene(
         // Ultra Mode widget fields
         widgetType: content.widgetType,
         widgetConfig: content.widgetConfig,
-        teacherActions: content.teacherActions,
       },
       actions,
       createdAt: Date.now(),
@@ -223,6 +222,7 @@ export function buildCompleteScene(
       content: {
         type: 'pbl',
         projectConfig: content.projectConfig,
+        ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
       },
       actions,
       createdAt: Date.now(),

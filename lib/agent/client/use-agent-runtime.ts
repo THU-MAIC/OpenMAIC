@@ -48,6 +48,7 @@ import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
+  isSendDisabled?: boolean;
 }
 
 /** A prior conversation turn sent to the server so the agent has memory. */
@@ -630,6 +631,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   const runtime = useExternalStoreRuntime({
     messages,
     isRunning,
+    isSendDisabled: opts.isSendDisabled,
     onNew,
     onCancel,
     convertMessage: (m) => m,
@@ -639,6 +641,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
     runtime,
     clearThread,
     hasMessages: messages.length > 0,
+    isRunning,
     sessions,
     activeSessionId,
     switchSession,
