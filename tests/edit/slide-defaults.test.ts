@@ -86,6 +86,11 @@ describe('createBlankSlideScene', () => {
     expect(s.content.canvas.background?.type).toBe('solid');
   });
 
+  it('starts with no actions (engine dwells; no seeded blank speech)', () => {
+    const s = createBlankSlideScene('stage-1', 'Untitled', 1);
+    expect(s.actions).toEqual([]);
+  });
+
   it('mints a fresh scene id + slide id on every call', () => {
     const a = createBlankSlideScene('stage-1', 'A', 1);
     const b = createBlankSlideScene('stage-1', 'B', 2);
