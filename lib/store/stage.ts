@@ -402,6 +402,16 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         currentSceneId,
         chats,
       });
+
+      // Sync the agent registry + db.generatedAgents whenever the roster changes.
+      // saveGeneratedAgents replaces the full set for this stageId, so deletions
+      // propagate correctly. This runs inside the debounced save, so it never
+      // fires on every keystroke.
+      if (stage.generatedAgentConfigs) {
+        const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
+        await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
+      }
+
       return true;
     } catch (error) {
       log.error('Failed to save to storage:', error);

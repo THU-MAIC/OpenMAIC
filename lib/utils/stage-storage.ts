@@ -54,6 +54,7 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
       videoManifest: data.stage.videoManifest,
       interactiveMode: data.stage.interactiveMode,
       taskEngineMode: data.stage.taskEngineMode,
+      generatedAgentConfigs: data.stage.generatedAgentConfigs,
     });
 
     // Delete old scenes first to avoid orphaned data

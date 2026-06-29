@@ -10,8 +10,13 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 vi.mock('@/lib/utils/database', () => ({
   db: { stageOutlines: { put: vi.fn(), get: vi.fn() } },
 }));
+vi.mock('@/lib/orchestration/registry/store', () => ({
+  saveGeneratedAgents: vi.fn().mockResolvedValue([]),
+}));
 
 import { useStageStore } from '@/lib/store/stage';
+import { saveStageData } from '@/lib/utils/stage-storage';
+import { saveGeneratedAgents } from '@/lib/orchestration/registry/store';
 import type { Stage } from '@/lib/types/stage';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 
@@ -103,5 +108,58 @@ describe('setStageAgents', () => {
     const stage = useStageStore.getState().stage;
     expect(stage?.id).toBe('stage-1');
     expect(stage?.name).toBe('Test stage');
+  });
+});
+
+describe('setStageAgents persistence (debounced save)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.mocked(saveStageData).mockClear();
+    vi.mocked(saveGeneratedAgents).mockClear();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('includes generatedAgentConfigs in saveStageData after debounce', async () => {
+    const configs = [makeAgentConfig('x1'), makeAgentConfig('x2')];
+    useStageStore.getState().setStageAgents(configs);
+
+    // Flush the 500 ms debounce
+    await vi.runAllTimersAsync();
+
+    expect(saveStageData).toHaveBeenCalledOnce();
+    const [, storeData] = vi.mocked(saveStageData).mock.calls[0];
+    expect(storeData.stage.generatedAgentConfigs).toEqual(configs);
+  });
+
+  it('calls saveGeneratedAgents with the new configs after debounce', async () => {
+    const configs = [makeAgentConfig('y1')];
+    useStageStore.getState().setStageAgents(configs);
+
+    await vi.runAllTimersAsync();
+
+    expect(saveGeneratedAgents).toHaveBeenCalledOnce();
+    const [stageId, savedConfigs] = vi.mocked(saveGeneratedAgents).mock.calls[0];
+    expect(stageId).toBe('stage-1');
+    expect(savedConfigs).toEqual(configs);
+  });
+
+  it('calls saveGeneratedAgents with empty array when roster cleared', async () => {
+    const stageWithAgents: Stage = {
+      ...makeStage(),
+      generatedAgentConfigs: [makeAgentConfig('old')],
+    };
+    useStageStore.setState({ stage: stageWithAgents });
+    useStageStore.getState().setStageAgents([]);
+
+    await vi.runAllTimersAsync();
+
+    // setStageAgents([]) → generatedAgentConfigs is [], saveGeneratedAgents not called
+    // (guarded by `if (stage.generatedAgentConfigs)` which is truthy for [])
+    expect(saveGeneratedAgents).toHaveBeenCalledOnce();
+    const [, savedConfigs] = vi.mocked(saveGeneratedAgents).mock.calls[0];
+    expect(savedConfigs).toEqual([]);
   });
 });
