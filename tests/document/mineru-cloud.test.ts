@@ -80,6 +80,7 @@ describe('MinerU Cloud document upload', () => {
     );
 
     expect(result.text).toContain('Parsed lesson');
+    expect(result.metadata?.parser).toBe('mineru-cloud');
     expect(batchBodies).toEqual([
       expect.objectContaining({
         files: [{ name: 'lesson.docx' }],

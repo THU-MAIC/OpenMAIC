@@ -34,18 +34,31 @@ const MIME_BY_EXTENSION: Record<string, string> = {
   markdown: DOCUMENT_MIME_TYPES.markdown,
 };
 
+const GENERIC_DOCUMENT_MIME_TYPES = new Set([
+  'application/octet-stream',
+  'application/zip',
+  'application/x-zip',
+  'application/x-zip-compressed',
+]);
+
 export function normalizeDocumentMimeType(input: {
   mimeType?: string | null;
   fileName?: string | null;
 }): string {
   const mimeType = input.mimeType?.split(';')[0]?.trim().toLowerCase();
-  if (mimeType && mimeType !== 'application/octet-stream') {
+  const extension = input.fileName?.split('.').pop()?.toLowerCase();
+  const mimeTypeFromExtension = extension ? MIME_BY_EXTENSION[extension] : undefined;
+
+  if (mimeTypeFromExtension && (!mimeType || GENERIC_DOCUMENT_MIME_TYPES.has(mimeType))) {
+    return mimeTypeFromExtension;
+  }
+
+  if (mimeType) {
     if (mimeType === 'text/x-markdown') return DOCUMENT_MIME_TYPES.markdown;
     return mimeType;
   }
 
-  const extension = input.fileName?.split('.').pop()?.toLowerCase();
-  return extension ? MIME_BY_EXTENSION[extension] || '' : '';
+  return mimeTypeFromExtension || '';
 }
 
 export function isSupportedCourseMaterial(input: {

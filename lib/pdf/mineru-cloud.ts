@@ -201,11 +201,18 @@ async function parseMinerUZip(zipUrl: string): Promise<ParsedPdfContent> {
   }
 
   // Build a synthetic fileResult compatible with extractMinerUResult
-  return extractMinerUResult({
+  const parsed = extractMinerUResult({
     md_content: mdContent,
     images: imageData,
     content_list: contentList,
   });
+  return {
+    ...parsed,
+    metadata: {
+      ...(parsed.metadata ?? { pageCount: 0 }),
+      parser: 'mineru-cloud',
+    },
+  };
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
