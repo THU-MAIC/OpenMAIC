@@ -141,7 +141,11 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                   a.type === 'spotlight' ||
                   a.type === 'laser' ||
                   a.type === 'play_video' ||
-                  a.type === 'discussion',
+                  a.type === 'discussion' ||
+                  a.type === 'widget_highlight' ||
+                  a.type === 'widget_setState' ||
+                  a.type === 'widget_annotation' ||
+                  a.type === 'widget_reveal',
               )
               .map((a) => {
                 if (a.type === 'speech') {
