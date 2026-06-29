@@ -18,7 +18,10 @@ export function materializeRoster(
   resolvePreset: (id: string) => GeneratedAgentConfig | undefined,
   makeId: () => string,
 ): AgentRoster {
-  // Step 1 — already materialized
+  // Step 1 — already materialized.
+  // Deliberately returns the array as-is (by reference, no defensive copy) and does NOT
+  // enforce the ≥1-teacher invariant: a stored roster is already maintained by the
+  // editor's last-teacher guard, and callers rely on reference identity for change detection.
   if (stage.generatedAgentConfigs && stage.generatedAgentConfigs.length > 0) {
     return stage.generatedAgentConfigs;
   }
@@ -36,10 +39,11 @@ export function materializeRoster(
     return [createAgentConfig('teacher', 0, makeId())];
   }
 
-  // Guarantee ≥1 teacher — prepend a default teacher when none present
+  // Guarantee ≥1 teacher — prepend a default teacher when none present.
+  // Use roster.length as the palette index so avatar/color cycling continues correctly.
   const hasTeacher = roster.some((a) => a.role === 'teacher');
   if (!hasTeacher) {
-    return [createAgentConfig('teacher', 0, makeId()), ...roster];
+    return [createAgentConfig('teacher', roster.length, makeId()), ...roster];
   }
 
   return roster;

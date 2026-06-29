@@ -41,6 +41,18 @@ describe('materializeRoster – (a) generatedAgentConfigs present', () => {
     const result = materializeRoster(stage, makeResolver([makeConfig('preset-1', 'student')]), makeCounter());
     expect(result).toBe(configs);
   });
+
+  it('returns same reference even for an unusual student-only generatedAgentConfigs (no teacher)', () => {
+    // Branch 1 deliberately skips the ≥1-teacher invariant for stored rosters —
+    // the editor's last-teacher guard maintains that separately.
+    const configs: GeneratedAgentConfig[] = [
+      makeConfig('s1', 'student'),
+      makeConfig('s2', 'student'),
+    ];
+    const stage = { generatedAgentConfigs: configs };
+    const result = materializeRoster(stage, () => undefined, makeCounter());
+    expect(result).toBe(configs); // same reference, no mutation or teacher injection
+  });
 });
 
 describe('materializeRoster – (b) agentIds resolved via resolvePreset', () => {
