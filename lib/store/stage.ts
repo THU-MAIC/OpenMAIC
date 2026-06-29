@@ -70,9 +70,6 @@ interface StageState {
   // UI state
   toolbarState: ToolbarState;
 
-  // View mode (slides vs agent roster)
-  viewMode: 'slides' | 'agents';
-
   // Transient generation state (not persisted)
   generatingOutlines: SceneOutline[];
 
@@ -100,7 +97,6 @@ interface StageState {
   setChats: (chats: ChatSession[]) => void;
   setMode: (mode: StageMode) => void;
   setToolbarState: (state: ToolbarState) => void;
-  setViewMode: (mode: 'slides' | 'agents') => void;
   setStageAgents: (configs: GeneratedAgentConfig[]) => void;
   setGeneratingOutlines: (outlines: SceneOutline[]) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
@@ -133,7 +129,6 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   chats: [],
   mode: 'playback',
   toolbarState: 'ai',
-  viewMode: 'slides' as const,
   generatingOutlines: [],
   outlines: [],
   generationComplete: false,
@@ -279,8 +274,6 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   setToolbarState: (toolbarState) => set({ toolbarState }),
-
-  setViewMode: (viewMode) => set({ viewMode }),
 
   setStageAgents: (configs) => {
     const stage = get().stage;
@@ -505,7 +498,6 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       currentGeneratingOrder: -1,
       failedOutlines: [],
       generatingOutlines: [],
-      viewMode: 'slides' as const,
     }));
     log.info('Store cleared');
   },

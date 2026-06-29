@@ -23,16 +23,18 @@ interface AgentInspectorProps {
   readonly agent: GeneratedAgentConfig;
   readonly onUpdate: (patch: AgentConfigPatch) => void;
   readonly canChangeRole: (id: string, nextRole: string) => boolean;
+  /** When true, renders full-width without the side border (for narrow column use). */
+  readonly narrow?: boolean;
 }
 
 /**
  * Right-panel inspector for the selected agent.
  * Allows editing name, role, avatar, and persona.
  */
-export function AgentInspector({ agent, onUpdate, canChangeRole }: AgentInspectorProps) {
+export function AgentInspector({ agent, onUpdate, canChangeRole, narrow }: AgentInspectorProps) {
   const isLastTeacher = !canChangeRole(agent.id, 'assistant');
   return (
-    <div className="flex w-80 shrink-0 flex-col gap-0 border-l border-zinc-200/60 dark:border-zinc-800/60">
+    <div className={narrow ? 'flex w-full flex-col gap-0' : 'flex w-80 shrink-0 flex-col gap-0 border-l border-zinc-200/60 dark:border-zinc-800/60'}>
       {/* Header strip showing avatar + name */}
       <div className="flex items-center gap-3 border-b border-zinc-100 bg-zinc-50/60 px-5 py-4 dark:border-zinc-800/60 dark:bg-zinc-900/40">
         <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-zinc-200/60 bg-white dark:border-zinc-700/60 dark:bg-zinc-800">

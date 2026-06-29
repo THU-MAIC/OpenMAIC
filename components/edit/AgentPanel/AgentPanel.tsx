@@ -164,6 +164,12 @@ interface AgentPanelProps {
   readonly switchSession: (id: string) => Promise<void>;
   readonly deleteSessionAndRefresh: (id: string) => Promise<void>;
   readonly refreshSessions: () => Promise<void>;
+  /**
+   * When true, renders only the thread body (no aside wrapper, no header, no
+   * resize handle, no collapse state). Used when an outer container (e.g.
+   * RightRailTabs) owns the rail chrome.
+   */
+  readonly naked?: boolean;
 }
 
 export function AgentPanel({
@@ -177,6 +183,7 @@ export function AgentPanel({
   switchSession,
   deleteSessionAndRefresh,
   refreshSessions,
+  naked,
 }: AgentPanelProps) {
   const { t } = useI18n();
 
@@ -244,6 +251,112 @@ export function AgentPanel({
   }, []);
 
   const [collapsed, setCollapsed] = useState(false);
+
+  // Naked mode: outer container (RightRailTabs) owns the aside wrapper and chrome.
+  // Render only the thread body, no aside / header / resize / collapse state.
+  if (naked) {
+    return (
+      <AssistantRuntimeProvider runtime={runtime}>
+        <ReadSceneContentUI />
+        <RegenerateSceneActionsUI />
+        <RegenerateSceneUI />
+        <EditInteractiveHtmlUI />
+
+        <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
+          <ThreadPrimitive.Viewport className="flex-1 space-y-6 overflow-y-auto px-4 py-5 scroll-smooth">
+            <ThreadPrimitive.Empty>
+              <div className="mx-auto mt-12 flex max-w-[268px] flex-col">
+                <p className="text-center text-sm font-medium text-foreground">
+                  {t(emptyTitleKey)}
+                </p>
+                <p className="mt-1.5 text-center text-[12px] leading-relaxed text-muted-foreground">
+                  {t(emptyLeadKey)}
+                </p>
+                <div className="mt-5 space-y-3">
+                  {capabilityKeys.map(({ label, examples }) => (
+                    <div key={label} className="flex flex-col gap-0.5">
+                      <span className="text-[12px] font-semibold text-foreground">{t(label)}</span>
+                      <span className="text-[11.5px] leading-relaxed text-[#5b1fa8]/70 dark:text-violet-300/70">
+                        {t(examples)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground/80">
+                  {t(emptyBoundaryKey)}
+                </p>
+                <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
+                  <Sparkles className="size-3 text-[#5b1fa8]/60 dark:text-violet-300/60" />
+                  {t('edit.agent.empty.comingSoon')}
+                </p>
+              </div>
+            </ThreadPrimitive.Empty>
+
+            <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
+          </ThreadPrimitive.Viewport>
+
+          <ThreadPrimitive.ScrollToBottom className="absolute bottom-2 left-1/2 grid size-7 -translate-x-1/2 place-items-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-0">
+            <ChevronDown className="size-4" />
+          </ThreadPrimitive.ScrollToBottom>
+
+          <div className="px-3 pb-3 pt-1">
+            {!canSend ? (
+              <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11.5px] leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                {unsupportedMessage}
+              </p>
+            ) : null}
+            <ComposerPrimitive.Root className="rounded-[10px] border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-violet-400 focus-within:ring-[3px] focus-within:ring-violet-500/10 dark:focus-within:ring-violet-500/20">
+              {scene?.title ? (
+                <div className="px-2 pt-2">
+                  <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-[#5b1fa8] dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                    <AtSign className="size-3 shrink-0 text-violet-500" />
+                    <span className="truncate">{scene.title}</span>
+                  </span>
+                </div>
+              ) : null}
+              <ComposerPrimitive.Input
+                minRows={1}
+                maxRows={6}
+                autoFocus={canSend}
+                disabled={!canSend}
+                placeholder={t(placeholderKey)}
+                className="block w-full resize-none bg-transparent px-3 pb-1 pt-2 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <div className="flex items-center px-2 pb-2 pt-0.5">
+                <div className="ml-auto flex items-center gap-1">
+                  <VoiceInputButton disabled={!canSend} />
+                  <ThreadPrimitive.If running={false}>
+                    <ComposerPrimitive.Send
+                      disabled={!canSend}
+                      className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50"
+                    >
+                      <ArrowUp className="size-4" />
+                    </ComposerPrimitive.Send>
+                  </ThreadPrimitive.If>
+                  <ThreadPrimitive.If running>
+                    <button
+                      type="button"
+                      aria-label={t('edit.agent.stop')}
+                      onClick={() => {
+                        try {
+                          runtime.thread.cancelRun();
+                        } catch {
+                          /* no run to cancel */
+                        }
+                      }}
+                      className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90"
+                    >
+                      <Square className="size-3 fill-current" />
+                    </button>
+                  </ThreadPrimitive.If>
+                </div>
+              </div>
+            </ComposerPrimitive.Root>
+          </div>
+        </ThreadPrimitive.Root>
+      </AssistantRuntimeProvider>
+    );
+  }
 
   // Collapsed: a slim rail with the brand mark — click anywhere to reopen. The
   // runtime is owned above this panel, so the conversation is preserved.

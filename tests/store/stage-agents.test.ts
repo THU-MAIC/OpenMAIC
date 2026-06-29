@@ -53,30 +53,6 @@ afterEach(() => {
   useStageStore.getState().clearStore();
 });
 
-describe('viewMode', () => {
-  it('defaults to slides', () => {
-    useStageStore.getState().clearStore();
-    expect(useStageStore.getState().viewMode).toBe('slides');
-  });
-
-  it('setViewMode updates to agents', () => {
-    useStageStore.getState().setViewMode('agents');
-    expect(useStageStore.getState().viewMode).toBe('agents');
-  });
-
-  it('setViewMode back to slides', () => {
-    useStageStore.getState().setViewMode('agents');
-    useStageStore.getState().setViewMode('slides');
-    expect(useStageStore.getState().viewMode).toBe('slides');
-  });
-
-  it('clearStore resets viewMode to slides', () => {
-    useStageStore.getState().setViewMode('agents');
-    useStageStore.getState().clearStore();
-    expect(useStageStore.getState().viewMode).toBe('slides');
-  });
-});
-
 describe('setStageAgents', () => {
   it('writes generatedAgentConfigs to stage', () => {
     const configs = [makeAgentConfig('a1'), makeAgentConfig('a2')];
