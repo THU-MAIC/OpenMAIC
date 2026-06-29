@@ -56,18 +56,28 @@ describe('materializeRoster – (a) generatedAgentConfigs present', () => {
 });
 
 describe('materializeRoster – (b) agentIds resolved via resolvePreset', () => {
-  it('maps agentIds through resolvePreset', () => {
+  it('maps agentIds through resolvePreset, assigning fresh ids (not original preset ids)', () => {
     const presets = [makeConfig('a1', 'teacher'), makeConfig('a2', 'student')];
     const stage = { agentIds: ['a1', 'a2'] };
     const result = materializeRoster(stage, makeResolver(presets), makeCounter());
-    expect(result.map((r) => r.id)).toEqual(['a1', 'a2']);
+    // Must use fresh stage-scoped ids, never the global preset ids
+    expect(result.map((r) => r.id)).toEqual(['gen-1', 'gen-2']);
+    expect(result.map((r) => r.id)).not.toContain('a1');
+    expect(result.map((r) => r.id)).not.toContain('a2');
+    // Other fields must be preserved from the resolved preset
+    expect(result[0].name).toBe('a1');
+    expect(result[0].role).toBe('teacher');
+    expect(result[1].name).toBe('a2');
+    expect(result[1].role).toBe('student');
   });
 
   it('drops ids that resolve to undefined', () => {
     const presets = [makeConfig('a1', 'teacher')];
     const stage = { agentIds: ['a1', 'unknown-x'] };
     const result = materializeRoster(stage, makeResolver(presets), makeCounter());
-    expect(result.map((r) => r.id)).toEqual(['a1']);
+    // Only the resolved entry survives, with a fresh id
+    expect(result.map((r) => r.id)).toEqual(['gen-1']);
+    expect(result[0].name).toBe('a1');
   });
 });
 
