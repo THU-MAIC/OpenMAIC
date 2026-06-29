@@ -1687,6 +1687,7 @@ export function createSceneWithActions(
         canvas: slide,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1702,6 +1703,7 @@ export function createSceneWithActions(
         questions: content.questions,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1721,6 +1723,7 @@ export function createSceneWithActions(
         widgetConfig: content.widgetConfig,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1737,6 +1740,7 @@ export function createSceneWithActions(
         ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;

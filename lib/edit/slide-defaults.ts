@@ -111,6 +111,11 @@ export function duplicateSlideScene(source: Scene, copySuffix: string, order: nu
   return {
     ...source,
     id: nanoid(),
+    // A duplicate is NOT generated from the source's outline, so it must not
+    // inherit `outlineId` — otherwise the editor agent would resolve the copy's
+    // context to the original slide's outline. Cleared so resolveSceneOutline
+    // falls back to the copy's own title / content.
+    outlineId: undefined,
     title,
     order,
     content,

@@ -110,6 +110,12 @@ describe('duplicateSlideScene', () => {
     expect(dup.content.canvas).not.toBe(source.content.canvas);
   });
 
+  it('does not inherit the source outlineId (a copy is not generated from it)', () => {
+    const source = makeSlideScene({ outlineId: 'src-outline' } as Partial<Scene>);
+    const dup = duplicateSlideScene(source, '(copy)', 2);
+    expect(dup.outlineId).toBeUndefined();
+  });
+
   it('reassigns every element id so React keys cannot collide', () => {
     const source = makeSlideScene();
     const dup = duplicateSlideScene(source, '(copy)', 2);

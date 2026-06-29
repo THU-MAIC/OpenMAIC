@@ -102,5 +102,16 @@ export type SceneContent = AppSceneContent;
  * callers keep their original semantics (actions are `Action[]`, content spans
  * all four kinds).
  */
-export type AppScene = DslScene<Action, SceneContent>;
+export type AppScene = DslScene<Action, SceneContent> & {
+  /**
+   * Stable id of the generation outline this scene was built from. Lets editor
+   * agent tools resolve a scene's outline by identity instead of by the mutable
+   * `order`, which Pro-mode insert / reorder / delete rebalances (matching by
+   * `order` after a reorder attaches another slide's outline). An app-layer
+   * annotation only — not part of the `@openmaic/dsl` Scene contract. Absent on
+   * inserted scenes and pre-existing data, where callers fall back to a
+   * scene-derived outline.
+   */
+  outlineId?: string;
+};
 export type Scene = AppScene;
