@@ -156,10 +156,38 @@ describe('setStageAgents persistence (debounced save)', () => {
 
     await vi.runAllTimersAsync();
 
-    // setStageAgents([]) → generatedAgentConfigs is [], saveGeneratedAgents not called
-    // (guarded by `if (stage.generatedAgentConfigs)` which is truthy for [])
+    // setStageAgents([]) → generatedAgentConfigs is [], empty array is truthy
     expect(saveGeneratedAgents).toHaveBeenCalledOnce();
     const [, savedConfigs] = vi.mocked(saveGeneratedAgents).mock.calls[0];
     expect(savedConfigs).toEqual([]);
+  });
+
+  it('does NOT call saveGeneratedAgents on setCurrentSceneId (scene advance)', async () => {
+    // Regression guard for the P1 bug: scene advances during playback must
+    // never churn db.generatedAgents via the shared saveToStorage path.
+    const stageWithAgents: Stage = {
+      ...makeStage(),
+      generatedAgentConfigs: [makeAgentConfig('a1')],
+    };
+    useStageStore.setState({ stage: stageWithAgents, scenes: [] });
+    useStageStore.getState().setCurrentSceneId('scene-42');
+
+    await vi.runAllTimersAsync();
+
+    // saveStageData fires (the snapshot write is fine), but saveGeneratedAgents must not.
+    expect(saveStageData).toHaveBeenCalledOnce();
+    expect(saveGeneratedAgents).not.toHaveBeenCalled();
+  });
+
+  it('does NOT call saveGeneratedAgents on plain saveToStorage without a roster edit', async () => {
+    const stageWithAgents: Stage = {
+      ...makeStage(),
+      generatedAgentConfigs: [makeAgentConfig('b1')],
+    };
+    useStageStore.setState({ stage: stageWithAgents });
+    await useStageStore.getState().saveToStorage();
+
+    expect(saveStageData).toHaveBeenCalledOnce();
+    expect(saveGeneratedAgents).not.toHaveBeenCalled();
   });
 });

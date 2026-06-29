@@ -24,6 +24,8 @@ export interface AgentRosterHistory {
   past: AgentRoster[];
   present: AgentRoster;
   future: AgentRoster[];
+  /** Last applied op — used to coalesce consecutive agent.update edits on the same agent+field. */
+  lastOp?: AgentEditOperation;
 }
 
 /** Maps a role string to its priority number. teacher=10, assistant=7, else=5. */
@@ -77,14 +79,34 @@ export function applyAgentEditOperation(
     const next = applyOperationToRoster(target.present, op);
     // If the roster didn't change (e.g. update against missing id), skip history push.
     if (next === target.present) return target;
+
+    // Coalesce consecutive agent.update ops on the same agent+fields into one
+    // history entry so undo steps over a whole field edit, not each keystroke.
+    const canCoalesce =
+      op.type === 'agent.update' &&
+      target.lastOp?.type === 'agent.update' &&
+      target.lastOp.id === op.id &&
+      sameKeys(target.lastOp.patch, op.patch);
+
+    if (canCoalesce) {
+      return { past: target.past, present: next, future: [], lastOp: op };
+    }
+
     return {
       past: capHistory([...target.past, target.present]),
       present: next,
       future: [],
+      lastOp: op,
     };
   }
 
   return applyOperationToRoster(target, op);
+}
+
+function sameKeys(a: AgentConfigPatch, b: AgentConfigPatch): boolean {
+  const ak = Object.keys(a);
+  const bk = Object.keys(b);
+  return ak.length === bk.length && ak.every((k) => bk.includes(k));
 }
 
 export function undoAgentEditOperation(h: AgentRosterHistory): AgentRosterHistory {
@@ -95,6 +117,7 @@ export function undoAgentEditOperation(h: AgentRosterHistory): AgentRosterHistor
     past: h.past.slice(0, -1),
     present: previous,
     future: [h.present, ...h.future],
+    // lastOp cleared — undo breaks the coalescing chain
   };
 }
 
@@ -106,6 +129,7 @@ export function redoAgentEditOperation(h: AgentRosterHistory): AgentRosterHistor
     past: capHistory([...h.past, h.present]),
     present: next,
     future: h.future.slice(1),
+    // lastOp cleared — redo breaks the coalescing chain
   };
 }
 

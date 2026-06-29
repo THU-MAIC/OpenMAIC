@@ -287,6 +287,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     if (!stage) return;
     set({ stage: { ...stage, generatedAgentConfigs: configs } });
     debouncedSave();
+    debouncedSaveAgents();
   },
 
   setGeneratingOutlines: (generatingOutlines) => set({ generatingOutlines }),
@@ -402,15 +403,6 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         currentSceneId,
         chats,
       });
-
-      // Sync the agent registry + db.generatedAgents whenever the roster changes.
-      // saveGeneratedAgents replaces the full set for this stageId, so deletions
-      // propagate correctly. This runs inside the debounced save, so it never
-      // fires on every keystroke.
-      if (stage.generatedAgentConfigs) {
-        const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-        await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
-      }
 
       return true;
     } catch (error) {
@@ -529,4 +521,16 @@ export const useStageStore = createSelectors(useStageStoreBase);
  */
 const debouncedSave = debounce(() => {
   useStageStore.getState().saveToStorage();
+}, 500);
+
+/**
+ * Debounced registry sync — fires ONLY when the agent roster is edited.
+ * Keeps db.generatedAgents writes off the broad saveToStorage path so scene
+ * advances (setCurrentSceneId etc.) never churn the registry mid-playback.
+ */
+const debouncedSaveAgents = debounce(async () => {
+  const { stage } = useStageStore.getState();
+  if (!stage?.id || !stage.generatedAgentConfigs) return;
+  const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
+  await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
 }, 500);

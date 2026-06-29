@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { nanoid } from 'nanoid';
 import { materializeRoster } from '@/lib/edit/agent-roster';
 import {
@@ -78,11 +78,17 @@ export function useAgentRoster(): AgentRosterController {
     () => histState.present[0]?.id ?? null,
   );
 
+  // Guard: only persist after a real user edit, not on initial materialization.
+  // Set to true inside every mutation path (applyOp, add, undo, redo) so the
+  // effect below is a no-op until the user actually touches the roster.
+  const isDirtyRef = useRef(false);
+
   // Persist roster edits to the store. Depends only on `histState.present`.
   // `stage` is intentionally excluded: setStageAgents mutates `stage`, so
   // depending on it would re-trigger this effect in an infinite loop (React #185).
   // setStageAgents already no-ops when there is no stage (lib/store/stage.ts:287).
   useEffect(() => {
+    if (!isDirtyRef.current) return;
     setStageAgents(histState.present);
   }, [histState.present, setStageAgents]);
 
@@ -94,6 +100,7 @@ export function useAgentRoster(): AgentRosterController {
    */
   const applyOp = useCallback((op: AgentEditOperation): boolean => {
     let succeeded = true;
+    isDirtyRef.current = true;
     setHistState((prev) => {
       try {
         return applyAgentEditOperation(prev, op);
@@ -109,6 +116,7 @@ export function useAgentRoster(): AgentRosterController {
 
   const add = useCallback((role = 'teacher') => {
     const id = makeId();
+    isDirtyRef.current = true;
     setHistState((prev) => {
       try {
         const agent = createAgentConfig(role, prev.present.length, id);
@@ -174,10 +182,12 @@ export function useAgentRoster(): AgentRosterController {
   );
 
   const undo = useCallback(() => {
+    isDirtyRef.current = true;
     setHistState((prev) => undoAgentEditOperation(prev));
   }, []);
 
   const redo = useCallback(() => {
+    isDirtyRef.current = true;
     setHistState((prev) => redoAgentEditOperation(prev));
   }, []);
 
