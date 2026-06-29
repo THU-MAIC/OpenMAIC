@@ -917,7 +917,8 @@
     "webSearching": "Web Search",
     "webSearchingDesc": "Searching the web for up-to-date information",
     "webSearchFailed": "Web search failed",
-    "blockedByBlankTitles": "{{count}} sections still need a title"
+    "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
+    "jumpToBlankTitle": "Jump to a section that still needs a title"
   },
   "settings": {
     "title": "Settings",

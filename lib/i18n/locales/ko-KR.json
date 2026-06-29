@@ -917,7 +917,8 @@
     "webSearching": "웹 검색",
     "webSearchingDesc": "최신 정보를 웹에서 검색하고 있어요",
     "webSearchFailed": "웹 검색에 실패했습니다",
-    "blockedByBlankTitles": "{{count}}개 섹션에 제목이 필요합니다"
+    "outlinesReadyCount": "{{ready}} / {{total}}개 섹션 준비됨",
+    "jumpToBlankTitle": "제목이 필요한 섹션으로 이동"
   },
   "settings": {
     "title": "설정",

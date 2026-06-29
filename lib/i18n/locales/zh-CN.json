@@ -917,7 +917,8 @@
     "webSearching": "网络搜索",
     "webSearchingDesc": "正在搜索网络获取最新资料",
     "webSearchFailed": "网络搜索失败",
-    "blockedByBlankTitles": "还有 {{count}} 个章节缺少标题"
+    "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
+    "jumpToBlankTitle": "跳到待补充标题的章节"
   },
   "settings": {
     "title": "设置",

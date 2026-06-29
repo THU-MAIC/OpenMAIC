@@ -917,7 +917,8 @@
     "webSearching": "ウェブ検索",
     "webSearchingDesc": "ウェブで最新情報を検索しています",
     "webSearchFailed": "ウェブ検索に失敗しました",
-    "blockedByBlankTitles": "{{count}} 個のセクションにタイトルが必要です"
+    "outlinesReadyCount": "{{ready}} / {{total}} セクション準備完了",
+    "jumpToBlankTitle": "タイトルが未入力のセクションへ移動"
   },
   "settings": {
     "title": "設定",

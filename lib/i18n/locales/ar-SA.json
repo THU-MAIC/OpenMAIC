@@ -917,7 +917,8 @@
     "webSearching": "بحث في الإنترنت",
     "webSearchingDesc": "جارٍ البحث في الإنترنت عن معلومات محدّثة",
     "webSearchFailed": "فشل البحث في الإنترنت",
-    "blockedByBlankTitles": "{{count}} أقسام بحاجة إلى عنوان"
+    "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
+    "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان"
   },
   "settings": {
     "title": "الإعدادات",

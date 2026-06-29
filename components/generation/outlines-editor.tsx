@@ -3,7 +3,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  AlertTriangle,
   Check,
   ChevronDown,
   GripVertical,
@@ -129,9 +128,12 @@ export function OutlinesEditor({
   const lastOutlineId = outlines.length > 0 ? outlines[outlines.length - 1].id : null;
 
   // Generation gate: an outline with a blank title is meaningless to generate,
-  // so block "Confirm & generate" until every section has a title. The reason
-  // chip below the button jumps to the first offending section.
+  // so block "Confirm & generate" until every section has a title. A neutral
+  // "N / M ready" counter by the button explains the gate and jumps to the
+  // first offending section.
   const blockingCount = countBlockingOutlines(outlines);
+  const totalCount = outlines.length;
+  const readyCount = totalCount - blockingCount;
   const firstBlockingId =
     blockingCount > 0 ? outlines.find((o) => validateOutline(o).length > 0)?.id : undefined;
   const scrollToFirstBlocking = () => {
@@ -384,10 +386,16 @@ export function OutlinesEditor({
             <button
               type="button"
               onClick={scrollToFirstBlocking}
-              className="inline-flex items-center gap-1 text-xs font-medium text-rose-600 transition-colors hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
+              title={t('generation.jumpToBlankTitle')}
+              className="inline-flex items-center gap-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
             >
-              <AlertTriangle className="size-3.5" />
-              {t('generation.blockedByBlankTitles', { count: blockingCount })}
+              <span className="block h-1 w-[84px] overflow-hidden rounded-full bg-muted">
+                <span
+                  className="block h-full rounded-full bg-muted-foreground/45 transition-[width]"
+                  style={{ width: `${totalCount > 0 ? (readyCount / totalCount) * 100 : 0}%` }}
+                />
+              </span>
+              {t('generation.outlinesReadyCount', { ready: readyCount, total: totalCount })}
             </button>
           )}
           <Button
@@ -590,6 +598,11 @@ function SceneRow({
         <div className="min-w-0 flex-1 space-y-1.5">
           {/* Title row */}
           <div className="flex items-start justify-between gap-2">
+            {!disabled && !outline.title.trim() && (
+              // Incomplete marker — a soft amber dot before a blank title. A
+              // blank title blocks generation; the gate below counts how many.
+              <span aria-hidden className="mt-[11px] h-2 w-2 shrink-0 rounded-full bg-amber-400" />
+            )}
             <textarea
               ref={titleRef}
               value={outline.title}
@@ -603,10 +616,6 @@ function SceneRow({
                 'placeholder:font-normal placeholder:text-muted-foreground/40',
                 'focus:outline-none focus:ring-0 md:text-lg',
                 disabled && 'cursor-default',
-                // A blank title is incomplete — flag it softly with an amber
-                // placeholder (no box: the title stays borderless). The hard
-                // red signal is the disabled generate button + its reason chip.
-                !disabled && !outline.title.trim() && 'placeholder:text-amber-500/80',
               )}
             />
             <div className="flex shrink-0 items-center gap-1.5 pt-0.5">

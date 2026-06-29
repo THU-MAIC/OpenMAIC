@@ -917,7 +917,8 @@
     "webSearching": "Поиск в интернете",
     "webSearchingDesc": "Поиск актуальной информации в сети",
     "webSearchFailed": "Ошибка веб-поиска",
-    "blockedByBlankTitles": "У {{count}} разделов нет заголовка"
+    "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
+    "jumpToBlankTitle": "Перейти к разделу без заголовка"
   },
   "settings": {
     "title": "Настройки",

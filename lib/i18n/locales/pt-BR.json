@@ -917,7 +917,8 @@
     "webSearching": "Buscando na Web",
     "webSearchingDesc": "Pesquisando informações atualizadas na web",
     "webSearchFailed": "Falha na pesquisa na web",
-    "blockedByBlankTitles": "{{count}} seções ainda precisam de um título"
+    "outlinesReadyCount": "{{ready}} / {{total}} seções prontas",
+    "jumpToBlankTitle": "Ir para uma seção que ainda precisa de título"
   },
   "settings": {
     "title": "Configurações",
