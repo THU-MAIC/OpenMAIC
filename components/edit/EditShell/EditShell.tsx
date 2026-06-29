@@ -29,6 +29,12 @@ interface EditShellProps {
    */
   readonly commandTrailing?: ReactNode;
   /**
+   * Center slot of the CommandBar — used for a view-mode segmented toggle
+   * (e.g. [Slides] / [Agents]) placed between the title area and the
+   * right-edge controls.
+   */
+  readonly commandLeading?: ReactNode;
+  /**
    * Optional right-side panel slot. Used by the MAIC Agent PoC to mount the
    * AI sidebar. Like `leftRail`, it is a pure chrome handoff — surface code
    * never imports it. Collapses to zero width when absent.
@@ -75,6 +81,7 @@ export function EditShell({
   scene,
   leftRail,
   commandTrailing,
+  commandLeading,
   rightRail,
   bottomRail,
 }: EditShellProps) {
@@ -102,6 +109,7 @@ export function EditShell({
         leftRail={leftRail}
         history={state?.history}
         commands={state?.commands}
+        leading={commandLeading}
         trailing={commandTrailing}
         rightRail={rightRail}
         bottomRail={bottomRail}
@@ -225,6 +233,7 @@ interface FrameProps {
   readonly leftRail?: ReactNode;
   readonly history?: React.ComponentProps<typeof CommandBar>['history'];
   readonly commands?: React.ComponentProps<typeof CommandBar>['commands'];
+  readonly leading?: ReactNode;
   readonly trailing?: ReactNode;
   readonly rightRail?: ReactNode;
   readonly bottomRail?: ReactNode;
@@ -236,6 +245,7 @@ function Frame({
   leftRail,
   history,
   commands,
+  leading,
   trailing,
   rightRail,
   bottomRail,
@@ -270,7 +280,7 @@ function Frame({
           animate={cmdAnimate}
           transition={{ ...stepTransition, delay: prefersReducedMotion ? 0 : COMMANDBAR_DELAY }}
         >
-          <CommandBar title={title} history={history} commands={commands} trailing={trailing} />
+          <CommandBar title={title} history={history} commands={commands} leading={leading} trailing={trailing} />
         </motion.div>
       }
       leftSlot={

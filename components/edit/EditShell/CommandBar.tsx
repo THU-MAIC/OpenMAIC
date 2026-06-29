@@ -14,6 +14,11 @@ interface CommandBarProps {
   readonly history?: SurfaceHistory;
   readonly commands?: readonly EditorCommand[];
   /**
+   * Center slot — used to place a segmented view toggle (e.g. Slides/Agents)
+   * between the title area and the right-edge controls.
+   */
+  readonly leading?: ReactNode;
+  /**
    * Right-edge slot owned by Stage. In Pro mode it carries the
    * HeaderControls (settings pill + Pro Switch + Download) since Stage
    * Header is unmounted to keep top chrome to a single bar.
@@ -32,7 +37,7 @@ interface CommandBarProps {
  * not a one-way state, so we deliberately do *not* place a "Done" pill
  * here that would compete with the Switch's affordance.
  */
-export function CommandBar({ title, history, commands, trailing }: CommandBarProps) {
+export function CommandBar({ title, history, commands, leading, trailing }: CommandBarProps) {
   const { t } = useI18n();
   const router = useRouter();
 
@@ -61,6 +66,10 @@ export function CommandBar({ title, history, commands, trailing }: CommandBarPro
           {title}
         </span>
       </div>
+
+      {leading && (
+        <div className="flex shrink-0 items-center">{leading}</div>
+      )}
 
       <div className="flex shrink-0 items-center gap-2">
         {commands && commands.length > 0 && (

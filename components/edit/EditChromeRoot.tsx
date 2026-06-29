@@ -11,6 +11,9 @@ import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import type { Scene } from '@/lib/types/stage';
+import { cn } from '@/lib/utils';
+import { useStageStore } from '@/lib/store/stage';
+import { AgentsView } from '@/components/edit/AgentsView/AgentsView';
 import { shouldRenderAgentPanel } from './agent-panel-visibility';
 
 interface EditChromeRootProps {
@@ -88,6 +91,32 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     isRunning: agentRuntime.isRunning,
   });
 
+  const viewMode = useStageStore.use.viewMode();
+  const setViewMode = useStageStore.use.setViewMode();
+
+  // [Slides] / [Agents] segmented toggle — passed into CommandBar's `leading`
+  // slot in both modes so the chrome layout stays consistent.
+  const viewToggle = <ViewModeToggle viewMode={viewMode} setViewMode={setViewMode} />;
+
+  // The HeaderControls (settings pill + Pro Switch) are shared across both
+  // modes; build them once and pass as `commandTrailing`.
+  const headerControls = (
+    <HeaderControls
+      mode="edit"
+      canEdit={isEditable}
+      onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}
+    />
+  );
+
+  if (viewMode === 'agents') {
+    return (
+      <AgentsView
+        commandLeading={viewToggle}
+        commandTrailing={headerControls}
+      />
+    );
+  }
+
   return (
     <EditShell
       scene={scene}
@@ -109,13 +138,65 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
         ) : undefined
       }
       bottomRail={authoringEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
-      commandTrailing={
-        <HeaderControls
-          mode="edit"
-          canEdit={isEditable}
-          onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}
-        />
-      }
+      commandLeading={viewToggle}
+      commandTrailing={headerControls}
     />
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ViewModeToggle — [Slides] [Agents] segmented control
+// ---------------------------------------------------------------------------
+
+interface ViewModeToggleProps {
+  readonly viewMode: 'slides' | 'agents';
+  readonly setViewMode: (mode: 'slides' | 'agents') => void;
+}
+
+function ViewModeToggle({ viewMode, setViewMode }: ViewModeToggleProps) {
+  return (
+    <div
+      role="tablist"
+      aria-label="编辑视图"
+      className="flex items-center gap-0.5 rounded-xl bg-zinc-100 p-0.5 dark:bg-zinc-800"
+    >
+      <ViewTab
+        label="幻灯片"
+        active={viewMode === 'slides'}
+        onClick={() => setViewMode('slides')}
+      />
+      <ViewTab
+        label="角色"
+        active={viewMode === 'agents'}
+        onClick={() => setViewMode('agents')}
+      />
+    </div>
+  );
+}
+
+function ViewTab({
+  label,
+  active,
+  onClick,
+}: {
+  readonly label: string;
+  readonly active: boolean;
+  readonly onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={cn(
+        'rounded-lg px-3 py-1 text-xs font-semibold transition-all',
+        active
+          ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-700 dark:text-zinc-100'
+          : 'text-zinc-500 hover:text-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-200',
+      )}
+    >
+      {label}
+    </button>
   );
 }
