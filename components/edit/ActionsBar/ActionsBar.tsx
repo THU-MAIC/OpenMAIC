@@ -89,6 +89,16 @@ const EMPTY: Action[] = [];
  */
 const INCOMPLETE_BOX = 'border-dashed border-amber-400/70 bg-amber-50/50 dark:bg-amber-500/5';
 
+/**
+ * Clear the canvas spotlight/laser preview when a cue glyph unmounts while it is
+ * being hovered — most importantly when the user deletes the cue. React does not
+ * fire `onMouseLeave` on unmount, so without this the previewed effect would stay
+ * stuck on the slide after its cue is gone.
+ */
+function useClearCuePreviewOnUnmount() {
+  useEffect(() => () => clearCuePreview(), []);
+}
+
 const MIN_H = 168;
 const MAX_H = 520;
 const DEFAULT_H = 224;
@@ -671,6 +681,7 @@ function CueMarker({
   onDragEnd: () => void;
 }) {
   const { t } = useI18n();
+  useClearCuePreviewOnUnmount();
   const m = cueMeta(action.type);
   const label = cueLabel(action.type, t);
   const Icon = m.icon;
@@ -764,6 +775,7 @@ function NodeDot({
   canDrag?: boolean;
 }) {
   const { t } = useI18n();
+  useClearCuePreviewOnUnmount();
   const isSpeech = action.type === 'speech';
   // A discussion is the scene's terminal anchor — give its node a distinct
   // marker (square, filled yellow) so it reads as the end stop, not a regular
