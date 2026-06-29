@@ -220,7 +220,8 @@
       "dragHandle": "اسحب لإعادة الترتيب",
       "deckLabel": "المشاهد",
       "moreActions": "إجراءات إضافية",
-      "rename": "إعادة تسمية"
+      "rename": "إعادة تسمية",
+      "sceneIncomplete": "محتوى هذه الصفحة غير مكتمل"
     },
     "zorder": {
       "toFront": "إحضار إلى الأمام",
@@ -915,7 +916,8 @@
     "generatingInProgress": "جارٍ التوليد...",
     "webSearching": "بحث في الإنترنت",
     "webSearchingDesc": "جارٍ البحث في الإنترنت عن معلومات محدّثة",
-    "webSearchFailed": "فشل البحث في الإنترنت"
+    "webSearchFailed": "فشل البحث في الإنترنت",
+    "blockedByBlankTitles": "{{count}} أقسام بحاجة إلى عنوان"
   },
   "settings": {
     "title": "الإعدادات",

@@ -220,7 +220,8 @@
       "dragHandle": "Drag to reorder",
       "deckLabel": "Scenes",
       "moreActions": "More actions",
-      "rename": "Rename"
+      "rename": "Rename",
+      "sceneIncomplete": "This page has incomplete content"
     },
     "zorder": {
       "toFront": "Bring to front",
@@ -915,7 +916,8 @@
     "generatingInProgress": "Generating...",
     "webSearching": "Web Search",
     "webSearchingDesc": "Searching the web for up-to-date information",
-    "webSearchFailed": "Web search failed"
+    "webSearchFailed": "Web search failed",
+    "blockedByBlankTitles": "{{count}} sections still need a title"
   },
   "settings": {
     "title": "Settings",

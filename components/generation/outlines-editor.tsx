@@ -3,6 +3,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
+  AlertTriangle,
   Check,
   ChevronDown,
   GripVertical,
@@ -29,6 +30,7 @@ import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { WidgetType } from '@/lib/types/widgets';
 import { changeOutlineType } from '@/lib/generation/outline-type';
+import { countBlockingOutlines, validateOutline } from '@/lib/edit/content-validation';
 
 type SceneType = SceneOutline['type'];
 
@@ -125,6 +127,18 @@ export function OutlinesEditor({
   const lastScrollTargetRef = useRef<string | null>(null);
   const editingDisabled = isLoading || isStreaming;
   const lastOutlineId = outlines.length > 0 ? outlines[outlines.length - 1].id : null;
+
+  // Generation gate: an outline with a blank title is meaningless to generate,
+  // so block "Confirm & generate" until every section has a title. The reason
+  // chip below the button jumps to the first offending section.
+  const blockingCount = countBlockingOutlines(outlines);
+  const firstBlockingId =
+    blockingCount > 0 ? outlines.find((o) => validateOutline(o).length > 0)?.id : undefined;
+  const scrollToFirstBlocking = () => {
+    if (!firstBlockingId) return;
+    const node = document.getElementById(`outline-scene-${firstBlockingId}`);
+    node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   // Auto-scroll to the latest streamed scene so streaming feels alive.
   useEffect(() => {
@@ -366,9 +380,19 @@ export function OutlinesEditor({
           >
             {t('generation.backToRequirements')}
           </Button>
+          {!editingDisabled && blockingCount > 0 && (
+            <button
+              type="button"
+              onClick={scrollToFirstBlocking}
+              className="inline-flex items-center gap-1 text-xs font-medium text-rose-600 transition-colors hover:text-rose-700 dark:text-rose-400 dark:hover:text-rose-300"
+            >
+              <AlertTriangle className="size-3.5" />
+              {t('generation.blockedByBlankTitles', { count: blockingCount })}
+            </button>
+          )}
           <Button
             onClick={onConfirm}
-            disabled={isLoading || isStreaming || outlines.length === 0}
+            disabled={isLoading || isStreaming || outlines.length === 0 || blockingCount > 0}
             className="rounded-full px-6 shadow-lg shadow-blue-500/20"
           >
             {isLoading ? (
@@ -579,6 +603,10 @@ function SceneRow({
                 'placeholder:font-normal placeholder:text-muted-foreground/40',
                 'focus:outline-none focus:ring-0 md:text-lg',
                 disabled && 'cursor-default',
+                // A blank title is incomplete — flag it softly with an amber
+                // placeholder (no box: the title stays borderless). The hard
+                // red signal is the disabled generate button + its reason chip.
+                !disabled && !outline.title.trim() && 'placeholder:text-amber-500/80',
               )}
             />
             <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
