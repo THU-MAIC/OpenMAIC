@@ -5,7 +5,15 @@ import type { GeneratedAgentConfig } from '@/lib/types/stage';
 // ----- helpers ---------------------------------------------------------------
 
 function makeConfig(id: string, role = 'teacher'): GeneratedAgentConfig {
-  return { id, name: id, role, persona: '', avatar: '/avatars/teacher.png', color: '#000', priority: role === 'teacher' ? 10 : role === 'assistant' ? 7 : 5 };
+  return {
+    id,
+    name: id,
+    role,
+    persona: '',
+    avatar: '/avatars/teacher.png',
+    color: '#000',
+    priority: role === 'teacher' ? 10 : role === 'assistant' ? 7 : 5,
+  };
 }
 
 /** Deterministic counter-based id factory. */
@@ -15,7 +23,9 @@ function makeCounter(): () => string {
 }
 
 /** Stub resolvePreset backed by an id→config map; returns undefined for unknowns. */
-function makeResolver(entries: GeneratedAgentConfig[]): (id: string) => GeneratedAgentConfig | undefined {
+function makeResolver(
+  entries: GeneratedAgentConfig[],
+): (id: string) => GeneratedAgentConfig | undefined {
   const map = new Map(entries.map((e) => [e.id, e]));
   return (id) => map.get(id);
 }
@@ -38,7 +48,11 @@ describe('materializeRoster – (a) generatedAgentConfigs present', () => {
   it('returns existing configs even when agentIds is also present', () => {
     const configs: GeneratedAgentConfig[] = [makeConfig('t1', 'teacher')];
     const stage = { generatedAgentConfigs: configs, agentIds: ['preset-1'] };
-    const result = materializeRoster(stage, makeResolver([makeConfig('preset-1', 'student')]), makeCounter());
+    const result = materializeRoster(
+      stage,
+      makeResolver([makeConfig('preset-1', 'student')]),
+      makeCounter(),
+    );
     expect(result).toBe(configs);
   });
 

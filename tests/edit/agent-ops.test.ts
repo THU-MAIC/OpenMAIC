@@ -1,14 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import {
-  applyAgentEditOperation, undoAgentEditOperation, redoAgentEditOperation,
-  createAgentConfig, priorityForRole, teacherCount,
-  type AgentRoster, type AgentRosterHistory,
+  applyAgentEditOperation,
+  undoAgentEditOperation,
+  redoAgentEditOperation,
+  createAgentConfig,
+  priorityForRole,
+  teacherCount,
+  type AgentRoster,
+  type AgentRosterHistory,
 } from '@/lib/edit/agent-ops';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 
-const T = (id: string, role = 'teacher'): GeneratedAgentConfig =>
-  ({ id, name: id, role, persona: '', avatar: '/avatars/teacher.png', color: '#000', priority: priorityForRole(role) });
+const T = (id: string, role = 'teacher'): GeneratedAgentConfig => ({
+  id,
+  name: id,
+  role,
+  persona: '',
+  avatar: '/avatars/teacher.png',
+  color: '#000',
+  priority: priorityForRole(role),
+});
 
 describe('priorityForRole', () => {
   it('maps roles', () => {
@@ -35,23 +47,44 @@ describe('applyAgentEditOperation (roster)', () => {
     expect(r.map((x) => x.id)).toEqual(['a', 'b']);
   });
   it('updates and recomputes priority on role change', () => {
-    const r = applyAgentEditOperation([T('a'), T('b', 'student')], { type: 'agent.update', id: 'b', patch: { role: 'assistant', name: 'TA' } });
+    const r = applyAgentEditOperation([T('a'), T('b', 'student')], {
+      type: 'agent.update',
+      id: 'b',
+      patch: { role: 'assistant', name: 'TA' },
+    });
     const b = r.find((x) => x.id === 'b')!;
-    expect(b.role).toBe('assistant'); expect(b.priority).toBe(7); expect(b.name).toBe('TA');
+    expect(b.role).toBe('assistant');
+    expect(b.priority).toBe(7);
+    expect(b.name).toBe('TA');
   });
   it('reorders', () => {
-    const r = applyAgentEditOperation([T('a'), T('b', 'student'), T('c', 'student')], { type: 'agent.reorder', id: 'c', index: 0 });
+    const r = applyAgentEditOperation([T('a'), T('b', 'student'), T('c', 'student')], {
+      type: 'agent.reorder',
+      id: 'c',
+      index: 0,
+    });
     expect(r.map((x) => x.id)).toEqual(['c', 'a', 'b']);
   });
   it('deletes', () => {
-    const r = applyAgentEditOperation([T('a'), T('b', 'student')], { type: 'agent.delete', id: 'b' });
+    const r = applyAgentEditOperation([T('a'), T('b', 'student')], {
+      type: 'agent.delete',
+      id: 'b',
+    });
     expect(r.map((x) => x.id)).toEqual(['a']);
   });
   it('blocks deleting the last teacher', () => {
-    expect(() => applyAgentEditOperation([T('a'), T('b', 'student')], { type: 'agent.delete', id: 'a' })).toThrow('LAST_TEACHER');
+    expect(() =>
+      applyAgentEditOperation([T('a'), T('b', 'student')], { type: 'agent.delete', id: 'a' }),
+    ).toThrow('LAST_TEACHER');
   });
   it('blocks role-changing the last teacher away', () => {
-    expect(() => applyAgentEditOperation([T('a')], { type: 'agent.update', id: 'a', patch: { role: 'student' } })).toThrow('LAST_TEACHER');
+    expect(() =>
+      applyAgentEditOperation([T('a')], {
+        type: 'agent.update',
+        id: 'a',
+        patch: { role: 'student' },
+      }),
+    ).toThrow('LAST_TEACHER');
   });
 });
 
@@ -68,8 +101,16 @@ describe('history overload + undo/redo', () => {
 
   it('two agent.update ops on same agent+field produce two separate undo steps', () => {
     let h: AgentRosterHistory = { past: [], present: [T('a')], future: [] };
-    h = applyAgentEditOperation(h, { type: 'agent.update', id: 'a', patch: { name: 'First Edit' } });
-    h = applyAgentEditOperation(h, { type: 'agent.update', id: 'a', patch: { name: 'Second Edit' } });
+    h = applyAgentEditOperation(h, {
+      type: 'agent.update',
+      id: 'a',
+      patch: { name: 'First Edit' },
+    });
+    h = applyAgentEditOperation(h, {
+      type: 'agent.update',
+      id: 'a',
+      patch: { name: 'Second Edit' },
+    });
     expect(h.present[0].name).toBe('Second Edit');
     h = undoAgentEditOperation(h);
     expect(h.present[0].name).toBe('First Edit');

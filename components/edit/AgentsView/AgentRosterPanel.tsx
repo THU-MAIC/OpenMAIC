@@ -1,15 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import {
-  Camera,
-  ChevronDown,
-  ChevronUp,
-  Redo2,
-  Undo2,
-  UserMinus,
-  UserPlus,
-} from 'lucide-react';
+import { Camera, ChevronDown, ChevronUp, Redo2, Undo2, UserMinus, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 import { useAgentRoster } from './useAgentRoster';
@@ -195,7 +187,11 @@ function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
           size={42}
           ringColor="#722ed1"
           onPickerOpen={() => {
-            if (!open) { onToggle(); setShowAvatarPicker(true); return; }
+            if (!open) {
+              onToggle();
+              setShowAvatarPicker(true);
+              return;
+            }
             setShowAvatarPicker((v) => !v);
           }}
         />
@@ -320,7 +316,11 @@ function ClassmateCard({
           size={40}
           ringColor={ringColor}
           onPickerOpen={() => {
-            if (!open) { onToggle(); setShowAvatarPicker(true); return; }
+            if (!open) {
+              onToggle();
+              setShowAvatarPicker(true);
+              return;
+            }
             setShowAvatarPicker((v) => !v);
           }}
         />
@@ -341,10 +341,7 @@ function ClassmateCard({
         </div>
 
         {/* Reorder controls (stop propagation so they don't expand) */}
-        <div
-          className="flex flex-col gap-0.5 shrink-0"
-          onClick={(e) => e.stopPropagation()}
-        >
+        <div className="flex flex-col gap-0.5 shrink-0" onClick={(e) => e.stopPropagation()}>
           <button
             type="button"
             aria-label="上移"

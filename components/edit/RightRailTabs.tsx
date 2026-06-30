@@ -166,7 +166,10 @@ export function RightRailTabs({
 
       {/* Tab strip — single header row, no nested header */}
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-gray-100 px-2 dark:border-gray-800">
-        <div role="tablist" className="flex items-center gap-0.5 rounded-lg bg-zinc-100/80 p-0.5 dark:bg-zinc-800">
+        <div
+          role="tablist"
+          className="flex items-center gap-0.5 rounded-lg bg-zinc-100/80 p-0.5 dark:bg-zinc-800"
+        >
           {showAiTab && (
             <RailTabButton
               label="Edit with AI"

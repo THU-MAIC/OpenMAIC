@@ -1,5 +1,12 @@
 import { create } from 'zustand';
-import type { PBLContent, Stage, Scene, SceneContent, StageMode, GeneratedAgentConfig } from '@/lib/types/stage';
+import type {
+  PBLContent,
+  Stage,
+  Scene,
+  SceneContent,
+  StageMode,
+  GeneratedAgentConfig,
+} from '@/lib/types/stage';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';

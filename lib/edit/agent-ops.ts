@@ -61,10 +61,7 @@ export function teacherCount(roster: AgentRoster): number {
   return roster.filter((a) => a.role === 'teacher').length;
 }
 
-export function applyAgentEditOperation(
-  roster: AgentRoster,
-  op: AgentEditOperation,
-): AgentRoster;
+export function applyAgentEditOperation(roster: AgentRoster, op: AgentEditOperation): AgentRoster;
 export function applyAgentEditOperation(
   history: AgentRosterHistory,
   op: AgentEditOperation,

@@ -27,12 +27,7 @@ export function AvatarPicker({ value, onChange }: AvatarPickerProps) {
               : 'border-transparent hover:border-zinc-300 dark:hover:border-zinc-600',
           )}
         >
-          <img
-            src={src}
-            alt=""
-            className="h-full w-full object-cover"
-            draggable={false}
-          />
+          <img src={src} alt="" className="h-full w-full object-cover" draggable={false} />
         </button>
       ))}
     </div>

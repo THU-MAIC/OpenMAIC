@@ -1,5 +1,12 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Scene, SceneType, SceneContent, Whiteboard, VideoManifest, GeneratedAgentConfig } from '@/lib/types/stage';
+import type {
+  Scene,
+  SceneType,
+  SceneContent,
+  Whiteboard,
+  VideoManifest,
+  GeneratedAgentConfig,
+} from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import type {
   SessionType,
