@@ -82,7 +82,12 @@ function EditableName({ value, onCommit, className }: EditableNameProps) {
       suppressContentEditableWarning
       onBlur={handleBlur}
       onClick={(e) => e.stopPropagation()}
-      className={cn('outline-none cursor-text', className)}
+      className={cn(
+        'outline-none cursor-text rounded-[3px]',
+        'hover:underline hover:decoration-dashed hover:decoration-[#b08ee6]',
+        'focus:shadow-[0_0_0_2px_rgba(114,46,209,.18)]',
+        className,
+      )}
       style={{ minWidth: 10 }}
     >
       {value}
@@ -190,7 +195,7 @@ function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
           size={42}
           ringColor="#722ed1"
           onPickerOpen={() => {
-            if (!open) { onToggle(); return; }
+            if (!open) { onToggle(); setShowAvatarPicker(true); return; }
             setShowAvatarPicker((v) => !v);
           }}
         />
@@ -315,7 +320,7 @@ function ClassmateCard({
           size={40}
           ringColor={ringColor}
           onPickerOpen={() => {
-            if (!open) { onToggle(); return; }
+            if (!open) { onToggle(); setShowAvatarPicker(true); return; }
             setShowAvatarPicker((v) => !v);
           }}
         />
@@ -552,7 +557,7 @@ export function AgentRosterPanel() {
           }}
         >
           <UserPlus style={{ width: 15, height: 15 }} />
-          从角色库添加同学
+          添加角色
         </button>
       </div>
     </div>
