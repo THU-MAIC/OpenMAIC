@@ -82,6 +82,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       outlines,
     } = useStageStore();
     const failedOutlines = useStageStore.use.failedOutlines();
+    const generationComplete = useStageStore.use.generationComplete();
 
     const currentScene = getCurrentScene();
 
@@ -806,9 +807,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // currently generating — signals the classroom has finished and the user
     // can see a completion page. Comparing scenes.length === outlines.length
     // (rather than just `scenes.length > 0`) means a partial generation with
-    // some failed outlines does not falsely trigger completion.
+    // some failed outlines does not falsely trigger completion. The persisted
+    // generationComplete flag also marks completion directly, so an edited
+    // finished deck (e.g. a deleted slide, leaving outlines.length > scenes)
+    // still reads as complete.
     const isCourseComplete =
-      outlines.length > 0 && scenes.length === outlines.length && generatingOutlines.length === 0;
+      generationComplete ||
+      (outlines.length > 0 && scenes.length === outlines.length && generatingOutlines.length === 0);
     const canAdvanceToPendingSlot = hasNextPending || isCourseComplete;
 
     // previous scene (gated)

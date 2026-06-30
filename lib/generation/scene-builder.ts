@@ -14,7 +14,7 @@ import type {
   ImageMapping,
 } from '@/lib/types/generation';
 import type { LanguageModel } from 'ai';
-import type { Slide, SlideTheme } from '@/lib/types/slides';
+import type { Slide, SlideTheme } from '@openmaic/dsl';
 import type { Scene } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
 import { applyOutlineFallbacks } from './outline-generator';
@@ -205,7 +205,6 @@ export function buildCompleteScene(
         // Ultra Mode widget fields
         widgetType: content.widgetType,
         widgetConfig: content.widgetConfig,
-        teacherActions: content.teacherActions,
       },
       actions,
       createdAt: Date.now(),
@@ -223,6 +222,7 @@ export function buildCompleteScene(
       content: {
         type: 'pbl',
         projectConfig: content.projectConfig,
+        ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
       },
       actions,
       createdAt: Date.now(),

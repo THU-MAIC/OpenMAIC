@@ -92,7 +92,7 @@ describe('sceneEditorRegistry', () => {
   function makeSurface(sceneType: SceneType, label = 'A'): SceneEditorSurface {
     return {
       sceneType,
-      CanvasComponent: () => null,
+      SurfaceComponent: () => null,
       useSurfaceState: () => ({
         // Cast through unknown because tests don't need a real surface state;
         // we only exercise the registry contract here.

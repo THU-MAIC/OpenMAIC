@@ -2,16 +2,19 @@
 
 import { useEffect } from 'react';
 import Canvas from '@/components/slide-renderer/Editor/Canvas';
+import { SpotlightOverlay } from '@/components/slide-renderer/Editor/SpotlightOverlay';
+import { LaserPointerOverlay } from '@/components/slide-renderer/Editor/LaserPointerOverlay';
 import { SceneProvider } from '@/lib/contexts/scene-context';
 import { useCanvasStore } from '@/lib/store/canvas';
 import {
   useEditingTextElementId,
-  useSelectedNonTextElementId,
+  useSelectedNonTextElement,
   useSlideCanvasController,
   useSyncEditingElementId,
 } from './use-slide-surface';
 import { AnchoredTextBar } from './AnchoredTextBar';
-import { AnchoredDeleteBar } from './AnchoredDeleteBar';
+import { AnchoredElementBar } from './AnchoredElementBar';
+import { ElementPickLayer } from './ElementPickLayer';
 
 /**
  * The slide surface's canvas. Reuses the unmodified slide renderer
@@ -23,13 +26,14 @@ import { AnchoredDeleteBar } from './AnchoredDeleteBar';
  * It also owns the selection-anchored chrome: it derives the selected element,
  * mirrors a selected text element into the canvas store's `editingElementId`
  * (which the renderer reads to draw a clean frame), and renders the anchored
- * bars — the format bar for text, a delete bar for every other element type.
+ * bars — the format bar for text, a type-aware element bar (z-order + delete,
+ * plus replace/crop/flip for images) for every other element type.
  * At most one bar is open at a time (single selection).
  */
 export function SlideCanvas() {
   const { controller, gestureProps } = useSlideCanvasController();
   const editingElementId = useEditingTextElementId();
-  const nonTextElementId = useSelectedNonTextElementId();
+  const nonTextElement = useSelectedNonTextElement();
   useSyncEditingElementId(editingElementId);
 
   // Esc disarms in-flight insert mode. Read via getState so the listener mounts
@@ -56,9 +60,17 @@ export function SlideCanvas() {
     <div className="relative h-full w-full" {...gestureProps}>
       <SceneProvider controller={controller}>
         <Canvas />
+        {/* Same spotlight + laser effects as playback, retargeted to the
+            editor's element ids — driven by useCanvasStore.setSpotlight /
+            setLaser (e.g. from the ActionsBar cue-badge hover). The laser cue
+            replays as a laser pointer, the spotlight cue as a spotlight. */}
+        <SpotlightOverlay domIdPrefix="editable-element-" />
+        <LaserPointerOverlay domIdPrefix="editable-element-" />
       </SceneProvider>
       <AnchoredTextBar editingElementId={editingElementId} />
-      <AnchoredDeleteBar elementId={nonTextElementId} />
+      <AnchoredElementBar element={nonTextElement} />
+      {/* Canvas-side element picker for the timeline's element-bound cues. */}
+      <ElementPickLayer />
     </div>
   );
 }
