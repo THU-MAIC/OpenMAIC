@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Stage, Scene, StageMode } from '@/lib/types/stage';
+import type { PBLContent, Stage, Scene, SceneContent, StageMode } from '@/lib/types/stage';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -38,6 +38,21 @@ function debounce<T extends (...args: Parameters<T>) => ReturnType<T>>(
 
 type ToolbarState = 'design' | 'ai';
 
+function mergeSceneContentForUpdate(
+  current: SceneContent,
+  incoming: SceneContent | undefined,
+): SceneContent | undefined {
+  if (!incoming) return incoming;
+  if (current.type !== 'pbl' || incoming.type !== 'pbl') return incoming;
+  const currentPBL = current as PBLContent;
+  const incomingPBL = incoming as PBLContent;
+  if ('projectV2' in incomingPBL || !currentPBL.projectV2) return incoming;
+  return {
+    ...incomingPBL,
+    projectV2: currentPBL.projectV2,
+  };
+}
+
 interface StageState {
   // Stage info
   stage: Stage | null;
@@ -61,6 +76,10 @@ interface StageState {
   // Persisted outlines for resume-on-refresh
   outlines: SceneOutline[];
 
+  // Persisted (with outlines): true once generation finished for this stage.
+  // Gates resume-on-mount so an edited finished deck is not regenerated.
+  generationComplete: boolean;
+
   // Transient generation tracking (not persisted)
   generationEpoch: number;
   generationStatus: 'idle' | 'generating' | 'paused' | 'completed' | 'error';
@@ -80,6 +99,9 @@ interface StageState {
   setToolbarState: (state: ToolbarState) => void;
   setGeneratingOutlines: (outlines: SceneOutline[]) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
+  setGenerationComplete: (complete: boolean) => void;
+  /** Mark generation complete iff every outline has a scene and none failed. */
+  markGenerationCompleteIfDone: () => void;
   setGenerationStatus: (status: 'idle' | 'generating' | 'paused' | 'completed' | 'error') => void;
   setCurrentGeneratingOrder: (order: number) => void;
   bumpGenerationEpoch: () => void;
@@ -93,7 +115,7 @@ interface StageState {
   getSceneIndex: (sceneId: string) => number;
 
   // Storage
-  saveToStorage: () => Promise<void>;
+  saveToStorage: () => Promise<boolean>;
   loadFromStorage: (stageId: string) => Promise<void>;
   clearStore: () => void;
 }
@@ -108,6 +130,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   toolbarState: 'ai',
   generatingOutlines: [],
   outlines: [],
+  generationComplete: false,
   generationEpoch: 0,
   generationStatus: 'idle' as const,
   currentGeneratingOrder: -1,
@@ -120,6 +143,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       scenes: [],
       currentSceneId: null,
       chats: [],
+      generationComplete: false,
       generationEpoch: s.generationEpoch + 1,
     }));
     debouncedSave();
@@ -183,14 +207,32 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   updateScene: (sceneId, updates) => {
-    const scenes = get().scenes.map((scene) =>
-      scene.id === sceneId ? { ...scene, ...updates } : scene,
-    );
+    const scenes = get().scenes.map((scene) => {
+      if (scene.id !== sceneId) return scene;
+      return {
+        ...scene,
+        ...updates,
+        content: mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content,
+      };
+    });
     set({ scenes });
     debouncedSave();
   },
 
   deleteScene: (sceneId) => {
+    // A deck that is complete right now (every outline has a scene) stays
+    // complete after a deletion. Capture that BEFORE removing the scene so the
+    // completion (end) page and resume-suppression survive even for decks whose
+    // generationComplete flag was never recorded — e.g. generated before the
+    // flag existed, or edited without a reload so loadFromStorage's self-heal
+    // never ran. Without this, the deletion breaks the scenes===outlines count
+    // and the "Course complete" page disappears.
+    const wasComplete =
+      !get().generationComplete &&
+      get().outlines.length > 0 &&
+      get().failedOutlines.length === 0 &&
+      get().outlines.every((o) => get().scenes.some((s) => s.order === o.order));
+
     const scenes = get().scenes.filter((scene) => scene.id !== sceneId);
     const currentSceneId = get().currentSceneId;
 
@@ -205,6 +247,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     } else {
       set({ scenes });
     }
+
+    if (wasComplete) get().setGenerationComplete(true);
+
     debouncedSave();
   },
 
@@ -233,18 +278,60 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   setOutlines: (outlines) => {
     set({ outlines });
-    // Persist outlines to IndexedDB
+    // Persist outlines to IndexedDB. Carry generationComplete so writing
+    // outlines never clobbers a previously-recorded completion flag.
     const stageId = get().stage?.id;
     if (stageId) {
+      const generationComplete = get().generationComplete;
       import('@/lib/utils/database').then(({ db }) => {
         db.stageOutlines.put({
           stageId,
           outlines,
+          generationComplete,
           createdAt: Date.now(),
           updatedAt: Date.now(),
         });
       });
     }
+  },
+
+  setGenerationComplete: (generationComplete) => {
+    set({ generationComplete });
+    // Persist alongside the outlines record so resume-on-mount can read it.
+    const stageId = get().stage?.id;
+    if (stageId) {
+      const outlines = get().outlines;
+      // Flush the current scenes BEFORE recording completion, and only record
+      // it once that flush is verified. Scenes save through a 500ms debounce,
+      // so writing the flag eagerly could let a reload see
+      // generationComplete=true with the final slide still unsaved — which
+      // would then be suppressed (not pending) and lost. If the scene flush
+      // fails, skip the flag: the deck stays resumable and recovers on reload.
+      void get()
+        .saveToStorage()
+        .then((saved) => {
+          if (!saved) return;
+          return import('@/lib/utils/database').then(({ db }) => {
+            db.stageOutlines.put({
+              stageId,
+              outlines,
+              generationComplete,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          });
+        });
+    }
+  },
+
+  markGenerationCompleteIfDone: () => {
+    const { outlines, scenes, failedOutlines, generationComplete } = get();
+    if (generationComplete) return;
+    const done =
+      outlines.length > 0 &&
+      failedOutlines.length === 0 &&
+      outlines.every((o) => scenes.some((s) => s.order === o.order));
+    if (done) get().setGenerationComplete(true);
   },
 
   setGenerationStatus: (generationStatus) => set({ generationStatus }),
@@ -282,12 +369,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     return get().scenes.findIndex((s) => s.id === sceneId);
   },
 
-  // Storage methods
+  // Storage methods. Returns true on a verified write so callers that gate on
+  // durability (e.g. setGenerationComplete) can avoid recording state that
+  // outruns the scene data.
   saveToStorage: async () => {
     const { stage, scenes, currentSceneId, chats } = get();
     if (!stage?.id) {
       log.warn('Cannot save: stage.id is required');
-      return;
+      return false;
     }
 
     try {
@@ -298,8 +387,10 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         currentSceneId,
         chats,
       });
+      return true;
     } catch (error) {
       log.error('Failed to save to storage:', error);
+      return false;
     }
   },
 
@@ -320,20 +411,52 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const { db } = await import('@/lib/utils/database');
       const outlinesRecord = await db.stageOutlines.get(stageId);
       const outlines = outlinesRecord?.outlines || [];
+      const persistedComplete = outlinesRecord?.generationComplete ?? false;
 
       if (data) {
         // Normalize legacy slide content (missing schemaVersion) at the load
         // boundary, same as setScenes/addScene — IndexedDB snapshots predate
         // the schema field, so they must be migrated on the way in.
         const migrated = data.scenes.map(migrateScene);
+
+        // Self-heal decks generated before generationComplete was tracked: if
+        // every outline already has a matching scene, generation must have
+        // finished, so treat the deck as complete and persist the flag. This
+        // prevents a pre-existing finished deck from regenerating a slide the
+        // user deletes before the flag was ever recorded.
+        //
+        // Matching is by `order`, consistent with the rest of the resume
+        // pipeline. For a never-edited deck order is a faithful key; the only
+        // way it diverges is Pro-mode insert/reorder, which is blocked while
+        // outlines are still pending (see stage-mode edit gating), so an
+        // interrupted deck cannot be edited into a false "all materialized".
+        const allMaterialized =
+          outlines.length > 0 && outlines.every((o) => migrated.some((s) => s.order === o.order));
+        const generationComplete = persistedComplete || allMaterialized;
+        if (generationComplete && !persistedComplete) {
+          db.stageOutlines.put({
+            stageId,
+            outlines,
+            generationComplete: true,
+            createdAt: outlinesRecord?.createdAt ?? Date.now(),
+            updatedAt: Date.now(),
+          });
+        }
+
         set({
           stage: data.stage,
           scenes: migrated,
           currentSceneId: data.currentSceneId,
           chats: data.chats,
           outlines,
-          // Compute generatingOutlines from persisted outlines minus completed scenes
-          generatingOutlines: outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
+          generationComplete,
+          // Compute generatingOutlines from persisted outlines minus completed
+          // scenes. Once generation is complete the deck is frozen for editing,
+          // so an orphaned outline (e.g. from a deleted slide) must NOT surface
+          // as a pending placeholder or drive resume regeneration.
+          generatingOutlines: generationComplete
+            ? []
+            : outlines.filter((o) => !migrated.some((s) => s.order === o.order)),
           // `mode` is transient UI state, not persisted with the stage.
           // Reset to 'playback' on every load so SPA navigation between
           // classrooms doesn't carry Pro-mode state across — e.g. user
@@ -359,6 +482,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       currentSceneId: null,
       chats: [],
       outlines: [],
+      generationComplete: false,
       generationEpoch: s.generationEpoch + 1,
       generationStatus: 'idle' as const,
       currentGeneratingOrder: -1,

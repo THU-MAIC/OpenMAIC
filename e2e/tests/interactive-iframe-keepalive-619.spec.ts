@@ -182,11 +182,15 @@ test.describe('#619 interactive iframe keep-alive', () => {
     await resetMutations(page);
 
     // `.first()` because the ~280ms mode cross-fade briefly mounts both chrome
-    // layers (each with its own Pro switch). iframe visibility is the unambiguous
-    // "transition settled" signal.
-    // --- Trigger A: Pro mode toggle (edit chrome unmounts playback chrome) ---
+    // layers (each with its own Pro switch).
+    // --- Trigger A: Pro mode toggle (edit chrome remounts the placeholder) ---
     await page.getByRole('switch').first().click();
-    await expect(iframeEl).toBeHidden(); // hidden in edit mode, not unmounted
+    // Since #777 the interactive iframe stays VISIBLE in edit mode — the editor
+    // agent ("Edit with AI") fixes interactive HTML, so the teacher must see the
+    // live page while editing. The keep-alive proof is that it is neither
+    // unmounted nor reloaded: the in-iframe counter state survives the toggle.
+    await expect(iframeEl).toBeVisible();
+    await expect(count).toHaveText('3'); // state preserved across the mode toggle
     await page.screenshot({ path: `${SHOTS}/02-pro-mode.png`, fullPage: true });
 
     await page.getByRole('switch').first().click();

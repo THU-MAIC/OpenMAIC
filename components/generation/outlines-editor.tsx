@@ -27,6 +27,8 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
+import type { WidgetType } from '@/lib/types/widgets';
+import { changeOutlineType } from '@/lib/generation/outline-type';
 
 type SceneType = SceneOutline['type'];
 
@@ -151,6 +153,15 @@ export function OutlinesEditor({
   const updateOutline = (index: number, updates: Partial<SceneOutline>) => {
     const next = [...outlines];
     next[index] = { ...next[index], ...updates };
+    onChange(normalizeOrder(next));
+  };
+
+  // Replace the whole outline object (not a partial merge) — used when changing
+  // type, so stale per-type config from the previous type is dropped instead of
+  // lingering and being persisted.
+  const replaceOutline = (index: number, outline: SceneOutline) => {
+    const next = [...outlines];
+    next[index] = outline;
     onChange(normalizeOrder(next));
   };
 
@@ -284,6 +295,7 @@ export function OutlinesEditor({
                       index={index}
                       outline={outline}
                       onUpdate={(updates) => updateOutline(index, updates)}
+                      onReplace={(next) => replaceOutline(index, next)}
                       onRemove={() => removeOutline(index)}
                       onMoveUp={() => moveOutline(index, 'up')}
                       onMoveDown={() => moveOutline(index, 'down')}
@@ -390,6 +402,7 @@ interface SceneRowProps {
   index: number;
   outline: SceneOutline;
   onUpdate: (updates: Partial<SceneOutline>) => void;
+  onReplace: (outline: SceneOutline) => void;
   onRemove: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
@@ -410,6 +423,7 @@ function SceneRow({
   index,
   outline,
   onUpdate,
+  onReplace,
   onRemove,
   onMoveUp,
   onMoveDown,
@@ -567,14 +581,31 @@ function SceneRow({
                 disabled && 'cursor-default',
               )}
             />
-            <div className="flex shrink-0 items-center gap-1 pt-0.5">
-              <TypePill
-                type={outline.type}
-                onChange={(type) => onUpdate({ type })}
-                disabled={disabled}
-                label={sceneTypeLabel(outline.type)}
-                theme={theme}
-              />
+            <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
+              {/* Cascading control: type-specific config (left) joined to the type selector (right) */}
+              <div className="inline-flex items-center overflow-hidden rounded-full">
+                {!disabled && outline.type === 'quiz' && (
+                  <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
+                )}
+                {!disabled && outline.type === 'interactive' && (
+                  <InteractiveConfigDisclosure
+                    outline={outline}
+                    onUpdate={onUpdate}
+                    theme={theme}
+                  />
+                )}
+                {!disabled && outline.type === 'pbl' && (
+                  <PblConfigDisclosure outline={outline} onUpdate={onUpdate} theme={theme} />
+                )}
+                <TypePill
+                  type={outline.type}
+                  onChange={(type) => onReplace(changeOutlineType(outline, type))}
+                  disabled={disabled}
+                  label={sceneTypeLabel(outline.type)}
+                  theme={theme}
+                  connected={!disabled && outline.type !== 'slide'}
+                />
+              </div>
               {!disabled && <DeleteSceneButton onConfirm={onRemove} />}
             </div>
           </div>
@@ -611,7 +642,9 @@ function SceneRow({
                     'bg-muted/70 text-foreground/80',
                   )}
                 >
-                  <span className="truncate">{point}</span>
+                  <span className="whitespace-normal break-words" title={point}>
+                    {point}
+                  </span>
                   {!disabled && (
                     <button
                       type="button"
@@ -634,11 +667,6 @@ function SceneRow({
               />
             )}
           </div>
-
-          {/* Quiz config (popover) */}
-          {outline.type === 'quiz' && !disabled && (
-            <QuizConfigDisclosure outline={outline} onUpdate={onUpdate} />
-          )}
         </div>
       </div>
     </motion.li>
@@ -694,12 +722,15 @@ function TypePill({
   disabled,
   label,
   theme,
+  connected = false,
 }: {
   type: SceneType;
   onChange: (type: SceneType) => void;
   disabled: boolean;
   label: string;
   theme: (typeof TYPE_THEME)[SceneType];
+  /** When part of a cascading group, drop own rounding so the wrapper clips it. */
+  connected?: boolean;
 }) {
   const { t } = useI18n();
   return (
@@ -708,7 +739,8 @@ function TypePill({
         <button
           type="button"
           className={cn(
-            'inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+            'inline-flex items-center gap-1 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wider transition-colors',
+            connected ? 'rounded-none' : 'rounded-full',
             theme.chip,
             !disabled && theme.chipHover,
             disabled && 'cursor-default',
@@ -940,12 +972,24 @@ function KeyPointInput({
   );
 }
 
+// Left segment of the cascading type control: a themed pill chunk that joins the
+// TypePill on its right via a hairline divider (the wrapper clips the corners).
+function cascadeSegmentClass(theme: (typeof TYPE_THEME)[SceneType]) {
+  return cn(
+    'inline-flex items-center gap-1 border-r border-black/[0.07] px-2.5 py-1 text-[11px] font-medium uppercase tracking-wider transition-colors dark:border-white/10',
+    theme.chip,
+    theme.chipHover,
+  );
+}
+
 function QuizConfigDisclosure({
   outline,
   onUpdate,
+  theme,
 }: {
   outline: SceneOutline;
   onUpdate: (updates: Partial<SceneOutline>) => void;
+  theme: (typeof TYPE_THEME)[SceneType];
 }) {
   const { t } = useI18n();
   const config = outline.quizConfig ?? {
@@ -968,14 +1012,10 @@ function QuizConfigDisclosure({
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            'mt-1 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium',
-            'text-purple-600 transition-colors hover:bg-purple-500/[0.06] dark:text-purple-300',
-          )}
-        >
-          <span>{t('generation.quizConfigSummary', { count: config.questionCount ?? 3 })}</span>
+        <button type="button" className={cascadeSegmentClass(theme)}>
+          <span className="max-w-[8rem] truncate">
+            {t('generation.quizConfigSummary', { count: config.questionCount ?? 3 })}
+          </span>
           <ChevronDown className="size-3 opacity-70" />
         </button>
       </PopoverTrigger>
@@ -1050,6 +1090,300 @@ function QuizConfigDisclosure({
               );
             })}
           </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+const WIDGET_KINDS: ReadonlyArray<readonly [WidgetType, string]> = [
+  ['simulation', 'generation.widgetSimulation'],
+  ['diagram', 'generation.widgetDiagram'],
+  ['code', 'generation.widgetCode'],
+  ['game', 'generation.widgetGame'],
+  ['visualization3d', 'generation.widgetVisualization3d'],
+];
+
+function InteractiveConfigDisclosure({
+  outline,
+  onUpdate,
+  theme,
+}: {
+  outline: SceneOutline;
+  onUpdate: (updates: Partial<SceneOutline>) => void;
+  theme: (typeof TYPE_THEME)[SceneType];
+}) {
+  const { t } = useI18n();
+  const widgetType = outline.widgetType ?? 'simulation';
+  const concept = outline.widgetOutline?.concept ?? '';
+
+  // A gated procedural-skill outline isn't manually selectable, but it can reach
+  // here via preservation; surface it as the current (selected) kind so it isn't
+  // mislabeled, and never clobber its task-engine fields on a same-kind re-select.
+  const kinds: ReadonlyArray<readonly [WidgetType, string]> =
+    widgetType === 'procedural-skill'
+      ? [['procedural-skill', 'generation.widgetProceduralSkill'], ...WIDGET_KINDS]
+      : WIDGET_KINDS;
+
+  const setWidgetType = (next: WidgetType) => {
+    if (next === widgetType) return; // same kind — keep the existing widgetOutline as-is
+    // Reset to the shared field only — keeping the previous kind's type-specific
+    // widgetOutline fields (language/gameType/diagramType/…) would leak stale config.
+    onUpdate({ widgetType: next, widgetOutline: { concept } });
+  };
+  const setConcept = (next: string) => {
+    onUpdate({ widgetType, widgetOutline: { ...outline.widgetOutline, concept: next } });
+  };
+
+  const currentLabel =
+    kinds.find(([value]) => value === widgetType)?.[1] ?? 'generation.widgetSimulation';
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className={cascadeSegmentClass(theme)}>
+          <span className="max-w-[8rem] truncate">{t(currentLabel)}</span>
+          <ChevronDown className="size-3 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6} className="w-64 space-y-2.5 p-3">
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.interactiveWidgetKind')}
+          </span>
+          <div className="flex flex-wrap gap-1">
+            {kinds.map(([value, labelKey]) => {
+              const selected = value === widgetType;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={selected}
+                  onClick={() => setWidgetType(value)}
+                  className={cn(
+                    'rounded-md border px-2 py-1.5 text-xs font-medium transition-all',
+                    selected
+                      ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200'
+                      : 'border-border/40 bg-transparent text-muted-foreground hover:border-border hover:bg-muted/60 hover:text-foreground',
+                  )}
+                >
+                  {t(labelKey)}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.interactiveConcept')}
+          </span>
+          <input
+            type="text"
+            value={concept}
+            onChange={(event) => setConcept(event.target.value)}
+            placeholder={t('generation.interactiveConceptPlaceholder')}
+            className={cn(
+              'w-full rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs',
+              'focus:border-emerald-400/50 focus:outline-none focus:ring-0',
+            )}
+          />
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function PblConfigDisclosure({
+  outline,
+  onUpdate,
+  theme,
+}: {
+  outline: SceneOutline;
+  onUpdate: (updates: Partial<SceneOutline>) => void;
+  theme: (typeof TYPE_THEME)[SceneType];
+}) {
+  const { t } = useI18n();
+  const [skillDraft, setSkillDraft] = useState('');
+  const projectTopic = outline.pblConfig?.projectTopic ?? '';
+  const projectDescription = outline.pblConfig?.projectDescription ?? '';
+  const skills = outline.pblConfig?.targetSkills ?? [];
+  const scenarioRoleplay = outline.pblConfig?.scenarioRoleplay === true;
+  const scenarioBrief = outline.pblConfig?.scenarioBrief ?? '';
+
+  const baseConfig = (): NonNullable<SceneOutline['pblConfig']> => ({
+    ...outline.pblConfig,
+    projectTopic,
+    projectDescription,
+    targetSkills: skills,
+  });
+
+  const updateConfig = (updates: Partial<NonNullable<SceneOutline['pblConfig']>>) => {
+    const nextConfig = { ...baseConfig(), ...updates };
+    if (nextConfig.scenarioRoleplay !== true) {
+      delete nextConfig.scenarioRoleplay;
+      delete nextConfig.scenarioBrief;
+    }
+    onUpdate({
+      pblConfig: nextConfig,
+    });
+  };
+
+  const updateSubtype = (nextScenarioRoleplay: boolean) => {
+    const nextConfig = baseConfig();
+    if (nextScenarioRoleplay) {
+      nextConfig.scenarioRoleplay = true;
+      nextConfig.scenarioBrief =
+        scenarioBrief.trim() || projectDescription || outline.description || projectTopic;
+    } else {
+      delete nextConfig.scenarioRoleplay;
+      delete nextConfig.scenarioBrief;
+    }
+    onUpdate({ pblConfig: nextConfig });
+  };
+
+  const addSkill = () => {
+    const value = skillDraft.trim();
+    if (!value || skills.includes(value)) {
+      setSkillDraft('');
+      return;
+    }
+    updateConfig({ targetSkills: [...skills, value] });
+    setSkillDraft('');
+  };
+  const removeSkill = (skill: string) => {
+    updateConfig({ targetSkills: skills.filter((s) => s !== skill) });
+  };
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button type="button" className={cascadeSegmentClass(theme)}>
+          <span className="max-w-[8rem] truncate">
+            {scenarioRoleplay
+              ? t('generation.pblSubtypeScenario')
+              : t('generation.pblSubtypeProject')}
+          </span>
+          <ChevronDown className="size-3 opacity-70" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" sideOffset={6} className="w-72 space-y-2.5 p-3">
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.pblSubtype')}
+          </span>
+          <div className="grid grid-cols-2 overflow-hidden rounded-md border border-border/50 bg-muted/30 p-0.5">
+            {[
+              { value: false, label: t('generation.pblSubtypeProject') },
+              { value: true, label: t('generation.pblSubtypeScenario') },
+            ].map((option) => {
+              const active = scenarioRoleplay === option.value;
+              return (
+                <button
+                  key={String(option.value)}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => updateSubtype(option.value)}
+                  className={cn(
+                    'rounded px-2 py-1 text-xs font-medium transition-colors',
+                    active
+                      ? 'bg-background text-foreground shadow-sm'
+                      : 'text-muted-foreground hover:text-foreground',
+                  )}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.pblProjectTopic')}
+          </span>
+          <input
+            type="text"
+            value={projectTopic}
+            onChange={(event) => updateConfig({ projectTopic: event.target.value })}
+            placeholder={t('generation.pblProjectTopicPlaceholder')}
+            className={cn(
+              'w-full rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs',
+              'focus:border-amber-400/50 focus:outline-none focus:ring-0',
+            )}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.pblProjectDescription')}
+          </span>
+          <textarea
+            value={projectDescription}
+            onChange={(event) => updateConfig({ projectDescription: event.target.value })}
+            placeholder={t('generation.pblProjectDescriptionPlaceholder')}
+            rows={2}
+            className={cn(
+              'w-full resize-none rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs',
+              'focus:border-amber-400/50 focus:outline-none focus:ring-0',
+            )}
+          />
+        </div>
+        {scenarioRoleplay && (
+          <div className="space-y-1.5">
+            <span className="text-xs font-medium text-muted-foreground">
+              {t('generation.pblScenarioBrief')}
+            </span>
+            <textarea
+              value={scenarioBrief}
+              onChange={(event) => updateConfig({ scenarioBrief: event.target.value })}
+              placeholder={t('generation.pblScenarioBriefPlaceholder')}
+              rows={2}
+              className={cn(
+                'w-full resize-none rounded-md border border-border/50 bg-background px-2 py-1.5 text-xs',
+                'focus:border-amber-400/50 focus:outline-none focus:ring-0',
+              )}
+            />
+          </div>
+        )}
+        <div className="space-y-1.5">
+          <span className="text-xs font-medium text-muted-foreground">
+            {t('generation.pblTargetSkills')}
+          </span>
+          {skills.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {skills.map((skill) => (
+                <span
+                  key={skill}
+                  className="inline-flex items-center gap-1 rounded-full bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-200"
+                >
+                  {skill}
+                  <button
+                    type="button"
+                    onClick={() => removeSkill(skill)}
+                    aria-label={t('generation.removeSkill')}
+                    className="inline-flex size-3 items-center justify-center rounded-full hover:bg-amber-500/20"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            type="text"
+            value={skillDraft}
+            onChange={(event) => setSkillDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addSkill();
+              }
+            }}
+            onBlur={addSkill}
+            placeholder={t('generation.pblAddSkill')}
+            className={cn(
+              'w-full rounded-md border border-dashed border-border/50 bg-background px-2 py-1.5 text-xs',
+              'focus:border-amber-400/50 focus:outline-none focus:ring-0',
+            )}
+          />
         </div>
       </PopoverContent>
     </Popover>

@@ -12,7 +12,7 @@
 
 <p align="center">
   <a href="https://jcst.ict.ac.cn/en/article/doi/10.1007/s11390-025-6000-0"><img src="https://img.shields.io/badge/Paper-JCST'26-blue?style=flat-square" alt="Paper"/></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-AGPL--3.0-blue.svg?style=flat-square" alt="License: AGPL-3.0"/></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green.svg?style=flat-square" alt="License: MIT"/></a>
   <a href="https://open.maic.chat/"><img src="https://img.shields.io/badge/Demo-Live-brightgreen?style=flat-square" alt="Live Demo"/></a>
   <a href="https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC&envDescription=Configure%20at%20least%20one%20LLM%20provider%20API%20key%20(e.g.%20OPENAI_API_KEY%2C%20ANTHROPIC_API_KEY).%20All%20providers%20are%20optional.&envLink=https%3A%2F%2Fgithub.com%2FTHU-MAIC%2FOpenMAIC%2Fblob%2Fmain%2F.env.example&project-name=openmaic&framework=nextjs"><img src="https://vercel.com/button" alt="Deploy with Vercel" height="20"/></a>
   <a href="#-openclaw-集成"><img src="https://img.shields.io/badge/OpenClaw-集成-F4511E?style=flat-square" alt="OpenClaw 集成"/></a>
@@ -39,6 +39,7 @@
 
 ## 🗞️ 动态
 
+- **2026-06-28** — [v0.3.0 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0) 项目式学习（PBL）v2 与课堂界面；“Edit with AI”专业模式编辑智能体；`@openmaic/*` SDK 系列（DSL/渲染器/导入器）发布至 npm；可选的分阶段模型路由；新增 GLM-5.2 / Kimi K2.7 Code / Qwen3.7 Plus·Max 等模型；职业学习任务引擎；新增韩语（ko-KR）；并将开源协议由 AGPL-3.0 调整为 MIT。查看[更新日志](CHANGELOG.md)。
 - **2026-06-02** — [v0.2.2 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2) MAIC Editor（v0）专业模式，可轻量编辑生成的幻灯片；生成前可编辑大纲；交互课堂离线导出；新增 Brave/百度/博查/MiniMax 搜索与 Azure STT；新增 Claude Opus 4.8 / MiniMax M3 / Gemini 3.5 Flash 等模型；新增繁体中文（zh-TW）与巴西葡萄牙语（pt-BR）。查看[更新日志](CHANGELOG.md)。
 - **2026-04-26** — [v0.2.1 发布！](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1) 接入 [VoxCPM2](https://github.com/OpenBMB/VoxCPM) TTS，支持音色克隆与自动生成音色；新增按模型思考配置；新增课程完成页与作答状态持久化；新增 DeepSeek-V4 / GPT-5.5 / GPT-Image-2 / 小米 MiMo / Hy3 等最新发布的模型。查看[更新日志](CHANGELOG.md)。
 - **2026-04-20** — **v0.2.0 发布！** 深度交互模式 — 3D 可视化、模拟实验、游戏、思维导图、在线编程，动手学习新体验。详见[功能特性](#-功能特性)。
@@ -678,7 +679,7 @@ OpenMAIC/
 
 ## 💼 商业合作
 
-本项目基于 AGPL-3.0 协议开源。商业授权合作请联系：**thu_maic@mail.tsinghua.edu.cn**
+本项目基于 MIT 协议开源，可免费商用。商业合作或共建请联系：**thu_maic@mail.tsinghua.edu.cn**
 
 ---
 
@@ -711,4 +712,13 @@ OpenMAIC/
 
 ## 📄 许可证
 
-本项目基于 [GNU Affero General Public License v3.0](LICENSE) 开源。
+本项目基于 [MIT License](LICENSE) 开源。
+
+### 第三方组件
+
+仓库内置的以下工作区子包**不**受根目录 MIT 许可证覆盖，各自保留原有协议：
+
+- `packages/mathml2omml` —— [LGPL-3.0-or-later](packages/mathml2omml/LICENSE)
+- `packages/pptxgenjs` —— [MIT](packages/pptxgenjs/package.json)（第三方）
+
+整体再分发本仓库时，上述子包内文件适用其各自的协议。

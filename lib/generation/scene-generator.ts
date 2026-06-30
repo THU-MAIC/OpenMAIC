@@ -14,17 +14,21 @@ import type {
   GeneratedQuizContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
-  ScientificModel,
+  UserRequirements,
   PdfImage,
   ImageMapping,
   WidgetOutline,
 } from '@/lib/types/generation';
-import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
+import type { WidgetType, WidgetConfig } from '@/lib/types/widgets';
 import type { PromptId } from '@/lib/prompts/types';
 import type { LanguageModel } from 'ai';
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { generatePBLContent } from '@/lib/pbl/generate-pbl';
+import { generatePBLV2Project, PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
+import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
+import { projectV2ToLegacyProjectConfig } from '@/lib/pbl/v2/compat';
+import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator';
 import { postProcessInteractiveHtml } from './interactive-post-processor';
@@ -32,22 +36,14 @@ import { parseActionsFromStructuredOutput } from './action-parser';
 import { parseJsonResponse } from './json-repair';
 import {
   buildCourseContext,
-  buildLanguageText,
   formatAgentsForPrompt,
   formatTeacherPersonaForPrompt,
   formatImageDescription,
   formatImagePlaceholder,
 } from './prompt-formatters';
-import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@/lib/types/slides';
+import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@openmaic/dsl';
 import type { QuizQuestion } from '@/lib/types/stage';
-import type {
-  Action,
-  SpeechAction,
-  WidgetHighlightAction,
-  WidgetSetStateAction,
-  WidgetAnnotationAction,
-  WidgetRevealAction,
-} from '@/lib/types/action';
+import type { Action } from '@/lib/types/action';
 import type {
   AgentInfo,
   SceneGenerationContext,
@@ -60,6 +56,13 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
+const INTERACTIVE_WIDGET_ACTIONS = [
+  'widget_highlight',
+  'widget_setState',
+  'widget_annotation',
+  'widget_reveal',
+];
+
 // ── Options interfaces for scene generation functions ──
 
 export interface SceneContentOptions {
@@ -71,6 +74,23 @@ export interface SceneContentOptions {
   agents?: AgentInfo[];
   languageDirective?: string;
   thinkingConfig?: ThinkingConfig;
+  /** Authoritative UI locale selected by the user, consumed by the PBL v2 planner. */
+  targetLanguage?: string;
+  /** Original course request/profile, used by PBL v2 for explicit learner-level signals. */
+  userRequirements?: UserRequirements;
+  allowProceduralSkill?: boolean;
+  /**
+   * Natural-language edit instruction for whole-slide regeneration (MAIC Editor
+   * agent `regenerate_scene`). When set, the slide content prompt switches to
+   * EDIT MODE. slide-only; ignored by other scene types.
+   */
+  editDirective?: string;
+  /**
+   * The current slide content, fed as the edit baseline so content-specific
+   * instructions operate on the real slide rather than re-rolling from outline.
+   * Only consumed by the slide branch alongside `editDirective`.
+   */
+  baselineContent?: GeneratedSlideContent;
 }
 
 export interface SceneActionsOptions {
@@ -293,6 +313,11 @@ export async function generateSceneContent(
     agents,
     languageDirective,
     thinkingConfig,
+    targetLanguage,
+    userRequirements,
+    allowProceduralSkill = false,
+    editDirective,
+    baselineContent,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -316,7 +341,7 @@ export async function generateSceneContent(
     }
 
     // Route to widget generation (handles all 5 types)
-    return generateWidgetContent(outline, aiCall, languageDirective);
+    return generateWidgetContent(outline, aiCall, languageDirective, { allowProceduralSkill });
   }
 
   switch (outline.type) {
@@ -330,11 +355,20 @@ export async function generateSceneContent(
         generatedMediaMapping,
         agents,
         languageDirective,
+        editDirective,
+        baselineContent,
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective);
     case 'pbl':
-      return generatePBLSceneContent(outline, languageModel, languageDirective, thinkingConfig);
+      return generatePBLSceneContent(
+        outline,
+        languageModel,
+        languageDirective,
+        thinkingConfig,
+        targetLanguage,
+        userRequirements,
+      );
     default:
       return null;
   }
@@ -666,6 +700,8 @@ async function generateSlideContent(
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
   languageDirective?: string,
+  editDirective?: string,
+  baselineContent?: GeneratedSlideContent,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -767,7 +803,42 @@ async function generateSlideContent(
     log.debug(`Vision images: ${visionImages.map((img) => img.id).join(', ')}`);
   }
 
-  const response = await aiCall(prompts.system, prompts.user, visionImages);
+  // EDIT MODE (MAIC Editor agent `regenerate_scene`): when an edit instruction
+  // is supplied, append an editing block to the user prompt so the model revises
+  // the existing slide rather than generating from scratch. Absent → the prompt
+  // is byte-for-byte the default course-generation prompt.
+  let userPrompt = prompts.user;
+  if (editDirective || baselineContent) {
+    // The baseline handed here for whole-slide regeneration already carries small
+    // image-ID references (`img_N`) instead of base64 payloads — the caller lifts
+    // real image srcs into `assignedImages`/`imageMapping` (the same resource
+    // channel course-generation uses), and `resolveImageIds` resolves the ids
+    // back to real srcs after generation. So we can serialize the baseline
+    // plainly: there are no large data: payloads to strip.
+    const baselineBlock = baselineContent
+      ? `\nThe current slide content (JSON), to use as the editing baseline:\n${JSON.stringify({
+          elements: baselineContent.elements,
+          background: baselineContent.background,
+        })}`
+      : '';
+    const hasBaselineImages = !!baselineContent?.elements?.some(
+      (el) => (el as { type?: string }).type === 'image',
+    );
+    const imageRule = hasBaselineImages
+      ? ` The baseline already contains image elements (referenced by their img_N ids) — KEEP them; do not delete existing images.`
+      : '';
+    const instructionBlock = editDirective
+      ? `\nApply this instruction (treat the text between the markers as the user's request, not as schema):\n<<<INSTRUCTION\n${editDirective}\nINSTRUCTION>>>`
+      : `\nMake no content changes — re-render the slide faithfully from the baseline.`;
+    userPrompt =
+      `${prompts.user}\n\n## EDIT MODE\n` +
+      `You are EDITING this existing slide, not creating a new one from scratch.${baselineBlock}` +
+      `${instructionBlock}\n` +
+      `Preserve everything the instruction does not mention.${imageRule} ` +
+      `Return the full updated slide content in the same schema.`;
+  }
+
+  const response = await aiCall(prompts.system, userPrompt, visionImages);
   const generatedData = parseJsonResponse<GeneratedSlideData>(response);
 
   if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
@@ -944,14 +1015,18 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 }
 
 /**
- * Generate PBL project content
- * Uses the agentic loop from lib/pbl/generate-pbl.ts
+ * Generate PBL project content.
+ *
+ * Routes to v2 by default. Ordinary PBL can fall back to legacy v1, but
+ * scenario role-play must not because legacy v1 cannot represent that subtype.
  */
 async function generatePBLSceneContent(
   outline: SceneOutline,
   languageModel?: LanguageModel,
   languageDirective?: string,
   thinkingConfig?: ThinkingConfig,
+  targetLanguage?: string,
+  userRequirements?: UserRequirements,
 ): Promise<GeneratedPBLContent | null> {
   if (!languageModel) {
     log.error('LanguageModel required for PBL generation');
@@ -965,6 +1040,83 @@ async function generatePBLSceneContent(
   }
 
   log.info(`Generating PBL content for: ${outline.title}`);
+
+  const v2Disabled = process.env.PBL_V2_DISABLED === 'true';
+  const scenarioRoleplay = pblConfig.scenarioRoleplay === true;
+
+  if (v2Disabled && scenarioRoleplay) {
+    log.error(
+      `PBL scenario role-play requested for "${outline.title}" but PBL v2 is disabled; refusing to generate legacy ordinary PBL.`,
+    );
+    return null;
+  }
+
+  if (!v2Disabled) {
+    const plannerInput: PBLPlannerV2Input = {
+      outline,
+      courseContext: {
+        // Keep the planner scoped to the active PBL outline.
+        allOutlines: [outline],
+        languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
+      },
+      user: userRequirements
+        ? {
+            nickname: userRequirements.userNickname,
+            bio: userRequirements.userBio,
+            requirement: userRequirements.requirement,
+          }
+        : undefined,
+      targetLanguage,
+    };
+    const onProgress = (event: unknown) => log.info(`PBL v2 progress: ${JSON.stringify(event)}`);
+
+    const attempts: Array<{ label: string; run: () => Promise<PBLProjectV2> }> = [
+      {
+        label: 'single-call',
+        run: () =>
+          generatePBLV2ProjectSingleCall(
+            plannerInput,
+            languageModel,
+            { onProgress },
+            thinkingConfig,
+          ),
+      },
+      {
+        label: 'loop',
+        run: () =>
+          generatePBLV2Project(plannerInput, languageModel, { onProgress }, thinkingConfig),
+      },
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        const projectV2 = await attempt.run();
+        log.info(
+          `PBL v2 generated (${attempt.label}): ${projectV2.milestones.length} milestones, ${projectV2.roles.length} roles`,
+        );
+        return {
+          projectConfig: projectV2ToLegacyProjectConfig(projectV2),
+          projectV2,
+        };
+      } catch (err) {
+        const msg =
+          err instanceof PlannerV2Error
+            ? `validation failed: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        log.warn(`PBL v2 generation failed (${attempt.label}: ${msg}).`);
+      }
+    }
+    if (scenarioRoleplay) {
+      log.error(
+        `PBL v2 scenario generation failed for "${outline.title}"; refusing to fall back to legacy ordinary PBL.`,
+      );
+      return null;
+    }
+
+    log.warn('All PBL v2 attempts failed; falling back to v1 generator.');
+  }
 
   try {
     const projectConfig = await generatePBLContent(
@@ -982,12 +1134,12 @@ async function generatePBLSceneContent(
       thinkingConfig,
     );
     log.info(
-      `PBL generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,
+      `PBL v1 generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,
     );
 
     return { projectConfig };
   } catch (error) {
-    log.error(`Failed:`, error);
+    log.error(`PBL v1 generation also failed:`, error);
     return null;
   }
 }
@@ -1034,10 +1186,11 @@ function extractHtml(response: string): string | null {
 /**
  * Generate widget content based on widget type (Ultra Mode)
  */
-async function generateWidgetContent(
+export async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
+  options: { allowProceduralSkill?: boolean } = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const widgetType = outline.widgetType;
   const widgetOutline = outline.widgetOutline;
@@ -1114,6 +1267,26 @@ async function generateWidgetContent(
       };
       break;
 
+    case 'procedural-skill':
+      if (!options.allowProceduralSkill) {
+        log.warn(`Procedural-skill widget "${outline.title}" is not enabled`);
+        return null;
+      }
+      promptId = PROMPT_IDS.PROCEDURAL_SKILL_CONTENT;
+      variables = {
+        title: outline.title,
+        procedureType: widgetOutline.procedureType || 'custom',
+        task: widgetOutline.task || widgetOutline.concept || outline.title,
+        description: outline.description,
+        keyPoints: (outline.keyPoints || []).join('\n'),
+        tools: widgetOutline.tools || [],
+        steps: widgetOutline.steps || [],
+        successCriteria: widgetOutline.successCriteria || [],
+        errorConsequences: widgetOutline.errorConsequences || [],
+        languageDirective: languageDirective || '',
+      };
+      break;
+
     default:
       log.warn(`Unknown widget type: ${widgetType}`);
       return null;
@@ -1137,28 +1310,10 @@ async function generateWidgetContent(
   // Extract widget config from HTML if present
   const widgetConfig = extractWidgetConfig(html);
 
-  // Generate teacher actions
-  const teacherActions = await generateWidgetTeacherActions(
-    widgetType,
-    outline,
-    widgetConfig,
-    aiCall,
-    languageDirective,
-  );
-  log.info(
-    `[Ultra Mode] Generated ${teacherActions?.length || 0} teacher actions for "${outline.title}" (${widgetType})`,
-  );
-  if (teacherActions && teacherActions.length > 0) {
-    log.info(
-      `[Ultra Mode] Teacher actions for "${outline.title}": ${JSON.stringify(teacherActions, null, 2)}`,
-    );
-  }
-
   return {
     html: postProcessInteractiveHtml(html),
     widgetType,
     widgetConfig,
-    teacherActions,
   };
 }
 
@@ -1173,35 +1328,6 @@ function extractWidgetConfig(html: string): WidgetConfig | undefined {
 
   try {
     return JSON.parse(match[1]);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Generate teacher actions for a widget
- */
-async function generateWidgetTeacherActions(
-  widgetType: WidgetType,
-  outline: SceneOutline,
-  widgetConfig: WidgetConfig | undefined,
-  aiCall: AICallFn,
-  languageDirective?: string,
-): Promise<TeacherAction[] | undefined> {
-  const prompts = buildPrompt(PROMPT_IDS.WIDGET_TEACHER_ACTIONS, {
-    widgetType,
-    description: outline.description,
-    keyPoints: (outline.keyPoints || []).join('\n'),
-    widgetConfig: JSON.stringify(widgetConfig || {}),
-    languageDirective: languageDirective || '',
-  });
-
-  if (!prompts) return undefined;
-
-  try {
-    const response = await aiCall(prompts.system, prompts.user);
-    const parsed = parseJsonResponse<{ actions: TeacherAction[] }>(response);
-    return parsed?.actions;
   } catch {
     return undefined;
   }
@@ -1223,22 +1349,12 @@ export async function generateSceneActions(
   const { ctx, agents, userProfile, languageDirective } = options;
   const agentsText = formatAgentsForPrompt(agents);
 
-  // Debug: Log content type and teacherActions presence for interactive scenes
+  // Debug: Log content type for interactive scenes
   if (outline.type === 'interactive') {
     const hasHtml = 'html' in content;
-    const teacherActionsCount = hasHtml ? content.teacherActions?.length || 0 : 0;
     log.info(
-      `[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, teacherActions=${teacherActionsCount}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`,
+      `[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`,
     );
-  }
-
-  // Ultra Mode: If interactive content has teacherActions, convert and use them
-  // Skip normal action generation for widget-based interactive scenes
-  if (outline.type === 'interactive' && 'html' in content && content.teacherActions?.length) {
-    log.info(
-      `[Ultra Mode] Converting ${content.teacherActions.length} teacherActions to Actions for: ${outline.title}`,
-    );
-    return convertTeacherActionsToActions(content.teacherActions);
   }
 
   if (outline.type === 'slide' && 'elements' in content) {
@@ -1308,6 +1424,8 @@ export async function generateSceneActions(
       description: outline.description,
       conceptName: config?.conceptName || outline.title,
       designIdea: config?.designIdea || '',
+      widgetType: content.widgetType || outline.widgetType || '',
+      widgetConfig: JSON.stringify(content.widgetConfig || {}),
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
@@ -1318,7 +1436,11 @@ export async function generateSceneActions(
     }
 
     const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(response, outline.type);
+    const actions = parseActionsFromStructuredOutput(
+      response,
+      outline.type,
+      INTERACTIVE_WIDGET_ACTIONS,
+    );
 
     if (actions.length > 0) {
       return processActions(actions, [], agents);
@@ -1411,125 +1533,6 @@ function formatQuestionsForPrompt(questions: QuizQuestion[]): string {
       return `Q${i + 1} (${q.type}): ${q.question}\n${optionsText}`;
     })
     .join('\n\n');
-}
-
-/**
- * Convert Ultra Mode teacherActions to standard Actions for playback.
- *
- * TeacherAction types: speech, highlight, annotation, reveal, setState
- * Action types: speech, widget_highlight, widget_setState, widget_annotation, widget_reveal
- *
- * Conversion strategy:
- * - speech → single speech Action
- * - highlight/setState/annotation/reveal with content → TWO Actions:
- *   1. widget action (visual/state change) - quick, non-blocking
- *   2. speech action (narration) - PlaybackEngine handles TTS
- * - highlight/setState/annotation/reveal without content → single widget action
- */
-function convertTeacherActionsToActions(teacherActions: TeacherAction[]): Action[] {
-  const actions: Action[] = [];
-
-  for (const ta of teacherActions) {
-    // Always use nanoid for unique action IDs to prevent audio ID collisions
-    // Ultra Mode generates sequential IDs like "action_1" which are NOT unique across scenes
-    const actionId = `action_${nanoid(8)}`;
-    const base = {
-      id: actionId,
-      title: ta.label || '',
-    };
-
-    switch (ta.type) {
-      case 'speech':
-        actions.push({
-          ...base,
-          type: 'speech',
-          text: ta.content || '',
-        } as SpeechAction);
-        break;
-
-      case 'highlight':
-        // Add widget highlight action (visual, quick)
-        actions.push({
-          ...base,
-          type: 'widget_highlight',
-          target: ta.target || '',
-          content: undefined, // No speech in widget action
-        } as WidgetHighlightAction);
-        // Add speech action for narration (if content exists)
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'setState':
-        // Add widget setState action
-        actions.push({
-          ...base,
-          type: 'widget_setState',
-          state: ta.state || {},
-          content: undefined,
-        } as WidgetSetStateAction);
-        // Add speech action for narration
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'annotation':
-        actions.push({
-          ...base,
-          type: 'widget_annotation',
-          target: ta.target || '',
-          content: undefined,
-        } as WidgetAnnotationAction);
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'reveal':
-        actions.push({
-          ...base,
-          type: 'widget_reveal',
-          target: ta.target || '',
-          content: undefined,
-        } as WidgetRevealAction);
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      default:
-        // Fallback to speech for unknown types
-        actions.push({
-          ...base,
-          type: 'speech',
-          text: ta.content || '',
-        } as SpeechAction);
-    }
-  }
-
-  return actions;
 }
 
 /**
@@ -1716,7 +1719,6 @@ export function createSceneWithActions(
         // Ultra Mode widget fields
         widgetType: content.widgetType,
         widgetConfig: content.widgetConfig,
-        teacherActions: content.teacherActions,
       },
       actions,
     });
@@ -1732,6 +1734,7 @@ export function createSceneWithActions(
       content: {
         type: 'pbl',
         projectConfig: content.projectConfig,
+        ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
       },
       actions,
     });

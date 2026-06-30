@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTImageElement } from '@/lib/types/slides';
+import type { PPTImageElement } from '@openmaic/dsl';
 import { useMediaStageId } from '@/lib/contexts/media-stage-context';
 import {
   useMediaGenerationStore,

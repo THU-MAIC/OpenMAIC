@@ -28,6 +28,14 @@ interface EditShellProps {
    * is hidden, so the entire top chrome reduces to a single bar.
    */
   readonly commandTrailing?: ReactNode;
+  /**
+   * Optional right-side panel slot. Used by the MAIC Agent PoC to mount the
+   * AI sidebar. Like `leftRail`, it is a pure chrome handoff — surface code
+   * never imports it. Collapses to zero width when absent.
+   */
+  readonly rightRail?: ReactNode;
+  /** Optional bottom bar (under the canvas) — used for the actions timeline. */
+  readonly bottomRail?: ReactNode;
 }
 
 const CHROME_TRANSITION = { duration: CHROME_DURATION, ease: CHROME_EASE } as const;
@@ -58,19 +66,25 @@ const LEFT_RAIL_DELAY = CHROME_STAGGER * 2;
  * Architecture: this shell resolves `scene.type` to a registered surface
  * (or falls back to NOOP_SURFACE for unregistered types) and **never
  * branches into a different component type**. The same `<Frame>` mounts
- * across every scene-type change — only the `surface.CanvasComponent`
- * inside the canvas slot swaps. That guarantees CommandBar and `leftRail`
+ * across every scene-type change — only the `surface.SurfaceComponent`
+ * inside the center slot swaps. That guarantees CommandBar and `leftRail`
  * never remount during scene navigation, removing the chrome flicker that
  * the previous two-branch design caused (PR3a rearch).
  */
-export function EditShell({ scene, leftRail, commandTrailing }: EditShellProps) {
+export function EditShell({
+  scene,
+  leftRail,
+  commandTrailing,
+  rightRail,
+  bottomRail,
+}: EditShellProps) {
   const surface = sceneEditorRegistry.resolve(scene.type) ?? NOOP_SURFACE;
   // Surface state is published from a child runner (keyed by sceneType so it
   // remounts when the surface identity changes — that's the boundary at which
   // rules-of-hooks naturally allows a different hook signature). The chrome
   // around it stays mounted and consumes state via these props.
   const [state, setState] = useState<SurfaceState | null>(null);
-  const CanvasComponent = surface.CanvasComponent;
+  const SurfaceComponent = surface.SurfaceComponent;
 
   return (
     <>
@@ -89,8 +103,10 @@ export function EditShell({ scene, leftRail, commandTrailing }: EditShellProps) 
         history={state?.history}
         commands={state?.commands}
         trailing={commandTrailing}
+        rightRail={rightRail}
+        bottomRail={bottomRail}
       >
-        <CanvasComponent />
+        <SurfaceComponent />
         {state?.insertItems && state.insertItems.length > 0 && (
           <FloatingInsertToolbar items={state.insertItems} />
         )}
@@ -210,10 +226,21 @@ interface FrameProps {
   readonly history?: React.ComponentProps<typeof CommandBar>['history'];
   readonly commands?: React.ComponentProps<typeof CommandBar>['commands'];
   readonly trailing?: ReactNode;
+  readonly rightRail?: ReactNode;
+  readonly bottomRail?: ReactNode;
   readonly children: ReactNode;
 }
 
-function Frame({ title, leftRail, history, commands, trailing, children }: FrameProps) {
+function Frame({
+  title,
+  leftRail,
+  history,
+  commands,
+  trailing,
+  rightRail,
+  bottomRail,
+  children,
+}: FrameProps) {
   const prefersReducedMotion = useReducedMotion();
 
   // Chrome layers fade in (opacity only) — deliberately NO transform (x/y)
@@ -271,6 +298,8 @@ function Frame({ title, leftRail, history, commands, trailing, children }: Frame
           </div>
         </div>
       }
+      rightSlot={rightRail ? <div className="h-full shrink-0">{rightRail}</div> : null}
+      bottomSlot={bottomRail ?? null}
     />
   );
 }
