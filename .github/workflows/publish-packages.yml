@@ -7,6 +7,8 @@ name: Publish @openmaic packages
 # a recursive publish must never touch them.
 #
 # Triggers:
+#   - merge a change to one of the @openmaic/* package manifests on `main`
+#     (real publish). This is the normal path for version-bump releases.
 #   - push a tag like `@openmaic/dsl@0.1.0` (real publish). NOTE: any @openmaic/*
 #     tag runs `pnpm -r publish` over all three packages — pnpm skips versions
 #     already on the registry, so in steady state this is idempotent. The tag is a
@@ -22,8 +24,13 @@ name: Publish @openmaic packages
 
 on:
   push:
+    branches: [main]
     tags:
       - "@openmaic/*@*"
+    paths:
+      - "packages/@openmaic/dsl/package.json"
+      - "packages/@openmaic/renderer/package.json"
+      - "packages/@openmaic/importer/package.json"
   workflow_dispatch:
     inputs:
       dry_run:
