@@ -536,6 +536,11 @@ function fixElementDefaults(
   elements: GeneratedSlideData['elements'],
   assignedImages?: PdfImage[],
 ): GeneratedSlideData['elements'] {
+  // Index assigned images by id once (O(m)) so the per-image-element lookup
+  // below is O(1) instead of a `.find` nested inside this map (which made the
+  // pass O(elements × images)).
+  const imageMetaById = new Map((assignedImages ?? []).map((img) => [img.id, img]));
+
   return elements.map((el) => {
     // Fix line elements
     if (el.type === 'line') {
@@ -595,7 +600,7 @@ function fixElementDefaults(
 
       // Correct dimensions using known aspect ratio (src is still img_id at this point)
       if (assignedImages && typeof imageEl.src === 'string') {
-        const imgMeta = assignedImages.find((img) => img.id === imageEl.src);
+        const imgMeta = imageMetaById.get(imageEl.src);
         if (imgMeta?.width && imgMeta?.height) {
           const knownRatio = imgMeta.width / imgMeta.height;
           const curW = (el.width || 400) as number;
@@ -1682,6 +1687,7 @@ export function createSceneWithActions(
         canvas: slide,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1697,6 +1703,7 @@ export function createSceneWithActions(
         questions: content.questions,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1716,6 +1723,7 @@ export function createSceneWithActions(
         widgetConfig: content.widgetConfig,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1732,6 +1740,7 @@ export function createSceneWithActions(
         ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;

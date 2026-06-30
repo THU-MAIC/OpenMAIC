@@ -26,6 +26,7 @@ import { useStageStore } from '@/lib/store/stage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import type { SceneContextMap } from '@/app/api/agent/edit/route';
 import { mergeAssistantParts, type PiPart } from './merge-assistant-parts';
+import { resolveSceneOutline } from './resolve-scene-outline';
 import { planRegenerateApply, type RegenerateDetails } from './apply-regenerate';
 import { applyScenePatchInSync } from './apply-slide-content';
 import { useRegenSnapshots } from './regen-snapshots';
@@ -488,29 +489,19 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         // into the tool deps so the model never fabricates outline/content.
         const storeState = useStageStore.getState();
         const { scenes, outlines, stage } = storeState;
+        // The full outline list in CURRENT scene order — each scene resolved by
+        // its stable `outlineId` (reorder/insert/delete rebalances `order`, and
+        // inserted/duplicated scenes have no persisted outline). The persisted
+        // `outlines` array is the original generation plan, so handing it over
+        // raw would give regenerate-scene/-actions a stale page index / order /
+        // title list. See resolveSceneOutline.
+        const allOutlines = scenes.map((s) => resolveSceneOutline(s, outlines));
         const sceneContextMap: SceneContextMap = {};
         for (const scene of scenes) {
-          const outline = outlines.find((o) => o.order === scene.order) ?? {
-            id: scene.id,
-            type: scene.type,
-            title: scene.title,
-            description: '',
-            keyPoints: [],
-            order: scene.order,
-          };
+          const outline = resolveSceneOutline(scene, outlines);
           sceneContextMap[scene.id] = {
             outline,
-            allOutlines:
-              outlines.length > 0
-                ? outlines
-                : scenes.map((s) => ({
-                    id: s.id,
-                    type: s.type,
-                    title: s.title,
-                    description: '',
-                    keyPoints: [],
-                    order: s.order,
-                  })),
+            allOutlines,
             content: scene.content,
             stageId: scene.stageId,
             languageDirective: stage?.languageDirective,

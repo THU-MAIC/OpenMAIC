@@ -290,8 +290,11 @@ function getShadowOption(shadow: PPTElementShadow, ratioPx2Pt: number): pptxgen.
     type: 'outer',
     color: c.color.replace('#', ''),
     opacity: c.alpha,
+    // pptxgenjs shadow blur AND offset are in points; the source model is in
+    // pixels. blur was converted but offset was not, so shadows exported ~33%
+    // too far at the default viewport (ratioPx2Pt = 96/72 × viewportSize/960).
     blur: shadow.blur / ratioPx2Pt,
-    offset,
+    offset: offset / ratioPx2Pt,
     angle,
   };
 }

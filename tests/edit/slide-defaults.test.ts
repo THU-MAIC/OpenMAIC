@@ -86,6 +86,11 @@ describe('createBlankSlideScene', () => {
     expect(s.content.canvas.background?.type).toBe('solid');
   });
 
+  it('starts with no actions (engine dwells; no seeded blank speech)', () => {
+    const s = createBlankSlideScene('stage-1', 'Untitled', 1);
+    expect(s.actions).toEqual([]);
+  });
+
   it('mints a fresh scene id + slide id on every call', () => {
     const a = createBlankSlideScene('stage-1', 'A', 1);
     const b = createBlankSlideScene('stage-1', 'B', 2);
@@ -108,6 +113,12 @@ describe('duplicateSlideScene', () => {
     expect(dup.content.canvas.id).not.toBe(source.content.canvas.id);
     expect(dup.content).not.toBe(source.content);
     expect(dup.content.canvas).not.toBe(source.content.canvas);
+  });
+
+  it('does not inherit the source outlineId (a copy is not generated from it)', () => {
+    const source = makeSlideScene({ outlineId: 'src-outline' } as Partial<Scene>);
+    const dup = duplicateSlideScene(source, '(copy)', 2);
+    expect(dup.outlineId).toBeUndefined();
   });
 
   it('reassigns every element id so React keys cannot collide', () => {

@@ -428,7 +428,17 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       // Reset all roundtable/live state so scenes are fully isolated
       resetSceneState();
 
-      if (!currentScene || !currentScene.actions || currentScene.actions.length === 0) {
+      // A slide scene with no actions is still playable: the engine dwells on it
+      // (see resolvePlaybackCursor) so a freshly inserted / emptied blank slide
+      // shows for a beat and auto-play advances past it. Non-slide scenes
+      // (quiz / interactive / pbl) without timeline actions get no lecture engine
+      // as before. Don't touch `autoStartRef` here: in the PENDING_SCENE_ID
+      // handoff `currentScene` is null while a pending auto-start legitimately
+      // waits for the next generated scene to materialize.
+      const hasPlayableActions =
+        !!currentScene?.actions &&
+        (currentScene.actions.length > 0 || currentScene.type === 'slide');
+      if (!currentScene || !hasPlayableActions) {
         engineRef.current = null;
         setEngineMode('idle');
 

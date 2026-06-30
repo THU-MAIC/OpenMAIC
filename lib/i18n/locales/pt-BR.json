@@ -205,7 +205,8 @@
       "dragHandle": "Arraste para reordenar",
       "deckLabel": "Cenas",
       "moreActions": "Mais ações",
-      "rename": "Renomear"
+      "rename": "Renomear",
+      "sceneIncomplete": "Esta página tem conteúdo incompleto"
     },
     "zorder": {
       "toFront": "Trazer para a frente",
@@ -915,7 +916,9 @@
     "generatingInProgress": "Gerando...",
     "webSearching": "Buscando na Web",
     "webSearchingDesc": "Pesquisando informações atualizadas na web",
-    "webSearchFailed": "Falha na pesquisa na web"
+    "webSearchFailed": "Falha na pesquisa na web",
+    "outlinesReadyCount": "{{ready}} / {{total}} seções prontas",
+    "jumpToBlankTitle": "Ir para uma seção que ainda precisa de título"
   },
   "settings": {
     "title": "Configurações",

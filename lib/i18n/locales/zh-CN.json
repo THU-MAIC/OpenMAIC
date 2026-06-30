@@ -220,7 +220,8 @@
       "dragHandle": "拖动",
       "deckLabel": "场景",
       "moreActions": "更多操作",
-      "rename": "重命名"
+      "rename": "重命名",
+      "sceneIncomplete": "本页内容不完整"
     },
     "zorder": {
       "toFront": "置于顶层",
@@ -915,7 +916,9 @@
     "generatingInProgress": "生成中...",
     "webSearching": "网络搜索",
     "webSearchingDesc": "正在搜索网络获取最新资料",
-    "webSearchFailed": "网络搜索失败"
+    "webSearchFailed": "网络搜索失败",
+    "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
+    "jumpToBlankTitle": "跳到待补充标题的章节"
   },
   "settings": {
     "title": "设置",

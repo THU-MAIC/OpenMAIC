@@ -124,9 +124,27 @@ export async function buildSceneFromOutline(
 }
 
 /**
- * Build complete Scene object (without API/store)
+ * Build complete Scene object (without API/store).
+ *
+ * Stamps `outlineId` with the originating outline's id so editor agent tools
+ * can later resolve this scene's generation outline by identity rather than by
+ * the mutable `order` (which Pro-mode reorder/insert/delete rebalances).
  */
 export function buildCompleteScene(
+  outline: SceneOutline,
+  content:
+    | GeneratedSlideContent
+    | GeneratedQuizContent
+    | GeneratedInteractiveContent
+    | GeneratedPBLContent,
+  actions: Action[],
+  stageId: string,
+): Scene | null {
+  const scene = buildCompleteSceneInner(outline, content, actions, stageId);
+  return scene && { ...scene, outlineId: outline.id };
+}
+
+function buildCompleteSceneInner(
   outline: SceneOutline,
   content:
     | GeneratedSlideContent
