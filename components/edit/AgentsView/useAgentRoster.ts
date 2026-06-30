@@ -8,7 +8,6 @@ import {
   undoAgentEditOperation,
   redoAgentEditOperation,
   createAgentConfig,
-  teacherCount,
   type AgentRoster,
   type AgentRosterHistory,
   type AgentConfigPatch,
@@ -42,6 +41,11 @@ function resolvePreset(id: string): GeneratedAgentConfig | undefined {
   };
 }
 
+/** True when the id refers to a built-in global default agent (isDefault flag). */
+function isGlobalDefault(id: string): boolean {
+  return useAgentRegistry.getState().getAgent(id)?.isDefault === true;
+}
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -54,8 +58,6 @@ export interface AgentRosterController {
   update: (id: string, patch: AgentConfigPatch) => void;
   remove: (id: string) => void;
   reorder: (id: string, index: number) => void;
-  canRemove: (id: string) => boolean;
-  canChangeRole: (id: string, nextRole: string) => boolean;
   history: { canUndo: boolean; canRedo: boolean; undo: () => void; redo: () => void };
 }
 
@@ -69,7 +71,7 @@ export function useAgentRoster(): AgentRosterController {
 
   const [histState, setHistState] = useState<AgentRosterHistory>(() => {
     const roster: AgentRoster = stage
-      ? materializeRoster(stage, resolvePreset, makeId)
+      ? materializeRoster(stage, resolvePreset, makeId, isGlobalDefault)
       : [];
     return { past: [], present: roster, future: [] };
   });
@@ -156,31 +158,6 @@ export function useAgentRoster(): AgentRosterController {
     [applyOp],
   );
 
-  const canRemove = useCallback(
-    (id: string): boolean => {
-      const agent = histState.present.find((a) => a.id === id);
-      if (!agent) return false;
-      if (agent.role === 'teacher' && teacherCount(histState.present) <= 1) return false;
-      return true;
-    },
-    [histState.present],
-  );
-
-  const canChangeRole = useCallback(
-    (id: string, nextRole: string): boolean => {
-      const agent = histState.present.find((a) => a.id === id);
-      if (!agent) return true;
-      if (
-        agent.role === 'teacher' &&
-        nextRole !== 'teacher' &&
-        teacherCount(histState.present) <= 1
-      )
-        return false;
-      return true;
-    },
-    [histState.present],
-  );
-
   const undo = useCallback(() => {
     isDirtyRef.current = true;
     setHistState((prev) => undoAgentEditOperation(prev));
@@ -199,8 +176,6 @@ export function useAgentRoster(): AgentRosterController {
     update,
     remove,
     reorder,
-    canRemove,
-    canChangeRole,
     history: {
       canUndo: histState.past.length > 0,
       canRedo: histState.future.length > 0,

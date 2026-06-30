@@ -56,11 +56,11 @@ describe('materializeRoster – (a) generatedAgentConfigs present', () => {
 });
 
 describe('materializeRoster – (b) agentIds resolved via resolvePreset', () => {
-  it('maps agentIds through resolvePreset, assigning fresh ids (not original preset ids)', () => {
+  it('assigns fresh ids for global-default preset ids (isGlobalDefault → true)', () => {
     const presets = [makeConfig('a1', 'teacher'), makeConfig('a2', 'student')];
     const stage = { agentIds: ['a1', 'a2'] };
-    const result = materializeRoster(stage, makeResolver(presets), makeCounter());
-    // Must use fresh stage-scoped ids, never the global preset ids
+    const result = materializeRoster(stage, makeResolver(presets), makeCounter(), () => true);
+    // Global defaults get fresh stage-scoped ids, never the global preset ids
     expect(result.map((r) => r.id)).toEqual(['gen-1', 'gen-2']);
     expect(result.map((r) => r.id)).not.toContain('a1');
     expect(result.map((r) => r.id)).not.toContain('a2');
@@ -71,11 +71,23 @@ describe('materializeRoster – (b) agentIds resolved via resolvePreset', () => 
     expect(result[1].role).toBe('student');
   });
 
+  it('keeps original id for stage-generated ids (isGlobalDefault → false)', () => {
+    const presets = [makeConfig('gen-abc', 'teacher'), makeConfig('gen-xyz', 'student')];
+    const stage = { agentIds: ['gen-abc', 'gen-xyz'] };
+    const result = materializeRoster(stage, makeResolver(presets), makeCounter(), () => false);
+    // Stage-generated ids are preserved so scene references remain valid
+    expect(result.map((r) => r.id)).toEqual(['gen-abc', 'gen-xyz']);
+    expect(result[0].name).toBe('gen-abc');
+    expect(result[0].role).toBe('teacher');
+    expect(result[1].name).toBe('gen-xyz');
+    expect(result[1].role).toBe('student');
+  });
+
   it('drops ids that resolve to undefined', () => {
     const presets = [makeConfig('a1', 'teacher')];
     const stage = { agentIds: ['a1', 'unknown-x'] };
-    const result = materializeRoster(stage, makeResolver(presets), makeCounter());
-    // Only the resolved entry survives, with a fresh id
+    const result = materializeRoster(stage, makeResolver(presets), makeCounter(), () => true);
+    // Only the resolved entry survives, with a fresh id (a1 is a global default here)
     expect(result.map((r) => r.id)).toEqual(['gen-1']);
     expect(result[0].name).toBe('a1');
   });
@@ -106,7 +118,7 @@ describe('materializeRoster – (d) result always has ≥1 teacher', () => {
   it('resolved presets that include a teacher satisfy the invariant', () => {
     const presets = [makeConfig('t1', 'teacher'), makeConfig('s1', 'student')];
     const stage = { agentIds: ['t1', 's1'] };
-    const result = materializeRoster(stage, makeResolver(presets), makeCounter());
+    const result = materializeRoster(stage, makeResolver(presets), makeCounter(), () => true);
     const teachers = result.filter((a) => a.role === 'teacher');
     expect(teachers.length).toBeGreaterThanOrEqual(1);
   });
@@ -114,7 +126,7 @@ describe('materializeRoster – (d) result always has ≥1 teacher', () => {
   it('prepends a teacher when resolved presets contain no teacher', () => {
     const presets = [makeConfig('s1', 'student'), makeConfig('s2', 'student')];
     const stage = { agentIds: ['s1', 's2'] };
-    const result = materializeRoster(stage, makeResolver(presets), makeCounter());
+    const result = materializeRoster(stage, makeResolver(presets), makeCounter(), () => true);
     const teachers = result.filter((a) => a.role === 'teacher');
     expect(teachers.length).toBeGreaterThanOrEqual(1);
   });

@@ -100,21 +100,29 @@ interface PersonaEditorProps {
 }
 
 function PersonaEditor({ agentId, value, borderColor, onUpdate }: PersonaEditorProps) {
+  const [prevValue, setPrevValue] = useState(value);
   const [draft, setDraft] = useState(value);
+  const [focused, setFocused] = useState(false);
+
+  // Sync draft when value changes externally (e.g. undo/redo), but only when
+  // not focused — avoids clobbering in-progress typing. Render-time state
+  // update: React re-renders immediately with the new draft before painting.
+  if (prevValue !== value && !focused) {
+    setPrevValue(value);
+    setDraft(value);
+  }
 
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const v = e.target.value.slice(0, PERSONA_MAX);
     setDraft(v);
   };
 
+  const handleFocus = () => setFocused(true);
+
   const handleBlur = () => {
+    setFocused(false);
     if (draft !== value) onUpdate(agentId, draft);
   };
-
-  // Keep draft in sync when parent value changes (e.g. undo)
-  if (draft !== value && document.activeElement !== document.querySelector(`[data-persona="${agentId}"]`)) {
-    // only sync when not focused — avoids clobbering in-progress edits
-  }
 
   return (
     <div className="flex flex-col gap-1.5">
@@ -125,6 +133,7 @@ function PersonaEditor({ agentId, value, borderColor, onUpdate }: PersonaEditorP
         data-persona={agentId}
         value={draft}
         onChange={handleChange}
+        onFocus={handleFocus}
         onBlur={handleBlur}
         rows={4}
         maxLength={PERSONA_MAX}
@@ -180,7 +189,10 @@ function TeacherCard({ agent, open, onToggle, onUpdate }: TeacherCardProps) {
           agent={agent}
           size={42}
           ringColor="#722ed1"
-          onPickerOpen={() => setShowAvatarPicker((v) => !v)}
+          onPickerOpen={() => {
+            if (!open) { onToggle(); return; }
+            setShowAvatarPicker((v) => !v);
+          }}
         />
 
         <div className="min-w-0 flex-1">
@@ -302,7 +314,10 @@ function ClassmateCard({
           agent={agent}
           size={40}
           ringColor={ringColor}
-          onPickerOpen={() => setShowAvatarPicker((v) => !v)}
+          onPickerOpen={() => {
+            if (!open) { onToggle(); return; }
+            setShowAvatarPicker((v) => !v);
+          }}
         />
 
         <div className="min-w-0 flex-1">

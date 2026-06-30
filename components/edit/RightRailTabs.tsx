@@ -16,6 +16,7 @@ import type { AgentEditSessionRecord } from '@/lib/agent/client/agent-edit-sessi
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { AgentPanel } from '@/components/edit/AgentPanel/AgentPanel';
 import { AgentRosterPanel } from '@/components/edit/AgentsView/AgentRosterPanel';
+import { shouldRenderAgentPanel } from '@/components/edit/agent-panel-visibility';
 
 const MIN_WIDTH = 320;
 const MAX_WIDTH = 640;
@@ -29,6 +30,8 @@ export interface RightRailTabsProps {
   readonly clearThread: () => void;
   readonly hasMessages: boolean;
   readonly canSend: boolean;
+  readonly agentEnabled: boolean;
+  readonly isRunning: boolean;
   readonly sessions: AgentEditSessionRecord[];
   readonly activeSessionId: string | undefined;
   readonly switchSession: (id: string) => Promise<void>;
@@ -37,12 +40,16 @@ export interface RightRailTabsProps {
 }
 
 /**
- * Tabbed right rail: "Edit with AI" | "角色"
+ * Tabbed right rail: "Edit with AI" | "课堂阵容"
  *
  * Owns the aside wrapper, resize handle, collapse state, and tab state.
  * The AgentPanel is rendered in naked (no-wrapper) mode for the AI tab;
- * the 角色 tab renders AgentRosterPanel. Both are kept mounted so state
+ * the 课堂阵容 tab renders AgentRosterPanel. Both are kept mounted so state
  * is preserved when switching tabs (hidden via CSS).
+ *
+ * The "Edit with AI" tab is gated by shouldRenderAgentPanel — when the current
+ * scene type does not support AI editing, the tab is hidden and the active tab
+ * falls back to 课堂阵容 (which is always available, as agents are stage-level).
  */
 export function RightRailTabs({
   scene,
@@ -50,6 +57,8 @@ export function RightRailTabs({
   clearThread,
   hasMessages,
   canSend,
+  agentEnabled,
+  isRunning,
   sessions,
   activeSessionId,
   switchSession,
@@ -57,7 +66,14 @@ export function RightRailTabs({
   refreshSessions,
 }: RightRailTabsProps) {
   const { t } = useI18n();
-  const [activeTab, setActiveTab] = useState<RailTab>('ai');
+  const showAiTab = shouldRenderAgentPanel({ agentEnabled, hasMessages, isRunning });
+  const [activeTab, setActiveTab] = useState<RailTab>(() => (showAiTab ? 'ai' : 'agents'));
+
+  // When the AI tab becomes unavailable (e.g. PBL scene), fall back to agents tab.
+  // Render-time setState: React re-renders immediately before painting.
+  if (!showAiTab && activeTab === 'ai') {
+    setActiveTab('agents');
+  }
   const [collapsed, setCollapsed] = useState(false);
 
   const railRef = useRef<HTMLElement>(null);
@@ -151,11 +167,13 @@ export function RightRailTabs({
       {/* Tab strip — single header row, no nested header */}
       <div className="flex h-10 shrink-0 items-center gap-1 border-b border-gray-100 px-2 dark:border-gray-800">
         <div role="tablist" className="flex items-center gap-0.5 rounded-lg bg-zinc-100/80 p-0.5 dark:bg-zinc-800">
-          <RailTabButton
-            label="Edit with AI"
-            active={activeTab === 'ai'}
-            onClick={() => setActiveTab('ai')}
-          />
+          {showAiTab && (
+            <RailTabButton
+              label="Edit with AI"
+              active={activeTab === 'ai'}
+              onClick={() => setActiveTab('ai')}
+            />
+          )}
           <RailTabButton
             label="课堂阵容"
             icon={<UsersRound className="size-[15px]" />}

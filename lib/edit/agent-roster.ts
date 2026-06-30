@@ -17,6 +17,7 @@ export function materializeRoster(
   stage: Pick<Stage, 'agentIds' | 'generatedAgentConfigs'>,
   resolvePreset: (id: string) => GeneratedAgentConfig | undefined,
   makeId: () => string,
+  isGlobalDefault: (id: string) => boolean = () => false,
 ): AgentRoster {
   // Step 1 — already materialized.
   // Deliberately returns the array as-is (by reference, no defensive copy) and does NOT
@@ -26,15 +27,19 @@ export function materializeRoster(
     return stage.generatedAgentConfigs;
   }
 
-  // Step 2 — resolve preset ids, cloning each to a fresh stage-scoped id so the
-  // editable roster never reuses a global default-* id (prevents saveGeneratedAgents
-  // from overwriting built-in defaults on the first edit).
+  // Step 2 — resolve preset ids. Global default presets get a fresh stage-scoped
+  // id (prevents saveGeneratedAgents from overwriting built-in defaults on the
+  // first edit). Stage-generated ids are kept as-is so existing scene references
+  // (scene.multiAgent.agentIds) remain valid after a roster edit.
   let roster: AgentRoster = [];
   if (stage.agentIds && stage.agentIds.length > 0) {
     roster = stage.agentIds
-      .map((id) => resolvePreset(id))
-      .filter((cfg): cfg is GeneratedAgentConfig => cfg !== undefined)
-      .map((cfg) => ({ ...cfg, id: makeId() }));
+      .map((id) => {
+        const cfg = resolvePreset(id);
+        if (!cfg) return undefined;
+        return isGlobalDefault(id) ? { ...cfg, id: makeId() } : { ...cfg };
+      })
+      .filter((cfg): cfg is GeneratedAgentConfig => cfg !== undefined);
   }
 
   // Step 3 — fallback to a single default teacher when nothing was resolved
