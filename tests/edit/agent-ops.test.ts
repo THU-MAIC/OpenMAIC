@@ -66,6 +66,17 @@ describe('history overload + undo/redo', () => {
     expect(h.present.map((x) => x.id)).toEqual(['a', 'b']);
   });
 
+  it('two agent.update ops on same agent+field produce two separate undo steps', () => {
+    let h: AgentRosterHistory = { past: [], present: [T('a')], future: [] };
+    h = applyAgentEditOperation(h, { type: 'agent.update', id: 'a', patch: { name: 'First Edit' } });
+    h = applyAgentEditOperation(h, { type: 'agent.update', id: 'a', patch: { name: 'Second Edit' } });
+    expect(h.present[0].name).toBe('Second Edit');
+    h = undoAgentEditOperation(h);
+    expect(h.present[0].name).toBe('First Edit');
+    h = undoAgentEditOperation(h);
+    expect(h.present[0].name).toBe('a');
+  });
+
   it('caps past history at 50 after 60 adds', () => {
     let h: AgentRosterHistory = { past: [], present: [T('seed')], future: [] };
     for (let i = 0; i < 60; i++) {

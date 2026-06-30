@@ -525,4 +525,6 @@ const debouncedSaveAgents = debounce(async () => {
   if (!stage?.id || !stage.generatedAgentConfigs) return;
   const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
   await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
+  const { useSettingsStore } = await import('@/lib/store/settings');
+  useSettingsStore.getState().setSelectedAgentIds(stage.generatedAgentConfigs.map((a) => a.id));
 }, 500);
