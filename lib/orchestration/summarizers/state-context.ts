@@ -137,9 +137,7 @@ export function buildStateContext(storeState: StatelessChatRequest['storeState']
       if (currentScene.content.type === 'quiz') {
         const questions = currentScene.content.questions;
         const hasGradedResults =
-          !!quizResults &&
-          quizResults.sceneId === currentSceneId &&
-          quizResults.results.length > 0;
+          !!quizResults && quizResults.sceneId === currentSceneId && quizResults.results.length > 0;
 
         if (hasGradedResults && quizResults) {
           // Student has submitted. Surface their answers, correctness, the
@@ -153,9 +151,7 @@ export function buildStateContext(storeState: StatelessChatRequest['storeState']
             const ans = answersById?.[q.id];
             const studentAnswer = Array.isArray(ans) ? ans.join(', ') : (ans ?? '');
             const correctAnswer =
-              Array.isArray(q.answer) && q.answer.length > 0
-                ? q.answer.join(', ')
-                : '(open-ended)';
+              Array.isArray(q.answer) && q.answer.length > 0 ? q.answer.join(', ') : '(open-ended)';
             const verdict = r ? r.status.toUpperCase() : 'UNGRADED';
             const points = q.points ?? 1;
             const earned = r?.earned ?? 0;
@@ -195,8 +191,8 @@ export function buildStateContext(storeState: StatelessChatRequest['storeState']
             [
               `Quiz scene — the student has NOT submitted yet. ${questions.length} question(s) below. You have this so you can clarify when the student asks about a specific item — NOT so you can teach them through it preemptively.`,
               'Strict rules while the quiz is unsubmitted (override everything else):',
-              "- Do NOT proactively list, recite, paraphrase, summarise, or walk through the questions. Mentioning them at all on your own initiative is a leak.",
-              "- Do NOT reveal the correct answer, eliminate options, or hint strongly enough that the answer is obvious. Even a leading phrase like \"think about whether x is really an integer\" is too much when it points at the answer.",
+              '- Do NOT proactively list, recite, paraphrase, summarise, or walk through the questions. Mentioning them at all on your own initiative is a leak.',
+              '- Do NOT reveal the correct answer, eliminate options, or hint strongly enough that the answer is obvious. Even a leading phrase like "think about whether x is really an integer" is too much when it points at the answer.',
               '- Do NOT teach the underlying concept end-to-end here. The concepts were already taught earlier; re-teaching them now is equivalent to giving the answers.',
               '- If the student claims to be done but no submitted results have arrived in this context, treat the absence of `Quiz results` above as authoritative — they have NOT submitted. Point them at the Submit button on the right-hand panel; do not start grading or summarising from memory.',
               '- If the student asks for help on a SPECIFIC question (by number, by option, or by quoting the stem), you MAY ask a single Socratic question or clarify a concept WITHOUT naming the correct option. Otherwise stay encouraging and meta ("看不懂哪一题？" / "Take it one question at a time").',
