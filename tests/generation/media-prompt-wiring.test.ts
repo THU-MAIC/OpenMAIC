@@ -11,6 +11,7 @@ describe('media prompt condition wiring', () => {
       capturedPrompt = `${system}\n${user}`;
       return JSON.stringify({
         languageDirective: 'Teach in English.',
+        courseTitle: 'Evaporation',
         outlines: [],
       });
     };
@@ -84,5 +85,60 @@ describe('media prompt condition wiring', () => {
     expect(capturedPrompt).not.toContain('ImageElement');
     expect(capturedPrompt).not.toContain('gen_img_');
     expect(capturedPrompt).not.toContain('{{');
+  });
+});
+
+describe('outline courseTitle parsing', () => {
+  const baseRequirements: UserRequirements = { requirement: 'Teach photosynthesis' };
+
+  async function runWith(raw: unknown) {
+    const aiCall: AICallFn = async (_system, _user) => JSON.stringify(raw);
+    return generateSceneOutlinesFromRequirements(baseRequirements, undefined, undefined, aiCall);
+  }
+
+  test('adopts a string courseTitle from the wrapper object', async () => {
+    const result = await runWith({
+      languageDirective: 'Teach in English.',
+      courseTitle: 'Photosynthesis Basics',
+      outlines: [],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.courseTitle).toBe('Photosynthesis Basics');
+  });
+
+  test('trims whitespace and caps overlong courseTitle defensively', async () => {
+    const long = 'A '.repeat(80); // 160 chars
+    const result = await runWith({
+      languageDirective: 'Teach in English.',
+      courseTitle: `  ${long}  `,
+      outlines: [],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.courseTitle?.length).toBeLessThanOrEqual(120);
+    // trimmed
+    expect(result.data?.courseTitle?.startsWith(' ')).toBe(false);
+  });
+
+  test('returns undefined courseTitle when the field is missing (graceful fallback)', async () => {
+    const result = await runWith({
+      languageDirective: 'Teach in English.',
+      outlines: [],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.courseTitle).toBeUndefined();
+  });
+
+  test('ignores a non-string / empty courseTitle', async () => {
+    const result = await runWith({
+      languageDirective: 'Teach in English.',
+      courseTitle: '   ',
+      outlines: [],
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.data?.courseTitle).toBeUndefined();
   });
 });

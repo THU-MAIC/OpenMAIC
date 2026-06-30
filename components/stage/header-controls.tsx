@@ -123,8 +123,9 @@ export function HeaderControls({
             and never gets clipped by an ancestor's overflow-hidden. */}
         <LanguageSwitcher />
 
-        {/* Theme — same Portal-backed DropdownMenu pattern. */}
-        <DropdownMenu>
+        {/* Theme — same Portal-backed DropdownMenu pattern. Non-modal keeps
+            Radix from body scroll-locking a fixed-height classroom layout. */}
+        <DropdownMenu modal={false}>
           <DropdownMenuTrigger asChild>
             <button
               className="p-2 rounded-full text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm transition-all group"
@@ -201,7 +202,16 @@ export function HeaderControls({
               ? 'opacity-60 cursor-not-allowed'
               : 'cursor-pointer hover:border-violet-400/60 dark:hover:border-violet-500/50',
           )}
-          title={mode === 'edit' ? t('stage.doneEditing') : t('stage.editCourse')}
+          // When disabled (e.g. the course-complete placeholder), explain why
+          // on hover and point the user to a real scene instead of a bare
+          // "Edit course" label they can't act on.
+          title={
+            !canEdit && mode !== 'edit'
+              ? t('stage.proModeDisabledHint')
+              : mode === 'edit'
+                ? t('stage.doneEditing')
+                : t('stage.editCourse')
+          }
         >
           <span
             className={cn(

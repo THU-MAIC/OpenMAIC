@@ -26,6 +26,7 @@ export function LanguageSwitcher({ onOpen }: LanguageSwitcherProps) {
 
   return (
     <DropdownMenu
+      modal={false}
       onOpenChange={(open) => {
         if (open) onOpen?.();
       }}

@@ -30,6 +30,7 @@ export interface StageListItem {
   createdAt: number;
   updatedAt: number;
   interactiveMode?: boolean;
+  taskEngineMode?: boolean;
 }
 
 /**
@@ -52,6 +53,7 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
       agentIds: data.stage.agentIds,
       videoManifest: data.stage.videoManifest,
       interactiveMode: data.stage.interactiveMode,
+      taskEngineMode: data.stage.taskEngineMode,
     });
 
     // Delete old scenes first to avoid orphaned data
@@ -164,6 +166,7 @@ export async function listStages(): Promise<StageListItem[]> {
           createdAt: stage.createdAt,
           updatedAt: stage.updatedAt,
           interactiveMode: stage.interactiveMode,
+          taskEngineMode: stage.taskEngineMode,
         };
       }),
     );
@@ -182,7 +185,7 @@ type ThumbnailMediaElement = {
   poster?: string;
 };
 
-type ThumbnailSlide = import('../types/slides').Slide;
+type ThumbnailSlide = import('@openmaic/dsl').Slide;
 
 function isGeneratedMediaRef(value: unknown): value is string {
   return typeof value === 'string' && /^gen_(img|vid)_[\w-]+$/i.test(value);

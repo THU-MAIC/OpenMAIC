@@ -20,13 +20,24 @@ export interface ResolvedVoice {
   voiceId: string;
 }
 
+/** A user-picked voice for one agent (same shape as AgentConfig.voiceConfig). */
+export interface AgentVoiceOverride {
+  providerId: TTSProviderId;
+  modelId?: string;
+  voiceId: string;
+}
+
+/** Persisted per-agent voice picks, keyed by agent id (settings store). */
+export type AgentVoiceOverrides = Record<string, AgentVoiceOverride>;
+
 /**
  * Resolve the TTS provider + voice for an agent, choosing only among ENABLED
  * providers (`enabledProviders` is the output of getEnabledProvidersWithVoices,
  * which already excludes disabled/unconfigured providers and browser-native).
  *
- * 1. If the agent has a voiceConfig whose provider is in `enabledProviders`
- *    (and the voiceId is known), use it.
+ * 1. If the user picked a voice for this agent (persisted `overrides`, keyed by
+ *    agent id) whose provider is in `enabledProviders` (and the voiceId is
+ *    known), use it; the agent's own voiceConfig is validated the same way next.
  * 2. Otherwise, deterministically pick the first provider in the given list by
  *    index. Whether browser-native can be picked depends on the caller's list:
  *    getEnabledProvidersWithVoices excludes it, getSelectableProvidersWithVoices
@@ -39,34 +50,29 @@ export function resolveAgentVoice(
   agent: AgentConfig,
   agentIndex: number,
   enabledProviders: ProviderWithVoices[],
+  overrides?: AgentVoiceOverrides,
 ): ResolvedVoice | null {
-  // Agent-specific config — honored only when its provider is still enabled.
-  if (agent.voiceConfig) {
+  // Candidates in priority order: the user's persisted per-agent override
+  // (settings store — survives reloads; registry records for default/generated
+  // agents do not), then the agent's own voiceConfig. Each is honored only
+  // when its provider is still enabled and the voice is known.
+  const candidates = [overrides?.[agent.id], agent.voiceConfig];
+  for (const choice of candidates) {
+    if (!choice) continue;
     // Browser-native voices are dynamic (not in static registry); it is a
     // first-class provider only when present in the enabled list.
-    if (agent.voiceConfig.providerId === 'browser-native-tts') {
+    if (choice.providerId === 'browser-native-tts') {
       if (enabledProviders.some((p) => p.providerId === 'browser-native-tts')) {
-        return {
-          providerId: agent.voiceConfig.providerId,
-          modelId: agent.voiceConfig.modelId,
-          voiceId: agent.voiceConfig.voiceId,
-        };
+        return { providerId: choice.providerId, modelId: choice.modelId, voiceId: choice.voiceId };
       }
-    } else {
-      const fromEnabled = enabledProviders.find(
-        (p) => p.providerId === agent.voiceConfig!.providerId,
-      );
-      if (fromEnabled) {
-        const list = getServerVoiceList(agent.voiceConfig.providerId);
-        const allVoiceIds = new Set([...list, ...fromEnabled.voices.map((v) => v.id)]);
-        if (allVoiceIds.has(agent.voiceConfig.voiceId)) {
-          return {
-            providerId: agent.voiceConfig.providerId,
-            modelId: agent.voiceConfig.modelId,
-            voiceId: agent.voiceConfig.voiceId,
-          };
-        }
-      }
+      continue;
+    }
+    const fromEnabled = enabledProviders.find((p) => p.providerId === choice.providerId);
+    if (!fromEnabled) continue;
+    const list = getServerVoiceList(choice.providerId);
+    const allVoiceIds = new Set([...list, ...fromEnabled.voices.map((v) => v.id)]);
+    if (allVoiceIds.has(choice.voiceId)) {
+      return { providerId: choice.providerId, modelId: choice.modelId, voiceId: choice.voiceId };
     }
   }
 

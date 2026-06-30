@@ -1,0 +1,564 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Office PowerPoint(.pptx) file to JSON | 将 PPTX 文件转为可读的 JSON 数据"
+    />
+    <meta name="keywords" content="pptx2json,pptxtojson,ppt,powerpoint,json,PPT解析,PPT转JSON" />
+    <link rel="icon" href="favicon.ico" />
+    <title>pptxtojson - PPTX转JSON</title>
+
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/jsoneditor@9.9.2/dist/jsoneditor.min.css"
+    />
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="https://cdn.jsdelivr.net/npm/toastify-js/src/toastify.min.css"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/jsoneditor@9.9.2/dist/jsoneditor.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/toastify-js"></script>
+    <script src="dist/index.umd.js"></script>
+
+    <style>
+      :root {
+        --primary-color: #33bcfc;
+        --secondary-color: #d897fd;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        font-family: 'Segoe UI', 'Roboto', sans-serif;
+      }
+
+      body {
+        color: #1e293b;
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background-color: #f3f4f6;
+      }
+
+      .container {
+        display: flex;
+        flex: 1;
+        padding: 32px;
+        padding-bottom: 0;
+      }
+
+      .left-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .header {
+        margin-bottom: 16px;
+      }
+
+      .logo {
+        font-size: 32px;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 8px;
+        display: flex;
+        align-items: center;
+      }
+
+      .logo span {
+        background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .tagline {
+        font-size: 14px;
+        color: #64748b;
+      }
+
+      .upload-section {
+        background-color: #fff;
+        border-radius: 12px;
+        padding: 32px;
+        margin-bottom: 32px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+        border: 1px dashed #d1d5db;
+        text-align: center;
+        transition: all 0.3s ease;
+      }
+
+      .upload-section.highlight {
+        border-color: var(--primary-color);
+        background-color: #f0f8ff;
+      }
+
+      .upload-section:hover {
+        border-color: var(--primary-color);
+      }
+
+      .upload-icon {
+        font-size: 48px;
+        margin-bottom: 16px;
+      }
+
+      .upload-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 8px;
+      }
+
+      .upload-desc {
+        font-size: 13px;
+        color: #64748b;
+        margin-bottom: 24px;
+      }
+
+      .upload-btn {
+        background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+        color: #fff;
+        border: none;
+        padding: 12px 32px;
+        border-radius: 50px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(58, 134, 255, 0.2);
+      }
+
+      .upload-btn:hover {
+        box-shadow: 0 6px 20px rgba(58, 134, 255, 0.3);
+      }
+
+      .features {
+        background-color: #fff;
+        border-radius: 12px;
+        padding: 24px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+      }
+
+      .features + .features {
+        margin-top: 32px;
+      }
+
+      .features-title {
+        font-size: 20px;
+        font-weight: 700;
+        margin-bottom: 20px;
+        position: relative;
+        padding-bottom: 8px;
+      }
+
+      .features-title::after {
+        content: '';
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        width: 40px;
+        height: 3px;
+        background: linear-gradient(90deg, var(--primary-color), var(--secondary-color));
+        border-radius: 3px;
+      }
+
+      .feature-item {
+        display: flex;
+        align-items: center;
+      }
+
+      .feature-item.link {
+        cursor: pointer;
+      }
+
+      .feature-item.link:hover .feature-text {
+        color: var(--primary-color);
+      }
+
+      .feature-item + .feature-item {
+        margin-top: 16px;
+      }
+
+      .feature-icon {
+        min-width: 24px;
+        color: var(--primary-color);
+        margin-right: 12px;
+        font-size: 20px;
+      }
+
+      .feature-text {
+        font-size: 15px;
+        color: #334155;
+        transition: all 0.3s ease;
+      }
+
+      a {
+        color: unset;
+        text-decoration: none;
+      }
+
+      .footer {
+        font-size: 14px;
+        color: #64748b;
+        text-align: center;
+        padding: 24px;
+      }
+
+      .right-panel {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        margin-left: 32px;
+      }
+
+      .result-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .result-title {
+        font-size: 18px;
+        font-weight: 700;
+      }
+
+      .result-actions button {
+        background-color: transparent;
+        border: 1px solid #e2e8f0;
+        padding: 4px 16px;
+        border-radius: 4px;
+        margin-left: 8px;
+        color: #475569;
+        cursor: pointer;
+        transition: all 0.3s ease;
+      }
+
+      .result-actions button:hover {
+        background-color: #f8fafc;
+        color: var(--primary-color);
+        border-color: var(--primary-color);
+      }
+
+      .json-preview {
+        flex: 1;
+        background-color: #fff;
+        border-radius: 12px;
+        padding: 24px;
+        overflow: auto;
+        font-family: 'Courier New', monospace;
+        position: relative;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+      }
+      .jsoneditor-mode-view {
+        border: none;
+      }
+      .jsoneditor-menu {
+        display: none;
+      }
+      .jsoneditor-navigation-bar {
+        display: none;
+      }
+      .jsoneditor-outer.has-nav-bar.has-main-menu-bar {
+        margin-top: 0 !important;
+        padding-top: 0 !important;
+      }
+
+      .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        display: none;
+        justify-content: center;
+        align-items: center;
+        z-index: 9999;
+      }
+      .loading-overlay.show {
+        display: flex;
+      }
+      .loading-content {
+        background-color: #fff;
+        padding: 24px 32px;
+        border-radius: 12px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 16px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+      }
+      .loading-spinner {
+        width: 40px;
+        height: 40px;
+        border: 4px solid #f3f4f6;
+        border-top-color: var(--primary-color);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .loading-text {
+        font-size: 16px;
+        font-weight: 600;
+        color: #1e293b;
+      }
+
+      @media screen and (max-width: 768px) {
+        .container {
+          flex-direction: column;
+        }
+
+        .left-panel,
+        .right-panel {
+          width: 100%;
+          flex: none;
+        }
+
+        .right-panel {
+          min-height: 50vh;
+          margin-left: 0;
+          margin-top: 32px;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- Loading遮罩 -->
+    <div class="loading-overlay" id="loadingOverlay">
+      <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">正在解析PPTX文件...</div>
+      </div>
+    </div>
+
+    <div class="container">
+      <!-- 左侧面板 -->
+      <div class="left-panel">
+        <div class="header">
+          <div class="logo">PPTX<span>TO</span>JSON</div>
+          <p class="tagline">将 PPTX 文件转为可读的 JSON 数据</p>
+        </div>
+
+        <div class="upload-section">
+          <div class="upload-icon">📤</div>
+          <h3 class="upload-title">上传PPTX文件</h3>
+          <p class="upload-desc">「点击选择文件」或「将文件拖放到区域内」上传</p>
+          <button class="upload-btn">选择文件</button>
+        </div>
+
+        <div class="features">
+          <h3 class="features-title">功能介绍</h3>
+          <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            <p class="feature-text">
+              解析PPTX数据，包括幻灯片主题、尺寸、背景、备注、母版、切页动画、页内元素及布局信息等
+            </p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            <p class="feature-text">
+              支持页内元素包括：文字（HTML富文本）、图片、形状、线条、表格、图表、音视频、公式等复杂元素
+            </p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            <p class="feature-text">易读易写的结构化 JSON 数据格式</p>
+          </div>
+          <div class="feature-item">
+            <span class="feature-icon">✓</span>
+            <p class="feature-text">不依赖任何服务器端环境，直接在浏览器端运行</p>
+          </div>
+        </div>
+
+        <div class="features">
+          <h3 class="features-title">相关链接</h3>
+          <div class="feature-item link">
+            <span class="feature-icon">📦</span>
+            <p class="feature-text">
+              <a href="https://github.com/pipipi-pikachu/pptx2json" target="_blank">GitHub 仓库</a>
+            </p>
+          </div>
+          <div class="feature-item link">
+            <span class="feature-icon">🧩</span>
+            <p class="feature-text">
+              <a href="https://pipipi-pikachu.github.io/PPTist/" target="_blank"
+                >在 PPTist 中测试</a
+              >
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧面板 -->
+      <div class="right-panel">
+        <div class="result-header">
+          <h2 class="result-title">解析结果</h2>
+          <div class="result-actions">
+            <button class="copy-btn">复制</button>
+            <button class="download-btn">下载</button>
+          </div>
+        </div>
+
+        <div class="json-preview"></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <p>
+        MIT License | Copyright © 2020-PRESENT
+        <a href="https://github.com/pipipi-pikachu" target="_blank">pipipi-pikachu</a>
+      </p>
+    </div>
+
+    <script>
+      document.ondragleave = (e) => e.preventDefault();
+      document.ondrop = (e) => e.preventDefault();
+      document.ondragenter = (e) => e.preventDefault();
+      document.ondragover = (e) => e.preventDefault();
+
+      const jsonPreviewRef = document.querySelector('.json-preview');
+      const uploadBtnRef = document.querySelector('.upload-btn');
+      const uploadSectionRef = document.querySelector('.upload-section');
+      const copyBtnRef = document.querySelector('.copy-btn');
+      const downloadBtnRef = document.querySelector('.download-btn');
+      const loadingOverlay = document.getElementById('loadingOverlay');
+
+      let jsonString = '';
+
+      const editor = new JSONEditor(jsonPreviewRef, { mode: 'view' }, {});
+
+      uploadBtnRef.addEventListener('click', () => {
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+        input.click();
+
+        input.onchange = (e) => {
+          const files = e.target.files;
+          if (files && files[0]) {
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+              loadingOverlay.classList.add('show');
+
+              try {
+                const json = await pptxtojsonPro.parse(e.target.result);
+                editor.set(json);
+                console.log(json);
+                jsonString = JSON.stringify(json, null, 2);
+              } finally {
+                loadingOverlay.classList.remove('show');
+              }
+            };
+            reader.readAsArrayBuffer(files[0]);
+          }
+        };
+      });
+
+      uploadSectionRef.addEventListener('drop', async (e) => {
+        uploadSectionRef.classList.remove('highlight');
+
+        const file = e.dataTransfer.files[0];
+
+        if (!file) return;
+        if (
+          file.type === 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+        ) {
+          loadingOverlay.classList.add('show');
+
+          try {
+            const json = await pptxtojsonPro.parse(file);
+            editor.set(json);
+            console.log(json);
+            jsonString = JSON.stringify(json, null, 2);
+          } finally {
+            loadingOverlay.classList.remove('show');
+          }
+        }
+      });
+
+      uploadSectionRef.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        uploadSectionRef.classList.add('highlight');
+      });
+
+      uploadSectionRef.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        if (!uploadSectionRef.contains(e.relatedTarget)) {
+          uploadSectionRef.classList.remove('highlight');
+        }
+      });
+
+      copyBtnRef.addEventListener('click', () => {
+        if (!jsonString) {
+          Toastify({
+            text: '请先上传文件',
+            duration: 1000,
+            gravity: 'top',
+            position: 'center',
+            style: {
+              background: 'linear-gradient(to right, #33bcfc, #d897fd)',
+              padding: '10px 20px',
+              fontSize: '14px',
+            },
+          }).showToast();
+          return;
+        }
+
+        navigator.clipboard.writeText(jsonString);
+        Toastify({
+          text: '已复制到剪贴板',
+          duration: 1000,
+          gravity: 'top',
+          position: 'center',
+          style: {
+            background: 'linear-gradient(to right, #33bcfc, #d897fd)',
+            padding: '10px 20px',
+            fontSize: '14px',
+          },
+        }).showToast();
+      });
+
+      downloadBtnRef.addEventListener('click', () => {
+        if (!jsonString) {
+          Toastify({
+            text: '请先上传文件',
+            duration: 1000,
+            gravity: 'top',
+            position: 'center',
+            style: {
+              background: 'linear-gradient(to right, #33bcfc, #d897fd)',
+              padding: '10px 20px',
+              fontSize: '14px',
+            },
+          }).showToast();
+          return;
+        }
+
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'slides.json';
+
+        document.body.appendChild(a);
+        a.click();
+
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      });
+    </script>
+  </body>
+</html>

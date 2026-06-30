@@ -68,9 +68,12 @@ export function useBrowserASR(options: UseBrowserASROptions = {}) {
       return;
     }
 
-    // Create Speech Recognition instance
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    const recognition = new SpeechRecognition();
+    // Create Speech Recognition instance. The globals are typed by
+    // @assistant-ui/core's speech adapter; cast the instance since its rich shape
+    // (event handlers, lang, continuous, …) isn't in that minimal type.
+    const SpeechRecognitionCtor = (window.SpeechRecognition || window.webkitSpeechRecognition)!;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API instance shape isn't in lib.dom
+    const recognition: any = new SpeechRecognitionCtor();
 
     recognition.lang = language;
     recognition.continuous = continuous;

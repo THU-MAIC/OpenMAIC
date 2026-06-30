@@ -3,10 +3,15 @@
 import { useEffect } from 'react';
 import { EditShell } from '@/components/edit/EditShell';
 import { SlideNavRail } from '@/components/edit/SlideNavRail';
+import { AgentPanel } from '@/components/edit/AgentPanel/AgentPanel';
+import { ActionsBar } from '@/components/edit/ActionsBar/ActionsBar';
 import { HeaderControls } from '@/components/stage/header-controls';
+import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
+import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
 import type { Scene } from '@/lib/types/stage';
+import { shouldRenderAgentPanel } from './agent-panel-visibility';
 
 interface EditChromeRootProps {
   readonly scene: Scene;
@@ -59,10 +64,51 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     void preloadEditor();
   }, []);
 
+  // The narration timeline (ActionsBar) is a slide-narration authoring tool — it
+  // only applies to scene types with a registered editor surface (slide/quiz).
+  // Read-only canvas scenes (no surface → NOOP + the "· view-only" badge, e.g.
+  // interactive/PBL) get no timeline.
+  const authoringEnabled = !!sceneEditorRegistry.resolve(scene.type);
+
+  // The AI edit panel (AgentPanel) is decoupled from the canvas surface: it
+  // renders wherever the agent has an edit capability — slides (regenerate) AND
+  // interactive scenes (edit_interactive_html), even though the interactive canvas
+  // itself stays view-only. PBL has neither a surface nor an agent edit tool.
+  const agentEnabled = authoringEnabled || scene.type === 'interactive';
+  // Keep the runtime owned by Pro mode chrome, not by the scene-capability gated
+  // panel. Unsupported scene switches can hide/disable the composer without
+  // destroying an in-flight run or the messages that still need to settle/save.
+  const agentRuntime = useAgentRuntime({
+    scene: agentEnabled ? { id: scene.id, title: scene.title } : undefined,
+    isSendDisabled: !agentEnabled,
+  });
+  const showAgentPanel = shouldRenderAgentPanel({
+    agentEnabled,
+    hasMessages: agentRuntime.hasMessages,
+    isRunning: agentRuntime.isRunning,
+  });
+
   return (
     <EditShell
       scene={scene}
       leftRail={<SlideNavRail />}
+      rightRail={
+        showAgentPanel ? (
+          <AgentPanel
+            scene={{ id: scene.id, title: scene.title, type: scene.type }}
+            runtime={agentRuntime.runtime}
+            clearThread={agentRuntime.clearThread}
+            hasMessages={agentRuntime.hasMessages}
+            canSend={agentEnabled}
+            sessions={agentRuntime.sessions}
+            activeSessionId={agentRuntime.activeSessionId}
+            switchSession={agentRuntime.switchSession}
+            deleteSessionAndRefresh={agentRuntime.deleteSessionAndRefresh}
+            refreshSessions={agentRuntime.refreshSessions}
+          />
+        ) : undefined
+      }
+      bottomRail={authoringEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
       commandTrailing={
         <HeaderControls
           mode="edit"
