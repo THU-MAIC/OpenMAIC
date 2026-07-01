@@ -215,6 +215,9 @@ describe('thinking config normalization', () => {
 
   it('normalizes Doubao Seed 2.0 thinking as reasoning effort levels', () => {
     const thinking = getThinking('doubao', 'doubao-seed-2-0-pro-260215');
+    const seed21Thinking = getThinking('doubao', 'doubao-seed-2-1-pro-260628');
+    const seed21TurboThinking = getThinking('doubao', 'doubao-seed-2-1-turbo-260628');
+    const evolvingThinking = getThinking('doubao', 'doubao-seed-evolving');
 
     expect(getDefaultThinkingConfig(thinking)).toEqual({
       mode: 'enabled',
@@ -225,6 +228,21 @@ describe('thinking config normalization', () => {
       effort: 'high',
     });
     expect(thinking?.effortValues).toEqual(['minimal', 'low', 'medium', 'high']);
+    expect(seed21Thinking?.effortValues).toEqual(['minimal', 'low', 'medium', 'high']);
+    expect(seed21TurboThinking?.effortValues).toEqual(['minimal', 'low', 'medium', 'high']);
+    expect(evolvingThinking?.effortValues).toEqual(['minimal', 'low', 'medium', 'high']);
+  });
+
+  it('normalizes Doubao Seed Character thinking as a mode toggle', () => {
+    const thinking = getThinking('doubao', 'doubao-seed-character-260628');
+
+    expect(getDefaultThinkingConfig(thinking)).toEqual({
+      mode: 'enabled',
+    });
+    expect(normalizeThinkingConfig(thinking, { mode: 'disabled' })).toEqual({
+      mode: 'disabled',
+    });
+    expect(thinking?.control).toBe('toggle');
   });
 
   it('preserves dynamic Gemini budgets and display labels', () => {

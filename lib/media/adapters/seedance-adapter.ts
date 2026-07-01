@@ -7,7 +7,7 @@
  * Request format (text-to-video):
  *   POST /api/v3/contents/generations/tasks
  *   {
- *     "model": "doubao-seedance-1-5-pro-251215",
+ *     "model": "doubao-seedance-2-0-260128",
  *     "content": [{ "type": "text", "text": "prompt here" }],
  *     "ratio": "16:9",
  *     "duration": 5,
@@ -16,10 +16,13 @@
  *   }
  *
  * Supported models:
- * - doubao-seedance-1-5-pro-251215     (latest, 4~12s)
- * - doubao-seedance-1-0-pro-250528     (stable, 2~12s)
- * - doubao-seedance-1-0-pro-fast-251015 (faster, 2~12s)
- * - doubao-seedance-1-0-lite-t2v-250428 (lightweight, 2~12s)
+ * - doubao-seedance-2-0-260128
+ * - doubao-seedance-2-0-fast-260128
+ * - doubao-seedance-2-0-mini-260615
+ * - doubao-seedance-1-5-pro-251215
+ * - doubao-seedance-1-0-pro-250528
+ * - doubao-seedance-1-0-pro-fast-251015
+ * - doubao-seedance-1-0-lite-t2v-250428
  *
  * API docs: https://www.volcengine.com/docs/6492/2165104
  */
@@ -30,7 +33,7 @@ import type {
   VideoGenerationResult,
 } from '../types';
 
-const DEFAULT_MODEL = 'doubao-seedance-1-5-pro-251215';
+const DEFAULT_MODEL = 'doubao-seedance-2-0-260128';
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
 const POLL_INTERVAL_MS = 5000;
 const MAX_POLL_ATTEMPTS = 60; // 5 minutes max

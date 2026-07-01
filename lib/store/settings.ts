@@ -470,7 +470,7 @@ const getDefaultImageConfig = () => ({
 // Initialize default Video config
 const getDefaultVideoConfig = () => ({
   videoProviderId: 'seedance' as VideoProviderId,
-  videoModelId: 'doubao-seedance-1-5-pro-251215',
+  videoModelId: 'doubao-seedance-2-0-260128',
   videoProvidersConfig: {
     seedance: { apiKey: '', baseUrl: '', enabled: false },
     kling: { apiKey: '', baseUrl: '', enabled: false },
