@@ -12,7 +12,7 @@
  *
  * Editing (persisted via useStageStore.updateScene → actions-edit ops):
  * - speech clip text is editable inline (commit on blur);
- * - palette chips drag into the track to add an action at a drop slot;
+ * - the header "添加动作" pill opens ActionPicker to insert a new action;
  * - existing items drag to reorder; each card carries a delete button;
  * - clicking an element-bound cue arms canvas pick mode (useCanvasStore.pickTarget),
  *   so the target is chosen by clicking the element directly on the slide.
@@ -22,6 +22,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
@@ -30,6 +31,7 @@ import {
   FoldVertical,
   GripVertical,
   Play,
+  Plus,
   RefreshCw,
   Trash2,
   UnfoldVertical,
@@ -51,6 +53,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { Action, DiscussionAction } from '@/lib/types/action';
+import type { SceneType } from '@/lib/types/stage';
 import { ELEMENT_BOUND, cueLabel, cueMeta } from './cue-meta';
 import { applyCuePreview, clearCuePreview, cuePreviewFor } from './cue-preview';
 import {
@@ -69,6 +72,8 @@ import {
   setSpeechTextClearAudioById,
   type AddableType,
 } from './actions-edit';
+import { ActionPicker } from './ActionPicker';
+import type { PickerType } from './picker-options';
 import {
   audioExists,
   audioObjectUrl,
@@ -104,13 +109,6 @@ const MAX_H = 520;
 const DEFAULT_H = 224;
 const LINE_H = 86; // height when collapsed to just the axis line of node icons (fits the chips)
 const AXIS_FROM_TOP = 20; // px from track top to the axis center (nodes hang below it)
-
-/**
- * Add-palette types — only the ones that stand alone. Whiteboard cues need an
- * open→draw→close workflow, so they aren't bare-addable (the agent still emits
- * them and they render in the timeline). Cue icon/label/tint live in cue-meta.
- */
-const PALETTE: AddableType[] = ['speech', 'spotlight', 'laser'];
 
 // Radix Select forbids an empty-string item value, so the discussion's
 // "unspecified agent" choice rides a sentinel that maps back to '' on change.
@@ -866,10 +864,9 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const actions = scene?.actions ?? EMPTY;
   const sceneOrder = scene?.order ?? 0;
   // Element-bound cues (spotlight / laser) point at slide elements, so they only
-  // make sense on SLIDE scenes. Quiz / interactive / PBL scenes have no canvas to
-  // bind to — offer speech only, so the user can't insert unsupported cues.
-  const palette =
-    scene?.type === 'slide' ? PALETTE : PALETTE.filter((pt) => !ELEMENT_BOUND.has(pt));
+  // make sense on SLIDE scenes. While the scene hasn't loaded yet, fall back to
+  // a non-slide type so the picker doesn't briefly offer unsupported cues.
+  const sceneType: SceneType = scene?.type ?? 'quiz';
   const language = useStageStore((s) => s.stage?.languageDirective);
   // Managed TTS on → speech clips show audio status + 试听 / 重新生成.
   const ttsActive = useSettingsStore(
@@ -899,6 +896,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [regenAll, setRegenAll] = useState(false);
+  const [pickerAt, setPickerAt] = useState<{ slot: number; rect: DOMRect } | null>(null);
   const [ttsRefresh, setTtsRefresh] = useState(0); // bump → speech clips re-check audio status
   const reduce = useReducedMotion();
   const dragRef = useRef<DragPayload | null>(null);
@@ -1004,6 +1002,27 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     document.body.style.cursor = '';
   }, []);
 
+  const newId = () =>
+    typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `a-${Date.now()}`;
+
+  // Shared insert path for both the drag-to-reorder drop zones and the
+  // ActionPicker (header pill / inline "+"): appends a discussion (terminal,
+  // at-most-one) or inserts an ordinary action at a slot, capped before any
+  // existing discussion so it always stays last.
+  const insertActionAt = useCallback(
+    (type: PickerType, slot: number) => {
+      const id = newId();
+      if (type === 'discussion') {
+        commit((cur) => appendDiscussion(cur, id));
+        return;
+      }
+      const action = makeAction(type, id);
+      commit((cur) => insertAt(cur, clampInsertSlot(cur, slot), action));
+      if (type === 'speech') setFocusId(id);
+    },
+    [commit],
+  );
+
   const handleDrop = useCallback(
     (slot: number) => {
       const p = dragRef.current;
@@ -1011,19 +1030,12 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       setDragOver(null);
       if (!p) return;
       if (p.kind === 'new') {
-        const id =
-          typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : `a-${Date.now()}`;
-        const action = makeAction(p.type, id);
-        // A discussion must stay last, so cap every insert/move before it.
-        commit((cur) => insertAt(cur, clampInsertSlot(cur, slot), action));
-        if (p.type === 'speech') setFocusId(id);
+        insertActionAt(p.type, slot);
       } else {
         commit((cur) => moveById(cur, p.id, clampInsertSlot(cur, slot)));
       }
     },
-    [commit],
+    [commit, insertActionAt],
   );
 
   const speechCount = actions.filter((a) => a.type === 'speech').length;
@@ -1033,12 +1045,6 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   // right only up to the slot before it; the discussion node itself can't move.
   const discussionPresent = hasDiscussion(actions);
   const lastMovableIndex = discussionPresent ? actions.length - 2 : actions.length - 1;
-
-  const addDiscussion = useCallback(() => {
-    const id =
-      typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `a-${Date.now()}`;
-    commit((cur) => appendDiscussion(cur, id));
-  }, [commit]);
 
   let speechIndex = 0;
   const items = actions.map((action, index) => {
@@ -1077,32 +1083,18 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
         </button>
 
         {!lineMode && (
-          <div className="ml-3 flex items-center gap-1.5 border-l border-gray-200/70 pl-3 dark:border-gray-700/60">
-            <span className="text-[10px] text-muted-foreground/45">
-              {t('edit.timeline.dragToAdd')}
-            </span>
-            {palette.map((pt) => {
-              const Icon = cueMeta(pt).icon;
-              return (
-                <span
-                  key={pt}
-                  draggable
-                  onDragStart={(e) => {
-                    dragRef.current = { kind: 'new', type: pt };
-                    setBlankDragImage(e);
-                  }}
-                  onDragEnd={() => {
-                    dragRef.current = null;
-                    setDragOver(null);
-                  }}
-                  className="inline-flex cursor-grab items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary/30 hover:text-foreground active:cursor-grabbing"
-                >
-                  <Icon className="size-3" />
-                  {cueLabel(pt, t)}
-                </span>
-              );
-            })}
-          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              const slot = discussionPresent ? actions.length - 1 : actions.length;
+              setPickerAt({ slot, rect: e.currentTarget.getBoundingClientRect() });
+            }}
+            className="ml-3 inline-flex items-center gap-1 rounded-full border border-primary/25 bg-primary/10 px-2.5 py-0.5 text-[11px] font-medium text-primary transition-colors hover:bg-primary/15"
+          >
+            <Plus className="size-3" />
+            {t('edit.timeline.addAction')}
+            <ChevronDown className="size-3 opacity-70" />
+          </button>
         )}
 
         {!lineMode && ttsActive && (
@@ -1116,27 +1108,6 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
           >
             <RefreshCw className={cn('size-3', regenAll && 'animate-spin')} />
             {t('edit.timeline.voiceAll')}
-          </button>
-        )}
-
-        {/* A discussion is terminal + at-most-one, so it's appended here rather
-            than dragged in. Disabled once the scene already has one. The flag
-            icon matches the discussion's terminal-anchor node on the track. */}
-        {!lineMode && (
-          <button
-            type="button"
-            onClick={addDiscussion}
-            disabled={discussionPresent}
-            title={
-              discussionPresent
-                ? t('edit.timeline.addDiscussionExists')
-                : t('edit.timeline.addDiscussion')
-            }
-            aria-label={t('edit.timeline.addDiscussion')}
-            className="ml-1.5 inline-flex items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-yellow-400/50 hover:text-foreground disabled:opacity-40 disabled:hover:border-border disabled:hover:text-muted-foreground"
-          >
-            <Flag className="size-3" />
-            {t('edit.timeline.addDiscussion')}
           </button>
         )}
 
@@ -1335,6 +1306,15 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       </div>
 
       {tip && <CueTooltip tip={tip} />}
+      {pickerAt && (
+        <ActionPicker
+          anchor={pickerAt.rect}
+          sceneType={sceneType}
+          actions={actions}
+          onSelect={(type) => insertActionAt(type, pickerAt.slot)}
+          onClose={() => setPickerAt(null)}
+        />
+      )}
     </section>
   );
 }
