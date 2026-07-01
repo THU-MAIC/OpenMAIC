@@ -19,7 +19,7 @@ import type {
   ImageMapping,
   WidgetOutline,
 } from '@/lib/types/generation';
-import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
+import type { WidgetType, WidgetConfig } from '@/lib/types/widgets';
 import type { PromptId } from '@/lib/prompts/types';
 import type { LanguageModel } from 'ai';
 import type { StageStore } from '@/lib/api/stage-api';
@@ -43,14 +43,7 @@ import {
 } from './prompt-formatters';
 import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@openmaic/dsl';
 import type { QuizQuestion } from '@/lib/types/stage';
-import type {
-  Action,
-  SpeechAction,
-  WidgetHighlightAction,
-  WidgetSetStateAction,
-  WidgetAnnotationAction,
-  WidgetRevealAction,
-} from '@/lib/types/action';
+import type { Action } from '@/lib/types/action';
 import type {
   AgentInfo,
   SceneGenerationContext,
@@ -62,6 +55,13 @@ import type {
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
+
+const INTERACTIVE_WIDGET_ACTIONS = [
+  'widget_highlight',
+  'widget_setState',
+  'widget_annotation',
+  'widget_reveal',
+];
 
 // ── Options interfaces for scene generation functions ──
 
@@ -536,6 +536,11 @@ function fixElementDefaults(
   elements: GeneratedSlideData['elements'],
   assignedImages?: PdfImage[],
 ): GeneratedSlideData['elements'] {
+  // Index assigned images by id once (O(m)) so the per-image-element lookup
+  // below is O(1) instead of a `.find` nested inside this map (which made the
+  // pass O(elements × images)).
+  const imageMetaById = new Map((assignedImages ?? []).map((img) => [img.id, img]));
+
   return elements.map((el) => {
     // Fix line elements
     if (el.type === 'line') {
@@ -595,7 +600,7 @@ function fixElementDefaults(
 
       // Correct dimensions using known aspect ratio (src is still img_id at this point)
       if (assignedImages && typeof imageEl.src === 'string') {
-        const imgMeta = assignedImages.find((img) => img.id === imageEl.src);
+        const imgMeta = imageMetaById.get(imageEl.src);
         if (imgMeta?.width && imgMeta?.height) {
           const knownRatio = imgMeta.width / imgMeta.height;
           const curW = (el.width || 400) as number;
@@ -1305,28 +1310,10 @@ export async function generateWidgetContent(
   // Extract widget config from HTML if present
   const widgetConfig = extractWidgetConfig(html);
 
-  // Generate teacher actions
-  const teacherActions = await generateWidgetTeacherActions(
-    widgetType,
-    outline,
-    widgetConfig,
-    aiCall,
-    languageDirective,
-  );
-  log.info(
-    `[Ultra Mode] Generated ${teacherActions?.length || 0} teacher actions for "${outline.title}" (${widgetType})`,
-  );
-  if (teacherActions && teacherActions.length > 0) {
-    log.info(
-      `[Ultra Mode] Teacher actions for "${outline.title}": ${JSON.stringify(teacherActions, null, 2)}`,
-    );
-  }
-
   return {
     html: postProcessInteractiveHtml(html),
     widgetType,
     widgetConfig,
-    teacherActions,
   };
 }
 
@@ -1341,35 +1328,6 @@ function extractWidgetConfig(html: string): WidgetConfig | undefined {
 
   try {
     return JSON.parse(match[1]);
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Generate teacher actions for a widget
- */
-async function generateWidgetTeacherActions(
-  widgetType: WidgetType,
-  outline: SceneOutline,
-  widgetConfig: WidgetConfig | undefined,
-  aiCall: AICallFn,
-  languageDirective?: string,
-): Promise<TeacherAction[] | undefined> {
-  const prompts = buildPrompt(PROMPT_IDS.WIDGET_TEACHER_ACTIONS, {
-    widgetType,
-    description: outline.description,
-    keyPoints: (outline.keyPoints || []).join('\n'),
-    widgetConfig: JSON.stringify(widgetConfig || {}),
-    languageDirective: languageDirective || '',
-  });
-
-  if (!prompts) return undefined;
-
-  try {
-    const response = await aiCall(prompts.system, prompts.user);
-    const parsed = parseJsonResponse<{ actions: TeacherAction[] }>(response);
-    return parsed?.actions;
   } catch {
     return undefined;
   }
@@ -1391,22 +1349,12 @@ export async function generateSceneActions(
   const { ctx, agents, userProfile, languageDirective } = options;
   const agentsText = formatAgentsForPrompt(agents);
 
-  // Debug: Log content type and teacherActions presence for interactive scenes
+  // Debug: Log content type for interactive scenes
   if (outline.type === 'interactive') {
     const hasHtml = 'html' in content;
-    const teacherActionsCount = hasHtml ? content.teacherActions?.length || 0 : 0;
     log.info(
-      `[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, teacherActions=${teacherActionsCount}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`,
+      `[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`,
     );
-  }
-
-  // Ultra Mode: If interactive content has teacherActions, convert and use them
-  // Skip normal action generation for widget-based interactive scenes
-  if (outline.type === 'interactive' && 'html' in content && content.teacherActions?.length) {
-    log.info(
-      `[Ultra Mode] Converting ${content.teacherActions.length} teacherActions to Actions for: ${outline.title}`,
-    );
-    return convertTeacherActionsToActions(content.teacherActions);
   }
 
   if (outline.type === 'slide' && 'elements' in content) {
@@ -1476,6 +1424,8 @@ export async function generateSceneActions(
       description: outline.description,
       conceptName: config?.conceptName || outline.title,
       designIdea: config?.designIdea || '',
+      widgetType: content.widgetType || outline.widgetType || '',
+      widgetConfig: JSON.stringify(content.widgetConfig || {}),
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
@@ -1486,7 +1436,11 @@ export async function generateSceneActions(
     }
 
     const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(response, outline.type);
+    const actions = parseActionsFromStructuredOutput(
+      response,
+      outline.type,
+      INTERACTIVE_WIDGET_ACTIONS,
+    );
 
     if (actions.length > 0) {
       return processActions(actions, [], agents);
@@ -1579,125 +1533,6 @@ function formatQuestionsForPrompt(questions: QuizQuestion[]): string {
       return `Q${i + 1} (${q.type}): ${q.question}\n${optionsText}`;
     })
     .join('\n\n');
-}
-
-/**
- * Convert Ultra Mode teacherActions to standard Actions for playback.
- *
- * TeacherAction types: speech, highlight, annotation, reveal, setState
- * Action types: speech, widget_highlight, widget_setState, widget_annotation, widget_reveal
- *
- * Conversion strategy:
- * - speech → single speech Action
- * - highlight/setState/annotation/reveal with content → TWO Actions:
- *   1. widget action (visual/state change) - quick, non-blocking
- *   2. speech action (narration) - PlaybackEngine handles TTS
- * - highlight/setState/annotation/reveal without content → single widget action
- */
-function convertTeacherActionsToActions(teacherActions: TeacherAction[]): Action[] {
-  const actions: Action[] = [];
-
-  for (const ta of teacherActions) {
-    // Always use nanoid for unique action IDs to prevent audio ID collisions
-    // Ultra Mode generates sequential IDs like "action_1" which are NOT unique across scenes
-    const actionId = `action_${nanoid(8)}`;
-    const base = {
-      id: actionId,
-      title: ta.label || '',
-    };
-
-    switch (ta.type) {
-      case 'speech':
-        actions.push({
-          ...base,
-          type: 'speech',
-          text: ta.content || '',
-        } as SpeechAction);
-        break;
-
-      case 'highlight':
-        // Add widget highlight action (visual, quick)
-        actions.push({
-          ...base,
-          type: 'widget_highlight',
-          target: ta.target || '',
-          content: undefined, // No speech in widget action
-        } as WidgetHighlightAction);
-        // Add speech action for narration (if content exists)
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'setState':
-        // Add widget setState action
-        actions.push({
-          ...base,
-          type: 'widget_setState',
-          state: ta.state || {},
-          content: undefined,
-        } as WidgetSetStateAction);
-        // Add speech action for narration
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'annotation':
-        actions.push({
-          ...base,
-          type: 'widget_annotation',
-          target: ta.target || '',
-          content: undefined,
-        } as WidgetAnnotationAction);
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'reveal':
-        actions.push({
-          ...base,
-          type: 'widget_reveal',
-          target: ta.target || '',
-          content: undefined,
-        } as WidgetRevealAction);
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      default:
-        // Fallback to speech for unknown types
-        actions.push({
-          ...base,
-          type: 'speech',
-          text: ta.content || '',
-        } as SpeechAction);
-    }
-  }
-
-  return actions;
 }
 
 /**
@@ -1852,6 +1687,7 @@ export function createSceneWithActions(
         canvas: slide,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1867,6 +1703,7 @@ export function createSceneWithActions(
         questions: content.questions,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1884,9 +1721,9 @@ export function createSceneWithActions(
         // Ultra Mode widget fields
         widgetType: content.widgetType,
         widgetConfig: content.widgetConfig,
-        teacherActions: content.teacherActions,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1903,6 +1740,7 @@ export function createSceneWithActions(
         ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;

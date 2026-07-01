@@ -9,7 +9,7 @@
  */
 import { nanoid } from 'nanoid';
 import type { Action } from '@/lib/types/action';
-import type { Scene, SceneContent, InteractiveContent } from '@/lib/types/stage';
+import type { Scene, ScenePatch, SceneContent, InteractiveContent } from '@/lib/types/stage';
 import type { GeneratedSlideContent } from '@/lib/types/generation';
 import { CURRENT_SLIDE_CONTENT_SCHEMA_VERSION } from '@/lib/edit/slide-schema';
 
@@ -79,7 +79,7 @@ export interface RegenerateApplyPlan {
     actionsOnly?: boolean;
   } | null;
   /** Partial scene update to apply, or null if nothing should change. */
-  patch: Partial<Scene> | null;
+  patch: ScenePatch | null;
 }
 
 /**
@@ -103,7 +103,7 @@ export function planRegenerateApply(
   // `edit_interactive_html` carries the edited interactive-page HTML. Snapshot
   // the current scene, then write the new html onto the existing
   // InteractiveContent — preserving the page's other fields (url / widgetType /
-  // widgetConfig / teacherActions). The iframe reloads when content.html changes.
+  // widgetConfig). The iframe reloads when content.html changes.
   if (toolName === 'edit_interactive_html' && typeof details.html === 'string') {
     const prev = scene?.content as InteractiveContent | undefined;
     if (!prev || prev.type !== 'interactive') return { snapshot: null, patch: null };
@@ -127,7 +127,7 @@ export function planRegenerateApply(
       | undefined;
     const existingCanvas = sceneContent?.type === 'slide' ? sceneContent.canvas : undefined;
     const runtime = toRuntimeSlideContent(details.content, existingCanvas);
-    const patch: Partial<Scene> = {
+    const patch: ScenePatch = {
       content: runtime,
       ...(actions.length > 0 ? { actions } : {}),
     };

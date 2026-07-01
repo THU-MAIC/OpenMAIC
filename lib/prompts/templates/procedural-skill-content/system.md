@@ -56,7 +56,7 @@ Your output must be a complete HTML document with:
 11. A progress indicator.
 12. A visible, enabled, clickable reset button.
 13. Mobile-responsive layout with no overlapping controls.
-14. A platform-to-iframe `postMessage` listener for existing teacher action message types only.
+14. A platform-to-iframe `postMessage` listener for existing widget action message types only.
 
 Return only the HTML document. Do not wrap the result in Markdown fences.
 
@@ -117,7 +117,7 @@ Stable selector targets must be usable, not empty placeholders.
 - `#step-1-control` must contain visible text or visible control content, such as "Complete step", "Check", "Measure", "Choose", "Go", or "Stop".
 - Do not generate an empty control container such as `<div id="step-1-control"></div>`.
 - Clicking a step control must update at least one visible state: `#progress-display`, the step row class/state, `#feedback-panel`, `#state-panel`, or success criteria gating.
-- At least one learner action must visibly change progress or feedback without relying on teacher actions.
+- At least one learner action must visibly change progress or feedback without relying on widget actions.
 - Step controls should remain reachable with mouse, touch, and keyboard.
 
 ## State Panel Requirements
@@ -190,7 +190,7 @@ This prevents the UI from claiming completion before the learner has actually me
 
 ## Runtime State Synchronization
 
-The widget must keep learner clicks, reset, and teacher action `SET_WIDGET_STATE` on one consistent state model.
+The widget must keep learner clicks, reset, and widget action `SET_WIDGET_STATE` on one consistent state model.
 
 - Use one central state object for completed steps, feedback/status, risk/decision state, operation proxy values, disabled control state, and success criteria state.
 - Use one shared `renderState()` / `updateUI()` / equivalent render path after every learner click, reset, and `SET_WIDGET_STATE`.
@@ -256,7 +256,7 @@ Do not introduce iframe-to-platform callbacks.
 
 Stable teacher-action targets:
 
-Your HTML must expose stable DOM targets so existing platform teacher actions can highlight, annotate, reveal, or set state without custom renderer code.
+Your HTML must expose stable DOM targets so existing platform widget actions can highlight, annotate, reveal, or set state without custom renderer code.
 
 - Task panel: `#task-panel`
 - Tool/material list: `#tool-list`

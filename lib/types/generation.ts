@@ -174,7 +174,7 @@ export interface GeneratedPBLContent {
 
 // ==================== Interactive Generation Types ====================
 
-import type { WidgetConfig, TeacherAction, WidgetType } from './widgets';
+import type { WidgetConfig, WidgetType } from './widgets';
 
 /**
  * Scientific model output from scientific modeling stage
@@ -194,7 +194,6 @@ export interface GeneratedInteractiveContent {
   scientificModel?: ScientificModel;
   widgetType?: WidgetType;
   widgetConfig?: WidgetConfig;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Legacy Types (for compatibility) ====================

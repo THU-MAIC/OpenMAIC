@@ -164,7 +164,12 @@ function interactiveScene(): Pick<Scene, 'content' | 'actions'> {
       url: 'about:blank',
       html: '<html><!-- old --></html>',
       widgetType: 'simulation',
-      teacherActions: [{ id: 'ta_keep' }],
+      widgetConfig: {
+        type: 'simulation',
+        concept: 'energy',
+        description: 'Energy simulation',
+        variables: [],
+      },
     } as unknown as SceneContent,
     actions: [{ type: 'speech', id: 'a_old' } as never],
   };
@@ -182,13 +187,13 @@ describe('planRegenerateApply — edit_interactive_html', () => {
       url: string;
       html: string;
       widgetType?: string;
-      teacherActions?: { id: string }[];
+      widgetConfig?: { type: string };
     };
     expect(content.type).toBe('interactive');
     expect(content.html).toContain('fixed');
     expect(content.url).toBe('about:blank');
     expect(content.widgetType).toBe('simulation');
-    expect(content.teacherActions?.[0]?.id).toBe('ta_keep');
+    expect(content.widgetConfig?.type).toBe('simulation');
   });
 
   it('snapshots the pre-fix content for restore', () => {

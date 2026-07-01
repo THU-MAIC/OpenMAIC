@@ -35,6 +35,7 @@ import type {
 } from './types';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 import { ActionEngine } from '@/lib/action/engine';
+import { resolvePlaybackCursor } from './engine-cursor';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useSettingsStore } from '@/lib/store/settings';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
@@ -404,21 +405,15 @@ export class PlaybackEngine {
   /**
    * Get the current action, or null if playback is complete.
    * Advances sceneIndex automatically when a scene's actions are exhausted.
+   * A scene with no actions yields one synthetic dwell beat (so the slide still
+   * shows) instead of being skipped — see {@link resolvePlaybackCursor}.
    */
   private getCurrentAction(): { action: Action; sceneId: string } | null {
-    while (this.sceneIndex < this.scenes.length) {
-      const scene = this.scenes[this.sceneIndex];
-      const actions = scene.actions || [];
-
-      if (this.actionIndex < actions.length) {
-        return { action: actions[this.actionIndex], sceneId: scene.id };
-      }
-
-      // Move to next scene
-      this.sceneIndex++;
-      this.actionIndex = 0;
-    }
-    return null;
+    const res = resolvePlaybackCursor(this.scenes, this.sceneIndex, this.actionIndex);
+    if (!res) return null;
+    this.sceneIndex = res.sceneIndex;
+    this.actionIndex = res.actionIndex;
+    return { action: res.action, sceneId: res.sceneId };
   }
 
   /**

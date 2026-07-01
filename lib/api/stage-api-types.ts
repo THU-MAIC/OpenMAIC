@@ -28,6 +28,8 @@ export interface CreateSceneParams {
   content?: Partial<SceneContent>;
   order?: number;
   actions?: Action[];
+  /** Stable id of the generation outline this scene was built from (see {@link Scene.outlineId}). */
+  outlineId?: string;
 }
 
 /**
