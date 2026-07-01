@@ -7,5 +7,5 @@ Description: {{description}}
 
 **Language Directive**: {{languageDirective}}
 
-Output as a JSON array directly (no explanation, no code fences, 3-6 segments):
+Output as a JSON array directly (no explanation, no code fences, 1-2 short text segments). No discussion or other action types — text only:
 [{"type":"text","content":"Let's test your understanding"}]

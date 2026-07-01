@@ -50,13 +50,18 @@
   },
   "import": {
     "classroom": "Импорт класса",
+    "pptx": "Импорт PPTX",
     "parsing": "Анализ ZIP...",
+    "parsingPptx": "Анализ PPTX...",
     "validating": "Проверка данных...",
     "writingMedia": "Запись медиафайлов...",
     "writingCourse": "Запись данных курса...",
     "success": "Класс успешно импортирован",
+    "pptxSuccess": "PPTX успешно проанализирован ({{count}} слайдов, вывод в консоли)",
     "error": {
       "invalidZip": "Недопустимый файл. Выберите корректный файл .maic.zip.",
+      "invalidPptx": "Не удалось проанализировать PPTX. Проверьте, что файл корректен.",
+      "parserUnavailable": "Импорт PPTX недоступен: парсер не развёрнут. Повторите установку/синхронизацию.",
       "invalidManifest": "Недопустимый файл класса: manifest.json отсутствует или повреждён.",
       "missingData": "Недопустимый файл класса: отсутствуют необходимые данные курса.",
       "storageFull": "Импорт не удался: хранилище браузера заполнено. Удалите старые классы."
@@ -152,7 +157,8 @@
     "fullscreen": "Полный экран",
     "exitFullscreen": "Свернуть",
     "editCourse": "Редактировать курс",
-    "doneEditing": "Завершить редактирование"
+    "doneEditing": "Завершить редактирование",
+    "proModeDisabledHint": "Редактирование недоступно на этой странице — откройте слайд курса, чтобы редактировать в Pro-режиме."
   },
   "edit": {
     "proMode": "Pro",
@@ -214,7 +220,201 @@
       "dragHandle": "Перетащите, чтобы переупорядочить",
       "deckLabel": "Сцены",
       "moreActions": "Ещё действия",
-      "rename": "Переименовать"
+      "rename": "Переименовать",
+      "sceneIncomplete": "Содержимое этой страницы не заполнено"
+    },
+    "zorder": {
+      "toFront": "На передний план",
+      "toBack": "На задний план"
+    },
+    "image": {
+      "replace": "Заменить изображение",
+      "flipH": "Отразить по горизонтали",
+      "flipV": "Отразить по вертикали"
+    },
+    "background": {
+      "label": "Фон",
+      "solid": "Сплошной цвет",
+      "image": "Изображение"
+    },
+    "quiz": {
+      "addQuestion": "Добавить вопрос",
+      "reorder": "Перетащите для сортировки",
+      "deleteQuestion": "Удалить вопрос",
+      "untitledQuestion": "Вопрос без названия",
+      "questionLabel": "Вопрос",
+      "questionPlaceholder": "Введите вопрос…",
+      "typeLabel": "Тип",
+      "pointsLabel": "Баллы",
+      "optionsLabel": "Варианты",
+      "optionPlaceholder": "Текст варианта",
+      "addOption": "Добавить вариант",
+      "deleteOption": "Удалить вариант",
+      "markCorrect": "Отметить как правильный",
+      "moveUp": "Вверх",
+      "moveDown": "Вниз",
+      "analysisLabel": "Пояснение",
+      "analysisPlaceholder": "Показывается после проверки…",
+      "commentPromptLabel": "Указания по оценке",
+      "commentPromptPlaceholder": "Как оценивать этот развёрнутый ответ?",
+      "empty": "Пока нет вопросов",
+      "emptyHint": "Нажмите «Добавить вопрос» выше, чтобы создать первый.",
+      "type": {
+        "single": "Один выбор",
+        "multiple": "Несколько вариантов",
+        "short_answer": "Краткий ответ"
+      },
+      "shortAnswerGradingNote": "Краткие ответы всегда оцениваются ИИ по указаниям ниже.",
+      "hint": {
+        "emptyText": "Вопрос {{n}}: добавьте текст вопроса",
+        "fewOptions": "Вопрос {{n}}: нужно не менее двух вариантов",
+        "emptyOption": "Вопрос {{n}}: есть пустой вариант",
+        "noCorrect": "Вопрос {{n}}: отметьте правильный ответ"
+      }
+    },
+    "cue": {
+      "speech": "Закадровый текст",
+      "spotlight": "Прожектор",
+      "laser": "Лазер",
+      "whiteboardOpen": "Доска",
+      "whiteboardText": "Запись",
+      "whiteboardShape": "Фигура",
+      "whiteboardLatex": "Формула",
+      "whiteboardTable": "Таблица",
+      "action": "Действие",
+      "discussion": "Обсуждение"
+    },
+    "element": {
+      "text": "Текст",
+      "image": "Изображение",
+      "shape": "Фигура",
+      "line": "Линия",
+      "chart": "Диаграмма",
+      "table": "Таблица",
+      "latex": "Формула",
+      "video": "Видео",
+      "audio": "Аудио",
+      "code": "Код"
+    },
+    "agent": {
+      "expand": "Развернуть ИИ-помощника",
+      "collapse": "Свернуть",
+      "stopped": "Остановлено",
+      "emptyTitle": "Что вы хотите изменить?",
+      "emptyHint": "Отредактировав этот слайд на холсте, позвольте ИИ заново сгенерировать закадровый текст, соответствующий содержанию.",
+      "placeholder": "Опишите изменения для этого слайда…",
+      "stop": "Остановить генерацию",
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "examples": "«Кнопка запуска не работает», «Панели накладываются на мобильном»",
+          "label": "Исправить ошибку на странице"
+        }
+      },
+      "newConversation": "New conversation",
+      "sessionHistory": "История",
+      "sessionUntitled": "Без названия",
+      "sessionDelete": "Удалить",
+      "sessionEmpty": "Нет истории",
+      "reasoning": "Рассуждение",
+      "thought": "Думал",
+      "interactive": {
+        "boundary": "Я вношу точечные исправления на странице и не пересоздаю её целиком. Переключайте сцены через навигацию слева.",
+        "emptyTitle": "Что нужно исправить на этой странице?",
+        "lead": "Опишите ошибку на этой интерактивной странице — например, кнопку, которая не реагирует, — и я исправлю только её, сохранив всё остальное.",
+        "placeholder": "Опишите ошибку на этой интерактивной странице…"
+      },
+      "thinking": "Думаю…"
+    },
+    "timeline": {
+      "title": "Сценарий закадрового текста",
+      "dragToAdd": "Перетащите, чтобы добавить",
+      "regenAllTts": "Сгенерировать всю озвучку заново",
+      "voiceAll": "Озвучить всё",
+      "counts": "{{speech}} реплик · {{cue}} действий",
+      "panLeft": "Прокрутить влево",
+      "panRight": "Прокрутить вправо",
+      "collapseAxis": "Свернуть до оси",
+      "expandTrack": "Развернуть дорожку",
+      "emptyHint": "Перетащите действия на ось, чтобы начать, или позвольте MAIC Agent сгенерировать закадровый текст.",
+      "speechPlaceholder": "Введите эту реплику…",
+      "reorder": "Перетащите для изменения порядка",
+      "moveLeft": "Влево",
+      "moveRight": "Вправо",
+      "pickElement": "Выбрать элемент",
+      "bound": "Привязано",
+      "fieldAction": "Действие",
+      "fieldElement": "Элемент",
+      "fieldContent": "Содержимое",
+      "addDiscussion": "Добавить обсуждение",
+      "addDiscussionExists": "Только одно обсуждение на сцену",
+      "discussionTerminal": "КОНЕЦ",
+      "discussionTerminalHint": "Обсуждение закрепляется в конце сцены (одно на сцену)",
+      "discussionTopicPlaceholder": "Тема обсуждения (обязательно)",
+      "discussionPromptPlaceholder": "Подсказка (необязательно)",
+      "discussionAgent": "Инициатор",
+      "discussionAgentUnset": "Не указан"
+    },
+    "tts": {
+      "preview": "Прослушать",
+      "regenerate": "Сгенерировать озвучку заново",
+      "statusReady": "Озвучено",
+      "statusNone": "Не озвучено",
+      "statusGenerating": "Генерация",
+      "statusError": "Ошибка"
+    },
+    "pick": {
+      "pickFor": "Выберите элемент для «{{label}}»",
+      "pickHint": "Нажмите на подсвеченный элемент или список ниже · Esc для отмены",
+      "pageElements": "Элементы страницы · {{count}}",
+      "expand": "Развернуть",
+      "collapse": "Свернуть",
+      "noElements": "На этом слайде нет элементов для выбора.",
+      "bindHint": "Нажмите на подсвеченный элемент на холсте для привязки"
+    },
+    "regen": {
+      "title": "Сгенерировать закадровый текст заново",
+      "running": "Генерация…",
+      "noActions": "Действия не сгенерированы",
+      "actionsCount": "{{count}} действий",
+      "generating": "Генерация",
+      "notGenerated": "Не сгенерировано",
+      "updated": "Обновлено"
+    },
+    "regenScene": {
+      "title": "Сгенерировать слайд заново",
+      "generating": "Генерация",
+      "updated": "Обновлено",
+      "notGenerated": "Не сгенерировано",
+      "elementsCount": "{{count}} элементов",
+      "restore": "Вернуть прежний вариант",
+      "restored": "Восстановлено",
+      "resume": "Вернуть"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
+    },
+    "fixHtml": {
+      "editsCount": "Правок: {{count}}",
+      "fixed": "Исправлено",
+      "fixing": "Исправляю",
+      "notFixed": "Не исправлено",
+      "title": "Исправить интерактивную страницу"
     }
   },
   "classroomComplete": {
@@ -360,6 +560,228 @@
         "title": "Шаг 3: Завершите проект",
         "desc": "Когда все задачи выполнены, система показывает \"🎉 Проект завершён!\""
       }
+    },
+    "v2": {
+      "hero": {
+        "title": "Проектное обучение · Project-Based Learning",
+        "stage": "Этапы",
+        "task": "Задания",
+        "tutor": "Наставник",
+        "greetingBanner": "Наставник приветствует вас…",
+        "startProject": "Начать проект",
+        "continueProject": "Продолжить проект",
+        "resetProgress": "Сбросить прогресс обучения",
+        "resetConfirmTitle": "Сбросить прогресс обучения?",
+        "resetConfirmDescription": "Это удалит весь прогресс по проекту — историю чата, отправленные работы и статусы этапов — и вы начнёте заново. Это действие нельзя отменить.",
+        "resetConfirmConfirm": "Сбросить",
+        "resetConfirmCancel": "Отмена",
+        "startHint": "Нажмите, чтобы войти в рабочее пространство. {{name}} проведёт вас через каждый этап.",
+        "startError": "Не удалось начать: {{error}}",
+        "youWillLearn": "Что вы получите",
+        "instructorTagline": "Сопровождает вас на протяжении всего проекта",
+        "scenarioCharacter": "Персонаж сценария",
+        "scenarioCharacterTagline": "Персонаж, с которым вы взаимодействуете в сценарии",
+        "scenarioFlow": "Этапы",
+        "close": "Закрыть"
+      },
+      "sidebar": {
+        "title": "План проекта",
+        "summary": "{{completed}} / {{total}} заданий · {{stages}} этапов",
+        "enterScenario": "Войти в сцену",
+        "advanceScene": "Продвинуть сцену",
+        "continueScene": "Следующий этап",
+        "stagePrep": "Подготовка",
+        "stageRoleplay": "Симуляция",
+        "stageWrapup": "Разбор",
+        "completeAct": "Завершить эту сцену",
+        "completeTask": "Готово"
+      },
+      "workspace": {
+        "progressLabel": "Прогресс",
+        "resizeSidebar": "Изменить ширину панели задач и чата",
+        "resizeSubmission": "Изменить ширину чата и панели отправки",
+        "enterFullscreen": "Развернуть на весь экран",
+        "exitFullscreen": "Выйти из полноэкранного режима",
+        "exitNativeFullscreen": "Выйти из полноэкранного режима",
+        "returnToHero": "Назад к обзору проекта",
+        "breadcrumbOverview": "Обзор",
+        "breadcrumbCurrent": "Рабочая область"
+      },
+      "chat": {
+        "placeholder": "Обсудите прогресс с {{name}}...",
+        "placeholderCompleted": "Проект завершён. Посмотрите отчёт.",
+        "send": "Отправить",
+        "voiceInput": "Голосовой ввод",
+        "keyboardHint": "Enter — отправить · Shift+Enter — новая строка",
+        "readingSubmission": "Чтение ответа…",
+        "generatingMilestoneFeedback": "Генерация отзыва по этапу…",
+        "generatingFinalEval": "Генерация итоговой оценки…",
+        "readingSubmissionWithTitle": "Чтение ответа «{{title}}»…",
+        "evaluatingTask": "{{name}} · Оценка задания",
+        "evaluatingFinal": "{{name}} · Итоговая оценка",
+        "narrating": "Описание сцены…",
+        "choosePrompt": "Выберите вариант",
+        "choiceOrType": "Выберите или напишите своё…",
+        "suggestionsToggle": "Нужны идеи? Посмотрите варианты ответа",
+        "guidancePointer": "Не знаете, что сказать? Цель и подсказки этой сцены — на панели справа.",
+        "roleplayHistoryTitle": "История ролевого этапа",
+        "coachHint": "Подсказка тренера",
+        "thinking": "{{name}} · Думает",
+        "typing": "{{name}} · Пишет…",
+        "submitted": "Работа отправлена",
+        "evaluatingSubmission": "Оценка вашего ответа…",
+        "evaluatingSubmissionDetail": "Задание: «{{title}}». Оценка появится здесь после завершения.",
+        "milestoneFeedbackPending": "Отзыв по этапу появится здесь, когда будет готов.",
+        "emptyChat": "Сообщений пока нет.",
+        "emptyChatHint": "Знакомство с проектом под руководством {{name}} начнётся здесь.",
+        "continueError": "Не удалось продолжить: {{error}}",
+        "stillTyping": "Всё ещё печатает",
+        "handoverHint": "Нажмите «Перейти к следующему этапу», чтобы продолжить."
+      },
+      "scene": {
+        "expand": "Развернуть",
+        "collapse": "Свернуть",
+        "greetHint": "Нажмите, чтобы поздороваться",
+        "label": "Сцена"
+      },
+      "milestoneCard": {
+        "title": "Оценка этапа",
+        "youLearned": "Чему вы научились",
+        "nextStage": "Следующий этап:",
+        "continueHint": "Нажмите Continue, чтобы перейти к следующему этапу.",
+        "alreadyEntered": "Следующий этап начат",
+        "continueToNext": "Перейти к следующему этапу",
+        "projectAlmostDone": "🎉 Проект почти завершён — ожидание отчёта"
+      },
+      "taskEvalCard": {
+        "title": "Отзыв на отправленное",
+        "strengths": "Что получилось хорошо",
+        "improvements": "Над чем поработать"
+      },
+      "briefing": {
+        "intro": "Вводная из этапа подготовки — здесь её можно открыть в любой момент сцены.",
+        "tablistLabel": "Вкладки правой панели",
+        "submissionTab": "Отправка",
+        "briefingTab": "Сводка",
+        "setting": "Обстановка",
+        "learnerRole": "Ваша роль",
+        "goal": "Цель",
+        "rules": "Правила",
+        "cast": "Персонажи",
+        "identity": "Кто это",
+        "situation": "Ситуация"
+      },
+      "submission": {
+        "textSubmission": "Текстовая отправка",
+        "fileTooLarge": "Файл превышает 5 МБ. Разделите или сожмите.",
+        "contentRequired": "Содержимое не может быть пустым",
+        "readFileFailed": "Ошибка чтения файла: {{error}}",
+        "parsingPdf": "Разбор PDF…",
+        "parsePdfFailed": "Не удалось разобрать PDF: {{error}}",
+        "pdfNoText": "В этом PDF не найден извлекаемый текст.",
+        "imageUploadFailed": "Не удалось загрузить изображение: {{error}}",
+        "imageTooLargeNoStorage": "Изображение слишком большое без настроенного хранилища (локально макс. 2 МБ).",
+        "imageNeedsCaptionNoVision": "Текущая модель не распознаёт изображения. Добавьте текстовое описание изображения перед отправкой или выберите модель с поддержкой зрения в настройках.",
+        "unsupportedFileType": "Неподдерживаемый тип файла. Принимаются только текстовые файлы (.txt, .md, .csv, .json, .py и т.д.) и PDF.",
+        "pasteTab": "Вставить текст / изображение",
+        "uploadTab": "Загрузить файл",
+        "pastePlaceholder": "Вставьте код, документ, ответ или изображение / скриншот сюда…",
+        "uploadPlaceholder": "Загруженное содержимое появится здесь. Можно редактировать перед отправкой...",
+        "imageCaptionPlaceholder": "Добавьте подпись к изображению (необязательно)…",
+        "imageSelectedReplace": "Изображение выбрано · нажмите, чтобы заменить",
+        "removeImage": "Удалить изображение",
+        "processing": "Обработка…",
+        "cancelProcessingConfirm": "Файл ещё обрабатывается. Отменить и отклонить эту загрузку?",
+        "currentTask": "Текущее задание",
+        "hints": "Подсказки",
+        "submitOutput": "Отправить",
+        "evaluating": "Оценка ответа...",
+        "lockedWhileStreaming": "Наставник отвечает — подождите, прежде чем отправлять.",
+        "evalFailed": "Ошибка оценки: {{error}}",
+        "submittedCount": "Отправлено: {{count}}",
+        "submissionHistory": "История отправок",
+        "fromTask": "Задача: {{title}}",
+        "download": "Скачать",
+        "viewSubmission": "Просмотр работы",
+        "noActiveTask": "Нет активных заданий.",
+        "canceling": "Отмена",
+        "submitting": "Отправка...",
+        "selectFileHint": "Выбрать файл · макс. 5 МБ · текст / PDF / изображение",
+        "modalTitle": "Отправить работу",
+        "modalTaskLabel": "Задание: {{title}}",
+        "fileRead": "Прочитано: {{filename}} · {{size}} КБ",
+        "submittedBadge": "Отправлено ({{count}})",
+        "receiptFile": "Файл: {{filename}}",
+        "receiptTemplate": "Отправлена работа по заданию ({{label}})."
+      },
+      "agentTabs": {
+        "noAgent": "Для этого проекта не настроен AI-агент."
+      },
+      "completion": {
+        "noWhatsNext": "В итоговой оценке ещё нет рекомендаций.",
+        "backToWorkspace": "Вернуться к работе",
+        "completionCta": "Смотреть отчёт",
+        "title": "Итоговый отчёт",
+        "whatYouBuilt": "Что вы создали",
+        "whatYouLearned": "Чему вы научились",
+        "whatsNext": "Что дальше",
+        "noDataFallback": "Ещё не записано",
+        "stageReview": "Обзор этапов",
+        "summary": "Вы выполнили все {{completed}} / {{total}} заданий в {{stages}} этапах.",
+        "statConcepts": "Освоено концепций",
+        "statTurns": "Реплик в диалоге",
+        "statScope": "Этапов · Задач",
+        "statDuration": "Затрачено времени",
+        "statSubmissions": "Отправлено работ",
+        "coreStageBadge": "Ключевой",
+        "conceptsInStageLabel": "Освоены концепции:",
+        "submissionsInStage": "Отправлено работ: {{count}}",
+        "coreConceptGrasp": "Ключевая концепция «{{concept}}» — {{quality}}",
+        "stageNoData": "Нет записанных результатов в этом этапе.",
+        "highlightsTitle": "Ваши достижения",
+        "scenario": {
+          "summary": "Вы прошли все {{acts}} акта этого сценария. Вот как прошла ролевая игра.",
+          "whatYouDidWell": "Что вы сделали хорошо",
+          "skillsPracticed": "Отработанные навыки",
+          "statGoals": "Целей достигнуто",
+          "statActs": "Завершено актов",
+          "goalReviewTitle": "Разбор по актам",
+          "goalReviewHint": "В этом сценарии для каждого акта заданы несколько ключевых целей. Вот разбор по тому, как прошёл ваш диалог — в этот раз вы достигли {{achieved}} из {{total}}.",
+          "goalListTitle": "Что требовал от вас каждый акт",
+          "goalListHint": "В этом сценарии для каждого акта заданы несколько ключевых целей. Вот обзор того, что требовалось сделать в каждом акте.",
+          "goalAchieved": "достигнуто",
+          "goalPartial": "частично",
+          "goalMissed": "не достигнуто",
+          "statGoodDecisions": "Удачные решения",
+          "statScore": "Очки за решения",
+          "statBeats": "Завершено актов",
+          "decisionReviewTitle": "Разбор решений",
+          "good": "удачно",
+          "ok": "нормально",
+          "poor": "доработать",
+          "decisionScore": "Очки за решения: {{score}}",
+          "castLabel": "Вы общались с: {{names}}"
+        },
+        "highlight": {
+          "independence": "Вы самостоятельно показали {{unlocks}}/{{total}} концепций — без подсказок. Отличное понимание.",
+          "resilience": "На этапе «{{title}}» вы преодолели {{errors}} ошибок — настоящая стойкость.",
+          "resilienceGeneral": "Вы преодолели {{errors}} ошибок — настоящая стойкость.",
+          "completion": "Все задания выполнены. Уверенный прогресс."
+        },
+        "synthesisQuality": {
+          "strong": "Отличное понимание ✅",
+          "ok": "Хорошее усвоение 👍",
+          "weak": "Можно укрепить 💪"
+        },
+        "durationMinutes": "{{m}} мин",
+        "durationHours": "{{h}} ч",
+        "durationHoursMinutes": "{{h}} ч {{m}} мин"
+      },
+      "completionCard": {
+        "title": "Проект завершён · Completion",
+        "subtitle": "Поздравляем! Проект завершён.",
+        "description": "На основе ваших данных (время, диалоги, исправление ошибок, освоенные концепции…) мы подготовили итоговый отчёт."
+      }
     }
   },
   "share": {
@@ -465,6 +887,28 @@
     "deleteSceneConfirmAction": "Удалить",
     "collapseEditor": "Свернуть",
     "quizConfigSummary": "{{count}} вопросов",
+    "interactiveWidgetKind": "Тип виджета",
+    "widgetSimulation": "Симуляция",
+    "widgetDiagram": "Диаграмма",
+    "widgetCode": "Код",
+    "widgetGame": "Игра",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "Концепция",
+    "interactiveConceptPlaceholder": "Изучаемая концепция",
+    "pblConfigSummary": "Проект",
+    "pblSubtype": "Тип PBL",
+    "pblSubtypeProject": "Проект",
+    "pblSubtypeScenario": "Сценарий",
+    "pblProjectTopic": "Тема проекта",
+    "pblProjectTopicPlaceholder": "Тема проекта",
+    "pblProjectDescription": "Описание",
+    "pblProjectDescriptionPlaceholder": "Что создадут учащиеся",
+    "pblScenarioBrief": "Кратко о сценарии",
+    "pblScenarioBriefPlaceholder": "Ситуация, персонажи и цель практики",
+    "pblTargetSkills": "Целевые навыки",
+    "pblAddSkill": "Добавить навык",
+    "widgetProceduralSkill": "Практический навык",
+    "removeSkill": "Удалить навык",
     "dragSceneHint": "Перетащите для сортировки или нажмите Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "Удалить сцену",
     "backToRequirements": "Назад к требованиям",
@@ -472,7 +916,9 @@
     "generatingInProgress": "Генерация...",
     "webSearching": "Поиск в интернете",
     "webSearchingDesc": "Поиск актуальной информации в сети",
-    "webSearchFailed": "Ошибка веб-поиска"
+    "webSearchFailed": "Ошибка веб-поиска",
+    "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
+    "jumpToBlankTitle": "Перейти к разделу без заголовка"
   },
   "settings": {
     "title": "Настройки",
@@ -1099,7 +1545,8 @@
     "viewDocs": "API документация",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Серверный API-ключ поиска настроен",
-    "optional": "Необязательно"
+    "optional": "Необязательно",
+    "ttsBrowserNativeTimelineNotice": "Встроенный в браузер TTS не поддерживает функции аудио на таймлайне редактора (прослушивание, повторная генерация и массовая озвучка). Переключитесь на управляемый TTS-провайдер, чтобы генерировать и управлять аудио для каждой строки."
   },
   "profile": {
     "title": "Профиль",

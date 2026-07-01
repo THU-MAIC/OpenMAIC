@@ -76,8 +76,15 @@ export class AudioPlayer {
         this.onEndedCallback?.();
       });
 
-      // Play
-      await this.audio.play();
+      // Play. If play() rejects (autoplay policy, decode error, interrupted
+      // load) the 'ended' listener never fires, so revoke the blob URL here to
+      // avoid leaking it for the lifetime of the document.
+      try {
+        await this.audio.play();
+      } catch (playError) {
+        URL.revokeObjectURL(blobUrl);
+        throw playError;
+      }
       // Re-apply after play() — some browsers reset during load
       this.audio.playbackRate = this.playbackRate;
       return true;

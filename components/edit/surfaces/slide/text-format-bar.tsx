@@ -95,6 +95,11 @@ function Divider() {
   return <div className="h-5 w-px bg-zinc-200 dark:bg-zinc-800" />;
 }
 
+// Font-size bounds, shared by the size input commit and the −/+ stepper so the
+// two clamp paths can never drift apart.
+export const FONT_SIZE_MIN = 8;
+export const FONT_SIZE_MAX = 96;
+
 // Subtle raised −/+ button inside the size stepper pill.
 const STEP_BUTTON =
   'flex h-7 w-7 items-center justify-center rounded text-zinc-600 transition-colors ' +
@@ -122,7 +127,7 @@ export function TextFormatBar({ elementId, attrs }: TextFormatBarProps) {
       setSizeInput(String(fontSize));
       return;
     }
-    const clamped = Math.max(8, Math.min(96, n));
+    const clamped = Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, n));
     if (clamped !== fontSize) run({ command: 'fontsize', value: `${clamped}px` });
     setSizeInput(String(clamped));
   }, [sizeInput, fontSize, run]);
@@ -310,7 +315,7 @@ export function ConnectedTextFormatBar({ elementId }: { readonly elementId: stri
 
 export function stepFontSize(current: string, delta: number): string {
   const n = parseInt(current, 10) || 16;
-  return `${Math.max(8, Math.min(96, n + delta))}px`;
+  return `${Math.max(FONT_SIZE_MIN, Math.min(FONT_SIZE_MAX, n + delta))}px`;
 }
 
 /**

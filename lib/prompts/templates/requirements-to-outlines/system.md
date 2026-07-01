@@ -45,6 +45,16 @@ Infer the course language from all available signals and produce:
 - **Emerging tech terms** (AI/ML): show bilingually.
 - **User's explicit request** about terminology overrides the above defaults.
 
+### Course Title
+
+Produce a **`courseTitle`** (required): a concise, human-readable name for the **entire course**. This becomes the course's display name, so it must be short and scannable — never the raw requirement text.
+
+- **Length**: ≤ 30 characters (roughly one short phrase). Hard cap; if the concept is long, compress it.
+- **Language**: write it in the **inferred teaching language** (same language `languageDirective` targets).
+- **Style**: a noun phrase summarizing the topic — e.g. "抛体运动入门", "Intro to Recursion", "光合作用原理". Not a sentence, not a question.
+- **Do NOT** include: quotes, numbering, leading emojis, the teacher's name/role, or words like "Course"/"课程"/"A course about".
+- If the requirement is already a crisp title, you may reuse it (trimmed to the limit). If it is a long prompt, distill it to its essence.
+
 ---
 
 ## Design Principles
@@ -205,17 +215,29 @@ Use `pbl` type when the course involves complex, multi-step project work that be
 - The `pblConfig.targetSkills` should list 2-5 specific skills students will develop
 - The `pblConfig.issueCount` should typically be 2-5 issues
 
+**Role-play scenario PBL (optional PBL sub-type)**:
+
+Some PBL projects are best learned by *practising an interpersonal or situational interaction* rather than by building an artefact — for example practising a difficult conversation, a negotiation, a job interview, a customer-service exchange, a debate, a role-play game (e.g. a murder-mystery / detective case, a social-deduction game like werewolf, or an interactive story), or social / relationship communication. When the core of the learning really is the interaction itself (the learner will converse with one or more in-character roles inside an immersive scene), additionally set inside `pblConfig`:
+
+- `scenarioRoleplay: true` — marks this PBL as a role-play scenario.
+- `scenarioBrief` (optional string) — a short hint about the situation and who the character(s) are, to steer the later design step.
+
+Leave **both unset** for ordinary build-an-artefact PBL projects (this is the default). Only use `scenarioRoleplay` when the practice of the interaction is the point. This does not change how you choose the scene `type` — it is still `pbl`; these two fields are an optional flavour *inside* a PBL scene.
+
+**Important:** `pblConfig.scenarioRoleplay` is the downstream runtime switch. If the user explicitly asks for a role-play / scenario-simulation PBL, do not return an ordinary PBL; set `scenarioRoleplay: true` and include a concrete `scenarioBrief`.
+
 ---
 
 ## Output Format
 
 ### Top-level shape — NON-NEGOTIABLE
 
-Your entire response MUST be a single JSON **object** with exactly these two top-level keys:
+Your entire response MUST be a single JSON **object** with exactly these three top-level keys:
 
 ```json
 {
   "languageDirective": "<the directive you inferred in the Language Inference step>",
+  "courseTitle": "<concise course name, ≤30 chars, in the teaching language>",
   "outlines": [ /* array of scene objects */ ]
 }
 ```
@@ -223,7 +245,7 @@ Your entire response MUST be a single JSON **object** with exactly these two top
 Rules:
 
 - **Never** return a bare array. The top level is an object, not an array.
-- **Never** omit `languageDirective`. It is required even if you think the language is obvious.
+- **Never** omit `languageDirective` or `courseTitle`. Both are required even if you think they are obvious.
 - **Never** wrap the response in any other structure, prose, or code fence.
 
 ### Minimal complete example
@@ -231,6 +253,7 @@ Rules:
 ```json
 {
   "languageDirective": "Deliver the entire course in English. Use simple vocabulary suitable for a beginner.",
+  "courseTitle": "Intro to Projectile Motion",
   "outlines": [
     {
       "id": "scene_1",
@@ -326,6 +349,21 @@ Rules:
 }
 ```
 
+For a **role-play scenario** PBL (see PBL Scene Guidelines), additionally include the two optional fields:
+
+```json
+{
+  "projectTopic": "Practise comforting a stressed friend",
+  "projectDescription": "Have a supportive conversation with a friend who is going through a hard week",
+  "targetSkills": ["Active listening", "Empathetic responding", "De-escalation"],
+  "issueCount": 3,
+  "scenarioRoleplay": true,
+  "scenarioBrief": "The character is a close friend overwhelmed by exams and a part-time job; the learner practises listening and offering support"
+}
+```
+
+Omit `scenarioRoleplay` and `scenarioBrief` entirely for ordinary build-an-artefact PBL projects.
+
 ---
 
 ## Important Reminders
@@ -333,7 +371,7 @@ Rules:
 **Top-level response shape (these come first because they are most often violated):**
 
 1. Return exactly one JSON **object** — never a bare array.
-2. That object MUST have both `languageDirective` (string) and `outlines` (array) as top-level keys. Omitting either is a failure.
+2. That object MUST have `languageDirective` (string), `courseTitle` (string, ≤30 chars), and `outlines` (array) as top-level keys. Omitting any is a failure.
 3. Do not wrap the object in prose, markdown, or code fences.
 
 **Scene-level rules:**
