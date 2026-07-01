@@ -71,7 +71,9 @@ function makeSlideScene(overrides: Partial<Scene> = {}): Scene {
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
-  };
+    // Fixture builder spreads a loose `Partial<Scene>` over a fixed-kind literal,
+    // which widens the discriminant; the cast is contained to this test helper.
+  } as Scene;
 }
 
 describe('createBlankSlideScene', () => {

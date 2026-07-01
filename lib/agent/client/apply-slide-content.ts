@@ -9,11 +9,11 @@
  */
 import { useStageStore } from '@/lib/store/stage';
 import { useSlideEditSession } from '@/components/edit/surfaces/slide/slide-edit-session';
-import type { Scene, SlideContent } from '@/lib/types/stage';
+import type { ScenePatch, SlideContent } from '@/lib/types/stage';
 
 /** Apply a scene patch to the stage store and keep the OPEN slide edit session
  *  in lockstep (else the canvas renders stale history and clobbers the change). */
-export function applyScenePatchInSync(sceneId: string, patch: Partial<Scene>): void {
+export function applyScenePatchInSync(sceneId: string, patch: ScenePatch): void {
   useStageStore.getState().updateScene(sceneId, patch);
   const es = useSlideEditSession.getState();
   if (patch.content && es.sceneId === sceneId) {

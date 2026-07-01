@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/dsl",
-  "version": "0.0.2",
+  "version": "0.1.0",
   "description": "The MAIC slide DSL: the pure, dependency-free contract (types + JSON Schema + validators + version/migration helpers) that @openmaic/renderer and @openmaic/importer both depend on.",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,7 +10,8 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    }
+    },
+    "./schema/*": "./dist/schema/*"
   },
   "files": [
     "dist",
@@ -20,7 +21,8 @@
   "sideEffects": false,
   "scripts": {
     "clean": "rm -rf dist",
-    "build": "rm -rf dist && tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json && node scripts/gen-schema.mjs",
+    "build:schema": "node scripts/gen-schema.mjs",
     "dev": "tsc -p tsconfig.json --watch",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
@@ -45,6 +47,8 @@
     "access": "public"
   },
   "devDependencies": {
+    "ajv": "^8.17.1",
+    "ts-json-schema-generator": "~2.4.0",
     "typescript": "^5",
     "vitest": "^4.1.8"
   }
