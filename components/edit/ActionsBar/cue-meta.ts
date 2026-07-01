@@ -98,7 +98,7 @@ const META: Record<string, CueMeta> = {
     labelKey: 'edit.cue.discussion',
     glyph: 'text-yellow-600 bg-yellow-500/10 dark:text-yellow-400',
     accent: 'bg-yellow-400/70',
-    dash: 'border-yellow-400/70',
+    dash: 'border-primary/40',
   },
 };
 
