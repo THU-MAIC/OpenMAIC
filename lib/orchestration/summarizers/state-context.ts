@@ -95,7 +95,7 @@ export function summarizeElements(elements: any[]): string {
  * Build context string from store state
  */
 export function buildStateContext(storeState: StatelessChatRequest['storeState']): string {
-  const { stage, scenes, currentSceneId, mode, whiteboardOpen } = storeState;
+  const { stage, scenes, currentSceneId, mode, whiteboardOpen, quizResults } = storeState;
 
   const lines: string[] = [];
 
@@ -130,16 +130,76 @@ export function buildStateContext(storeState: StatelessChatRequest['storeState']
         lines.push(`Current slide elements (${elements.length}):\n${summarizeElements(elements)}`);
       }
 
-      // Quiz scene: include question summary
+      // Quiz scene: include question summary, or post-submit results when the
+      // student has finished. Hydration of `quizResults` happens client-side in
+      // use-chat-sessions; absent here means the student has not submitted (or
+      // the active scene is not the quiz that owns the results).
       if (currentScene.content.type === 'quiz') {
         const questions = currentScene.content.questions;
-        const qSummary = questions
-          .slice(0, 5)
-          .map((q, i) => `  ${i + 1}. [${q.type}] ${q.question.slice(0, 80)}`)
-          .join('\n');
-        lines.push(
-          `Quiz questions (${questions.length}):\n${qSummary}${questions.length > 5 ? `\n  ... and ${questions.length - 5} more` : ''}`,
-        );
+        const hasGradedResults =
+          !!quizResults && quizResults.sceneId === currentSceneId && quizResults.results.length > 0;
+
+        if (hasGradedResults && quizResults) {
+          // Student has submitted. Surface their answers, correctness, the
+          // grader's comment on short-answer questions, and the canonical
+          // analysis so the agent can give targeted feedback on the actual
+          // mistakes instead of re-teaching everything.
+          const resultsById = new Map(quizResults.results.map((r) => [r.questionId, r]));
+          const answersById = quizResults.answers;
+          const lineEntries = questions.map((q, i) => {
+            const r = resultsById.get(q.id);
+            const ans = answersById?.[q.id];
+            const studentAnswer = Array.isArray(ans) ? ans.join(', ') : (ans ?? '');
+            const correctAnswer =
+              Array.isArray(q.answer) && q.answer.length > 0 ? q.answer.join(', ') : '(open-ended)';
+            const verdict = r ? r.status.toUpperCase() : 'UNGRADED';
+            const points = q.points ?? 1;
+            const earned = r?.earned ?? 0;
+            const entry: string[] = [
+              `  ${i + 1}. [${q.type}] ${q.question}`,
+              `     Student answer: ${studentAnswer || '(empty)'}`,
+              `     Correct answer: ${correctAnswer}`,
+              `     Verdict: ${verdict} (${earned}/${points} pts)`,
+            ];
+            if (q.analysis) entry.push(`     Reference analysis: ${q.analysis}`);
+            if (r?.aiComment) entry.push(`     AI grader comment: ${r.aiComment}`);
+            return entry.join('\n');
+          });
+          const score = quizResults.results.reduce((acc, r) => acc + (r.earned ?? 0), 0);
+          const total = questions.reduce((acc, q) => acc + (q.points ?? 1), 0);
+          lines.push(
+            `Quiz results — the student JUST submitted (${score}/${total} pts). Use these to address THIS student's specific mistakes; do not re-teach what they already got right. Walk through wrong answers, acknowledge correct ones briefly, and tie feedback back to the underlying concept.\n${lineEntries.join('\n')}`,
+          );
+        } else {
+          // Student has NOT submitted yet. Surface the questions in full so the
+          // agent CAN help when the student asks about a specific item — but
+          // strict rules below forbid using them proactively. The split matters:
+          // suppressing the text entirely makes the agent useless for clarifying
+          // questions; exposing it without rules let it recite the whole quiz
+          // the moment a user said "I'm done". We want both — visibility AND
+          // restraint.
+          const qSummary = questions
+            .map((q, i) => {
+              const optionsPart =
+                q.options && q.options.length > 0
+                  ? `\n     Options: ${q.options.map((o) => `${o.value}. ${o.label}`).join(' | ')}`
+                  : '';
+              return `  ${i + 1}. [${q.type}] ${q.question}${optionsPart}`;
+            })
+            .join('\n');
+          lines.push(
+            [
+              `Quiz scene — the student has NOT submitted yet. ${questions.length} question(s) below. You have this so you can clarify when the student asks about a specific item — NOT so you can teach them through it preemptively.`,
+              'Strict rules while the quiz is unsubmitted (override everything else):',
+              '- Do NOT proactively list, recite, paraphrase, summarise, or walk through the questions. Mentioning them at all on your own initiative is a leak.',
+              '- Do NOT reveal the correct answer, eliminate options, or hint strongly enough that the answer is obvious. Even a leading phrase like "think about whether x is really an integer" is too much when it points at the answer.',
+              '- Do NOT teach the underlying concept end-to-end here. The concepts were already taught earlier; re-teaching them now is equivalent to giving the answers.',
+              '- If the student claims to be done but no submitted results have arrived in this context, treat the absence of `Quiz results` above as authoritative — they have NOT submitted. Point them at the Submit button on the right-hand panel; do not start grading or summarising from memory.',
+              '- If the student asks for help on a SPECIFIC question (by number, by option, or by quoting the stem), you MAY ask a single Socratic question or clarify a concept WITHOUT naming the correct option. Otherwise stay encouraging and meta ("看不懂哪一题？" / "Take it one question at a time").',
+              '- You MAY answer how-the-quiz-works questions (how to submit, how many questions, what types) and offer encouragement.',
+            ].join('\n') + `\n${qSummary}`,
+          );
+        }
       }
     }
   } else if (scenes.length > 0) {

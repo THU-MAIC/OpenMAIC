@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { SceneThumbnailContent } from '@/components/stage/scene-thumbnail-content';
 import { SCENE_CREATION_ENABLED } from '@/lib/edit/scene-creation-enabled';
+import { sceneHasIssues } from '@/lib/edit/content-validation';
 import type { Scene } from '@/lib/types/stage';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
@@ -125,6 +126,16 @@ function ThumbItemComponent({
             : 'hover:bg-zinc-50/80 dark:hover:bg-zinc-800/50',
         )}
       >
+        {/* Page-level "incomplete content" dot — surfaces a scene with any
+            content issue (blank narration / no actions / unbound cue …) so the
+            user can spot it in the rail without opening every page. */}
+        {sceneHasIssues(scene) && (
+          <span
+            title={t('edit.nav.sceneIncomplete')}
+            aria-label={t('edit.nav.sceneIncomplete')}
+            className="absolute right-1 top-1 z-10 size-2 rounded-full bg-amber-400 shadow-sm ring-2 ring-white dark:ring-slate-900"
+          />
+        )}
         {/* Scene header — index badge + title. Title doubles as the
             inline rename surface when `renaming` is true. */}
         <div className="flex items-center justify-between gap-1 px-2 pt-0.5">

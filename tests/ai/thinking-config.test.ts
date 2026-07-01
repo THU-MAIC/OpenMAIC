@@ -26,11 +26,17 @@ describe('thinking config metadata', () => {
   it('does not expose fixed thinking models as configurable', () => {
     const thinking = getThinking('grok', 'grok-4.20-reasoning');
     const minimaxM27Thinking = getThinking('minimax', 'MiniMax-M2.7');
+    const kimiK27CodeThinking = getThinking('kimi', 'kimi-k2.7-code');
+    const kimiK27CodeHighSpeedThinking = getThinking('kimi', 'kimi-k2.7-code-highspeed');
 
     expect(thinking?.control).toBe('none');
     expect(supportsConfigurableThinking(thinking)).toBe(false);
     expect(minimaxM27Thinking?.control).toBe('none');
     expect(supportsConfigurableThinking(minimaxM27Thinking)).toBe(false);
+    expect(kimiK27CodeThinking?.control).toBe('none');
+    expect(supportsConfigurableThinking(kimiK27CodeThinking)).toBe(false);
+    expect(kimiK27CodeHighSpeedThinking?.control).toBe('none');
+    expect(supportsConfigurableThinking(kimiK27CodeHighSpeedThinking)).toBe(false);
   });
 
   it('exposes MiniMax M3 thinking as a toggle through the Anthropic adapter', () => {
@@ -146,6 +152,35 @@ describe('thinking config normalization', () => {
     expect(normalizeThinkingConfig(thinking, { effort: 'max' })).toEqual({
       mode: 'enabled',
       effort: 'max',
+    });
+  });
+
+  it('normalizes GLM-5.2 thinking as official reasoning effort levels', () => {
+    const thinking = getThinking('glm', 'glm-5.2');
+
+    expect(supportsConfigurableThinking(thinking)).toBe(true);
+    expect(thinking?.control).toBe('effort');
+    expect(thinking?.requestAdapter).toBe('glm');
+    expect(thinking?.effortValues).toEqual([
+      'none',
+      'minimal',
+      'low',
+      'medium',
+      'high',
+      'xhigh',
+      'max',
+    ]);
+    expect(getDefaultThinkingConfig(thinking)).toEqual({
+      mode: 'enabled',
+      effort: 'max',
+    });
+    expect(normalizeThinkingConfig(thinking, { mode: 'disabled' })).toEqual({
+      mode: 'disabled',
+      effort: 'none',
+    });
+    expect(normalizeThinkingConfig(thinking, { effort: 'minimal' })).toEqual({
+      mode: 'enabled',
+      effort: 'minimal',
     });
   });
 
