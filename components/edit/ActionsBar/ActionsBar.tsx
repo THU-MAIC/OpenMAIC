@@ -79,6 +79,9 @@ import {
 } from '@/lib/audio/regenerate-speech-tts';
 
 const EMPTY: Action[] = [];
+// Stable empty set for the "no lines regenerating" state (avoids re-allocating
+// on every reset and keeps a constant identity between batch runs).
+const NO_IDS: ReadonlySet<string> = new Set();
 
 /**
  * Clear the canvas spotlight/laser preview when a cue glyph unmounts while it is
@@ -258,6 +261,7 @@ function SpeechTtsBar({
   text,
   audioUrl,
   refreshKey,
+  regenerating,
   onGenerated,
 }: {
   actionId: string;
@@ -267,10 +271,25 @@ function SpeechTtsBar({
   text: string;
   audioUrl?: string;
   refreshKey?: number;
+  regenerating?: boolean;
   onGenerated: () => void;
 }) {
   const { t } = useI18n();
   const [status, setStatus] = useState<TtsStatus>('none');
+  // Holds this line in 生成中 across a batch ("全部配音") run and — crucially —
+  // until its OWN audio re-check resolves, so it can't briefly flash back to
+  // 未配音 in the window between the batch clearing `regenerating` and the async
+  // audioExists effect landing. Latched on the rising edge of `regenerating`,
+  // cleared inside that re-check effect (which the batch always re-triggers via
+  // `refreshKey`).
+  const [batchPending, setBatchPending] = useState(false);
+  const [prevRegenerating, setPrevRegenerating] = useState(regenerating);
+  if (regenerating !== prevRegenerating) {
+    // Adjust state during render (per React's "you might not need an effect"),
+    // not in an effect — avoids a cascading render on the batch's hot path.
+    setPrevRegenerating(regenerating);
+    if (regenerating) setBatchPending(true);
+  }
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const objUrlRef = useRef<string | null>(null);
 
@@ -290,17 +309,29 @@ function SpeechTtsBar({
   useEffect(() => {
     let alive = true;
     (async () => {
-      if (audioUrl) {
-        if (alive) setStatus('ready');
-        return;
+      try {
+        if (audioUrl) {
+          if (alive) setStatus('ready');
+          return;
+        }
+        const has = await audioExists(lookupId);
+        if (alive) setStatus((s) => (s === 'generating' ? s : has ? 'ready' : 'none'));
+      } catch {
+        /* IndexedDB read failed — leave status as-is (as before this change) */
+      } finally {
+        // Clear the batch latch only once the batch itself is over — its
+        // end-of-batch re-check runs with regenerating=false. A *stale*
+        // pre-batch check that resolves mid-batch must NOT clear it (adding
+        // regenerating to the deps also cancels such a check at batch start via
+        // the cleanup below). Runs even if the read threw, so the row can never
+        // wedge in 生成中.
+        if (alive && !regenerating) setBatchPending(false);
       }
-      const has = await audioExists(lookupId);
-      if (alive) setStatus((s) => (s === 'generating' ? s : has ? 'ready' : 'none'));
     })();
     return () => {
       alive = false;
     };
-  }, [lookupId, audioUrl, refreshKey]);
+  }, [lookupId, audioUrl, refreshKey, regenerating]);
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
@@ -342,7 +373,13 @@ function SpeechTtsBar({
     },
     error: { label: t('edit.tts.statusError'), cls: 'text-rose-500' },
   };
-  const s = STATUS[status];
+  // A batch "全部配音" run drives this line's loading state from the parent
+  // (regenerating) — independent of the local single-line status. `batchPending`
+  // extends 生成中 past the prop clearing, until this line's own audio re-check
+  // resolves to 已配音 / 未配音, so the batch end shows a clean 生成中 → 已配音
+  // transition with no intermediate flash.
+  const effStatus: TtsStatus = regenerating || batchPending ? 'generating' : status;
+  const s = STATUS[effStatus];
 
   return (
     <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-1 dark:border-gray-700/50">
@@ -352,7 +389,7 @@ function SpeechTtsBar({
       <button
         type="button"
         onClick={preview}
-        disabled={status !== 'ready'}
+        disabled={effStatus !== 'ready'}
         className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
         aria-label={t('edit.tts.preview')}
         title={t('edit.tts.preview')}
@@ -362,12 +399,12 @@ function SpeechTtsBar({
       <button
         type="button"
         onClick={regenerate}
-        disabled={status === 'generating' || !text.trim()}
+        disabled={effStatus === 'generating' || !text.trim()}
         className="grid size-5 place-items-center rounded-md text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground disabled:opacity-30 disabled:hover:bg-transparent"
         aria-label={t('edit.tts.regenerate')}
         title={t('edit.tts.regenerate')}
       >
-        <RefreshCw className={cn('size-3', status === 'generating' && 'animate-spin')} />
+        <RefreshCw className={cn('size-3', effStatus === 'generating' && 'animate-spin')} />
       </button>
     </div>
   );
@@ -385,6 +422,7 @@ function SpeechClip({
   ttsActive,
   audioUrl,
   ttsRefresh,
+  regenerating,
   onCommit,
   onGenerated,
   onDelete,
@@ -406,6 +444,7 @@ function SpeechClip({
   ttsActive: boolean;
   audioUrl?: string;
   ttsRefresh?: number;
+  regenerating?: boolean;
   onCommit: (text: string) => void;
   onGenerated: () => void;
   onDelete: () => void;
@@ -501,6 +540,7 @@ function SpeechClip({
           text={val}
           audioUrl={audioUrl}
           refreshKey={ttsRefresh}
+          regenerating={regenerating}
           onGenerated={onGenerated}
         />
       )}
@@ -899,6 +939,9 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const [dragOver, setDragOver] = useState<number | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [regenAll, setRegenAll] = useState(false);
+  // Ids of speech lines currently being (re)generated by "全部配音", so each
+  // line's status row shows 生成中 for the duration of the batch.
+  const [regeneratingIds, setRegeneratingIds] = useState<ReadonlySet<string>>(NO_IDS);
   const [ttsRefresh, setTtsRefresh] = useState(0); // bump → speech clips re-check audio status
   const reduce = useReducedMotion();
   const dragRef = useRef<DragPayload | null>(null);
@@ -926,6 +969,9 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
     if (!speeches.length) return;
     const order = latest()?.order ?? 0;
     setRegenAll(true);
+    // Light up every queued line's status row up front (they're all about to be
+    // synthesized), cleared together in the finally once the batch settles.
+    setRegeneratingIds(new Set(speeches.map((a) => a.id).filter(Boolean) as string[]));
     // Stamp audioId only for lines that actually synthesized — a skipped/failed
     // line must not get an id pointing at a blob that was never written.
     const okIds = new Set<string>();
@@ -952,10 +998,14 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
           }
           return next;
         });
-        setTtsRefresh((n) => n + 1);
       }
     } finally {
       setRegenAll(false);
+      setRegeneratingIds(NO_IDS);
+      // Always re-check every line's audio at batch end — even when nothing
+      // synthesized — so each SpeechTtsBar resolves its status (and clears its
+      // batchPending flag) instead of getting stuck in 生成中.
+      setTtsRefresh((n) => n + 1);
     }
   }, [regenAll, sceneId, language, commit]);
 
@@ -1257,6 +1307,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                               ttsActive={ttsActive}
                               audioUrl={(action as { audioUrl?: string }).audioUrl}
                               ttsRefresh={ttsRefresh}
+                              regenerating={regeneratingIds.has(key)}
                               autoFocus={key === focusId}
                               onFocused={() => setFocusId(null)}
                               onCommit={(text) => {
