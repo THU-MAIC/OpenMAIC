@@ -824,13 +824,17 @@ function NodeDot({
 /** Slim insertion slot between items; widens + glows while a drag hovers it. */
 function DropZone({
   active,
+  slot,
   onEnter,
   onDrop,
+  onInsert,
   flex,
 }: {
   active: boolean;
+  slot: number;
   onEnter: () => void;
   onDrop: () => void;
+  onInsert: (slot: number, rect: DOMRect) => void;
   flex?: boolean;
 }) {
   return (
@@ -844,16 +848,26 @@ function DropZone({
         onDrop();
       }}
       className={cn(
-        'relative h-full shrink-0 transition-all',
-        flex ? 'flex-1' : active ? 'w-10' : 'w-2.5',
+        'group/ins relative flex h-full shrink-0 items-start justify-center pt-2 transition-all',
+        flex ? 'flex-1' : active ? 'w-10' : 'w-4',
       )}
     >
       <span
         className={cn(
-          'absolute inset-y-3 left-1/2 w-0.5 -translate-x-1/2 rounded-full transition-colors',
+          'pointer-events-none absolute inset-y-3 left-1/2 w-0.5 -translate-x-1/2 rounded-full transition-colors',
           active ? 'bg-violet-500' : 'bg-transparent',
         )}
       />
+      {!active && (
+        <button
+          type="button"
+          title=""
+          onClick={(e) => onInsert(slot, e.currentTarget.getBoundingClientRect())}
+          className="relative z-[1] grid size-[22px] scale-90 place-items-center rounded-full border border-dashed border-primary/40 bg-background text-primary/70 opacity-30 transition-all hover:scale-100 hover:border-solid hover:border-primary hover:bg-primary/5 hover:text-primary hover:opacity-100 group-hover/ins:opacity-90"
+        >
+          <Plus className="size-3" />
+        </button>
+      )}
     </div>
   );
 }
@@ -1166,9 +1180,11 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
             )}
             <DropZone
               active={dragOver === 0}
+              slot={0}
               flex={actions.length === 0}
               onEnter={() => setDragOver(0)}
               onDrop={() => handleDrop(0)}
+              onInsert={(slot, rect) => setPickerAt({ slot, rect })}
             />
             {items.map(({ action, index, key, speechIndex: si }) => {
               // A discussion is pinned terminal, so it can't be drag-reordered.
@@ -1295,8 +1311,10 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                   </motion.div>
                   <DropZone
                     active={dragOver === index + 1}
+                    slot={index + 1}
                     onEnter={() => setDragOver(index + 1)}
                     onDrop={() => handleDrop(index + 1)}
+                    onInsert={(slot, rect) => setPickerAt({ slot, rect })}
                   />
                 </div>
               );
