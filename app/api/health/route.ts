@@ -16,7 +16,7 @@ export async function GET() {
       webSearch: Object.keys(getServerWebSearchProviders()).length > 0,
       imageGeneration: Object.keys(getServerImageProviders()).length > 0,
       videoGeneration: Object.keys(getServerVideoProviders()).length > 0,
-      tts: Object.keys(getServerTTSProviders()).length > 0,
+      tts: Object.values(getServerTTSProviders()).some((info) => !info.disabled),
     },
   });
 }

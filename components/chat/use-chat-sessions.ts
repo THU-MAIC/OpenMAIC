@@ -24,10 +24,46 @@ import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
 import { runAgentLoop, type AgentLoopStoreState } from '@/lib/chat/agent-loop';
 import { ActionEngine } from '@/lib/action/engine';
+import { readSubmittedState } from '@/lib/quiz/persistence';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ChatSessions');
+
+/**
+ * Hydrate post-submit quiz state for the active scene from localStorage so the
+ * agent receives the student's actual answers and grader feedback. Returns
+ * `undefined` when the active scene is not a quiz, the student has not submitted
+ * yet, or the persisted blob is unreadable — `state-context.ts` then falls back
+ * to the bare question summary.
+ */
+function buildQuizResultsForStoreState(
+  scenes: { id: string; type?: string }[],
+  currentSceneId: string | null,
+):
+  | {
+      sceneId: string;
+      answers: Record<string, string | string[]>;
+      results: Array<{
+        questionId: string;
+        correct: boolean | null;
+        status: 'correct' | 'incorrect';
+        earned: number;
+        aiComment?: string;
+      }>;
+    }
+  | undefined {
+  if (!currentSceneId) return undefined;
+  const scene = scenes.find((s) => s.id === currentSceneId);
+  if (!scene || scene.type !== 'quiz') return undefined;
+  const submitted = readSubmittedState(currentSceneId);
+  if (!submitted || submitted.kind !== 'reviewing') return undefined;
+  return {
+    sceneId: currentSceneId,
+    answers: submitted.answers,
+    results: submitted.results,
+  };
+}
 
 interface UseChatSessionsOptions {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
@@ -493,6 +529,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               currentSceneId: freshState.currentSceneId,
               mode: freshState.mode,
               whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+              quizResults: buildQuizResultsForStoreState(
+                freshState.scenes,
+                freshState.currentSceneId,
+              ),
             };
           },
 
@@ -895,6 +935,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               currentSceneId: currentState.currentSceneId,
               mode: currentState.mode,
               whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+              quizResults: buildQuizResultsForStoreState(
+                currentState.scenes,
+                currentState.currentSceneId,
+              ),
             },
             config: {
               agentIds,
@@ -1105,6 +1149,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               currentSceneId: currentState.currentSceneId,
               mode: currentState.mode,
               whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+              quizResults: buildQuizResultsForStoreState(
+                currentState.scenes,
+                currentState.currentSceneId,
+              ),
             },
             config: {
               agentIds,
@@ -1243,6 +1291,10 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
               currentSceneId: currentState.currentSceneId,
               mode: currentState.mode,
               whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+              quizResults: buildQuizResultsForStoreState(
+                currentState.scenes,
+                currentState.currentSceneId,
+              ),
             },
             config: {
               agentIds,

@@ -7,8 +7,9 @@
  *
  * SSE events:
  *   { type: 'languageDirective', data: string }
+ *   { type: 'courseTitle', data: string }
  *   { type: 'outline', data: SceneOutline, index: number }
- *   { type: 'done', outlines: SceneOutline[], languageDirective: string }
+ *   { type: 'done', outlines: SceneOutline[], languageDirective: string, courseTitle?: string }
  *   { type: 'error', error: string }
  */
 
@@ -35,6 +36,7 @@ import type {
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { resolveVocationalActive } from '@/lib/config/feature-flags';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -45,7 +47,12 @@ export const maxDuration = 300;
  *   {"languageDirective":"用中文授课...","outlines":[...
  */
 function extractLanguageDirective(buffer: string): string | null {
-  const match = buffer.match(/"languageDirective"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+  // The directive is the first key of the wrapper object, so it can only ever
+  // appear in the head of the buffer. Bound the scan to keep this O(1) per
+  // streamed chunk — it is called on the full, growing buffer on every chunk,
+  // which is otherwise O(n²) over the stream.
+  const head = buffer.length > 8192 ? buffer.slice(0, 8192) : buffer;
+  const match = head.match(/"languageDirective"\s*:\s*"((?:[^"\\]|\\.)*)"/);
   if (!match) return null;
   try {
     return JSON.parse(`"${match[1]}"`);
@@ -55,39 +62,83 @@ function extractLanguageDirective(buffer: string): string | null {
 }
 
 /**
- * Incremental JSON array parser.
- * Extracts complete top-level objects from a partially-streamed JSON array.
- * Supports both a flat array `[{...},{...}]` and a wrapper object
- * `{"languageDirective":"...","outlines":[{...},{...}]}`.
- * Returns newly found objects (skipping `alreadyParsed` count).
+ * Extract the courseTitle from the streamed wrapper JSON.
+ * Same head-bound scan as `extractLanguageDirective` — the title is a
+ * top-level key near the start of the wrapper object, so it only appears in
+ * the buffer head. Returns the decoded title, or null if not yet streamed.
  */
-function extractNewOutlines(buffer: string, alreadyParsed: number): SceneOutline[] {
+const COURSE_TITLE_RE = /"courseTitle"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+
+// Normalize a captured title identically to the non-streaming parser
+// (lib/generation/outline-generator.ts): ignore whitespace-only titles and cap
+// length defensively so a hallucinating model cannot push a blank or unbounded
+// value into the stage name. Returning null lets callers fall back / keep scanning.
+function normalizeStreamedTitle(raw: string): string | null {
+  let title: string;
+  try {
+    title = JSON.parse(`"${raw}"`);
+  } catch {
+    title = raw;
+  }
+  const normalized = title.trim();
+  return normalized ? normalized.slice(0, 120) : null;
+}
+
+function extractCourseTitle(buffer: string): string | null {
+  const head = buffer.length > 8192 ? buffer.slice(0, 8192) : buffer;
+  const match = head.match(COURSE_TITLE_RE);
+  return match ? normalizeStreamedTitle(match[1]) : null;
+}
+
+/**
+ * Full-buffer fallback, run once after the stream completes: recovers a title
+ * the model emitted after the `outlines` array or beyond the 8KB head window —
+ * cases the head-bound `extractCourseTitle` scan would miss. Only invoked when
+ * the streaming scan produced nothing, so the extra full-buffer regex is paid once.
+ */
+function extractCourseTitleFromComplete(buffer: string): string | null {
+  const match = buffer.match(COURSE_TITLE_RE);
+  return match ? normalizeStreamedTitle(match[1]) : null;
+}
+
+/**
+ * Incremental JSON array parser.
+ * Extracts complete top-level objects from a partially-streamed JSON array,
+ * resuming from `scanFrom` (an index into `buffer`) so the growing buffer is
+ * scanned only ONCE across the whole stream — O(n) total instead of O(n²).
+ * Supports both a flat array `[{...},{...}]` and a wrapper object
+ * `{"languageDirective":"...","outlines":[{...},{...}]}`, with or without a
+ * markdown ```json fence (the array is located by content, not by stripping).
+ * Returns newly found objects plus the index to resume scanning from next time.
+ */
+function extractNewOutlines(
+  buffer: string,
+  scanFrom: number,
+): { outlines: SceneOutline[]; scanFrom: number } {
   const results: SceneOutline[] = [];
 
-  // Strip markdown fencing if present
-  const stripped = buffer.replace(/^[\s\S]*?(?=[\[{])/, '');
-
-  // Find the outlines array — either nested in {"outlines": [...]} or a flat array
-  let arrayStart = -1;
-  const outlinesKeyIdx = stripped.indexOf('"outlines"');
-  if (outlinesKeyIdx >= 0) {
-    // Wrapper format: find [ after "outlines":
-    arrayStart = stripped.indexOf('[', outlinesKeyIdx);
+  let i: number;
+  if (scanFrom > 0) {
+    // Resume just past the last fully-parsed object (between array elements,
+    // so not inside a string and at brace depth 0).
+    i = scanFrom;
   } else {
-    // Flat array fallback
-    arrayStart = stripped.indexOf('[');
+    // Locate the outlines array opening once.
+    const outlinesKeyIdx = buffer.indexOf('"outlines"');
+    const arrayStart =
+      outlinesKeyIdx >= 0 ? buffer.indexOf('[', outlinesKeyIdx) : buffer.indexOf('[');
+    if (arrayStart === -1) return { outlines: results, scanFrom: 0 };
+    i = arrayStart + 1;
   }
-
-  if (arrayStart === -1) return results;
 
   let depth = 0;
   let objectStart = -1;
   let inString = false;
   let escaped = false;
-  let objectCount = 0;
+  let consumed = i; // index just past the last fully-parsed object
 
-  for (let i = arrayStart + 1; i < stripped.length; i++) {
-    const char = stripped[i];
+  for (; i < buffer.length; i++) {
+    const char = buffer[i];
 
     if (escaped) {
       escaped = false;
@@ -109,21 +160,125 @@ function extractNewOutlines(buffer: string, alreadyParsed: number): SceneOutline
     } else if (char === '}') {
       depth--;
       if (depth === 0 && objectStart >= 0) {
-        objectCount++;
-        if (objectCount > alreadyParsed) {
-          try {
-            const obj = JSON.parse(stripped.substring(objectStart, i + 1));
-            results.push(obj);
-          } catch {
-            // Incomplete or invalid JSON — skip
-          }
+        try {
+          results.push(JSON.parse(buffer.substring(objectStart, i + 1)));
+        } catch {
+          // Incomplete or invalid JSON — skip
         }
         objectStart = -1;
+        consumed = i + 1;
       }
     }
   }
 
-  return results;
+  return { outlines: results, scanFrom: consumed };
+}
+
+function normalizeTaskEngineProceduralOutline(
+  outline: SceneOutline,
+  requirement: string,
+): SceneOutline {
+  const widgetOutline = outline.widgetOutline ?? {};
+
+  return {
+    ...outline,
+    type: 'interactive',
+    widgetType: 'procedural-skill',
+    widgetOutline: {
+      ...widgetOutline,
+      procedureType: widgetOutline.procedureType ?? 'inspection',
+      task: widgetOutline.task || requirement,
+      tools:
+        widgetOutline.tools && widgetOutline.tools.length > 0
+          ? widgetOutline.tools
+          : ['required PPE', 'task checklist'],
+      steps:
+        widgetOutline.steps && widgetOutline.steps.length > 0
+          ? widgetOutline.steps
+          : ['Confirm task conditions', 'Select required tools', 'Complete safety check'],
+      successCriteria:
+        widgetOutline.successCriteria && widgetOutline.successCriteria.length > 0
+          ? widgetOutline.successCriteria
+          : ['Required checks completed', 'Unsafe conditions are not ignored'],
+      errorConsequences:
+        widgetOutline.errorConsequences && widgetOutline.errorConsequences.length > 0
+          ? widgetOutline.errorConsequences
+          : ['Unsafe or incorrect actions require stopping and rechecking'],
+    },
+  };
+}
+
+function normalizeTaskEngineSlideOutline(outline: SceneOutline): SceneOutline {
+  const normalized: SceneOutline = {
+    ...outline,
+    type: 'slide',
+  };
+  delete normalized.widgetType;
+  delete normalized.widgetOutline;
+  delete normalized.interactiveConfig;
+  return normalized;
+}
+
+const ORDINARY_WIDGET_TYPES = new Set(['simulation', 'diagram', 'code', 'game', 'visualization3d']);
+
+function normalizeTaskEngineOutline(outline: SceneOutline, requirement: string): SceneOutline {
+  if (outline.type === 'slide') {
+    return normalizeTaskEngineSlideOutline(outline);
+  }
+
+  if (outline.type === 'interactive' && outline.widgetType === 'procedural-skill') {
+    return normalizeTaskEngineProceduralOutline(outline, requirement);
+  }
+
+  if (
+    outline.type === 'interactive' &&
+    outline.widgetType &&
+    ORDINARY_WIDGET_TYPES.has(outline.widgetType)
+  ) {
+    return outline;
+  }
+
+  return normalizeTaskEngineSlideOutline(outline);
+}
+
+function sanitizeNonTaskEngineOutline(outline: SceneOutline): SceneOutline {
+  if (outline.widgetType !== 'procedural-skill') {
+    return outline;
+  }
+
+  const widgetOutline = { ...(outline.widgetOutline ?? {}) };
+  delete widgetOutline.procedureType;
+  delete widgetOutline.task;
+  delete widgetOutline.tools;
+  delete widgetOutline.steps;
+  delete widgetOutline.successCriteria;
+  delete widgetOutline.errorConsequences;
+
+  // procedural-skill is gated behind taskEngineMode to protect ordinary MAIC generation.
+  return {
+    ...outline,
+    type: 'interactive',
+    widgetType: 'diagram',
+    description: outline.description
+      ? `${outline.description} Present this as a process or structure diagram.`
+      : 'Present this topic as a process or structure diagram.',
+    widgetOutline,
+  };
+}
+
+function ensureUniqueOutlineId(outline: SceneOutline, usedIds: Set<string>): SceneOutline {
+  const candidate = typeof outline.id === 'string' && outline.id.trim() ? outline.id : undefined;
+  if (candidate && !usedIds.has(candidate)) {
+    usedIds.add(candidate);
+    return outline;
+  }
+
+  let id = nanoid();
+  while (usedIds.has(id)) {
+    id = nanoid();
+  }
+  usedIds.add(id);
+  return { ...outline, id };
 }
 
 export async function POST(req: NextRequest) {
@@ -138,7 +293,7 @@ export async function POST(req: NextRequest) {
       modelInfo,
       modelString,
       thinkingConfig,
-    } = await resolveModelFromRequest(req, body);
+    } = await resolveModelFromRequest(req, body, 'scene-outlines-stream');
     resolvedModelString = modelString;
 
     if (!body.requirements) {
@@ -203,11 +358,14 @@ export async function POST(req: NextRequest) {
     // Build teacher context from agents (if available)
     const teacherContext = formatTeacherPersonaForPrompt(agents);
 
-    // Check if Interactive Mode is enabled
+    // Check if Interactive Mode or server-enabled Task Engine mode is enabled.
     const interactiveMode = requirements.interactiveMode ?? false;
-    const promptId = interactiveMode
-      ? PROMPT_IDS.INTERACTIVE_OUTLINES
-      : PROMPT_IDS.REQUIREMENTS_TO_OUTLINES;
+    const taskEngineMode = resolveVocationalActive(requirements);
+    const promptId = taskEngineMode
+      ? PROMPT_IDS.TASK_ENGINE_OUTLINES
+      : interactiveMode
+        ? PROMPT_IDS.INTERACTIVE_OUTLINES
+        : PROMPT_IDS.REQUIREMENTS_TO_OUTLINES;
 
     const prompts = buildPrompt(promptId, {
       requirement: requirements.requirement,
@@ -255,6 +413,10 @@ export async function POST(req: NextRequest) {
         };
 
         const MAX_STREAM_RETRIES = 2;
+        // Hard ceiling on the accumulated stream buffer. Legitimate outline
+        // JSON is small (tens of KB); anything past this is a runaway/degenerate
+        // generation and must not be allowed to grow the heap unbounded.
+        const MAX_OUTLINE_STREAM_BYTES = 512 * 1024;
 
         try {
           startHeartbeat();
@@ -270,23 +432,31 @@ export async function POST(req: NextRequest) {
                   },
                 ],
                 maxOutputTokens: modelInfo?.outputWindow,
+                // Tear down the upstream LLM request when the client disconnects,
+                // instead of letting it run to completion for a dead connection.
+                abortSignal: req.signal,
               }
             : {
                 model: languageModel,
                 system: prompts.system,
                 prompt: prompts.user,
                 maxOutputTokens: modelInfo?.outputWindow,
+                abortSignal: req.signal,
               };
 
           let parsedOutlines: SceneOutline[] = [];
           let languageDirective: string | null = null;
+          let courseTitle: string | null = null;
           let lastError: string | undefined;
 
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
             try {
               let fullText = '';
+              let scanFrom = 0;
               parsedOutlines = [];
               languageDirective = null;
+              courseTitle = null;
+              const usedOutlineIds = new Set<string>();
               const textStream = streamLLM(
                 streamParams,
                 'scene-outlines-stream',
@@ -294,7 +464,21 @@ export async function POST(req: NextRequest) {
               ).textStream;
 
               for await (const chunk of textStream) {
+                // Stop doing work the moment the client goes away — otherwise
+                // generation keeps running and buffering for a dead connection.
+                if (req.signal?.aborted) {
+                  stopHeartbeat();
+                  return;
+                }
+
                 fullText += chunk;
+
+                if (fullText.length > MAX_OUTLINE_STREAM_BYTES) {
+                  log.warn(
+                    `Outline stream exceeded ${MAX_OUTLINE_STREAM_BYTES} bytes (len=${fullText.length}); stopping read and finalizing with ${parsedOutlines.length} outline(s)`,
+                  );
+                  break;
+                }
 
                 // Try to extract language directive early
                 if (!languageDirective) {
@@ -308,15 +492,35 @@ export async function POST(req: NextRequest) {
                   }
                 }
 
-                // Try to extract new outlines from the accumulated text
-                const newOutlines = extractNewOutlines(fullText, parsedOutlines.length);
+                // Try to extract course title early (same pattern as languageDirective)
+                if (!courseTitle) {
+                  courseTitle = extractCourseTitle(fullText);
+                  if (courseTitle) {
+                    const ctEvent = JSON.stringify({
+                      type: 'courseTitle',
+                      data: courseTitle,
+                    });
+                    controller.enqueue(encoder.encode(`data: ${ctEvent}\n\n`));
+                  }
+                }
+
+                // Try to extract new outlines from the accumulated text,
+                // resuming the scan from where the previous chunk left off.
+                const { outlines: newOutlines, scanFrom: nextScanFrom } = extractNewOutlines(
+                  fullText,
+                  scanFrom,
+                );
+                scanFrom = nextScanFrom;
                 for (const outline of newOutlines) {
                   // Ensure ID and order
-                  const enriched = {
+                  const enrichedBase = {
                     ...outline,
-                    id: outline.id || nanoid(),
                     order: parsedOutlines.length + 1,
                   };
+                  const normalized = taskEngineMode
+                    ? normalizeTaskEngineOutline(enrichedBase, requirements.requirement)
+                    : sanitizeNonTaskEngineOutline(enrichedBase);
+                  const enriched = ensureUniqueOutlineId(normalized, usedOutlineIds);
                   parsedOutlines.push(enriched);
 
                   const event = JSON.stringify({
@@ -329,7 +533,15 @@ export async function POST(req: NextRequest) {
               }
 
               // Validate: got outlines?
-              if (parsedOutlines.length > 0) break;
+              if (parsedOutlines.length > 0) {
+                if (!courseTitle) {
+                  // The head-bound streaming scan can miss a title the model
+                  // placed after the outlines array or past the 8KB head window;
+                  // recover it from the now-complete response before finalizing.
+                  courseTitle = extractCourseTitleFromComplete(fullText);
+                }
+                break;
+              }
 
               // Empty result — retry if we have attempts left
               lastError = fullText.trim()
@@ -352,6 +564,12 @@ export async function POST(req: NextRequest) {
                 controller.enqueue(encoder.encode(`data: ${retryEvent}\n\n`));
               }
             } catch (error) {
+              // Client disconnected (AbortError from the now-propagated signal):
+              // stop immediately, don't burn retries re-running generation.
+              if (req.signal?.aborted) {
+                stopHeartbeat();
+                return;
+              }
               lastError = error instanceof Error ? error.message : String(error);
               log.warn(
                 `Outlines stream error detail (attempt ${attempt}/${MAX_STREAM_RETRIES + 1}): ${lastError}`,
@@ -381,6 +599,8 @@ export async function POST(req: NextRequest) {
               type: 'done',
               outlines: uniquifiedOutlines,
               languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
+              courseTitle: courseTitle || undefined,
+              taskEngineMode,
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));
           } else {
@@ -402,7 +622,12 @@ export async function POST(req: NextRequest) {
           controller.enqueue(encoder.encode(`data: ${errorEvent}\n\n`));
         } finally {
           stopHeartbeat();
-          controller.close();
+          // The controller may already be closed if the client disconnected.
+          try {
+            controller.close();
+          } catch {
+            // already closed — ignore
+          }
         }
       },
     });

@@ -21,6 +21,12 @@ interface ServerProviderEntry {
   baseUrl?: string;
   models?: string[];
   proxy?: string;
+  /**
+   * Admin/operator force-off switch. `false` disables the provider for ALL
+   * clients regardless of the user's per-provider toggle (server precedence).
+   * Currently honored for TTS only (#665).
+   */
+  enabled?: boolean;
 }
 
 interface ServerConfig {
@@ -31,6 +37,8 @@ interface ServerConfig {
   image: Record<string, ServerProviderEntry>;
   video: Record<string, ServerProviderEntry>;
   webSearch: Record<string, ServerProviderEntry>;
+  /** TTS provider IDs the operator force-disabled (server precedence). */
+  ttsDisabled: Set<string>;
 }
 
 // ---------------------------------------------------------------------------
@@ -68,6 +76,16 @@ const TTS_ENV_MAP: Record<string, string> = {
   TTS_ELEVENLABS: 'elevenlabs-tts',
   TTS_MINIMAX: 'minimax-tts',
   TTS_LEMONADE: 'lemonade-tts',
+};
+
+/**
+ * Env prefixes for the TTS force-disable switch (`TTS_<PREFIX>_ENABLED=false`).
+ * Superset of TTS_ENV_MAP: browser-native has no credential env (it is
+ * client-only) but operators may still want to force it off fleet-wide (#665).
+ */
+const TTS_DISABLE_ENV_MAP: Record<string, string> = {
+  ...TTS_ENV_MAP,
+  TTS_BROWSER_NATIVE: 'browser-native-tts',
 };
 
 const ASR_ENV_MAP: Record<string, string> = {
@@ -208,6 +226,37 @@ function loadEnvSection(
   return result;
 }
 
+/** Parse a boolean-ish env value. Falsey words ⇒ false; anything else ⇒ true. */
+function parseBooleanEnv(raw: string): boolean {
+  return !/^(false|0|no|off)$/i.test(raw.trim());
+}
+
+/**
+ * Collect TTS provider IDs the operator force-disabled, from YAML
+ * (`tts.<id>.enabled: false`) and env (`TTS_<PREFIX>_ENABLED=false`). An
+ * explicit env `true` overrides a YAML disable (env precedence, matching the
+ * rest of this module).
+ */
+function collectDisabledTTS(
+  yamlTts: Record<string, Partial<ServerProviderEntry>> | undefined,
+): Set<string> {
+  const disabled = new Set<string>();
+  if (yamlTts) {
+    for (const [id, entry] of Object.entries(yamlTts)) {
+      if (entry?.enabled === false) disabled.add(id);
+    }
+  }
+  for (const [prefix, providerId] of Object.entries(TTS_DISABLE_ENV_MAP)) {
+    const raw = process.env[`${prefix}_ENABLED`];
+    // Treat unset / empty (e.g. a blank CI-templated value) as "no opinion" so
+    // it never silently overrides an explicit YAML disable.
+    if (raw === undefined || raw.trim() === '') continue;
+    if (parseBooleanEnv(raw)) disabled.delete(providerId);
+    else disabled.add(providerId);
+  }
+  return disabled;
+}
+
 // ---------------------------------------------------------------------------
 // Module-level cache (process singleton)
 // ---------------------------------------------------------------------------
@@ -260,6 +309,7 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
     webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
+    ttsDisabled: collectDisabledTTS(yamlData.tts),
   };
 }
 
@@ -303,7 +353,7 @@ function getConfig(): ServerConfig {
 // server config (the bug class #533 patched route-by-route).
 // ---------------------------------------------------------------------------
 
-type ProviderSection = keyof ServerConfig;
+type ProviderSection = Exclude<keyof ServerConfig, 'ttsDisabled'>;
 
 /** Whether the operator configured this provider in the given section. */
 export function isServerConfiguredProvider(section: ProviderSection, providerId: string): boolean {
@@ -368,17 +418,43 @@ export function resolveProxy(providerId: string): string | undefined {
 // Public API — TTS
 // ---------------------------------------------------------------------------
 
-/** Returns server-configured TTS providers (managed flag only, no base URLs). */
-export function getServerTTSProviders(): Record<string, Record<string, never>> {
-  return Object.fromEntries(Object.keys(getConfig().tts).map((id) => [id, {}]));
+/**
+ * Returns TTS providers the client must know about: server-managed providers
+ * (presence = managed flag, no base URLs) plus operator force-disabled
+ * providers (`{ disabled: true }`). A force-disabled provider is reported as
+ * disabled even when it is otherwise configured — disable wins (#665).
+ */
+export function getServerTTSProviders(): Record<string, { disabled?: boolean }> {
+  const cfg = getConfig();
+  const result: Record<string, { disabled?: boolean }> = {};
+  for (const id of Object.keys(cfg.tts)) result[id] = {};
+  for (const id of cfg.ttsDisabled) result[id] = { disabled: true };
+  return result;
 }
 
 export function resolveTTSApiKey(providerId: string, clientKey?: string): string {
   return resolveSectionApiKey('tts', providerId, clientKey);
 }
 
+/** Whether the operator force-disabled this TTS provider (server precedence, #665). */
+export function isServerTTSProviderDisabled(providerId: string): boolean {
+  return getConfig().ttsDisabled.has(providerId);
+}
+
 export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): string | undefined {
   return resolveSectionBaseUrl('tts', providerId, clientBaseUrl);
+}
+
+/**
+ * Resolve the TTS model. A managed provider may pin its model server-side
+ * (`${PREFIX}_MODELS`, first entry) — authoritative like its key/baseUrl, since
+ * the managed-provider UI does not expose a model field. Otherwise the client
+ * model wins.
+ */
+export function resolveTTSModel(providerId: string, clientModel?: string): string | undefined {
+  const entry = getConfig().tts[providerId];
+  if (entry?.models && entry.models.length > 0) return entry.models[0];
+  return clientModel;
 }
 
 // ---------------------------------------------------------------------------
@@ -503,4 +579,19 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (webSearch.baidu?.apiKey) return 'baidu';
   if (webSearch.minimax?.apiKey) return 'minimax';
   return Object.keys(webSearch)[0];
+}
+
+/**
+ * Opt-in concurrency for parallel scene-content generation (#572).
+ *
+ * Returns the server-configured `PARALLEL_SCENE_CONCURRENCY`, clamped to
+ * [0, 10]. `0` (the default) means the client keeps the original serial
+ * generation loop; a value `> 1` enables the hybrid two-phase path. Kept
+ * server-side because many deployments use API keys with low per-key
+ * concurrency quotas, where a bursty default would surface as 429s.
+ */
+export function getParallelSceneConcurrency(): number {
+  const raw = Number.parseInt(process.env.PARALLEL_SCENE_CONCURRENCY ?? '', 10);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(raw, 10);
 }

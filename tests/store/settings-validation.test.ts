@@ -58,6 +58,11 @@ describe('isProviderUsable', () => {
   it('returns false for keyless provider with apiKey but no baseUrl', () => {
     expect(isProviderUsable({ requiresApiKey: false, apiKey: 'some-key' })).toBe(false);
   });
+
+  it('returns false for a server-disabled provider even with a client API key (#665)', () => {
+    expect(isProviderUsable({ apiKey: 'sk-xxx', serverDisabled: true })).toBe(false);
+    expect(isProviderUsable({ isServerConfigured: true, serverDisabled: true })).toBe(false);
+  });
 });
 
 describe('validateProvider', () => {
@@ -86,6 +91,14 @@ describe('validateProvider', () => {
   it('falls back to first usable provider when current is unusable', () => {
     const configMap = {
       'provider-a': cfg(),
+      'provider-b': cfg({ isServerConfigured: true }),
+    };
+    expect(validateProvider('provider-a', configMap, ['provider-b'])).toBe('provider-b');
+  });
+
+  it('re-points away from a server-disabled current provider that has a client key (#665)', () => {
+    const configMap = {
+      'provider-a': cfg({ apiKey: 'sk-xxx', serverDisabled: true }),
       'provider-b': cfg({ isServerConfigured: true }),
     };
     expect(validateProvider('provider-a', configMap, ['provider-b'])).toBe('provider-b');

@@ -82,6 +82,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       outlines,
     } = useStageStore();
     const failedOutlines = useStageStore.use.failedOutlines();
+    const generationComplete = useStageStore.use.generationComplete();
 
     const currentScene = getCurrentScene();
 
@@ -427,7 +428,17 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       // Reset all roundtable/live state so scenes are fully isolated
       resetSceneState();
 
-      if (!currentScene || !currentScene.actions || currentScene.actions.length === 0) {
+      // A slide scene with no actions is still playable: the engine dwells on it
+      // (see resolvePlaybackCursor) so a freshly inserted / emptied blank slide
+      // shows for a beat and auto-play advances past it. Non-slide scenes
+      // (quiz / interactive / pbl) without timeline actions get no lecture engine
+      // as before. Don't touch `autoStartRef` here: in the PENDING_SCENE_ID
+      // handoff `currentScene` is null while a pending auto-start legitimately
+      // waits for the next generated scene to materialize.
+      const hasPlayableActions =
+        !!currentScene?.actions &&
+        (currentScene.actions.length > 0 || currentScene.type === 'slide');
+      if (!currentScene || !hasPlayableActions) {
         engineRef.current = null;
         setEngineMode('idle');
 
@@ -806,9 +817,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     // currently generating — signals the classroom has finished and the user
     // can see a completion page. Comparing scenes.length === outlines.length
     // (rather than just `scenes.length > 0`) means a partial generation with
-    // some failed outlines does not falsely trigger completion.
+    // some failed outlines does not falsely trigger completion. The persisted
+    // generationComplete flag also marks completion directly, so an edited
+    // finished deck (e.g. a deleted slide, leaving outlines.length > scenes)
+    // still reads as complete.
     const isCourseComplete =
-      outlines.length > 0 && scenes.length === outlines.length && generatingOutlines.length === 0;
+      generationComplete ||
+      (outlines.length > 0 && scenes.length === outlines.length && generatingOutlines.length === 0);
     const canAdvanceToPendingSlot = hasNextPending || isCourseComplete;
 
     // previous scene (gated)

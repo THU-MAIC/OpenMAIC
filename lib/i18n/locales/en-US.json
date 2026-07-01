@@ -50,13 +50,18 @@
   },
   "import": {
     "classroom": "Import Classroom",
+    "pptx": "Import PPTX",
     "parsing": "Parsing ZIP...",
+    "parsingPptx": "Parsing PPTX...",
     "validating": "Validating data...",
     "writingMedia": "Writing media files...",
     "writingCourse": "Writing course data...",
     "success": "Classroom imported successfully",
+    "pptxSuccess": "PPTX parsed successfully ({{count}} slides, output logged to console)",
     "error": {
       "invalidZip": "Invalid file. Please select a valid .maic.zip file.",
+      "invalidPptx": "Failed to parse PPTX. Please check the file is valid.",
+      "parserUnavailable": "PPTX import is unavailable: the parser bundle is not deployed. Re-run install/sync.",
       "invalidManifest": "Invalid classroom file: manifest.json is missing or corrupted.",
       "missingData": "Invalid classroom file: missing required course data.",
       "storageFull": "Import failed: browser storage is full. Try clearing old classrooms."
@@ -126,7 +131,8 @@
     "voiceLoading": "Loading...",
     "voiceAutoAssign": "Voices will be auto-assigned",
     "searchVoice": "Search voices",
-    "noMatchingVoices": "No matching voices"
+    "noMatchingVoices": "No matching voices",
+    "noVoice": "No voice"
   },
   "proactiveCard": {
     "discussion": "Discussion",
@@ -151,7 +157,8 @@
     "fullscreen": "Fullscreen",
     "exitFullscreen": "Exit Fullscreen",
     "editCourse": "Edit course",
-    "doneEditing": "Done editing"
+    "doneEditing": "Done editing",
+    "proModeDisabledHint": "Editing isn't available on this page — open a course slide to edit with Pro mode."
   },
   "edit": {
     "proMode": "Pro",
@@ -213,7 +220,201 @@
       "dragHandle": "Drag to reorder",
       "deckLabel": "Scenes",
       "moreActions": "More actions",
-      "rename": "Rename"
+      "rename": "Rename",
+      "sceneIncomplete": "This page has incomplete content"
+    },
+    "zorder": {
+      "toFront": "Bring to front",
+      "toBack": "Send to back"
+    },
+    "image": {
+      "replace": "Replace image",
+      "flipH": "Flip horizontal",
+      "flipV": "Flip vertical"
+    },
+    "background": {
+      "label": "Background",
+      "solid": "Solid",
+      "image": "Image"
+    },
+    "quiz": {
+      "addQuestion": "Add question",
+      "reorder": "Drag to reorder",
+      "deleteQuestion": "Delete question",
+      "untitledQuestion": "Untitled question",
+      "questionLabel": "Question",
+      "questionPlaceholder": "Enter the question…",
+      "typeLabel": "Type",
+      "pointsLabel": "Points",
+      "optionsLabel": "Options",
+      "optionPlaceholder": "Option text",
+      "addOption": "Add option",
+      "deleteOption": "Remove option",
+      "markCorrect": "Mark as correct answer",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "analysisLabel": "Explanation",
+      "analysisPlaceholder": "Shown after the question is graded…",
+      "commentPromptLabel": "Grading guidance",
+      "commentPromptPlaceholder": "How should this open response be graded?",
+      "empty": "No questions yet",
+      "emptyHint": "Use the “Add question” button above to create the first one.",
+      "type": {
+        "single": "Single choice",
+        "multiple": "Multiple choice",
+        "short_answer": "Short answer"
+      },
+      "shortAnswerGradingNote": "Short answers are always graded by AI from the guidance below.",
+      "hint": {
+        "emptyText": "Question {{n}}: add question text",
+        "fewOptions": "Question {{n}}: add at least two options",
+        "emptyOption": "Question {{n}}: an option label is empty",
+        "noCorrect": "Question {{n}}: mark a correct answer"
+      }
+    },
+    "cue": {
+      "speech": "Narration",
+      "spotlight": "Spotlight",
+      "laser": "Laser",
+      "whiteboardOpen": "Whiteboard",
+      "whiteboardText": "Writing",
+      "whiteboardShape": "Shape",
+      "whiteboardLatex": "Formula",
+      "whiteboardTable": "Table",
+      "action": "Action",
+      "discussion": "Discussion"
+    },
+    "element": {
+      "text": "Text",
+      "image": "Image",
+      "shape": "Shape",
+      "line": "Line",
+      "chart": "Chart",
+      "table": "Table",
+      "latex": "Formula",
+      "video": "Video",
+      "audio": "Audio",
+      "code": "Code"
+    },
+    "agent": {
+      "expand": "Expand AI assistant",
+      "collapse": "Collapse",
+      "stopped": "Stopped",
+      "emptyTitle": "What would you like to change?",
+      "emptyHint": "After editing this slide on the canvas, let AI regenerate narration that matches the content.",
+      "placeholder": "Describe your changes to this slide…",
+      "stop": "Stop generating",
+      "empty": {
+        "lead": "Tell me how to change this slide — I'll redo the content and re-align the narration.",
+        "boundary": "For fine-grained edits use the editor; add / delete / reorder slides from the left nav.",
+        "comingSoon": "More capabilities coming soon."
+      },
+      "interactive": {
+        "emptyTitle": "What needs fixing on this page?",
+        "lead": "Describe a bug on this interactive page — e.g. a button that does nothing — and I'll fix just that, keeping everything else.",
+        "placeholder": "Describe the bug on this interactive page…",
+        "boundary": "I make targeted fixes to the page; I won't rebuild the whole page. Switch scenes from the left nav."
+      },
+      "cap": {
+        "content": {
+          "label": "Regenerate the slide",
+          "examples": "“Condense to 3 points”, “Add a real-world example”"
+        },
+        "narration": {
+          "label": "Regenerate the narration script",
+          "examples": "“Make it more conversational”, “Align with my canvas edits”"
+        },
+        "fixHtml": {
+          "label": "Fix a bug on the page",
+          "examples": "“The start button does nothing”, “Panels overlap on mobile”"
+        }
+      },
+      "newConversation": "New conversation",
+      "sessionHistory": "History",
+      "sessionUntitled": "Untitled chat",
+      "sessionDelete": "Delete",
+      "sessionEmpty": "No past conversations",
+      "thinking": "Thinking…",
+      "reasoning": "Reasoning",
+      "thought": "Thought for"
+    },
+    "timeline": {
+      "title": "Narration script",
+      "dragToAdd": "Drag to add",
+      "regenAllTts": "Regenerate all voiceover",
+      "voiceAll": "Voice all",
+      "counts": "{{speech}} narration · {{cue}} cues",
+      "panLeft": "Pan left",
+      "panRight": "Pan right",
+      "collapseAxis": "Collapse to axis",
+      "expandTrack": "Expand track",
+      "emptyHint": "Drag actions onto the axis to start, or let MAIC Agent generate narration.",
+      "speechPlaceholder": "Enter this narration line…",
+      "reorder": "Drag to reorder",
+      "moveLeft": "Move left",
+      "moveRight": "Move right",
+      "pickElement": "Pick element",
+      "bound": "Bound",
+      "fieldAction": "Action",
+      "fieldElement": "Element",
+      "fieldContent": "Content",
+      "addDiscussion": "Add discussion",
+      "addDiscussionExists": "Only one discussion per scene",
+      "discussionTerminal": "END",
+      "discussionTerminalHint": "A discussion stays at the end of the scene (one per scene)",
+      "discussionTopicPlaceholder": "Discussion topic (required)",
+      "discussionPromptPlaceholder": "Guidance prompt (optional)",
+      "discussionAgent": "Initiator",
+      "discussionAgentUnset": "Unspecified"
+    },
+    "tts": {
+      "preview": "Preview",
+      "regenerate": "Regenerate voiceover",
+      "statusReady": "Voiced",
+      "statusNone": "Not voiced",
+      "statusGenerating": "Generating",
+      "statusError": "Failed"
+    },
+    "pick": {
+      "pickFor": "Pick an element for \"{{label}}\"",
+      "pickHint": "Click a highlighted element or the list below · Esc to cancel",
+      "pageElements": "Page elements · {{count}}",
+      "expand": "Expand",
+      "collapse": "Collapse",
+      "noElements": "No locatable elements on this slide.",
+      "bindHint": "Click a highlighted element on the canvas to bind"
+    },
+    "regen": {
+      "title": "Regenerate narration",
+      "running": "Generating…",
+      "noActions": "No actions generated",
+      "actionsCount": "{{count}} actions",
+      "generating": "Generating",
+      "notGenerated": "Not generated",
+      "updated": "Updated"
+    },
+    "regenScene": {
+      "title": "Regenerate slide",
+      "generating": "Generating",
+      "updated": "Updated",
+      "notGenerated": "Not generated",
+      "elementsCount": "{{count}} elements",
+      "restore": "Restore previous",
+      "restored": "Restored",
+      "resume": "Resume"
+    },
+    "fixHtml": {
+      "title": "Fix interactive page",
+      "fixing": "Fixing",
+      "fixed": "Fixed",
+      "notFixed": "Not fixed",
+      "editsCount": "{{count}} edit(s)"
+    },
+    "readCard": {
+      "title": "Read slide content",
+      "reading": "Reading",
+      "done": "Read",
+      "failed": "Not read"
     }
   },
   "classroomComplete": {
@@ -359,6 +560,228 @@
         "title": "Step 3: Complete the Project",
         "desc": "When all issues are done, the system displays \"🎉 Project Complete!\""
       }
+    },
+    "v2": {
+      "hero": {
+        "title": "Project-Based Learning",
+        "stage": "Stages",
+        "task": "Tasks",
+        "tutor": "Tutor",
+        "greetingBanner": "Your tutor is saying hello…",
+        "startProject": "Start Project",
+        "continueProject": "Continue Project",
+        "resetProgress": "Reset learning progress",
+        "resetConfirmTitle": "Reset learning progress?",
+        "resetConfirmDescription": "This clears all progress for this project — chat history, submissions, and stage status — and you'll start over from the beginning. This can't be undone.",
+        "resetConfirmConfirm": "Reset",
+        "resetConfirmCancel": "Cancel",
+        "startHint": "Click to enter the workspace. {{name}} will guide you through each stage.",
+        "startError": "Unable to start: {{error}}",
+        "youWillLearn": "What you'll gain",
+        "instructorTagline": "Guides you through the whole project",
+        "scenarioCharacter": "Role-play character",
+        "scenarioCharacterTagline": "The character you'll interact with in the scenario",
+        "scenarioFlow": "Flow",
+        "close": "Close"
+      },
+      "sidebar": {
+        "title": "Project Roadmap",
+        "summary": "{{completed}} / {{total}} tasks · {{stages}} stages",
+        "enterScenario": "Enter the scene",
+        "advanceScene": "Advance the scene",
+        "continueScene": "Next stage",
+        "stagePrep": "Prep",
+        "stageRoleplay": "Simulation",
+        "stageWrapup": "Debrief",
+        "completeAct": "Finish this act",
+        "completeTask": "Done"
+      },
+      "workspace": {
+        "progressLabel": "Progress",
+        "resizeSidebar": "Resize sidebar and chat",
+        "resizeSubmission": "Resize chat and submission panel",
+        "enterFullscreen": "Expand to fullscreen workspace",
+        "exitFullscreen": "Exit fullscreen workspace",
+        "exitNativeFullscreen": "Exit fullscreen",
+        "returnToHero": "Back to project overview",
+        "breadcrumbOverview": "Overview",
+        "breadcrumbCurrent": "Workspace"
+      },
+      "chat": {
+        "placeholder": "Chat with {{name}} about your progress...",
+        "placeholderCompleted": "Project complete. Check out your report.",
+        "send": "Send",
+        "voiceInput": "Voice input",
+        "keyboardHint": "Enter to send · Shift+Enter for newline",
+        "readingSubmission": "Reading submission…",
+        "generatingMilestoneFeedback": "Generating milestone feedback…",
+        "generatingFinalEval": "Generating final evaluation…",
+        "readingSubmissionWithTitle": "Reading latest submission for \"{{title}}\"…",
+        "evaluatingTask": "{{name}} · Reviewing task",
+        "evaluatingFinal": "{{name}} · Final evaluation",
+        "narrating": "Setting the scene…",
+        "choosePrompt": "Pick an option",
+        "choiceOrType": "Pick one, or type your own…",
+        "suggestionsToggle": "Need ideas? See some ways to respond",
+        "guidancePointer": "Stuck? Check this act's goal and tips in the panel on the right.",
+        "roleplayHistoryTitle": "Role-play history",
+        "coachHint": "Coach tip",
+        "thinking": "{{name}} · Thinking",
+        "typing": "{{name}} · Typing…",
+        "submitted": "Work submitted",
+        "evaluatingSubmission": "Evaluating your submission…",
+        "evaluatingSubmissionDetail": "Task: \"{{title}}\". Feedback on this submission will appear here once evaluation is complete.",
+        "milestoneFeedbackPending": "The milestone feedback will appear once ready.",
+        "emptyChat": "No messages yet.",
+        "emptyChatHint": "Your project walkthrough with {{name}} will start here.",
+        "continueError": "Unable to continue: {{error}}",
+        "stillTyping": "Still typing",
+        "handoverHint": "Click \"Continue to Next Stage\" to keep going."
+      },
+      "scene": {
+        "expand": "Expand",
+        "collapse": "Collapse",
+        "greetHint": "Tap to say hi",
+        "label": "The scene"
+      },
+      "milestoneCard": {
+        "title": "Milestone Review",
+        "youLearned": "What you learned",
+        "nextStage": "Next stage:",
+        "continueHint": "Click Continue to enter the next stage.",
+        "alreadyEntered": "Next stage entered",
+        "continueToNext": "Continue to Next Stage",
+        "projectAlmostDone": "🎉 Project almost done — awaiting completion report"
+      },
+      "taskEvalCard": {
+        "title": "Submission Feedback",
+        "strengths": "What went well",
+        "improvements": "Next steps"
+      },
+      "briefing": {
+        "intro": "The premise introduced during prep — kept here so you can revisit it anytime in the scene.",
+        "tablistLabel": "Right panel tabs",
+        "submissionTab": "Submit",
+        "briefingTab": "Briefing",
+        "setting": "Setting",
+        "learnerRole": "Your role",
+        "goal": "Goal",
+        "rules": "Rules",
+        "cast": "Cast",
+        "identity": "Identity",
+        "situation": "Situation"
+      },
+      "submission": {
+        "textSubmission": "Text submission",
+        "fileTooLarge": "File exceeds 5 MB limit. Try splitting or compressing.",
+        "contentRequired": "Content cannot be empty",
+        "readFileFailed": "Failed to read file: {{error}}",
+        "parsingPdf": "Parsing PDF…",
+        "parsePdfFailed": "Failed to parse PDF: {{error}}",
+        "pdfNoText": "No extractable text found in this PDF.",
+        "imageUploadFailed": "Failed to upload image: {{error}}",
+        "imageTooLargeNoStorage": "Image too large to attach without storage configured (max 2 MB locally).",
+        "imageNeedsCaptionNoVision": "The current model can't read images. Add a text description of the image before submitting, or switch to a vision-capable model in Settings.",
+        "unsupportedFileType": "Unsupported file type. Only text files (.txt, .md, .csv, .json, .py, …) and PDF are accepted.",
+        "pasteTab": "Paste text / image",
+        "uploadTab": "Upload file",
+        "pastePlaceholder": "Paste your code, document, answer — or an image / screenshot — here…",
+        "uploadPlaceholder": "Uploaded content will appear here. Edit before submitting…",
+        "imageCaptionPlaceholder": "Add an optional caption for this image…",
+        "imageSelectedReplace": "Image selected · click to replace",
+        "removeImage": "Remove image",
+        "processing": "Processing…",
+        "cancelProcessingConfirm": "A file is still being processed. Cancel and discard this upload?",
+        "currentTask": "Current Task",
+        "hints": "Hints",
+        "submitOutput": "Submit",
+        "evaluating": "Evaluating submission…",
+        "lockedWhileStreaming": "The instructor is replying — please wait before submitting.",
+        "evalFailed": "Evaluation failed: {{error}}",
+        "submittedCount": "{{count}} submitted",
+        "submissionHistory": "Submission History",
+        "fromTask": "Task: {{title}}",
+        "download": "Download",
+        "viewSubmission": "View submission",
+        "noActiveTask": "No active task.",
+        "canceling": "Cancel",
+        "submitting": "Submitting…",
+        "selectFileHint": "Choose a file · Max 5 MB · Text, PDF or image",
+        "modalTitle": "Submit your work",
+        "modalTaskLabel": "Task: {{title}}",
+        "fileRead": "Read: {{filename}} · {{size}} KB",
+        "submittedBadge": "Submitted ({{count}})",
+        "receiptFile": "File: {{filename}}",
+        "receiptTemplate": "Submitted work for this task ({{label}})."
+      },
+      "agentTabs": {
+        "noAgent": "No AI agent configured for this project."
+      },
+      "completion": {
+        "noWhatsNext": "The final evaluation hasn't been written yet.",
+        "backToWorkspace": "Back to Workspace",
+        "completionCta": "View Report",
+        "title": "Completion Report",
+        "whatYouBuilt": "What you built",
+        "whatYouLearned": "What you learned",
+        "whatsNext": "What's next",
+        "noDataFallback": "Not yet written",
+        "stageReview": "Stage Reviews",
+        "summary": "You completed {{completed}} of {{total}} tasks across {{stages}} stages.",
+        "statConcepts": "Concepts mastered",
+        "statTurns": "Messages exchanged",
+        "statScope": "Stages · Tasks",
+        "statDuration": "Time spent",
+        "statSubmissions": "Work submitted",
+        "coreStageBadge": "Core",
+        "conceptsInStageLabel": "Concepts:",
+        "submissionsInStage": "Submitted {{count}} piece(s) of work",
+        "coreConceptGrasp": "Core concept \"{{concept}}\" — {{quality}}",
+        "stageNoData": "No recorded output in this stage.",
+        "scenario": {
+          "summary": "You completed all {{acts}} acts of this scenario. Here's how the role-play went.",
+          "whatYouDidWell": "What you did well",
+          "skillsPracticed": "Skills you practised",
+          "statGoals": "Goals met",
+          "statActs": "Acts completed",
+          "goalReviewTitle": "Act-by-act review",
+          "goalReviewHint": "This scenario set a few key goals for each act. Here's a look back at how your conversation actually went — you met {{achieved}} of {{total}} this time.",
+          "goalListTitle": "What each act asked of you",
+          "goalListHint": "This scenario set a few key goals for each act. Here's a look back at what each act asked you to do.",
+          "goalAchieved": "achieved",
+          "goalPartial": "partly done",
+          "goalMissed": "not done",
+          "statGoodDecisions": "Strong choices",
+          "statScore": "Decision score",
+          "statBeats": "Acts completed",
+          "decisionReviewTitle": "Decision review",
+          "good": "strong",
+          "ok": "okay",
+          "poor": "to improve",
+          "decisionScore": "Decision score {{score}}",
+          "castLabel": "You interacted with: {{names}}"
+        },
+        "highlightsTitle": "Highlights",
+        "highlight": {
+          "independence": "You demonstrated {{unlocks}}/{{total}} concepts on your own — no prompting needed. Solid understanding.",
+          "resilience": "In \"{{title}}\" you overcame {{errors}} errors, tackling each one — real grit.",
+          "resilienceGeneral": "You overcame {{errors}} errors, tackling each one — real grit.",
+          "completion": "You completed every task. Steady progress all the way through."
+        },
+        "synthesisQuality": {
+          "strong": "Strong understanding ✅",
+          "ok": "Good grasp 👍",
+          "weak": "Room to grow 💪"
+        },
+        "durationMinutes": "{{m}} min",
+        "durationHours": "{{h}} hr",
+        "durationHoursMinutes": "{{h}} hr {{m}} min"
+      },
+      "completionCard": {
+        "title": "Project Complete · Completion",
+        "subtitle": "Congratulations! You finished the entire project.",
+        "description": "Based on your performance data (time spent, conversations, error recovery, concepts unlocked…), we have generated a completion report showing what you built, what you learned, and where to go next."
+      }
     }
   },
   "share": {
@@ -464,6 +887,28 @@
     "deleteSceneConfirmAction": "Delete",
     "collapseEditor": "Collapse",
     "quizConfigSummary": "{{count}} questions",
+    "interactiveWidgetKind": "Widget kind",
+    "widgetSimulation": "Simulation",
+    "widgetDiagram": "Diagram",
+    "widgetCode": "Code",
+    "widgetGame": "Game",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "Concept",
+    "interactiveConceptPlaceholder": "Concept to explore",
+    "pblConfigSummary": "Project",
+    "pblSubtype": "PBL type",
+    "pblSubtypeProject": "Project",
+    "pblSubtypeScenario": "Scenario",
+    "pblProjectTopic": "Project topic",
+    "pblProjectTopicPlaceholder": "Project topic",
+    "pblProjectDescription": "Description",
+    "pblProjectDescriptionPlaceholder": "What students will build",
+    "pblScenarioBrief": "Scenario brief",
+    "pblScenarioBriefPlaceholder": "Situation, characters, and practice goal",
+    "pblTargetSkills": "Target skills",
+    "pblAddSkill": "Add skill",
+    "widgetProceduralSkill": "Procedural skill",
+    "removeSkill": "Remove skill",
     "dragSceneHint": "Drag to reorder; or focus and press Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "Delete scene",
     "backToRequirements": "Back to requirements",
@@ -471,7 +916,9 @@
     "generatingInProgress": "Generating...",
     "webSearching": "Web Search",
     "webSearchingDesc": "Searching the web for up-to-date information",
-    "webSearchFailed": "Web search failed"
+    "webSearchFailed": "Web search failed",
+    "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
+    "jumpToBlankTitle": "Jump to a section that still needs a title"
   },
   "settings": {
     "title": "Settings",
@@ -1063,6 +1510,10 @@
     "noVisionWarning": "Current model does not support vision. Images can still be placed in slides, but the model cannot understand image content to optimize selection and layout",
     "serverConfigured": "Server",
     "serverConfiguredNotice": "This provider is managed by the server and can't be edited here. To use your own credentials, add a separate provider.",
+    "ttsProviderEnabledLabel": "Enable this provider",
+    "ttsProviderEnabledHint": "When off, this provider is hidden from the voice picker and never auto-assigned.",
+    "ttsProviderUnavailableHint": "Configure this provider before enabling it.",
+    "ttsProviderDisabledByAdmin": "This provider has been disabled by the server administrator and cannot be enabled.",
     "optionalOverride": "Optional — leave empty to use server config",
     "setupNeeded": "Setup required",
     "modelNotConfigured": "Please select a model to get started",
@@ -1094,7 +1545,8 @@
     "viewDocs": "API Docs",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Server-side search API key is configured",
-    "optional": "Optional"
+    "optional": "Optional",
+    "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio."
   },
   "profile": {
     "title": "Profile",

@@ -8,9 +8,10 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import { resolveAgentVoice, getAvailableProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import { resolveAgentVoice, getSelectableProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { playBrowserTTSPreview } from '@/lib/audio/browser-tts-preview';
-import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { resolveAgentVoiceOptions } from '@/lib/audio/agent-voice';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 import {
   Sparkles,
@@ -31,7 +32,11 @@ function matchesVoiceQuery(value: string | undefined, query: string): boolean {
   return !!value?.toLowerCase().includes(query);
 }
 
-function getFilteredModelGroups(provider: ProviderWithVoices, query: string) {
+function getFilteredModelGroups(
+  provider: ProviderWithVoices,
+  query: string,
+  autoVoiceLabel?: string,
+) {
   const normalizedQuery = query.trim().toLowerCase();
   if (!normalizedQuery) return provider.modelGroups;
 
@@ -47,7 +52,9 @@ function getFilteredModelGroups(provider: ProviderWithVoices, query: string) {
           groupMatches ||
           matchesVoiceQuery(voice.name, normalizedQuery) ||
           matchesVoiceQuery(voice.id, normalizedQuery) ||
-          matchesVoiceQuery(voice.language, normalizedQuery),
+          matchesVoiceQuery(voice.language, normalizedQuery) ||
+          // Auto Voice is shown by its localized label, not voice.name — match it too.
+          (voice.id === VOXCPM_AUTO_VOICE_ID && matchesVoiceQuery(autoVoiceLabel, normalizedQuery)),
       );
       return { ...group, voices };
     })
@@ -70,9 +77,10 @@ function AgentVoicePill({
   disabled?: boolean;
 }) {
   const { t, locale } = useI18n();
-  const updateAgent = useAgentRegistry((s) => s.updateAgent);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
-  const resolved = resolveAgentVoice(agent, agentIndex, availableProviders);
+  const agentVoiceOverrides = useSettingsStore((s) => s.agentVoiceOverrides);
+  const setAgentVoiceOverride = useSettingsStore((s) => s.setAgentVoiceOverride);
+  const resolved = resolveAgentVoice(agent, agentIndex, availableProviders, agentVoiceOverrides);
   const [popoverOpen, setPopoverOpen] = useState(false);
   const [voiceQuery, setVoiceQuery] = useState('');
   const [previewingId, setPreviewingId] = useState<string | null>(null);
@@ -82,11 +90,12 @@ function AgentVoicePill({
   const visibleProviderGroups = availableProviders
     .map((provider) => ({
       provider,
-      groups: getFilteredModelGroups(provider, voiceQuery),
+      groups: getFilteredModelGroups(provider, voiceQuery, t('settings.voxcpmAutoVoice')),
     }))
     .filter(({ groups }) => groups.length > 0);
 
   const displayName = (() => {
+    if (!resolved) return t('agentBar.noVoice');
     for (const p of availableProviders) {
       if (p.providerId === resolved.providerId) {
         const v = p.voices.find((voice) => voice.id === resolved.voiceId);
@@ -138,18 +147,12 @@ function AgentVoicePill({
         const controller = new AbortController();
         previewAbortRef.current = controller;
         const providerConfig = ttsProvidersConfig[providerId];
-        const providerOptions =
-          providerId === 'voxcpm-tts'
-            ? {
-                ...(providerConfig?.providerOptions || {}),
-                ...(await getVoxCPMProviderOptions(voiceId, {
-                  agentName: agent.name,
-                  role: agent.role,
-                  persona: agent.persona,
-                  locale,
-                })),
-              }
-            : undefined;
+        const providerOptions = await resolveAgentVoiceOptions(agent, {
+          providerId,
+          providerConfig: { ...providerConfig, modelId: modelId || providerConfig?.modelId },
+          voiceId,
+          language: locale,
+        });
         const res = await fetch('/api/generate/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -196,6 +199,8 @@ function AgentVoicePill({
   // Cleanup on unmount
   useEffect(() => () => stopPreview(), [stopPreview]);
 
+  // Disabled (TTS off) OR no enabled provider ⇒ render the same muted,
+  // non-interactive pill — don't silently hide the control (#665).
   if (disabled) {
     return (
       <div
@@ -269,9 +274,9 @@ function AgentVoicePill({
                 </div>
                 {group.voices.map((voice) => {
                   const isActive =
-                    resolved.providerId === provider.providerId &&
-                    resolved.voiceId === voice.id &&
-                    (resolved.modelId || '') === (group.modelId || '');
+                    resolved?.providerId === provider.providerId &&
+                    resolved?.voiceId === voice.id &&
+                    (resolved?.modelId || '') === (group.modelId || '');
                   const previewKey = `${provider.providerId}::${voice.id}`;
                   const isPreviewing = previewingId === previewKey;
                   const canPreview = !isNonPreviewableVoice(provider.providerId, voice.id);
@@ -286,12 +291,13 @@ function AgentVoicePill({
                       <button
                         type="button"
                         onClick={() => {
-                          updateAgent(agent.id, {
-                            voiceConfig: {
-                              providerId: provider.providerId,
-                              modelId: group.modelId || undefined,
-                              voiceId: voice.id,
-                            },
+                          // Persisted in settings, not on the registry record:
+                          // default agent records are reset from code on every
+                          // load and would drop the pick.
+                          setAgentVoiceOverride(agent.id, {
+                            providerId: provider.providerId,
+                            modelId: group.modelId || undefined,
+                            voiceId: voice.id,
                           });
                           setPopoverOpen(false);
                         }}
@@ -364,11 +370,14 @@ function TeacherVoicePill({
   const visibleProviderGroups = availableProviders
     .map((provider) => ({
       provider,
-      groups: getFilteredModelGroups(provider, voiceQuery),
+      groups: getFilteredModelGroups(provider, voiceQuery, t('settings.voxcpmAutoVoice')),
     }))
     .filter(({ groups }) => groups.length > 0);
 
   const displayName = (() => {
+    // No enabled provider ⇒ no valid voice; show the placeholder, not a stale
+    // voice name from a now-disabled provider (#665).
+    if (availableProviders.length === 0) return t('agentBar.noVoice');
     for (const p of availableProviders) {
       if (p.providerId === ttsProviderId) {
         const v = p.voices.find((voice) => voice.id === ttsVoice);
@@ -419,17 +428,12 @@ function TeacherVoicePill({
         const controller = new AbortController();
         previewAbortRef.current = controller;
         const providerConfig = ttsProvidersConfig[providerId];
-        const providerOptions =
-          providerId === 'voxcpm-tts'
-            ? {
-                ...(providerConfig?.providerOptions || {}),
-                ...(await getVoxCPMProviderOptions(voiceId, {
-                  agentName: 'Teacher',
-                  role: 'teacher',
-                  locale,
-                })),
-              }
-            : undefined;
+        const providerOptions = await resolveAgentVoiceOptions(undefined, {
+          providerId,
+          providerConfig: { ...providerConfig, modelId: modelId || providerConfig?.modelId },
+          voiceId,
+          language: locale,
+        });
         const res = await fetch('/api/generate/tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -465,6 +469,8 @@ function TeacherVoicePill({
 
   useEffect(() => () => stopPreview(), [stopPreview]);
 
+  // Disabled (TTS off) OR no enabled provider ⇒ render the same muted,
+  // non-interactive pill — don't silently hide the control (#665).
   if (disabled) {
     return (
       <div
@@ -612,6 +618,7 @@ export function AgentBar() {
   const setSelectedAgentIds = useSettingsStore((s) => s.setSelectedAgentIds);
   const agentMode = useSettingsStore((s) => s.agentMode);
   const setAgentMode = useSettingsStore((s) => s.setAgentMode);
+  const setAgentSelectionIsUserSet = useSettingsStore((s) => s.setAgentSelectionIsUserSet);
   const ttsProvidersConfig = useSettingsStore((s) => s.ttsProvidersConfig);
   const ttsEnabled = useSettingsStore((s) => s.ttsEnabled);
 
@@ -635,27 +642,13 @@ export function AgentBar() {
   const selectedAgents = agents.filter((a) => selectedAgentIds.includes(a.id));
   const nonTeacherSelected = selectedAgents.filter((a) => a.role !== 'teacher');
 
-  const serverProviders = getAvailableProvidersWithVoices(ttsProvidersConfig, voxcpmProfiles);
-  const availableProviders: ProviderWithVoices[] = [
-    ...serverProviders,
-    ...(browserVoices.length > 0
-      ? [
-          {
-            providerId: 'browser-native-tts' as TTSProviderId,
-            providerName: 'Browser Native',
-            voices: browserVoices.map((v) => ({ id: v.voiceURI, name: v.name })),
-            modelGroups: [
-              {
-                modelId: '',
-                modelName: 'Browser Native',
-                voices: browserVoices.map((v) => ({ id: v.voiceURI, name: v.name })),
-              },
-            ],
-          },
-        ]
-      : []),
-  ];
-  const showVoice = availableProviders.length > 0;
+  // Single source of truth for selectable provider+voice options (enabled
+  // providers + opt-in browser-native), shared with discussion TTS (#665).
+  const availableProviders = getSelectableProvidersWithVoices(
+    ttsProvidersConfig,
+    voxcpmProfiles,
+    browserVoices,
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -671,6 +664,11 @@ export function AgentBar() {
   }, [open]);
 
   const handleModeChange = (mode: 'preset' | 'auto') => {
+    // Clicking the already-active tab is a visual no-op; it must not convert
+    // stage-derived defaults into a "user choice".
+    if (mode === agentMode) return;
+    // An explicit choice — restoreAgentSelection keeps it across classrooms.
+    setAgentSelectionIsUserSet(true);
     setAgentMode(mode);
     if (mode === 'preset') {
       // Remove stale auto-generated agent IDs that may linger from a previous auto classroom
@@ -685,12 +683,21 @@ export function AgentBar() {
       setSelectedAgentIds(
         presetIds.length > 0 ? presetIds : ['default-1', 'default-2', 'default-3'],
       );
+    } else {
+      // Auto mode plays the current classroom's generated agents — leaving the
+      // preset ids selected would desync playback from the toggle (UI says
+      // Auto, discussion still uses preset agents) and persist an auto
+      // selection that can never validate on restore. When no classroom's
+      // agents are loaded (fresh home), an empty selection falls back to the
+      // stage-derived defaults on the next classroom load.
+      setSelectedAgentIds(allAgents.filter((a) => a.isGenerated).map((a) => a.id));
     }
   };
 
   const toggleAgent = (agentId: string) => {
     const agent = agents.find((a) => a.id === agentId);
     if (agent?.role === 'teacher') return;
+    setAgentSelectionIsUserSet(true);
     if (selectedAgentIds.includes(agentId)) {
       setSelectedAgentIds(selectedAgentIds.filter((id) => id !== agentId));
     } else {
@@ -764,12 +771,11 @@ export function AgentBar() {
           )}
         </>
       )}
-      {showVoice &&
-        (ttsEnabled ? (
-          <Volume2 className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors" />
-        ) : (
-          <VolumeX className="size-3.5 text-muted-foreground/30" />
-        ))}
+      {ttsEnabled ? (
+        <Volume2 className="size-3.5 text-muted-foreground/40 group-hover:text-muted-foreground/60 transition-colors" />
+      ) : (
+        <VolumeX className="size-3.5 text-muted-foreground/30" />
+      )}
     </div>
   );
 
@@ -803,14 +809,12 @@ export function AgentBar() {
         <span className="text-[10px] text-muted-foreground/50 shrink-0 w-[52px] text-right">
           {getAgentRole(agent)}
         </span>
-        {showVoice && (
-          <AgentVoicePill
-            agent={agent}
-            agentIndex={agentIndex}
-            availableProviders={availableProviders}
-            disabled={!ttsEnabled}
-          />
-        )}
+        <AgentVoicePill
+          agent={agent}
+          agentIndex={agentIndex}
+          availableProviders={availableProviders}
+          disabled={!ttsEnabled || availableProviders.length === 0}
+        />
       </div>
     );
   };
@@ -870,12 +874,10 @@ export function AgentBar() {
                   <span className="text-[13px] font-medium truncate min-w-0 flex-1">
                     {getAgentName(teacherAgent)}
                   </span>
-                  {showVoice && (
-                    <TeacherVoicePill
-                      availableProviders={availableProviders}
-                      disabled={!ttsEnabled}
-                    />
-                  )}
+                  <TeacherVoicePill
+                    availableProviders={availableProviders}
+                    disabled={!ttsEnabled || availableProviders.length === 0}
+                  />
                 </div>
               )}
 

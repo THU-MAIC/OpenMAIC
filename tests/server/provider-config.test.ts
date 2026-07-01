@@ -132,6 +132,38 @@ describe('provider-config', () => {
     });
   });
 
+  describe('getParallelSceneConcurrency', () => {
+    beforeEach(() => {
+      delete process.env.PARALLEL_SCENE_CONCURRENCY;
+    });
+
+    it('defaults to 0 (serial) when unset', async () => {
+      const { getParallelSceneConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelSceneConcurrency()).toBe(0);
+    });
+
+    it('reads a positive integer from the env var', async () => {
+      vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', '3');
+      const { getParallelSceneConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelSceneConcurrency()).toBe(3);
+    });
+
+    it('clamps to a maximum of 10', async () => {
+      vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', '50');
+      const { getParallelSceneConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelSceneConcurrency()).toBe(10);
+    });
+
+    it('treats zero, negative, and non-numeric values as off', async () => {
+      for (const value of ['0', '-2', 'abc']) {
+        vi.resetModules();
+        vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', value);
+        const { getParallelSceneConcurrency } = await import('@/lib/server/provider-config');
+        expect(getParallelSceneConcurrency(), `value=${value}`).toBe(0);
+      }
+    });
+  });
+
   describe('resolveBaseUrl', () => {
     it('returns client URL for an unmanaged provider', async () => {
       const { resolveBaseUrl } = await import('@/lib/server/provider-config');
@@ -401,6 +433,61 @@ pdf:
       expect(isServerConfiguredProvider('video', 'grok-video')).toBe(true);
       // section-scoped: an LLM provider id is not a video provider
       expect(isServerConfiguredProvider('video', 'openai')).toBe(false);
+    });
+  });
+
+  describe('getServerTTSProviders force-disable (#665)', () => {
+    it('reports nothing when no TTS provider is configured or disabled', async () => {
+      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
+      expect(getServerTTSProviders()).toEqual({});
+    });
+
+    it('marks an env-configured TTS provider as managed (no disabled flag)', async () => {
+      vi.stubEnv('TTS_OPENAI_API_KEY', 'sk-tts');
+      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
+      expect(getServerTTSProviders()['openai-tts']).toEqual({});
+    });
+
+    it('force-disables a provider via TTS_<P>_ENABLED=false even when it has a key', async () => {
+      vi.stubEnv('TTS_OPENAI_API_KEY', 'sk-tts');
+      vi.stubEnv('TTS_OPENAI_ENABLED', 'false');
+      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
+      expect(getServerTTSProviders()['openai-tts']).toEqual({ disabled: true });
+    });
+
+    it('force-disables browser-native via env (it is client-only, has no key)', async () => {
+      vi.stubEnv('TTS_BROWSER_NATIVE_ENABLED', 'false');
+      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
+      expect(getServerTTSProviders()['browser-native-tts']).toEqual({ disabled: true });
+    });
+
+    it('force-disables a provider via YAML tts.<id>.enabled: false', async () => {
+      yamlOverride = 'tts:\n  voxcpm-tts:\n    enabled: false\n';
+      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
+      expect(getServerTTSProviders()['voxcpm-tts']).toEqual({ disabled: true });
+    });
+
+    it('env ENABLED=true overrides a YAML disable', async () => {
+      yamlOverride = 'tts:\n  openai-tts:\n    enabled: false\n    apiKey: sk-yaml\n';
+      vi.stubEnv('TTS_OPENAI_ENABLED', 'true');
+      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
+      // Re-enabled by env, and configured via YAML key ⇒ managed, not disabled.
+      expect(getServerTTSProviders()['openai-tts']).toEqual({});
+    });
+
+    it('an empty TTS_<P>_ENABLED does NOT override a YAML disable', async () => {
+      yamlOverride = 'tts:\n  openai-tts:\n    enabled: false\n    apiKey: sk-yaml\n';
+      vi.stubEnv('TTS_OPENAI_ENABLED', '');
+      const { getServerTTSProviders } = await import('@/lib/server/provider-config');
+      expect(getServerTTSProviders()['openai-tts']).toEqual({ disabled: true });
+    });
+
+    it('isServerTTSProviderDisabled reflects the force-disable set', async () => {
+      vi.stubEnv('TTS_OPENAI_API_KEY', 'sk-tts');
+      vi.stubEnv('TTS_OPENAI_ENABLED', 'false');
+      const { isServerTTSProviderDisabled } = await import('@/lib/server/provider-config');
+      expect(isServerTTSProviderDisabled('openai-tts')).toBe(true);
+      expect(isServerTTSProviderDisabled('qwen-tts')).toBe(false);
     });
   });
 });

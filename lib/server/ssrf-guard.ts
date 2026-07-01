@@ -162,6 +162,9 @@ export function isPrivateIP(ip: string): boolean {
   return false;
 }
 
+const LOCAL_NETWORK_BLOCK_MESSAGE =
+  'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
+
 /**
  * Validate a URL against SSRF attacks.
  * Returns null if the URL is safe, or an error message string if blocked.
@@ -192,7 +195,7 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     hostname === '::1' ||
     isPrivateIP(hostname)
   ) {
-    return 'Local/private network URLs are not allowed';
+    return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
 
   if (isIP(hostname)) {
@@ -211,7 +214,7 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   }
 
   if (resolvedAddresses.some(({ address }) => isPrivateIP(address))) {
-    return 'Local/private network URLs are not allowed';
+    return LOCAL_NETWORK_BLOCK_MESSAGE;
   }
 
   return null;

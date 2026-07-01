@@ -50,13 +50,18 @@
   },
   "import": {
     "classroom": "导入课堂",
+    "pptx": "导入 PPTX",
     "parsing": "正在解析 ZIP...",
+    "parsingPptx": "正在解析 PPTX...",
     "validating": "正在验证数据...",
     "writingMedia": "正在写入媒体文件...",
     "writingCourse": "正在写入课程数据...",
     "success": "课堂导入成功",
+    "pptxSuccess": "PPTX 解析成功（共 {{count}} 页，输出已打印到控制台）",
     "error": {
       "invalidZip": "无效文件，请选择有效的 .maic.zip 文件。",
+      "invalidPptx": "PPTX 解析失败，请检查文件是否有效。",
+      "parserUnavailable": "PPTX 导入不可用：解析器未部署。请重新执行安装/同步步骤。",
       "invalidManifest": "无效课堂文件：manifest.json 缺失或已损坏。",
       "missingData": "无效课堂文件：缺少必需的课程数据。",
       "storageFull": "导入失败：浏览器存储空间已满，请清理旧课堂后重试。"
@@ -126,7 +131,8 @@
     "voiceLoading": "加载中...",
     "voiceAutoAssign": "音色将自动分配",
     "searchVoice": "搜索音色",
-    "noMatchingVoices": "没有匹配音色"
+    "noMatchingVoices": "没有匹配音色",
+    "noVoice": "无可用音色"
   },
   "proactiveCard": {
     "discussion": "讨论",
@@ -151,7 +157,8 @@
     "fullscreen": "全屏",
     "exitFullscreen": "退出全屏",
     "editCourse": "编辑课程",
-    "doneEditing": "完成编辑"
+    "doneEditing": "完成编辑",
+    "proModeDisabledHint": "本页不支持编辑——打开任意课程页即可使用 Pro 模式编辑。"
   },
   "edit": {
     "proMode": "专业模式",
@@ -213,7 +220,201 @@
       "dragHandle": "拖动",
       "deckLabel": "场景",
       "moreActions": "更多操作",
-      "rename": "重命名"
+      "rename": "重命名",
+      "sceneIncomplete": "本页内容不完整"
+    },
+    "zorder": {
+      "toFront": "置于顶层",
+      "toBack": "置于底层"
+    },
+    "image": {
+      "replace": "替换图片",
+      "flipH": "水平翻转",
+      "flipV": "垂直翻转"
+    },
+    "background": {
+      "label": "背景",
+      "solid": "纯色",
+      "image": "图片"
+    },
+    "quiz": {
+      "addQuestion": "添加题目",
+      "reorder": "拖动排序",
+      "deleteQuestion": "删除题目",
+      "untitledQuestion": "未命名题目",
+      "questionLabel": "题干",
+      "questionPlaceholder": "输入题目…",
+      "typeLabel": "类型",
+      "pointsLabel": "分值",
+      "optionsLabel": "选项",
+      "optionPlaceholder": "选项内容",
+      "addOption": "添加选项",
+      "deleteOption": "删除选项",
+      "markCorrect": "标记为正确答案",
+      "moveUp": "上移",
+      "moveDown": "下移",
+      "analysisLabel": "解析",
+      "analysisPlaceholder": "评分后显示…",
+      "commentPromptLabel": "评分指引",
+      "commentPromptPlaceholder": "应如何评判这道主观题？",
+      "empty": "暂无题目",
+      "emptyHint": "点击上方“添加题目”创建第一道题。",
+      "type": {
+        "single": "单选",
+        "multiple": "多选",
+        "short_answer": "简答"
+      },
+      "shortAnswerGradingNote": "简答题由 AI 依据下方评分指引自动打分。",
+      "hint": {
+        "emptyText": "第 {{n}} 题：请填写题干",
+        "fewOptions": "第 {{n}} 题：至少需要两个选项",
+        "emptyOption": "第 {{n}} 题：有选项内容为空",
+        "noCorrect": "第 {{n}} 题：请标记正确答案"
+      }
+    },
+    "cue": {
+      "speech": "讲解",
+      "spotlight": "聚光",
+      "laser": "激光",
+      "whiteboardOpen": "画板",
+      "whiteboardText": "板书",
+      "whiteboardShape": "图形",
+      "whiteboardLatex": "公式",
+      "whiteboardTable": "表格",
+      "action": "动作",
+      "discussion": "讨论"
+    },
+    "element": {
+      "text": "文本",
+      "image": "图片",
+      "shape": "形状",
+      "line": "线条",
+      "chart": "图表",
+      "table": "表格",
+      "latex": "公式",
+      "video": "视频",
+      "audio": "音频",
+      "code": "代码"
+    },
+    "agent": {
+      "expand": "展开 AI 助手",
+      "collapse": "收起",
+      "stopped": "已停止",
+      "emptyTitle": "有什么想改的？",
+      "emptyHint": "在画布上编辑好这一页后，让 AI 重新生成与内容匹配的讲解旁白。",
+      "placeholder": "描述对这一页的修改…",
+      "stop": "停止生成",
+      "empty": {
+        "lead": "告诉我这一页怎么改，我会重做内容并对齐讲解。",
+        "boundary": "精细编辑请使用编辑器，增删 / 排序页面请用左侧导航。",
+        "comingSoon": "更多能力陆续加入中，敬请期待。"
+      },
+      "interactive": {
+        "emptyTitle": "这个互动页要修什么？",
+        "lead": "描述这个互动页的问题（比如某个按钮点了没反应），我只修这一处、其它内容原样保留。",
+        "placeholder": "描述这个互动页的问题…",
+        "boundary": "我只做定点修复，不整页重做；切换页面请用左侧导航。"
+      },
+      "cap": {
+        "content": {
+          "label": "重新生成 PPT 页面",
+          "examples": "“精简成三个要点”、“加个生活化例子”"
+        },
+        "narration": {
+          "label": "重新生成讲解脚本",
+          "examples": "“讲得更口语一些”、“和画布上的改动对齐”"
+        },
+        "fixHtml": {
+          "label": "修复互动页的 bug",
+          "examples": "“开始按钮点了没反应”、“手机上排版重叠”"
+        }
+      },
+      "newConversation": "新对话",
+      "sessionHistory": "历史对话",
+      "sessionUntitled": "未命名对话",
+      "sessionDelete": "删除",
+      "sessionEmpty": "暂无历史对话",
+      "thinking": "思考中…",
+      "reasoning": "思考过程",
+      "thought": "已思考"
+    },
+    "timeline": {
+      "title": "讲解脚本",
+      "dragToAdd": "拖入添加",
+      "regenAllTts": "重新生成全部配音",
+      "voiceAll": "全部配音",
+      "counts": "{{speech}} 讲解 · {{cue}} 动作",
+      "panLeft": "左移视口",
+      "panRight": "右移视口",
+      "collapseAxis": "收起为轴线",
+      "expandTrack": "展开轨道",
+      "emptyHint": "把上方的动作拖到轴上开始编排，或让 MAIC Agent 生成讲解。",
+      "speechPlaceholder": "输入这一句讲解…",
+      "reorder": "拖动重排",
+      "moveLeft": "左移",
+      "moveRight": "右移",
+      "pickElement": "选元素",
+      "bound": "已绑定",
+      "fieldAction": "动作",
+      "fieldElement": "元素",
+      "fieldContent": "内容",
+      "addDiscussion": "添加讨论",
+      "addDiscussionExists": "每个场景仅支持一个讨论",
+      "discussionTerminal": "末尾",
+      "discussionTerminalHint": "讨论固定在场景末尾，每个场景仅一个",
+      "discussionTopicPlaceholder": "讨论主题（必填）",
+      "discussionPromptPlaceholder": "引导语（可选）",
+      "discussionAgent": "发起",
+      "discussionAgentUnset": "不指定"
+    },
+    "tts": {
+      "preview": "试听",
+      "regenerate": "重新生成配音",
+      "statusReady": "已配音",
+      "statusNone": "未配音",
+      "statusGenerating": "生成中",
+      "statusError": "失败"
+    },
+    "pick": {
+      "pickFor": "为「{{label}}」选择元素",
+      "pickHint": "点高亮元素或下方列表 · Esc 取消",
+      "pageElements": "页面元素 · {{count}}",
+      "expand": "展开",
+      "collapse": "折叠",
+      "noElements": "这一页没有可定位的元素。",
+      "bindHint": "点画布上高亮的元素绑定"
+    },
+    "regen": {
+      "title": "重新生成讲解",
+      "running": "正在生成…",
+      "noActions": "未生成动作",
+      "actionsCount": "{{count}} 个动作",
+      "generating": "生成中",
+      "notGenerated": "未生成",
+      "updated": "已更新"
+    },
+    "regenScene": {
+      "title": "重新生成页面",
+      "generating": "生成中",
+      "updated": "已更新",
+      "notGenerated": "未生成",
+      "elementsCount": "{{count}} 个元素",
+      "restore": "还原到重生成前",
+      "restored": "已还原",
+      "resume": "恢复"
+    },
+    "fixHtml": {
+      "title": "修复交互页",
+      "fixing": "修复中",
+      "fixed": "已修复",
+      "notFixed": "未修复",
+      "editsCount": "{{count}} 处修改"
+    },
+    "readCard": {
+      "title": "读取页面内容",
+      "reading": "读取中",
+      "done": "已读取",
+      "failed": "未读取"
     }
   },
   "classroomComplete": {
@@ -359,6 +560,228 @@
         "title": "第三步：完成项目",
         "desc": "所有任务完成后，系统会显示「🎉 项目已完成！」"
       }
+    },
+    "v2": {
+      "hero": {
+        "title": "项目实战 · Project-Based Learning",
+        "stage": "阶段",
+        "task": "任务",
+        "tutor": "导师",
+        "greetingBanner": "导师正在和你打招呼…",
+        "startProject": "开始项目",
+        "continueProject": "继续做项目",
+        "resetProgress": "重置学习进度",
+        "resetConfirmTitle": "重置学习进度？",
+        "resetConfirmDescription": "这会清空本项目的全部进度——对话历史、提交内容和各阶段状态，你将从头重新开始。此操作无法撤销。",
+        "resetConfirmConfirm": "确认重置",
+        "resetConfirmCancel": "取消",
+        "startHint": "点击后会进入工作台，{{name}} 将为你逐步揭晓每个阶段。",
+        "startError": "无法开始项目：{{error}}",
+        "youWillLearn": "你将收获",
+        "instructorTagline": "全程陪伴你完成项目",
+        "scenarioCharacter": "模拟角色",
+        "scenarioCharacterTagline": "情景模拟中与你互动的角色",
+        "scenarioFlow": "环节",
+        "close": "关闭"
+      },
+      "sidebar": {
+        "title": "项目路线",
+        "summary": "{{completed}} / {{total}} 任务 · {{stages}} 阶段",
+        "enterScenario": "进入情景模拟",
+        "advanceScene": "推进剧情",
+        "continueScene": "进入下一阶段",
+        "stagePrep": "准备",
+        "stageRoleplay": "模拟",
+        "stageWrapup": "复盘",
+        "completeAct": "完成这一幕",
+        "completeTask": "完成"
+      },
+      "workspace": {
+        "progressLabel": "阶段推进",
+        "resizeSidebar": "调整任务栏和对话区宽度",
+        "resizeSubmission": "调整对话区和提交区宽度",
+        "enterFullscreen": "展开为全屏工作台",
+        "exitFullscreen": "退出全屏工作台",
+        "exitNativeFullscreen": "退出全屏",
+        "returnToHero": "返回项目主页",
+        "breadcrumbOverview": "项目首页",
+        "breadcrumbCurrent": "工作台"
+      },
+      "chat": {
+        "placeholder": "和 {{name}} 聊聊你的进度...",
+        "placeholderCompleted": "项目已完成，看看你的结业报告吧。",
+        "send": "发送",
+        "voiceInput": "语音输入",
+        "keyboardHint": "Enter 发送 · Shift+Enter 换行",
+        "readingSubmission": "正在读取最新提交…",
+        "generatingMilestoneFeedback": "阶段反馈正在生成中…",
+        "generatingFinalEval": "项目总评正在生成…",
+        "readingSubmissionWithTitle": "正在读取「{{title}}」的最新提交…",
+        "evaluatingTask": "{{name}} · 点评任务中",
+        "evaluatingFinal": "{{name}} · 项目总评",
+        "narrating": "正在描述场景…",
+        "choosePrompt": "请选择一个选项",
+        "choiceOrType": "选一个，或自己输入…",
+        "suggestionsToggle": "需要灵感？看看可以怎么说",
+        "guidancePointer": "没有头绪？右侧面板里有这一幕的目标和提示。",
+        "roleplayHistoryTitle": "情景模拟阶段互动历史",
+        "coachHint": "教练提示",
+        "thinking": "{{name}} · 思考中",
+        "typing": "{{name}} · 输入中…",
+        "submitted": "已提交产出",
+        "evaluatingSubmission": "正在评测你的提交…",
+        "evaluatingSubmissionDetail": "任务：「{{title}}」。评测完成后，本次提交点评会出现在这里。",
+        "milestoneFeedbackPending": "阶段反馈完成后会显示继续按钮。",
+        "emptyChat": "还没有对话。",
+        "emptyChatHint": "你和 {{name}} 的项目导学会从这里开始。",
+        "continueError": "无法继续到下一阶段：{{error}}",
+        "stillTyping": "仍在输入中",
+        "handoverHint": "请先点击「继续到下一阶段」。"
+      },
+      "scene": {
+        "expand": "展开",
+        "collapse": "收起",
+        "greetHint": "点一下打个招呼",
+        "label": "场景"
+      },
+      "milestoneCard": {
+        "title": "阶段测评",
+        "youLearned": "你学到了",
+        "nextStage": "下一阶段：",
+        "continueHint": "点击 Continue 按钮后，我会再带你进入下一阶段。",
+        "alreadyEntered": "已进入下一阶段",
+        "continueToNext": "继续到下一阶段",
+        "projectAlmostDone": "🎉 项目即将完成 —— 等待生成结业报告"
+      },
+      "taskEvalCard": {
+        "title": "本次提交点评",
+        "strengths": "做得好的",
+        "improvements": "下次可以"
+      },
+      "briefing": {
+        "intro": "进入情景后，准备阶段介绍的背景在这里随时可查。",
+        "tablistLabel": "右侧面板切换",
+        "submissionTab": "提交区",
+        "briefingTab": "情景简报",
+        "setting": "背景设定",
+        "learnerRole": "你的角色",
+        "goal": "练习目标",
+        "rules": "规则",
+        "cast": "出场角色",
+        "identity": "身份",
+        "situation": "处境"
+      },
+      "submission": {
+        "textSubmission": "文本提交",
+        "fileTooLarge": "文件最大 5 MB；超过的话请分段粘贴或精简后再上传。",
+        "contentRequired": "内容不能为空",
+        "readFileFailed": "读取文件失败：{{error}}",
+        "parsingPdf": "正在解析 PDF…",
+        "parsePdfFailed": "PDF 解析失败：{{error}}",
+        "pdfNoText": "未能从该 PDF 中提取到文本。",
+        "imageUploadFailed": "图片上传失败：{{error}}",
+        "imageTooLargeNoStorage": "未配置存储时图片过大，本地最大 2 MB。",
+        "imageNeedsCaptionNoVision": "当前模型无法识别图片，请用文字补充图片内容后再提交，或在设置中切换支持视觉的模型。",
+        "unsupportedFileType": "不支持的文件类型。仅接受文本文件（.txt, .md, .csv, .json, .py 等）与 PDF。",
+        "pasteTab": "粘贴文本 / 图片",
+        "uploadTab": "上传文件",
+        "pastePlaceholder": "把你写的代码、文档、回答，或图片 / 截图粘贴在这里…",
+        "uploadPlaceholder": "上传后内容会显示在这里，可在提交前再编辑...",
+        "imageCaptionPlaceholder": "可为这张图片补充文字说明（可选）…",
+        "imageSelectedReplace": "已选择图片 · 点击更换",
+        "removeImage": "移除图片",
+        "processing": "处理中…",
+        "cancelProcessingConfirm": "文件还在处理中，确定要取消并放弃这次上传吗？",
+        "currentTask": "当前任务",
+        "hints": "提示",
+        "submitOutput": "提交产出",
+        "evaluating": "正在评估提交内容...",
+        "lockedWhileStreaming": "导师正在回复，请稍候再提交。",
+        "evalFailed": "评测失败：{{error}}",
+        "submittedCount": "已提交 {{count}} 份",
+        "submissionHistory": "已提交记录",
+        "fromTask": "任务：{{title}}",
+        "download": "下载",
+        "viewSubmission": "查看产出",
+        "noActiveTask": "没有进行中的任务。",
+        "canceling": "取消",
+        "submitting": "提交中...",
+        "selectFileHint": "点击选择文件 · 最大 5 MB · 文本 / PDF / 图片",
+        "modalTitle": "提交你的产出",
+        "modalTaskLabel": "任务：{{title}}",
+        "fileRead": "已读取：{{filename}} · {{size}} KB",
+        "submittedBadge": "已提交（{{count}}）",
+        "receiptFile": "文件：{{filename}}",
+        "receiptTemplate": "已提交本任务产出（{{label}}）。"
+      },
+      "agentTabs": {
+        "noAgent": "这个项目还没有配置 AI 角色。"
+      },
+      "completion": {
+        "noWhatsNext": "最终评测还没有写入下一步建议。",
+        "backToWorkspace": "返回工作台",
+        "completionCta": "查看结业报告",
+        "title": "项目结业报告",
+        "whatYouBuilt": "你打造了什么",
+        "whatYouLearned": "你学到了什么",
+        "whatsNext": "下一步",
+        "noDataFallback": "最终评测还没有写入",
+        "stageReview": "阶段回顾",
+        "summary": "你完成了全部 {{completed}} / {{total}} 个任务，跨越了 {{stages}} 个阶段。",
+        "statConcepts": "掌握概念",
+        "statTurns": "对话轮次",
+        "statScope": "阶段 · 任务",
+        "statDuration": "项目用时",
+        "statSubmissions": "提交作品",
+        "coreStageBadge": "核心",
+        "conceptsInStageLabel": "解锁了概念：",
+        "submissionsInStage": "提交了 {{count}} 件作品",
+        "coreConceptGrasp": "核心概念「{{concept}}」——{{quality}}",
+        "stageNoData": "本阶段没有记录的产出。",
+        "highlightsTitle": "你的亮点",
+        "scenario": {
+          "summary": "你完成了这场情景模拟的 {{acts}} 幕。这是这次角色扮演的表现回顾。",
+          "whatYouDidWell": "你做得好的地方",
+          "skillsPracticed": "你练到的技能",
+          "statGoals": "目标达成",
+          "statActs": "完成幕数",
+          "goalReviewTitle": "逐幕回顾",
+          "goalReviewHint": "这场情景模拟为每一幕都设定了几个关键目标。下面根据你和角色的真实对话，回顾你这次达成了其中的 {{achieved}}/{{total}} 个。",
+          "goalListTitle": "每一幕的目标",
+          "goalListHint": "这场情景模拟为每一幕都设定了几个关键目标。下面是各幕的目标回顾。",
+          "goalAchieved": "做到了",
+          "goalPartial": "部分做到",
+          "goalMissed": "没做到",
+          "statGoodDecisions": "出色决策",
+          "statScore": "决策得分",
+          "statBeats": "完成幕数",
+          "decisionReviewTitle": "决策回顾",
+          "good": "出色",
+          "ok": "尚可",
+          "poor": "待改进",
+          "decisionScore": "决策总分 {{score}}",
+          "castLabel": "你与之互动的角色：{{names}}"
+        },
+        "highlight": {
+          "independence": "你自主展现了 {{unlocks}}/{{total}} 个概念——不靠追问，自己就表达出来了，理解很扎实。",
+          "resilience": "在「{{title}}」阶段你克服了 {{errors}} 个错误，逐一攻克——韧性强。",
+          "resilienceGeneral": "你克服了 {{errors}} 个错误，逐一攻克——韧性强。",
+          "completion": "完成了全部任务，每一步都扎实走过。"
+        },
+        "synthesisQuality": {
+          "strong": "理解到位 ✅",
+          "ok": "基本掌握 👍",
+          "weak": "还可以再巩固 💪"
+        },
+        "durationMinutes": "{{m}} 分钟",
+        "durationHours": "{{h}} 小时",
+        "durationHoursMinutes": "{{h}} 小时 {{m}} 分钟"
+      },
+      "completionCard": {
+        "title": "项目完成 · Completion",
+        "subtitle": "恭喜你！整个项目跑通了。",
+        "description": "我们已经基于你这段时间的数据（用时、对话、错误恢复、解锁的概念……）生成了一份结业报告，包含你打造了什么、学到了什么，以及接下来可以走向哪里。"
+      }
     }
   },
   "share": {
@@ -464,6 +887,28 @@
     "deleteSceneConfirmAction": "删除",
     "collapseEditor": "收起",
     "quizConfigSummary": "{{count}} 道题",
+    "interactiveWidgetKind": "组件类型",
+    "widgetSimulation": "仿真模拟",
+    "widgetDiagram": "图示",
+    "widgetCode": "代码",
+    "widgetGame": "游戏",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "概念",
+    "interactiveConceptPlaceholder": "要探索的概念",
+    "pblConfigSummary": "项目",
+    "pblSubtype": "PBL 类型",
+    "pblSubtypeProject": "项目",
+    "pblSubtypeScenario": "情景模拟",
+    "pblProjectTopic": "项目主题",
+    "pblProjectTopicPlaceholder": "项目主题",
+    "pblProjectDescription": "项目描述",
+    "pblProjectDescriptionPlaceholder": "学生将完成的项目",
+    "pblScenarioBrief": "情景设定",
+    "pblScenarioBriefPlaceholder": "场景、角色与练习目标",
+    "pblTargetSkills": "目标技能",
+    "pblAddSkill": "添加技能",
+    "widgetProceduralSkill": "操作技能",
+    "removeSkill": "移除技能",
     "dragSceneHint": "拖动排序；或聚焦后按 Ctrl/⌘ + ↑ / ↓",
     "deleteScene": "删除场景",
     "backToRequirements": "返回修改需求",
@@ -471,7 +916,9 @@
     "generatingInProgress": "生成中...",
     "webSearching": "网络搜索",
     "webSearchingDesc": "正在搜索网络获取最新资料",
-    "webSearchFailed": "网络搜索失败"
+    "webSearchFailed": "网络搜索失败",
+    "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
+    "jumpToBlankTitle": "跳到待补充标题的章节"
   },
   "settings": {
     "title": "设置",
@@ -1063,6 +1510,10 @@
     "noVisionWarning": "当前模型不支持视觉能力，图片仍可放入幻灯片，但模型无法理解图片内容来优化选择和布局",
     "serverConfigured": "服务端",
     "serverConfiguredNotice": "此提供方由服务端托管，无法在此修改。如需使用自己的凭据，请新增一个提供方。",
+    "ttsProviderEnabledLabel": "启用此提供方",
+    "ttsProviderEnabledHint": "关闭后，此提供方将不会出现在语音选择器中，也不会被自动分配。",
+    "ttsProviderUnavailableHint": "请先配置此提供方再启用。",
+    "ttsProviderDisabledByAdmin": "此提供方已被服务端管理员禁用，无法启用。",
     "optionalOverride": "可选，留空则使用服务端配置",
     "setupNeeded": "请先完成配置",
     "modelNotConfigured": "请选择一个模型以开始使用",
@@ -1094,7 +1545,8 @@
     "viewDocs": "API 文档",
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "服务端已配置搜索 API Key",
-    "optional": "可选"
+    "optional": "可选",
+    "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。"
   },
   "profile": {
     "title": "个人资料",

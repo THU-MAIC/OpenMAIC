@@ -20,10 +20,7 @@ Generate a self-contained HTML code editor with execution and test validation.
     { "id": "t1", "input": "5", "expected": "25", "description": "Square the input" }
   ],
   "hints": ["Think about multiplication", "What is x * x?"],
-  "solution": "def solution(x):\n    return x * x",
-  "teacherActions": [
-    { "id": "act1", "type": "speech", "content": "Try implementing the solution" }
-  ]
+  "solution": "def solution(x):\n    return x * x"
 }
 ```
 

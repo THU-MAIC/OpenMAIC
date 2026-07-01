@@ -6,14 +6,27 @@ import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
 import { db } from '@/lib/utils/database';
-import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
+import type {
+  SceneOutline,
+  PdfImage,
+  ImageMapping,
+  UserRequirements,
+} from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
-import { getVoxCPMProviderOptions } from '@/lib/audio/voxcpm-voices';
+import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
+import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
+import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
+import {
+  isAbortError,
+  withGenerationRetry,
+  type GenerationRetryOptions,
+} from '@/lib/generation/generation-retry';
 
 const log = createLogger('SceneGenerator');
 
@@ -30,6 +43,10 @@ interface SceneActionsResult {
   previousSpeeches?: string[];
   error?: string;
 }
+
+type ClientRetryOptions<T> = Partial<
+  Omit<GenerationRetryOptions<T>, 'label' | 'shouldRetryResult' | 'signal'>
+>;
 
 function getApiHeaders(): HeadersInit {
   const config = getCurrentModelConfig();
@@ -64,8 +81,34 @@ function withThinkingConfig<T extends Record<string, unknown>>(body: T): T {
   return thinkingConfig ? ({ ...body, thinkingConfig } as T) : body;
 }
 
+async function readJsonResponse(response: Response): Promise<Record<string, unknown>> {
+  return response.json().catch(() => ({
+    error: response.statusText || 'Request failed',
+  }));
+}
+
+function createHttpError(
+  response: Response,
+  data: { details?: unknown; error?: unknown },
+  fallback: string,
+): Error & { statusCode?: number } {
+  const message =
+    typeof data.details === 'string'
+      ? data.details
+      : typeof data.error === 'string'
+        ? data.error
+        : `${fallback}: HTTP ${response.status}`;
+  const error = new Error(message) as Error & { statusCode?: number };
+  error.statusCode = response.status;
+  return error;
+}
+
+function messageFromError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 /** Call POST /api/generate/scene-content (step 1) */
-async function fetchSceneContent(
+export async function fetchSceneContent(
   params: {
     outline: SceneOutline;
     allOutlines: SceneOutline[];
@@ -80,26 +123,43 @@ async function fetchSceneContent(
     };
     agents?: AgentInfo[];
     languageDirective?: string;
+    requirements?: UserRequirements;
   },
   signal?: AbortSignal,
+  retryOptions?: ClientRetryOptions<SceneContentResult>,
 ): Promise<SceneContentResult> {
-  const response = await fetch('/api/generate/scene-content', {
-    method: 'POST',
-    headers: getApiHeaders(),
-    body: JSON.stringify(withThinkingConfig(params)),
-    signal,
-  });
+  try {
+    return await withGenerationRetry(
+      async () => {
+        const response = await fetch('/api/generate/scene-content', {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify(withThinkingConfig(params)),
+          signal,
+        });
 
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({ error: 'Request failed' }));
-    return { success: false, error: data.error || `HTTP ${response.status}` };
+        const data = await readJsonResponse(response);
+        if (!response.ok) {
+          throw createHttpError(response, data, 'Scene content request failed');
+        }
+
+        return data as unknown as SceneContentResult;
+      },
+      {
+        label: `scene content "${params.outline.title}"`,
+        shouldRetryResult: (result) => !result.success || !result.content,
+        ...retryOptions,
+        signal,
+      },
+    );
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return { success: false, error: messageFromError(error, 'Content generation failed') };
   }
-
-  return response.json();
 }
 
 /** Call POST /api/generate/scene-actions (step 2) */
-async function fetchSceneActions(
+export async function fetchSceneActions(
   params: {
     outline: SceneOutline;
     allOutlines: SceneOutline[];
@@ -111,20 +171,44 @@ async function fetchSceneActions(
     languageDirective?: string;
   },
   signal?: AbortSignal,
+  retryOptions?: ClientRetryOptions<SceneActionsResult>,
 ): Promise<SceneActionsResult> {
-  const response = await fetch('/api/generate/scene-actions', {
-    method: 'POST',
-    headers: getApiHeaders(),
-    body: JSON.stringify(withThinkingConfig(params)),
-    signal,
-  });
+  try {
+    return await withGenerationRetry(
+      async () => {
+        const response = await fetch('/api/generate/scene-actions', {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify(withThinkingConfig(params)),
+          signal,
+        });
 
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({ error: 'Request failed' }));
-    return { success: false, error: data.error || `HTTP ${response.status}` };
+        const data = await readJsonResponse(response);
+        if (!response.ok) {
+          throw createHttpError(response, data, 'Scene actions request failed');
+        }
+
+        return data as unknown as SceneActionsResult;
+      },
+      {
+        label: `scene actions "${params.outline.title}"`,
+        shouldRetryResult: (result) => !result.success || !result.scene,
+        ...retryOptions,
+        signal,
+      },
+    );
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return { success: false, error: messageFromError(error, 'Actions generation failed') };
   }
+}
 
-  return response.json();
+interface TTSApiResponse {
+  success?: boolean;
+  base64?: string;
+  format?: string;
+  error?: string;
+  details?: string;
 }
 
 /** Generate TTS for one speech action and store in IndexedDB */
@@ -133,44 +217,67 @@ export async function generateAndStoreTTS(
   text: string,
   language?: string,
   signal?: AbortSignal,
+  retryOptions?: ClientRetryOptions<TTSApiResponse>,
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   if (settings.ttsProviderId === 'browser-native-tts') return;
+  // Don't server-generate against a disabled/unconfigured provider (#665).
+  if (
+    !isTTSProviderEnabled(
+      settings.ttsProviderId,
+      settings.ttsProvidersConfig?.[settings.ttsProviderId],
+    )
+  )
+    return;
 
   const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
-  const providerOptions =
-    settings.ttsProviderId === 'voxcpm-tts'
-      ? {
-          ...(ttsProviderConfig?.providerOptions || {}),
-          ...(await getVoxCPMProviderOptions(settings.ttsVoice, { role: 'teacher', language })),
-        }
-      : undefined;
-  const response = await fetch('/api/generate/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text,
-      audioId,
-      ttsProviderId: settings.ttsProviderId,
-      ttsModelId: ttsProviderConfig?.modelId,
-      ttsVoice: settings.ttsVoice,
-      ttsSpeed: settings.ttsSpeed,
-      ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-      // Managed providers resolve their base URL server-side; only send the
-      // client's own base URL (custom providers).
-      ttsBaseUrl:
-        ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
-      ttsProviderOptions: providerOptions,
-    }),
-    signal,
+  // Narration is the teacher's voice — resolve it from the teacher agent profile
+  // through the single resolver (registers + references by id for stable timbre).
+  const teacher = pickNarratorAgent(useAgentRegistry.getState().listAgents());
+  const providerOptions = await resolveAgentVoiceOptions(teacher, {
+    providerId: settings.ttsProviderId,
+    providerConfig: ttsProviderConfig,
+    voiceId: settings.ttsVoice,
+    language,
   });
+  const data = await withGenerationRetry(
+    async () => {
+      const response = await fetch('/api/generate/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          audioId,
+          ttsProviderId: settings.ttsProviderId,
+          ttsModelId: ttsProviderConfig?.modelId,
+          ttsVoice: settings.ttsVoice,
+          ttsSpeed: settings.ttsSpeed,
+          ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+          // Managed providers resolve their base URL server-side; only send the
+          // client's own base URL (custom providers).
+          ttsBaseUrl:
+            ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
+          ttsProviderOptions: providerOptions,
+        }),
+        signal,
+      });
 
-  const data = await response
-    .json()
-    .catch(() => ({ success: false, error: response.statusText || 'Invalid TTS response' }));
-  if (!response.ok || !data.success || !data.base64 || !data.format) {
+      const data = (await readJsonResponse(response)) as TTSApiResponse;
+      if (!response.ok) {
+        throw createHttpError(response, data, 'TTS request failed');
+      }
+      return data;
+    },
+    {
+      label: `tts "${audioId}"`,
+      shouldRetryResult: (result) => !result.success || !result.base64 || !result.format,
+      ...retryOptions,
+      signal,
+    },
+  );
+  if (!data.success || !data.base64 || !data.format) {
     const err = new Error(
-      data.details || data.error || `TTS request failed: HTTP ${response.status}`,
+      data.details || data.error || 'TTS request failed: invalid response payload',
     );
     log.warn('TTS failed for', audioId, ':', err);
     throw err;
@@ -217,6 +324,8 @@ async function generateTTSForScene(
     try {
       await generateAndStoreTTS(audioId, action.text, language, signal);
     } catch (error) {
+      if (isAbortError(error)) throw error;
+
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
       log.warn('TTS generation failed:', {
@@ -303,6 +412,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
       if (pending.length === 0) {
         store.getState().setGenerationStatus('completed');
         store.getState().setGeneratingOutlines([]);
+        store.getState().setGenerationComplete(true);
         options.onComplete?.();
         generatingRef.current = false;
         return;
@@ -326,21 +436,30 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           .map((a) => a.text);
       }
 
-      // Serial generation loop — two-step per outline
+      // #572: opt-in parallel content fetch. Concurrency is server-configured
+      // (PARALLEL_SCENE_CONCURRENCY), default 0 = off, so out-of-box behaviour is
+      // unchanged.
+      const parallelConcurrency = Math.max(
+        0,
+        // Belt-and-suspenders: the value is already clamped server-side and again
+        // in the settings store; re-clamp here so a stale/garbage store value can
+        // never spawn an unbounded fetch fan-out.
+        Math.floor(useSettingsStore.getState().parallelSceneConcurrency ?? 0),
+      );
+      const useParallelContent = parallelConcurrency > 1 && pending.length > 1;
+
+      // Pipelined generation loop (#572). When parallelism is on, scene *content*
+      // fetches are kicked off up front with bounded concurrency (lazyBoundedMap)
+      // but CONSUMED IN ORDER inside the serial loop below — there is no barrier.
+      // So the first scene paints after content(1)+actions(1)+TTS(1) (same as
+      // serial) while later content fetches run hidden behind earlier scenes'
+      // actions/TTS. Content has no cross-scene dependency, so running it ahead is
+      // safe; actions + TTS stay strictly serial to preserve previousSpeeches
+      // threading and the pause-on-failure UX. With parallelism off this is exactly
+      // the original one-at-a-time loop.
       try {
-        let pausedByFailureOrAbort = false;
-        for (const outline of pending) {
-          if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
-            store.getState().setGenerationStatus('paused');
-            pausedByFailureOrAbort = true;
-            break;
-          }
-
-          store.getState().setCurrentGeneratingOrder(outline.order);
-
-          // Step 1: Generate content
-          options.onPhaseChange?.('content', outline);
-          const contentResult = await fetchSceneContent(
+        const fetchContent = (outline: SceneOutline) =>
+          fetchSceneContent(
             {
               outline,
               allOutlines: outlines,
@@ -354,6 +473,59 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             signal,
           );
 
+        // Pre-warm content fetches (<= parallelConcurrency in flight), keyed by
+        // outline id. Each promise resolves to a result and never rejects, so an
+        // unexpected throw routes through the same mark-failed path as the serial
+        // loop instead of taking sibling fetches down with it.
+        const contentPromises = useParallelContent
+          ? new Map(
+              lazyBoundedMap(
+                pending,
+                parallelConcurrency,
+                async (outline): Promise<SceneContentResult> => {
+                  options.onPhaseChange?.('content', outline);
+                  try {
+                    return await fetchContent(outline);
+                  } catch (err) {
+                    return {
+                      success: false,
+                      error: err instanceof Error ? err.message : 'Content generation failed',
+                    };
+                  }
+                },
+                {
+                  shouldContinue: () =>
+                    !abortRef.current && store.getState().generationEpoch === startEpoch,
+                },
+              ).map((promise, i) => [pending[i].id, promise] as const),
+            )
+          : null;
+
+        let pausedByFailureOrAbort = false;
+        let hadContentFailure = false;
+        for (const outline of pending) {
+          if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
+            store.getState().setGenerationStatus('paused');
+            pausedByFailureOrAbort = true;
+            break;
+          }
+
+          store.getState().setCurrentGeneratingOrder(outline.order);
+
+          // Step 1: content — await this outline's pre-warmed fetch (parallel),
+          // which usually resolved while the previous scene's actions/TTS ran; or
+          // fetch it now (serial).
+          let contentResult: SceneContentResult;
+          if (contentPromises) {
+            contentResult = (await contentPromises.get(outline.id)) ?? {
+              success: false,
+              error: 'Content generation failed',
+            };
+          } else {
+            options.onPhaseChange?.('content', outline);
+            contentResult = await fetchContent(outline);
+          }
+
           if (!contentResult.success || !contentResult.content) {
             if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
               pausedByFailureOrAbort = true;
@@ -361,6 +533,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             }
             store.getState().addFailedOutline(outline);
             options.onSceneFailed?.(outline, contentResult.error || 'Content generation failed');
+            if (contentPromises) {
+              // Parallel: surface the failure but keep going with the other scenes
+              // (their content is already in flight).
+              hadContentFailure = true;
+              removeGeneratingOutline(outline.id);
+              continue;
+            }
+            // Serial: pause the batch (unchanged behaviour).
             store.getState().setGenerationStatus('paused');
             pausedByFailureOrAbort = true;
             break;
@@ -393,7 +573,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             const settings = useSettingsStore.getState();
 
             // TTS generation — failure means the whole scene fails
-            if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
+            if (
+              settings.ttsEnabled &&
+              settings.ttsProviderId !== 'browser-native-tts' &&
+              isTTSProviderEnabled(
+                settings.ttsProviderId,
+                settings.ttsProvidersConfig?.[settings.ttsProviderId],
+              )
+            ) {
               const ttsResult = await generateTTSForScene(
                 scene,
                 params.languageDirective || params.stageInfo.language,
@@ -436,13 +623,20 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
 
         if (!abortRef.current && !pausedByFailureOrAbort) {
-          store.getState().setGenerationStatus('completed');
-          store.getState().setGeneratingOutlines([]);
-          options.onComplete?.();
+          if (hadContentFailure) {
+            // Parallel content phase left some outlines failed but kept going;
+            // surface them for retry instead of signalling a clean completion.
+            store.getState().setGenerationStatus('paused');
+          } else {
+            store.getState().setGenerationStatus('completed');
+            store.getState().setGeneratingOutlines([]);
+            store.getState().setGenerationComplete(true);
+            options.onComplete?.();
+          }
         }
       } catch (err: unknown) {
         // AbortError is expected when stop() is called — don't treat as failure
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (isAbortError(err)) {
           log.info('Generation aborted');
           store.getState().setGenerationStatus('paused');
         } else {
@@ -560,7 +754,14 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
 
         // Step 3: TTS
         const settings = useSettingsStore.getState();
-        if (settings.ttsEnabled && settings.ttsProviderId !== 'browser-native-tts') {
+        if (
+          settings.ttsEnabled &&
+          settings.ttsProviderId !== 'browser-native-tts' &&
+          isTTSProviderEnabled(
+            settings.ttsProviderId,
+            settings.ttsProvidersConfig?.[settings.ttsProviderId],
+          )
+        ) {
           const ttsResult = await generateTTSForScene(
             actionsResult.scene,
             params.languageDirective || params.stageInfo.language,
@@ -578,9 +779,15 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         // Resume remaining generation if there are pending outlines
         if (store.getState().generatingOutlines.length > 0 && lastParamsRef.current) {
           generateRemainingRef.current?.(lastParamsRef.current);
+        } else {
+          // This retry may have materialized the final outstanding slide. The
+          // generateRemaining completion path is not reached on the retry flow,
+          // so mark completion here too — otherwise a later delete would treat
+          // the orphaned outline as pending and regenerate it.
+          store.getState().markGenerationCompleteIfDone();
         }
       } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        if (!isAbortError(err)) {
           store.getState().addFailedOutline(outline);
         }
       }

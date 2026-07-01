@@ -90,7 +90,11 @@ export const toPoints = (d: string) => {
       });
     } else if (item.type === 512) {
       const lastPoint = points[points.length - 1];
-      if (!['M', 'L', 'Q', 'C'].includes(lastPoint.type)) continue;
+      // An arc may appear before any anchor point (e.g. a path that starts with
+      // "A", or one whose leading commands push no point). Without `lastPoint`
+      // there is nothing to arc from, so skip it instead of throwing — this keeps
+      // the documented "malformed path returns []" contract.
+      if (!lastPoint || !['M', 'L', 'Q', 'C'].includes(lastPoint.type)) continue;
 
       const cubicBezierPoints = arcToBezier({
         px: lastPoint.x as number,

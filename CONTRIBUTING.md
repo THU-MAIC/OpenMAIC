@@ -134,10 +134,9 @@ AI-assisted PRs are held to the same quality standard as any other PR. Community
 OpenMAIC/
 ├── app/              # Next.js app router pages and API routes
 ├── components/       # React components
-├── lib/              # Shared utilities and core logic
+├── lib/              # Shared utilities and core logic (i18n in lib/i18n/locales/)
 ├── packages/         # Internal packages (mathml2omml, pptxgenjs)
 ├── public/           # Static assets
-├── messages/         # i18n translation files
 └── .github/          # Issue templates, PR template, CI workflows
 ```
 
@@ -160,4 +159,4 @@ Please report security vulnerabilities through [GitHub Security Advisories](http
 
 ## License
 
-By contributing to OpenMAIC, you agree that your contributions will be licensed under the [AGPL-3.0 License](LICENSE).
+By contributing to OpenMAIC, you agree that your contributions will be licensed under the [MIT License](LICENSE).

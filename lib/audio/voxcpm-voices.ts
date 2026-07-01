@@ -10,9 +10,14 @@ import {
   buildAutoVoxCPMVoicePrompt,
   getVoxCPMProfileIdFromVoiceId,
   getVoxCPMProfileVoiceId,
+  voxCPMBackendSupportsVoiceRegistration,
   type VoxCPMProviderOptions,
   type VoxCPMVoicePromptContext,
 } from '@/lib/audio/voxcpm';
+import {
+  ensureRegisteredVoice,
+  type VoiceRegistrationRequestConfig,
+} from '@/lib/audio/voice-registration-client';
 
 export type VoxCPMVoiceProfile = VoiceProfileRecord;
 
@@ -276,11 +281,26 @@ export function useVoxCPMVoiceProfiles() {
 export async function getVoxCPMProviderOptions(
   voiceId: string,
   context?: VoxCPMVoicePromptContext,
+  request?: VoiceRegistrationRequestConfig,
 ): Promise<VoxCPMProviderOptions> {
   if (voiceId === VOXCPM_AUTO_VOICE_ID) {
+    // Drive register-once only when this VoxCPM backend supports it; otherwise
+    // (and on any failure) fall back to the inline voice-design prompt.
+    const canRegister =
+      !!request &&
+      !!context?.voiceDesign &&
+      voxCPMBackendSupportsVoiceRegistration(context.backend ?? 'vllm-omni');
+    const registeredVoiceId = canRegister
+      ? await ensureRegisteredVoice(
+          VOXCPM_TTS_PROVIDER_ID,
+          { voiceDesign: context!.voiceDesign, language: context!.language || context!.locale },
+          request!,
+        ).catch(() => undefined)
+      : undefined;
     return {
       voiceMode: 'auto',
-      voicePrompt: buildAutoVoxCPMVoicePrompt(context),
+      voicePrompt: buildAutoVoxCPMVoicePrompt(context), // inline fallback always set
+      ...(registeredVoiceId ? { registeredVoiceId } : {}),
     };
   }
 
