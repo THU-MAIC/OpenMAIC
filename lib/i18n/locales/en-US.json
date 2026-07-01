@@ -365,7 +365,15 @@
       "discussionTopicPlaceholder": "Discussion topic (required)",
       "discussionPromptPlaceholder": "Guidance prompt (optional)",
       "discussionAgent": "Initiator",
-      "discussionAgentUnset": "Unspecified"
+      "discussionAgentUnset": "Unspecified",
+      "addAction": "Add action"
+    },
+    "picker": {
+      "title": "Insert action",
+      "speechDesc": "Speak a line — can auto-voice",
+      "spotlightDesc": "Highlight an element on the canvas",
+      "laserDesc": "Point a laser at an element",
+      "discussionDesc": "Pose a question, pick who starts it"
     },
     "tts": {
       "preview": "Preview",

@@ -365,7 +365,15 @@
       "discussionTopicPlaceholder": "讨论主题（必填）",
       "discussionPromptPlaceholder": "引导语（可选）",
       "discussionAgent": "发起",
-      "discussionAgentUnset": "不指定"
+      "discussionAgentUnset": "不指定",
+      "addAction": "添加动作"
+    },
+    "picker": {
+      "title": "插入动作",
+      "speechDesc": "讲一句话，可自动配音",
+      "spotlightDesc": "高亮画布中的一个元素",
+      "laserDesc": "用激光点指向一个元素",
+      "discussionDesc": "抛出问题，指定发起同学"
     },
     "tts": {
       "preview": "试听",
