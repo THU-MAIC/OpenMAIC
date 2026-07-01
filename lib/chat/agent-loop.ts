@@ -26,6 +26,22 @@ export interface AgentLoopStoreState {
   currentSceneId: string | null;
   mode: string;
   whiteboardOpen: boolean;
+  /**
+   * Post-submit quiz state for the current scene. Hydrated from localStorage
+   * client-side; absent when the active scene is not a graded quiz or the
+   * student has not submitted yet.
+   */
+  quizResults?: {
+    sceneId: string;
+    answers: Record<string, string | string[]>;
+    results: Array<{
+      questionId: string;
+      correct: boolean | null;
+      status: 'correct' | 'incorrect';
+      earned: number;
+      aiComment?: string;
+    }>;
+  };
 }
 
 /** Request template — fields that stay constant across loop iterations */

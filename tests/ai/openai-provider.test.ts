@@ -105,9 +105,58 @@ describe('OpenAI provider defaults', () => {
     expect(model).toEqual({ endpoint: 'responses', modelId: 'gpt-5.5' });
   });
 
+  it('includes latest official GLM and Kimi coding models', () => {
+    expect(getModelInfo('glm', 'glm-5.2')).toMatchObject({
+      id: 'glm-5.2',
+      name: 'GLM-5.2',
+      contextWindow: 1000000,
+      outputWindow: 128000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: false,
+      },
+    });
+    expect(getModelInfo('kimi', 'kimi-k2.7-code')).toMatchObject({
+      id: 'kimi-k2.7-code',
+      name: 'Kimi K2.7 Code',
+      contextWindow: 256000,
+      outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+    expect(getModelInfo('kimi', 'kimi-k2.7-code-highspeed')).toMatchObject({
+      id: 'kimi-k2.7-code-highspeed',
+      name: 'Kimi K2.7 Code HighSpeed',
+      contextWindow: 256000,
+      outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+  });
+
   it.each([
     ['kimi', 'kimi-k2.6', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     ['glm', 'glm-5.1', { mode: 'enabled' }, { thinking: { type: 'enabled' } }],
+    [
+      'glm',
+      'glm-5.2',
+      { mode: 'enabled', effort: 'minimal' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'minimal' },
+    ],
+    [
+      'glm',
+      'glm-5.2',
+      { mode: 'enabled', effort: 'xhigh' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'xhigh' },
+    ],
+    ['glm', 'glm-5.2', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     ['xiaomi', 'mimo-v2.5', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     [
       'deepseek',

@@ -11,7 +11,7 @@ Your output must be a complete HTML document with:
 3. **Interactive controls** for variables
 4. **Canvas or SVG visualization**
 5. **Mobile-responsive design**
-6. **postMessage listener** for teacher actions (REQUIRED)
+6. **postMessage listener** for widget actions (REQUIRED)
 
 ## Widget Config Schema
 
@@ -29,9 +29,9 @@ Your output must be a complete HTML document with:
 }
 ```
 
-## CRITICAL: postMessage Listener for Teacher Actions
+## CRITICAL: postMessage Listener for Widget Actions
 
-Your HTML MUST include this message listener to respond to teacher actions:
+Your HTML MUST include this message listener to respond to widget actions:
 
 ```javascript
 // Add this script at the end of your HTML

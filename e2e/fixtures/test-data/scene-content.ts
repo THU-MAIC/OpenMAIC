@@ -1,7 +1,7 @@
-import type { SlideTheme } from '../../../lib/types/slides';
+import type { SlideTheme } from '@openmaic/dsl';
 import { mockOutlines } from './scene-outlines';
 
-/** Default theme matching lib/types/slides.ts:SlideTheme */
+/** Default theme matching @openmaic/dsl SlideTheme */
 const defaultTheme: SlideTheme = {
   backgroundColor: '#ffffff',
   themeColors: ['#5b9bd5', '#ed7d31', '#a5a5a5', '#ffc000', '#4472c4'],

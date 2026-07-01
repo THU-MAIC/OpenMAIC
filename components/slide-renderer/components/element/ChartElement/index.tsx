@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTChartElement } from '@/lib/types/slides';
+import type { PPTChartElement } from '@openmaic/dsl';
 import { ElementOutline } from '../ElementOutline';
 import { Chart } from './Chart';
 

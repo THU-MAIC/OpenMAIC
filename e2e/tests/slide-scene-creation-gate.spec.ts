@@ -7,12 +7,14 @@ import { createSettingsStorage } from '../fixtures/test-data/settings';
 const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
 
 /**
- * MVP gate: the slide editor must not expose scene-creation (blank insert +
- * duplicate) because editor-created scenes have no playback actions and get
- * skipped during playback. Reorder / delete / rename stay. This test fails if
- * SCENE_CREATION_ENABLED is flipped back on without removing the gate.
+ * Scene creation is enabled in the slide editor: the inter-thumb "+" insertion
+ * zones and the per-slide Duplicate menu item are exposed alongside reorder /
+ * delete / rename. (Duplicated slides carry their actions; a blank inserted
+ * slide is authored via the script timeline / MAIC Agent.) This test guards
+ * that the entry points stay available — flip SCENE_CREATION_ENABLED off and it
+ * fails.
  */
-test.describe('Slide editor — scene-creation gate (MVP)', () => {
+test.describe('Slide editor — scene creation (enabled)', () => {
   test.beforeEach(async ({ page, mockApi }) => {
     await page.addInitScript((settings) => {
       localStorage.setItem('settings-storage', settings);
@@ -20,7 +22,7 @@ test.describe('Slide editor — scene-creation gate (MVP)', () => {
     await mockApi.setupGenerationMocks();
   });
 
-  test('Pro mode rail hides insert + duplicate, keeps rename/delete', async ({
+  test('Pro mode rail exposes insert + duplicate alongside rename/delete', async ({
     page,
   }, testInfo) => {
     // Generate a classroom through the mocked pipeline.
@@ -45,17 +47,16 @@ test.describe('Slide editor — scene-creation gate (MVP)', () => {
     const rail = page.getByTestId('slide-nav-rail');
     await expect(rail).toBeVisible({ timeout: 10_000 });
 
-    // Gate 1: no inter-thumb "+" insertion zones.
-    await expect(page.getByTestId('slide-nav-insert')).toHaveCount(0);
+    // Insertion zones are present between thumbs.
+    await expect(page.getByTestId('slide-nav-insert')).not.toHaveCount(0);
 
-    // Gate 2: the per-slide overflow menu has exactly Rename + Delete
-    // (Duplicate removed). Counting menuitems keeps the assertion
-    // locale-independent.
+    // The per-slide overflow menu now has Rename + Duplicate + Delete (3 items).
+    // Counting menuitems keeps the assertion locale-independent.
     await page.getByTestId('slide-nav-more').first().click();
-    await expect(page.getByRole('menuitem')).toHaveCount(2);
+    await expect(page.getByRole('menuitem')).toHaveCount(3);
 
-    // Visual evidence of the gated rail, attached to the Playwright report.
-    await testInfo.attach('pro-rail-gated', {
+    // Visual evidence, attached to the Playwright report.
+    await testInfo.attach('pro-rail-scene-creation', {
       body: await rail.screenshot(),
       contentType: 'image/png',
     });

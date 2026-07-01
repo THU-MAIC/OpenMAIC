@@ -1,4 +1,5 @@
 import type { TTSVoiceInfo } from '@/lib/audio/types';
+import { buildVoiceDesignPrompt, type VoiceDesign } from '@/lib/audio/voice-design';
 
 export const VOXCPM_TTS_PROVIDER_ID = 'voxcpm-tts' as const;
 export const VOXCPM_MODEL_ID = 'VoxCPM2';
@@ -38,6 +39,8 @@ export interface VoxCPMVoicePromptContext {
   persona?: string;
   language?: string;
   locale?: string;
+  voiceDesign?: VoiceDesign;
+  backend?: VoxCPMBackendType;
 }
 
 export interface VoxCPMProviderOptions {
@@ -52,6 +55,7 @@ export interface VoxCPMProviderOptions {
   inferenceTimesteps?: number;
   normalize?: boolean;
   denoise?: boolean;
+  registeredVoiceId?: string;
 }
 
 export const VOXCPM_AUTO_VOICE: TTSVoiceInfo = {
@@ -102,7 +106,20 @@ function sanitizeAutoVoicePromptPart(value?: string): string {
     .trim();
 }
 
+/**
+ * Whether a VoxCPM backend exposes a runtime voice-registration API
+ * (POST /v1/audio/voices) for reference-by-id timbre stability.
+ */
+export function voxCPMBackendSupportsVoiceRegistration(backend: VoxCPMBackendType): boolean {
+  return backend === 'vllm-omni';
+}
+
 export function buildAutoVoxCPMVoicePrompt(context: VoxCPMVoicePromptContext = {}): string {
+  if (context.voiceDesign) {
+    const designPrompt = sanitizeAutoVoicePromptPart(buildVoiceDesignPrompt(context.voiceDesign));
+    if (designPrompt) return designPrompt;
+  }
+
   const persona = sanitizeAutoVoicePromptPart(context.persona);
   if (persona) return persona;
 
