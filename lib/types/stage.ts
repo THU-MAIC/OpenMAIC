@@ -102,5 +102,53 @@ export type SceneContent = AppSceneContent;
  * callers keep their original semantics (actions are `Action[]`, content spans
  * all four kinds).
  */
-export type AppScene = DslScene<Action, SceneContent>;
+export type AppScene = DslScene<Action, SceneContent> & {
+  /**
+   * Stable id of the generation outline this scene was built from. Lets editor
+   * agent tools resolve a scene's outline by identity instead of by the mutable
+   * `order`, which Pro-mode insert / reorder / delete rebalances (matching by
+   * `order` after a reorder attaches another slide's outline). An app-layer
+   * annotation only — not part of the `@openmaic/dsl` Scene contract. Absent on
+   * inserted scenes and pre-existing data, where callers fall back to a
+   * scene-derived outline.
+   */
+  outlineId?: string;
+};
 export type Scene = AppScene;
+
+/**
+ * A partial update for {@link AppScene} — the patch shape used by `updateScene` /
+ * `applyScenePatchInSync` / the regenerate-apply plan.
+ *
+ * `Partial<AppScene>` is unusable here: `AppScene` is a discriminated union, and
+ * `Partial<>` *distributes* over it into a union of per-kind partials
+ * (`Partial<SlideScene> | Partial<QuizScene> | …`). A generic patch such as
+ * `{ content }`, where `content: SceneContent` spans all four kinds, then matches
+ * none of those members. `ScenePatch` is a single (non-distributive) object type
+ * that keeps `type` and `content` as independently-optional wide unions, which is
+ * exactly what a shallow-merge patch needs.
+ */
+export type ScenePatch = Partial<Omit<AppScene, 'type' | 'content'>> & {
+  type?: SceneContent['type'];
+  content?: SceneContent;
+};
+
+/**
+ * Build an {@link AppScene} from its kind-independent {@link SceneCore} plus a
+ * concrete content payload, binding `type` to `content.type`.
+ *
+ * The lone `as` is unavoidable and is the *only* cast in the scene-construction
+ * path: `AppScene` is a distributive discriminated union, and TS cannot prove
+ * that the freshly-built `{ ...core, type, content }` literal lands in the member
+ * matching `content`'s kind when that kind is only known through a generic. The
+ * generic return type re-narrows the result to the single member whose `type`
+ * equals `content.type`, so every call site still sees a correctly discriminated
+ * scene. `type` is always derived from `content.type`, which makes the binding
+ * impossible to violate at a call site.
+ */
+export function makeScene<C extends SceneContent>(
+  core: Omit<AppScene, 'type' | 'content'>,
+  content: C,
+): Extract<AppScene, { type: C['type'] }> {
+  return { ...core, type: content.type, content } as Extract<AppScene, { type: C['type'] }>;
+}

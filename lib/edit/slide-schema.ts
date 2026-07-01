@@ -13,7 +13,13 @@
  *     guarantee that the field is present.
  */
 
-import type { InteractiveContent, Scene, SceneContent, SlideContent } from '@/lib/types/stage';
+import {
+  makeScene,
+  type InteractiveContent,
+  type Scene,
+  type SceneContent,
+  type SlideContent,
+} from '@/lib/types/stage';
 
 export const CURRENT_SLIDE_CONTENT_SCHEMA_VERSION = 1;
 
@@ -81,7 +87,7 @@ export function migrateScene(scene: Scene): Scene {
   if (migratedContent === scene.content) {
     return scene;
   }
-  return { ...scene, content: migratedContent };
+  return makeScene(scene, migratedContent);
 }
 
 function migrateSceneContent(content: SceneContent): SceneContent {

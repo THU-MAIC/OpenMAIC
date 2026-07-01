@@ -220,7 +220,8 @@
       "dragHandle": "ドラッグして並べ替え",
       "deckLabel": "シーン",
       "moreActions": "その他の操作",
-      "rename": "名前を変更"
+      "rename": "名前を変更",
+      "sceneIncomplete": "このページの内容が未完成です"
     },
     "zorder": {
       "toFront": "最前面へ移動",
@@ -915,7 +916,9 @@
     "generatingInProgress": "生成中...",
     "webSearching": "ウェブ検索",
     "webSearchingDesc": "ウェブで最新情報を検索しています",
-    "webSearchFailed": "ウェブ検索に失敗しました"
+    "webSearchFailed": "ウェブ検索に失敗しました",
+    "outlinesReadyCount": "{{ready}} / {{total}} セクション準備完了",
+    "jumpToBlankTitle": "タイトルが未入力のセクションへ移動"
   },
   "settings": {
     "title": "設定",

@@ -220,7 +220,8 @@
       "dragHandle": "拖曳重新排序",
       "deckLabel": "場景",
       "moreActions": "更多操作",
-      "rename": "重新命名"
+      "rename": "重新命名",
+      "sceneIncomplete": "本頁內容不完整"
     },
     "zorder": {
       "toFront": "移至最上層",
@@ -900,7 +901,9 @@
     "generatingInProgress": "生成中...",
     "webSearching": "網路搜尋",
     "webSearchingDesc": "正在搜尋網路取得最新資料",
-    "webSearchFailed": "網路搜尋失敗"
+    "webSearchFailed": "網路搜尋失敗",
+    "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
+    "jumpToBlankTitle": "跳到待補充標題的章節"
   },
   "settings": {
     "title": "設定",

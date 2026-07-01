@@ -44,7 +44,9 @@ function makeSlideScene(overrides: Partial<Scene> = {}): Scene {
     order: 1,
     content: makeSlideContent(),
     ...overrides,
-  };
+    // Fixture spreads a loose `Partial<Scene>` over a fixed-kind literal; cast
+    // contained to the test helper.
+  } as Scene;
 }
 
 function makeInteractiveContent(
@@ -67,7 +69,9 @@ function makeInteractiveScene(overrides: Partial<Scene> = {}): Scene {
     order: 1,
     content: makeInteractiveContent(),
     ...overrides,
-  };
+    // Fixture spreads a loose `Partial<Scene>` over a fixed-kind literal; cast
+    // contained to the test helper.
+  } as Scene;
 }
 
 describe('migrateSlideContent', () => {

@@ -220,7 +220,8 @@
       "dragHandle": "Перетащите, чтобы переупорядочить",
       "deckLabel": "Сцены",
       "moreActions": "Ещё действия",
-      "rename": "Переименовать"
+      "rename": "Переименовать",
+      "sceneIncomplete": "Содержимое этой страницы не заполнено"
     },
     "zorder": {
       "toFront": "На передний план",
@@ -915,7 +916,9 @@
     "generatingInProgress": "Генерация...",
     "webSearching": "Поиск в интернете",
     "webSearchingDesc": "Поиск актуальной информации в сети",
-    "webSearchFailed": "Ошибка веб-поиска"
+    "webSearchFailed": "Ошибка веб-поиска",
+    "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
+    "jumpToBlankTitle": "Перейти к разделу без заголовка"
   },
   "settings": {
     "title": "Настройки",
