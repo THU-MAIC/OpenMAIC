@@ -54,7 +54,7 @@ import {
 } from '@/components/ui/select';
 import type { Action, DiscussionAction } from '@/lib/types/action';
 import type { SceneType } from '@/lib/types/stage';
-import { ELEMENT_BOUND, cueLabel, cueMeta } from './cue-meta';
+import { ELEMENT_BOUND, cueLabel, cueMeta, elementLabel } from './cue-meta';
 import { applyCuePreview, clearCuePreview, cuePreviewFor } from './cue-preview';
 import {
   appendDiscussion,
@@ -84,6 +84,7 @@ import {
 } from '@/lib/audio/regenerate-speech-tts';
 
 const EMPTY: Action[] = [];
+const EMPTY_ELEMENTS: { id?: string; type: string; content?: string }[] = [];
 
 /**
  * Clear the canvas spotlight/laser preview when a cue glyph unmounts while it is
@@ -653,6 +654,7 @@ function DiscussionClip({
  */
 function CueMarker({
   action,
+  elements,
   onTip,
   onDelete,
   onPick,
@@ -664,6 +666,7 @@ function CueMarker({
   onDragEnd,
 }: {
   action: Action;
+  elements: { id?: string; type: string; content?: string }[];
   onTip: (t: TooltipState | null) => void;
   onDelete: () => void;
   onPick: () => void;
@@ -682,6 +685,9 @@ function CueMarker({
   const bound = ELEMENT_BOUND.has(action.type);
   const elementId = (action as { elementId?: string }).elementId ?? '';
   const needsTarget = bound && !elementId;
+  // Bound cue → show what it's actually pointing at, not a generic "bound";
+  // the element may have been deleted since binding, so fall back gracefully.
+  const boundEl = elementId ? elements.find((e) => e.id === elementId) : undefined;
 
   return (
     <div
@@ -704,7 +710,7 @@ function CueMarker({
         bound
           ? 'cursor-pointer hover:border-violet-300/70 dark:hover:border-violet-500/40'
           : 'cursor-grab active:cursor-grabbing',
-        needsTarget && INCOMPLETE_CLIP,
+        needsTarget && cn('border-dashed', m.dash),
       )}
       aria-label={label}
     >
@@ -744,7 +750,9 @@ function CueMarker({
                 : 'text-muted-foreground/45',
             )}
           >
-            {needsTarget ? t('edit.timeline.pickElement') : t('edit.timeline.bound')}
+            {needsTarget
+              ? t('edit.timeline.pickElement')
+              : `→ ${boundEl ? elementLabel(boundEl, t) : t('edit.timeline.bound')}`}
           </span>
         )}
       </div>
@@ -802,11 +810,11 @@ function NodeDot({
       }}
       className={cn(
         'grid size-6 place-items-center ring-2 ring-white transition-transform hover:scale-110 dark:ring-slate-900',
-        isDiscussion ? 'rounded-md' : 'rounded-full',
+        isDiscussion ? 'rounded-[7px]' : 'rounded-full',
         needsTarget
           ? 'text-amber-600 bg-amber-100 ring-amber-200 animate-pulse dark:bg-amber-500/20 dark:text-amber-400'
           : isDiscussion
-            ? 'bg-yellow-400 text-yellow-950 ring-yellow-200 dark:bg-yellow-500 dark:text-slate-900 dark:ring-yellow-500/30'
+            ? 'bg-yellow-400 text-yellow-900 ring-yellow-200 dark:bg-yellow-500 dark:text-slate-900 dark:ring-yellow-500/30'
             : m.glyph,
         bound
           ? 'cursor-pointer'
@@ -881,6 +889,15 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   // make sense on SLIDE scenes. While the scene hasn't loaded yet, fall back to
   // a non-slide type so the picker doesn't briefly offer unsupported cues.
   const sceneType: SceneType = scene?.type ?? 'quiz';
+  // Slide-scene canvas elements — feeds CueMarker's bound-cue label lookup
+  // ("→ <element name>" instead of a generic "bound"). Non-slide scenes'
+  // `content` has no `canvas`, so this is always [] there.
+  const sceneElements =
+    (
+      scene?.content as
+        | { canvas?: { elements?: { id?: string; type: string; content?: string }[] } }
+        | undefined
+    )?.canvas?.elements ?? EMPTY_ELEMENTS;
   const language = useStageStore((s) => s.stage?.languageDirective);
   // Managed TTS on → speech clips show audio status + 试听 / 重新生成.
   const ttsActive = useSettingsStore(
@@ -1294,6 +1311,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                           ) : (
                             <CueMarker
                               action={action}
+                              elements={sceneElements}
                               onTip={setTip}
                               onDelete={() => commit((cur) => removeById(cur, key))}
                               onPick={onPick}
