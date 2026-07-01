@@ -333,17 +333,17 @@ function SpeechTtsBar({
 
   const STATUS: Record<TtsStatus, { label: string; cls: string }> = {
     ready: { label: t('edit.tts.statusReady'), cls: 'text-emerald-600 dark:text-emerald-400' },
-    none: { label: t('edit.tts.statusNone'), cls: 'text-muted-foreground/55' },
+    none: { label: t('edit.tts.statusNone'), cls: 'text-muted-foreground' },
     generating: {
       label: t('edit.tts.statusGenerating'),
-      cls: 'text-violet-600 dark:text-violet-400',
+      cls: 'text-amber-600 dark:text-amber-400',
     },
     error: { label: t('edit.tts.statusError'), cls: 'text-rose-500' },
   };
   const s = STATUS[status];
 
   return (
-    <div className="flex items-center gap-1 border-t border-gray-100 px-2 py-1 dark:border-gray-700/50">
+    <div className="flex items-center gap-1 border-t border-border/60 px-2 py-1">
       <Volume2 className="size-3 shrink-0 text-muted-foreground/40" />
       <span className={cn('text-[10px] font-medium', s.cls)}>{s.label}</span>
       <span className="ml-auto" />
@@ -449,17 +449,17 @@ function SpeechClip({
   return (
     <div
       className={cn(
-        'group/clip relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-violet-500/40',
+        'group/clip relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-border/85 bg-white/75 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:bg-slate-800/50 dark:hover:border-violet-500/40',
         needsText && INCOMPLETE_CLIP,
       )}
     >
-      <span className="absolute inset-x-0 top-0 h-[3px] bg-primary/30 transition-colors group-hover/clip:bg-primary/60" />
-      <div className="flex items-center gap-1.5 border-b border-gray-100 bg-gray-50/70 px-2 py-1 dark:border-gray-700/50 dark:bg-slate-900/40">
+      <span className="absolute inset-x-0 top-0 h-[3px] bg-primary/35" />
+      <div className="flex items-center gap-1.5 border-b border-border/60 bg-muted/40 px-2 py-1">
         <span
           draggable
           onDragStart={onDragStart}
           onDragEnd={onDragEnd}
-          className="cursor-grab text-muted-foreground/40 transition-colors hover:text-muted-foreground active:cursor-grabbing"
+          className="cursor-grab text-muted-foreground/50 transition-colors hover:text-muted-foreground active:cursor-grabbing"
           aria-label={t('edit.timeline.reorder')}
         >
           <GripVertical className="size-3.5" />
@@ -468,7 +468,7 @@ function SpeechClip({
           {String(index).padStart(2, '0')}
         </span>
         <SpeechIcon className="size-3 text-primary/45" />
-        <span className="ml-auto mr-0.5 text-[8.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/40">
+        <span className="ml-auto mr-0.5 text-[8.5px] font-medium uppercase tracking-[0.12em] text-muted-foreground/50">
           {t('edit.cue.speech')}
         </span>
         <MoveButtons
@@ -488,7 +488,7 @@ function SpeechClip({
         }}
         onBlur={commit}
         placeholder={t('edit.timeline.speechPlaceholder')}
-        className="flex-1 resize-none bg-transparent px-3 py-2 text-[12.5px] leading-[1.7] text-foreground/85 outline-none placeholder:text-muted-foreground/40 [scrollbar-width:thin]"
+        className="flex-1 resize-none bg-transparent px-3 py-2 text-[12.5px] leading-[1.7] text-foreground/90 outline-none placeholder:text-muted-foreground/40 [scrollbar-width:thin]"
       />
       {ttsActive && (
         <SpeechTtsBar
