@@ -65,13 +65,11 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     void preloadEditor();
   }, []);
 
-  // The narration timeline (ActionsBar) is a slide-narration authoring tool — it
-  // only applies to scene types with a registered editor surface (slide/quiz).
-  // Read-only canvas scenes (no surface → NOOP + the "· view-only" badge, e.g.
-  // interactive/PBL) get no timeline.
+  // Whether this scene type has a registered canvas editor surface (slide/quiz).
+  // Authoring surface is separate from narration timeline availability.
   const authoringEnabled = !!sceneEditorRegistry.resolve(scene.type);
-  // The narration timeline is decoupled from the canvas surface (like the AI
-  // edit panel below): it applies to registered surfaces (slide/quiz) AND
+  // The narration timeline (ActionsBar) is decoupled from the canvas editor surface
+  // (like agentEnabled below): it applies to registered surfaces (slide/quiz) AND
   // view-only canvases that still carry a spoken script (interactive/pbl).
   const timelineEnabled = supportsNarrationTimeline(scene.type, authoringEnabled);
 
