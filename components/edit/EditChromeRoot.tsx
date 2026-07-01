@@ -9,6 +9,7 @@ import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
+import { supportsNarrationTimeline } from './scene-timeline';
 import type { Scene } from '@/lib/types/stage';
 import { RightRailTabs } from '@/components/edit/RightRailTabs';
 
@@ -69,6 +70,10 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
   // Read-only canvas scenes (no surface → NOOP + the "· view-only" badge, e.g.
   // interactive/PBL) get no timeline.
   const authoringEnabled = !!sceneEditorRegistry.resolve(scene.type);
+  // The narration timeline is decoupled from the canvas surface (like the AI
+  // edit panel below): it applies to registered surfaces (slide/quiz) AND
+  // view-only canvases that still carry a spoken script (interactive/pbl).
+  const timelineEnabled = supportsNarrationTimeline(scene.type, authoringEnabled);
 
   // The AI edit panel is decoupled from the canvas surface: it renders wherever
   // the agent has an edit capability — slides (regenerate) AND interactive scenes
@@ -111,7 +116,7 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
           refreshSessions={agentRuntime.refreshSessions}
         />
       }
-      bottomRail={authoringEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
+      bottomRail={timelineEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
       commandTrailing={headerControls}
     />
   );
