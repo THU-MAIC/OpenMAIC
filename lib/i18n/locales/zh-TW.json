@@ -365,7 +365,15 @@
       "discussionTopicPlaceholder": "討論主題（必填）",
       "discussionPromptPlaceholder": "引導語（選填）",
       "discussionAgent": "發起",
-      "discussionAgentUnset": "不指定"
+      "discussionAgentUnset": "不指定",
+      "addAction": "新增動作"
+    },
+    "picker": {
+      "title": "插入動作",
+      "speechDesc": "講一句話，可自動配音",
+      "spotlightDesc": "突顯畫布中的一個元素",
+      "laserDesc": "用雷射點指向一個元素",
+      "discussionDesc": "拋出問題，指定發起同學"
     },
     "tts": {
       "preview": "試聽",

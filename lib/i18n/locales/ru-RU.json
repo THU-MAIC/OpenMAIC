@@ -365,7 +365,15 @@
       "discussionTopicPlaceholder": "Тема обсуждения (обязательно)",
       "discussionPromptPlaceholder": "Подсказка (необязательно)",
       "discussionAgent": "Инициатор",
-      "discussionAgentUnset": "Не указан"
+      "discussionAgentUnset": "Не указан",
+      "addAction": "Добавить действие"
+    },
+    "picker": {
+      "title": "Вставить действие",
+      "speechDesc": "Произнести реплику — можно озвучить автоматически",
+      "spotlightDesc": "Выделить элемент на холсте",
+      "laserDesc": "Указать на элемент лазером",
+      "discussionDesc": "Задать вопрос и выбрать, кто начнёт"
     },
     "tts": {
       "preview": "Прослушать",

@@ -836,6 +836,7 @@ function DropZone({
   onEnter,
   onDrop,
   onInsert,
+  insertLabel,
   flex,
 }: {
   active: boolean;
@@ -843,6 +844,7 @@ function DropZone({
   onEnter: () => void;
   onDrop: () => void;
   onInsert: (slot: number, rect: DOMRect) => void;
+  insertLabel: string;
   flex?: boolean;
 }) {
   return (
@@ -863,13 +865,14 @@ function DropZone({
       <span
         className={cn(
           'pointer-events-none absolute inset-y-3 left-1/2 w-0.5 -translate-x-1/2 rounded-full transition-colors',
-          active ? 'bg-violet-500' : 'bg-transparent',
+          active ? 'bg-primary' : 'bg-transparent',
         )}
       />
       {!active && (
         <button
           type="button"
-          title=""
+          aria-label={insertLabel}
+          title={insertLabel}
           onClick={(e) => onInsert(slot, e.currentTarget.getBoundingClientRect())}
           className="relative z-[1] grid size-[22px] scale-90 place-items-center rounded-full border border-dashed border-primary/40 bg-background text-primary/70 opacity-30 transition-all hover:scale-100 hover:border-solid hover:border-primary hover:bg-primary/5 hover:text-primary hover:opacity-100 group-hover/ins:opacity-90"
         >
@@ -1202,6 +1205,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
               onEnter={() => setDragOver(0)}
               onDrop={() => handleDrop(0)}
               onInsert={(slot, rect) => setPickerAt({ slot, rect })}
+              insertLabel={t('edit.timeline.addAction')}
             />
             {items.map(({ action, index, key, speechIndex: si }) => {
               // A discussion is pinned terminal, so it can't be drag-reordered.
@@ -1333,6 +1337,7 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
                     onEnter={() => setDragOver(index + 1)}
                     onDrop={() => handleDrop(index + 1)}
                     onInsert={(slot, rect) => setPickerAt({ slot, rect })}
+                    insertLabel={t('edit.timeline.addAction')}
                   />
                 </div>
               );

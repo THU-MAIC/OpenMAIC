@@ -316,7 +316,15 @@
       "discussionTopicPlaceholder": "토론 주제(필수)",
       "discussionPromptPlaceholder": "안내 프롬프트(선택)",
       "discussionAgent": "시작자",
-      "discussionAgentUnset": "지정 안 함"
+      "discussionAgentUnset": "지정 안 함",
+      "addAction": "동작 추가"
+    },
+    "picker": {
+      "title": "동작 삽입",
+      "speechDesc": "내레이션 말하기 (자동 음성 지원)",
+      "spotlightDesc": "캔버스의 요소를 강조",
+      "laserDesc": "레이저로 요소를 가리키기",
+      "discussionDesc": "질문을 던지고 발표자를 지정"
     },
     "tts": {
       "preview": "미리듣기",

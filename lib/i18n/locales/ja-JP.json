@@ -365,7 +365,15 @@
       "discussionTopicPlaceholder": "ディスカッションの主題（必須）",
       "discussionPromptPlaceholder": "ガイドプロンプト（任意）",
       "discussionAgent": "開始者",
-      "discussionAgentUnset": "指定なし"
+      "discussionAgentUnset": "指定なし",
+      "addAction": "アクションを追加"
+    },
+    "picker": {
+      "title": "アクションを挿入",
+      "speechDesc": "ナレーションを話す（自動音声対応）",
+      "spotlightDesc": "キャンバス上の要素をハイライト",
+      "laserDesc": "レーザーで要素を指し示す",
+      "discussionDesc": "問いを投げかけ、発言者を指定"
     },
     "tts": {
       "preview": "試聴",
