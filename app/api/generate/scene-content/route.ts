@@ -22,6 +22,7 @@ import type {
 } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
+import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest) {
               },
             ],
             maxOutputTokens: modelInfo?.outputWindow,
+            maxRetries: 0,
           },
           'scene-content',
           undefined,
@@ -124,6 +126,7 @@ export async function POST(req: NextRequest) {
           system: systemPrompt,
           prompt: userPrompt,
           maxOutputTokens: modelInfo?.outputWindow,
+          maxRetries: 0,
         },
         'scene-content',
         undefined,
@@ -194,6 +197,6 @@ export async function POST(req: NextRequest) {
       `Scene content generation failed [scene="${outlineTitle ?? 'unknown'}", model=${resolvedModelString ?? 'unknown'}]:`,
       error,
     );
-    return apiError('INTERNAL_ERROR', 500, error instanceof Error ? error.message : String(error));
+    return llmApiError(error);
   }
 }

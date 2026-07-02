@@ -95,6 +95,7 @@
 import type { TTSModelConfig } from './types';
 import { isCustomTTSProvider } from './types';
 import { TTS_PROVIDERS } from './constants';
+import { splitConcatenatedJsonObjects } from './json-stream';
 import {
   VOXCPM_VLLM_MODEL_ID,
   VOXCPM_AUTO_VOICE_ID,
@@ -859,52 +860,6 @@ export { getAllTTSProviders, getTTSProvider, getTTSVoices } from './constants';
  * The endpoint and auth header are bound together, so we pick both from the key
  * shape — never a normal endpoint with X-Api-Key, or vice versa.
  */
-function extractConcatenatedJsonObjects(text: string): unknown[] {
-  const objects: unknown[] = [];
-  let depth = 0;
-  let start = -1;
-  let inString = false;
-  let escaped = false;
-
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch === '\\') {
-        escaped = true;
-      } else if (ch === '"') {
-        inString = false;
-      }
-      continue;
-    }
-
-    if (ch === '"') {
-      inString = true;
-      continue;
-    }
-
-    if (ch === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (ch === '}') {
-      if (depth === 0) continue;
-      depth--;
-      if (depth === 0 && start >= 0) {
-        try {
-          objects.push(JSON.parse(text.slice(start, i + 1)));
-        } catch {
-          // Ignore malformed chunks and keep scanning; later chunks may be valid.
-        }
-        start = -1;
-      }
-    }
-  }
-
-  return objects;
-}
-
 async function generateDoubaoTTS(
   config: TTSModelConfig,
   text: string,
@@ -962,8 +917,19 @@ async function generateDoubaoTTS(
   const responseText = await response.text();
   const audioChunks: Uint8Array[] = [];
 
-  for (const rawChunk of extractConcatenatedJsonObjects(responseText)) {
-    const chunk = rawChunk as { code?: number; message?: string; data?: string };
+  // Doubao streams a run of concatenated JSON objects with no delimiter. Split
+  // them string-aware (see splitConcatenatedJsonObjects) — a naive `{`/`}` depth
+  // counter miscounts braces that appear inside a string value (e.g. an error
+  // `message` containing `}`), which corrupts the object boundaries.
+  for (const objectText of splitConcatenatedJsonObjects(responseText)) {
+    let chunk: { code: number; message?: string; data?: string };
+    try {
+      chunk = JSON.parse(objectText);
+    } catch {
+      continue;
+    }
+
+
     if (chunk.code === 0 && chunk.data) {
       audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
     } else if (chunk.code === 20000000) {

@@ -79,6 +79,26 @@ import {
 } from '@/lib/audio/regenerate-speech-tts';
 
 const EMPTY: Action[] = [];
+
+/**
+ * Clear the canvas spotlight/laser preview when a cue glyph unmounts while it is
+ * being hovered — most importantly when the user deletes the cue. React does not
+ * fire `onMouseLeave` on unmount, so without this the previewed effect would stay
+ * stuck on the slide after its cue is gone.
+ */
+function useClearCuePreviewOnUnmount() {
+  useEffect(() => () => clearCuePreview(), []);
+}
+
+/**
+ * Soft amber dashed border marking a still-incomplete clip card — an empty
+ * narration line, a cue bound to no element, a discussion with no topic. A clip
+ * is a card, so a dashed frame reads as "draft / unfinished" better than a dot;
+ * the calmer amber stays clear of the blue interactive controls and is dropped
+ * the moment the clip is filled.
+ */
+const INCOMPLETE_CLIP = 'border-dashed border-amber-400/70';
+
 const MIN_H = 168;
 const MAX_H = 520;
 const DEFAULT_H = 224;
@@ -426,9 +446,15 @@ function SpeechClip({
   };
 
   const SpeechIcon = cueMeta('speech').icon;
+  const needsText = !text.trim();
 
   return (
-    <div className="group/clip relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-violet-500/40">
+    <div
+      className={cn(
+        'group/clip relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-violet-400 hover:border-violet-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-violet-500/40',
+        needsText && INCOMPLETE_CLIP,
+      )}
+    >
       <span className="absolute inset-x-0 top-0 h-[3px] bg-primary/30 transition-colors group-hover/clip:bg-primary/60" />
       <div className="flex items-center gap-1.5 border-b border-gray-100 bg-gray-50/70 px-2 py-1 dark:border-gray-700/50 dark:bg-slate-900/40">
         <span
@@ -511,7 +537,6 @@ function DiscussionClip({
   const { t } = useI18n();
   const m = cueMeta('discussion');
   const needsTopic = !topic.trim();
-
   // Local drafts committed on blur; synced from props when not mid-edit so a
   // concurrent store update can't clobber an in-flight edit (mirrors SpeechClip).
   const [topicVal, setTopicVal] = useState(topic);
@@ -530,12 +555,12 @@ function DiscussionClip({
   return (
     <div
       className={cn(
-        'group/disc relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border bg-white/70 shadow-sm transition-colors dark:bg-slate-800/50',
-        needsTopic
-          ? 'border-dashed border-amber-400/70'
-          : 'border-gray-200/80 focus-within:border-yellow-400 hover:border-yellow-300/70 dark:border-gray-700/60 dark:hover:border-yellow-500/40',
+        'group/disc relative flex h-full w-[228px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/70 shadow-sm transition-colors focus-within:border-yellow-400 hover:border-yellow-300/70 dark:border-gray-700/60 dark:bg-slate-800/50 dark:hover:border-yellow-500/40',
+        needsTopic && INCOMPLETE_CLIP,
       )}
     >
+      {/* The empty state reads from the amber dashed frame + the "topic
+          (required)" placeholder; the discussion keeps its Flag glyph identity. */}
       <span className={cn('absolute inset-x-0 top-0 h-[3px]', m.accent)} />
       <div className="flex items-center gap-1.5 border-b border-yellow-300/50 bg-yellow-400/15 px-2 py-1 dark:border-yellow-500/25 dark:bg-yellow-500/10">
         <span className="flex size-4 items-center justify-center rounded-md bg-yellow-400 text-yellow-950 dark:bg-yellow-500 dark:text-slate-900">
@@ -652,6 +677,7 @@ function CueMarker({
   onDragEnd: () => void;
 }) {
   const { t } = useI18n();
+  useClearCuePreviewOnUnmount();
   const m = cueMeta(action.type);
   const label = cueLabel(action.type, t);
   const Icon = m.icon;
@@ -676,13 +702,11 @@ function CueMarker({
         if (bound) onPick();
       }}
       className={cn(
-        'group/cue relative flex h-full w-[108px] shrink-0 flex-col overflow-hidden rounded-xl border bg-white/65 shadow-sm transition-colors dark:bg-slate-800/40',
+        'group/cue relative flex h-full w-[108px] shrink-0 flex-col overflow-hidden rounded-xl border border-gray-200/80 bg-white/65 shadow-sm transition-colors dark:border-gray-700/60 dark:bg-slate-800/40',
         bound
           ? 'cursor-pointer hover:border-violet-300/70 dark:hover:border-violet-500/40'
           : 'cursor-grab active:cursor-grabbing',
-        needsTarget
-          ? 'border-dashed border-amber-400/70'
-          : 'border-gray-200/80 dark:border-gray-700/60',
+        needsTarget && INCOMPLETE_CLIP,
       )}
       aria-label={label}
     >
@@ -747,6 +771,7 @@ function NodeDot({
   canDrag?: boolean;
 }) {
   const { t } = useI18n();
+  useClearCuePreviewOnUnmount();
   const isSpeech = action.type === 'speech';
   // A discussion is the scene's terminal anchor — give its node a distinct
   // marker (square, filled yellow) so it reads as the end stop, not a regular

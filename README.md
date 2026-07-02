@@ -39,6 +39,7 @@
 
 ## 🗞️ News
 
+- **2026-06-28** — [v0.3.0 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.3.0) Project-Based Learning (PBL) v2 with classroom UI; "Edit with AI" Pro-mode editor agent; the `@openmaic/*` SDK family (DSL/renderer/importer) published to npm; optional per-stage model routing; new models (GLM-5.2, Kimi K2.7 Code, Qwen3.7 Plus/Max); a vocational-learning task engine; Korean (ko-KR) locale; and relicensing from AGPL-3.0 to MIT. See [changelog](CHANGELOG.md).
 - **2026-06-02** — [v0.2.2 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.2) MAIC Editor (v0) Pro Mode for editing generated slides; editable outline before generation; offline-ready classroom export; new search providers (Brave/Baidu/Bocha/MiniMax) and Azure STT; new models (Claude Opus 4.8, MiniMax M3, Gemini 3.5 Flash); Traditional Chinese (zh-TW) and Brazilian Portuguese (pt-BR) locales. See [changelog](CHANGELOG.md).
 - **2026-04-26** — [v0.2.1 released!](https://github.com/THU-MAIC/OpenMAIC/releases/tag/v0.2.1) Integrated [VoxCPM2](https://github.com/OpenBMB/VoxCPM) TTS with voice cloning and on-the-fly auto-generated voices; added per-model thinking config; added end-of-course completion page with persistent quiz state; added latest released models including DeepSeek-V4 / GPT-5.5 / GPT-Image-2 / Xiaomi MiMo / Hy3. See [changelog](CHANGELOG.md).
 - **2026-04-20** — **v0.2.0 released!** Deep Interactive Mode — 3D visualization, simulations, games, mind maps, and online programming for hands-on learning. See [features](#-features) for details.

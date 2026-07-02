@@ -220,7 +220,8 @@
       "dragHandle": "Drag to reorder",
       "deckLabel": "Scenes",
       "moreActions": "More actions",
-      "rename": "Rename"
+      "rename": "Rename",
+      "sceneIncomplete": "This page has incomplete content"
     },
     "zorder": {
       "toFront": "Bring to front",
@@ -329,6 +330,10 @@
         }
       },
       "newConversation": "New conversation",
+      "sessionHistory": "History",
+      "sessionUntitled": "Untitled chat",
+      "sessionDelete": "Delete",
+      "sessionEmpty": "No past conversations",
       "thinking": "Thinking…",
       "reasoning": "Reasoning",
       "thought": "Thought for"
@@ -911,7 +916,9 @@
     "generatingInProgress": "Generating...",
     "webSearching": "Web Search",
     "webSearchingDesc": "Searching the web for up-to-date information",
-    "webSearchFailed": "Web search failed"
+    "webSearchFailed": "Web search failed",
+    "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
+    "jumpToBlankTitle": "Jump to a section that still needs a title"
   },
   "settings": {
     "title": "Settings",

@@ -23,19 +23,23 @@ import {
   ThreadPrimitive,
   useComposerRuntime,
   useMessage,
+  type AssistantRuntime,
 } from '@assistant-ui/react';
 import {
   ArrowUp,
   AtSign,
   ChevronDown,
+  History,
   PanelRightClose,
   PanelRightOpen,
   Sparkles,
   Square,
   SquarePen,
+  Trash2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils/cn';
-import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import type { AgentEditSessionRecord } from '@/lib/agent/client/agent-edit-session-types';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { MarkdownText } from './markdown-text';
@@ -132,12 +136,13 @@ function AssistantMessage() {
 /** Mic button that dictates into the composer. Lives inside ComposerPrimitive.Root
  *  so it can append the transcription to the composer text via the composer
  *  runtime. SpeechButton self-gates on ASR availability (disabled when off). */
-function VoiceInputButton() {
+function VoiceInputButton({ disabled }: { readonly disabled?: boolean }) {
   const composer = useComposerRuntime();
   return (
     <SpeechButton
       size="md"
       className="size-[30px]"
+      disabled={disabled}
       onTranscription={(text) => {
         if (!text) return;
         const cur = composer.getState().text ?? '';
@@ -148,9 +153,39 @@ function VoiceInputButton() {
   );
 }
 
-export function AgentPanel({ scene }: { scene?: { id: string; title: string; type?: string } }) {
+interface AgentPanelProps {
+  readonly scene?: { id: string; title: string; type?: string };
+  readonly runtime: AssistantRuntime;
+  readonly clearThread: () => void;
+  readonly hasMessages: boolean;
+  readonly canSend: boolean;
+  readonly sessions: AgentEditSessionRecord[];
+  readonly activeSessionId: string | undefined;
+  readonly switchSession: (id: string) => Promise<void>;
+  readonly deleteSessionAndRefresh: (id: string) => Promise<void>;
+  readonly refreshSessions: () => Promise<void>;
+  /**
+   * When true, renders only the thread body (no aside wrapper, no header, no
+   * resize handle, no collapse state). Used when an outer container (e.g.
+   * RightRailTabs) owns the rail chrome.
+   */
+  readonly naked?: boolean;
+}
+
+export function AgentPanel({
+  scene,
+  runtime,
+  clearThread,
+  hasMessages,
+  canSend,
+  sessions,
+  activeSessionId,
+  switchSession,
+  deleteSessionAndRefresh,
+  refreshSessions,
+  naked,
+}: AgentPanelProps) {
   const { t } = useI18n();
-  const { runtime, clearThread, hasMessages } = useAgentRuntime({ scene });
 
   // Interactive scenes expose a different agent capability (fix the page's bugs)
   // than slides (regenerate content/narration), so the empty-state copy and the
@@ -166,6 +201,11 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
   const placeholderKey = isInteractive
     ? 'edit.agent.interactive.placeholder'
     : 'edit.agent.placeholder';
+  const sceneTypeLabel =
+    scene?.type && ['slide', 'quiz', 'interactive', 'pbl'].includes(scene.type)
+      ? t(`edit.sceneType.${scene.type}`)
+      : (scene?.type ?? 'Scene');
+  const unsupportedMessage = t('edit.unsupportedScene', { type: sceneTypeLabel });
 
   // Drag-to-resize from the left edge (pointer capture, direct DOM write).
   const railRef = useRef<HTMLElement>(null);
@@ -212,8 +252,114 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
 
   const [collapsed, setCollapsed] = useState(false);
 
+  // Naked mode: outer container (RightRailTabs) owns the aside wrapper and chrome.
+  // Render only the thread body, no aside / header / resize / collapse state.
+  if (naked) {
+    return (
+      <AssistantRuntimeProvider runtime={runtime}>
+        <ReadSceneContentUI />
+        <RegenerateSceneActionsUI />
+        <RegenerateSceneUI />
+        <EditInteractiveHtmlUI />
+
+        <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
+          <ThreadPrimitive.Viewport className="flex-1 space-y-6 overflow-y-auto px-4 py-5 scroll-smooth">
+            <ThreadPrimitive.Empty>
+              <div className="mx-auto mt-12 flex max-w-[268px] flex-col">
+                <p className="text-center text-sm font-medium text-foreground">
+                  {t(emptyTitleKey)}
+                </p>
+                <p className="mt-1.5 text-center text-[12px] leading-relaxed text-muted-foreground">
+                  {t(emptyLeadKey)}
+                </p>
+                <div className="mt-5 space-y-3">
+                  {capabilityKeys.map(({ label, examples }) => (
+                    <div key={label} className="flex flex-col gap-0.5">
+                      <span className="text-[12px] font-semibold text-foreground">{t(label)}</span>
+                      <span className="text-[11.5px] leading-relaxed text-[#5b1fa8]/70 dark:text-violet-300/70">
+                        {t(examples)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-5 text-[11px] leading-relaxed text-muted-foreground/80">
+                  {t(emptyBoundaryKey)}
+                </p>
+                <p className="mt-2 inline-flex items-center gap-1 text-[11px] text-muted-foreground/70">
+                  <Sparkles className="size-3 text-[#5b1fa8]/60 dark:text-violet-300/60" />
+                  {t('edit.agent.empty.comingSoon')}
+                </p>
+              </div>
+            </ThreadPrimitive.Empty>
+
+            <ThreadPrimitive.Messages components={{ UserMessage, AssistantMessage }} />
+          </ThreadPrimitive.Viewport>
+
+          <ThreadPrimitive.ScrollToBottom className="absolute bottom-2 left-1/2 grid size-7 -translate-x-1/2 place-items-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-opacity hover:text-foreground disabled:pointer-events-none disabled:opacity-0">
+            <ChevronDown className="size-4" />
+          </ThreadPrimitive.ScrollToBottom>
+
+          <div className="px-3 pb-3 pt-1">
+            {!canSend ? (
+              <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11.5px] leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                {unsupportedMessage}
+              </p>
+            ) : null}
+            <ComposerPrimitive.Root className="rounded-[10px] border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-violet-400 focus-within:ring-[3px] focus-within:ring-violet-500/10 dark:focus-within:ring-violet-500/20">
+              {scene?.title ? (
+                <div className="px-2 pt-2">
+                  <span className="inline-flex max-w-full items-center gap-1 rounded-md border border-violet-200 bg-violet-50 px-2 py-0.5 text-[11px] font-medium text-[#5b1fa8] dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300">
+                    <AtSign className="size-3 shrink-0 text-violet-500" />
+                    <span className="truncate">{scene.title}</span>
+                  </span>
+                </div>
+              ) : null}
+              <ComposerPrimitive.Input
+                minRows={1}
+                maxRows={6}
+                autoFocus={canSend}
+                disabled={!canSend}
+                placeholder={t(placeholderKey)}
+                className="block w-full resize-none bg-transparent px-3 pb-1 pt-2 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <div className="flex items-center px-2 pb-2 pt-0.5">
+                <div className="ml-auto flex items-center gap-1">
+                  <VoiceInputButton disabled={!canSend} />
+                  <ThreadPrimitive.If running={false}>
+                    <ComposerPrimitive.Send
+                      disabled={!canSend}
+                      className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50"
+                    >
+                      <ArrowUp className="size-4" />
+                    </ComposerPrimitive.Send>
+                  </ThreadPrimitive.If>
+                  <ThreadPrimitive.If running>
+                    <button
+                      type="button"
+                      aria-label={t('edit.agent.stop')}
+                      onClick={() => {
+                        try {
+                          runtime.thread.cancelRun();
+                        } catch {
+                          /* no run to cancel */
+                        }
+                      }}
+                      className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90"
+                    >
+                      <Square className="size-3 fill-current" />
+                    </button>
+                  </ThreadPrimitive.If>
+                </div>
+              </div>
+            </ComposerPrimitive.Root>
+          </div>
+        </ThreadPrimitive.Root>
+      </AssistantRuntimeProvider>
+    );
+  }
+
   // Collapsed: a slim rail with the brand mark — click anywhere to reopen. The
-  // runtime stays alive in useAgentRuntime, so the conversation is preserved.
+  // runtime is owned above this panel, so the conversation is preserved.
   if (collapsed) {
     return (
       <aside
@@ -256,13 +402,60 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
         <span className="text-[13px] font-semibold text-[#5b1fa8] dark:text-violet-300">
           Edit with AI
         </span>
+        <Popover onOpenChange={(open) => open && void refreshSessions()}>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              title={t('edit.agent.sessionHistory')}
+              aria-label={t('edit.agent.sessionHistory')}
+              className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <History className="size-4" />
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-72 p-1">
+            {sessions.length === 0 ? (
+              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
+                {t('edit.agent.sessionEmpty')}
+              </p>
+            ) : (
+              <ul className="max-h-80 overflow-y-auto">
+                {sessions.map((s) => (
+                  <li key={s.id} className="group flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => void switchSession(s.id)}
+                      className={cn(
+                        'flex-1 truncate rounded-md px-2 py-1.5 text-left text-[13px] transition-colors hover:bg-muted',
+                        s.id === activeSessionId
+                          ? 'bg-muted font-medium text-foreground'
+                          : 'text-muted-foreground',
+                      )}
+                    >
+                      {s.title || t('edit.agent.sessionUntitled')}
+                    </button>
+                    <button
+                      type="button"
+                      title={t('edit.agent.sessionDelete')}
+                      aria-label={t('edit.agent.sessionDelete')}
+                      onClick={() => void deleteSessionAndRefresh(s.id)}
+                      className="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground/40 opacity-0 transition-opacity hover:text-red-500 group-hover:opacity-100"
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </PopoverContent>
+        </Popover>
         {hasMessages ? (
           <button
             type="button"
             onClick={clearThread}
             title={t('edit.agent.newConversation')}
             aria-label={t('edit.agent.newConversation')}
-            className="ml-auto grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
+            className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
           >
             <SquarePen className="size-4" />
           </button>
@@ -272,10 +465,7 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
           onClick={() => setCollapsed(true)}
           title={t('edit.agent.collapse')}
           aria-label={t('edit.agent.collapse')}
-          className={cn(
-            'grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground',
-            hasMessages ? '' : 'ml-auto',
-          )}
+          className="grid size-7 place-items-center rounded-md text-muted-foreground/55 transition-colors hover:bg-muted hover:text-foreground"
         >
           <PanelRightClose className="size-4" />
         </button>
@@ -332,6 +522,11 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
           {/* Composer (design .ae-composer): a bordered input shell with an
               @-scene context chip, a voice-input mic, and a square violet send. */}
           <div className="px-3 pb-3 pt-1">
+            {!canSend ? (
+              <p className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11.5px] leading-relaxed text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                {unsupportedMessage}
+              </p>
+            ) : null}
             <ComposerPrimitive.Root className="rounded-[10px] border border-border bg-card shadow-sm transition-[border-color,box-shadow] focus-within:border-violet-400 focus-within:ring-[3px] focus-within:ring-violet-500/10 dark:focus-within:ring-violet-500/20">
               {scene?.title ? (
                 <div className="px-2 pt-2">
@@ -347,20 +542,24 @@ export function AgentPanel({ scene }: { scene?: { id: string; title: string; typ
               <ComposerPrimitive.Input
                 minRows={1}
                 maxRows={6}
-                autoFocus
+                autoFocus={canSend}
+                disabled={!canSend}
                 placeholder={t(placeholderKey)}
-                className="block w-full resize-none bg-transparent px-3 pb-1 pt-2 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/50"
+                className="block w-full resize-none bg-transparent px-3 pb-1 pt-2 text-[13px] leading-5 text-foreground outline-none placeholder:text-muted-foreground/50 disabled:cursor-not-allowed disabled:opacity-60"
               />
 
               <div className="flex items-center px-2 pb-2 pt-0.5">
                 {/* Voice + send cluster on the right; the mic sits immediately
                     left of the send/stop button. Voice self-gates on ASR. */}
                 <div className="ml-auto flex items-center gap-1">
-                  <VoiceInputButton />
+                  <VoiceInputButton disabled={!canSend} />
                   {/* Send while idle; Stop while a response streams. Stop calls the
                       thread runtime's cancelRun → our onCancel aborts the fetch. */}
                   <ThreadPrimitive.If running={false}>
-                    <ComposerPrimitive.Send className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50">
+                    <ComposerPrimitive.Send
+                      disabled={!canSend}
+                      className="grid size-[30px] shrink-0 place-items-center rounded-lg bg-primary text-white transition-colors hover:opacity-90 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground/50"
+                    >
                       <ArrowUp className="size-4" />
                     </ComposerPrimitive.Send>
                   </ThreadPrimitive.If>

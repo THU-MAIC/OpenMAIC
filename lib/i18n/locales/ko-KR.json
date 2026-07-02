@@ -220,7 +220,8 @@
       "dragHandle": "드래그하여 순서 변경",
       "deckLabel": "장면",
       "moreActions": "더 보기",
-      "rename": "이름 바꾸기"
+      "rename": "이름 바꾸기",
+      "sceneIncomplete": "이 페이지의 내용이 미완성입니다"
     },
     "cue": {
       "speech": "내레이션",
@@ -274,6 +275,10 @@
         }
       },
       "newConversation": "새 대화",
+      "sessionHistory": "기록",
+      "sessionUntitled": "제목 없는 대화",
+      "sessionDelete": "삭제",
+      "sessionEmpty": "대화 기록 없음",
       "reasoning": "추론 과정",
       "thought": "생각한 시간",
       "interactive": {
@@ -911,7 +916,9 @@
     "generatingInProgress": "생성 중...",
     "webSearching": "웹 검색",
     "webSearchingDesc": "최신 정보를 웹에서 검색하고 있어요",
-    "webSearchFailed": "웹 검색에 실패했습니다"
+    "webSearchFailed": "웹 검색에 실패했습니다",
+    "outlinesReadyCount": "{{ready}} / {{total}}개 섹션 준비됨",
+    "jumpToBlankTitle": "제목이 필요한 섹션으로 이동"
   },
   "settings": {
     "title": "설정",

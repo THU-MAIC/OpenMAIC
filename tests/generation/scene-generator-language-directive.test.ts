@@ -147,7 +147,6 @@ describe('scene-generator language directive threading (issue #472)', () => {
       const { aiCall, lastUser } = makeCapturingAiCall('[]');
       const content: GeneratedInteractiveContent = {
         html: '<div />',
-        // No widgetType/teacherActions so we hit the normal actions path
       };
 
       await generateSceneActions(baseOutline({ type: 'interactive' }), content, aiCall, {
@@ -189,14 +188,11 @@ describe('scene-generator language directive threading (issue #472)', () => {
   });
 
   describe('widget generation (interactive scenes)', () => {
-    it('threads languageDirective into widget content AND widget-teacher-actions prompts', async () => {
+    it('threads languageDirective into the widget content prompt', async () => {
       const captured: string[] = [];
-      // 1st call: widget HTML content; 2nd call: widget-teacher-actions JSON
       const aiCall: AICallFn = async (_system, user) => {
         captured.push(user);
-        return captured.length === 1
-          ? '<!DOCTYPE html><html><body>widget</body></html>'
-          : JSON.stringify({ actions: [] });
+        return '<!DOCTYPE html><html><body>widget</body></html>';
       };
 
       await generateSceneContent(
@@ -209,7 +205,7 @@ describe('scene-generator language directive threading (issue #472)', () => {
         { languageDirective: DIRECTIVE },
       );
 
-      expect(captured).toHaveLength(2);
+      expect(captured).toHaveLength(1);
       for (const user of captured) {
         expect(user).toContain(DIRECTIVE);
         expect(user).not.toContain('{{languageDirective}}');

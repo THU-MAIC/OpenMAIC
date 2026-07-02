@@ -1,7 +1,17 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { BookOpen, MessageSquare, Flashlight, MousePointer2, Play } from 'lucide-react';
+import {
+  BookOpen,
+  MessageSquare,
+  Flashlight,
+  MousePointer2,
+  Play,
+  Highlighter,
+  SlidersHorizontal,
+  StickyNote,
+  Eye,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import type { LectureNoteEntry } from '@/lib/types/chat';
@@ -21,6 +31,26 @@ const ACTION_ICON_ONLY: Record<string, { Icon: typeof Flashlight; style: string 
     Icon: Play,
     style:
       'bg-yellow-50 dark:bg-yellow-500/15 border-yellow-300/40 dark:border-yellow-500/30 text-yellow-700 dark:text-yellow-300',
+  },
+  widget_highlight: {
+    Icon: Highlighter,
+    style:
+      'bg-amber-50 dark:bg-amber-500/15 border-amber-300/40 dark:border-amber-500/30 text-amber-700 dark:text-amber-300',
+  },
+  widget_setState: {
+    Icon: SlidersHorizontal,
+    style:
+      'bg-indigo-50 dark:bg-indigo-500/15 border-indigo-300/40 dark:border-indigo-500/30 text-indigo-700 dark:text-indigo-300',
+  },
+  widget_annotation: {
+    Icon: StickyNote,
+    style:
+      'bg-sky-50 dark:bg-sky-500/15 border-sky-300/40 dark:border-sky-500/30 text-sky-700 dark:text-sky-300',
+  },
+  widget_reveal: {
+    Icon: Eye,
+    style:
+      'bg-emerald-50 dark:bg-emerald-500/15 border-emerald-300/40 dark:border-emerald-500/30 text-emerald-700 dark:text-emerald-300',
   },
 };
 
