@@ -78,6 +78,7 @@ Return exactly one JSON object with these top-level keys:
 ```json
 {
   "languageDirective": "<teaching language directive>",
+  "courseTitle": "<concise course name, ≤30 chars, in the teaching language>",
   "outlines": [ /* scene outlines */ ]
 }
 ```
@@ -85,6 +86,7 @@ Return exactly one JSON object with these top-level keys:
 Rules:
 
 - Do not return prose, markdown fences, or a bare array.
+- Never omit `courseTitle`: a concise, human-readable course name (≤30 chars, a noun phrase, in the teaching language) — not the raw user request.
 - For suitable vocational tasks, produce 10-14 scenes.
 - For suitable vocational tasks, prefer 10-12 scenes by default.
 - For suitable vocational tasks, generate at least 10 scenes.

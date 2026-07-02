@@ -32,4 +32,4 @@ If the request is suitable for vocational procedural practice, generate the mixe
 
 If the request is not suitable, generate a normal MAIC-style outline using slide plus ordinary interactive widgets only. Do not output `procedural-skill` for non-vocational topics.
 
-Return ONLY the JSON object with `languageDirective` and `outlines`. Do not use markdown fences or explanatory text.
+Return ONLY the JSON object with `languageDirective`, `courseTitle`, and `outlines`. Do not use markdown fences or explanatory text.

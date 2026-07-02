@@ -1,0 +1,55 @@
+{
+  "name": "@openmaic/dsl",
+  "version": "0.2.0",
+  "description": "The MAIC slide DSL: the pure, dependency-free contract (types + JSON Schema + validators + version/migration helpers) that @openmaic/renderer and @openmaic/importer both depend on.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./schema/*": "./dist/schema/*"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "rm -rf dist && tsc -p tsconfig.json && node scripts/gen-schema.mjs",
+    "build:schema": "node scripts/gen-schema.mjs",
+    "dev": "tsc -p tsconfig.json --watch",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "pnpm run build"
+  },
+  "keywords": [
+    "maic",
+    "dsl",
+    "slide",
+    "schema",
+    "contract"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/THU-MAIC/OpenMAIC",
+    "directory": "packages/@openmaic/dsl"
+  },
+  "publishConfig": {
+    "registry": "https://registry.npmjs.org",
+    "access": "public"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1",
+    "ts-json-schema-generator": "~2.4.0",
+    "typescript": "^5",
+    "vitest": "^4.1.8"
+  }
+}

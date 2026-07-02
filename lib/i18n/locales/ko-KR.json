@@ -160,7 +160,8 @@
     "fullscreen": "전체화면",
     "exitFullscreen": "전체화면 종료",
     "editCourse": "강좌 편집",
-    "doneEditing": "편집 완료"
+    "doneEditing": "편집 완료",
+    "proModeDisabledHint": "이 페이지에서는 편집할 수 없습니다 — 코스 슬라이드를 열면 Pro 모드로 편집할 수 있습니다."
   },
   "edit": {
     "proMode": "프로 모드",
@@ -222,7 +223,201 @@
       "dragHandle": "드래그하여 순서 변경",
       "deckLabel": "장면",
       "moreActions": "더 보기",
-      "rename": "이름 바꾸기"
+      "rename": "이름 바꾸기",
+      "sceneIncomplete": "이 페이지의 내용이 미완성입니다"
+    },
+    "cue": {
+      "speech": "내레이션",
+      "spotlight": "스포트라이트",
+      "laser": "레이저",
+      "whiteboardOpen": "화이트보드",
+      "whiteboardText": "판서",
+      "whiteboardShape": "도형",
+      "whiteboardLatex": "수식",
+      "whiteboardTable": "표",
+      "action": "동작",
+      "discussion": "토론"
+    },
+    "element": {
+      "text": "텍스트",
+      "image": "이미지",
+      "shape": "도형",
+      "line": "선",
+      "chart": "차트",
+      "table": "표",
+      "latex": "수식",
+      "video": "비디오",
+      "audio": "오디오",
+      "code": "코드"
+    },
+    "agent": {
+      "expand": "AI 어시스턴트 펼치기",
+      "collapse": "접기",
+      "stopped": "중지됨",
+      "emptyTitle": "무엇을 바꿀까요?",
+      "emptyHint": "캔버스에서 이 슬라이드를 편집한 뒤, 내용에 맞는 내레이션을 AI가 다시 생성하도록 하세요.",
+      "placeholder": "이 슬라이드에 대한 변경 사항을 설명하세요…",
+      "stop": "생성 중지",
+      "empty": {
+        "lead": "이 페이지를 어떻게 바꿀지 알려주세요. 내용을 다시 만들고 내레이션도 맞춥니다.",
+        "boundary": "세부 편집은 에디터에서, 슬라이드 추가 / 삭제 / 정렬은 왼쪽 내비에서.",
+        "comingSoon": "더 많은 기능이 곧 추가됩니다."
+      },
+      "cap": {
+        "content": {
+          "label": "슬라이드 다시 생성",
+          "examples": "“핵심 3가지로” “실생활 예시 추가”"
+        },
+        "narration": {
+          "label": "내레이션 스크립트 다시 생성",
+          "examples": "“좀 더 구어체로” “편집한 내용에 맞춰”"
+        },
+        "fixHtml": {
+          "examples": "\"시작 버튼을 눌러도 반응이 없음\", \"모바일에서 패널이 겹침\"",
+          "label": "페이지 버그 수정"
+        }
+      },
+      "newConversation": "새 대화",
+      "sessionHistory": "기록",
+      "sessionUntitled": "제목 없는 대화",
+      "sessionDelete": "삭제",
+      "sessionEmpty": "대화 기록 없음",
+      "reasoning": "추론 과정",
+      "thought": "생각한 시간",
+      "interactive": {
+        "boundary": "페이지를 부분적으로만 수정하며, 페이지 전체를 다시 만들지 않습니다. 장면 전환은 왼쪽 내비게이션을 사용하세요.",
+        "emptyTitle": "이 페이지에서 무엇을 수정할까요?",
+        "lead": "이 인터랙티브 페이지의 버그(예: 눌러도 반응 없는 버튼)를 설명해 주세요. 해당 부분만 수정하고 나머지는 그대로 둡니다.",
+        "placeholder": "이 인터랙티브 페이지의 버그를 설명하세요…"
+      },
+      "thinking": "생각 중…"
+    },
+    "timeline": {
+      "title": "내레이션 스크립트",
+      "dragToAdd": "끌어서 추가",
+      "regenAllTts": "전체 음성 다시 생성",
+      "voiceAll": "전체 음성",
+      "counts": "내레이션 {{speech}}개 · 동작 {{cue}}개",
+      "panLeft": "왼쪽으로 이동",
+      "panRight": "오른쪽으로 이동",
+      "collapseAxis": "축으로 접기",
+      "expandTrack": "트랙 펼치기",
+      "emptyHint": "위의 동작을 축으로 끌어 시작하거나, MAIC Agent가 내레이션을 생성하도록 하세요.",
+      "speechPlaceholder": "이 내레이션을 입력하세요…",
+      "reorder": "끌어서 순서 변경",
+      "moveLeft": "왼쪽으로",
+      "moveRight": "오른쪽으로",
+      "pickElement": "요소 선택",
+      "bound": "연결됨",
+      "fieldAction": "동작",
+      "fieldElement": "요소",
+      "fieldContent": "내용",
+      "addDiscussion": "토론 추가",
+      "addDiscussionExists": "장면당 토론은 하나만 가능합니다",
+      "discussionTerminal": "끝",
+      "discussionTerminalHint": "토론은 장면의 끝에 고정되며 장면당 하나만 허용됩니다",
+      "discussionTopicPlaceholder": "토론 주제(필수)",
+      "discussionPromptPlaceholder": "안내 프롬프트(선택)",
+      "discussionAgent": "시작자",
+      "discussionAgentUnset": "지정 안 함"
+    },
+    "tts": {
+      "preview": "미리듣기",
+      "regenerate": "음성 다시 생성",
+      "statusReady": "음성 있음",
+      "statusNone": "음성 없음",
+      "statusGenerating": "생성 중",
+      "statusError": "실패"
+    },
+    "pick": {
+      "pickFor": "「{{label}}」에 사용할 요소 선택",
+      "pickHint": "강조된 요소 또는 아래 목록을 클릭 · Esc 취소",
+      "pageElements": "페이지 요소 · {{count}}",
+      "expand": "펼치기",
+      "collapse": "접기",
+      "noElements": "이 슬라이드에는 지정할 수 있는 요소가 없습니다.",
+      "bindHint": "캔버스에서 강조된 요소를 클릭하여 연결"
+    },
+    "regen": {
+      "title": "내레이션 다시 생성",
+      "running": "생성 중…",
+      "noActions": "동작이 생성되지 않음",
+      "actionsCount": "동작 {{count}}개",
+      "generating": "생성 중",
+      "notGenerated": "생성 안 됨",
+      "updated": "업데이트됨"
+    },
+    "regenScene": {
+      "title": "슬라이드 다시 생성",
+      "generating": "생성 중",
+      "updated": "업데이트됨",
+      "notGenerated": "생성 안 됨",
+      "elementsCount": "요소 {{count}}개",
+      "restore": "이전 상태로 복원",
+      "restored": "복원됨",
+      "resume": "다시 적용"
+    },
+    "background": {
+      "image": "이미지",
+      "label": "배경",
+      "solid": "단색"
+    },
+    "image": {
+      "flipH": "좌우 반전",
+      "flipV": "상하 반전",
+      "replace": "이미지 교체"
+    },
+    "quiz": {
+      "addOption": "선택지 추가",
+      "addQuestion": "문항 추가",
+      "analysisLabel": "해설",
+      "analysisPlaceholder": "문항이 채점된 후 표시됩니다…",
+      "commentPromptLabel": "채점 기준",
+      "commentPromptPlaceholder": "이 주관식 답안을 어떻게 채점해야 하나요?",
+      "deleteOption": "선택지 삭제",
+      "deleteQuestion": "문항 삭제",
+      "empty": "아직 문항이 없습니다",
+      "emptyHint": "위의 “문항 추가” 버튼으로 첫 문항을 만드세요.",
+      "markCorrect": "정답으로 표시",
+      "moveDown": "아래로 이동",
+      "moveUp": "위로 이동",
+      "optionPlaceholder": "선택지 내용",
+      "optionsLabel": "선택지",
+      "pointsLabel": "배점",
+      "questionLabel": "문항",
+      "questionPlaceholder": "문항을 입력하세요…",
+      "reorder": "끌어서 순서 변경",
+      "shortAnswerGradingNote": "주관식은 아래 기준에 따라 항상 AI가 채점합니다.",
+      "typeLabel": "유형",
+      "untitledQuestion": "제목 없는 문항",
+      "hint": {
+        "emptyOption": "문항 {{n}}: 선택지 내용이 비어 있습니다",
+        "emptyText": "문항 {{n}}: 문항 내용을 입력하세요",
+        "fewOptions": "문항 {{n}}: 선택지를 두 개 이상 추가하세요",
+        "noCorrect": "문항 {{n}}: 정답을 표시하세요"
+      },
+      "type": {
+        "multiple": "복수 선택",
+        "short_answer": "주관식",
+        "single": "단일 선택"
+      }
+    },
+    "zorder": {
+      "toFront": "맨 앞으로 가져오기",
+      "toBack": "맨 뒤로 보내기"
+    },
+    "readCard": {
+      "title": "페이지 내용 읽기",
+      "reading": "읽는 중",
+      "done": "읽음",
+      "failed": "읽지 못함"
+    },
+    "fixHtml": {
+      "editsCount": "수정 {{count}}건",
+      "fixed": "수정됨",
+      "fixing": "수정 중",
+      "notFixed": "수정 안 됨",
+      "title": "인터랙티브 페이지 수정"
     }
   },
   "classroomComplete": {
@@ -368,6 +563,228 @@
         "title": "3단계: 프로젝트 완료",
         "desc": "모든 이슈가 완료되면 \"🎉 프로젝트 완료!\"가 표시됩니다"
       }
+    },
+    "v2": {
+      "hero": {
+        "title": "Project-Based Learning",
+        "stage": "Stages",
+        "task": "Tasks",
+        "tutor": "Tutor",
+        "greetingBanner": "Your tutor is saying hello…",
+        "startProject": "Start Project",
+        "continueProject": "Continue Project",
+        "resetProgress": "Reset learning progress",
+        "resetConfirmTitle": "Reset learning progress?",
+        "resetConfirmDescription": "This clears all progress for this project — chat history, submissions, and stage status — and you'll start over from the beginning. This can't be undone.",
+        "resetConfirmConfirm": "Reset",
+        "resetConfirmCancel": "Cancel",
+        "startHint": "Click to enter the workspace. {{name}} will guide you through each stage.",
+        "startError": "Unable to start: {{error}}",
+        "youWillLearn": "What you'll gain",
+        "instructorTagline": "Guides you through the whole project",
+        "scenarioCharacter": "Role-play character",
+        "scenarioCharacterTagline": "The character you'll interact with in the scenario",
+        "scenarioFlow": "Flow",
+        "close": "Close"
+      },
+      "sidebar": {
+        "title": "Project Roadmap",
+        "summary": "{{completed}} / {{total}} tasks · {{stages}} stages",
+        "enterScenario": "Enter the scene",
+        "advanceScene": "Advance the scene",
+        "continueScene": "Next stage",
+        "stagePrep": "Prep",
+        "stageRoleplay": "Simulation",
+        "stageWrapup": "Debrief",
+        "completeAct": "Finish this act",
+        "completeTask": "Done"
+      },
+      "workspace": {
+        "progressLabel": "Progress",
+        "resizeSidebar": "Resize sidebar and chat",
+        "resizeSubmission": "Resize chat and submission panel",
+        "enterFullscreen": "Expand to fullscreen workspace",
+        "exitFullscreen": "Exit fullscreen workspace",
+        "exitNativeFullscreen": "Exit fullscreen",
+        "returnToHero": "Back to project overview",
+        "breadcrumbOverview": "Overview",
+        "breadcrumbCurrent": "Workspace"
+      },
+      "chat": {
+        "placeholder": "Chat with {{name}} about your progress...",
+        "placeholderCompleted": "Project complete. Check out your report.",
+        "send": "Send",
+        "voiceInput": "Voice input",
+        "keyboardHint": "Enter to send · Shift+Enter for newline",
+        "readingSubmission": "Reading submission…",
+        "generatingMilestoneFeedback": "Generating milestone feedback…",
+        "generatingFinalEval": "Generating final evaluation…",
+        "readingSubmissionWithTitle": "Reading latest submission for \"{{title}}\"…",
+        "evaluatingTask": "{{name}} · Reviewing task",
+        "evaluatingFinal": "{{name}} · Final evaluation",
+        "narrating": "Setting the scene…",
+        "choosePrompt": "Pick an option",
+        "choiceOrType": "Pick one, or type your own…",
+        "suggestionsToggle": "Need ideas? See some ways to respond",
+        "guidancePointer": "Stuck? Check this act's goal and tips in the panel on the right.",
+        "roleplayHistoryTitle": "Role-play history",
+        "coachHint": "Coach tip",
+        "thinking": "{{name}} · Thinking",
+        "typing": "{{name}} · Typing…",
+        "submitted": "Work submitted",
+        "evaluatingSubmission": "Evaluating your submission…",
+        "evaluatingSubmissionDetail": "Task: \"{{title}}\". Feedback on this submission will appear here once evaluation is complete.",
+        "milestoneFeedbackPending": "The milestone feedback will appear once ready.",
+        "emptyChat": "No messages yet.",
+        "emptyChatHint": "Your project walkthrough with {{name}} will start here.",
+        "continueError": "Unable to continue: {{error}}",
+        "stillTyping": "Still typing",
+        "handoverHint": "Click \"Continue to Next Stage\" to keep going."
+      },
+      "scene": {
+        "expand": "Expand",
+        "collapse": "Collapse",
+        "greetHint": "Tap to say hi",
+        "label": "The scene"
+      },
+      "milestoneCard": {
+        "title": "Milestone Review",
+        "youLearned": "What you learned",
+        "nextStage": "Next stage:",
+        "continueHint": "Click Continue to enter the next stage.",
+        "alreadyEntered": "Next stage entered",
+        "continueToNext": "Continue to Next Stage",
+        "projectAlmostDone": "🎉 Project almost done — awaiting completion report"
+      },
+      "taskEvalCard": {
+        "title": "Submission Feedback",
+        "strengths": "What went well",
+        "improvements": "Next steps"
+      },
+      "briefing": {
+        "intro": "The premise introduced during prep — kept here so you can revisit it anytime in the scene.",
+        "tablistLabel": "Right panel tabs",
+        "submissionTab": "Submit",
+        "briefingTab": "Briefing",
+        "setting": "Setting",
+        "learnerRole": "Your role",
+        "goal": "Goal",
+        "rules": "Rules",
+        "cast": "Cast",
+        "identity": "Identity",
+        "situation": "Situation"
+      },
+      "submission": {
+        "textSubmission": "Text submission",
+        "fileTooLarge": "File exceeds 5 MB limit. Try splitting or compressing.",
+        "contentRequired": "Content cannot be empty",
+        "readFileFailed": "Failed to read file: {{error}}",
+        "parsingPdf": "Parsing PDF…",
+        "parsePdfFailed": "Failed to parse PDF: {{error}}",
+        "pdfNoText": "No extractable text found in this PDF.",
+        "imageUploadFailed": "Failed to upload image: {{error}}",
+        "imageTooLargeNoStorage": "Image too large to attach without storage configured (max 2 MB locally).",
+        "imageNeedsCaptionNoVision": "The current model can't read images. Add a text description of the image before submitting, or switch to a vision-capable model in Settings.",
+        "unsupportedFileType": "Unsupported file type. Only text files (.txt, .md, .csv, .json, .py, …) and PDF are accepted.",
+        "pasteTab": "Paste text / image",
+        "uploadTab": "Upload file",
+        "pastePlaceholder": "Paste your code, document, answer — or an image / screenshot — here…",
+        "uploadPlaceholder": "Uploaded content will appear here. Edit before submitting…",
+        "imageCaptionPlaceholder": "Add an optional caption for this image…",
+        "imageSelectedReplace": "Image selected · click to replace",
+        "removeImage": "Remove image",
+        "processing": "Processing…",
+        "cancelProcessingConfirm": "A file is still being processed. Cancel and discard this upload?",
+        "currentTask": "Current Task",
+        "hints": "Hints",
+        "submitOutput": "Submit",
+        "evaluating": "Evaluating submission…",
+        "lockedWhileStreaming": "The instructor is replying — please wait before submitting.",
+        "evalFailed": "Evaluation failed: {{error}}",
+        "submittedCount": "{{count}} submitted",
+        "submissionHistory": "Submission History",
+        "fromTask": "Task: {{title}}",
+        "download": "Download",
+        "viewSubmission": "View submission",
+        "noActiveTask": "No active task.",
+        "canceling": "Cancel",
+        "submitting": "Submitting…",
+        "selectFileHint": "Choose a file · Max 5 MB · Text, PDF or image",
+        "modalTitle": "Submit your work",
+        "modalTaskLabel": "Task: {{title}}",
+        "fileRead": "Read: {{filename}} · {{size}} KB",
+        "submittedBadge": "Submitted ({{count}})",
+        "receiptFile": "File: {{filename}}",
+        "receiptTemplate": "Submitted work for this task ({{label}})."
+      },
+      "agentTabs": {
+        "noAgent": "No AI agent configured for this project."
+      },
+      "completion": {
+        "noWhatsNext": "The final evaluation hasn't been written yet.",
+        "backToWorkspace": "Back to Workspace",
+        "completionCta": "View Report",
+        "title": "Completion Report",
+        "whatYouBuilt": "What you built",
+        "whatYouLearned": "What you learned",
+        "whatsNext": "What's next",
+        "noDataFallback": "Not yet written",
+        "stageReview": "Stage Reviews",
+        "summary": "You completed {{completed}} of {{total}} tasks across {{stages}} stages.",
+        "statConcepts": "Concepts mastered",
+        "statTurns": "Messages exchanged",
+        "statScope": "Stages · Tasks",
+        "statDuration": "Time spent",
+        "statSubmissions": "Work submitted",
+        "coreStageBadge": "Core",
+        "conceptsInStageLabel": "Concepts:",
+        "submissionsInStage": "Submitted {{count}} piece(s) of work",
+        "coreConceptGrasp": "Core concept \"{{concept}}\" — {{quality}}",
+        "stageNoData": "No recorded output in this stage.",
+        "scenario": {
+          "summary": "You completed all {{acts}} acts of this scenario. Here's how the role-play went.",
+          "whatYouDidWell": "What you did well",
+          "skillsPracticed": "Skills you practised",
+          "statGoals": "Goals met",
+          "statActs": "Acts completed",
+          "goalReviewTitle": "Act-by-act review",
+          "goalReviewHint": "This scenario set a few key goals for each act. Here's a look back at how your conversation actually went — you met {{achieved}} of {{total}} this time.",
+          "goalListTitle": "What each act asked of you",
+          "goalListHint": "This scenario set a few key goals for each act. Here's a look back at what each act asked you to do.",
+          "goalAchieved": "achieved",
+          "goalPartial": "partly done",
+          "goalMissed": "not done",
+          "statGoodDecisions": "Strong choices",
+          "statScore": "Decision score",
+          "statBeats": "Acts completed",
+          "decisionReviewTitle": "Decision review",
+          "good": "strong",
+          "ok": "okay",
+          "poor": "to improve",
+          "decisionScore": "Decision score {{score}}",
+          "castLabel": "You interacted with: {{names}}"
+        },
+        "highlightsTitle": "Highlights",
+        "highlight": {
+          "independence": "You demonstrated {{unlocks}}/{{total}} concepts on your own — no prompting needed. Solid understanding.",
+          "resilience": "In \"{{title}}\" you overcame {{errors}} errors, tackling each one — real grit.",
+          "resilienceGeneral": "You overcame {{errors}} errors, tackling each one — real grit.",
+          "completion": "You completed every task. Steady progress all the way through."
+        },
+        "synthesisQuality": {
+          "strong": "Strong understanding ✅",
+          "ok": "Good grasp 👍",
+          "weak": "Room to grow 💪"
+        },
+        "durationMinutes": "{{m}} min",
+        "durationHours": "{{h}} hr",
+        "durationHoursMinutes": "{{h}} hr {{m}} min"
+      },
+      "completionCard": {
+        "title": "Project Complete · Completion",
+        "subtitle": "Congratulations! You finished the entire project.",
+        "description": "Based on your performance data (time spent, conversations, error recovery, concepts unlocked…), we have generated a completion report showing what you built, what you learned, and where to go next."
+      }
     }
   },
   "share": {
@@ -477,6 +894,28 @@
     "deleteSceneConfirmAction": "삭제",
     "collapseEditor": "접기",
     "quizConfigSummary": "{{count}}문제",
+    "interactiveWidgetKind": "위젯 종류",
+    "widgetSimulation": "시뮬레이션",
+    "widgetDiagram": "다이어그램",
+    "widgetCode": "코드",
+    "widgetGame": "게임",
+    "widgetVisualization3d": "3D",
+    "interactiveConcept": "개념",
+    "interactiveConceptPlaceholder": "탐구할 개념",
+    "pblConfigSummary": "프로젝트",
+    "pblSubtype": "PBL 유형",
+    "pblSubtypeProject": "프로젝트",
+    "pblSubtypeScenario": "상황 시뮬레이션",
+    "pblProjectTopic": "프로젝트 주제",
+    "pblProjectTopicPlaceholder": "프로젝트 주제",
+    "pblProjectDescription": "설명",
+    "pblProjectDescriptionPlaceholder": "학생이 만들 결과물",
+    "pblScenarioBrief": "상황 개요",
+    "pblScenarioBriefPlaceholder": "상황, 인물, 연습 목표",
+    "pblTargetSkills": "목표 역량",
+    "pblAddSkill": "역량 추가",
+    "widgetProceduralSkill": "절차 기술",
+    "removeSkill": "역량 제거",
     "dragSceneHint": "드래그하여 순서 변경, 또는 포커스 후 Ctrl/⌘ + ↑ / ↓ 키 사용",
     "deleteScene": "장면 삭제",
     "backToRequirements": "요구사항으로 돌아가기",
@@ -484,7 +923,9 @@
     "generatingInProgress": "생성 중...",
     "webSearching": "웹 검색",
     "webSearchingDesc": "최신 정보를 웹에서 검색하고 있어요",
-    "webSearchFailed": "웹 검색에 실패했습니다"
+    "webSearchFailed": "웹 검색에 실패했습니다",
+    "outlinesReadyCount": "{{ready}} / {{total}}개 섹션 준비됨",
+    "jumpToBlankTitle": "제목이 필요한 섹션으로 이동"
   },
   "settings": {
     "title": "설정",
@@ -1111,7 +1552,8 @@
     "viewDocs": "API 문서",
     "webSearchBaseUrl": "기본 URL",
     "webSearchServerConfigured": "서버 측 검색 API 키가 설정되어 있습니다",
-    "optional": "선택 사항"
+    "optional": "선택 사항",
+    "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다."
   },
   "profile": {
     "title": "프로필",

@@ -382,6 +382,64 @@ describe('task-engine outline route', () => {
     expect(done.outlines[0].widgetOutline.successCriteria).toBeUndefined();
   });
 
+  test('preserves model-authored scenario PBL subtype through streamed outlines', async () => {
+    vi.resetModules();
+    streamLLMMock.mockReset();
+    resolveModelFromRequestMock.mockReset();
+
+    resolveModelFromRequestMock.mockResolvedValue({
+      model: { provider: 'glm.chat', modelId: 'glm-5.1' },
+      modelInfo: { outputWindow: 4096, capabilities: {} },
+      modelString: 'glm:glm-5.1',
+      providerId: 'glm',
+      modelId: 'glm-5.1',
+      thinkingConfig: undefined,
+    });
+
+    streamLLMMock.mockReturnValue({
+      textStream: (async function* () {
+        yield JSON.stringify({
+          languageDirective: '用中文授课。',
+          outlines: [
+            {
+              id: 'scene_pbl',
+              type: 'pbl',
+              title: '同理沟通练习',
+              description: '练习安慰压力很大的朋友。',
+              keyPoints: ['倾听', '回应'],
+              order: 1,
+              pblConfig: {
+                projectTopic: '同理沟通练习',
+                projectDescription: '练习安慰压力很大的朋友。',
+                targetSkills: ['倾听', '回应'],
+                issueCount: 2,
+                scenarioRoleplay: true,
+                scenarioBrief: '朋友压力很大，学习者练习倾听和支持。',
+              },
+            },
+          ],
+        });
+      })(),
+    });
+
+    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const response = await POST(
+      mockRequest({
+        requirement: '生成一个情景模拟 PBL，练习安慰压力很大的朋友',
+      }) as unknown as Parameters<typeof POST>[0],
+    );
+
+    const events = parseSseEvents(await readStreamBody(response));
+    const outline = events.find((event) => event.type === 'outline');
+    const done = events.find((event) => event.type === 'done');
+
+    expect(outline).toBeDefined();
+    expect(done).toBeDefined();
+    expect(outline?.data.pblConfig.scenarioRoleplay).toBe(true);
+    expect(done?.outlines[0].pblConfig.scenarioRoleplay).toBe(true);
+    expect(done?.outlines[0].pblConfig.scenarioBrief).toContain('朋友压力很大');
+  });
+
   test('ensures streamed outline ids are unique', async () => {
     vi.resetModules();
     streamLLMMock.mockReset();

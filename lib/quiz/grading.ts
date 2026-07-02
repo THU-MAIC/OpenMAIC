@@ -20,8 +20,14 @@ export function toArray(v: string | string[] | undefined): string[] {
   return Array.isArray(v) ? v : [v];
 }
 
+/**
+ * Whether a question is graded as open text (AI) rather than by exact
+ * answer-key match. Classification is by the explicit `type` only: an
+ * unanswered choice question (empty `answer`) is still a choice question and
+ * must not be re-routed to AI grading. `hasAnswer` does not override the type.
+ */
 export function isShortAnswer(q: QuizQuestion): boolean {
-  return q.type === 'short_answer' || (!q.hasAnswer && (!q.answer || q.answer.length === 0));
+  return q.type === 'short_answer';
 }
 
 /** Grade choice questions locally. Returns results only for non-short-answer questions. */

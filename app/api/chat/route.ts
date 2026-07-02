@@ -68,11 +68,16 @@ export async function POST(req: NextRequest) {
       model: languageModel,
       apiKey: resolvedApiKey,
       providerId,
+      thinkingConfig: resolvedThinking,
     } = await resolveModel({
       modelString: body.model,
+      stage: 'chat-adapter',
       apiKey: body.apiKey,
       baseUrl: body.baseUrl,
       providerType: body.providerType,
+      // Let resolveModel arbitrate thinking too: a routed chat-adapter's thinking
+      // wins, an unrouted one honors this client thinking (see resolve-model.ts).
+      thinkingConfig: body.thinkingConfig ?? body.thinking,
     });
 
     if (isProviderKeyRequired(providerId) && !resolvedApiKey) {
@@ -117,10 +122,12 @@ export async function POST(req: NextRequest) {
       try {
         startHeartbeat();
 
-        // Default: thinking disabled for low-latency chat. UI requests send
-        // `thinkingConfig`; eval harnesses can still opt in via `thinking`.
-        const thinkingConfig: ThinkingConfig = body.thinkingConfig ??
-          body.thinking ?? { mode: 'disabled', enabled: false };
+        // Use the resolved thinking (route-pinned for a routed chat-adapter,
+        // else the client's). Default to disabled for low-latency chat.
+        const thinkingConfig: ThinkingConfig = resolvedThinking ?? {
+          mode: 'disabled',
+          enabled: false,
+        };
 
         const generator = statelessGenerate(
           {

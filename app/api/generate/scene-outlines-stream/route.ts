@@ -7,8 +7,9 @@
  *
  * SSE events:
  *   { type: 'languageDirective', data: string }
+ *   { type: 'courseTitle', data: string }
  *   { type: 'outline', data: SceneOutline, index: number }
- *   { type: 'done', outlines: SceneOutline[], languageDirective: string }
+ *   { type: 'done', outlines: SceneOutline[], languageDirective: string, courseTitle?: string }
  *   { type: 'error', error: string }
  */
 
@@ -58,6 +59,46 @@ function extractLanguageDirective(buffer: string): string | null {
   } catch {
     return match[1];
   }
+}
+
+/**
+ * Extract the courseTitle from the streamed wrapper JSON.
+ * Same head-bound scan as `extractLanguageDirective` — the title is a
+ * top-level key near the start of the wrapper object, so it only appears in
+ * the buffer head. Returns the decoded title, or null if not yet streamed.
+ */
+const COURSE_TITLE_RE = /"courseTitle"\s*:\s*"((?:[^"\\]|\\.)*)"/;
+
+// Normalize a captured title identically to the non-streaming parser
+// (lib/generation/outline-generator.ts): ignore whitespace-only titles and cap
+// length defensively so a hallucinating model cannot push a blank or unbounded
+// value into the stage name. Returning null lets callers fall back / keep scanning.
+function normalizeStreamedTitle(raw: string): string | null {
+  let title: string;
+  try {
+    title = JSON.parse(`"${raw}"`);
+  } catch {
+    title = raw;
+  }
+  const normalized = title.trim();
+  return normalized ? normalized.slice(0, 120) : null;
+}
+
+function extractCourseTitle(buffer: string): string | null {
+  const head = buffer.length > 8192 ? buffer.slice(0, 8192) : buffer;
+  const match = head.match(COURSE_TITLE_RE);
+  return match ? normalizeStreamedTitle(match[1]) : null;
+}
+
+/**
+ * Full-buffer fallback, run once after the stream completes: recovers a title
+ * the model emitted after the `outlines` array or beyond the 8KB head window —
+ * cases the head-bound `extractCourseTitle` scan would miss. Only invoked when
+ * the streaming scan produced nothing, so the extra full-buffer regex is paid once.
+ */
+function extractCourseTitleFromComplete(buffer: string): string | null {
+  const match = buffer.match(COURSE_TITLE_RE);
+  return match ? normalizeStreamedTitle(match[1]) : null;
 }
 
 /**
@@ -252,7 +293,7 @@ export async function POST(req: NextRequest) {
       modelInfo,
       modelString,
       thinkingConfig,
-    } = await resolveModelFromRequest(req, body);
+    } = await resolveModelFromRequest(req, body, 'scene-outlines-stream');
     resolvedModelString = modelString;
 
     if (!body.requirements) {
@@ -405,6 +446,7 @@ export async function POST(req: NextRequest) {
 
           let parsedOutlines: SceneOutline[] = [];
           let languageDirective: string | null = null;
+          let courseTitle: string | null = null;
           let lastError: string | undefined;
 
           for (let attempt = 1; attempt <= MAX_STREAM_RETRIES + 1; attempt++) {
@@ -413,6 +455,7 @@ export async function POST(req: NextRequest) {
               let scanFrom = 0;
               parsedOutlines = [];
               languageDirective = null;
+              courseTitle = null;
               const usedOutlineIds = new Set<string>();
               const textStream = streamLLM(
                 streamParams,
@@ -449,6 +492,18 @@ export async function POST(req: NextRequest) {
                   }
                 }
 
+                // Try to extract course title early (same pattern as languageDirective)
+                if (!courseTitle) {
+                  courseTitle = extractCourseTitle(fullText);
+                  if (courseTitle) {
+                    const ctEvent = JSON.stringify({
+                      type: 'courseTitle',
+                      data: courseTitle,
+                    });
+                    controller.enqueue(encoder.encode(`data: ${ctEvent}\n\n`));
+                  }
+                }
+
                 // Try to extract new outlines from the accumulated text,
                 // resuming the scan from where the previous chunk left off.
                 const { outlines: newOutlines, scanFrom: nextScanFrom } = extractNewOutlines(
@@ -478,7 +533,15 @@ export async function POST(req: NextRequest) {
               }
 
               // Validate: got outlines?
-              if (parsedOutlines.length > 0) break;
+              if (parsedOutlines.length > 0) {
+                if (!courseTitle) {
+                  // The head-bound streaming scan can miss a title the model
+                  // placed after the outlines array or past the 8KB head window;
+                  // recover it from the now-complete response before finalizing.
+                  courseTitle = extractCourseTitleFromComplete(fullText);
+                }
+                break;
+              }
 
               // Empty result — retry if we have attempts left
               lastError = fullText.trim()
@@ -536,6 +599,7 @@ export async function POST(req: NextRequest) {
               type: 'done',
               outlines: uniquifiedOutlines,
               languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
+              courseTitle: courseTitle || undefined,
               taskEngineMode,
             });
             controller.enqueue(encoder.encode(`data: ${doneEvent}\n\n`));

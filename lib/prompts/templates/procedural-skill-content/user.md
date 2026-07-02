@@ -56,7 +56,7 @@ Generate a complete, self-contained HTML procedural skill widget with these mand
 14. The listener must use `event.data.type` because MAIC's renderer sends the platform message type in that field.
 15. `SET_WIDGET_STATE` must read `data.state`; `HIGHLIGHT_ELEMENT`, `REVEAL_ELEMENT`, and `ANNOTATE_ELEMENT` must read `data.target`.
 16. `SET_WIDGET_STATE` with `data.state.completedSteps` must update visible progress, step completion, feedback/status, and success criteria.
-17. Learner click actions and teacher action `SET_WIDGET_STATE` must use the same shared state update/render path.
+17. Learner click actions and widget action `SET_WIDGET_STATE` must use the same shared state update/render path.
 18. Generated JavaScript must guard DOM access before writing to elements; never set `disabled`, `textContent`, `className`, or `style` on null elements.
 19. No iframe-to-platform messages and no new postMessage action types.
 20. Responsive, self-contained HTML with inline CSS and JavaScript only.

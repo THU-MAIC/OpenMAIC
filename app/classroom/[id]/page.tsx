@@ -154,11 +154,14 @@ export default function ClassroomDetailPage() {
     if (loading || error || generationStartedRef.current) return;
 
     const state = useStageStore.getState();
-    const { outlines, scenes, stage } = state;
+    const { outlines, scenes, stage, generationComplete } = state;
 
-    // Check if there are pending outlines
+    // Check if there are pending outlines. A finished deck is frozen for
+    // editing: deleting a slide leaves its outline orphaned, but that must not
+    // be treated as an interrupted generation and regenerated. Only resume
+    // when generation has not completed.
     const completedOrders = new Set(scenes.map((s) => s.order));
-    const hasPending = outlines.some((o) => !completedOrders.has(o.order));
+    const hasPending = !generationComplete && outlines.some((o) => !completedOrders.has(o.order));
 
     if (hasPending && stage) {
       generationStartedRef.current = true;
@@ -191,7 +194,19 @@ export default function ClassroomDetailPage() {
       // Resume media generation for any tasks not yet in IndexedDB.
       // generateMediaForOutlines skips already-completed tasks automatically.
       generationStartedRef.current = true;
-      generateMediaForOutlines(outlines, stage.id).catch((err) => {
+      // The deck reached the classroom already fully materialized (e.g. a
+      // single-slide course, or a deck whose last slide finished in
+      // generation-preview), so generateRemaining's completion path never
+      // ran. Record completion now so a later edit/delete is not treated as
+      // an interrupted generation. No-op if already complete or not all
+      // outlines have scenes.
+      useStageStore.getState().markGenerationCompleteIfDone();
+      // Resume media only for outlines that still have a scene. On a finished
+      // deck the user may have deleted a slide, leaving an orphaned outline;
+      // generating its media would waste API calls on a slide that is gone.
+      const materializedOrders = new Set(scenes.map((s) => s.order));
+      const materializedOutlines = outlines.filter((o) => materializedOrders.has(o.order));
+      generateMediaForOutlines(materializedOutlines, stage.id).catch((err) => {
         log.warn('[Classroom] Media generation resume error:', err);
       });
     }

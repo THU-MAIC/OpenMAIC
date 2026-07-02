@@ -27,7 +27,7 @@ try {
   console.error('[assert-vendor] It is loaded at runtime via /vendor/maic-importer/index.js');
   console.error('[assert-vendor] and is produced by the postinstall sync step. To fix:');
   console.error(
-    '[assert-vendor]   pnpm --filter @maic/importer build && pnpm run sync:maic-importer',
+    '[assert-vendor]   pnpm --filter @openmaic/importer build && pnpm run sync:maic-importer',
   );
   console.error('[assert-vendor] (a normal `pnpm install` runs both via postinstall).\n');
   process.exit(1);

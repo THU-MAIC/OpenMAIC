@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
       model: languageModel,
       modelString: _modelString,
       thinkingConfig,
-    } = await resolveModelFromRequest(req, body);
+    } = await resolveModelFromRequest(req, body, 'agent-profiles');
     modelString = _modelString;
 
     // ── Build prompt ──
