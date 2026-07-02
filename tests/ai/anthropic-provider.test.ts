@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest';
 import { getProvider } from '@/lib/ai/providers';
 
 describe('Anthropic provider defaults', () => {
-  it('lists Claude Opus 4.8 first with current token windows', () => {
+  it('lists Claude Fable 5 first with current token windows', () => {
     const models = getProvider('anthropic')?.models ?? [];
     const [latest] = models;
 
     expect(latest).toMatchObject({
-      id: 'claude-opus-4-8',
-      name: 'Claude Opus 4.8',
+      id: 'claude-fable-5',
+      name: 'Claude Fable 5',
       contextWindow: 1000000,
       outputWindow: 128000,
       capabilities: {
@@ -18,5 +18,11 @@ describe('Anthropic provider defaults', () => {
         vision: true,
       },
     });
+  });
+
+  it('keeps Claude Opus 4.8 in the catalog', () => {
+    const models = getProvider('anthropic')?.models ?? [];
+
+    expect(models.map((m) => m.id)).toContain('claude-opus-4-8');
   });
 });

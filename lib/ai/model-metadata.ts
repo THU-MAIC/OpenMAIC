@@ -141,6 +141,16 @@ const anthropicOpus47Effort: ThinkingCapability = {
   effortValues: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
 };
 
+// Fable 5: thinking is always on — {type: 'disabled'} returns a 400, so no
+// 'none' effort and not toggleable. API-side default effort is 'high'.
+const anthropicFable5Effort: ThinkingCapability = {
+  ...anthropicOpus47Effort,
+  effortValues: ['low', 'medium', 'high', 'xhigh', 'max'],
+  defaultEffort: 'high',
+  toggleable: false,
+  defaultEnabled: true,
+};
+
 const deepseekEffort: ThinkingCapability = {
   control: 'effort',
   requestAdapter: 'deepseek',
@@ -254,6 +264,7 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
     'none',
   ),
 
+  [getModelMetadataKey('anthropic', 'claude-fable-5')]: anthropicFable5Effort,
   [getModelMetadataKey('anthropic', 'claude-opus-4-8')]: anthropicOpus47Effort,
   [getModelMetadataKey('anthropic', 'claude-opus-4-7')]: anthropicOpus47Effort,
   [getModelMetadataKey('anthropic', 'claude-opus-4-6')]: anthropicAdaptiveEffort,
