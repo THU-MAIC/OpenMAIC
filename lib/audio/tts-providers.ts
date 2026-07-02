@@ -929,7 +929,6 @@ async function generateDoubaoTTS(
       continue;
     }
 
-
     if (chunk.code === 0 && chunk.data) {
       audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
     } else if (chunk.code === 20000000) {
