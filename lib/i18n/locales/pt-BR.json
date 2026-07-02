@@ -325,7 +325,6 @@
     },
     "timeline": {
       "title": "Roteiro de narração",
-      "dragToAdd": "Arraste para adicionar",
       "regenAllTts": "Regenerar toda a narração",
       "voiceAll": "Narrar tudo",
       "counts": "{{speech}} narração · {{cue}} ações",
@@ -343,7 +342,6 @@
       "fieldAction": "Ação",
       "fieldElement": "Elemento",
       "fieldContent": "Conteúdo",
-      "addDiscussion": "Adicionar discussão",
       "addDiscussionExists": "Apenas uma discussão por cena",
       "discussionTerminal": "FIM",
       "discussionTerminalHint": "A discussão fica no final da cena (uma por cena)",

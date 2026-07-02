@@ -291,7 +291,6 @@
     },
     "timeline": {
       "title": "내레이션 스크립트",
-      "dragToAdd": "끌어서 추가",
       "regenAllTts": "전체 음성 다시 생성",
       "voiceAll": "전체 음성",
       "counts": "내레이션 {{speech}}개 · 동작 {{cue}}개",
@@ -309,7 +308,6 @@
       "fieldAction": "동작",
       "fieldElement": "요소",
       "fieldContent": "내용",
-      "addDiscussion": "토론 추가",
       "addDiscussionExists": "장면당 토론은 하나만 가능합니다",
       "discussionTerminal": "끝",
       "discussionTerminalHint": "토론은 장면의 끝에 고정되며 장면당 하나만 허용됩니다",

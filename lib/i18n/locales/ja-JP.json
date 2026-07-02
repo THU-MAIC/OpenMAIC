@@ -340,7 +340,6 @@
     },
     "timeline": {
       "title": "ナレーション台本",
-      "dragToAdd": "ドラッグして追加",
       "regenAllTts": "すべての音声を再生成",
       "voiceAll": "全音声生成",
       "counts": "{{speech}} ナレーション · {{cue}} アクション",
@@ -358,7 +357,6 @@
       "fieldAction": "アクション",
       "fieldElement": "要素",
       "fieldContent": "内容",
-      "addDiscussion": "ディスカッションを追加",
       "addDiscussionExists": "各シーンにディスカッションは1つまで",
       "discussionTerminal": "末尾",
       "discussionTerminalHint": "ディスカッションはシーンの末尾に固定され、各シーンに1つだけです",

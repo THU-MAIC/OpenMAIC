@@ -83,6 +83,7 @@ export function ActionPicker({
                 type="button"
                 role="menuitem"
                 disabled={opt.disabled}
+                title={opt.disabled ? t('edit.timeline.addDiscussionExists') : undefined}
                 onClick={() => {
                   onSelect(opt.type);
                   onClose();

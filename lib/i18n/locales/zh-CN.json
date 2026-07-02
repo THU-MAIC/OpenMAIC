@@ -340,7 +340,6 @@
     },
     "timeline": {
       "title": "讲解脚本",
-      "dragToAdd": "拖入添加",
       "regenAllTts": "重新生成全部配音",
       "voiceAll": "全部配音",
       "counts": "{{speech}} 讲解 · {{cue}} 动作",
@@ -358,7 +357,6 @@
       "fieldAction": "动作",
       "fieldElement": "元素",
       "fieldContent": "内容",
-      "addDiscussion": "添加讨论",
       "addDiscussionExists": "每个场景仅支持一个讨论",
       "discussionTerminal": "末尾",
       "discussionTerminalHint": "讨论固定在场景末尾，每个场景仅一个",

@@ -70,7 +70,6 @@ import {
   setDiscussionPromptById,
   setDiscussionTopicById,
   setSpeechTextClearAudioById,
-  type AddableType,
 } from './actions-edit';
 import { ActionPicker } from './ActionPicker';
 import type { PickerType } from './picker-options';
@@ -115,7 +114,7 @@ const AXIS_FROM_TOP = 20; // px from track top to the axis center (nodes hang be
 // "unspecified agent" choice rides a sentinel that maps back to '' on change.
 const DISCUSSION_AGENT_NONE = '__none__';
 
-type DragPayload = { kind: 'new'; type: AddableType } | { kind: 'move'; id: string };
+type DragPayload = { kind: 'move'; id: string };
 
 interface TooltipState {
   action: Action;
@@ -1039,10 +1038,10 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
   const newId = () =>
     typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `a-${Date.now()}`;
 
-  // Shared insert path for both the drag-to-reorder drop zones and the
-  // ActionPicker (header pill / inline "+"): appends a discussion (terminal,
-  // at-most-one) or inserts an ordinary action at a slot, capped before any
-  // existing discussion so it always stays last.
+  // Insert path for the ActionPicker (header pill / inline "+" drop-zone
+  // buttons): appends a discussion (terminal, at-most-one) or inserts an
+  // ordinary action at a slot, capped before any existing discussion so it
+  // always stays last.
   const insertActionAt = useCallback(
     (type: PickerType, slot: number) => {
       const id = newId();
@@ -1063,13 +1062,9 @@ export function ActionsBar({ sceneId }: { sceneId: string }) {
       dragRef.current = null;
       setDragOver(null);
       if (!p) return;
-      if (p.kind === 'new') {
-        insertActionAt(p.type, slot);
-      } else {
-        commit((cur) => moveById(cur, p.id, clampInsertSlot(cur, slot)));
-      }
+      commit((cur) => moveById(cur, p.id, clampInsertSlot(cur, slot)));
     },
-    [commit, insertActionAt],
+    [commit],
   );
 
   const speechCount = actions.filter((a) => a.type === 'speech').length;
