@@ -141,14 +141,15 @@ const anthropicOpus47Effort: ThinkingCapability = {
   effortValues: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
 };
 
-// Fable 5: thinking is always on — {type: 'disabled'} returns a 400, so no
-// 'none' effort and not toggleable. API-side default effort is 'high'.
+// Fable 5: thinking is always on — {type: 'disabled'} and budget_tokens both
+// return a 400, so no 'none' effort, not toggleable, and depth is effort-only.
+// API-side default effort is 'high'.
 const anthropicFable5Effort: ThinkingCapability = {
   ...anthropicOpus47Effort,
   effortValues: ['low', 'medium', 'high', 'xhigh', 'max'],
   defaultEffort: 'high',
   toggleable: false,
-  defaultEnabled: true,
+  budgetAdjustable: false,
 };
 
 const deepseekEffort: ThinkingCapability = {

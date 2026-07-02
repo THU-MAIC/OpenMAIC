@@ -158,23 +158,6 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/claude.svg',
     models: [
       {
-        id: 'claude-fable-5',
-        name: 'Claude Fable 5',
-        contextWindow: 1000000,
-        outputWindow: 128000,
-        capabilities: {
-          streaming: true,
-          tools: true,
-          vision: true,
-          thinking: {
-            // Fable 5 rejects thinking: {type: 'disabled'} — thinking is always on
-            toggleable: false,
-            budgetAdjustable: true,
-            defaultEnabled: true,
-          },
-        },
-      },
-      {
         id: 'claude-opus-4-8',
         name: 'Claude Opus 4.8',
         contextWindow: 1000000,
@@ -187,6 +170,24 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
             toggleable: true,
             budgetAdjustable: true,
             defaultEnabled: false,
+          },
+        },
+      },
+      {
+        id: 'claude-fable-5',
+        name: 'Claude Fable 5',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            // Fable 5 rejects thinking: {type: 'disabled'} and budget_tokens —
+            // thinking is always on and depth is effort-only
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
           },
         },
       },
