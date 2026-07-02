@@ -13,6 +13,9 @@
     "pdfParser": "解析器",
     "pdfUpload": "上傳 PDF",
     "removePdf": "移除檔案",
+    "documentExtractor": "文件解析器",
+    "courseMaterialUpload": "上傳課程材料",
+    "removeCourseMaterial": "移除檔案",
     "webSearchOn": "已開啟",
     "webSearchOff": "點擊開啟",
     "webSearchDesc": "生成前搜尋網路取得最新資料，讓內容更豐富準確",
@@ -791,16 +794,20 @@
   },
   "upload": {
     "pdfSizeLimit": "支援最大50MB的PDF檔案",
+    "courseMaterialSizeLimit": "支援最大 50MB 的 PDF、DOCX、PPTX、TXT 和 Markdown 檔案",
     "generateFailed": "生成課堂失敗，請重試",
     "requirementPlaceholder": "輸入你想學的任何內容，例如：\n「從零學 Python，30 分鐘寫出第一個程式」\n「用白板為我講解傅立葉轉換」\n「阿瓦隆桌遊怎麼玩」",
     "requirementRequired": "請輸入課程需求",
-    "fileTooLarge": "檔案過大，請選擇小於50MB的PDF檔案"
+    "fileTooLarge": "檔案過大，請選擇小於 50MB 的檔案",
+    "unsupportedCourseMaterial": "不支援的課程材料類型，請上傳 PDF、DOCX、PPTX、TXT 或 Markdown 檔案"
   },
   "generation": {
-    "analyzingPdf": "解析 PDF 文件",
-    "analyzingPdfDesc": "正在擷取文件結構和內容...",
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",
     "pdfParseFailed": "PDF 解析失敗",
+    "analyzingCourseMaterial": "解析 {{type}} 檔案",
+    "analyzingCourseMaterialDesc": "正在擷取文件結構和內容...",
+    "courseMaterialLoadFailed": "無法載入課程材料，請重試",
+    "courseMaterialParseFailed": "課程材料解析失敗",
     "streamNotReadable": "無法讀取生成資料流",
     "generatingOutlines": "生成課程大綱",
     "generatingOutlinesDesc": "正在建構學習路徑...",

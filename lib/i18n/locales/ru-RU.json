@@ -13,6 +13,9 @@
     "pdfParser": "Парсер",
     "pdfUpload": "Загрузить PDF",
     "removePdf": "Удалить файл",
+    "documentExtractor": "Экстрактор",
+    "courseMaterialUpload": "Загрузить материал курса",
+    "removeCourseMaterial": "Удалить файл",
     "webSearchOn": "Включено",
     "webSearchOff": "Нажмите для включения",
     "webSearchDesc": "Поиск актуальной информации в интернете перед генерацией",
@@ -806,16 +809,20 @@
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",
+    "courseMaterialSizeLimit": "Поддержка PDF, DOCX, PPTX, TXT и Markdown до 50 МБ",
     "generateFailed": "Ошибка генерации, попробуйте снова",
     "requirementPlaceholder": "Расскажите, что вы хотите изучить, например:\n\"Научи меня Python с нуля за 30 минут\"\n\"Объясни преобразование Фурье на доске\"\n\"Как играть в настольную игру Авалон\"",
     "requirementRequired": "Пожалуйста, укажите требования к курсу",
-    "fileTooLarge": "Файл слишком большой. Выберите PDF до 50 МБ"
+    "fileTooLarge": "Файл слишком большой. Выберите файл до 50 МБ",
+    "unsupportedCourseMaterial": "Неподдерживаемый тип материала. Загрузите PDF, DOCX, PPTX, TXT или Markdown."
   },
   "generation": {
-    "analyzingPdf": "Анализ PDF-документа",
-    "analyzingPdfDesc": "Извлечение структуры и содержимого документа...",
     "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",
     "pdfParseFailed": "Ошибка обработки PDF",
+    "analyzingCourseMaterial": "Анализ файла {{type}}",
+    "analyzingCourseMaterialDesc": "Извлечение структуры и содержимого документа...",
+    "courseMaterialLoadFailed": "Не удалось загрузить материал курса, попробуйте снова",
+    "courseMaterialParseFailed": "Ошибка обработки материала курса",
     "streamNotReadable": "Не удалось прочитать поток генерации",
     "generatingOutlines": "Создание структуры курса",
     "generatingOutlinesDesc": "Формирование учебной программы...",

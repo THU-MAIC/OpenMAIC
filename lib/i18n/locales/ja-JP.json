@@ -13,6 +13,9 @@
     "pdfParser": "パーサー",
     "pdfUpload": "PDFをアップロード",
     "removePdf": "ファイルを削除",
+    "documentExtractor": "抽出器",
+    "courseMaterialUpload": "教材をアップロード",
+    "removeCourseMaterial": "ファイルを削除",
     "webSearchOn": "有効",
     "webSearchOff": "クリックして有効化",
     "webSearchDesc": "生成前にウェブ検索で最新情報を取得します",
@@ -806,16 +809,20 @@
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",
+    "courseMaterialSizeLimit": "50MBまでのPDF、DOCX、PPTX、TXT、Markdownファイルに対応しています",
     "generateFailed": "教室の生成に失敗しました。もう一度お試しください",
     "requirementPlaceholder": "学びたいことを自由に入力してください。例えば：\n「Pythonをゼロから30分で教えて」\n「フーリエ変換をホワイトボードで解説して」\n「ボードゲーム『アバロン』の遊び方」",
     "requirementRequired": "コースの要件を入力してください",
-    "fileTooLarge": "ファイルが大きすぎます。50MB以下のPDFファイルを選択してください"
+    "fileTooLarge": "ファイルが大きすぎます。50MB以下のファイルを選択してください",
+    "unsupportedCourseMaterial": "対応していない教材形式です。PDF、DOCX、PPTX、TXT、Markdownをアップロードしてください。"
   },
   "generation": {
-    "analyzingPdf": "PDFドキュメントを分析中",
-    "analyzingPdfDesc": "ドキュメントの構造と内容を抽出しています...",
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",
     "pdfParseFailed": "PDFの解析に失敗しました",
+    "analyzingCourseMaterial": "{{type}}ファイルを分析中",
+    "analyzingCourseMaterialDesc": "ドキュメントの構造と内容を抽出しています...",
+    "courseMaterialLoadFailed": "教材の読み込みに失敗しました。もう一度お試しください",
+    "courseMaterialParseFailed": "教材の解析に失敗しました",
     "streamNotReadable": "生成ストリームを読み取れません",
     "generatingOutlines": "コースアウトラインを作成中",
     "generatingOutlinesDesc": "学習パスを構成しています...",

@@ -29,7 +29,7 @@ nothing.
 | `action.ts`   | The playback verb set: `Action` and all variants (spotlight, laser, speech, the `Wb*` whiteboard family, `play_video`, `discussion`, and the `widget_*` interaction actions), `ActionType`, the frozen `ACTION_TYPES` set + `isActionType` guard, the `FIRE_AND_FORGET_ACTIONS` / `SLIDE_ONLY_ACTIONS` / `SYNC_ACTIONS` category lists, plus the `PercentageGeometry` overlay type. |
 | `guards.ts`   | Pure discriminant type-guards (`isTextElement`, …) and `PPT_ELEMENT_TYPES`. |
 | `validate.ts` | Pure, zero-dep structural validators — `validateStage` / `validateScene` / `validateAction` returning an error-collecting `ValidationResult`. |
-| `version.ts`  | `DSL_VERSION` + the `DslMigration` shape and (empty) migration registry. |
+| `version.ts`  | Serialized-contract version + migration registry: `DSL_VERSION`, the `DSL_MIGRATIONS` ladder, and the pure `migrate` / `dslVersionOf` / `needsMigration` runner. |
 
 ```ts
 import type { Slide, PPTElement, Action } from '@openmaic/dsl';
@@ -81,6 +81,48 @@ public TS types, and both honoring the zero-runtime-dependency invariant:
    `ValidationResult` is `{ valid: true } | { valid: false; errors: { path; message }[] }` —
    it collects every issue rather than failing on the first.
 
+## Version & migration
+
+Two version numbers live in this package and do **not** track each other:
+
+- the **npm package version** (`package.json`) — the semver of the *code/API*
+  artifact; bumps when exports or behavior change.
+- **`DSL_VERSION`** — the version of the *serialized* slide contract (the
+  on-disk document shape). It bumps only when a persisted document's shape
+  changes, independent of package releases. (A third, finer axis —
+  `SlideContent.schemaVersion` — versions the PPTist canvas *inside* a slide and
+  is migrated app-side; it is orthogonal to `DSL_VERSION`.)
+
+`version.ts` owns the document-level migration mechanism, zero-dependency and
+pure like the validators:
+
+```ts
+import { DSL_VERSION, migrate, dslVersionOf, needsMigration } from '@openmaic/dsl';
+
+const current = migrate(doc); // walks doc from its written version up to DSL_VERSION
+```
+
+- `DSL_MIGRATIONS` is an ordered ladder of `{ from, to, migrate }` steps; each
+  step's `to` is the next step's `from`, and the last reaches `DSL_VERSION`.
+- `migrate(doc)` reads the document's version from its `dslVersion` envelope
+  field (absent ⇒ treated as legacy/unversioned), walks the ladder applying each
+  pure transform, and stamps the result. It is **idempotent** (a current
+  document is returned as-is), **forward-compatible** (a document stamped newer
+  than `DSL_VERSION` is returned untouched, never silently downgraded), and
+  **fail-loud** (a gap in the ladder throws rather than yielding a half-migrated
+  document).
+
+The first ladder entry is a no-op transform that stamps legacy documents up to
+the current `DSL_VERSION`: promoting `Action` into the contract and adding
+validators did not change any serialized shape, so the current on-disk shape
+already *is* `0.1.0`. The entry wires the pipeline end to end and gives real
+documents a version to migrate forward from; the first real transform is
+appended (and `DSL_VERSION` bumped) when the serialized shape first changes.
+
+Which aggregate carries the `dslVersion` field — a whole `Stage`, a single Scene
+row, or a bundle — is left to the store that first consumes this pipeline; the
+runner only needs the envelope field.
+
 ## Status
 
 Both consumers are now wired to `@openmaic/dsl` and no longer vendor their own copy
@@ -108,6 +150,9 @@ of the slide types:
       from widget configs, so the standard `Action` union now covers them too.
       `Scene<TAction>` defaults to that union; PBL configs and the app's richer
       content kinds still plug in via `Scene`'s generics.
+- [x] Activate the migration registry: `version.ts` ships the `DSL_MIGRATIONS`
+      ladder and a pure `migrate` runner (idempotent, forward-compatible,
+      fail-loud), no longer a stub. See **Version & migration** above.
 - [ ] Reserve `@openmaic/exporter` as the 4th family member.
 
 ### Stage / Scene split

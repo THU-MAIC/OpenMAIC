@@ -106,6 +106,31 @@ describe('PDF compatibility adapter', () => {
     ]);
   });
 
+  it('normalizes MinerU Cloud markdown output into a markdown document block', () => {
+    const parsed: ParsedPdfContent = {
+      text: '# Cloud Parsed Lesson',
+      images: [],
+      metadata: {
+        pageCount: 1,
+        parser: 'mineru-cloud',
+      },
+    };
+
+    const artifact = parsedPdfToDocumentArtifact(parsed, {
+      buffer: Buffer.from('docx'),
+      fileName: 'lesson.docx',
+      fileSize: 456,
+      mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      config: { providerId: 'mineru-cloud' },
+    });
+
+    expect(artifact.blocks[0]).toMatchObject({
+      id: 'document-text',
+      type: 'markdown',
+      text: '# Cloud Parsed Lesson',
+    });
+  });
+
   it('round-trips back to the existing ParsedPdfContent shape used by generation', () => {
     const parsed: ParsedPdfContent = {
       text: 'Plain text',
