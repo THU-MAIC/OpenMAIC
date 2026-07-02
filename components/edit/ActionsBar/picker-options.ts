@@ -18,8 +18,8 @@ export interface PickerOption {
  * Discussion is terminal + at-most-one, so it is disabled when one exists.
  */
 export function pickerOptions(sceneType: SceneType, actions: Action[]): PickerOption[] {
-  const cues = CUE_ORDER.filter(
-    (t) => sceneType === 'slide' || !ELEMENT_BOUND.has(t),
-  ).map((type) => ({ type, disabled: false }));
+  const cues = CUE_ORDER.filter((t) => sceneType === 'slide' || !ELEMENT_BOUND.has(t)).map(
+    (type) => ({ type, disabled: false }),
+  );
   return [...cues, { type: 'discussion' as const, disabled: hasDiscussion(actions) }];
 }

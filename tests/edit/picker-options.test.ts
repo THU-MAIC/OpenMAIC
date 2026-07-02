@@ -7,7 +7,10 @@ const A = (id: string, type = 'speech'): Action => ({ id, type }) as unknown as 
 describe('pickerOptions', () => {
   test('slide scene offers speech + spotlight + laser + discussion', () => {
     expect(pickerOptions('slide', []).map((o) => o.type)).toEqual([
-      'speech', 'spotlight', 'laser', 'discussion',
+      'speech',
+      'spotlight',
+      'laser',
+      'discussion',
     ]);
   });
   test('non-slide scenes drop element-bound cues', () => {
