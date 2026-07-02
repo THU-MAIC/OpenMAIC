@@ -6,7 +6,12 @@ import { isSceneEditLocked } from '@/lib/edit/regen-lock';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { useSettingsStore } from '@/lib/store/settings';
 import { db } from '@/lib/utils/database';
-import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
+import type {
+  SceneOutline,
+  PdfImage,
+  ImageMapping,
+  UserRequirements,
+} from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
@@ -17,6 +22,11 @@ import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
+import {
+  isAbortError,
+  withGenerationRetry,
+  type GenerationRetryOptions,
+} from '@/lib/generation/generation-retry';
 
 const log = createLogger('SceneGenerator');
 
@@ -33,6 +43,10 @@ interface SceneActionsResult {
   previousSpeeches?: string[];
   error?: string;
 }
+
+type ClientRetryOptions<T> = Partial<
+  Omit<GenerationRetryOptions<T>, 'label' | 'shouldRetryResult' | 'signal'>
+>;
 
 function getApiHeaders(): HeadersInit {
   const config = getCurrentModelConfig();
@@ -67,8 +81,34 @@ function withThinkingConfig<T extends Record<string, unknown>>(body: T): T {
   return thinkingConfig ? ({ ...body, thinkingConfig } as T) : body;
 }
 
+async function readJsonResponse(response: Response): Promise<Record<string, unknown>> {
+  return response.json().catch(() => ({
+    error: response.statusText || 'Request failed',
+  }));
+}
+
+function createHttpError(
+  response: Response,
+  data: { details?: unknown; error?: unknown },
+  fallback: string,
+): Error & { statusCode?: number } {
+  const message =
+    typeof data.details === 'string'
+      ? data.details
+      : typeof data.error === 'string'
+        ? data.error
+        : `${fallback}: HTTP ${response.status}`;
+  const error = new Error(message) as Error & { statusCode?: number };
+  error.statusCode = response.status;
+  return error;
+}
+
+function messageFromError(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 /** Call POST /api/generate/scene-content (step 1) */
-async function fetchSceneContent(
+export async function fetchSceneContent(
   params: {
     outline: SceneOutline;
     allOutlines: SceneOutline[];
@@ -83,26 +123,43 @@ async function fetchSceneContent(
     };
     agents?: AgentInfo[];
     languageDirective?: string;
+    requirements?: UserRequirements;
   },
   signal?: AbortSignal,
+  retryOptions?: ClientRetryOptions<SceneContentResult>,
 ): Promise<SceneContentResult> {
-  const response = await fetch('/api/generate/scene-content', {
-    method: 'POST',
-    headers: getApiHeaders(),
-    body: JSON.stringify(withThinkingConfig(params)),
-    signal,
-  });
+  try {
+    return await withGenerationRetry(
+      async () => {
+        const response = await fetch('/api/generate/scene-content', {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify(withThinkingConfig(params)),
+          signal,
+        });
 
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({ error: 'Request failed' }));
-    return { success: false, error: data.error || `HTTP ${response.status}` };
+        const data = await readJsonResponse(response);
+        if (!response.ok) {
+          throw createHttpError(response, data, 'Scene content request failed');
+        }
+
+        return data as unknown as SceneContentResult;
+      },
+      {
+        label: `scene content "${params.outline.title}"`,
+        shouldRetryResult: (result) => !result.success || !result.content,
+        ...retryOptions,
+        signal,
+      },
+    );
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return { success: false, error: messageFromError(error, 'Content generation failed') };
   }
-
-  return response.json();
 }
 
 /** Call POST /api/generate/scene-actions (step 2) */
-async function fetchSceneActions(
+export async function fetchSceneActions(
   params: {
     outline: SceneOutline;
     allOutlines: SceneOutline[];
@@ -114,20 +171,44 @@ async function fetchSceneActions(
     languageDirective?: string;
   },
   signal?: AbortSignal,
+  retryOptions?: ClientRetryOptions<SceneActionsResult>,
 ): Promise<SceneActionsResult> {
-  const response = await fetch('/api/generate/scene-actions', {
-    method: 'POST',
-    headers: getApiHeaders(),
-    body: JSON.stringify(withThinkingConfig(params)),
-    signal,
-  });
+  try {
+    return await withGenerationRetry(
+      async () => {
+        const response = await fetch('/api/generate/scene-actions', {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify(withThinkingConfig(params)),
+          signal,
+        });
 
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({ error: 'Request failed' }));
-    return { success: false, error: data.error || `HTTP ${response.status}` };
+        const data = await readJsonResponse(response);
+        if (!response.ok) {
+          throw createHttpError(response, data, 'Scene actions request failed');
+        }
+
+        return data as unknown as SceneActionsResult;
+      },
+      {
+        label: `scene actions "${params.outline.title}"`,
+        shouldRetryResult: (result) => !result.success || !result.scene,
+        ...retryOptions,
+        signal,
+      },
+    );
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    return { success: false, error: messageFromError(error, 'Actions generation failed') };
   }
+}
 
-  return response.json();
+interface TTSApiResponse {
+  success?: boolean;
+  base64?: string;
+  format?: string;
+  error?: string;
+  details?: string;
 }
 
 /** Generate TTS for one speech action and store in IndexedDB */
@@ -136,6 +217,7 @@ export async function generateAndStoreTTS(
   text: string,
   language?: string,
   signal?: AbortSignal,
+  retryOptions?: ClientRetryOptions<TTSApiResponse>,
 ): Promise<void> {
   const settings = useSettingsStore.getState();
   if (settings.ttsProviderId === 'browser-native-tts') return;
@@ -158,32 +240,44 @@ export async function generateAndStoreTTS(
     voiceId: settings.ttsVoice,
     language,
   });
-  const response = await fetch('/api/generate/tts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      text,
-      audioId,
-      ttsProviderId: settings.ttsProviderId,
-      ttsModelId: ttsProviderConfig?.modelId,
-      ttsVoice: settings.ttsVoice,
-      ttsSpeed: settings.ttsSpeed,
-      ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-      // Managed providers resolve their base URL server-side; only send the
-      // client's own base URL (custom providers).
-      ttsBaseUrl:
-        ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
-      ttsProviderOptions: providerOptions,
-    }),
-    signal,
-  });
+  const data = await withGenerationRetry(
+    async () => {
+      const response = await fetch('/api/generate/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          audioId,
+          ttsProviderId: settings.ttsProviderId,
+          ttsModelId: ttsProviderConfig?.modelId,
+          ttsVoice: settings.ttsVoice,
+          ttsSpeed: settings.ttsSpeed,
+          ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+          // Managed providers resolve their base URL server-side; only send the
+          // client's own base URL (custom providers).
+          ttsBaseUrl:
+            ttsProviderConfig?.baseUrl || ttsProviderConfig?.customDefaultBaseUrl || undefined,
+          ttsProviderOptions: providerOptions,
+        }),
+        signal,
+      });
 
-  const data = await response
-    .json()
-    .catch(() => ({ success: false, error: response.statusText || 'Invalid TTS response' }));
-  if (!response.ok || !data.success || !data.base64 || !data.format) {
+      const data = (await readJsonResponse(response)) as TTSApiResponse;
+      if (!response.ok) {
+        throw createHttpError(response, data, 'TTS request failed');
+      }
+      return data;
+    },
+    {
+      label: `tts "${audioId}"`,
+      shouldRetryResult: (result) => !result.success || !result.base64 || !result.format,
+      ...retryOptions,
+      signal,
+    },
+  );
+  if (!data.success || !data.base64 || !data.format) {
     const err = new Error(
-      data.details || data.error || `TTS request failed: HTTP ${response.status}`,
+      data.details || data.error || 'TTS request failed: invalid response payload',
     );
     log.warn('TTS failed for', audioId, ':', err);
     throw err;
@@ -230,6 +324,8 @@ async function generateTTSForScene(
     try {
       await generateAndStoreTTS(audioId, action.text, language, signal);
     } catch (error) {
+      if (isAbortError(error)) throw error;
+
       failedCount++;
       lastError = error instanceof Error ? error.message : `TTS failed for action ${action.id}`;
       log.warn('TTS generation failed:', {
@@ -540,7 +636,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
         }
       } catch (err: unknown) {
         // AbortError is expected when stop() is called — don't treat as failure
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (isAbortError(err)) {
           log.info('Generation aborted');
           store.getState().setGenerationStatus('paused');
         } else {
@@ -691,7 +787,7 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           store.getState().markGenerationCompleteIfDone();
         }
       } catch (err) {
-        if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        if (!isAbortError(err)) {
           store.getState().addFailedOutline(outline);
         }
       }

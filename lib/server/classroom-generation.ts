@@ -29,6 +29,7 @@ import {
   replaceMediaPlaceholders,
   generateTTSForClassroom,
 } from '@/lib/server/classroom-media-generation';
+import { withGenerationRetry } from '@/lib/generation/generation-retry';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import type { UserRequirements } from '@/lib/types/generation';
 import type { Scene, Stage } from '@/lib/types/stage';
@@ -222,6 +223,24 @@ export async function generateClassroom(
     return result.text;
   };
 
+  const sceneAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
+    const result = await callLLM(
+      {
+        model: languageModel,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        maxOutputTokens: modelInfo?.outputWindow,
+        maxRetries: 0,
+      },
+      'generate-classroom-scene',
+      undefined,
+      classroomThinking,
+    );
+    return result.text;
+  };
+
   const searchQueryAiCall: AICallFn = async (systemPrompt, userPrompt, _images) => {
     const result = await callLLM(
       {
@@ -409,20 +428,51 @@ export async function generateClassroom(
       totalScenes: outlines.length,
     });
 
-    const content = await generateSceneContent(safeOutline, aiCall, {
-      agents,
-      languageDirective,
-      allowProceduralSkill: vocationalActive,
-    });
+    const reportSceneRetry = async (
+      phase: 'content' | 'actions',
+      event: { attempt: number; maxAttempts: number; reason: string },
+    ) => {
+      const nextAttempt = Math.min(event.attempt + 1, event.maxAttempts);
+      const message = `Retrying scene ${index + 1}/${outlines.length} ${phase} (${nextAttempt}/${event.maxAttempts}): ${safeOutline.title}`;
+      log.warn(`${message} — ${event.reason}`);
+      await options.onProgress?.({
+        step: 'generating_scenes',
+        progress: Math.max(progressStart, 31),
+        message,
+        scenesGenerated: generatedScenes,
+        totalScenes: outlines.length,
+      });
+    };
+
+    const content = await withGenerationRetry(
+      () =>
+        generateSceneContent(safeOutline, sceneAiCall, {
+          agents,
+          languageDirective,
+          allowProceduralSkill: vocationalActive,
+        }),
+      {
+        label: `scene ${index + 1}/${outlines.length} content`,
+        shouldRetryResult: (result) => result === null,
+        onRetry: (event) => reportSceneRetry('content', event),
+      },
+    );
     if (!content) {
       log.warn(`Skipping scene "${safeOutline.title}" — content generation failed`);
       continue;
     }
 
-    const actions = await generateSceneActions(safeOutline, content, aiCall, {
-      agents,
-      languageDirective,
-    });
+    const actions = await withGenerationRetry(
+      () =>
+        generateSceneActions(safeOutline, content, sceneAiCall, {
+          agents,
+          languageDirective,
+        }),
+      {
+        label: `scene ${index + 1}/${outlines.length} actions`,
+        onRetry: (event) => reportSceneRetry('actions', event),
+      },
+    );
     log.info(`Scene "${safeOutline.title}": ${actions.length} actions`);
 
     const sceneId = createSceneWithActions(safeOutline, content, actions, api);

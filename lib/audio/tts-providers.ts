@@ -95,6 +95,7 @@
 import type { TTSModelConfig } from './types';
 import { isCustomTTSProvider } from './types';
 import { TTS_PROVIDERS } from './constants';
+import { splitConcatenatedJsonObjects } from './json-stream';
 import {
   VOXCPM_VLLM_MODEL_ID,
   VOXCPM_AUTO_VOICE_ID,
@@ -890,38 +891,27 @@ async function generateDoubaoTTS(
   const responseText = await response.text();
   const audioChunks: Uint8Array[] = [];
 
-  let depth = 0;
-  let start = -1;
-  for (let i = 0; i < responseText.length; i++) {
-    if (responseText[i] === '{') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (responseText[i] === '}') {
-      depth--;
-      if (depth === 0 && start >= 0) {
-        let chunk: { code: number; message?: string; data?: string };
-        try {
-          chunk = JSON.parse(responseText.slice(start, i + 1));
-        } catch {
-          start = -1;
-          continue;
-        }
-        start = -1;
+  // Doubao streams a run of concatenated JSON objects with no delimiter. Split
+  // them string-aware (see splitConcatenatedJsonObjects) — a naive `{`/`}` depth
+  // counter miscounts braces that appear inside a string value (e.g. an error
+  // `message` containing `}`), which corrupts the object boundaries.
+  for (const objectText of splitConcatenatedJsonObjects(responseText)) {
+    let chunk: { code: number; message?: string; data?: string };
+    try {
+      chunk = JSON.parse(objectText);
+    } catch {
+      continue;
+    }
 
-        if (chunk.code === 0 && chunk.data) {
-          audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
-        } else if (chunk.code === 20000000) {
-          break;
-        } else if (chunk.code && chunk.code !== 0) {
-          if (chunk.code === 45000000 || chunk.code === 45000292) {
-            throw new TTSRateLimitError(
-              'doubao-tts',
-              chunk.message || 'concurrency quota exceeded',
-            );
-          }
-          throw new Error(`Doubao TTS error: ${chunk.message || 'unknown'} (code: ${chunk.code})`);
-        }
+    if (chunk.code === 0 && chunk.data) {
+      audioChunks.push(new Uint8Array(Buffer.from(chunk.data, 'base64')));
+    } else if (chunk.code === 20000000) {
+      break;
+    } else if (chunk.code && chunk.code !== 0) {
+      if (chunk.code === 45000000 || chunk.code === 45000292) {
+        throw new TTSRateLimitError('doubao-tts', chunk.message || 'concurrency quota exceeded');
       }
+      throw new Error(`Doubao TTS error: ${chunk.message || 'unknown'} (code: ${chunk.code})`);
     }
   }
 

@@ -29,6 +29,7 @@ import { cn } from '@/lib/utils';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { WidgetType } from '@/lib/types/widgets';
 import { changeOutlineType } from '@/lib/generation/outline-type';
+import { countBlockingOutlines, validateOutline } from '@/lib/edit/content-validation';
 
 type SceneType = SceneOutline['type'];
 
@@ -125,6 +126,21 @@ export function OutlinesEditor({
   const lastScrollTargetRef = useRef<string | null>(null);
   const editingDisabled = isLoading || isStreaming;
   const lastOutlineId = outlines.length > 0 ? outlines[outlines.length - 1].id : null;
+
+  // Generation gate: an outline with a blank title is meaningless to generate,
+  // so block "Confirm & generate" until every section has a title. A neutral
+  // "N / M ready" counter by the button explains the gate and jumps to the
+  // first offending section.
+  const blockingCount = countBlockingOutlines(outlines);
+  const totalCount = outlines.length;
+  const readyCount = totalCount - blockingCount;
+  const firstBlockingId =
+    blockingCount > 0 ? outlines.find((o) => validateOutline(o).length > 0)?.id : undefined;
+  const scrollToFirstBlocking = () => {
+    if (!firstBlockingId) return;
+    const node = document.getElementById(`outline-scene-${firstBlockingId}`);
+    node?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
 
   // Auto-scroll to the latest streamed scene so streaming feels alive.
   useEffect(() => {
@@ -366,9 +382,25 @@ export function OutlinesEditor({
           >
             {t('generation.backToRequirements')}
           </Button>
+          {!editingDisabled && blockingCount > 0 && (
+            <button
+              type="button"
+              onClick={scrollToFirstBlocking}
+              title={t('generation.jumpToBlankTitle')}
+              className="inline-flex items-center gap-2.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              <span className="block h-1 w-[84px] overflow-hidden rounded-full bg-muted">
+                <span
+                  className="block h-full rounded-full bg-muted-foreground/45 transition-[width]"
+                  style={{ width: `${totalCount > 0 ? (readyCount / totalCount) * 100 : 0}%` }}
+                />
+              </span>
+              {t('generation.outlinesReadyCount', { ready: readyCount, total: totalCount })}
+            </button>
+          )}
           <Button
             onClick={onConfirm}
-            disabled={isLoading || isStreaming || outlines.length === 0}
+            disabled={isLoading || isStreaming || outlines.length === 0 || blockingCount > 0}
             className="rounded-full px-6 shadow-lg shadow-blue-500/20"
           >
             {isLoading ? (
@@ -566,6 +598,11 @@ function SceneRow({
         <div className="min-w-0 flex-1 space-y-1.5">
           {/* Title row */}
           <div className="flex items-start justify-between gap-2">
+            {!disabled && !outline.title.trim() && (
+              // Incomplete marker — a soft amber dot before a blank title. A
+              // blank title blocks generation; the gate below counts how many.
+              <span aria-hidden className="mt-[11px] h-2 w-2 shrink-0 rounded-full bg-amber-400" />
+            )}
             <textarea
               ref={titleRef}
               value={outline.title}

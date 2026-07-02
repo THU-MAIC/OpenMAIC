@@ -8,6 +8,7 @@ import {
   type SlideContent,
   type QuizContent,
   type Whiteboard,
+  type Action,
 } from '@openmaic/dsl';
 
 /**
@@ -87,8 +88,9 @@ describe('discriminant guards', () => {
 });
 
 describe('Scene<TAction, TContent> generic', () => {
-  it('default Scene is the feature-free skeleton (no actions, slide/quiz content)', () => {
-    // No type args: actions default to never[], content to slide | quiz.
+  it('default Scene: optional actions (standard Action union), slide/quiz content', () => {
+    // No type args: actions default to the standard `Action` union and stay
+    // optional; content defaults to slide | quiz.
     const s: Scene = {
       id: 'sc1',
       stageId: 'stg1',
@@ -122,12 +124,19 @@ describe('Scene<TAction, TContent> generic', () => {
     expect(appScene.actions?.[0].kind).toBe('speech');
   });
 
-  it('TAction defaults to never so the default Scene rejects concrete actions at the type level', () => {
-    // A default `Scene` with actions supplied must NOT type-check: `never[]`
-    // accepts no concrete element. Pin the exact type so the default can't
-    // silently drift to something that would accept a concrete action.
+  it('TAction defaults to the standard Action union so the default Scene carries playback actions', () => {
+    // The default `Scene` exposes the contract's standard `Action` union on
+    // `actions`. Pin the exact type so the default can't silently drift away
+    // from the promoted action set.
     type DefaultScene = Scene;
-    expectTypeOf<DefaultScene['actions']>().toEqualTypeOf<never[] | undefined>();
+    expectTypeOf<DefaultScene['actions']>().toEqualTypeOf<Action[] | undefined>();
+  });
+
+  it('skeleton-only consumers can still opt out of actions with Scene<never>', () => {
+    // Renderers / importers that only care about the lesson skeleton reject
+    // concrete actions by pinning `never`.
+    type SkeletonScene = Scene<never>;
+    expectTypeOf<SkeletonScene['actions']>().toEqualTypeOf<never[] | undefined>();
   });
 });
 

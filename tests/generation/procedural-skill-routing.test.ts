@@ -22,8 +22,7 @@ describe('procedural-skill widget content routing', () => {
     const captured: Array<{ system: string; user: string }> = [];
     const aiCall: AICallFn = async (system, user) => {
       captured.push({ system, user });
-      return captured.length === 1
-        ? `<!DOCTYPE html>
+      return `<!DOCTYPE html>
 <html>
   <body>
     <script type="application/json" id="widget-config">
@@ -45,8 +44,7 @@ describe('procedural-skill widget content routing', () => {
     </script>
     <main>procedural skill widget</main>
   </body>
-</html>`
-        : JSON.stringify({ actions: [] });
+</html>`;
     };
 
     const outline = createProceduralSkillOutline();
@@ -60,7 +58,7 @@ describe('procedural-skill widget content routing', () => {
     expect(content?.widgetType).toBe('procedural-skill');
     expect(content?.widgetConfig?.type).toBe('procedural-skill');
 
-    expect(captured).toHaveLength(2);
+    expect(captured).toHaveLength(1);
     const widgetPrompt = captured[0];
     expect(widgetPrompt.system).toContain('# Procedural Skill Widget Content Generator');
     expect(widgetPrompt.system).toContain('"type": "procedural-skill"');

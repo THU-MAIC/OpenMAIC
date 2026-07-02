@@ -1,5 +1,14 @@
 import { create } from 'zustand';
-import type { PBLContent, Stage, Scene, SceneContent, StageMode } from '@/lib/types/stage';
+import {
+  makeScene,
+  type PBLContent,
+  type Stage,
+  type Scene,
+  type SceneContent,
+  type ScenePatch,
+  type StageMode,
+  type GeneratedAgentConfig,
+} from '@/lib/types/stage';
 import { createSelectors } from '@/lib/utils/create-selectors';
 import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -91,12 +100,13 @@ interface StageState {
   setScenes: (scenes: Scene[]) => void;
   addScene: (scene: Scene) => void;
   insertSceneAfter: (anchorSceneId: string, scene: Scene) => void;
-  updateScene: (sceneId: string, updates: Partial<Scene>) => void;
+  updateScene: (sceneId: string, updates: ScenePatch) => void;
   deleteScene: (sceneId: string) => void;
   setCurrentSceneId: (sceneId: string | null) => void;
   setChats: (chats: ChatSession[]) => void;
   setMode: (mode: StageMode) => void;
   setToolbarState: (state: ToolbarState) => void;
+  setStageAgents: (configs: GeneratedAgentConfig[]) => void;
   setGeneratingOutlines: (outlines: SceneOutline[]) => void;
   setOutlines: (outlines: SceneOutline[]) => void;
   setGenerationComplete: (complete: boolean) => void;
@@ -209,11 +219,10 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   updateScene: (sceneId, updates) => {
     const scenes = get().scenes.map((scene) => {
       if (scene.id !== sceneId) return scene;
-      return {
-        ...scene,
-        ...updates,
-        content: mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content,
-      };
+      const content = mergeSceneContentForUpdate(scene.content, updates.content) ?? scene.content;
+      // Rebind `type` to the merged content's kind (a type-only patch can no
+      // longer desync the discriminant from the content).
+      return makeScene({ ...scene, ...updates }, content);
     });
     set({ scenes });
     debouncedSave();
@@ -273,6 +282,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   },
 
   setToolbarState: (toolbarState) => set({ toolbarState }),
+
+  setStageAgents: (configs) => {
+    const stage = get().stage;
+    if (!stage) return;
+    set({ stage: { ...stage, generatedAgentConfigs: configs } });
+    debouncedSave();
+    debouncedSaveAgents();
+  },
 
   setGeneratingOutlines: (generatingOutlines) => set({ generatingOutlines }),
 
@@ -387,6 +404,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         currentSceneId,
         chats,
       });
+
       return true;
     } catch (error) {
       log.error('Failed to save to storage:', error);
@@ -503,4 +521,18 @@ export const useStageStore = createSelectors(useStageStoreBase);
  */
 const debouncedSave = debounce(() => {
   useStageStore.getState().saveToStorage();
+}, 500);
+
+/**
+ * Debounced registry sync — fires ONLY when the agent roster is edited.
+ * Keeps db.generatedAgents writes off the broad saveToStorage path so scene
+ * advances (setCurrentSceneId etc.) never churn the registry mid-playback.
+ */
+const debouncedSaveAgents = debounce(async () => {
+  const { stage } = useStageStore.getState();
+  if (!stage?.id || !stage.generatedAgentConfigs) return;
+  const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
+  await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
+  const { useSettingsStore } = await import('@/lib/store/settings');
+  useSettingsStore.getState().setSelectedAgentIds(stage.generatedAgentConfigs.map((a) => a.id));
 }, 500);

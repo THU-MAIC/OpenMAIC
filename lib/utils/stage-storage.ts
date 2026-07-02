@@ -5,7 +5,7 @@
  * Each stage has its own storage key based on stageId
  */
 
-import { Stage, Scene } from '../types/stage';
+import { makeScene, Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { db } from './database';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
@@ -54,6 +54,7 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
       videoManifest: data.stage.videoManifest,
       interactiveMode: data.stage.interactiveMode,
       taskEngineMode: data.stage.taskEngineMode,
+      generatedAgentConfigs: data.stage.generatedAgentConfigs,
     });
 
     // Delete old scenes first to avoid orphaned data
@@ -106,7 +107,10 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 
     return {
       stage,
-      scenes,
+      // `SceneRecord` is the loose persisted shape (independent `type` + `content`);
+      // re-bind each to a discriminated `AppScene`, deriving `type` from the stored
+      // `content.type`. Spreads the full record, so `whiteboard` etc. are preserved.
+      scenes: scenes.map((s) => makeScene(s, s.content)),
       currentSceneId: stage.currentSceneId || scenes[0]?.id || null,
       chats,
     };
