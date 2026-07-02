@@ -93,7 +93,7 @@ async function readMinerUJson<T>(res: Response, context: string): Promise<T> {
 
 // ── Filename sanitization ─────────────────────────────────────────────────────
 
-const MINERU_CLOUD_SUPPORTED_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'ppt', 'pptx']);
+const MINERU_CLOUD_SUPPORTED_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
 
 function sanitizeFileName(name: string | undefined): string {
   const fallback = 'document.pdf';
