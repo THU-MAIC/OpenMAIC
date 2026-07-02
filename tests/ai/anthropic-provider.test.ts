@@ -20,9 +20,20 @@ describe('Anthropic provider defaults', () => {
     });
   });
 
-  it('keeps Claude Opus 4.8 in the catalog', () => {
+  it('keeps Claude Opus 4.8 in the catalog with current token windows', () => {
     const models = getProvider('anthropic')?.models ?? [];
+    const opus = models.find((m) => m.id === 'claude-opus-4-8');
 
-    expect(models.map((m) => m.id)).toContain('claude-opus-4-8');
+    expect(opus).toMatchObject({
+      id: 'claude-opus-4-8',
+      name: 'Claude Opus 4.8',
+      contextWindow: 1000000,
+      outputWindow: 128000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
   });
 });
