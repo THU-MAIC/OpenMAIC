@@ -345,7 +345,6 @@
     },
     "timeline": {
       "title": "讲解脚本",
-      "dragToAdd": "拖入添加",
       "regenAllTts": "重新生成全部配音",
       "voiceAll": "全部配音",
       "counts": "{{speech}} 讲解 · {{cue}} 动作",
@@ -363,14 +362,21 @@
       "fieldAction": "动作",
       "fieldElement": "元素",
       "fieldContent": "内容",
-      "addDiscussion": "添加讨论",
       "addDiscussionExists": "每个场景仅支持一个讨论",
       "discussionTerminal": "末尾",
       "discussionTerminalHint": "讨论固定在场景末尾，每个场景仅一个",
       "discussionTopicPlaceholder": "讨论主题（必填）",
       "discussionPromptPlaceholder": "引导语（可选）",
       "discussionAgent": "发起",
-      "discussionAgentUnset": "不指定"
+      "discussionAgentUnset": "不指定",
+      "addAction": "添加动作"
+    },
+    "picker": {
+      "title": "插入动作",
+      "speechDesc": "讲一句话，可自动配音",
+      "spotlightDesc": "高亮画布中的一个元素",
+      "laserDesc": "用激光点指向一个元素",
+      "discussionDesc": "抛出问题，指定发起同学"
     },
     "tts": {
       "preview": "试听",

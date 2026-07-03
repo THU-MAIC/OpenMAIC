@@ -296,7 +296,6 @@
     },
     "timeline": {
       "title": "내레이션 스크립트",
-      "dragToAdd": "끌어서 추가",
       "regenAllTts": "전체 음성 다시 생성",
       "voiceAll": "전체 음성",
       "counts": "내레이션 {{speech}}개 · 동작 {{cue}}개",
@@ -314,14 +313,21 @@
       "fieldAction": "동작",
       "fieldElement": "요소",
       "fieldContent": "내용",
-      "addDiscussion": "토론 추가",
       "addDiscussionExists": "장면당 토론은 하나만 가능합니다",
       "discussionTerminal": "끝",
       "discussionTerminalHint": "토론은 장면의 끝에 고정되며 장면당 하나만 허용됩니다",
       "discussionTopicPlaceholder": "토론 주제(필수)",
       "discussionPromptPlaceholder": "안내 프롬프트(선택)",
       "discussionAgent": "시작자",
-      "discussionAgentUnset": "지정 안 함"
+      "discussionAgentUnset": "지정 안 함",
+      "addAction": "동작 추가"
+    },
+    "picker": {
+      "title": "동작 삽입",
+      "speechDesc": "내레이션 말하기 (자동 음성 지원)",
+      "spotlightDesc": "캔버스의 요소를 강조",
+      "laserDesc": "레이저로 요소를 가리키기",
+      "discussionDesc": "질문을 던지고 발표자를 지정"
     },
     "tts": {
       "preview": "미리듣기",

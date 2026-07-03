@@ -345,7 +345,6 @@
     },
     "timeline": {
       "title": "نص السرد",
-      "dragToAdd": "اسحب للإضافة",
       "regenAllTts": "إعادة توليد كل التعليق الصوتي",
       "voiceAll": "صوّت الكل",
       "counts": "{{speech}} سرد · {{cue}} إجراءات",
@@ -363,14 +362,21 @@
       "fieldAction": "إجراء",
       "fieldElement": "عنصر",
       "fieldContent": "المحتوى",
-      "addDiscussion": "إضافة مناقشة",
       "addDiscussionExists": "مناقشة واحدة فقط لكل مشهد",
       "discussionTerminal": "النهاية",
       "discussionTerminalHint": "تبقى المناقشة في نهاية المشهد (واحدة لكل مشهد)",
       "discussionTopicPlaceholder": "موضوع المناقشة (مطلوب)",
       "discussionPromptPlaceholder": "توجيه (اختياري)",
       "discussionAgent": "المُبادر",
-      "discussionAgentUnset": "غير محدد"
+      "discussionAgentUnset": "غير محدد",
+      "addAction": "إضافة إجراء"
+    },
+    "picker": {
+      "title": "إدراج إجراء",
+      "speechDesc": "قل جملة — يمكن نطقها تلقائيًا",
+      "spotlightDesc": "تسليط الضوء على عنصر في اللوحة",
+      "laserDesc": "توجيه مؤشر ليزر إلى عنصر",
+      "discussionDesc": "اطرح سؤالاً وحدّد من يبدأ النقاش"
     },
     "tts": {
       "preview": "معاينة",

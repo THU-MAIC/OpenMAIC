@@ -29,6 +29,7 @@ nothing.
 | `action.ts`   | The playback verb set: `Action` and all variants (spotlight, laser, speech, the `Wb*` whiteboard family, `play_video`, `discussion`, and the `widget_*` interaction actions), `ActionType`, the frozen `ACTION_TYPES` set + `isActionType` guard, the `FIRE_AND_FORGET_ACTIONS` / `SLIDE_ONLY_ACTIONS` / `SYNC_ACTIONS` category lists, plus the `PercentageGeometry` overlay type. |
 | `guards.ts`   | Pure discriminant type-guards (`isTextElement`, …) and `PPT_ELEMENT_TYPES`. |
 | `validate.ts` | Pure, zero-dep structural validators — `validateStage` / `validateScene` / `validateAction` returning an error-collecting `ValidationResult`. |
+| `normalize.ts` | Pure, zero-dep defaulters — `normalizeElement` / `normalizeSlide` / `normalizeScene` / `normalizeStage` and the canonical `ELEMENT_DEFAULTS`. Fills required-field defaults, derives geometry, fails loud on malformed input; the repair counterpart to `validate*`. |
 | `version.ts`  | Serialized-contract version + migration registry: `DSL_VERSION`, the `DSL_MIGRATIONS` ladder, and the pure `migrate` / `dslVersionOf` / `needsMigration` runner. |
 
 ```ts
@@ -36,11 +37,12 @@ import type { Slide, PPTElement, Action } from '@openmaic/dsl';
 import { isTextElement, DSL_VERSION, SYNC_ACTIONS } from '@openmaic/dsl';
 ```
 
-## Runtime layer (schema + validators)
+## Runtime layer (schema + validators + normalizers)
 
 The contract is enforceable two ways — a zero-dependency in-process validator
 and a cross-language JSON Schema — both generated from / aligned to the same
-public TS types, and both honoring the zero-runtime-dependency invariant:
+public TS types, and both honoring the zero-runtime-dependency invariant; a
+third zero-dependency `normalize*` family repairs a document to satisfy them:
 
 1. **JSON Schema artifacts (cross-language mirror)** — `Stage`, the default
    `Scene<Action, SceneContent>`, and `Action` are emitted as standalone JSON
@@ -80,6 +82,37 @@ public TS types, and both honoring the zero-runtime-dependency invariant:
 
    `ValidationResult` is `{ valid: true } | { valid: false; errors: { path; message }[] }` —
    it collects every issue rather than failing on the first.
+
+3. **Pure normalizers (repair boundary)** — where `validate*` *reports* on a
+   document, `normalize*` *repairs* one, so producers stop carrying their own
+   imperative "fix up the output" pass. `normalizeElement` (and the
+   `normalizeSlide` / `normalizeScene` / `normalizeStage` walkers) fill the
+   required fields a producer may have left off, derive geometry-dependent fields
+   (a line's `start` / `end`, a shape's `viewBox` / `path`), and **fail loud** on
+   a present-but-wrong-typed field — returning a fully-defaulted document that
+   then satisfies the validators. Pure and non-mutating; idempotent.
+
+   The *static* defaults (`ELEMENT_DEFAULTS`) are the single source of truth and
+   also ride out on the JSON Schema as `@default` annotations (so non-TS
+   consumers ship them too); a test pins the two together. `normalize*` owns only
+   the producer-independent defaults — media-specific reconciliation (e.g.
+   fitting an image box to a resolved asset's real dimensions) stays a producer
+   concern.
+
+   Scope: `normalize*` owns element **content** (the per-variant required fields
+   + derivable geometry). It does **not** fill or check the base identity /
+   geometry every element shares (`id`, `left` / `top` / `width` / `height` /
+   `rotate`) — those are producer-supplied (the `id` is often assigned
+   downstream) and carry no content default. `normalize*` and `validate*` are
+   complementary: normalize repairs content, validate / the schema check the
+   full structure.
+
+   ```ts
+   import { normalizeElement, normalizeScene, ELEMENT_DEFAULTS } from '@openmaic/dsl';
+
+   const el = normalizeElement(rawElement); // required fields filled, geometry derived
+   const scene = normalizeScene(rawScene); //  walks the slide canvas + whiteboards
+   ```
 
 ## Version & migration
 
@@ -153,6 +186,10 @@ of the slide types:
 - [x] Activate the migration registry: `version.ts` ships the `DSL_MIGRATIONS`
       ladder and a pure `migrate` runner (idempotent, forward-compatible,
       fail-loud), no longer a stub. See **Version & migration** above.
+- [x] Own element defaulting in the contract: `normalize.ts` ships the pure
+      `normalize*` family + `ELEMENT_DEFAULTS`, and the static defaults ride out
+      on the JSON Schema as `@default` annotations. Producers drop their
+      imperative "fix up the output" passes. See **Runtime layer** above.
 - [ ] Reserve `@openmaic/exporter` as the 4th family member.
 
 ### Stage / Scene split

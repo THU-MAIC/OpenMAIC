@@ -345,7 +345,6 @@
     },
     "timeline": {
       "title": "講解腳本",
-      "dragToAdd": "拖入新增",
       "regenAllTts": "重新生成全部配音",
       "voiceAll": "全部配音",
       "counts": "{{speech}} 講解 · {{cue}} 動作",
@@ -363,14 +362,21 @@
       "fieldAction": "動作",
       "fieldElement": "元素",
       "fieldContent": "內容",
-      "addDiscussion": "新增討論",
       "addDiscussionExists": "每個場景僅支援一個討論",
       "discussionTerminal": "結尾",
       "discussionTerminalHint": "討論固定在場景結尾，每個場景僅一個",
       "discussionTopicPlaceholder": "討論主題（必填）",
       "discussionPromptPlaceholder": "引導語（選填）",
       "discussionAgent": "發起",
-      "discussionAgentUnset": "不指定"
+      "discussionAgentUnset": "不指定",
+      "addAction": "新增動作"
+    },
+    "picker": {
+      "title": "插入動作",
+      "speechDesc": "講一句話，可自動配音",
+      "spotlightDesc": "突顯畫布中的一個元素",
+      "laserDesc": "用雷射點指向一個元素",
+      "discussionDesc": "拋出問題，指定發起同學"
     },
     "tts": {
       "preview": "試聽",

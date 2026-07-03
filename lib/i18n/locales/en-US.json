@@ -345,7 +345,6 @@
     },
     "timeline": {
       "title": "Narration script",
-      "dragToAdd": "Drag to add",
       "regenAllTts": "Regenerate all voiceover",
       "voiceAll": "Voice all",
       "counts": "{{speech}} narration · {{cue}} cues",
@@ -363,14 +362,21 @@
       "fieldAction": "Action",
       "fieldElement": "Element",
       "fieldContent": "Content",
-      "addDiscussion": "Add discussion",
       "addDiscussionExists": "Only one discussion per scene",
       "discussionTerminal": "END",
       "discussionTerminalHint": "A discussion stays at the end of the scene (one per scene)",
       "discussionTopicPlaceholder": "Discussion topic (required)",
       "discussionPromptPlaceholder": "Guidance prompt (optional)",
       "discussionAgent": "Initiator",
-      "discussionAgentUnset": "Unspecified"
+      "discussionAgentUnset": "Unspecified",
+      "addAction": "Add action"
+    },
+    "picker": {
+      "title": "Insert action",
+      "speechDesc": "Speak a line — can auto-voice",
+      "spotlightDesc": "Highlight an element on the canvas",
+      "laserDesc": "Point a laser at an element",
+      "discussionDesc": "Pose a question, pick who starts it"
     },
     "tts": {
       "preview": "Preview",

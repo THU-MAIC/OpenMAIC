@@ -345,7 +345,6 @@
     },
     "timeline": {
       "title": "ナレーション台本",
-      "dragToAdd": "ドラッグして追加",
       "regenAllTts": "すべての音声を再生成",
       "voiceAll": "全音声生成",
       "counts": "{{speech}} ナレーション · {{cue}} アクション",
@@ -363,14 +362,21 @@
       "fieldAction": "アクション",
       "fieldElement": "要素",
       "fieldContent": "内容",
-      "addDiscussion": "ディスカッションを追加",
       "addDiscussionExists": "各シーンにディスカッションは1つまで",
       "discussionTerminal": "末尾",
       "discussionTerminalHint": "ディスカッションはシーンの末尾に固定され、各シーンに1つだけです",
       "discussionTopicPlaceholder": "ディスカッションの主題（必須）",
       "discussionPromptPlaceholder": "ガイドプロンプト（任意）",
       "discussionAgent": "開始者",
-      "discussionAgentUnset": "指定なし"
+      "discussionAgentUnset": "指定なし",
+      "addAction": "アクションを追加"
+    },
+    "picker": {
+      "title": "アクションを挿入",
+      "speechDesc": "ナレーションを話す（自動音声対応）",
+      "spotlightDesc": "キャンバス上の要素をハイライト",
+      "laserDesc": "レーザーで要素を指し示す",
+      "discussionDesc": "問いを投げかけ、発言者を指定"
     },
     "tts": {
       "preview": "試聴",

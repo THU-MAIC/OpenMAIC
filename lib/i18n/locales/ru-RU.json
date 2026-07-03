@@ -345,7 +345,6 @@
     },
     "timeline": {
       "title": "Сценарий закадрового текста",
-      "dragToAdd": "Перетащите, чтобы добавить",
       "regenAllTts": "Сгенерировать всю озвучку заново",
       "voiceAll": "Озвучить всё",
       "counts": "{{speech}} реплик · {{cue}} действий",
@@ -363,14 +362,21 @@
       "fieldAction": "Действие",
       "fieldElement": "Элемент",
       "fieldContent": "Содержимое",
-      "addDiscussion": "Добавить обсуждение",
       "addDiscussionExists": "Только одно обсуждение на сцену",
       "discussionTerminal": "КОНЕЦ",
       "discussionTerminalHint": "Обсуждение закрепляется в конце сцены (одно на сцену)",
       "discussionTopicPlaceholder": "Тема обсуждения (обязательно)",
       "discussionPromptPlaceholder": "Подсказка (необязательно)",
       "discussionAgent": "Инициатор",
-      "discussionAgentUnset": "Не указан"
+      "discussionAgentUnset": "Не указан",
+      "addAction": "Добавить действие"
+    },
+    "picker": {
+      "title": "Вставить действие",
+      "speechDesc": "Произнести реплику — можно озвучить автоматически",
+      "spotlightDesc": "Выделить элемент на холсте",
+      "laserDesc": "Указать на элемент лазером",
+      "discussionDesc": "Задать вопрос и выбрать, кто начнёт"
     },
     "tts": {
       "preview": "Прослушать",

@@ -330,7 +330,6 @@
     },
     "timeline": {
       "title": "Roteiro de narração",
-      "dragToAdd": "Arraste para adicionar",
       "regenAllTts": "Regenerar toda a narração",
       "voiceAll": "Narrar tudo",
       "counts": "{{speech}} narração · {{cue}} ações",
@@ -348,14 +347,21 @@
       "fieldAction": "Ação",
       "fieldElement": "Elemento",
       "fieldContent": "Conteúdo",
-      "addDiscussion": "Adicionar discussão",
       "addDiscussionExists": "Apenas uma discussão por cena",
       "discussionTerminal": "FIM",
       "discussionTerminalHint": "A discussão fica no final da cena (uma por cena)",
       "discussionTopicPlaceholder": "Tópico da discussão (obrigatório)",
       "discussionPromptPlaceholder": "Orientação (opcional)",
       "discussionAgent": "Iniciador",
-      "discussionAgentUnset": "Não especificado"
+      "discussionAgentUnset": "Não especificado",
+      "addAction": "Adicionar ação"
+    },
+    "picker": {
+      "title": "Inserir ação",
+      "speechDesc": "Fale uma frase — pode ter narração automática",
+      "spotlightDesc": "Destacar um elemento na tela",
+      "laserDesc": "Apontar um laser para um elemento",
+      "discussionDesc": "Faça uma pergunta e escolha quem inicia"
     },
     "tts": {
       "preview": "Pré-visualizar",
