@@ -37,7 +37,12 @@ import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
-import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
+import {
+  type GenerationSessionState,
+  ALL_STEPS,
+  getActiveSteps,
+  getGenerationStepText,
+} from './types';
 import { StepVisualizer } from './components/visualizers';
 import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 
@@ -231,7 +236,7 @@ function GenerationPreviewContent() {
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    // Use a local mutable copy so we can update it after PDF parsing
+    // Use a local mutable copy so we can update it after document extraction
     let currentSession = generationSession;
 
     setError(null);
@@ -241,38 +246,38 @@ function GenerationPreviewContent() {
       // Compute active steps for this session (recomputed after session mutations)
       let activeSteps = getActiveSteps(currentSession);
 
-      // Determine if we need the PDF analysis step
+      // Determine if we need the document analysis step
       const hasPdfToAnalyze = !!currentSession.pdfStorageKey && !currentSession.pdfText;
-      // If no PDF to analyze, skip to the next available step
+      // If no document to analyze, skip to the next available step
       if (!hasPdfToAnalyze) {
         const firstNonPdfIdx = activeSteps.findIndex((s) => s.id !== 'pdf-analysis');
         setCurrentStepIndex(Math.max(0, firstNonPdfIdx));
       }
 
-      // Step 0: Parse PDF if needed
+      // Step 0: Extract uploaded course material if needed
       if (hasPdfToAnalyze) {
-        log.debug('=== Generation Preview: Parsing PDF ===');
+        log.debug('=== Generation Preview: Extracting course material ===');
         const pdfBlob = await loadPdfBlob(currentSession.pdfStorageKey!);
         if (!pdfBlob) {
-          throw new Error(t('generation.pdfLoadFailed'));
+          throw new Error(t('generation.courseMaterialLoadFailed'));
         }
 
         // Ensure pdfBlob is a valid Blob with content
         if (!(pdfBlob instanceof Blob) || pdfBlob.size === 0) {
-          log.error('Invalid PDF blob:', {
+          log.error('Invalid course material blob:', {
             type: typeof pdfBlob,
             size: pdfBlob instanceof Blob ? pdfBlob.size : 'N/A',
           });
-          throw new Error(t('generation.pdfLoadFailed'));
+          throw new Error(t('generation.courseMaterialLoadFailed'));
         }
 
         // Wrap as a File to guarantee multipart/form-data with correct content-type
         const pdfFile = new File([pdfBlob], currentSession.pdfFileName || 'document.pdf', {
-          type: 'application/pdf',
+          type: currentSession.documentMimeType || pdfBlob.type || 'application/pdf',
         });
 
         const parseFormData = new FormData();
-        parseFormData.append('pdf', pdfFile);
+        parseFormData.append('file', pdfFile);
 
         if (currentSession.pdfProviderId) {
           parseFormData.append('providerId', currentSession.pdfProviderId);
@@ -284,7 +289,7 @@ function GenerationPreviewContent() {
           parseFormData.append('baseUrl', currentSession.pdfProviderConfig.baseUrl);
         }
 
-        const parseResponse = await fetch('/api/parse-pdf', {
+        const parseResponse = await fetch('/api/extract-document', {
           method: 'POST',
           body: parseFormData,
           signal,
@@ -292,12 +297,12 @@ function GenerationPreviewContent() {
 
         if (!parseResponse.ok) {
           const errorData = await parseResponse.json();
-          throw new Error(errorData.error || t('generation.pdfParseFailed'));
+          throw new Error(errorData.error || t('generation.courseMaterialParseFailed'));
         }
 
         const parseResult = await parseResponse.json();
         if (!parseResult.success || !parseResult.data) {
-          throw new Error(t('generation.pdfParseFailed'));
+          throw new Error(t('generation.courseMaterialParseFailed'));
         }
 
         let pdfText = parseResult.data.text as string;
@@ -358,7 +363,7 @@ function GenerationPreviewContent() {
           }),
         );
 
-        // Update session with parsed PDF data
+        // Update session with extracted document data
         const updatedSession = {
           ...currentSession,
           pdfText,
@@ -1137,6 +1142,7 @@ function GenerationPreviewContent() {
     activeSteps.length > 0
       ? activeSteps[Math.min(currentStepIndex, activeSteps.length - 1)]
       : ALL_STEPS[0];
+  const activeStepText = getGenerationStepText(activeStep, session);
 
   if (isReviewingOutlines) {
     const outlineStepIndex = Math.max(
@@ -1327,14 +1333,14 @@ function GenerationPreviewContent() {
                         ? t('generation.generationFailed')
                         : isComplete
                           ? t('generation.generationComplete')
-                          : t(activeStep.title)}
+                          : t(activeStepText.title, activeStepText.titleValues)}
                     </h2>
                     <p className="text-muted-foreground text-base">
                       {error
                         ? error
                         : isComplete
                           ? t('generation.classroomReady')
-                          : statusMessage || t(activeStep.description)}
+                          : statusMessage || t(activeStepText.description)}
                     </p>
                   </motion.div>
                 </AnimatePresence>

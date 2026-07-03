@@ -13,6 +13,9 @@
     "pdfParser": "Analisador",
     "pdfUpload": "Enviar PDF",
     "removePdf": "Remover arquivo",
+    "documentExtractor": "Extrator",
+    "courseMaterialUpload": "Enviar material do curso",
+    "removeCourseMaterial": "Remover arquivo",
     "webSearchOn": "Ativada",
     "webSearchOff": "Clique para ativar",
     "webSearchDesc": "Pesquise na web por informações atualizadas antes da geração",
@@ -806,16 +809,20 @@
   },
   "upload": {
     "pdfSizeLimit": "Suporta arquivos PDF de até 50 MB",
+    "courseMaterialSizeLimit": "Suporta PDF, DOCX, PPTX, TXT e Markdown de até 50 MB",
     "generateFailed": "Falha ao gerar a sala, tente novamente",
     "requirementPlaceholder": "Conte-me o que você quer aprender, por exemplo:\n\"Me ensine Python do zero em 30 minutos\"\n\"Explique a Transformada de Fourier no quadro\"\n\"Como jogar o jogo de tabuleiro Avalon\"",
     "requirementRequired": "Por favor, descreva os objetivos do curso",
-    "fileTooLarge": "Arquivo muito grande. Selecione um PDF com menos de 50 MB"
+    "fileTooLarge": "Arquivo muito grande. Selecione um arquivo com menos de 50 MB",
+    "unsupportedCourseMaterial": "Tipo de material não suportado. Envie PDF, DOCX, PPTX, TXT ou Markdown."
   },
   "generation": {
-    "analyzingPdf": "Analisando o Documento PDF",
-    "analyzingPdfDesc": "Extraindo estrutura e conteúdo do documento...",
     "pdfLoadFailed": "Falha ao carregar o PDF, tente novamente",
     "pdfParseFailed": "Falha ao analisar o PDF",
+    "analyzingCourseMaterial": "Analisando arquivo {{type}}",
+    "analyzingCourseMaterialDesc": "Extraindo estrutura e conteúdo do documento...",
+    "courseMaterialLoadFailed": "Falha ao carregar o material do curso, tente novamente",
+    "courseMaterialParseFailed": "Falha ao analisar o material do curso",
     "streamNotReadable": "Não foi possível ler o fluxo de geração",
     "generatingOutlines": "Esboçando o Roteiro do Curso",
     "generatingOutlinesDesc": "Estruturando o caminho de aprendizagem...",

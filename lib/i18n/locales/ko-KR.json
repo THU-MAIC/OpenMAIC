@@ -13,6 +13,9 @@
     "pdfParser": "파서",
     "pdfUpload": "PDF 업로드",
     "removePdf": "파일 제거",
+    "documentExtractor": "추출기",
+    "courseMaterialUpload": "강의 자료 업로드",
+    "removeCourseMaterial": "파일 제거",
     "webSearchOn": "사용 중",
     "webSearchOff": "클릭하여 사용",
     "webSearchDesc": "생성 전 최신 정보를 웹에서 검색합니다",
@@ -806,16 +809,20 @@
   },
   "upload": {
     "pdfSizeLimit": "최대 50MB PDF 파일을 지원합니다",
+    "courseMaterialSizeLimit": "최대 50MB PDF, DOCX, PPTX, TXT, Markdown 파일을 지원합니다",
     "generateFailed": "교실 생성에 실패했습니다. 다시 시도해주세요",
     "requirementPlaceholder": "학습하고 싶은 내용을 자유롭게 입력하세요, 예:\n\"파이썬을 30분 만에 처음부터 가르쳐주세요\"\n\"칠판에 푸리에 변환을 설명해주세요\"\n\"보드게임 Avalon 하는 방법\"",
     "requirementRequired": "강좌 요구사항을 입력해주세요",
-    "fileTooLarge": "파일이 너무 큽니다. 50MB 미만의 PDF 파일을 선택해주세요"
+    "fileTooLarge": "파일이 너무 큽니다. 50MB 미만의 파일을 선택해주세요",
+    "unsupportedCourseMaterial": "지원하지 않는 강의 자료 형식입니다. PDF, DOCX, PPTX, TXT 또는 Markdown을 업로드해주세요."
   },
   "generation": {
-    "analyzingPdf": "PDF 문서 분석 중",
-    "analyzingPdfDesc": "문서 구조와 내용을 추출하고 있어요...",
     "pdfLoadFailed": "PDF 파일 불러오기에 실패했습니다. 다시 시도해주세요",
     "pdfParseFailed": "PDF 파싱에 실패했습니다",
+    "analyzingCourseMaterial": "{{type}} 파일 분석 중",
+    "analyzingCourseMaterialDesc": "문서 구조와 내용을 추출하고 있어요...",
+    "courseMaterialLoadFailed": "강의 자료를 불러오지 못했습니다. 다시 시도해주세요",
+    "courseMaterialParseFailed": "강의 자료 파싱에 실패했습니다",
     "streamNotReadable": "생성 스트림을 읽을 수 없습니다",
     "generatingOutlines": "강좌 개요 작성 중",
     "generatingOutlinesDesc": "학습 경로를 구성하고 있어요...",

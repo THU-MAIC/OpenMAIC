@@ -332,6 +332,10 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('siliconflow', 'THUDM/GLM-4.1V-9B-Thinking')]: siliconflowBudget,
   [getModelMetadataKey('siliconflow', 'THUDM/GLM-Z1-Rumination-32B-0414')]: siliconflowBudget,
 
+  [getModelMetadataKey('doubao', 'doubao-seed-2-1-pro-260628')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-2-1-turbo-260628')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-evolving')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-character-260628')]: toggleCapability('doubao'),
   [getModelMetadataKey('doubao', 'doubao-seed-2-0-pro-260215')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-2-0-lite-260215')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-2-0-mini-260215')]: doubaoSeed20Effort,

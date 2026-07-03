@@ -13,6 +13,9 @@
     "pdfParser": "Parser",
     "pdfUpload": "Upload PDF",
     "removePdf": "Remove file",
+    "documentExtractor": "Extractor",
+    "courseMaterialUpload": "Upload course material",
+    "removeCourseMaterial": "Remove file",
     "webSearchOn": "Enabled",
     "webSearchOff": "Click to enable",
     "webSearchDesc": "Search the web for up-to-date information before generation",
@@ -806,16 +809,20 @@
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",
+    "courseMaterialSizeLimit": "Supports PDF, DOCX, PPTX, TXT, and Markdown files up to 50MB",
     "generateFailed": "Failed to generate classroom, please try again",
     "requirementPlaceholder": "Tell me anything you want to learn, e.g.\n\"Teach me Python from scratch in 30 minutes\"\n\"Explain Fourier Transform on the whiteboard\"\n\"How to play the board game Avalon\"",
     "requirementRequired": "Please enter course requirements",
-    "fileTooLarge": "File too large. Please select a PDF file smaller than 50MB"
+    "fileTooLarge": "File too large. Please select a file smaller than 50MB",
+    "unsupportedCourseMaterial": "Unsupported course material type. Please upload PDF, DOCX, PPTX, TXT, or Markdown."
   },
   "generation": {
-    "analyzingPdf": "Analyzing PDF Document",
-    "analyzingPdfDesc": "Extracting document structure and content...",
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",
+    "analyzingCourseMaterial": "Analyzing {{type}} file",
+    "analyzingCourseMaterialDesc": "Extracting document structure and content...",
+    "courseMaterialLoadFailed": "Failed to load course material, please try again",
+    "courseMaterialParseFailed": "Course material parsing failed",
     "streamNotReadable": "Unable to read generation stream",
     "generatingOutlines": "Drafting Course Outline",
     "generatingOutlinesDesc": "Structuring the learning path...",

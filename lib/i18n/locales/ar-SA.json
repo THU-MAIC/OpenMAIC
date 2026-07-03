@@ -13,6 +13,9 @@
     "pdfParser": "محلل PDF",
     "pdfUpload": "رفع PDF",
     "removePdf": "إزالة الملف",
+    "documentExtractor": "مستخرج المستندات",
+    "courseMaterialUpload": "رفع مادة المقرر",
+    "removeCourseMaterial": "إزالة الملف",
     "webSearchOn": "مُفعّل",
     "webSearchOff": "انقر للتفعيل",
     "webSearchDesc": "البحث في الإنترنت عن معلومات محدّثة قبل التوليد",
@@ -806,16 +809,20 @@
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",
+    "courseMaterialSizeLimit": "يدعم ملفات PDF وDOCX وPPTX وTXT وMarkdown حتى 50 ميغابايت",
     "generateFailed": "فشل توليد الفصل، يرجى المحاولة مرة أخرى",
     "requirementPlaceholder": "أخبرني بأي شيء تريد تعلمه، مثلاً:\n\"علمني بايثون من الصفر في 30 دقيقة\"\n\"اشرح تحويل فورييه على السبورة\"\n\"كيف تلعب لعبة أفالون\"",
     "requirementRequired": "يرجى إدخال متطلبات المقرر",
-    "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف PDF أصغر من 50 ميغابايت"
+    "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف أصغر من 50 ميغابايت",
+    "unsupportedCourseMaterial": "نوع مادة المقرر غير مدعوم. يرجى رفع PDF أو DOCX أو PPTX أو TXT أو Markdown."
   },
   "generation": {
-    "analyzingPdf": "تحليل مستند PDF",
-    "analyzingPdfDesc": "جارٍ استخراج هيكل المستند ومحتواه...",
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",
     "pdfParseFailed": "فشل تحليل PDF",
+    "analyzingCourseMaterial": "تحليل ملف {{type}}",
+    "analyzingCourseMaterialDesc": "جارٍ استخراج هيكل المستند ومحتواه...",
+    "courseMaterialLoadFailed": "فشل تحميل مادة المقرر، يرجى المحاولة مرة أخرى",
+    "courseMaterialParseFailed": "فشل تحليل مادة المقرر",
     "streamNotReadable": "تعذرت قراءة تدفق التوليد",
     "generatingOutlines": "صياغة مخطط المقرر",
     "generatingOutlinesDesc": "جارٍ هيكلة مسار التعلم...",
