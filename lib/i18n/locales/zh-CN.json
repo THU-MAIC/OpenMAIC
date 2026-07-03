@@ -15,6 +15,8 @@
     "removePdf": "移除文件",
     "documentExtractor": "文档解析器",
     "courseMaterialUpload": "上传课程材料",
+    "courseMaterialsSelected": "已选择 {{n}} 个材料",
+    "courseMaterialMergeOrder": "材料会按下方显示顺序合并。",
     "removeCourseMaterial": "移除文件",
     "webSearchOn": "已开启",
     "webSearchOff": "点击开启",
@@ -814,6 +816,8 @@
     "requirementPlaceholder": "输入你想学的任何内容，例如：\n「从零学 Python，30 分钟写出第一个程序」\n「用白板给我讲解傅里叶变换」\n「阿瓦隆桌游怎么玩」",
     "requirementRequired": "请输入课程需求",
     "fileTooLarge": "文件过大，请选择小于 50MB 的文件",
+    "courseMaterialCountLimit": "最多可上传 5 个课程材料文件",
+    "courseMaterialTotalSizeLimit": "课程材料总大小需小于 150MB",
     "unsupportedCourseMaterial": "不支持的课程材料类型，请上传 PDF、DOCX、PPTX、TXT 或 Markdown 文件"
   },
   "generation": {

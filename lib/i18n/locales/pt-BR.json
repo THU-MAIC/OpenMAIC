@@ -15,6 +15,8 @@
     "removePdf": "Remover arquivo",
     "documentExtractor": "Extrator",
     "courseMaterialUpload": "Enviar material do curso",
+    "courseMaterialsSelected": "{{n}} materiais selecionados",
+    "courseMaterialMergeOrder": "Os materiais serão mesclados na ordem mostrada abaixo.",
     "removeCourseMaterial": "Remover arquivo",
     "webSearchOn": "Ativada",
     "webSearchOff": "Clique para ativar",
@@ -814,6 +816,8 @@
     "requirementPlaceholder": "Conte-me o que você quer aprender, por exemplo:\n\"Me ensine Python do zero em 30 minutos\"\n\"Explique a Transformada de Fourier no quadro\"\n\"Como jogar o jogo de tabuleiro Avalon\"",
     "requirementRequired": "Por favor, descreva os objetivos do curso",
     "fileTooLarge": "Arquivo muito grande. Selecione um arquivo com menos de 50 MB",
+    "courseMaterialCountLimit": "Você pode enviar até 5 arquivos de material do curso",
+    "courseMaterialTotalSizeLimit": "O tamanho total dos materiais deve ser menor que 150 MB",
     "unsupportedCourseMaterial": "Tipo de material não suportado. Envie PDF, DOCX, PPTX, TXT ou Markdown."
   },
   "generation": {

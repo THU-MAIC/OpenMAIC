@@ -15,6 +15,8 @@
     "removePdf": "ファイルを削除",
     "documentExtractor": "抽出器",
     "courseMaterialUpload": "教材をアップロード",
+    "courseMaterialsSelected": "{{n}}件の教材を選択済み",
+    "courseMaterialMergeOrder": "教材は下に表示された順序で結合されます。",
     "removeCourseMaterial": "ファイルを削除",
     "webSearchOn": "有効",
     "webSearchOff": "クリックして有効化",
@@ -814,6 +816,8 @@
     "requirementPlaceholder": "学びたいことを自由に入力してください。例えば：\n「Pythonをゼロから30分で教えて」\n「フーリエ変換をホワイトボードで解説して」\n「ボードゲーム『アバロン』の遊び方」",
     "requirementRequired": "コースの要件を入力してください",
     "fileTooLarge": "ファイルが大きすぎます。50MB以下のファイルを選択してください",
+    "courseMaterialCountLimit": "教材ファイルは最大5件までアップロードできます",
+    "courseMaterialTotalSizeLimit": "教材の合計サイズは150MB未満にしてください",
     "unsupportedCourseMaterial": "対応していない教材形式です。PDF、DOCX、PPTX、TXT、Markdownをアップロードしてください。"
   },
   "generation": {

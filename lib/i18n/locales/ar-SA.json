@@ -15,6 +15,8 @@
     "removePdf": "إزالة الملف",
     "documentExtractor": "مستخرج المستندات",
     "courseMaterialUpload": "رفع مادة المقرر",
+    "courseMaterialsSelected": "تم تحديد {{n}} مواد",
+    "courseMaterialMergeOrder": "سيتم دمج المواد بالترتيب المعروض أدناه.",
     "removeCourseMaterial": "إزالة الملف",
     "webSearchOn": "مُفعّل",
     "webSearchOff": "انقر للتفعيل",
@@ -814,6 +816,8 @@
     "requirementPlaceholder": "أخبرني بأي شيء تريد تعلمه، مثلاً:\n\"علمني بايثون من الصفر في 30 دقيقة\"\n\"اشرح تحويل فورييه على السبورة\"\n\"كيف تلعب لعبة أفالون\"",
     "requirementRequired": "يرجى إدخال متطلبات المقرر",
     "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف أصغر من 50 ميغابايت",
+    "courseMaterialCountLimit": "يمكنك رفع ما يصل إلى 5 ملفات لمواد المقرر",
+    "courseMaterialTotalSizeLimit": "يجب أن يكون الحجم الإجمالي لمواد المقرر أقل من 150 ميغابايت",
     "unsupportedCourseMaterial": "نوع مادة المقرر غير مدعوم. يرجى رفع PDF أو DOCX أو PPTX أو TXT أو Markdown."
   },
   "generation": {

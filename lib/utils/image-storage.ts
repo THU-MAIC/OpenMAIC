@@ -175,3 +175,6 @@ export async function loadPdfBlob(key: string): Promise<Blob | null> {
   const record = await db.imageFiles.get(key);
   return record?.blob ?? null;
 }
+
+export const storeDocumentBlob = storePdfBlob;
+export const loadDocumentBlob = loadPdfBlob;

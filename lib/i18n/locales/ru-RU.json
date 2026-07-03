@@ -15,6 +15,8 @@
     "removePdf": "Удалить файл",
     "documentExtractor": "Экстрактор",
     "courseMaterialUpload": "Загрузить материал курса",
+    "courseMaterialsSelected": "Выбрано материалов: {{n}}",
+    "courseMaterialMergeOrder": "Материалы объединяются в порядке, показанном ниже.",
     "removeCourseMaterial": "Удалить файл",
     "webSearchOn": "Включено",
     "webSearchOff": "Нажмите для включения",
@@ -814,6 +816,8 @@
     "requirementPlaceholder": "Расскажите, что вы хотите изучить, например:\n\"Научи меня Python с нуля за 30 минут\"\n\"Объясни преобразование Фурье на доске\"\n\"Как играть в настольную игру Авалон\"",
     "requirementRequired": "Пожалуйста, укажите требования к курсу",
     "fileTooLarge": "Файл слишком большой. Выберите файл до 50 МБ",
+    "courseMaterialCountLimit": "Можно загрузить до 5 файлов материалов курса",
+    "courseMaterialTotalSizeLimit": "Общий размер материалов курса должен быть меньше 150 МБ",
     "unsupportedCourseMaterial": "Неподдерживаемый тип материала. Загрузите PDF, DOCX, PPTX, TXT или Markdown."
   },
   "generation": {

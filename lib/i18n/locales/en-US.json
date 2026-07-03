@@ -15,6 +15,8 @@
     "removePdf": "Remove file",
     "documentExtractor": "Extractor",
     "courseMaterialUpload": "Upload course material",
+    "courseMaterialsSelected": "{{n}} materials selected",
+    "courseMaterialMergeOrder": "Materials are merged in the order shown below.",
     "removeCourseMaterial": "Remove file",
     "webSearchOn": "Enabled",
     "webSearchOff": "Click to enable",
@@ -814,6 +816,8 @@
     "requirementPlaceholder": "Tell me anything you want to learn, e.g.\n\"Teach me Python from scratch in 30 minutes\"\n\"Explain Fourier Transform on the whiteboard\"\n\"How to play the board game Avalon\"",
     "requirementRequired": "Please enter course requirements",
     "fileTooLarge": "File too large. Please select a file smaller than 50MB",
+    "courseMaterialCountLimit": "You can upload up to 5 course material files",
+    "courseMaterialTotalSizeLimit": "Total course material size must be under 150MB",
     "unsupportedCourseMaterial": "Unsupported course material type. Please upload PDF, DOCX, PPTX, TXT, or Markdown."
   },
   "generation": {

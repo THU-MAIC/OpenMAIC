@@ -36,9 +36,13 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { storePdfBlob } from '@/lib/utils/image-storage';
+import { storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
-import type { UserRequirements } from '@/lib/types/generation';
+import type {
+  SelectedCourseMaterial,
+  SessionDocumentSource,
+  UserRequirements,
+} from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
@@ -74,7 +78,7 @@ const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 const PPTX_IMPORT_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PPTX_IMPORT === 'true';
 
 interface FormState {
-  pdfFile: File | null;
+  courseMaterials: SelectedCourseMaterial[];
   requirement: string;
   webSearch: boolean;
   interactiveMode: boolean;
@@ -82,7 +86,7 @@ interface FormState {
 }
 
 const initialFormState: FormState = {
-  pdfFile: null,
+  courseMaterials: [],
   requirement: '',
   webSearch: false,
   interactiveMode: false,
@@ -283,6 +287,39 @@ function HomePage() {
     }
   };
 
+  const addCourseMaterials = (files: File[]) => {
+    setForm((prev) => {
+      const existing = new Set(
+        prev.courseMaterials.map((item) => `${item.name}:${item.size}:${item.lastModified}`),
+      );
+      const startOrder = prev.courseMaterials.length + 1;
+      const additions = files
+        .filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`))
+        .map((file, index) => ({
+          id: nanoid(8),
+          file,
+          name: file.name,
+          size: file.size,
+          lastModified: file.lastModified,
+          type: file.type,
+          order: startOrder + index,
+        }));
+
+      return additions.length > 0
+        ? { ...prev, courseMaterials: [...prev.courseMaterials, ...additions] }
+        : prev;
+    });
+  };
+
+  const removeCourseMaterial = (id: string) => {
+    setForm((prev) => ({
+      ...prev,
+      courseMaterials: prev.courseMaterials
+        .filter((item) => item.id !== id)
+        .map((item, index) => ({ ...item, order: index + 1 })),
+    }));
+  };
+
   const handleGenerate = async () => {
     // No model/provider guard here: generation is gated by `canGenerate`
     // (requires a usable provider), and under the #580 invariant a usable
@@ -306,20 +343,11 @@ function HomePage() {
         ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
       };
 
-      let pdfStorageKey: string | undefined;
-      let pdfFileName: string | undefined;
-      let documentMimeType: string | undefined;
+      let documentSources: SessionDocumentSource[] | undefined;
       let pdfProviderId: string | undefined;
       let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
 
-      if (form.pdfFile) {
-        pdfStorageKey = await storePdfBlob(form.pdfFile);
-        pdfFileName = form.pdfFile.name;
-        documentMimeType = normalizeDocumentMimeType({
-          mimeType: form.pdfFile.type,
-          fileName: form.pdfFile.name,
-        });
-
+      if (form.courseMaterials.length > 0) {
         const settings = useSettingsStore.getState();
         pdfProviderId = settings.pdfProviderId;
         const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
@@ -329,6 +357,25 @@ function HomePage() {
             baseUrl: providerCfg.baseUrl,
           };
         }
+
+        documentSources = await Promise.all(
+          [...form.courseMaterials]
+            .sort((a, b) => a.order - b.order)
+            .map(async (item, index) => ({
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              lastModified: item.lastModified,
+              mimeType: normalizeDocumentMimeType({
+                mimeType: item.file.type,
+                fileName: item.file.name,
+              }),
+              order: index + 1,
+              storageKey: await storeDocumentBlob(item.file),
+              providerId: pdfProviderId,
+              providerConfig: pdfProviderConfig,
+            })),
+        );
       }
 
       const sessionState = {
@@ -337,9 +384,11 @@ function HomePage() {
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
-        pdfStorageKey,
-        pdfFileName,
-        documentMimeType,
+        documentSources,
+        // Backward-compatible single-document fields for previously saved sessions.
+        pdfStorageKey: documentSources?.[0]?.storageKey,
+        pdfFileName: documentSources?.[0]?.name,
+        documentMimeType: documentSources?.[0]?.mimeType,
         pdfProviderId,
         pdfProviderConfig,
         sceneOutlines: null,
@@ -568,8 +617,9 @@ function HomePage() {
                     setSettingsSection(section);
                     setSettingsOpen(true);
                   }}
-                  pdfFile={form.pdfFile}
-                  onPdfFileChange={(f) => updateForm('pdfFile', f)}
+                  courseMaterials={form.courseMaterials}
+                  onCourseMaterialsAdd={addCourseMaterials}
+                  onCourseMaterialRemove={removeCourseMaterial}
                   onPdfError={setError}
                 />
               </div>
