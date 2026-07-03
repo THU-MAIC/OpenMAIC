@@ -13,7 +13,7 @@ import type {
 } from '@/lib/types/generation';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
-import { sortDocumentImagesForVision } from '@/lib/document';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
 import type { AICallFn, GenerationResult, GenerationCallbacks } from './pipeline-types';

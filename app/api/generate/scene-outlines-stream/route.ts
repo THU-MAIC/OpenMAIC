@@ -36,7 +36,7 @@ import type {
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
-import { sortDocumentImagesForVision } from '@/lib/document';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 const log = createLogger('Outlines Stream');
 

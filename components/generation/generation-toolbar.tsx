@@ -37,7 +37,10 @@ import {
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
 import { COURSE_MATERIAL_ACCEPT, isSupportedCourseMaterial } from '@/lib/document/mime';
-import { MAX_DOCUMENT_BUNDLE_FILES, MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES } from '@/lib/document';
+import {
+  MAX_DOCUMENT_BUNDLE_FILES,
+  MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
+} from '@/lib/document/bundle';
 import type { SelectedCourseMaterial } from '@/lib/types/generation';
 
 // ─── Constants ───────────────────────────────────────────────

@@ -31,7 +31,7 @@ import {
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
-import { buildDocumentBundle, type ParsedDocumentPart } from '@/lib/document';
+import { buildDocumentBundle, type ParsedDocumentPart } from '@/lib/document/bundle';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
 import type { Stage } from '@/lib/types/stage';
