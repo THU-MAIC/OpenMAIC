@@ -51,6 +51,10 @@ function pdfLayoutType(value: unknown): NonNullable<ParsedPdfContent['layout']>[
     : 'text';
 }
 
+function isMinerUMarkdownParser(parser: unknown): boolean {
+  return parser === 'mineru' || parser === 'mineru-cloud';
+}
+
 export function parsedPdfToDocumentArtifact(
   parsed: ParsedPdfContent,
   input: DocumentExtractorInput,
@@ -60,7 +64,7 @@ export function parsedPdfToDocumentArtifact(
   if (parsed.text) {
     blocks.push({
       id: 'document-text',
-      type: parsed.metadata?.parser === 'mineru' ? 'markdown' : 'text',
+      type: isMinerUMarkdownParser(parsed.metadata?.parser) ? 'markdown' : 'text',
       text: parsed.text,
     });
   }

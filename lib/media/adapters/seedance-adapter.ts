@@ -7,7 +7,7 @@
  * Request format (text-to-video):
  *   POST /api/v3/contents/generations/tasks
  *   {
- *     "model": "doubao-seedance-1-5-pro-251215",
+ *     "model": "doubao-seedance-2-0-260128",
  *     "content": [{ "type": "text", "text": "prompt here" }],
  *     "ratio": "16:9",
  *     "duration": 5,
@@ -16,10 +16,13 @@
  *   }
  *
  * Supported models:
- * - doubao-seedance-1-5-pro-251215     (latest, 4~12s)
- * - doubao-seedance-1-0-pro-250528     (stable, 2~12s)
- * - doubao-seedance-1-0-pro-fast-251015 (faster, 2~12s)
- * - doubao-seedance-1-0-lite-t2v-250428 (lightweight, 2~12s)
+ * - doubao-seedance-2-0-260128
+ * - doubao-seedance-2-0-fast-260128
+ * - doubao-seedance-2-0-mini-260615
+ * - doubao-seedance-1-5-pro-251215
+ * - doubao-seedance-1-0-pro-250528
+ * - doubao-seedance-1-0-pro-fast-251015
+ * - doubao-seedance-1-0-lite-t2v-250428
  *
  * API docs: https://www.volcengine.com/docs/6492/2165104
  */
@@ -30,9 +33,19 @@ import type {
   VideoGenerationResult,
 } from '../types';
 
-const DEFAULT_MODEL = 'doubao-seedance-1-5-pro-251215';
+const DEFAULT_MODEL = 'doubao-seedance-2-0-260128';
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
 const POLL_INTERVAL_MS = 5000;
+
+/**
+ * Resolves the Ark API root. A bare host gets the standard `/api/v3` appended; a
+ * baseUrl that already carries an `/api/...` path (e.g. a token plan's
+ * `https://ark.cn-beijing.volces.com/api/plan/v3`) is used verbatim.
+ */
+function resolveArkRoot(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '');
+  return /\/api\//.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
+}
 const MAX_POLL_ATTEMPTS = 60; // 5 minutes max
 
 /** Response shape for task creation (only returns id) */
@@ -111,7 +124,7 @@ export async function testSeedanceConnectivity(
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
   try {
     const response = await fetch(
-      `${baseUrl}/api/v3/contents/generations/tasks/connectivity-test-nonexistent`,
+      `${resolveArkRoot(baseUrl)}/contents/generations/tasks/connectivity-test-nonexistent`,
       {
         method: 'GET',
         headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -156,7 +169,7 @@ export async function submitSeedanceTask(
   const resolution = toSeedanceResolution(options.resolution);
   if (resolution) body.resolution = resolution;
 
-  const response = await fetch(`${baseUrl}/api/v3/contents/generations/tasks`, {
+  const response = await fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -189,7 +202,7 @@ export async function pollSeedanceTask(
 ): Promise<VideoGenerationResult | null> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  const response = await fetch(`${baseUrl}/api/v3/contents/generations/tasks/${taskId}`, {
+  const response = await fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks/${taskId}`, {
     method: 'GET',
     headers: {
       Authorization: `Bearer ${config.apiKey}`,

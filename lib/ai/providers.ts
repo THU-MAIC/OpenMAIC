@@ -870,6 +870,34 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/doubao.svg',
     models: [
       {
+        id: 'doubao-seed-2-1-pro-260628',
+        name: 'Doubao Seed 2.1 Pro',
+        contextWindow: 256000,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'doubao-seed-2-1-turbo-260628',
+        name: 'Doubao Seed 2.1 Turbo',
+        contextWindow: 256000,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'doubao-seed-evolving',
+        name: 'Doubao Seed Evolving',
+        contextWindow: 256000,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
+        id: 'doubao-seed-character-260628',
+        name: 'Doubao Seed Character',
+        contextWindow: 256000,
+        outputWindow: 32768,
+        capabilities: { streaming: true, tools: true, vision: true },
+      },
+      {
         id: 'doubao-seed-2-0-pro-260215',
         name: 'Doubao Seed 2.0 Pro',
         contextWindow: 128000,

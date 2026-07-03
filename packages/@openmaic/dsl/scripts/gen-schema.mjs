@@ -28,6 +28,11 @@ function getGenerator() {
     tsconfig: resolve(pkgRoot, 'tsconfig.json'),
     skipTypeCheck: true,
     topRef: true,
+    // `extended` parses annotation tags — notably `@default`, which carries the
+    // canonical static element defaults (see slides.ts / normalize.ts) onto the
+    // emitted schema so non-TS consumers ship them too. It is the generator's
+    // default; pinned here because the contract now depends on it.
+    jsDoc: 'extended',
   });
   return generator;
 }

@@ -283,6 +283,17 @@ async function parseWithMinerU(
   config: PDFParserConfig,
   pdfBuffer: Buffer,
 ): Promise<ParsedPdfContent> {
+  return parseWithMinerUDocument(config, pdfBuffer, {
+    fileName: 'document.pdf',
+    mimeType: 'application/pdf',
+  });
+}
+
+export async function parseWithMinerUDocument(
+  config: PDFParserConfig,
+  documentBuffer: Buffer,
+  options: { fileName: string; mimeType: string },
+): Promise<ParsedPdfContent> {
   if (!config.baseUrl) {
     throw new Error(
       'MinerU base URL is required. ' +
@@ -291,22 +302,20 @@ async function parseWithMinerU(
     );
   }
 
-  log.info('[MinerU] Parsing PDF with MinerU server:', config.baseUrl);
-
-  const fileName = 'document.pdf';
+  log.info(`[MinerU] Parsing document with MinerU server: ${config.baseUrl}`);
 
   // Create FormData for file upload
   const formData = new FormData();
 
   // Convert Buffer to Blob
-  const arrayBuffer = pdfBuffer.buffer.slice(
-    pdfBuffer.byteOffset,
-    pdfBuffer.byteOffset + pdfBuffer.byteLength,
+  const arrayBuffer = documentBuffer.buffer.slice(
+    documentBuffer.byteOffset,
+    documentBuffer.byteOffset + documentBuffer.byteLength,
   );
   const blob = new Blob([arrayBuffer as ArrayBuffer], {
-    type: 'application/pdf',
+    type: options.mimeType,
   });
-  formData.append('files', blob, fileName);
+  formData.append('files', blob, options.fileName);
 
   // MinerU API form fields
   // Defaults already: return_md=true, formula_enable=true, table_enable=true
@@ -338,7 +347,7 @@ async function parseWithMinerU(
   const json = await response.json();
 
   // Response: { results: { "<fileName>": { md_content, images, content_list, ... } } }
-  const fileResult = json.results?.[fileName];
+  const fileResult = json.results?.[options.fileName];
   if (!fileResult) {
     const keys = json.results ? Object.keys(json.results) : [];
     // Try first available key in case filename doesn't match exactly
@@ -346,7 +355,7 @@ async function parseWithMinerU(
     if (!fallback) {
       throw new Error(`MinerU returned no results. Response keys: ${JSON.stringify(keys)}`);
     }
-    log.warn(`[MinerU] Filename mismatch, using key "${keys[0]}" instead of "${fileName}"`);
+    log.warn(`[MinerU] Filename mismatch, using key "${keys[0]}" instead of "${options.fileName}"`);
     return extractMinerUResult(fallback);
   }
 

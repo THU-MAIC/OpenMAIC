@@ -846,30 +846,56 @@ export async function getCurrentTTSConfig(): Promise<TTSModelConfig> {
 export { getAllTTSProviders, getTTSProvider, getTTSVoices } from './constants';
 
 /**
- * Doubao TTS 2.0 implementation (Volcengine Seed-TTS 2.0)
+ * Doubao TTS 2.0 implementation (Volcengine Seed-TTS 2.0).
+ *
+ * Two auth modes, distinguished by the API key shape — Volcengine exposes
+ * Seed-TTS as two separate products that do NOT share credentials or endpoints
+ * (verified: a plan key 401s on the normal endpoint, and the plan endpoint
+ * rejects Bearer auth):
+ *  - Standalone speech console: `appId:accessKey` → normal endpoint
+ *    (.../api/v3/tts/unidirectional) with `X-Api-App-Id` + `X-Api-Access-Key`.
+ *  - Ark Agent Plan: a single `ark-...` plan key → plan endpoint
+ *    (.../api/plan/tts/unidirectional, carried in config.baseUrl) with
+ *    `X-Api-Key`. Lit up via the Token Plan one-click setup.
+ * The endpoint and auth header are bound together, so we pick both from the key
+ * shape — never a normal endpoint with X-Api-Key, or vice versa.
  */
 async function generateDoubaoTTS(
   config: TTSModelConfig,
   text: string,
 ): Promise<TTSGenerationResult> {
-  const colonIdx = (config.apiKey || '').indexOf(':');
-  if (colonIdx <= 0) {
+  const rawKey = config.apiKey || '';
+  if (!rawKey) {
     throw new Error(
-      'Doubao TTS requires API key in format "appId:accessKey". Get both from the Volcengine console.',
+      'Doubao TTS requires an API key: an Agent Plan key, or "appId:accessKey" from the Volcengine speech console.',
     );
   }
-  const appId = config.apiKey!.slice(0, colonIdx);
-  const accessKey = config.apiKey!.slice(colonIdx + 1);
+  const colonIdx = rawKey.indexOf(':');
+  // A colon means the classic appId:accessKey pair; otherwise treat the whole
+  // value as an Agent Plan single key (X-Api-Key auth on the /plan endpoint).
+  const isPlanKey = colonIdx < 0;
+  const appId = isPlanKey ? '' : rawKey.slice(0, colonIdx);
+  const accessKey = isPlanKey ? '' : rawKey.slice(colonIdx + 1);
+  // A colon with an empty half is a malformed pair — fail clearly rather than
+  // sending an empty appId/accessKey header that the API rejects opaquely.
+  if (!isPlanKey && (!appId || !accessKey)) {
+    throw new Error(
+      'Doubao TTS appId:accessKey is malformed — both halves are required (or use an Agent Plan key).',
+    );
+  }
 
   const baseUrl = config.baseUrl || TTS_PROVIDERS['doubao-tts'].defaultBaseUrl;
   const speechRate = Math.round(((config.speed || 1.0) - 1.0) * 100);
+
+  const authHeaders: Record<string, string> = isPlanKey
+    ? { 'X-Api-Key': rawKey }
+    : { 'X-Api-App-Id': appId, 'X-Api-Access-Key': accessKey };
 
   const response = await fetch(`${baseUrl}/unidirectional`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Api-App-Id': appId,
-      'X-Api-Access-Key': accessKey,
+      ...authHeaders,
       'X-Api-Resource-Id': 'seed-tts-2.0',
     },
     body: JSON.stringify({
