@@ -25,6 +25,7 @@ describe('procedural-skill widget action selector contract', () => {
           steps: [{ id: 'step-1', title: 'Inspect visible condition' }],
           successCriteria: ['Device is ready for use'],
         }),
+        elementInventory: '(no interactive elements detected)',
         courseContext: '',
         agents: '',
         languageDirective: 'Teach in English.',
@@ -41,6 +42,7 @@ describe('procedural-skill widget action selector contract', () => {
     expect(text).toContain('widget_annotation');
     expect(text).toContain('widget_reveal');
     expect(text).toContain('widget_setState');
+    expect(text).toContain('Element Inventory');
     expect(text).not.toMatch(UNRESOLVED_PLACEHOLDER);
   });
 
@@ -54,6 +56,7 @@ describe('procedural-skill widget action selector contract', () => {
         keyPoints: '1. Observe the orbit',
         designIdea: 'A 3D visualization with zoom and speed controls.',
         widgetConfig: JSON.stringify({ type: 'visualization3d' }),
+        elementInventory: '(no interactive elements detected)',
         courseContext: '',
         agents: '',
         languageDirective: 'Teach in English.',

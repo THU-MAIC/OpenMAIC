@@ -1,8 +1,14 @@
 import { pdfDocumentExtractorProviders } from './pdf';
+import { textDocumentExtractorProvider } from './text';
 import type { DocumentExtractorProvider, DocumentExtractorProviderId } from '../types';
 
+const documentExtractorProviders = [
+  textDocumentExtractorProvider,
+  ...pdfDocumentExtractorProviders,
+];
+
 const DOCUMENT_EXTRACTOR_PROVIDERS: Record<DocumentExtractorProviderId, DocumentExtractorProvider> =
-  Object.fromEntries(pdfDocumentExtractorProviders.map((provider) => [provider.id, provider]));
+  Object.fromEntries(documentExtractorProviders.map((provider) => [provider.id, provider]));
 
 export function getDocumentExtractorProviders(): DocumentExtractorProvider[] {
   return Object.values(DOCUMENT_EXTRACTOR_PROVIDERS);

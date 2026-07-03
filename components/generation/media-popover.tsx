@@ -63,6 +63,17 @@ const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
   { id: 'asr', icon: Mic, label: 'ASR' },
 ];
 
+function providerModels<T extends { id: string; name: string }>(
+  builtInModels: T[],
+  config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+): T[] {
+  const customModels = config?.customModels || [];
+  if (config?.replaceBuiltInModels && customModels.length > 0) {
+    return customModels;
+  }
+  return [...builtInModels, ...customModels];
+}
+
 export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -129,7 +140,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
           groupName: p.name,
           groupIcon: IMAGE_PROVIDER_ICONS[p.id],
           available: true,
-          items: [...p.models, ...(imageProvidersConfig[p.id]?.customModels || [])].map((m) => ({
+          items: providerModels(p.models, imageProvidersConfig[p.id]).map((m) => ({
             id: m.id,
             name: m.name,
           })),
@@ -146,7 +157,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
           groupName: p.name,
           groupIcon: VIDEO_PROVIDER_ICONS[p.id],
           available: true,
-          items: [...p.models, ...(videoProvidersConfig[p.id]?.customModels || [])].map((m) => ({
+          items: providerModels(p.models, videoProvidersConfig[p.id]).map((m) => ({
             id: m.id,
             name: m.name,
           })),

@@ -36,10 +36,11 @@ import {
 } from '@/lib/ai/thinking-config';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
+import { COURSE_MATERIAL_ACCEPT, isSupportedCourseMaterial } from '@/lib/document/mime';
 
 // ─── Constants ───────────────────────────────────────────────
-const MAX_PDF_SIZE_MB = 50;
-const MAX_PDF_SIZE_BYTES = MAX_PDF_SIZE_MB * 1024 * 1024;
+const MAX_COURSE_MATERIAL_SIZE_MB = 50;
+const MAX_COURSE_MATERIAL_SIZE_BYTES = MAX_COURSE_MATERIAL_SIZE_MB * 1024 * 1024;
 
 // ─── Types ───────────────────────────────────────────────────
 export interface GenerationToolbarProps {
@@ -112,10 +113,13 @@ export function GenerationToolbar({
   const currentThinkingConfig =
     thinkingConfigs[getThinkingConfigKey(currentProviderId, currentModelId)];
 
-  // PDF handler
+  // Course material handler
   const handleFileSelect = (file: File) => {
-    if (file.type !== 'application/pdf') return;
-    if (file.size > MAX_PDF_SIZE_BYTES) {
+    if (!isSupportedCourseMaterial({ mimeType: file.type, fileName: file.name })) {
+      onPdfError(t('upload.unsupportedCourseMaterial'));
+      return;
+    }
+    if (file.size > MAX_COURSE_MATERIAL_SIZE_BYTES) {
       onPdfError(t('upload.fileTooLarge'));
       return;
     }
@@ -169,7 +173,7 @@ export function GenerationToolbar({
         {/* ── Separator ── */}
         <div className="w-px h-4 bg-border/60 mx-1" />
 
-        {/* ── PDF (parser + upload) combined Popover ── */}
+        {/* ── Course material (extractor + upload) combined Popover ── */}
         <Popover>
           <PopoverTrigger asChild>
             {pdfFile ? (
@@ -194,10 +198,10 @@ export function GenerationToolbar({
             )}
           </PopoverTrigger>
           <PopoverContent align="start" className="w-72 p-0">
-            {/* Parser selector */}
+            {/* Extractor selector */}
             <div className="flex items-center gap-2 px-3 pt-3 pb-2">
               <span className="text-xs font-medium text-muted-foreground shrink-0">
-                {t('toolbar.pdfParser')}
+                {t('toolbar.documentExtractor')}
               </span>
               <Select
                 value={pdfProviderId}
@@ -239,7 +243,7 @@ export function GenerationToolbar({
                 type="file"
                 ref={fileInputRef}
                 className="hidden"
-                accept=".pdf"
+                accept={COURSE_MATERIAL_ACCEPT}
                 onChange={(e) => {
                   const f = e.target.files?.[0];
                   if (f) handleFileSelect(f);
@@ -263,7 +267,7 @@ export function GenerationToolbar({
                     onClick={() => onPdfFileChange(null)}
                     className="w-full text-xs text-destructive hover:underline text-left"
                   >
-                    {t('toolbar.removePdf')}
+                    {t('toolbar.removeCourseMaterial')}
                   </button>
                 </div>
               ) : (
@@ -288,9 +292,9 @@ export function GenerationToolbar({
                   }}
                 >
                   <Paperclip className="size-5 text-muted-foreground/50 mb-1.5" />
-                  <p className="text-xs font-medium">{t('toolbar.pdfUpload')}</p>
+                  <p className="text-xs font-medium">{t('toolbar.courseMaterialUpload')}</p>
                   <p className="text-[10px] text-muted-foreground/60 mt-0.5">
-                    {t('upload.pdfSizeLimit')}
+                    {t('upload.courseMaterialSizeLimit')}
                   </p>
                 </div>
               )}

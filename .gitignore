@@ -89,3 +89,4 @@ e2e/screenshots/
 
 # local e2e screenshots for #619 review
 e2e/__screenshots-619/
+/.playwright-mcp/

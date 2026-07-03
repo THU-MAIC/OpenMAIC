@@ -383,6 +383,32 @@ pdf:
 
       expect(providers.mineru).toBeUndefined();
     });
+
+    it('includes MinerU Cloud from env when only API key is configured', async () => {
+      vi.stubEnv('PDF_MINERU_CLOUD_API_KEY', 'mineru-cloud-key');
+      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers['mineru-cloud']).toBeDefined();
+      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-key');
+      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
+    });
+
+    it('includes MinerU Cloud from YAML when only API key is configured', async () => {
+      yamlOverride = `
+pdf:
+  mineru-cloud:
+    apiKey: mineru-cloud-yaml-key
+`;
+      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers['mineru-cloud']).toBeDefined();
+      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-yaml-key');
+      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
+    });
   });
 
   describe('image and video provider metadata', () => {

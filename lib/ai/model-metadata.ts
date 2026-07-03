@@ -332,10 +332,39 @@ const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('siliconflow', 'THUDM/GLM-4.1V-9B-Thinking')]: siliconflowBudget,
   [getModelMetadataKey('siliconflow', 'THUDM/GLM-Z1-Rumination-32B-0414')]: siliconflowBudget,
 
+  [getModelMetadataKey('doubao', 'doubao-seed-2-1-pro-260628')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-2-1-turbo-260628')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-evolving')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-character-260628')]: toggleCapability('doubao'),
   [getModelMetadataKey('doubao', 'doubao-seed-2-0-pro-260215')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-2-0-lite-260215')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-2-0-mini-260215')]: doubaoSeed20Effort,
   [getModelMetadataKey('doubao', 'doubao-seed-1-8-251228')]: doubaoMode,
+  // Volcengine Ark Agent Plan exposes the Seed 2.0 family under dotted aliases
+  // (the token-plan preset seeds these). They're the same native Doubao models
+  // as the catalog ids above, served from the plan's own endpoint, so they
+  // carry the identical doubao thinking control. (Cross-vendor models the plan
+  // also serves — deepseek/minimax/glm/kimi via ark's OpenAI-compatible path —
+  // are intentionally NOT mapped here: their native thinking transport doesn't
+  // apply through that gateway.)
+  [getModelMetadataKey('doubao', 'doubao-seed-2.0-pro')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-2.0-code')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-2.0-lite')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'doubao-seed-2.0-mini')]: doubaoSeed20Effort,
+  // Cross-vendor models the Ark Agent Plan also serves through its
+  // OpenAI-compatible endpoint (all under the `doubao` provider id). Verified
+  // against a live plan key: each accepts the gateway's unified `reasoning_effort`
+  // field (low/medium/high) and actually reasons, so they share the doubao
+  // effort adapter — which sends `minimal` (not `none`) to disable, matching
+  // what the plan endpoint accepts. The token-plan preset seeds these aliases.
+  [getModelMetadataKey('doubao', 'deepseek-v4-pro')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'deepseek-v4-flash')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'glm-5.2')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'kimi-k2.7-code')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'kimi-k2.6')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'minimax-m3')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'minimax-m2.7')]: doubaoSeed20Effort,
+  [getModelMetadataKey('doubao', 'ark-code-latest')]: doubaoSeed20Effort,
 
   [getModelMetadataKey('openrouter', 'deepseek/deepseek-v4-pro')]: effortCapability(
     'openrouter',

@@ -1,6 +1,6 @@
 {
   "name": "@openmaic/dsl",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "The MAIC slide DSL: the pure, dependency-free contract (types + JSON Schema + validators + version/migration helpers) that @openmaic/renderer and @openmaic/importer both depend on.",
   "type": "module",
   "main": "./dist/index.js",
