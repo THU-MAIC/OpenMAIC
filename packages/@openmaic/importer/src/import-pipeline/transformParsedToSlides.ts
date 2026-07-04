@@ -1,5 +1,3 @@
- 
- 
 import {
   parse as parsePptxDefault,
   type Shape,

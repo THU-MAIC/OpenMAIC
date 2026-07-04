@@ -196,7 +196,6 @@ export async function slideToPng(
     );
 
     if (process.env.NODE_ENV !== 'production') {
-       
       console.debug('[slideToPng] container ready', {
         innerHTMLLength: container.innerHTML.length,
         imgCount: container.querySelectorAll('img').length,
