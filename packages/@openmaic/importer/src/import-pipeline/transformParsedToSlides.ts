@@ -1,5 +1,5 @@
-/* eslint-disable max-lines */
-/* eslint-disable no-console */
+ 
+ 
 import {
   parse as parsePptxDefault,
   type Shape,

@@ -3,6 +3,7 @@ import type { SceneOutline } from '@/lib/types/generation';
 
 const mocks = vi.hoisted(() => ({
   callLLM: vi.fn(),
+  streamLLM: vi.fn(),
   resolveModelFromRequest: vi.fn(),
   applyOutlineFallbacks: vi.fn(),
   generateSceneContent: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/ai/llm', () => ({
   callLLM: mocks.callLLM,
+  streamLLM: mocks.streamLLM,
 }));
 
 vi.mock('@/lib/server/resolve-model', () => ({
@@ -63,6 +65,11 @@ describe('scene API retry boundary', () => {
     });
     mocks.applyOutlineFallbacks.mockImplementation((value) => value);
     mocks.callLLM.mockResolvedValue({ text: 'ok' });
+    mocks.streamLLM.mockReturnValue({
+      textStream: (async function* () {
+        yield 'ok';
+      })(),
+    });
     mocks.resolveVocationalActive.mockReturnValue(false);
   });
 
@@ -78,7 +85,7 @@ describe('scene API retry boundary', () => {
     const body = await response.json();
 
     expect(body.success).toBe(true);
-    expect(mocks.callLLM.mock.calls[0][0].maxRetries).toBe(0);
+    expect(mocks.streamLLM.mock.calls[0][0].maxRetries).toBe(0);
   });
 
   it('disables AI SDK retries for scene-actions model calls', async () => {
@@ -115,7 +122,11 @@ describe('scene API retry boundary', () => {
       await aiCall('system', 'user');
       return { elements: [], remark: 'ok' };
     });
-    mocks.callLLM.mockRejectedValueOnce(unauthorized);
+    mocks.streamLLM.mockReturnValueOnce({
+      textStream: (async function* () {
+        throw unauthorized;
+      })(),
+    });
 
     const { POST } = await import('@/app/api/generate/scene-content/route');
     const response = await POST(mockRequest());
@@ -136,7 +147,11 @@ describe('scene API retry boundary', () => {
       await aiCall('system', 'user');
       return { elements: [], remark: 'ok' };
     });
-    mocks.callLLM.mockRejectedValueOnce(unavailable);
+    mocks.streamLLM.mockReturnValueOnce({
+      textStream: (async function* () {
+        throw unavailable;
+      })(),
+    });
 
     const { POST } = await import('@/app/api/generate/scene-content/route');
     const response = await POST(mockRequest());
