@@ -1,3 +1,5 @@
+'use client';
+
 export { EditableSlideCanvas } from './EditableSlideCanvas';
 export { EMPTY_SELECTION } from './types';
 export type {
