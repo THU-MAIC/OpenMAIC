@@ -4,6 +4,7 @@ import {
   ELEMENT_DEFAULTS,
   normalizeElement,
   normalizeSlide,
+  normalizeSlideWith,
   normalizeScene,
   normalizeStage,
 } from '@openmaic/dsl';
@@ -72,6 +73,17 @@ describe('normalizeElement — static defaults', () => {
       { type: 'image' }
     >;
     expect(out.fixedRatio).toBe(false);
+  });
+
+  it("keeps a shape's explicit empty fill — '' means no solid fill, not absent", () => {
+    // Producers emit `fill: ''` deliberately (the importer for gradient /
+    // image-filled / unfilled shapes); the renderer maps it to `none`.
+    // Defaulting it would paint transparent shapes with the canonical color.
+    const shape = normalizeElement({ ...box, type: 'shape', fill: '' }) as Extract<
+      PPTElement,
+      { type: 'shape' }
+    >;
+    expect(shape.fill).toBe('');
   });
 
   it('fills a present-but-empty shape text overlay (consumers read text.content unguarded)', () => {
@@ -263,6 +275,48 @@ describe('document-level walkers', () => {
     expect((out.elements[0] as Extract<PPTElement, { type: 'text' }>).defaultFontName).toBe(
       ELEMENT_DEFAULTS.text.defaultFontName,
     );
+  });
+
+  it('normalizeSlide throws on a malformed element (use normalizeSlideWith to degrade)', () => {
+    const bad = { ...box, type: 'text', defaultColor: 123 } as unknown as PPTElement;
+    expect(() => normalizeSlide(slide([bad]))).toThrow(/defaultColor/);
+  });
+
+  it('normalizeSlide stays unary: point-free `slides.map(normalizeSlide)` type-checks and works', () => {
+    // Regression for the API-ergonomics contract: an options parameter on
+    // normalizeSlide itself would collide with map's index argument.
+    const out = [slide([bareText]), slide([bareText])].map(normalizeSlide);
+    expect(out).toHaveLength(2);
+    expect((out[1].elements[0] as Extract<PPTElement, { type: 'text' }>).defaultFontName).toBe(
+      ELEMENT_DEFAULTS.text.defaultFontName,
+    );
+  });
+
+  it("normalizeSlideWith onInvalid: 'drop' drops the malformed element, keeps the rest, and reports it", () => {
+    const bad = { ...box, id: 'bad', type: 'text', defaultColor: 123 } as unknown as PPTElement;
+    const dropped: Array<{ element: unknown; error: unknown }> = [];
+    const out = normalizeSlideWith({
+      onInvalid: 'drop',
+      onDropped: (element, error) => dropped.push({ element, error }),
+    })(slide([bareText, bad]));
+    expect(out.elements).toHaveLength(1);
+    expect(out.elements[0].id).toBe(box.id);
+    expect(dropped).toHaveLength(1);
+    expect((dropped[0].element as { id: string }).id).toBe('bad');
+    expect(String(dropped[0].error)).toMatch(/defaultColor/);
+  });
+
+  it("normalizeSlideWith onInvalid: 'drop' without onDropped drops without throwing", () => {
+    const bad = { ...box, type: 'text', defaultColor: 123 } as unknown as PPTElement;
+    const normalize = normalizeSlideWith({ onInvalid: 'drop' });
+    expect(() => normalize(slide([bad]))).not.toThrow();
+    expect(normalize(slide([bad])).elements).toHaveLength(0);
+  });
+
+  it('normalizeSlideWith without a drop policy is plain normalizeSlide (map-safe)', () => {
+    expect(normalizeSlideWith({})).toBe(normalizeSlide);
+    const bad = { ...box, type: 'text', defaultColor: 123 } as unknown as PPTElement;
+    expect(() => [slide([bad])].map(normalizeSlideWith({}))).toThrow(/defaultColor/);
   });
 
   it('normalizeScene normalizes a slide scene canvas + whiteboards', () => {
