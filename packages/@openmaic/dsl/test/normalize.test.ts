@@ -4,6 +4,7 @@ import {
   ELEMENT_DEFAULTS,
   normalizeElement,
   normalizeSlide,
+  normalizeSlideWith,
   normalizeScene,
   normalizeStage,
 } from '@openmaic/dsl';
@@ -276,18 +277,28 @@ describe('document-level walkers', () => {
     );
   });
 
-  it('normalizeSlide throws on a malformed element by default', () => {
+  it('normalizeSlide throws on a malformed element (use normalizeSlideWith to degrade)', () => {
     const bad = { ...box, type: 'text', defaultColor: 123 } as unknown as PPTElement;
     expect(() => normalizeSlide(slide([bad]))).toThrow(/defaultColor/);
   });
 
-  it("normalizeSlide with onInvalid: 'drop' drops the malformed element, keeps the rest, and reports it", () => {
+  it('normalizeSlide stays unary: point-free `slides.map(normalizeSlide)` type-checks and works', () => {
+    // Regression for the API-ergonomics contract: an options parameter on
+    // normalizeSlide itself would collide with map's index argument.
+    const out = [slide([bareText]), slide([bareText])].map(normalizeSlide);
+    expect(out).toHaveLength(2);
+    expect((out[1].elements[0] as Extract<PPTElement, { type: 'text' }>).defaultFontName).toBe(
+      ELEMENT_DEFAULTS.text.defaultFontName,
+    );
+  });
+
+  it("normalizeSlideWith onInvalid: 'drop' drops the malformed element, keeps the rest, and reports it", () => {
     const bad = { ...box, id: 'bad', type: 'text', defaultColor: 123 } as unknown as PPTElement;
     const dropped: Array<{ element: unknown; error: unknown }> = [];
-    const out = normalizeSlide(slide([bareText, bad]), {
+    const out = normalizeSlideWith({
       onInvalid: 'drop',
       onDropped: (element, error) => dropped.push({ element, error }),
-    });
+    })(slide([bareText, bad]));
     expect(out.elements).toHaveLength(1);
     expect(out.elements[0].id).toBe(box.id);
     expect(dropped).toHaveLength(1);
@@ -295,10 +306,17 @@ describe('document-level walkers', () => {
     expect(String(dropped[0].error)).toMatch(/defaultColor/);
   });
 
-  it("normalizeSlide with onInvalid: 'drop' but no onDropped drops without throwing", () => {
+  it("normalizeSlideWith onInvalid: 'drop' without onDropped drops without throwing", () => {
     const bad = { ...box, type: 'text', defaultColor: 123 } as unknown as PPTElement;
-    expect(() => normalizeSlide(slide([bad]), { onInvalid: 'drop' })).not.toThrow();
-    expect(normalizeSlide(slide([bad]), { onInvalid: 'drop' }).elements).toHaveLength(0);
+    const normalize = normalizeSlideWith({ onInvalid: 'drop' });
+    expect(() => normalize(slide([bad]))).not.toThrow();
+    expect(normalize(slide([bad])).elements).toHaveLength(0);
+  });
+
+  it('normalizeSlideWith without a drop policy is plain normalizeSlide (map-safe)', () => {
+    expect(normalizeSlideWith({})).toBe(normalizeSlide);
+    const bad = { ...box, type: 'text', defaultColor: 123 } as unknown as PPTElement;
+    expect(() => [slide([bad])].map(normalizeSlideWith({}))).toThrow(/defaultColor/);
   });
 
   it('normalizeScene normalizes a slide scene canvas + whiteboards', () => {

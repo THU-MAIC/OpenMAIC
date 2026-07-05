@@ -15,7 +15,7 @@
  * `Promise.allSettled` here so a missing inner `.catch` cannot fail the
  * whole import either.
  */
-import { normalizeSlide, type Slide } from '@openmaic/dsl';
+import { normalizeSlideWith, type Slide } from '@openmaic/dsl';
 import type { Output } from '../adapter/types';
 import { parseZip } from '../parser/ZipParser';
 import { buildPresentation } from '../model/Presentation';
@@ -86,31 +86,31 @@ export async function parsedToSlides(
  * Contract boundary: run the DSL's slide normalization over the transform
  * output before handing slides to consumers.
  *
- * `normalizeSlide` fills any required content field the transform left off and
- * derives geometry-dependent fields. The transform is deterministic, but its
- * input is the wild-world .pptx corpus — so, matching the importer's
- * degrade-not-fail policy (see the upload failure policy above), this uses the
- * DSL's `onInvalid: 'drop'` mode: an element normalization cannot repair is
- * dropped with a warning rather than failing the whole import or reaching
- * consumers that read it unguarded.
+ * The DSL's slide normalization fills any required content field the transform
+ * left off and derives geometry-dependent fields. The transform is
+ * deterministic, but its input is the wild-world .pptx corpus — so, matching
+ * the importer's degrade-not-fail policy (see the upload failure policy above),
+ * this uses the DSL's `onInvalid: 'drop'` mode: an element normalization cannot
+ * repair is dropped with a warning rather than failing the whole import or
+ * reaching consumers that read it unguarded.
  *
  * `parsedToSlides` / `importPptx` apply this automatically. Consumers calling
  * `transformParsedToSlides` directly (bundler-constrained integrations) should
  * run their result through this themselves to get the same output contract.
  */
+const normalizeImportedSlide = normalizeSlideWith({
+  onInvalid: 'drop',
+  onDropped: (_element, error) => {
+    console.warn(
+      `[@openmaic/importer] dropping element that fails DSL normalization: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  },
+});
+
 export function normalizeImportedSlides(slides: Slide[]): Slide[] {
-  return slides.map((slide) =>
-    normalizeSlide(slide, {
-      onInvalid: 'drop',
-      onDropped: (_element, error) => {
-        console.warn(
-          `[@openmaic/importer] dropping element that fails DSL normalization: ${
-            error instanceof Error ? error.message : String(error)
-          }`,
-        );
-      },
-    }),
-  );
+  return slides.map(normalizeImportedSlide);
 }
 
 /**

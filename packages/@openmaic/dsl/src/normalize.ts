@@ -317,15 +317,16 @@ export function normalizeElement(el: unknown): PPTElement {
 }
 
 /**
- * Element-invalidity policy for {@link normalizeSlide}.
+ * Element-invalidity policy for {@link normalizeSlideWith}.
  *
  * `normalizeElement` fails loud on a present-but-wrong-typed field. What that
  * should do to the *slide* is a producer decision: a build-time producer wants
- * the throw (`'throw'`, the default); a producer normalizing unreliable
- * wild-world input (an imported deck, model output) prefers to degrade — drop
- * the one element rather than fail the whole document or hand the malformed
- * payload to consumers that read it unguarded (`'drop'`). `onDropped` observes
- * each drop (log it, count it, surface it) so the loss is never silent.
+ * the throw (`'throw'`, the default — what plain {@link normalizeSlide} does);
+ * a producer normalizing unreliable wild-world input (an imported deck, model
+ * output) prefers to degrade — drop the one element rather than fail the whole
+ * document or hand the malformed payload to consumers that read it unguarded
+ * (`'drop'`). `onDropped` observes each drop (log it, count it, surface it) so
+ * the loss is never silent.
  */
 export interface NormalizeSlideOptions {
   onInvalid?: 'throw' | 'drop';
@@ -335,27 +336,44 @@ export interface NormalizeSlideOptions {
 /**
  * Normalize every element on a slide-like canvas (a {@link Slide} or a
  * whiteboard — anything carrying an `elements` array). Pure; returns a fresh
- * object with normalized elements. See {@link NormalizeSlideOptions} for what
- * happens to an element that fails normalization.
+ * object with normalized elements. Throws on the first element that fails
+ * normalization; for a degrade-per-element policy use
+ * {@link normalizeSlideWith}.
+ *
+ * Deliberately unary so `slides.map(normalizeSlide)` stays valid — an options
+ * parameter here would collide with `map`'s index argument.
  */
-export function normalizeSlide<T extends { elements: PPTElement[] }>(
-  slide: T,
-  options?: NormalizeSlideOptions,
-): T {
-  if (options?.onInvalid !== 'drop') {
-    // Spread + override is a structurally-identical `T`; TS can't prove that for a
-    // generic, so the single localized cast stands in for the invariant.
-    return { ...slide, elements: slide.elements.map(normalizeElement) } as T;
-  }
-  const elements: PPTElement[] = [];
-  for (const el of slide.elements) {
-    try {
-      elements.push(normalizeElement(el));
-    } catch (error) {
-      options.onDropped?.(el, error);
+export function normalizeSlide<T extends { elements: PPTElement[] }>(slide: T): T {
+  // Spread + override is a structurally-identical `T`; TS can't prove that for a
+  // generic, so the single localized cast stands in for the invariant.
+  return { ...slide, elements: slide.elements.map(normalizeElement) } as T;
+}
+
+/**
+ * Build a unary {@link normalizeSlide} variant carrying an element-invalidity
+ * policy. Curried (options first) precisely so the result is safe in
+ * `slides.map(...)`:
+ *
+ * ```ts
+ * const normalize = normalizeSlideWith({ onInvalid: 'drop', onDropped: log });
+ * const clean = slides.map(normalize);
+ * ```
+ */
+export function normalizeSlideWith(
+  options: NormalizeSlideOptions,
+): <T extends { elements: PPTElement[] }>(slide: T) => T {
+  if (options.onInvalid !== 'drop') return normalizeSlide;
+  return <T extends { elements: PPTElement[] }>(slide: T): T => {
+    const elements: PPTElement[] = [];
+    for (const el of slide.elements) {
+      try {
+        elements.push(normalizeElement(el));
+      } catch (error) {
+        options.onDropped?.(el, error);
+      }
     }
-  }
-  return { ...slide, elements } as T;
+    return { ...slide, elements } as T;
+  };
 }
 
 /**
@@ -368,9 +386,7 @@ export function normalizeSlide<T extends { elements: PPTElement[] }>(
 export function normalizeScene<TAction, TContent extends { type: SceneType }>(
   scene: Scene<TAction, TContent>,
 ): Scene<TAction, TContent> {
-  // Not `.map(normalizeSlide)` — map's index argument would land in the options
-  // parameter.
-  const whiteboards = scene.whiteboards?.map((wb) => normalizeSlide(wb));
+  const whiteboards = scene.whiteboards?.map(normalizeSlide);
   let next: Scene<TAction, TContent> = whiteboards ? { ...scene, whiteboards } : { ...scene };
   if (isSlideContent(scene.content)) {
     // Spread + override yields a structurally-identical scene; TS can't prove
@@ -392,5 +408,5 @@ export function normalizeScene<TAction, TContent extends { type: SceneType }>(
  */
 export function normalizeStage(stage: Stage): Stage {
   if (!stage.whiteboard) return { ...stage };
-  return { ...stage, whiteboard: stage.whiteboard.map((wb) => normalizeSlide(wb)) };
+  return { ...stage, whiteboard: stage.whiteboard.map(normalizeSlide) };
 }
