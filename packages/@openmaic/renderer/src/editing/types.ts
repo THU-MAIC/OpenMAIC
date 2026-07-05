@@ -32,13 +32,17 @@ export type EditIntent =
  * onSelectionChange. Id-based (not position-based) so it survives document edits.
  */
 export interface Selection {
-  elementIds: string[];
+  /** readonly: the host owns selection and treats it immutably */
+  elementIds: readonly string[];
   primaryId?: string;
   groupId?: string;
   editingId?: string;
 }
 
-export const EMPTY_SELECTION: Selection = { elementIds: [] };
+/** Immutable empty-selection sentinel. Frozen so a shared reference can't be mutated. */
+export const EMPTY_SELECTION: Selection = Object.freeze({
+  elementIds: Object.freeze([] as string[]),
+});
 
 export interface SnappingOptions {
   toElements?: boolean;

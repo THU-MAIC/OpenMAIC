@@ -1,3 +1,5 @@
+'use client';
+
 import { SlideCanvas } from '../SlideCanvas';
 import type { EditableSlideCanvasProps, Selection } from './types';
 
@@ -11,31 +13,29 @@ import type { EditableSlideCanvasProps, Selection } from './types';
  * snapping, and ProseMirror inline editing — and the `onElementsChange` intent
  * emission — land in Part A / Part B. See the editing-surface RFC for the
  * controlled edit-intent model this shell grows into.
+ *
+ * It forwards `className`/`style` straight to SlideCanvas (no wrapper element) so
+ * the v1 fill/auto-fit contract is preserved unchanged.
  */
 export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
-  const { slide, scale, renderImage, renderVideo, selection, onSelectionChange, className, style } =
-    props;
+  const { slide, scale, renderImage, renderVideo, onSelectionChange, className, style } = props;
 
   return (
-    <div
+    <SlideCanvas
+      slide={slide}
+      scale={scale}
+      renderImage={renderImage}
+      renderVideo={renderVideo}
       className={className}
       style={style}
-      data-editing-primary-id={selection?.primaryId ?? undefined}
-    >
-      <SlideCanvas
-        slide={slide}
-        scale={scale}
-        renderImage={renderImage}
-        renderVideo={renderVideo}
-        onElementClick={
-          onSelectionChange
-            ? (element) => {
-                const next: Selection = { elementIds: [element.id], primaryId: element.id };
-                onSelectionChange(next);
-              }
-            : undefined
-        }
-      />
-    </div>
+      onElementClick={
+        onSelectionChange
+          ? (element) => {
+              const next: Selection = { elementIds: [element.id], primaryId: element.id };
+              onSelectionChange(next);
+            }
+          : undefined
+      }
+    />
   );
 }
