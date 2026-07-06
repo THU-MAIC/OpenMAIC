@@ -103,37 +103,70 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
         <div ref={overlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
           {interactive &&
             elements
-              // Line elements: hit target + selection + endpoint editing land
-              // together in the line slice; the box-model drag intent can't
-              // represent line moves. Skipping them here also narrows the type
-              // so `width`/`height`/`rotate` are directly available (no casts).
-              // Locked elements (`el.lock`): the app editor guards locked
-              // content from being moved; mirror that here by never mounting a
-              // move hit target for one, so it can't be dragged. (Its
-              // selection border, if selected, is unaffected — SelectionOverlay
-              // is untouched.)
-              .filter(
-                (el): el is Exclude<PPTElement, { type: 'line' }> => el.type !== 'line' && !el.lock,
-              )
-              .map((el) => (
-                <div
-                  key={el.id}
-                  data-element-id={el.id}
-                  onPointerDown={(e) => onElementPointerDown(el, e)}
-                  style={{
-                    position: 'absolute',
-                    left: `${viewportStyles.left + el.left * canvasScale}px`,
-                    top: `${viewportStyles.top + el.top * canvasScale}px`,
-                    width: `${el.width * canvasScale}px`,
-                    height: `${el.height * canvasScale}px`,
-                    transform: `rotate(${el.rotate}deg)`,
-                    transformOrigin: 'center',
-                    pointerEvents: 'auto',
-                    cursor: 'move',
-                    touchAction: 'none',
-                  }}
-                />
-              ))}
+              // Line elements: deliberately skipped — no hit target at all.
+              // A line's real hit area is its thin (often diagonal) stroke,
+              // not its rectangular bounding box; a rectangular blocker/hit
+              // div over the bbox would wrongly swallow clicks on other
+              // visible elements around the line. Hit target + selection +
+              // endpoint editing land together in the line slice in a later
+              // PR. Skipping them here also narrows the type so
+              // `width`/`height`/`rotate` are directly available (no casts).
+              .filter((el): el is Exclude<PPTElement, { type: 'line' }> => el.type !== 'line')
+              .map((el) =>
+                el.lock ? (
+                  // Locked elements (`el.lock`): the app editor guards locked
+                  // content from being moved, and — critically — a locked
+                  // element is the top rendered DOM node in the real app, so
+                  // it swallows the click rather than falling through to
+                  // whatever unlocked element sits beneath it. Mirror that
+                  // here with an INERT blocker at the same stacking position
+                  // (same map order, so it's on top when it visually
+                  // overlaps an unlocked element below it in the array):
+                  // `pointerEvents: 'auto'` consumes the pointer, but
+                  // `onPointerDown` is a no-op (no `onElementPointerDown`
+                  // call, no `data-element-id`) so no gesture is ever armed
+                  // and nothing beneath moves or gets selected. (A locked
+                  // element's selection border, if selected, is unaffected —
+                  // SelectionOverlay is untouched.)
+                  <div
+                    key={el.id}
+                    data-hit-kind="blocker"
+                    onPointerDown={(e) => {
+                      e.stopPropagation();
+                    }}
+                    style={{
+                      position: 'absolute',
+                      left: `${viewportStyles.left + el.left * canvasScale}px`,
+                      top: `${viewportStyles.top + el.top * canvasScale}px`,
+                      width: `${el.width * canvasScale}px`,
+                      height: `${el.height * canvasScale}px`,
+                      transform: `rotate(${el.rotate}deg)`,
+                      transformOrigin: 'center',
+                      pointerEvents: 'auto',
+                      cursor: 'default',
+                      touchAction: 'none',
+                    }}
+                  />
+                ) : (
+                  <div
+                    key={el.id}
+                    data-element-id={el.id}
+                    onPointerDown={(e) => onElementPointerDown(el, e)}
+                    style={{
+                      position: 'absolute',
+                      left: `${viewportStyles.left + el.left * canvasScale}px`,
+                      top: `${viewportStyles.top + el.top * canvasScale}px`,
+                      width: `${el.width * canvasScale}px`,
+                      height: `${el.height * canvasScale}px`,
+                      transform: `rotate(${el.rotate}deg)`,
+                      transformOrigin: 'center',
+                      pointerEvents: 'auto',
+                      cursor: 'move',
+                      touchAction: 'none',
+                    }}
+                  />
+                ),
+              )}
 
           {/* SelectionOverlay is left untouched; wrap it in a positioning
               container matching SlideCanvas's element container so its

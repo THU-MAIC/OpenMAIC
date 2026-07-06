@@ -316,6 +316,68 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelector('[data-element-id="locked1"]')).toBeNull();
   });
 
+  it('a locked element overlapping an unlocked one blocks the pointer instead of falling through', () => {
+    // Regression for cr-fix-4 (round-4 cross-review P2): a locked element
+    // used to be skipped entirely from the hit layer, so a pointer-down over
+    // its (visually on-top) area fell through to whatever unlocked element's
+    // hit target happened to occupy the same region underneath — moving/
+    // selecting the WRONG element. The locked element now gets an inert
+    // blocker at the same stacking position (same map order) so it consumes
+    // the pointer instead.
+    const onSel = vi.fn();
+    const onCh = vi.fn();
+    const overlappingLockedSlide = {
+      ...slide,
+      elements: [
+        (slide as unknown as { elements: unknown[] }).elements[0], // 'a': left 100 top 100 w200 h80
+        {
+          id: 'locked1',
+          type: 'text',
+          left: 100,
+          top: 100,
+          width: 200,
+          height: 80,
+          rotate: 0,
+          content: 'y',
+          defaultFontName: 'a',
+          defaultColor: '#000',
+          lineHeight: 1,
+          lock: true,
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={overlappingLockedSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+
+    // Both elements share identical screen geometry. `locked1` is later in
+    // the elements array, so it is later in DOM/stacking order too — mirror
+    // real overlapping-sibling hit-testing by dispatching to whichever hit
+    // node currently ends up on top there. Pre-fix that's still `a`'s own hit
+    // div (the locked element renders no hit node at all); post-fix it's the
+    // locked blocker.
+    const hitLayerNodes = container.querySelectorAll(
+      '[data-element-id], [data-hit-kind="blocker"]',
+    );
+    const topmost = hitLayerNodes[hitLayerNodes.length - 1] as HTMLElement;
+
+    fireEvent.pointerDown(topmost, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(topmost, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(topmost, { clientX: 30, clientY: 20 });
+
+    // The locked blocker must consume the gesture: the unlocked element `a`
+    // beneath it is neither moved (no `element.update`) nor selected.
+    expect(onCh).not.toHaveBeenCalled();
+    expect(onSel).not.toHaveBeenCalled();
+  });
+
   it('ignores a foreign pointerId; only the active pointer drives the gesture', () => {
     const { container } = render(
       <EditableSlideCanvas
