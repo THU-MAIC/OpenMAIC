@@ -343,7 +343,6 @@
     },
     "timeline": {
       "title": "講解腳本",
-      "dragToAdd": "拖入新增",
       "regenAllTts": "重新生成全部配音",
       "voiceAll": "全部配音",
       "counts": "{{speech}} 講解 · {{cue}} 動作",
@@ -361,14 +360,21 @@
       "fieldAction": "動作",
       "fieldElement": "元素",
       "fieldContent": "內容",
-      "addDiscussion": "新增討論",
       "addDiscussionExists": "每個場景僅支援一個討論",
       "discussionTerminal": "結尾",
       "discussionTerminalHint": "討論固定在場景結尾，每個場景僅一個",
       "discussionTopicPlaceholder": "討論主題（必填）",
       "discussionPromptPlaceholder": "引導語（選填）",
       "discussionAgent": "發起",
-      "discussionAgentUnset": "不指定"
+      "discussionAgentUnset": "不指定",
+      "addAction": "新增動作"
+    },
+    "picker": {
+      "title": "插入動作",
+      "speechDesc": "講一句話，可自動配音",
+      "spotlightDesc": "突顯畫布中的一個元素",
+      "laserDesc": "用雷射點指向一個元素",
+      "discussionDesc": "拋出問題，指定發起同學"
     },
     "tts": {
       "preview": "試聽",
@@ -1540,6 +1546,56 @@
     "voxcpmVoiceSaved": "VoxCPM 聲音已儲存",
     "voxcpmVoicesDescription": "儲存在此瀏覽器中並加入共享的客服人員聲音池。",
     "voxcpmVoicesTitle": "VoxCPM 聲音",
+    "selectProvider": "选择厂商",
+    "customProvider": "自定义",
+    "presetPickHint": "选择厂商后将自动填入接口地址与协议，填好密钥再点「拉取模型」即可。不在列表中可用「自定义」。",
+    "presetCategory": {
+      "tokenPlan": "Token Plan 套餐",
+      "aggregator": "聚合 / 网关",
+      "thirdParty": "厂商直连",
+      "official": "官方"
+    },
+    "fetchModels": "拉取模型",
+    "fetchModelsResult": "已拉取 {total} 个模型，新增 {added} 个",
+    "fetchModelsNoEndpoint": "该服务商未提供模型列表接口，请手动「新建模型」",
+    "fetchModelsAuthError": "API 密钥无效或已过期",
+    "fetchModelsFailed": "拉取模型失败",
+    "usage": {
+      "title": "用量统计",
+      "refresh": "刷新",
+      "disclaimer": "用量为系统统计,仅统计经服务端的调用。",
+      "totalRequests": "总请求数",
+      "totalTokens": "语言模型 Token",
+      "dailyTrend": "每日 Token 趋势",
+      "tokens": "Token",
+      "byModel": "按模型",
+      "model": "模型",
+      "type": "类型",
+      "reqs": "请求",
+      "usage": "用量",
+      "empty": "暂无用量数据",
+      "kindLlm": "语言模型",
+      "kindImage": "图像",
+      "kindVideo": "视频",
+      "kindTts": "语音合成",
+      "kindAsr": "语音识别",
+      "unitToken": "Token",
+      "unitImage": "张",
+      "unitSecond": "秒",
+      "unitCharacter": "字符"
+    },
+    "tokenPlan": {
+      "nav": "Token Plan",
+      "title": "Token Plan 一鍵配置",
+      "desc": "選擇你的 Token Plan 服務商並填入密鑰，將自動配置所有已適配的模態（語言模型/圖像/影片/語音/網路搜尋）。",
+      "selectPlan": "選擇服務商",
+      "apiKey": "API 密鑰",
+      "enable": "啟用",
+      "updateKey": "更新密鑰",
+      "modelsCount": "{{n}} 個模型",
+      "capabilities": "套餐提供的能力",
+      "offeredNote": "套餐提供的模型清單。請在生成介面選擇需要使用的模型——是否可用取決於你的套餐等級，不支援的模型會在生成時報錯。"
+    },
     "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。"
   },
   "profile": {

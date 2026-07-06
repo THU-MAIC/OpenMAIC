@@ -343,7 +343,6 @@
     },
     "timeline": {
       "title": "نص السرد",
-      "dragToAdd": "اسحب للإضافة",
       "regenAllTts": "إعادة توليد كل التعليق الصوتي",
       "voiceAll": "صوّت الكل",
       "counts": "{{speech}} سرد · {{cue}} إجراءات",
@@ -361,14 +360,21 @@
       "fieldAction": "إجراء",
       "fieldElement": "عنصر",
       "fieldContent": "المحتوى",
-      "addDiscussion": "إضافة مناقشة",
       "addDiscussionExists": "مناقشة واحدة فقط لكل مشهد",
       "discussionTerminal": "النهاية",
       "discussionTerminalHint": "تبقى المناقشة في نهاية المشهد (واحدة لكل مشهد)",
       "discussionTopicPlaceholder": "موضوع المناقشة (مطلوب)",
       "discussionPromptPlaceholder": "توجيه (اختياري)",
       "discussionAgent": "المُبادر",
-      "discussionAgentUnset": "غير محدد"
+      "discussionAgentUnset": "غير محدد",
+      "addAction": "إضافة إجراء"
+    },
+    "picker": {
+      "title": "إدراج إجراء",
+      "speechDesc": "قل جملة — يمكن نطقها تلقائيًا",
+      "spotlightDesc": "تسليط الضوء على عنصر في اللوحة",
+      "laserDesc": "توجيه مؤشر ليزر إلى عنصر",
+      "discussionDesc": "اطرح سؤالاً وحدّد من يبدأ النقاش"
     },
     "tts": {
       "preview": "معاينة",
@@ -1555,6 +1561,56 @@
     "webSearchBaseUrl": "العنوان الأساسي",
     "webSearchServerConfigured": "تم تكوين مفتاح API للبحث على الخادم",
     "optional": "اختياري",
+    "selectProvider": "Select Provider",
+    "customProvider": "Custom",
+    "presetPickHint": "Picking a provider auto-fills its base URL and protocol; enter your key then click \"Fetch Models\". Not listed? Use \"Custom\".",
+    "presetCategory": {
+      "tokenPlan": "Token Plans",
+      "aggregator": "Aggregators",
+      "thirdParty": "Vendors",
+      "official": "Official"
+    },
+    "fetchModels": "Fetch Models",
+    "fetchModelsResult": "Fetched {total} models, added {added}",
+    "fetchModelsNoEndpoint": "This provider has no model list endpoint — add models manually",
+    "fetchModelsAuthError": "API key is invalid or expired",
+    "fetchModelsFailed": "Failed to fetch models",
+    "usage": {
+      "title": "Usage",
+      "refresh": "Refresh",
+      "disclaimer": "Usage is system-tracked; only server-side calls are counted.",
+      "totalRequests": "Requests",
+      "totalTokens": "LLM Tokens",
+      "dailyTrend": "Daily Token Trend",
+      "tokens": "Tokens",
+      "byModel": "By Model",
+      "model": "Model",
+      "type": "Type",
+      "reqs": "Reqs",
+      "usage": "Usage",
+      "empty": "No usage data yet",
+      "kindLlm": "LLM",
+      "kindImage": "Image",
+      "kindVideo": "Video",
+      "kindTts": "Speech",
+      "kindAsr": "ASR",
+      "unitToken": "tokens",
+      "unitImage": "images",
+      "unitSecond": "sec",
+      "unitCharacter": "chars"
+    },
+    "tokenPlan": {
+      "nav": "Token Plan",
+      "title": "Token Plan Setup",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "selectPlan": "Select Provider",
+      "apiKey": "API Key",
+      "enable": "Enable",
+      "updateKey": "Update key",
+      "modelsCount": "{{n}} models",
+      "capabilities": "Capabilities offered",
+      "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
+    },
     "ttsBrowserNativeTimelineNotice": "لا يدعم تحويل النص إلى كلام المدمج في المتصفح ميزات الصوت في الخط الزمني للمحرر (المعاينة وإعادة التوليد والتعليق الصوتي الجماعي). بدّل إلى مزود TTS مُدار لتوليد صوت كل سطر وإدارته."
   },
   "profile": {

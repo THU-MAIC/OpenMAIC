@@ -5,6 +5,10 @@ Design Idea: {{designIdea}}
 Key Points: {{keyPoints}}
 Widget Type: {{widgetType}}
 Widget Config JSON: {{widgetConfig}}
+
+Element Inventory (from the generated widget HTML — prefer these real selectors over any convention below):
+{{elementInventory}}
+
 {{courseContext}}
 {{agents}}
 

@@ -142,7 +142,11 @@ export function makeEditInteractiveHtmlTool(
             text: `Applied ${edits.length} edit(s) to the interactive page.`,
           },
         ],
-        details: { sceneId, html: newHtml, editCount: edits.length },
+        details: {
+          sceneId,
+          html: newHtml,
+          editCount: edits.length,
+        },
       };
     },
   };

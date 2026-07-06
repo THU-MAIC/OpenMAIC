@@ -27,7 +27,8 @@ export function getTextStyle(style?: TableCellStyle): CSSProperties {
 /**
  * Format text: convert \n to <br/> and spaces to &nbsp;
  */
-export function formatText(text: string): string {
+export function formatText(text: unknown): string {
+  if (typeof text !== 'string') return '';
   return text.replace(/\n/g, '<br/>').replace(/ /g, '&nbsp;');
 }
 
@@ -39,16 +40,19 @@ export function getHiddenCells(data: TableCell[][]): Set<string> {
   const hidden = new Set<string>();
 
   for (let rowIdx = 0; rowIdx < data.length; rowIdx++) {
+    const row = data[rowIdx];
+    if (!Array.isArray(row)) continue;
+
     let realColIdx = 0;
-    for (let colIdx = 0; colIdx < data[rowIdx].length; colIdx++) {
+    for (let colIdx = 0; colIdx < row.length; colIdx++) {
       // Skip positions already occupied by a previous merge
       while (hidden.has(`${rowIdx}_${realColIdx}`)) {
         realColIdx++;
       }
 
-      const cell = data[rowIdx][colIdx];
-      const colspan = cell.colspan ?? 1;
-      const rowspan = cell.rowspan ?? 1;
+      const cell = row[colIdx];
+      const colspan = Number.isFinite(cell?.colspan) && cell.colspan > 0 ? cell.colspan : 1;
+      const rowspan = Number.isFinite(cell?.rowspan) && cell.rowspan > 0 ? cell.rowspan : 1;
 
       if (colspan > 1 || rowspan > 1) {
         for (let r = 0; r < rowspan; r++) {

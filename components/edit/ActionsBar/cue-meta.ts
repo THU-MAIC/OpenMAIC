@@ -32,6 +32,8 @@ export interface CueMeta {
   glyph: string;
   /** top accent bar tint for the cue card */
   accent: string;
+  /** dashed-border tint used by a "needs target" cue card */
+  dash: string;
 }
 
 const META: Record<string, CueMeta> = {
@@ -40,54 +42,63 @@ const META: Record<string, CueMeta> = {
     labelKey: 'edit.cue.speech',
     glyph: 'text-primary bg-primary/10 dark:text-primary',
     accent: 'bg-primary/40',
+    dash: 'border-primary/40',
   },
   spotlight: {
     icon: Focus,
     labelKey: 'edit.cue.spotlight',
     glyph: 'text-amber-600 bg-amber-500/10 dark:text-amber-400',
     accent: 'bg-amber-400/70',
+    dash: 'border-amber-400/70',
   },
   laser: {
     icon: Crosshair,
     labelKey: 'edit.cue.laser',
     glyph: 'text-rose-600 bg-rose-500/10 dark:text-rose-400',
     accent: 'bg-rose-400/70',
+    dash: 'border-rose-400/70',
   },
   wb_open: {
     icon: Presentation,
     labelKey: 'edit.cue.whiteboardOpen',
     glyph: 'text-sky-600 bg-sky-500/10 dark:text-sky-400',
     accent: 'bg-sky-400/70',
+    dash: 'border-primary/40',
   },
   wb_draw_text: {
     icon: PenLine,
     labelKey: 'edit.cue.whiteboardText',
     glyph: 'text-sky-600 bg-sky-500/10 dark:text-sky-400',
     accent: 'bg-sky-400/70',
+    dash: 'border-primary/40',
   },
   wb_draw_shape: {
     icon: Shapes,
     labelKey: 'edit.cue.whiteboardShape',
     glyph: 'text-sky-600 bg-sky-500/10 dark:text-sky-400',
     accent: 'bg-sky-400/70',
+    dash: 'border-primary/40',
   },
   wb_draw_latex: {
     icon: Sigma,
     labelKey: 'edit.cue.whiteboardLatex',
     glyph: 'text-sky-600 bg-sky-500/10 dark:text-sky-400',
     accent: 'bg-sky-400/70',
+    dash: 'border-primary/40',
   },
   wb_draw_table: {
     icon: Table2,
     labelKey: 'edit.cue.whiteboardTable',
     glyph: 'text-sky-600 bg-sky-500/10 dark:text-sky-400',
     accent: 'bg-sky-400/70',
+    dash: 'border-primary/40',
   },
   discussion: {
     icon: Flag,
     labelKey: 'edit.cue.discussion',
     glyph: 'text-yellow-600 bg-yellow-500/10 dark:text-yellow-400',
     accent: 'bg-yellow-400/70',
+    dash: 'border-primary/40',
   },
 };
 
@@ -96,6 +107,7 @@ const FALLBACK: CueMeta = {
   labelKey: 'edit.cue.action',
   glyph: 'text-muted-foreground bg-muted',
   accent: 'bg-muted-foreground/30',
+  dash: 'border-muted-foreground/30',
 };
 
 export function cueMeta(type: string): CueMeta {

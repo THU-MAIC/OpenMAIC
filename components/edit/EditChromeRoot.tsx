@@ -9,6 +9,7 @@ import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
+import { supportsNarrationTimeline } from './scene-timeline';
 import type { Scene } from '@/lib/types/stage';
 import { RightRailTabs } from '@/components/edit/RightRailTabs';
 
@@ -64,11 +65,13 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     void preloadEditor();
   }, []);
 
-  // The narration timeline (ActionsBar) is a slide-narration authoring tool — it
-  // only applies to scene types with a registered editor surface (slide/quiz).
-  // Read-only canvas scenes (no surface → NOOP + the "· view-only" badge, e.g.
-  // interactive/PBL) get no timeline.
+  // Whether this scene type has a registered canvas editor surface (slide/quiz).
+  // Authoring surface is separate from narration timeline availability.
   const authoringEnabled = !!sceneEditorRegistry.resolve(scene.type);
+  // The narration timeline (ActionsBar) is decoupled from the canvas editor surface
+  // (like agentEnabled below): it applies to registered surfaces (slide/quiz) AND
+  // view-only canvases that still carry a spoken script (interactive/pbl).
+  const timelineEnabled = supportsNarrationTimeline(scene.type, authoringEnabled);
 
   // The AI edit panel is decoupled from the canvas surface: it renders wherever
   // the agent has an edit capability — slides (regenerate) AND interactive scenes
@@ -111,7 +114,7 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
           refreshSessions={agentRuntime.refreshSessions}
         />
       }
-      bottomRail={authoringEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
+      bottomRail={timelineEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
       commandTrailing={headerControls}
     />
   );

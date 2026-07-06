@@ -343,7 +343,6 @@
     },
     "timeline": {
       "title": "ナレーション台本",
-      "dragToAdd": "ドラッグして追加",
       "regenAllTts": "すべての音声を再生成",
       "voiceAll": "全音声生成",
       "counts": "{{speech}} ナレーション · {{cue}} アクション",
@@ -361,14 +360,21 @@
       "fieldAction": "アクション",
       "fieldElement": "要素",
       "fieldContent": "内容",
-      "addDiscussion": "ディスカッションを追加",
       "addDiscussionExists": "各シーンにディスカッションは1つまで",
       "discussionTerminal": "末尾",
       "discussionTerminalHint": "ディスカッションはシーンの末尾に固定され、各シーンに1つだけです",
       "discussionTopicPlaceholder": "ディスカッションの主題（必須）",
       "discussionPromptPlaceholder": "ガイドプロンプト（任意）",
       "discussionAgent": "開始者",
-      "discussionAgentUnset": "指定なし"
+      "discussionAgentUnset": "指定なし",
+      "addAction": "アクションを追加"
+    },
+    "picker": {
+      "title": "アクションを挿入",
+      "speechDesc": "ナレーションを話す（自動音声対応）",
+      "spotlightDesc": "キャンバス上の要素をハイライト",
+      "laserDesc": "レーザーで要素を指し示す",
+      "discussionDesc": "問いを投げかけ、発言者を指定"
     },
     "tts": {
       "preview": "試聴",
@@ -1555,6 +1561,56 @@
     "webSearchBaseUrl": "ベースURL",
     "webSearchServerConfigured": "サーバー側で検索APIキーが設定済みです",
     "optional": "任意",
+    "selectProvider": "Select Provider",
+    "customProvider": "Custom",
+    "presetPickHint": "Picking a provider auto-fills its base URL and protocol; enter your key then click \"Fetch Models\". Not listed? Use \"Custom\".",
+    "presetCategory": {
+      "tokenPlan": "Token Plans",
+      "aggregator": "Aggregators",
+      "thirdParty": "Vendors",
+      "official": "Official"
+    },
+    "fetchModels": "Fetch Models",
+    "fetchModelsResult": "Fetched {total} models, added {added}",
+    "fetchModelsNoEndpoint": "This provider has no model list endpoint — add models manually",
+    "fetchModelsAuthError": "API key is invalid or expired",
+    "fetchModelsFailed": "Failed to fetch models",
+    "usage": {
+      "title": "Usage",
+      "refresh": "Refresh",
+      "disclaimer": "Usage is system-tracked; only server-side calls are counted.",
+      "totalRequests": "Requests",
+      "totalTokens": "LLM Tokens",
+      "dailyTrend": "Daily Token Trend",
+      "tokens": "Tokens",
+      "byModel": "By Model",
+      "model": "Model",
+      "type": "Type",
+      "reqs": "Reqs",
+      "usage": "Usage",
+      "empty": "No usage data yet",
+      "kindLlm": "LLM",
+      "kindImage": "Image",
+      "kindVideo": "Video",
+      "kindTts": "Speech",
+      "kindAsr": "ASR",
+      "unitToken": "tokens",
+      "unitImage": "images",
+      "unitSecond": "sec",
+      "unitCharacter": "chars"
+    },
+    "tokenPlan": {
+      "nav": "Token Plan",
+      "title": "Token Plan Setup",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "selectPlan": "Select Provider",
+      "apiKey": "API Key",
+      "enable": "Enable",
+      "updateKey": "Update key",
+      "modelsCount": "{{n}} models",
+      "capabilities": "Capabilities offered",
+      "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
+    },
     "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。"
   },
   "profile": {

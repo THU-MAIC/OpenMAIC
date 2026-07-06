@@ -145,7 +145,7 @@ vi.mock('@/lib/media/video-providers', () => ({
     seedance: {
       id: 'seedance',
       requiresApiKey: true,
-      models: [{ id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro' }],
+      models: [{ id: 'doubao-seedance-2-0-260128', name: 'Seedance 2.0' }],
     },
     kling: {
       id: 'kling',
@@ -991,7 +991,7 @@ describe('fetchServerProviders — Video stale selection', () => {
     mockServerResponse({ video: { seedance: {} } });
     await store.getState().fetchServerProviders();
     store.getState().setVideoProvider('seedance');
-    store.getState().setVideoModelId('doubao-seedance-1-5-pro-251215');
+    store.getState().setVideoModelId('doubao-seedance-2-0-260128');
 
     mockServerResponse({});
     await store.getState().fetchServerProviders();
@@ -1031,7 +1031,7 @@ describe('fetchServerProviders — Video stale selection', () => {
     mockServerResponse({ video: { seedance: {}, kling: {} } });
     await store.getState().fetchServerProviders();
     store.getState().setVideoProvider('seedance');
-    store.getState().setVideoModelId('doubao-seedance-1-5-pro-251215');
+    store.getState().setVideoModelId('doubao-seedance-2-0-260128');
 
     mockServerResponse({ video: { kling: {} } });
     await store.getState().fetchServerProviders();
@@ -1055,7 +1055,7 @@ describe('fetchServerProviders — Video stale selection', () => {
     await store.getState().fetchServerProviders();
 
     expect(store.getState().videoProviderId).toBe('seedance');
-    expect(store.getState().videoModelId).toBe('doubao-seedance-1-5-pro-251215');
+    expect(store.getState().videoModelId).toBe('doubao-seedance-2-0-260128');
     // Provider recovered but generation stays off — user enables manually
     expect(store.getState().videoGenerationEnabled).toBe(false);
   });
@@ -1247,7 +1247,7 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
 
     store.getState().setVideoProviderConfig('seedance', { customModels: [] });
 
-    expect(store.getState().videoModelId).toBe('doubao-seedance-1-5-pro-251215');
+    expect(store.getState().videoModelId).toBe('doubao-seedance-2-0-260128');
   });
 
   it('deleting the selected provider (bulk setProvidersConfig) does not keep an invalid selection', async () => {

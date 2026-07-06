@@ -39,6 +39,7 @@ export type { MediaMode } from './serializer/RenderContext';
 export {
   importPptx,
   parsedToSlides,
+  normalizeImportedSlides,
   transformParsedToSlides,
   createMockImportContext,
 } from './import-pipeline';

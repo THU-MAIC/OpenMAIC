@@ -294,7 +294,6 @@
     },
     "timeline": {
       "title": "내레이션 스크립트",
-      "dragToAdd": "끌어서 추가",
       "regenAllTts": "전체 음성 다시 생성",
       "voiceAll": "전체 음성",
       "counts": "내레이션 {{speech}}개 · 동작 {{cue}}개",
@@ -312,14 +311,21 @@
       "fieldAction": "동작",
       "fieldElement": "요소",
       "fieldContent": "내용",
-      "addDiscussion": "토론 추가",
       "addDiscussionExists": "장면당 토론은 하나만 가능합니다",
       "discussionTerminal": "끝",
       "discussionTerminalHint": "토론은 장면의 끝에 고정되며 장면당 하나만 허용됩니다",
       "discussionTopicPlaceholder": "토론 주제(필수)",
       "discussionPromptPlaceholder": "안내 프롬프트(선택)",
       "discussionAgent": "시작자",
-      "discussionAgentUnset": "지정 안 함"
+      "discussionAgentUnset": "지정 안 함",
+      "addAction": "동작 추가"
+    },
+    "picker": {
+      "title": "동작 삽입",
+      "speechDesc": "내레이션 말하기 (자동 음성 지원)",
+      "spotlightDesc": "캔버스의 요소를 강조",
+      "laserDesc": "레이저로 요소를 가리키기",
+      "discussionDesc": "질문을 던지고 발표자를 지정"
     },
     "tts": {
       "preview": "미리듣기",
@@ -1555,6 +1561,56 @@
     "webSearchBaseUrl": "기본 URL",
     "webSearchServerConfigured": "서버 측 검색 API 키가 설정되어 있습니다",
     "optional": "선택 사항",
+    "selectProvider": "Select Provider",
+    "customProvider": "Custom",
+    "presetPickHint": "Picking a provider auto-fills its base URL and protocol; enter your key then click \"Fetch Models\". Not listed? Use \"Custom\".",
+    "presetCategory": {
+      "tokenPlan": "Token Plans",
+      "aggregator": "Aggregators",
+      "thirdParty": "Vendors",
+      "official": "Official"
+    },
+    "fetchModels": "Fetch Models",
+    "fetchModelsResult": "Fetched {total} models, added {added}",
+    "fetchModelsNoEndpoint": "This provider has no model list endpoint — add models manually",
+    "fetchModelsAuthError": "API key is invalid or expired",
+    "fetchModelsFailed": "Failed to fetch models",
+    "usage": {
+      "title": "Usage",
+      "refresh": "Refresh",
+      "disclaimer": "Usage is system-tracked; only server-side calls are counted.",
+      "totalRequests": "Requests",
+      "totalTokens": "LLM Tokens",
+      "dailyTrend": "Daily Token Trend",
+      "tokens": "Tokens",
+      "byModel": "By Model",
+      "model": "Model",
+      "type": "Type",
+      "reqs": "Reqs",
+      "usage": "Usage",
+      "empty": "No usage data yet",
+      "kindLlm": "LLM",
+      "kindImage": "Image",
+      "kindVideo": "Video",
+      "kindTts": "Speech",
+      "kindAsr": "ASR",
+      "unitToken": "tokens",
+      "unitImage": "images",
+      "unitSecond": "sec",
+      "unitCharacter": "chars"
+    },
+    "tokenPlan": {
+      "nav": "Token Plan",
+      "title": "Token Plan Setup",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "selectPlan": "Select Provider",
+      "apiKey": "API Key",
+      "enable": "Enable",
+      "updateKey": "Update key",
+      "modelsCount": "{{n}} models",
+      "capabilities": "Capabilities offered",
+      "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
+    },
     "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다."
   },
   "profile": {
