@@ -1,11 +1,21 @@
 import type { PPTElement } from '@openmaic/dsl';
 
+// Reuse the renderer's single source of truth for element bounds instead of a
+// local re-implementation. `getElementRange` there is line-aware (derives
+// bounds from `start`/`end` for `PPTLineElement`) and rotation-aware, so
+// alignment guides built over a slide containing a line no longer produce NaN.
+import { getElementRange } from '../../utils/element';
+
 /**
  * Pure geometry/bounds math for the editing surface (gesture engine, snapping,
  * alignment guides). No React, no store, no `@/` imports — this module only
- * consumes the DSL element shape (`left/top/width/height/rotate`) and plain
- * numbers, so it can be exercised with plain unit tests and reused by any host.
+ * consumes the DSL element shape and plain numbers, so it can be exercised with
+ * plain unit tests and reused by any host.
  */
+
+// Re-exported so `snapping.ts`/`drag.ts` keep importing `getElementRange` from
+// `./geometry` unchanged, while the implementation lives in `utils/element`.
+export { getElementRange };
 
 /** A single alignment/snap guide line: a fixed axis value plus the span it covers. */
 export type AlignLine = {
@@ -19,85 +29,6 @@ export interface ElementRange {
   maxX: number;
   minY: number;
   maxY: number;
-}
-
-interface RotatedRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-  rotate: number;
-}
-
-/**
- * Rotated bounding range of a `left/top/width/height/rotate` rect: rotates the
- * four corners about the rect's center and returns the axis-aligned range that
- * encloses them. Ported from the app's `getRectRotatedRange`.
- */
-function getRectRotatedRange(rect: RotatedRect): {
-  xRange: [number, number];
-  yRange: [number, number];
-} {
-  const { left, top, width, height, rotate = 0 } = rect;
-
-  const radius = Math.sqrt(Math.pow(width, 2) + Math.pow(height, 2)) / 2;
-  const auxiliaryAngle = (Math.atan(height / width) * 180) / Math.PI;
-
-  const tlbraRadian = ((180 - rotate - auxiliaryAngle) * Math.PI) / 180;
-  const trblaRadian = ((auxiliaryAngle - rotate) * Math.PI) / 180;
-
-  const middleLeft = left + width / 2;
-  const middleTop = top + height / 2;
-
-  const xAxis = [
-    middleLeft + radius * Math.cos(tlbraRadian),
-    middleLeft + radius * Math.cos(trblaRadian),
-    middleLeft - radius * Math.cos(tlbraRadian),
-    middleLeft - radius * Math.cos(trblaRadian),
-  ];
-  const yAxis = [
-    middleTop - radius * Math.sin(tlbraRadian),
-    middleTop - radius * Math.sin(trblaRadian),
-    middleTop + radius * Math.sin(tlbraRadian),
-    middleTop + radius * Math.sin(trblaRadian),
-  ];
-
-  return {
-    xRange: [Math.min(...xAxis), Math.max(...xAxis)],
-    yRange: [Math.min(...yAxis), Math.max(...yAxis)],
-  };
-}
-
-/**
- * Axis-aligned bbox for a single element, in canvas units. Rotated elements
- * return the rotated bounding range (the box that encloses the rotated shape),
- * not the unrotated box.
- *
- * Line elements (`start`/`end` tuples, no `width`/`rotate`) are out of scope for
- * this port — the callers this task serves (selection bbox, alignment guides)
- * only operate over box elements. A line's bbox can be derived from its
- * `start`/`end` points if a future task needs it here.
- */
-export function getElementRange(el: PPTElement): ElementRange {
-  const { left, top, width, height } = el as unknown as {
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-  };
-  const rotate = (el as unknown as { rotate?: number }).rotate ?? 0;
-
-  if (rotate) {
-    const { xRange, yRange } = getRectRotatedRange({ left, top, width, height, rotate });
-    return { minX: xRange[0], maxX: xRange[1], minY: yRange[0], maxY: yRange[1] };
-  }
-
-  return {
-    minX: left,
-    maxX: left + width,
-    minY: top,
-    maxY: top + height,
-  };
 }
 
 /** Union bbox of a list of elements, in canvas units. */

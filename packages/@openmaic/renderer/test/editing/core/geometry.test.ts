@@ -29,6 +29,23 @@ describe('geometry', () => {
     expect(r.maxX - r.minX).toBeCloseTo(80, 5);
     expect(r.maxY - r.minY).toBeCloseTo(200, 5);
   });
+  it('line element returns finite bounds derived from start/end (not NaN)', () => {
+    const line = {
+      id: 'l',
+      type: 'line',
+      left: 100,
+      top: 50,
+      start: [0, 0],
+      end: [120, 40],
+    } as unknown as PPTElement;
+    const r = getElementRange(line);
+    expect(Number.isFinite(r.minX)).toBe(true);
+    expect(Number.isFinite(r.maxX)).toBe(true);
+    expect(Number.isFinite(r.minY)).toBe(true);
+    expect(Number.isFinite(r.maxY)).toBe(true);
+    // Derived from left/top + max(start,end): x ∈ [100, 220], y ∈ [50, 90]
+    expect(r).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 90 });
+  });
   it('list range is the union bbox', () => {
     expect(
       getElementListRange([box(), box({ id: 'b', left: 400, top: 0, width: 50, height: 50 })]),
