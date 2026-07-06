@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useState, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import type { PPTElement, Slide } from '@openmaic/dsl';
 
 import { computeDragMove } from './core/drag';
@@ -60,6 +60,21 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
 
   const [working, setWorking] = useState<Working | null>(null);
 
+  // Teardown for the currently-armed gesture's window listeners. Single-pointer:
+  // each pointer-down re-arms and overwrites this with its own teardown, and
+  // pointer-up clears it. Held here (not in the closure) so the unmount effect
+  // can remove any listeners still live when the component unmounts mid-drag —
+  // otherwise a later pointer-move/up would `setWorking` on an unmounted host.
+  const teardownRef = useRef<(() => void) | null>(null);
+
+  useEffect(
+    () => () => {
+      teardownRef.current?.();
+      teardownRef.current = null;
+    },
+    [],
+  );
+
   const onElementPointerDown = (el: PPTElement, e: ReactPointerEvent) => {
     const startX = e.clientX;
     const startY = e.clientY;
@@ -99,9 +114,14 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
       setWorking({ id: el.id, live, guides });
     };
 
-    const handleUp = (ev: PointerEvent) => {
+    const removeListeners = () => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
+    };
+
+    const handleUp = (ev: PointerEvent) => {
+      removeListeners();
+      teardownRef.current = null;
 
       const movedPast =
         Math.abs(ev.clientX - startX) > DRAG_THRESHOLD_PX ||
@@ -119,6 +139,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
 
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
+    teardownRef.current = removeListeners;
   };
 
   return {
