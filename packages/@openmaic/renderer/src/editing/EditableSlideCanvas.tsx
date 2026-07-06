@@ -1,41 +1,97 @@
 'use client';
 
+import type { PPTElement } from '@openmaic/dsl';
+
 import { SlideCanvas } from '../SlideCanvas';
-import type { EditableSlideCanvasProps, Selection } from './types';
+import { SelectionOverlay } from './handles/SelectionOverlay';
+import { useEditGesture } from './useEditGesture';
+import { EMPTY_SELECTION, type EditableSlideCanvasProps } from './types';
 
 /**
- * EditableSlideCanvas — Stage 0 scaffold for the renderer v2 editing surface,
- * shipped under the `@openmaic/renderer/editing` subpath so the read-only entry
- * (`@openmaic/renderer`) never pulls the editing bundle.
+ * EditableSlideCanvas — the renderer v2 editing surface. It renders the
+ * controlled document through the v1 read-only {@link SlideCanvas} (whose
+ * render path is left untouched) and layers its own interaction surface on top:
+ * a per-element hit layer that arms drag/click gestures, and a
+ * {@link SelectionOverlay} driven by the controlled `selection`.
  *
- * This scaffold renders through the v1 read-only SlideCanvas and supports
- * click-to-select only. Operate handles (drag / resize / rotate), alignment
- * snapping, and ProseMirror inline editing — and the `onElementsChange` intent
- * emission — land in Part A / Part B. See the editing-surface RFC for the
- * controlled edit-intent model this shell grows into.
+ * Gestures are owned by {@link useEditGesture}: pointer-down + drag produces a
+ * live working copy for 60fps feedback and, on pointer-up past a small
+ * threshold, emits exactly one `element.update` intent via `onElementsChange`;
+ * a click with no movement reports selection via `onSelectionChange` only.
+ * Alignment guides are computed but not drawn in this PR.
  *
- * It forwards `className`/`style` straight to SlideCanvas (no wrapper element) so
- * the v1 fill/auto-fit contract is preserved unchanged.
+ * The interaction layer is a sibling overlay (same origin, positions scaled by
+ * `scale`) so the v1 fill/render contract is preserved unmodified. `scale`
+ * defaults to 1 — editing runs at a controlled zoom rather than auto-fit.
+ * `renderImage`/`renderVideo`/`className`/`style` pass through.
  */
 export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
-  const { slide, scale, renderImage, renderVideo, onSelectionChange, className, style } = props;
+  const {
+    slide,
+    renderImage,
+    renderVideo,
+    className,
+    style,
+    selection,
+    onSelectionChange,
+    onElementsChange,
+    snapping,
+  } = props;
+
+  const scale = props.scale ?? 1;
+  const activeSelection = selection ?? EMPTY_SELECTION;
+
+  const { workingSlide, onElementPointerDown } = useEditGesture({
+    slide,
+    scale,
+    selection: activeSelection,
+    snapping,
+    onSelectionChange,
+    onElementsChange,
+  });
+
+  const elements = workingSlide.elements;
 
   return (
-    <SlideCanvas
-      slide={slide}
-      scale={scale}
-      renderImage={renderImage}
-      renderVideo={renderVideo}
+    <div
       className={className}
-      style={style}
-      onElementClick={
-        onSelectionChange
-          ? (element) => {
-              const next: Selection = { elementIds: [element.id], primaryId: element.id };
-              onSelectionChange(next);
-            }
-          : undefined
-      }
-    />
+      style={{ position: 'relative', width: '100%', height: '100%', ...style }}
+    >
+      <SlideCanvas
+        slide={workingSlide}
+        scale={scale}
+        renderImage={renderImage}
+        renderVideo={renderVideo}
+      />
+
+      {/* Interaction overlay: hit targets below, selection chrome above. */}
+      <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+        {elements.map((el: PPTElement) => {
+          const height = 'height' in el ? el.height : 0;
+          const rotate = 'rotate' in el ? el.rotate : 0;
+          return (
+            <div
+              key={el.id}
+              data-element-id={el.id}
+              onPointerDown={(e) => onElementPointerDown(el, e)}
+              style={{
+                position: 'absolute',
+                left: `${el.left * scale}px`,
+                top: `${el.top * scale}px`,
+                width: `${el.width * scale}px`,
+                height: `${height * scale}px`,
+                transform: `rotate(${rotate}deg)`,
+                transformOrigin: 'center',
+                pointerEvents: 'auto',
+                cursor: 'move',
+                touchAction: 'none',
+              }}
+            />
+          );
+        })}
+
+        <SelectionOverlay elements={elements} selection={activeSelection} scale={scale} />
+      </div>
+    </div>
   );
 }
