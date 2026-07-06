@@ -129,6 +129,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
     const removeListeners = () => {
       window.removeEventListener('pointermove', handleMove);
       window.removeEventListener('pointerup', handleUp);
+      window.removeEventListener('pointercancel', handleCancel);
     };
 
     const handleUp = (ev: PointerEvent) => {
@@ -141,9 +142,13 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
       // both axes must classify as a drag even if neither axis alone exceeds it.
       const movedPast = Math.hypot(ev.clientX - startX, ev.clientY - startY) > DRAG_THRESHOLD_PX;
 
-      if (movedPast) {
+      // A move intent is only meaningful when the host can mutate. Without
+      // `onElementsChange`, a drag-classified gesture (even a >2px jitter on a
+      // read-only click-to-select host) falls back to selection so a pointer
+      // interaction always yields a selection rather than doing nothing.
+      if (movedPast && onElementsChange) {
         const { props } = compute(ev.clientX, ev.clientY);
-        onElementsChange?.([moveIntent(el.id, props)]);
+        onElementsChange([moveIntent(el.id, props)]);
       } else {
         onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
       }
@@ -151,8 +156,20 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
       setWorking(null);
     };
 
+    // Browser-initiated cancel (touch interruption, OS gesture takeover): tear
+    // down and revert the working copy WITHOUT emitting any intent or selection
+    // change, then leave the hook ready for a fresh gesture.
+    const handleCancel = (ev: PointerEvent) => {
+      if (ev.pointerId !== activePointerRef.current) return;
+      removeListeners();
+      teardownRef.current = null;
+      activePointerRef.current = null;
+      setWorking(null);
+    };
+
     window.addEventListener('pointermove', handleMove);
     window.addEventListener('pointerup', handleUp);
+    window.addEventListener('pointercancel', handleCancel);
     teardownRef.current = removeListeners;
   };
 
