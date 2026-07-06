@@ -205,6 +205,82 @@ describe('EditableSlideCanvas', () => {
     expect(onSel).not.toHaveBeenCalled();
   });
 
+  it('fills its container: outer wrapper is width/height 100% (style can override)', () => {
+    const { container } = render(
+      <EditableSlideCanvas slide={slide} scale={1} onSelectionChange={vi.fn()} />,
+    );
+    const outer = container.firstChild as HTMLElement;
+    expect(outer.style.width).toBe('100%');
+    expect(outer.style.height).toBe('100%');
+
+    // A consumer `style` still wins (merged AFTER the fill defaults).
+    const { container: c2 } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        onSelectionChange={vi.fn()}
+        style={{ height: '400px' }}
+      />,
+    );
+    expect((c2.firstChild as HTMLElement).style.height).toBe('400px');
+    expect((c2.firstChild as HTMLElement).style.width).toBe('100%');
+  });
+
+  it('with only onSelectionChange, a >2px drag still selects and emits no update', () => {
+    const onSel = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        snapping={false}
+      />,
+    );
+    const hit = findHit(container);
+    fireEvent.pointerDown(hit, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(hit, { clientX: 30, clientY: 20 });
+    // No mutation callback -> a drag-classified gesture falls back to selection.
+    expect(onSel).toHaveBeenCalledTimes(1);
+    expect(onSel).toHaveBeenCalledWith(
+      expect.objectContaining({ elementIds: ['a'], primaryId: 'a' }),
+    );
+  });
+
+  it('pointercancel reverts the working copy and leaves the hook ready for a new gesture', () => {
+    const onSel = vi.fn();
+    const onCh = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={onSel}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+    const hit = findHit(container);
+    fireEvent.pointerDown(hit, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { clientX: 30, clientY: 0 });
+    expect(findHit(container).style.left).toBe('130px'); // live drag moved it
+    fireEvent.pointerCancel(hit, { clientX: 30, clientY: 0 });
+    // Cancelled: working copy reverts, no intent, no selection change.
+    expect(findHit(container).style.left).toBe('100px');
+    expect(onCh).not.toHaveBeenCalled();
+    expect(onSel).not.toHaveBeenCalled();
+
+    // The hook is ready again: a fresh gesture is NOT ignored.
+    fireEvent.pointerDown(hit, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { clientX: 40, clientY: 0 });
+    fireEvent.pointerUp(hit, { clientX: 40, clientY: 0 });
+    expect(onCh).toHaveBeenCalledTimes(1);
+    expect(onCh).toHaveBeenCalledWith([
+      { type: 'element.update', id: 'a', props: { left: 140, top: 100 } },
+    ]);
+  });
+
   it('ignores a foreign pointerId; only the active pointer drives the gesture', () => {
     const { container } = render(
       <EditableSlideCanvas

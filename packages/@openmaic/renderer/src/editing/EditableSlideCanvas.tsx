@@ -75,11 +75,16 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
 
   return (
     // Outer wrapper carries the documented `className`/`style` pass-through
-    // (which may add padding). The inner wrapper below is padding-free so that
-    // SlideCanvas (normal flow) and the overlay (`inset: 0`) always measure the
-    // same box — otherwise consumer padding would diverge their box models and
-    // misalign the overlay from the rendered elements.
-    <div className={className} style={style}>
+    // (which may add padding). It fills its container by default (`width`/
+    // `height: 100%`, merged BEFORE `...style` so a consumer can still override)
+    // — without an explicit height the inner `height: 100%` (and SlideCanvas's
+    // own `height: 100%`) would resolve against an auto-height box, so
+    // `useViewportSize` reads `clientHeight ≈ 0`, `fitScale ≈ 0`, and the canvas
+    // renders blank when `scale` is omitted. The inner wrapper below is
+    // padding-free so that SlideCanvas (normal flow) and the overlay (`inset: 0`)
+    // always measure the same box — otherwise consumer padding would diverge
+    // their box models and misalign the overlay from the rendered elements.
+    <div className={className} style={{ width: '100%', height: '100%', ...style }}>
       <div style={{ position: 'relative', width: '100%', height: '100%' }}>
         {/* Pass `props.scale` (possibly undefined) THROUGH so SlideCanvas
             auto-fits with the same `fitScale` the overlay reads above. */}
