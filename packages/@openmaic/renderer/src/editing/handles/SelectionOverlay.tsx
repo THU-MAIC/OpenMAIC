@@ -17,33 +17,32 @@ export interface SelectionOverlayProps {
 export function SelectionOverlay({ elements, selection, scale }: SelectionOverlayProps) {
   const selected = selection.elementIds
     .map((id) => elements.find((el) => el.id === id))
-    .filter((el): el is PPTElement => el != null);
+    // Line elements: hit target + selection + endpoint editing land together in
+    // the line slice; the box-model drag intent can't represent line moves. We
+    // skip them here (rather than a `height`/`rotate` fallback) — which also
+    // narrows the type so `width`/`height`/`rotate` are directly available.
+    .filter(
+      (el): el is Exclude<PPTElement, { type: 'line' }> => el != null && el.type !== 'line',
+    );
 
   if (selected.length === 0) return null;
 
   return (
     <>
-      {selected.map((el) => {
-        // Line elements (`PPTLineElement`) omit `height`/`rotate` from the
-        // base geometry (their bounds derive from start/end points instead);
-        // fall back to 0 for them rather than widening `PPTElement`.
-        const height = 'height' in el ? el.height : 0;
-        const rotate = 'rotate' in el ? el.rotate : 0;
-        return (
-          <BorderLine
-            key={el.id}
-            width={el.width * scale}
-            height={height * scale}
-            style={{
-              left: `${el.left * scale}px`,
-              top: `${el.top * scale}px`,
-              transform: `rotate(${rotate}deg)`,
-              transformOrigin: 'center',
-              pointerEvents: 'none',
-            }}
-          />
-        );
-      })}
+      {selected.map((el) => (
+        <BorderLine
+          key={el.id}
+          width={el.width * scale}
+          height={el.height * scale}
+          style={{
+            left: `${el.left * scale}px`,
+            top: `${el.top * scale}px`,
+            transform: `rotate(${el.rotate}deg)`,
+            transformOrigin: 'center',
+            pointerEvents: 'none',
+          }}
+        />
+      ))}
     </>
   );
 }

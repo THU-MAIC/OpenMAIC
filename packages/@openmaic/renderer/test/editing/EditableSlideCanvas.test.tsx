@@ -97,6 +97,66 @@ describe('EditableSlideCanvas', () => {
     expect(onCh).not.toHaveBeenCalled();
   });
 
+  it('auto-fits when scale is omitted: overlay positions use fitScale', () => {
+    // scale omitted -> canvasScale falls back to the hook's fitScale (0.5 here).
+    vi.mocked(useViewportSize).mockReturnValue({
+      viewportStyles: { left: 0, top: 0, width: 1000, height: 562 },
+      fitScale: 0.5,
+    });
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    const hit = findHit(container);
+    // el.left=100 at fitScale 0.5 -> 50px; el.width=200 -> 100px.
+    expect(hit.style.left).toBe('50px');
+    expect(hit.style.width).toBe('100px');
+  });
+
+  it('is inert without callbacks: no interactive hit node is rendered', () => {
+    const { container } = render(<EditableSlideCanvas slide={slide} scale={1} />);
+    expect(container.querySelector('[data-element-id]')).toBeNull();
+  });
+
+  it('defers line elements: no hit node or selection border for a line', () => {
+    const lineSlide = {
+      ...slide,
+      elements: [
+        ...(slide as unknown as { elements: unknown[] }).elements,
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: ['a', 'line1'], primaryId: 'line1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    // Box element still hit-testable; line element has no hit node.
+    expect(container.querySelector('[data-element-id="a"]')).not.toBeNull();
+    expect(container.querySelector('[data-element-id="line1"]')).toBeNull();
+    // Only the box element gets a selection border (one, not two).
+    expect(container.querySelectorAll('[data-selection-border]')).toHaveLength(1);
+  });
+
   it('a drag emits exactly one element.update intent on pointer-up', () => {
     const onCh = vi.fn();
     const { container } = render(
