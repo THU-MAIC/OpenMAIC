@@ -21,9 +21,7 @@ export function SelectionOverlay({ elements, selection, scale }: SelectionOverla
     // the line slice; the box-model drag intent can't represent line moves. We
     // skip them here (rather than a `height`/`rotate` fallback) — which also
     // narrows the type so `width`/`height`/`rotate` are directly available.
-    .filter(
-      (el): el is Exclude<PPTElement, { type: 'line' }> => el != null && el.type !== 'line',
-    );
+    .filter((el): el is Exclude<PPTElement, { type: 'line' }> => el != null && el.type !== 'line');
 
   if (selected.length === 0) return null;
 
