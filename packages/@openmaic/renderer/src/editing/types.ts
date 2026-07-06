@@ -47,7 +47,10 @@ export const EMPTY_SELECTION: Selection = Object.freeze({
 export interface SnappingOptions {
   toElements?: boolean;
   toCanvas?: boolean;
-  /** snap threshold in px */
+  /**
+   * Snap threshold in canvas units (viewportSize space), not screen px — it is
+   * compared against un-scaled element bounds for app parity.
+   */
   range?: number;
 }
 

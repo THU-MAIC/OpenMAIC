@@ -178,4 +178,51 @@ describe('EditableSlideCanvas', () => {
       { type: 'element.update', id: 'a', props: { left: 130, top: 120 } },
     ]);
   });
+
+  it('a diagonal move past the threshold on both axes commits a drag (Euclidean)', () => {
+    // dx=dy=1.9 -> neither axis exceeds 2 (old per-axis check would misclassify
+    // as a click), but hypot ≈ 2.69 > 2 so it must commit a drag intent.
+    const onSel = vi.fn();
+    const onCh = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={onSel}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+    const hit = findHit(container);
+    fireEvent.pointerDown(hit, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { clientX: 1.9, clientY: 1.9 });
+    fireEvent.pointerUp(hit, { clientX: 1.9, clientY: 1.9 });
+    expect(onCh).toHaveBeenCalledTimes(1);
+    expect(onCh).toHaveBeenCalledWith([
+      { type: 'element.update', id: 'a', props: { left: 101.9, top: 101.9 } },
+    ]);
+    expect(onSel).not.toHaveBeenCalled();
+  });
+
+  it('ignores a foreign pointerId; only the active pointer drives the gesture', () => {
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        snapping={false}
+      />,
+    );
+    const hit = findHit(container);
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 0, clientY: 0 });
+    // A second pointer's move must be ignored (no cross-contamination).
+    fireEvent.pointerMove(hit, { pointerId: 2, clientX: 50, clientY: 50 });
+    expect(findHit(container).style.left).toBe('100px'); // unmoved
+    // The active pointer still drives the working copy.
+    fireEvent.pointerMove(hit, { pointerId: 1, clientX: 30, clientY: 0 });
+    expect(findHit(container).style.left).toBe('130px');
+  });
 });

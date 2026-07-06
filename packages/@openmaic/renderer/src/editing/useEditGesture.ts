@@ -67,15 +67,26 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
   // otherwise a later pointer-move/up would `setWorking` on an unmounted host.
   const teardownRef = useRef<(() => void) | null>(null);
 
+  // The pointerId owning the in-flight gesture. Single-pointer by design: while
+  // one gesture is active, further pointer-downs are ignored and window
+  // move/up events from any *other* pointerId are dropped, so a second finger
+  // can't overwrite the teardown ref or drag the first element.
+  const activePointerRef = useRef<number | null>(null);
+
   useEffect(
     () => () => {
       teardownRef.current?.();
       teardownRef.current = null;
+      activePointerRef.current = null;
     },
     [],
   );
 
   const onElementPointerDown = (el: PPTElement, e: ReactPointerEvent) => {
+    // Ignore additional pointer-downs while a gesture is already in flight.
+    if (activePointerRef.current !== null) return;
+    activePointerRef.current = e.pointerId;
+
     const startX = e.clientX;
     const startY = e.clientY;
     const others = slide.elements.filter((o) => o.id !== el.id);
@@ -104,6 +115,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
       });
 
     const handleMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== activePointerRef.current) return;
       const { props, guides } = compute(ev.clientX, ev.clientY);
       const live: Slide = {
         ...slide,
@@ -120,12 +132,14 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
     };
 
     const handleUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== activePointerRef.current) return;
       removeListeners();
       teardownRef.current = null;
+      activePointerRef.current = null;
 
-      const movedPast =
-        Math.abs(ev.clientX - startX) > DRAG_THRESHOLD_PX ||
-        Math.abs(ev.clientY - startY) > DRAG_THRESHOLD_PX;
+      // Combined (Euclidean) distance: a diagonal move past the threshold on
+      // both axes must classify as a drag even if neither axis alone exceeds it.
+      const movedPast = Math.hypot(ev.clientX - startX, ev.clientY - startY) > DRAG_THRESHOLD_PX;
 
       if (movedPast) {
         const { props } = compute(ev.clientX, ev.clientY);
