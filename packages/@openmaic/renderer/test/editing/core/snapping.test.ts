@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
+import type { PPTElement } from '@openmaic/dsl';
 import { buildAlignLines, snapRange } from '../../../src/editing/core/snapping';
 
-const el = (o: any) => ({ id: 'x', type: 'text', rotate: 0, ...o } as any);
+const el = (o: Partial<PPTElement>) =>
+  ({ id: 'x', type: 'text', rotate: 0, ...o }) as unknown as PPTElement;
 const vp = { width: 1000, height: 562 };
 
 describe('snapping', () => {
@@ -10,8 +12,10 @@ describe('snapping', () => {
     expect(vertical.map((l) => l.value)).toEqual(expect.arrayContaining([0, 500, 1000]));
   });
   it('builds element edge + center lines when toElements is on', () => {
-    const { vertical } = buildAlignLines([el({ left: 100, top: 0, width: 200, height: 50 })], vp,
-      { toElements: true, toCanvas: false });
+    const { vertical } = buildAlignLines([el({ left: 100, top: 0, width: 200, height: 50 })], vp, {
+      toElements: true,
+      toCanvas: false,
+    });
     expect(vertical.map((l) => l.value)).toEqual(expect.arrayContaining([100, 200, 300])); // left,center,right
   });
   it('snaps a target within range and reports a guide', () => {

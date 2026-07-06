@@ -1,9 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { getElementRange, getElementListRange, uniqAlignLines, pxToCanvas } from
-  '../../../src/editing/core/geometry';
+import type { PPTElement } from '@openmaic/dsl';
+import {
+  getElementRange,
+  getElementListRange,
+  uniqAlignLines,
+  pxToCanvas,
+} from '../../../src/editing/core/geometry';
 
-const box = (over: Partial<any> = {}) =>
-  ({ id: 'a', type: 'text', left: 100, top: 50, width: 200, height: 80, rotate: 0, ...over } as any);
+const box = (over: Partial<PPTElement> = {}) =>
+  ({
+    id: 'a',
+    type: 'text',
+    left: 100,
+    top: 50,
+    width: 200,
+    height: 80,
+    rotate: 0,
+    ...over,
+  }) as unknown as PPTElement;
 
 describe('geometry', () => {
   it('axis-aligned range for an unrotated element', () => {
@@ -16,12 +30,19 @@ describe('geometry', () => {
     expect(r.maxY - r.minY).toBeCloseTo(200, 5);
   });
   it('list range is the union bbox', () => {
-    expect(getElementListRange([box(), box({ id: 'b', left: 400, top: 0, width: 50, height: 50 })]))
-      .toEqual({ minX: 100, maxX: 450, minY: 0, maxY: 130 });
+    expect(
+      getElementListRange([box(), box({ id: 'b', left: 400, top: 0, width: 50, height: 50 })]),
+    ).toEqual({ minX: 100, maxX: 450, minY: 0, maxY: 130 });
   });
   it('uniqAlignLines dedups by value and merges ranges', () => {
-    expect(uniqAlignLines([{ value: 10, range: [0, 5] }, { value: 10, range: [3, 8] }]))
-      .toEqual([{ value: 10, range: [0, 8] }]);
+    expect(
+      uniqAlignLines([
+        { value: 10, range: [0, 5] },
+        { value: 10, range: [3, 8] },
+      ]),
+    ).toEqual([{ value: 10, range: [0, 8] }]);
   });
-  it('pxToCanvas divides by scale', () => { expect(pxToCanvas(50, 0.5)).toBe(100); });
+  it('pxToCanvas divides by scale', () => {
+    expect(pxToCanvas(50, 0.5)).toBe(100);
+  });
 });

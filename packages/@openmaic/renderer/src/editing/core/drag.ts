@@ -74,7 +74,14 @@ export function computeDragMove(input: DragInput): DragResult {
     return { props: { left: shiftedLeft, top: shiftedTop }, guides: [] };
   }
 
-  const shiftedElement = { ...element, left: shiftedLeft, top: shiftedTop, width, height, rotate } as PPTElement;
+  const shiftedElement = {
+    ...element,
+    left: shiftedLeft,
+    top: shiftedTop,
+    width,
+    height,
+    rotate,
+  } as PPTElement;
   const targetRange = getElementRange(shiftedElement);
 
   const lines = buildAlignLines(others, viewport, resolved.opts);
