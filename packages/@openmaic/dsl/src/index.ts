@@ -30,3 +30,4 @@ export * from './action.js';
 export * from './validate.js';
 export * from './normalize.js';
 export * from './version.js';
+export * from './storage.js';

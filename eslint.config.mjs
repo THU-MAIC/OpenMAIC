@@ -87,6 +87,30 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Package boundary (machine-enforced): @openmaic/storage is a standalone,
+  // app-agnostic persistence package. Same policy as the @openmaic/renderer
+  // boundary above — it must contain NO `@/…` host-app path-alias string, so a
+  // deadline can't punch a "temporary" host dependency through the package API.
+  // It depends only on @openmaic/dsl; host wiring (which store persists where)
+  // lives in the app, which imports the package, never the reverse.
+  {
+    files: ['packages/@openmaic/storage/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/^@\\//]',
+          message:
+            '@openmaic/storage must not reference a host-app path (@/…). This package authors no `@/…` strings — depend only on @openmaic/dsl. The app wires its stores through the package, not the reverse.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/^@\\//]',
+          message:
+            '@openmaic/storage must not reference a host-app path (@/…) in a template literal. Depend only on @openmaic/dsl.',
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;
