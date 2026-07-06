@@ -47,11 +47,30 @@ describe('document MIME normalization', () => {
   });
 
   it('falls back to the extension when a browser reports an unknown MIME', () => {
-    // Some Windows setups report application/x-msword for .doc — unknown to
-    // the format registry, but the extension resolves cleanly.
+    // Some Windows setups report application/x-msword for .doc — this alias
+    // is now curated in the registry so it round-trips to the canonical MIME.
     expect(
       normalizeDocumentMimeType({ mimeType: 'application/x-msword', fileName: 'legacy.doc' }),
     ).toBe(DOCUMENT_MIME_TYPES.doc);
+  });
+
+  it('does not let an unknown MIME masquerade as a supported format via the filename extension', () => {
+    // Security regression: previously any unknown MIME with a matching
+    // extension was normalized to the extension's canonical MIME, so a
+    // `{application/x-msdownload, lesson.pdf}` upload would pass the unpdf
+    // whitelist. Curated aliases go through aliasMimes; everything else
+    // keeps its reported MIME so provider whitelists can reject it.
+    expect(
+      normalizeDocumentMimeType({
+        mimeType: 'application/x-msdownload',
+        fileName: 'lesson.pdf',
+      }),
+    ).toBe('application/x-msdownload');
+    expect(
+      isMimeSupportedByProviders({ mimeType: 'application/x-msdownload', fileName: 'lesson.pdf' }, [
+        'unpdf',
+      ]),
+    ).toBe(false);
   });
 
   it('accepts a non-canonical browser MIME for a provider that supports the format', () => {

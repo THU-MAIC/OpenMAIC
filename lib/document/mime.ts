@@ -18,7 +18,13 @@ interface DocumentFormat {
 
 const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
   { id: 'pdf', mime: 'application/pdf', extensions: ['.pdf'], label: 'PDF' },
-  { id: 'doc', mime: 'application/msword', extensions: ['.doc'], label: 'DOC' },
+  {
+    id: 'doc',
+    mime: 'application/msword',
+    extensions: ['.doc'],
+    aliasMimes: ['application/x-msword'],
+    label: 'DOC',
+  },
   {
     id: 'docx',
     mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -95,11 +101,6 @@ for (const f of DOCUMENT_FORMATS) {
   }
 }
 
-/** Every MIME string that maps back to a known format (canonical + aliases). */
-const KNOWN_MIME_TYPES: readonly string[] = Array.from(
-  new Set(DOCUMENT_FORMATS.flatMap((f) => [f.mime, ...(f.aliasMimes ?? [])])),
-);
-
 // ─── Provider capability matrix ──────────────────────────────────────────────
 // Every provider's supported set of formats. This is the ONLY place these
 // lists live — `lib/document/extractors/pdf.ts` and `lib/pdf/mineru-cloud.ts`
@@ -164,21 +165,24 @@ const GENERIC_DOCUMENT_MIME_TYPES = new Set([
   'application/x-zip-compressed',
 ]);
 
-const KNOWN_MIME_SET = new Set(KNOWN_MIME_TYPES);
-
 /**
  * Normalize a (mimeType, fileName) pair to a canonical MIME string.
  *
  * Precedence:
- *   1. mimeType is missing or generic (octet-stream/zip): use extension.
- *   2. mimeType is a known alias (e.g. `image/jpeg2000`, `text/x-markdown`):
- *      map to the canonical MIME. This also catches the case where a browser
- *      reports the correct MIME — it round-trips through the alias lookup.
- *   3. mimeType is unknown but extension maps to a known format: prefer
- *      the extension. Prevents rejecting a valid file when the browser
- *      reports a non-standard MIME (e.g. some Windows installs report
- *      `application/x-msword` for `.doc`).
- *   4. Fall back to whatever mimeType we have.
+ *   1. mimeType is missing or a generic upload fallback (octet-stream,
+ *      zip-family): use the extension. Handles the common case where a
+ *      browser has no more specific MIME to offer for Office/ZIP-based
+ *      formats.
+ *   2. mimeType is a known alias (canonical MIME, or one of the
+ *      registry's curated `aliasMimes` — e.g. `image/jpeg2000`,
+ *      `text/x-markdown`, `application/x-msword`): map to the canonical
+ *      MIME.
+ *   3. Otherwise: return the reported mimeType verbatim. We do NOT trust
+ *      the extension for arbitrary unknown MIMEs — a
+ *      `{mime: 'application/x-msdownload', fileName: 'lesson.pdf'}` pair
+ *      must not spoof its way to `application/pdf`. If a real-world
+ *      browser MIME shows up that legitimately maps to a known format,
+ *      add it to that format's `aliasMimes`.
  */
 export function normalizeDocumentMimeType(input: {
   mimeType?: string | null;
@@ -188,22 +192,11 @@ export function normalizeDocumentMimeType(input: {
   const extension = input.fileName?.split('.').pop()?.toLowerCase();
   const mimeTypeFromExtension = extension ? MIME_BY_EXTENSION[extension] : undefined;
 
-  if (mimeTypeFromExtension && (!mimeType || GENERIC_DOCUMENT_MIME_TYPES.has(mimeType))) {
-    return mimeTypeFromExtension;
+  if (!mimeType || GENERIC_DOCUMENT_MIME_TYPES.has(mimeType)) {
+    return mimeTypeFromExtension ?? mimeType ?? '';
   }
 
-  if (mimeType) {
-    const canonical = canonicalFromAlias(mimeType);
-    if (canonical) return canonical;
-    if (mimeTypeFromExtension && !KNOWN_MIME_SET.has(mimeType)) {
-      // Non-canonical browser-reported MIME with a known extension —
-      // trust the extension.
-      return mimeTypeFromExtension;
-    }
-    return mimeType;
-  }
-
-  return mimeTypeFromExtension || '';
+  return canonicalFromAlias(mimeType) ?? mimeType;
 }
 
 function canonicalFromAlias(mimeType: string): string | undefined {
