@@ -39,6 +39,29 @@ describe('computeDragMove', () => {
     });
     expect(r.props).toEqual({ left: 100, top: 90 });
   });
+  it('returns a line element unchanged (lines are not box-model draggable)', () => {
+    const line = {
+      id: 'l',
+      type: 'line',
+      left: 10,
+      top: 20,
+      start: [0, 0],
+      end: [50, 50],
+      width: 2,
+      style: 'solid',
+      color: '#333',
+      points: ['', ''],
+    } as unknown as PPTElement;
+    const r = computeDragMove({
+      element: line,
+      others: [],
+      viewport: vp,
+      deltaCanvas: { x: 30, y: -10 },
+      snapping: { toCanvas: true, range: 5 },
+    });
+    expect(r.props).toEqual({ left: 10, top: 20 });
+    expect(r.guides).toHaveLength(0);
+  });
   it('snaps the left edge to the canvas edge and emits a guide', () => {
     // drag so left edge lands at x=2 → snap to 0
     const r = computeDragMove({

@@ -55,13 +55,18 @@ function resolveSnapping(
  */
 export function computeDragMove(input: DragInput): DragResult {
   const { element, others, viewport, deltaCanvas, axisLock, snapping } = input;
-  const { left, top, width, height, rotate } = element as unknown as {
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    rotate?: number;
-  };
+
+  // Lines are filtered from dragging upstream (they carry `start`/`end`, not a
+  // `width`/`height` box, so the box-model drag intent can't represent them).
+  // If one still reaches here, return its current position unchanged rather than
+  // reading `undefined` box fields off the union.
+  if (element.type === 'line') {
+    return { props: { left: element.left, top: element.top }, guides: [] };
+  }
+
+  // `element` is now narrowed to the non-line box variants, so `left/top/width/
+  // height/rotate` are directly available without any cast.
+  const { left, top, width, height, rotate } = element;
 
   const dx0 = axisLock === 'y' ? 0 : deltaCanvas.x;
   const dy0 = axisLock === 'x' ? 0 : deltaCanvas.y;
