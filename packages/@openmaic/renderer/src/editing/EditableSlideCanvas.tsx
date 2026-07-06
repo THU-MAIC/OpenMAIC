@@ -107,7 +107,14 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               // together in the line slice; the box-model drag intent can't
               // represent line moves. Skipping them here also narrows the type
               // so `width`/`height`/`rotate` are directly available (no casts).
-              .filter((el): el is Exclude<PPTElement, { type: 'line' }> => el.type !== 'line')
+              // Locked elements (`el.lock`): the app editor guards locked
+              // content from being moved; mirror that here by never mounting a
+              // move hit target for one, so it can't be dragged. (Its
+              // selection border, if selected, is unaffected — SelectionOverlay
+              // is untouched.)
+              .filter(
+                (el): el is Exclude<PPTElement, { type: 'line' }> => el.type !== 'line' && !el.lock,
+              )
               .map((el) => (
                 <div
                   key={el.id}

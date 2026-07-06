@@ -281,6 +281,41 @@ describe('EditableSlideCanvas', () => {
     ]);
   });
 
+  it('locked element: no interactive move hit target is rendered', () => {
+    const lockedSlide = {
+      ...slide,
+      elements: [
+        (slide as unknown as { elements: unknown[] }).elements[0],
+        {
+          id: 'locked1',
+          type: 'text',
+          left: 300,
+          top: 300,
+          width: 100,
+          height: 50,
+          rotate: 0,
+          content: 'y',
+          defaultFontName: 'a',
+          defaultColor: '#000',
+          lineHeight: 1,
+          lock: true,
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lockedSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    // Unlocked element still hit-testable; locked element has no hit node.
+    expect(container.querySelector('[data-element-id="a"]')).not.toBeNull();
+    expect(container.querySelector('[data-element-id="locked1"]')).toBeNull();
+  });
+
   it('ignores a foreign pointerId; only the active pointer drives the gesture', () => {
     const { container } = render(
       <EditableSlideCanvas
