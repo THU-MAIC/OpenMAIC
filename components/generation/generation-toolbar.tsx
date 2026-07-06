@@ -41,6 +41,7 @@ import {
   MAX_DOCUMENT_BUNDLE_FILES,
   MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
 } from '@/lib/document/bundle';
+import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
 import type { SelectedCourseMaterial } from '@/lib/types/generation';
 
 // ─── Constants ───────────────────────────────────────────────
@@ -138,12 +139,7 @@ export function GenerationToolbar({
       return;
     }
 
-    const existing = new Set(
-      courseMaterials.map((file) => `${file.name}:${file.size}:${file.lastModified}`),
-    );
-    const dedupedFiles = supportedFiles.filter(
-      (file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`),
-    );
+    const dedupedFiles = dedupeCourseMaterialFiles(courseMaterials, supportedFiles);
     if (dedupedFiles.length === 0) return;
 
     if (courseMaterials.length + dedupedFiles.length > MAX_DOCUMENT_BUNDLE_FILES) {

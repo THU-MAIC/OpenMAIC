@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   allocateDocumentTextBudgets,
   buildDocumentBundle,
+  sortDocumentImagesForVision,
   type ParsedDocumentPart,
 } from '@/lib/document/bundle';
 
@@ -119,5 +120,41 @@ describe('document bundle', () => {
     expect(priorities.get('a1')).toBe(2);
     expect(priorities.get('b1')).toBe(1);
     expect(priorities.get('a2')).toBe(0);
+  });
+
+  it('does not truncate into a rewritten image ID', () => {
+    const images = Array.from({ length: 11 }, (_, index) => ({
+      id: `image_${index + 1}`,
+      src: `data:image/png;base64,${index + 1}`,
+      pageNumber: 1,
+    }));
+    const header =
+      '## Source Document 1: Source 1.pdf\n' +
+      '- Order: 1\n' +
+      '- MIME type: application/pdf\n' +
+      '- Pages: 2\n\n';
+
+    const bundle = buildDocumentBundle(
+      [
+        part(1, {
+          text: 'prefix image_11 suffix',
+          rawTextLength: 'prefix image_11 suffix'.length,
+          images,
+        }),
+      ],
+      { maxChars: header.length + 'prefix img_1'.length, maxVisionImages: 4 },
+    );
+
+    expect(bundle.text).not.toContain('prefix img_1');
+  });
+
+  it('sorts same-priority img_N IDs numerically', () => {
+    const sorted = sortDocumentImagesForVision([
+      { id: 'img_10', pageNumber: 1, visionPriority: 0 },
+      { id: 'img_2', pageNumber: 1, visionPriority: 0 },
+      { id: 'img_1', pageNumber: 1, visionPriority: 0 },
+    ]);
+
+    expect(sorted.map((image) => image.id)).toEqual(['img_1', 'img_2', 'img_10']);
   });
 });

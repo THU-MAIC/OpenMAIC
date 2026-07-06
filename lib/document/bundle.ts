@@ -44,6 +44,19 @@ function replaceImageIds(text: string, idMap: ReadonlyMap<string, string>): stri
   return nextText;
 }
 
+function truncateTextAtBoundary(text: string, maxChars: number): string {
+  if (maxChars <= 0) return '';
+  if (text.length <= maxChars) return text;
+
+  const sliced = Array.from(text).slice(0, maxChars).join('');
+  let cut = sliced.length;
+  while (cut > 0 && /[\p{L}\p{N}_-]/u.test(sliced[cut - 1])) {
+    cut -= 1;
+  }
+
+  return cut > 0 ? sliced.slice(0, cut) : sliced;
+}
+
 function buildSectionHeader(part: ParsedDocumentPart, index: number): string {
   const lines = [
     `## Source Document ${index + 1}: ${part.source.name}`,
@@ -156,6 +169,11 @@ export function sortDocumentImagesForVision<
     const priorityDiff = (b.visionPriority ?? 0) - (a.visionPriority ?? 0);
     if (priorityDiff !== 0) return priorityDiff;
     if (a.pageNumber !== b.pageNumber) return a.pageNumber - b.pageNumber;
+    const aNumericId = Number(a.id.match(/^img_(\d+)$/)?.[1] ?? Number.NaN);
+    const bNumericId = Number(b.id.match(/^img_(\d+)$/)?.[1] ?? Number.NaN);
+    if (Number.isFinite(aNumericId) && Number.isFinite(bNumericId)) {
+      return aNumericId - bNumericId;
+    }
     return a.id.localeCompare(b.id);
   });
 }
@@ -206,7 +224,10 @@ export function buildDocumentBundle(
 
   const text = stableParts
     .map((part, index) => {
-      const boundedText = replaceImageIds(part.text, finalIdMap).slice(0, textBudgets[index]);
+      const boundedText = replaceImageIds(
+        truncateTextAtBoundary(part.text, textBudgets[index]),
+        finalIdMap,
+      );
       return `${headers[index]}${boundedText}`;
     })
     .join(SECTION_SEPARATOR);

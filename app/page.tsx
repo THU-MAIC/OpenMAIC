@@ -36,8 +36,9 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { storeDocumentBlob } from '@/lib/utils/image-storage';
+import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
+import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
 import type {
   SelectedCourseMaterial,
   SessionDocumentSource,
@@ -124,7 +125,6 @@ function HomePage() {
   };
 
   // Hydrate client-only state after mount (avoids SSR mismatch)
-  /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
   useEffect(() => {
     try {
       const saved = localStorage.getItem(RECENT_OPEN_STORAGE_KEY);
@@ -145,21 +145,18 @@ function HomePage() {
       /* localStorage unavailable */
     }
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Restore requirement draft from localStorage on mount. The previous derived-state
   // pattern initialised `prev` from the cached value itself, so on the first client
   // render the comparison was always equal and the restore never fired. Use an effect
   // so the cache is hydrated into the form once we know the live requirement is empty.
   const draftRestoredRef = useRef(false);
-  /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
   useEffect(() => {
     if (draftRestoredRef.current) return;
     if (!cachedRequirement) return;
     draftRestoredRef.current = true;
     setForm((prev) => (prev.requirement ? prev : { ...prev, requirement: cachedRequirement }));
   }, [cachedRequirement]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -229,7 +226,6 @@ function HomePage() {
     useMediaGenerationStore.getState().revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Store hydration on mount
     loadClassrooms();
 
     return () => {
@@ -289,21 +285,17 @@ function HomePage() {
 
   const addCourseMaterials = (files: File[]) => {
     setForm((prev) => {
-      const existing = new Set(
-        prev.courseMaterials.map((item) => `${item.name}:${item.size}:${item.lastModified}`),
-      );
+      const dedupedFiles = dedupeCourseMaterialFiles(prev.courseMaterials, files);
       const startOrder = prev.courseMaterials.length + 1;
-      const additions = files
-        .filter((file) => !existing.has(`${file.name}:${file.size}:${file.lastModified}`))
-        .map((file, index) => ({
-          id: nanoid(8),
-          file,
-          name: file.name,
-          size: file.size,
-          lastModified: file.lastModified,
-          type: file.type,
-          order: startOrder + index,
-        }));
+      const additions = dedupedFiles.map((file, index) => ({
+        id: nanoid(8),
+        file,
+        name: file.name,
+        size: file.size,
+        lastModified: file.lastModified,
+        type: file.type,
+        order: startOrder + index,
+      }));
 
       return additions.length > 0
         ? { ...prev, courseMaterials: [...prev.courseMaterials, ...additions] }
@@ -358,10 +350,14 @@ function HomePage() {
           };
         }
 
-        documentSources = await Promise.all(
-          [...form.courseMaterials]
-            .sort((a, b) => a.order - b.order)
-            .map(async (item, index) => ({
+        const storedDocumentKeys: string[] = [];
+        try {
+          documentSources = [];
+          const orderedMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
+          for (const [index, item] of orderedMaterials.entries()) {
+            const storageKey = await storeDocumentBlob(item.file);
+            storedDocumentKeys.push(storageKey);
+            documentSources.push({
               id: item.id,
               name: item.name,
               size: item.size,
@@ -371,11 +367,14 @@ function HomePage() {
                 fileName: item.file.name,
               }),
               order: index + 1,
-              storageKey: await storeDocumentBlob(item.file),
+              storageKey,
               providerId: pdfProviderId,
-              providerConfig: pdfProviderConfig,
-            })),
-        );
+            });
+          }
+        } catch (error) {
+          await Promise.allSettled(storedDocumentKeys.map((key) => deleteDocumentBlob(key)));
+          throw error;
+        }
       }
 
       const sessionState = {

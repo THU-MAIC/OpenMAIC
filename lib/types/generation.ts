@@ -52,7 +52,6 @@ export interface SessionDocumentSource {
   order: number;
   storageKey: string;
   providerId?: string;
-  providerConfig?: { apiKey?: string; baseUrl?: string };
 }
 
 // ==================== Stage 1 Input ====================

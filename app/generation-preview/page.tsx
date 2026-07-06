@@ -31,7 +31,12 @@ import {
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
-import { buildDocumentBundle, type ParsedDocumentPart } from '@/lib/document/bundle';
+import {
+  MAX_DOCUMENT_BUNDLE_FILES,
+  MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
+  buildDocumentBundle,
+  type ParsedDocumentPart,
+} from '@/lib/document/bundle';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
 import type { Stage } from '@/lib/types/stage';
@@ -76,9 +81,26 @@ function legacySourceFromSession(session: GenerationSessionState): SessionDocume
       order: 1,
       storageKey: session.pdfStorageKey,
       providerId: session.pdfProviderId,
-      providerConfig: session.pdfProviderConfig,
     },
   ];
+}
+
+function validateDocumentSources(
+  sources: SessionDocumentSource[],
+  t: (key: string, values?: Record<string, unknown>) => string,
+) {
+  if (sources.length > MAX_DOCUMENT_BUNDLE_FILES) {
+    throw new Error(t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES }));
+  }
+
+  const totalSize = sources.reduce((sum, source) => sum + source.size, 0);
+  if (totalSize > MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES) {
+    throw new Error(
+      t('upload.courseMaterialTotalSizeLimit', {
+        n: Math.floor(MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES / 1024 / 1024),
+      }),
+    );
+  }
 }
 
 function GenerationPreviewContent() {
@@ -290,87 +312,95 @@ function GenerationPreviewContent() {
       // Step 0: Extract uploaded course material if needed
       if (hasPdfToAnalyze) {
         log.debug('=== Generation Preview: Extracting course material bundle ===');
-        const parsedParts: ParsedDocumentPart[] = [];
+        validateDocumentSources(documentSources, t);
+        const sortedDocumentSources = [...documentSources].sort((a, b) => a.order - b.order);
+        const parsedParts = await Promise.all(
+          sortedDocumentSources.map(async (source): Promise<ParsedDocumentPart> => {
+            const documentBlob = await loadDocumentBlob(source.storageKey);
+            if (!documentBlob) {
+              throw new Error(t('generation.courseMaterialLoadFailed'));
+            }
 
-        for (const source of [...documentSources].sort((a, b) => a.order - b.order)) {
-          const documentBlob = await loadDocumentBlob(source.storageKey);
-          if (!documentBlob) {
-            throw new Error(t('generation.courseMaterialLoadFailed'));
-          }
+            if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
+              log.error('Invalid course material blob:', {
+                source: source.name,
+                type: typeof documentBlob,
+                size: documentBlob instanceof Blob ? documentBlob.size : 'N/A',
+              });
+              throw new Error(t('generation.courseMaterialLoadFailed'));
+            }
 
-          if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
-            log.error('Invalid course material blob:', {
-              source: source.name,
-              type: typeof documentBlob,
-              size: documentBlob instanceof Blob ? documentBlob.size : 'N/A',
+            const documentFile = new File([documentBlob], source.name || 'document.pdf', {
+              type: source.mimeType || documentBlob.type || 'application/pdf',
             });
-            throw new Error(t('generation.courseMaterialLoadFailed'));
-          }
 
-          const documentFile = new File([documentBlob], source.name || 'document.pdf', {
-            type: source.mimeType || documentBlob.type || 'application/pdf',
-          });
+            const parseFormData = new FormData();
+            parseFormData.append('file', documentFile);
 
-          const parseFormData = new FormData();
-          parseFormData.append('file', documentFile);
+            const providerId = source.providerId || currentSession.pdfProviderId;
+            const legacySourceConfig = (
+              source as SessionDocumentSource & {
+                providerConfig?: { apiKey?: string; baseUrl?: string };
+              }
+            ).providerConfig;
+            const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
+            if (providerId) parseFormData.append('providerId', providerId);
+            if (providerConfig?.apiKey?.trim()) {
+              parseFormData.append('apiKey', providerConfig.apiKey);
+            }
+            if (providerConfig?.baseUrl?.trim()) {
+              parseFormData.append('baseUrl', providerConfig.baseUrl);
+            }
 
-          const providerId = source.providerId || currentSession.pdfProviderId;
-          const providerConfig = source.providerConfig || currentSession.pdfProviderConfig;
-          if (providerId) parseFormData.append('providerId', providerId);
-          if (providerConfig?.apiKey?.trim()) parseFormData.append('apiKey', providerConfig.apiKey);
-          if (providerConfig?.baseUrl?.trim()) {
-            parseFormData.append('baseUrl', providerConfig.baseUrl);
-          }
+            const parseResponse = await fetch('/api/extract-document', {
+              method: 'POST',
+              body: parseFormData,
+              signal,
+            });
 
-          const parseResponse = await fetch('/api/extract-document', {
-            method: 'POST',
-            body: parseFormData,
-            signal,
-          });
+            if (!parseResponse.ok) {
+              const errorData = await parseResponse.json();
+              throw new Error(errorData.error || t('generation.courseMaterialParseFailed'));
+            }
 
-          if (!parseResponse.ok) {
-            const errorData = await parseResponse.json();
-            throw new Error(errorData.error || t('generation.courseMaterialParseFailed'));
-          }
+            const parseResult = await parseResponse.json();
+            if (!parseResult.success || !parseResult.data) {
+              throw new Error(t('generation.courseMaterialParseFailed'));
+            }
 
-          const parseResult = await parseResponse.json();
-          if (!parseResult.success || !parseResult.data) {
-            throw new Error(t('generation.courseMaterialParseFailed'));
-          }
+            const rawImages = parseResult.data.metadata?.pdfImages;
+            const images = rawImages
+              ? rawImages.map((img: ParsedDocumentResponseImage) => ({
+                  id: img.id,
+                  src: img.src || '',
+                  pageNumber: img.pageNumber ?? 1,
+                  description: img.description,
+                  width: img.width,
+                  height: img.height,
+                }))
+              : ((parseResult.data.images as string[] | undefined) ?? []).map((src, i) => ({
+                  id: `img_${i + 1}`,
+                  src,
+                  pageNumber: 1,
+                }));
 
-          const rawImages = parseResult.data.metadata?.pdfImages;
-          const images = rawImages
-            ? rawImages.map((img: ParsedDocumentResponseImage) => ({
-                id: img.id,
-                src: img.src || '',
-                pageNumber: img.pageNumber || 1,
-                description: img.description,
-                width: img.width,
-                height: img.height,
-              }))
-            : ((parseResult.data.images as string[] | undefined) ?? []).map((src, i) => ({
-                id: `img_${i + 1}`,
-                src,
-                pageNumber: 1,
-              }));
-
-          parsedParts.push({
-            source: {
-              id: source.id,
-              name: source.name,
-              size: source.size,
-              lastModified: source.lastModified,
-              mimeType: source.mimeType,
-              order: source.order,
-              providerId,
-              providerConfig,
-            },
-            text: parseResult.data.text as string,
-            rawTextLength: (parseResult.data.text as string).length,
-            pageCount: parseResult.data.metadata?.pageCount,
-            images,
-          });
-        }
+            return {
+              source: {
+                id: source.id,
+                name: source.name,
+                size: source.size,
+                lastModified: source.lastModified,
+                mimeType: source.mimeType,
+                order: source.order,
+                providerId,
+              },
+              text: parseResult.data.text as string,
+              rawTextLength: (parseResult.data.text as string).length,
+              pageCount: parseResult.data.metadata?.pageCount,
+              images,
+            };
+          }),
+        );
 
         const bundle = buildDocumentBundle(parsedParts);
         const imageStorageIds = await storeImages(bundle.images);
