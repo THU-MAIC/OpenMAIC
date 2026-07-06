@@ -98,6 +98,7 @@
     "@types/react-dom": "^19",
     "@types/tinycolor2": "^1.4.6",
     "rollup": "^4.35.0",
+    "rollup-plugin-preserve-directives": "^0.4.0",
     "tslib": "^2.8.0",
     "typescript": "^5"
   },
