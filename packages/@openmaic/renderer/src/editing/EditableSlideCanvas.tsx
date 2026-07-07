@@ -179,6 +179,15 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                         strokeWidth={grabCanvas}
                         pointerEvents="stroke"
                         onPointerDown={(e) => {
+                          // Deferred limitation: line selection is handled here
+                          // directly and bypasses `useEditGesture`, so it also
+                          // bypasses the `activePointerRef` multi-pointer guard.
+                          // A second pointer-down on a line during an in-flight
+                          // box drag can therefore change the selection mid-
+                          // gesture. This is deferred together with multi-touch/
+                          // multi-select support; single-pointer/mouse use (only
+                          // one active pointer at a time) is unaffected.
+                          //
                           // Always consume the pointer to block fall-through to
                           // an overlapped box beneath (even with no selection
                           // callback, and even when the line is locked). When a

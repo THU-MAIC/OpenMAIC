@@ -72,7 +72,29 @@ describe('geometry', () => {
     } as unknown as PPTElement & { type: 'line' };
     expect(getLineBounds(straight as never)).toEqual({ minX: 10, maxX: 60, minY: 10, maxY: 60 });
   });
-  it('getLineBounds includes broken/broken2 and both cubic control points', () => {
+  it('getLineBounds follows the rendered path for a broken2 line, not the raw control point', () => {
+    // A horizontal broken2 line: the renderer's getLineElementPath draws the
+    // connector flat at y=0 (it uses broken2[0] as an x, NOT broken2[1] as a
+    // y), so the visible stroke has zero height even though broken2[1]=80.
+    // Deriving bounds from the raw control point would wrongly report maxY=80
+    // and paint an oversized selection border; the rendered path reports maxY=0.
+    const horizontal = {
+      id: 'l',
+      type: 'line',
+      left: 0,
+      top: 0,
+      start: [0, 0],
+      end: [100, 0],
+      broken2: [50, 80],
+    } as unknown as PPTElement & { type: 'line' };
+    const r = getLineBounds(horizontal as never);
+    expect(r.minY).toBe(0);
+    // Flat: the rendered horizontal connector never reaches y=80.
+    expect(r.maxY).toBe(0);
+    expect(r.minX).toBe(0);
+    expect(r.maxX).toBe(100);
+  });
+  it('getLineBounds includes broken and both cubic control points', () => {
     const broken = {
       id: 'l',
       type: 'line',
