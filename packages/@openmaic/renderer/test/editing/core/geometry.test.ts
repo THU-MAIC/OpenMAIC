@@ -77,6 +77,21 @@ describe('geometry', () => {
     } as unknown as PPTElement & { type: 'line' };
     expect(getLineBounds(straight as never)).toEqual({ minX: 10, maxX: 60, minY: 10, maxY: 60 });
   });
+  it('getLineBounds inflates by half the rendered stroke width', () => {
+    // A thick horizontal line: the centerline is flat (minY === maxY on the
+    // path), but the rendered stroke (strokeWidth = width) extends width/2 above
+    // and below it, so the border must grow by half the width on every side.
+    const thick = {
+      id: 'l',
+      type: 'line',
+      left: 0,
+      top: 0,
+      width: 10,
+      start: [0, 0],
+      end: [100, 0],
+    } as unknown as PPTElement & { type: 'line' };
+    expect(getLineBounds(thick as never)).toEqual({ minX: -5, maxX: 105, minY: -5, maxY: 5 });
+  });
   it('getLineBounds follows the rendered path for a broken2 line, not the raw control point', () => {
     // A horizontal broken2 line: the renderer's getLineElementPath draws the
     // connector flat at y=0 (it uses broken2[0] as an x, NOT broken2[1] as a

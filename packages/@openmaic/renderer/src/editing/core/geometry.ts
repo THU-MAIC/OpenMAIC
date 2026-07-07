@@ -221,20 +221,28 @@ export function getPathBounds(d: string): ElementRange | null {
  *     outside the drawn stroke; we take the true Bézier extrema instead, so a
  *     `curve=[50,80]` line yields maxY=40 (the peak at t=0.5), not 80.
  *
+ * The path bbox bounds the stroke CENTERLINE, so we inflate it by half the
+ * rendered stroke width (`line.width`, drawn as `strokeWidth` by the v1 line
+ * renderer) on every side — otherwise a thick horizontal line, whose centerline
+ * is flat (`minY === maxY`), would get a zero-height border even though the
+ * visible stroke spans `width` vertically. (Endpoint markers can still paint
+ * beyond this and remain a separate deferred concern.)
+ *
  * Falls back to the element origin (a zero-size box at `left`/`top`) when the
  * path yields no points, so the bounds stay finite.
  */
 export function getLineBounds(line: PPTLineElement): ElementRange {
   const { left, top } = line;
+  const halfStroke = (line.width ?? 0) / 2;
   const bounds = getPathBounds(getLineElementPath(line));
   if (!bounds) {
     return { minX: left, maxX: left, minY: top, maxY: top };
   }
   return {
-    minX: bounds.minX + left,
-    maxX: bounds.maxX + left,
-    minY: bounds.minY + top,
-    maxY: bounds.maxY + top,
+    minX: bounds.minX + left - halfStroke,
+    maxX: bounds.maxX + left + halfStroke,
+    minY: bounds.minY + top - halfStroke,
+    maxY: bounds.maxY + top + halfStroke,
   };
 }
 
