@@ -67,9 +67,10 @@ describe('SelectionOverlay', () => {
     expect(lineBorder.style.height).toBe('50px');
     expect(lineBorder.style.transform).toBe('');
   });
-  it('encloses a curve control point that leaves the start/end chord', () => {
+  it('wraps the true drawn quadratic curve, not the raw control point', () => {
     // start=[0,0], end=[100,0] is a zero-height chord; the curve control point
-    // at y=80 must be enclosed so the border spans the actual drawn path.
+    // sits at y=80, but the drawn quadratic (M0,0 Q50,80 100,0) only peaks at
+    // y=40 (t=0.5), so the selection border must span the tight bbox, not 80.
     const line = {
       id: 'ln',
       type: 'line',
@@ -88,11 +89,11 @@ describe('SelectionOverlay', () => {
     );
     const border = container.querySelector('[data-selection-border]') as HTMLElement;
     expect(border).not.toBeNull();
-    // width = (100-0)*0.5 = 50; height = (80-0)*0.5 = 40 (encloses the control point).
+    // width = (100-0)*0.5 = 50; height = (40-0)*0.5 = 20 (true quadratic peak).
     expect(border.style.left).toBe('0px');
     expect(border.style.top).toBe('0px');
     expect(border.style.width).toBe('50px');
-    expect(border.style.height).toBe('40px');
+    expect(border.style.height).toBe('20px');
     expect(border.style.transform).toBe('');
   });
 });

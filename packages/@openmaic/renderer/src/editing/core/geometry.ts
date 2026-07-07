@@ -31,53 +31,206 @@ export interface ElementRange {
   maxY: number;
 }
 
+// Numeric tolerance below which a Bézier leading coefficient is treated as
+// zero (degenerate to a lower-degree curve). Coordinates here are canvas units
+// (tens–hundreds), so 1e-9 is safely below any meaningful geometry.
+const EPS = 1e-9;
+
+/** Evaluate a quadratic Bézier on one axis at parameter `t` (Bernstein form). */
+function quadraticAt(p0: number, p1: number, p2: number, t: number): number {
+  const mt = 1 - t;
+  return mt * mt * p0 + 2 * mt * t * p1 + t * t * p2;
+}
+
+/**
+ * Tight `[min, max]` extent of a quadratic Bézier on ONE axis: the two
+ * endpoints plus the single interior extremum, if any. The control point `p1`
+ * itself is deliberately NOT included — it can lie outside the drawn curve.
+ *
+ * The extremum is where `B'(t) = 0`, i.e. `t* = (p0 - p1) / (p0 - 2p1 + p2)`.
+ * When the denominator is ≈ 0 the curve is linear on this axis (control on the
+ * chord line), so the endpoints already bound it.
+ */
+export function quadraticBounds(p0: number, p1: number, p2: number): [number, number] {
+  let lo = Math.min(p0, p2);
+  let hi = Math.max(p0, p2);
+  const denom = p0 - 2 * p1 + p2;
+  if (Math.abs(denom) > EPS) {
+    const t = (p0 - p1) / denom;
+    if (t > 0 && t < 1) {
+      const v = quadraticAt(p0, p1, p2, t);
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+  }
+  return [lo, hi];
+}
+
+/** Evaluate a cubic Bézier on one axis at parameter `t` (Bernstein form). */
+function cubicAt(p0: number, p1: number, p2: number, p3: number, t: number): number {
+  const mt = 1 - t;
+  return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
+}
+
+/**
+ * Tight `[min, max]` extent of a cubic Bézier on ONE axis: the two endpoints
+ * plus every interior extremum. The control points `p1`/`p2` are deliberately
+ * NOT included — they can lie outside the drawn curve.
+ *
+ * Extrema are the roots of `B'(t) = 0`, a quadratic `a t² + b t + c = 0` where
+ * (differentiating the cubic Bernstein form):
+ *   a = -p0 + 3p1 - 3p2 + p3
+ *   b = 2(p0 - 2p1 + p2)
+ *   c = -p0 + p1
+ * The `a ≈ 0` case degenerates to the linear `b t + c = 0`.
+ */
+export function cubicBounds(p0: number, p1: number, p2: number, p3: number): [number, number] {
+  let lo = Math.min(p0, p3);
+  let hi = Math.max(p0, p3);
+
+  const a = -p0 + 3 * p1 - 3 * p2 + p3;
+  const b = 2 * (p0 - 2 * p1 + p2);
+  const c = -p0 + p1;
+
+  const roots: number[] = [];
+  if (Math.abs(a) < EPS) {
+    // Linear derivative: a single root (or none if the curve is flat on axis).
+    if (Math.abs(b) > EPS) roots.push(-c / b);
+  } else {
+    const disc = b * b - 4 * a * c;
+    if (disc >= 0) {
+      const s = Math.sqrt(disc);
+      roots.push((-b + s) / (2 * a));
+      roots.push((-b - s) / (2 * a));
+    }
+  }
+
+  for (const t of roots) {
+    if (t > 0 && t < 1) {
+      const v = cubicAt(p0, p1, p2, p3, t);
+      lo = Math.min(lo, v);
+      hi = Math.max(hi, v);
+    }
+  }
+  return [lo, hi];
+}
+
+/**
+ * Tight axis-aligned bounding box of an SVG path string composed of absolute
+ * `M`/`L`/`Q`/`C` commands (the only ones {@link getLineElementPath} emits).
+ * Returns `null` for an empty/degenerate path (no coordinates).
+ *
+ * Each segment contributes its EXACT drawn extent — for `Q`/`C` that means the
+ * Bézier extrema (via {@link quadraticBounds}/{@link cubicBounds}), not the raw
+ * control points, which can bulge outside the curve. The SVG "current point" is
+ * tracked across commands so `Q`/`C` know their start point `P0`. Implicit
+ * command repetition (a coordinate run after `L`/`Q`/`C` with no new letter) is
+ * supported, which is why `broken2`'s trailing `… 100,0` pair is bounded.
+ */
+export function getPathBounds(d: string): ElementRange | null {
+  const tokens = d.match(/[MLQC]|-?\d+(?:\.\d+)?/g);
+  if (!tokens) return null;
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  const includeX = (v: number) => {
+    if (v < minX) minX = v;
+    if (v > maxX) maxX = v;
+  };
+  const includeY = (v: number) => {
+    if (v < minY) minY = v;
+    if (v > maxY) maxY = v;
+  };
+
+  let cmd = '';
+  let cx = 0;
+  let cy = 0;
+  let i = 0;
+  const num = () => Number(tokens[i++]);
+
+  while (i < tokens.length) {
+    if (/^[MLQC]$/.test(tokens[i])) cmd = tokens[i++];
+
+    if (cmd === 'M' || cmd === 'L') {
+      const x = num();
+      const y = num();
+      includeX(x);
+      includeY(y);
+      cx = x;
+      cy = y;
+    } else if (cmd === 'Q') {
+      const x1 = num();
+      const y1 = num();
+      const x = num();
+      const y = num();
+      const [xlo, xhi] = quadraticBounds(cx, x1, x);
+      const [ylo, yhi] = quadraticBounds(cy, y1, y);
+      includeX(xlo);
+      includeX(xhi);
+      includeY(ylo);
+      includeY(yhi);
+      cx = x;
+      cy = y;
+    } else if (cmd === 'C') {
+      const x1 = num();
+      const y1 = num();
+      const x2 = num();
+      const y2 = num();
+      const x = num();
+      const y = num();
+      const [xlo, xhi] = cubicBounds(cx, x1, x2, x);
+      const [ylo, yhi] = cubicBounds(cy, y1, y2, y);
+      includeX(xlo);
+      includeX(xhi);
+      includeY(ylo);
+      includeY(yhi);
+      cx = x;
+      cy = y;
+    } else {
+      // No active command (malformed leading token): skip one token to avoid
+      // an infinite loop.
+      i++;
+    }
+  }
+
+  if (!Number.isFinite(minX)) return null;
+  return { minX, maxX, minY, maxY };
+}
+
 /**
  * Tight axis-aligned bounds of a line's actual drawn path, in canvas units.
  *
  * Unlike {@link getElementRange} (which only bounds `start`/`end`, i.e. the
  * chord), this bounds the EXACT path the renderer draws, so the selection
- * border wraps the visible stroke for every line shape. We derive it by
- * re-using {@link getLineElementPath} — the single source of truth for the
- * rendered `<path d>` — and taking min/max over its coordinates, then offset by
- * the element's `left`/`top`.
+ * border wraps the visible stroke for every line shape. We derive it from
+ * {@link getLineElementPath} — the single source of truth for the rendered
+ * `<path d>` — via {@link getPathBounds}, then offset by the element's
+ * `left`/`top`.
  *
- * This matters because the raw control points are NOT all drawn as points:
- *   - `broken2` renders as an L-shaped connector that uses only `broken2[0]`
- *     (horizontal lines) or only `broken2[1]` (vertical lines), so a horizontal
- *     `broken2=[50,80]` line draws flat at y=0 — bounding the raw `[50,80]`
- *     control point would report maxY=80 and paint an oversized border.
- *   - `curve` (quadratic Q) and `cubic` (C) put their control points directly
- *     in the path, so the bounds still enclose a control point that leaves the
- *     chord (e.g. `curve=[50,80]` → height 80), matching the rendered stroke.
+ * Crucially, the raw control points are NOT taken as bbox points:
+ *   - `broken2` renders as an L-shaped connector using only `broken2[0]` (for
+ *     horizontal lines) or `broken2[1]` (for vertical), so a horizontal
+ *     `broken2=[50,80]` line draws flat at y=0 — its true maxY is 0, not 80.
+ *   - `curve` (quadratic Q) / `cubic` (C) put control points that can bulge
+ *     outside the drawn stroke; we take the true Bézier extrema instead, so a
+ *     `curve=[50,80]` line yields maxY=40 (the peak at t=0.5), not 80.
  *
- * The path string only contains pair-wise `x,y` coordinates after the command
- * letters (M/L/Q/C), so we extract every number in order and pair them into
- * `(x,y)`. Guard against an empty/odd match list (degenerate path) by falling
- * back to the element origin so the bounds stay finite.
+ * Falls back to the element origin (a zero-size box at `left`/`top`) when the
+ * path yields no points, so the bounds stay finite.
  */
 export function getLineBounds(line: PPTLineElement): ElementRange {
   const { left, top } = line;
-  const nums = getLineElementPath(line).match(/-?\d+(?:\.\d+)?/g);
-
-  const xs: number[] = [];
-  const ys: number[] = [];
-  if (nums) {
-    // Pair numbers as (x, y); a trailing unpaired number (odd count) is ignored.
-    for (let i = 0; i + 1 < nums.length; i += 2) {
-      xs.push(left + Number(nums[i]));
-      ys.push(top + Number(nums[i + 1]));
-    }
-  }
-
-  if (xs.length === 0) {
+  const bounds = getPathBounds(getLineElementPath(line));
+  if (!bounds) {
     return { minX: left, maxX: left, minY: top, maxY: top };
   }
-
   return {
-    minX: Math.min(...xs),
-    maxX: Math.max(...xs),
-    minY: Math.min(...ys),
-    maxY: Math.max(...ys),
+    minX: bounds.minX + left,
+    maxX: bounds.maxX + left,
+    minY: bounds.minY + top,
+    maxY: bounds.maxY + top,
   };
 }
 
