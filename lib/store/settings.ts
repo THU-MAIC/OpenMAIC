@@ -27,6 +27,7 @@ import {
   validateProvider,
   resolveSelectedModel,
   isLLMProviderConfigured,
+  isProviderUsable,
 } from '@/lib/store/settings-validation';
 
 const log = createLogger('Settings');
@@ -54,6 +55,11 @@ function pruneThinkingConfigs(
 /** Available playback speed tiers */
 export const PLAYBACK_SPEEDS = [1, 1.25, 1.5, 2] as const;
 export type PlaybackSpeed = (typeof PLAYBACK_SPEEDS)[number];
+
+const MY_INDEX_TTS_PROVIDER_ID = 'custom-tts-my-indextts' as TTSProviderId;
+const MY_INDEX_TTS_BASE_URL = 'http://127.0.0.1:8008/openai/v1';
+const MY_INDEX_TTS_MODEL_ID = 'IndexTTS2';
+const MY_INDEX_TTS_VOICE_ID = 'default';
 
 export interface SettingsState {
   // Model selection
@@ -396,12 +402,23 @@ function resolveLLMSelection(
 
 // Initialize default audio config
 const getDefaultAudioConfig = () => ({
-  ttsProviderId: 'browser-native-tts' as TTSProviderId,
-  ttsVoice: 'default',
+  ttsProviderId: MY_INDEX_TTS_PROVIDER_ID,
+  ttsVoice: MY_INDEX_TTS_VOICE_ID,
   ttsSpeed: 1.0,
   asrProviderId: 'browser-native' as ASRProviderId,
   asrLanguage: 'zh',
   ttsProvidersConfig: {
+    [MY_INDEX_TTS_PROVIDER_ID]: {
+      apiKey: '',
+      baseUrl: MY_INDEX_TTS_BASE_URL,
+      enabled: true,
+      modelId: MY_INDEX_TTS_MODEL_ID,
+      customName: 'MyIndexTTS',
+      customDefaultBaseUrl: MY_INDEX_TTS_BASE_URL,
+      customVoices: [{ id: MY_INDEX_TTS_VOICE_ID, name: 'Default' }],
+      isBuiltIn: false,
+      requiresApiKey: false,
+    },
     // Built-in providers default enabled:true — they only ever surface once
     // configured (API key or server-managed), so "enabled" is a user opt-OUT,
     // not the visibility gate. A server-configured provider must not be hidden
@@ -441,6 +458,39 @@ const getDefaultAudioConfig = () => ({
     'lemonade-asr': { apiKey: '', baseUrl: '', enabled: false },
   } as Record<ASRProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
+
+function ensureMyIndexTTSProvider(state: Partial<SettingsState>): void {
+  if (!state.ttsProvidersConfig) return;
+
+  const existing = state.ttsProvidersConfig[MY_INDEX_TTS_PROVIDER_ID];
+  state.ttsProvidersConfig[MY_INDEX_TTS_PROVIDER_ID] = {
+    ...existing,
+    apiKey: existing?.apiKey || '',
+    baseUrl: existing?.baseUrl || MY_INDEX_TTS_BASE_URL,
+    customDefaultBaseUrl: existing?.customDefaultBaseUrl || MY_INDEX_TTS_BASE_URL,
+    modelId: existing?.modelId || MY_INDEX_TTS_MODEL_ID,
+    customName: existing?.customName || 'MyIndexTTS',
+    customVoices: existing?.customVoices?.length
+      ? existing.customVoices
+      : [{ id: MY_INDEX_TTS_VOICE_ID, name: 'Default' }],
+    enabled: true,
+    requiresApiKey: false,
+  };
+
+  if (
+    !state.ttsProviderId ||
+    state.ttsProviderId === 'qwen-tts' ||
+    state.ttsProviderId === 'browser-native-tts'
+  ) {
+    state.ttsProviderId = MY_INDEX_TTS_PROVIDER_ID;
+    state.ttsVoice = MY_INDEX_TTS_VOICE_ID;
+  }
+
+  if (state.ttsProviderId === MY_INDEX_TTS_PROVIDER_ID) {
+    state.ttsVoice = state.ttsVoice || MY_INDEX_TTS_VOICE_ID;
+    state.ttsEnabled = true;
+  }
+}
 
 // Initialize default PDF config
 const getDefaultPDFConfig = () => ({
@@ -577,6 +627,7 @@ function ensureBuiltInAudioProviders(state: Partial<SettingsState>): void {
   const defaultAudioConfig = getDefaultAudioConfig();
 
   if (state.ttsProvidersConfig) {
+    ensureMyIndexTTSProvider(state);
     for (const providerId of Object.keys(TTS_PROVIDERS) as BuiltInTTSProviderId[]) {
       if (!state.ttsProvidersConfig[providerId]) {
         state.ttsProvidersConfig[providerId] = defaultAudioConfig.ttsProvidersConfig[providerId];
@@ -865,10 +916,8 @@ export const useSettingsStore = create<SettingsState>()(
         videoGenerationEnabled: false,
         reviewOutlineEnabled: false,
 
-        // TTS is OFF by default; auto-enabled on first server-sync when a TTS
-        // provider is configured (mirrors image/video). Fresh installs with no
-        // provider stay off and show an "enable browser-native" CTA (#665).
-        ttsEnabled: false,
+        // TTS defaults to the local MyIndexTTS provider for this deployment.
+        ttsEnabled: true,
         asrEnabled: true,
 
         // Off until the server reports a concurrency via fetchServerProviders.
@@ -1557,7 +1606,7 @@ export const useSettingsStore = create<SettingsState>()(
                   .map(([id]) => id) as TTSProviderId[];
                 if (
                   serverTtsIds.length > 0 &&
-                  !newTTSConfig[state.ttsProviderId]?.isServerConfigured
+                  !isProviderUsable(newTTSConfig[state.ttsProviderId])
                 ) {
                   autoTtsProvider = serverTtsIds[0];
                   autoTtsVoice =
@@ -1734,6 +1783,7 @@ export const useSettingsStore = create<SettingsState>()(
           Object.assign(state, defaultAudioConfig);
         }
         ensureBuiltInAudioProviders(state);
+        ensureMyIndexTTSProvider(state);
         ensureBuiltInWebSearchProviders(state);
 
         // Migrate global ttsModelId to per-provider
@@ -1886,6 +1936,7 @@ export const useSettingsStore = create<SettingsState>()(
 
         ensureValidProviderSelections(state);
         ensureBuiltInAudioProviders(state);
+        ensureMyIndexTTSProvider(state);
         ensureBuiltInWebSearchProviders(state);
         state.thinkingConfigs = pruneThinkingConfigs(state.thinkingConfigs, state.providersConfig);
 
@@ -1898,6 +1949,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInProviders(merged as Partial<SettingsState>);
         promoteLegacyCustomProviderBaseUrls(merged as Partial<SettingsState>);
         ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
+        ensureMyIndexTTSProvider(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
         ensureBuiltInWebSearchProviders(merged as Partial<SettingsState>);

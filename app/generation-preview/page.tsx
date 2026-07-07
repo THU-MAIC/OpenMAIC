@@ -38,6 +38,47 @@ import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
+const POST_OUTLINE_FETCH_RETRY_DELAY_MS = 1500;
+
+function isTransientFetchError(error: unknown): boolean {
+  return (
+    error instanceof TypeError &&
+    /failed to fetch|networkerror|load failed/i.test(error.message || '')
+  );
+}
+
+function wait(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Aborted', 'AbortError'));
+      return;
+    }
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
+  });
+}
+
+async function fetchWithNetworkRetry(
+  input: RequestInfo | URL,
+  init: RequestInit & { signal?: AbortSignal },
+  label: string,
+): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (!isTransientFetchError(error) || init.signal?.aborted) throw error;
+    log.warn(`[Generation] ${label} fetch failed once; retrying`, error);
+    await wait(POST_OUTLINE_FETCH_RETRY_DELAY_MS, init.signal);
+    return await fetch(input, init);
+  }
+}
 
 function GenerationPreviewContent() {
   const router = useRouter();
@@ -726,24 +767,28 @@ function GenerationPreviewContent() {
             );
           };
 
-          const agentResp = await fetch('/api/generate/agent-profiles', {
-            method: 'POST',
-            headers: getApiHeaders(),
-            body: JSON.stringify(
-              withThinkingConfig({
-                stageInfo: { name: stage.name, description: stage.description },
-                sceneOutlines: outlines.map((o) => ({
-                  title: o.title,
-                  description: o.description,
-                })),
-                languageDirective,
-                availableAvatars: allAvatars.map((a) => a.path),
-                avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
-                availableVoices: getAvailableVoicesForGeneration(),
-              }),
-            ),
-            signal,
-          });
+          const agentResp = await fetchWithNetworkRetry(
+            '/api/generate/agent-profiles',
+            {
+              method: 'POST',
+              headers: getApiHeaders(),
+              body: JSON.stringify(
+                withThinkingConfig({
+                  stageInfo: { name: stage.name, description: stage.description },
+                  sceneOutlines: outlines.map((o) => ({
+                    title: o.title,
+                    description: o.description,
+                  })),
+                  languageDirective,
+                  availableAvatars: allAvatars.map((a) => a.path),
+                  avatarDescriptions: allAvatars.map((a) => ({ path: a.path, desc: a.desc })),
+                  availableVoices: getAvailableVoicesForGeneration(),
+                }),
+              ),
+              signal,
+            },
+            'agent-profiles',
+          );
 
           if (!agentResp.ok) throw new Error('Agent generation failed');
           const agentData = await agentResp.json();
@@ -847,24 +892,28 @@ function GenerationPreviewContent() {
       const firstOutline = outlines[0];
 
       // Step 2: Generate content (currentStepIndex is already 2)
-      const contentResp = await fetch('/api/generate/scene-content', {
-        method: 'POST',
-        headers: getApiHeaders(),
-        body: JSON.stringify(
-          withThinkingConfig({
-            outline: firstOutline,
-            allOutlines: outlines,
-            pdfImages: currentSession.pdfImages,
-            imageMapping,
-            stageInfo,
-            stageId: stage.id,
-            agents,
-            languageDirective,
-            requirements: currentSession.requirements,
-          }),
-        ),
-        signal,
-      });
+      const contentResp = await fetchWithNetworkRetry(
+        '/api/generate/scene-content',
+        {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify(
+            withThinkingConfig({
+              outline: firstOutline,
+              allOutlines: outlines,
+              pdfImages: currentSession.pdfImages,
+              imageMapping,
+              stageInfo,
+              stageId: stage.id,
+              agents,
+              languageDirective,
+              requirements: currentSession.requirements,
+            }),
+          ),
+          signal,
+        },
+        'scene-content',
+      );
 
       if (!contentResp.ok) {
         const errorData = await contentResp.json().catch(() => ({ error: 'Request failed' }));
@@ -880,23 +929,27 @@ function GenerationPreviewContent() {
       const actionsStepIdx = activeSteps.findIndex((s) => s.id === 'actions');
       setCurrentStepIndex(actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
 
-      const actionsResp = await fetch('/api/generate/scene-actions', {
-        method: 'POST',
-        headers: getApiHeaders(),
-        body: JSON.stringify(
-          withThinkingConfig({
-            outline: contentData.effectiveOutline || firstOutline,
-            allOutlines: outlines,
-            content: contentData.content,
-            stageId: stage.id,
-            agents,
-            previousSpeeches: [],
-            userProfile,
-            languageDirective,
-          }),
-        ),
-        signal,
-      });
+      const actionsResp = await fetchWithNetworkRetry(
+        '/api/generate/scene-actions',
+        {
+          method: 'POST',
+          headers: getApiHeaders(),
+          body: JSON.stringify(
+            withThinkingConfig({
+              outline: contentData.effectiveOutline || firstOutline,
+              allOutlines: outlines,
+              content: contentData.content,
+              stageId: stage.id,
+              agents,
+              previousSpeeches: [],
+              userProfile,
+              languageDirective,
+            }),
+          ),
+          signal,
+        },
+        'scene-actions',
+      );
 
       if (!actionsResp.ok) {
         const errorData = await actionsResp.json().catch(() => ({ error: 'Request failed' }));
@@ -935,27 +988,31 @@ function GenerationPreviewContent() {
           const audioId = `tts_${action.id}`;
           action.audioId = audioId;
           try {
-            const resp = await fetch('/api/generate/tts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                text: action.text,
-                audioId,
-                ttsProviderId: settings.ttsProviderId,
-                ttsModelId: ttsProviderConfig?.modelId,
-                ttsVoice: settings.ttsVoice,
-                ttsSpeed: settings.ttsSpeed,
-                ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-                // Managed providers resolve their base URL server-side; only
-                // send the client's own base URL (custom providers).
-                ttsBaseUrl:
-                  ttsProviderConfig?.baseUrl ||
-                  ttsProviderConfig?.customDefaultBaseUrl ||
-                  undefined,
-                ttsProviderOptions: providerOptions,
-              }),
-              signal,
-            });
+            const resp = await fetchWithNetworkRetry(
+              '/api/generate/tts',
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  text: action.text,
+                  audioId,
+                  ttsProviderId: settings.ttsProviderId,
+                  ttsModelId: ttsProviderConfig?.modelId,
+                  ttsVoice: settings.ttsVoice,
+                  ttsSpeed: settings.ttsSpeed,
+                  ttsApiKey: ttsProviderConfig?.apiKey || undefined,
+                  // Managed providers resolve their base URL server-side; only
+                  // send the client's own base URL (custom providers).
+                  ttsBaseUrl:
+                    ttsProviderConfig?.baseUrl ||
+                    ttsProviderConfig?.customDefaultBaseUrl ||
+                    undefined,
+                  ttsProviderOptions: providerOptions,
+                }),
+                signal,
+              },
+              `tts:${audioId}`,
+            );
             if (!resp.ok) {
               ttsFailCount++;
               continue;

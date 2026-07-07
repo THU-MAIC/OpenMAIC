@@ -28,10 +28,43 @@ export async function writeJsonFileAtomic(filePath: string, data: unknown) {
   await fs.rename(tempFilePath, filePath);
 }
 
+function normalizeOrigin(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  try {
+    const url = new URL(withProtocol);
+    return url.origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function firstHeaderValue(value: string | null): string | undefined {
+  return value?.split(',')[0]?.trim() || undefined;
+}
+
 export function buildRequestOrigin(req: NextRequest): string {
-  return req.headers.get('x-forwarded-host')
-    ? `${req.headers.get('x-forwarded-proto') || 'http'}://${req.headers.get('x-forwarded-host')}`
-    : req.nextUrl.origin;
+  const configuredOrigin =
+    normalizeOrigin(process.env.APP_BASE_URL) ||
+    normalizeOrigin(process.env.NEXT_PUBLIC_APP_BASE_URL) ||
+    normalizeOrigin(process.env.SITE_URL);
+  if (configuredOrigin) return configuredOrigin;
+
+  const host = firstHeaderValue(req.headers.get('host'));
+  const forwardedHost = firstHeaderValue(req.headers.get('x-forwarded-host'));
+  const proto =
+    firstHeaderValue(req.headers.get('x-forwarded-proto')) ||
+    req.nextUrl.protocol.replace(/:$/, '') ||
+    'http';
+
+  const requestHost = host || forwardedHost;
+  if (requestHost) {
+    return `${proto}://${requestHost}`;
+  }
+
+  return req.nextUrl.origin;
 }
 
 export interface PersistedClassroomData {
