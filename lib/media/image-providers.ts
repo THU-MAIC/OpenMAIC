@@ -61,6 +61,8 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://dashscope.aliyuncs.com',
     models: [
+      { id: 'qwen-image-2.0-pro-2026-04-22', name: 'Qwen Image 2.0 Pro (2026-04-22)' },
+      { id: 'qwen-image-2.0-pro-2026-06-22', name: 'Qwen Image 2.0 Pro (2026-06-22)' },
       { id: 'qwen-image-2.0-pro', name: 'Qwen Image 2.0 Pro' },
       { id: 'qwen-image-2.0-pro-2026-03-03', name: 'Qwen Image 2.0 Pro (2026-03-03)' },
       { id: 'qwen-image-2.0', name: 'Qwen Image 2.0' },

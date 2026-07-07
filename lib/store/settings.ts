@@ -60,6 +60,7 @@ const MY_INDEX_TTS_PROVIDER_ID = 'custom-tts-my-indextts' as TTSProviderId;
 const MY_INDEX_TTS_BASE_URL = 'http://127.0.0.1:8008/openai/v1';
 const MY_INDEX_TTS_MODEL_ID = 'IndexTTS2';
 const MY_INDEX_TTS_VOICE_ID = 'default';
+const DEFAULT_QWEN_IMAGE_MODEL_ID = 'qwen-image-2.0-pro-2026-04-22';
 
 export interface SettingsState {
   // Model selection
@@ -489,6 +490,13 @@ function ensureMyIndexTTSProvider(state: Partial<SettingsState>): void {
   if (state.ttsProviderId === MY_INDEX_TTS_PROVIDER_ID) {
     state.ttsVoice = state.ttsVoice || MY_INDEX_TTS_VOICE_ID;
     state.ttsEnabled = true;
+  }
+}
+
+function ensureQwenImageDefaultModel(state: Partial<SettingsState>): void {
+  if (state.imageProviderId !== 'qwen-image') return;
+  if (!state.imageModelId || state.imageModelId === 'qwen-image-2.0-pro') {
+    state.imageModelId = DEFAULT_QWEN_IMAGE_MODEL_ID;
   }
 }
 
@@ -1763,6 +1771,7 @@ export const useSettingsStore = create<SettingsState>()(
         // Ensure image/video configs have all built-in providers
         ensureBuiltInImageProviders(state);
         ensureBuiltInVideoProviders(state);
+        ensureQwenImageDefaultModel(state);
 
         // Migrate from old ttsModel to new ttsProviderId
         if (state.ttsModel && !state.ttsProviderId) {
@@ -1785,6 +1794,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInAudioProviders(state);
         ensureMyIndexTTSProvider(state);
         ensureBuiltInWebSearchProviders(state);
+        ensureQwenImageDefaultModel(state);
 
         // Migrate global ttsModelId to per-provider
         if ((state as Record<string, unknown>).ttsModelId) {
@@ -1938,6 +1948,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInAudioProviders(state);
         ensureMyIndexTTSProvider(state);
         ensureBuiltInWebSearchProviders(state);
+        ensureQwenImageDefaultModel(state);
         state.thinkingConfigs = pruneThinkingConfigs(state.thinkingConfigs, state.providersConfig);
 
         return state;
@@ -1955,6 +1966,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInWebSearchProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
         stripLegacyServerBaseUrl(merged as Partial<SettingsState>);
+        ensureQwenImageDefaultModel(merged as Partial<SettingsState>);
         const typedMerged = merged as Partial<SettingsState>;
         typedMerged.thinkingConfigs = pruneThinkingConfigs(
           typedMerged.thinkingConfigs,

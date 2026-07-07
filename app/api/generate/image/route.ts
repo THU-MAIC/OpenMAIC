@@ -32,6 +32,8 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('ImageGeneration API');
+const QWEN_IMAGE_DEFAULT_MODEL = 'qwen-image-2.0-pro-2026-04-22';
+const QWEN_IMAGE_FALLBACK_MODEL = 'qwen-image-2.0-pro-2026-06-22';
 
 export const maxDuration = 60;
 
@@ -76,12 +78,31 @@ export async function POST(request: NextRequest) {
       body.height = dims.height;
     }
 
+    const requestedModel = clientModel || undefined;
+    const effectiveModel =
+      providerId === 'qwen-image' && !requestedModel ? QWEN_IMAGE_DEFAULT_MODEL : requestedModel;
+
     log.info(
-      `Generating image: provider=${providerId}, model=${clientModel || 'default'}, ` +
+      `Generating image: provider=${providerId}, model=${effectiveModel || 'default'}, ` +
         `prompt="${body.prompt.slice(0, 80)}...", size=${body.width ?? 'auto'}x${body.height ?? 'auto'}`,
     );
 
-    const result = await generateImage({ providerId, apiKey, baseUrl, model: clientModel }, body);
+    let result;
+    try {
+      result = await generateImage({ providerId, apiKey, baseUrl, model: effectiveModel }, body);
+    } catch (error) {
+      if (providerId !== 'qwen-image' || effectiveModel !== QWEN_IMAGE_DEFAULT_MODEL) {
+        throw error;
+      }
+      log.warn(
+        `Qwen Image default model failed; retrying with fallback model ${QWEN_IMAGE_FALLBACK_MODEL}:`,
+        error,
+      );
+      result = await generateImage(
+        { providerId, apiKey, baseUrl, model: QWEN_IMAGE_FALLBACK_MODEL },
+        body,
+      );
+    }
 
     return apiSuccess({ result });
   } catch (error) {
