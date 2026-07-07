@@ -179,7 +179,16 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                         strokeWidth={grabCanvas}
                         pointerEvents="stroke"
                         onPointerDown={(e) => {
+                          // Always consume the pointer to block fall-through to
+                          // an overlapped box beneath (even with no selection
+                          // callback). When a selection callback is provided,
+                          // also select the line — on pointer-down, for parity
+                          // with box elements (which select via
+                          // onElementPointerDown). A line is selectable but NOT
+                          // draggable here: no working copy is armed and no
+                          // move intent is ever emitted (line editing deferred).
                           e.stopPropagation();
+                          onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
                         }}
                         style={{ cursor: 'default', touchAction: 'none' }}
                       />

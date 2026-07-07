@@ -125,7 +125,7 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelector('[data-element-id]')).toBeNull();
   });
 
-  it('defers line elements: no hit node or selection border for a line', () => {
+  it('a line is selectable-not-draggable: no move hit node, but a selection border shows', () => {
     const lineSlide = {
       ...slide,
       elements: [
@@ -153,11 +153,13 @@ describe('EditableSlideCanvas', () => {
         onElementsChange={vi.fn()}
       />,
     );
-    // Box element still hit-testable; line element has no hit node.
+    // Box element still hit-testable; line element has no draggable hit node
+    // (its blocker is an inert SVG path, not a data-element-id move target).
     expect(container.querySelector('[data-element-id="a"]')).not.toBeNull();
     expect(container.querySelector('[data-element-id="line1"]')).toBeNull();
-    // Only the box element gets a selection border (one, not two).
-    expect(container.querySelectorAll('[data-selection-border]')).toHaveLength(1);
+    // The line is now selectable: with it in the controlled selection, both the
+    // box and the line get a selection border (two, not one).
+    expect(container.querySelectorAll('[data-selection-border]')).toHaveLength(2);
   });
 
   it('a line renders an inert SVG-path blocker mirroring getLineElementPath (straight) and consumes stroke pointer-downs', () => {
@@ -210,12 +212,16 @@ describe('EditableSlideCanvas', () => {
     // Grab band (canvas units): max(10, width*scale)=max(10,2)=10 at scale 1.
     expect(blocker.getAttribute('stroke-width')).toBe('10');
 
-    // A pointer-down on the stroke blocker is inert: the box beneath is neither
-    // moved nor selected (the blocker consumed the pointer).
+    // A pointer-down on the stroke blocker selects the LINE (selectable but not
+    // draggable) and consumes the pointer, so the box beneath is neither moved
+    // nor selected — the selection lands on the line, never the box.
     fireEvent.pointerDown(blocker as unknown as Element, { clientX: 0, clientY: 0 });
     fireEvent.pointerMove(blocker as unknown as Element, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(blocker as unknown as Element, { clientX: 30, clientY: 20 });
-    expect(onSel).not.toHaveBeenCalled();
+    expect(onSel).toHaveBeenCalledTimes(1);
+    expect(onSel).toHaveBeenCalledWith(
+      expect.objectContaining({ elementIds: ['line1'], primaryId: 'line1' }),
+    );
     expect(onCh).not.toHaveBeenCalled();
 
     // A pointer-down in the line's bbox but away from the stroke still reaches
@@ -226,6 +232,90 @@ describe('EditableSlideCanvas', () => {
     fireEvent.pointerMove(boxHit, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(boxHit, { clientX: 30, clientY: 20 });
     expect(onCh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a pointer-down on a line selects it via onSelectionChange but emits no element.update (selectable, not draggable)', () => {
+    // Regression (reviewer, PR #859): lines regressed to unselectable — the
+    // blocker only stopped propagation. It must now select the line on
+    // pointer-down (parity with box elements) while staying drag-inert: no
+    // working copy, no move intent, ever.
+    const onSel = vi.fn();
+    const onCh = vi.fn();
+    const lineSlide = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+    const blocker = container.querySelector('[data-hit-kind="line"]') as unknown as Element;
+    fireEvent.pointerDown(blocker, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(blocker, { clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(blocker, { clientX: 40, clientY: 30 });
+    // Selected once, on pointer-down (box-element parity); never draggable.
+    expect(onSel).toHaveBeenCalledTimes(1);
+    expect(onSel).toHaveBeenCalledWith(
+      expect.objectContaining({ elementIds: ['line1'], primaryId: 'line1' }),
+    );
+    expect(onCh).not.toHaveBeenCalled();
+  });
+
+  it('the line blocker still consumes the pointer when onSelectionChange is absent', () => {
+    // Even with no selection callback, the blocker must block fall-through: a
+    // pointer-down over a line that overlaps a box must not move the box.
+    const onCh = vi.fn();
+    const lineOverBox = {
+      ...slide,
+      elements: [
+        (slide as unknown as { elements: unknown[] }).elements[0], // box 'a'
+        {
+          id: 'line1',
+          type: 'line',
+          left: 100,
+          top: 100,
+          start: [0, 0],
+          end: [100, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineOverBox}
+        scale={1}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+    const blocker = container.querySelector('[data-hit-kind="line"]') as unknown as Element;
+    fireEvent.pointerDown(blocker, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(blocker, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(blocker, { clientX: 30, clientY: 20 });
+    // Blocker consumed the pointer; the box beneath never moved.
+    expect(onCh).not.toHaveBeenCalled();
   });
 
   it('a non-straight line blocker uses the real getLineElementPath (covers the curve, not just the chord)', () => {

@@ -1,5 +1,6 @@
 import type { PPTElement } from '@openmaic/dsl';
 import type { Selection } from '../types';
+import { getElementRange } from '../../utils/element';
 import { BorderLine } from './BorderLine';
 
 export interface SelectionOverlayProps {
@@ -17,30 +18,48 @@ export interface SelectionOverlayProps {
 export function SelectionOverlay({ elements, selection, scale }: SelectionOverlayProps) {
   const selected = selection.elementIds
     .map((id) => elements.find((el) => el.id === id))
-    // Line elements: hit target + selection + endpoint editing land together in
-    // the line slice; the box-model drag intent can't represent line moves. We
-    // skip them here (rather than a `height`/`rotate` fallback) — which also
-    // narrows the type so `width`/`height`/`rotate` are directly available.
-    .filter((el): el is Exclude<PPTElement, { type: 'line' }> => el != null && el.type !== 'line');
+    .filter((el): el is PPTElement => el != null);
 
   if (selected.length === 0) return null;
 
   return (
     <>
-      {selected.map((el) => (
-        <BorderLine
-          key={el.id}
-          width={el.width * scale}
-          height={el.height * scale}
-          style={{
-            left: `${el.left * scale}px`,
-            top: `${el.top * scale}px`,
-            transform: `rotate(${el.rotate}deg)`,
-            transformOrigin: 'center',
-            pointerEvents: 'none',
-          }}
-        />
-      ))}
+      {selected.map((el) => {
+        // Line elements have no box-model `width`/`height`/`rotate`; a line is
+        // selectable but not yet movable (line editing is deferred). Derive its
+        // bounding box from getElementRange and render an unrotated border.
+        if (el.type === 'line') {
+          const { minX, maxX, minY, maxY } = getElementRange(el);
+          return (
+            <BorderLine
+              key={el.id}
+              width={(maxX - minX) * scale}
+              height={(maxY - minY) * scale}
+              style={{
+                left: `${minX * scale}px`,
+                top: `${minY * scale}px`,
+                pointerEvents: 'none',
+              }}
+            />
+          );
+        }
+        // Non-line elements are narrowed here, so `width`/`height`/`rotate` are
+        // directly available (no casts).
+        return (
+          <BorderLine
+            key={el.id}
+            width={el.width * scale}
+            height={el.height * scale}
+            style={{
+              left: `${el.left * scale}px`,
+              top: `${el.top * scale}px`,
+              transform: `rotate(${el.rotate}deg)`,
+              transformOrigin: 'center',
+              pointerEvents: 'none',
+            }}
+          />
+        );
+      })}
     </>
   );
 }

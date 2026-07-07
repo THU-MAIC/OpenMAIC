@@ -36,7 +36,7 @@ describe('SelectionOverlay', () => {
     expect(border.style.left).toBe('50px'); // 100 * 0.5
     expect(border.style.width).toBe('100px'); // 200 * 0.5
   });
-  it('renders no border for a selected line element (deferred to the line slice)', () => {
+  it('renders a border for a selected line element at its bounding box (no rotation)', () => {
     const line = {
       id: 'ln',
       type: 'line',
@@ -52,7 +52,19 @@ describe('SelectionOverlay', () => {
         scale={1}
       />,
     );
-    // Only the box element 'a' gets a border; the line is skipped.
-    expect(container.querySelectorAll('[data-selection-border]')).toHaveLength(1);
+    // Both the box element and the line now get a selection border.
+    const borders = container.querySelectorAll('[data-selection-border]');
+    expect(borders).toHaveLength(2);
+    // The line border sits at its getElementRange bbox (no box-model width/
+    // height): minX=10, minY=10, width = (left+max(start.x,end.x)) - minX = 50,
+    // height = 50; no rotation for a line.
+    const lineBorder = Array.from(borders).find(
+      (b) => (b as HTMLElement).style.left === '10px',
+    ) as HTMLElement;
+    expect(lineBorder).toBeTruthy();
+    expect(lineBorder.style.top).toBe('10px');
+    expect(lineBorder.style.width).toBe('50px');
+    expect(lineBorder.style.height).toBe('50px');
+    expect(lineBorder.style.transform).toBe('');
   });
 });
