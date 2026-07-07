@@ -128,7 +128,11 @@ export function cubicBounds(p0: number, p1: number, p2: number, p3: number): [nu
  * supported, which is why `broken2`'s trailing `… 100,0` pair is bounded.
  */
 export function getPathBounds(d: string): ElementRange | null {
-  const tokens = d.match(/[MLQC]|-?\d+(?:\.\d+)?/g);
+  // Number pattern accepts an optional sign, a fractional part, and an
+  // exponent — `getLineElementPath` can stringify tiny/large coordinates in
+  // exponent form (e.g. a rotated imported line yields `7.1e-15`), which a
+  // plain `-?\d+(?:\.\d+)?` would mis-split into `7.1` and `-15`.
+  const tokens = d.match(/[MLQC]|[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?/g);
   if (!tokens) return null;
 
   let minX = Infinity;

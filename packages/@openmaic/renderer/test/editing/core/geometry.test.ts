@@ -184,6 +184,17 @@ describe('geometry', () => {
     // Empty/degenerate path → null.
     expect(getPathBounds('')).toBeNull();
   });
+  it('getPathBounds parses exponent-form coordinates as single numbers', () => {
+    // A rotated/imported line can stringify a near-zero coord in exponent form;
+    // `7.105427357601002e-15` must parse as one ~0 number, not `7.1` and `-15`
+    // (the old regex would have made minX = -15).
+    const r = getPathBounds('M7.105427357601002e-15,0 L100,50');
+    expect(r).not.toBeNull();
+    expect(r!.minX).toBeCloseTo(0, 6);
+    expect(r!.maxX).toBe(100);
+    expect(r!.minY).toBe(0);
+    expect(r!.maxY).toBe(50);
+  });
   it('list range is the union bbox', () => {
     expect(
       getElementListRange([box(), box({ id: 'b', left: 400, top: 0, width: 50, height: 50 })]),
