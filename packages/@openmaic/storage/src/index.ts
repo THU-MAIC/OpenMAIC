@@ -7,9 +7,11 @@
  * persists — the KV / asset primitives and their swappable backends. The
  * pluggable seam is the backend, not the database driver.
  *
- * Part 1 ships the browser backends (zero server) and the primitive contracts;
- * the HTTP backend + reference server and the DocumentStore / RuntimeStore
- * follow in later parts (see the tracking issue).
+ * The KV / asset primitives ship with browser backends (zero server) and their
+ * primitive contracts; the `DocumentStore` adds the normalized document
+ * aggregate (browser backend, migrate-on-read, validation gate). The HTTP
+ * backend + reference server and the `RuntimeStore` follow in later parts (see
+ * the tracking issue).
  */
 export type { KVScope, KVStore } from './kv/types.js';
 export { DEFAULT_KV_SCOPE } from './kv/types.js';
@@ -21,6 +23,15 @@ export {
   type PersistedValue,
   type PersistStorageLike,
 } from './zustand/persist.js';
+
+export type {
+  DocumentStore,
+  MaicDocument,
+  DocumentSummary,
+  SceneLike,
+  SceneValidator,
+} from './document/types.js';
+export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
 
 // Re-export the DSL-owned asset contract for convenience, so consumers can get
 // the interface and a backend from one import without reaching into the DSL.
