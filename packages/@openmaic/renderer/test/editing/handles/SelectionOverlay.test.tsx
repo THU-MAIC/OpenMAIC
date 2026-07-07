@@ -67,4 +67,32 @@ describe('SelectionOverlay', () => {
     expect(lineBorder.style.height).toBe('50px');
     expect(lineBorder.style.transform).toBe('');
   });
+  it('encloses a curve control point that leaves the start/end chord', () => {
+    // start=[0,0], end=[100,0] is a zero-height chord; the curve control point
+    // at y=80 must be enclosed so the border spans the actual drawn path.
+    const line = {
+      id: 'ln',
+      type: 'line',
+      left: 0,
+      top: 0,
+      start: [0, 0],
+      end: [100, 0],
+      curve: [50, 80],
+    } as unknown as PPTElement;
+    const { container } = render(
+      <SelectionOverlay
+        elements={[line]}
+        selection={{ elementIds: ['ln'], primaryId: 'ln' }}
+        scale={0.5}
+      />,
+    );
+    const border = container.querySelector('[data-selection-border]') as HTMLElement;
+    expect(border).not.toBeNull();
+    // width = (100-0)*0.5 = 50; height = (80-0)*0.5 = 40 (encloses the control point).
+    expect(border.style.left).toBe('0px');
+    expect(border.style.top).toBe('0px');
+    expect(border.style.width).toBe('50px');
+    expect(border.style.height).toBe('40px');
+    expect(border.style.transform).toBe('');
+  });
 });

@@ -3,6 +3,7 @@ import type { PPTElement } from '@openmaic/dsl';
 import {
   getElementRange,
   getElementListRange,
+  getLineBounds,
   uniqAlignLines,
   pxToCanvas,
 } from '../../../src/editing/core/geometry';
@@ -45,6 +46,59 @@ describe('geometry', () => {
     expect(Number.isFinite(r.maxY)).toBe(true);
     // Derived from left/top + max(start,end): x ∈ [100, 220], y ∈ [50, 90]
     expect(r).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 90 });
+  });
+  it('getLineBounds encloses a curve control point that leaves the chord', () => {
+    const curved = {
+      id: 'l',
+      type: 'line',
+      left: 0,
+      top: 0,
+      start: [0, 0],
+      end: [100, 0],
+      curve: [50, 80],
+    } as unknown as PPTElement & { type: 'line' };
+    // start/end span only x∈[0,100] y=0 (chord is zero height); the curve
+    // control point at y=80 must be enclosed.
+    expect(getLineBounds(curved as never)).toEqual({ minX: 0, maxX: 100, minY: 0, maxY: 80 });
+  });
+  it('getLineBounds offsets every point by left/top and covers a straight chord', () => {
+    const straight = {
+      id: 'l',
+      type: 'line',
+      left: 10,
+      top: 10,
+      start: [0, 0],
+      end: [50, 50],
+    } as unknown as PPTElement & { type: 'line' };
+    expect(getLineBounds(straight as never)).toEqual({ minX: 10, maxX: 60, minY: 10, maxY: 60 });
+  });
+  it('getLineBounds includes broken/broken2 and both cubic control points', () => {
+    const broken = {
+      id: 'l',
+      type: 'line',
+      left: 5,
+      top: 5,
+      start: [0, 0],
+      end: [40, 10],
+      broken: [20, 60],
+    } as unknown as PPTElement & { type: 'line' };
+    // broken point y=60 dominates the height; offset by top=5.
+    expect(getLineBounds(broken as never)).toEqual({ minX: 5, maxX: 45, minY: 5, maxY: 65 });
+
+    const cubic = {
+      id: 'l',
+      type: 'line',
+      left: 0,
+      top: 0,
+      start: [0, 0],
+      end: [100, 0],
+      cubic: [
+        [10, -30],
+        [90, 50],
+      ],
+    } as unknown as PPTElement & { type: 'line' };
+    // Both control points count: y∈[-30,50], x∈[0,100].
+    expect(getLineBounds(cubic as never)).toEqual({ minX: 0, maxX: 100, minY: -30, maxY: 50 });
   });
   it('list range is the union bbox', () => {
     expect(

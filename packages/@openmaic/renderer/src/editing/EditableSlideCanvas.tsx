@@ -181,13 +181,27 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                         onPointerDown={(e) => {
                           // Always consume the pointer to block fall-through to
                           // an overlapped box beneath (even with no selection
-                          // callback). When a selection callback is provided,
-                          // also select the line — on pointer-down, for parity
-                          // with box elements (which select via
-                          // onElementPointerDown). A line is selectable but NOT
-                          // draggable here: no working copy is armed and no
-                          // move intent is ever emitted (line editing deferred).
+                          // callback, and even when the line is locked). When a
+                          // selection callback is provided, also select the line
+                          // — on pointer-down, for parity with box elements
+                          // (which select via onElementPointerDown). A line is
+                          // selectable but NOT draggable here: no working copy is
+                          // armed and no move intent is ever emitted (line
+                          // editing deferred).
                           e.stopPropagation();
+                          // A locked line is inert like a locked box: it blocks
+                          // fall-through (stopPropagation above) but must not be
+                          // selected.
+                          if (el.lock) return;
+                          // Idempotent re-selection: skip the emit when this line
+                          // is already the sole primary selection, mirroring the
+                          // box `alreadySolePrimary` guard in useEditGesture — a
+                          // re-click on an already-selected line must not re-emit.
+                          const alreadySolePrimary =
+                            activeSelection.primaryId === el.id &&
+                            activeSelection.elementIds.length === 1 &&
+                            activeSelection.elementIds[0] === el.id;
+                          if (alreadySolePrimary) return;
                           onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
                         }}
                         style={{ cursor: 'default', touchAction: 'none' }}

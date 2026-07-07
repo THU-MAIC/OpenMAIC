@@ -1,6 +1,6 @@
 import type { PPTElement } from '@openmaic/dsl';
 import type { Selection } from '../types';
-import { getElementRange } from '../../utils/element';
+import { getLineBounds } from '../core/geometry';
 import { BorderLine } from './BorderLine';
 
 export interface SelectionOverlayProps {
@@ -27,9 +27,12 @@ export function SelectionOverlay({ elements, selection, scale }: SelectionOverla
       {selected.map((el) => {
         // Line elements have no box-model `width`/`height`/`rotate`; a line is
         // selectable but not yet movable (line editing is deferred). Derive its
-        // bounding box from getElementRange and render an unrotated border.
+        // bounding box from getLineBounds (which encloses every control point,
+        // not just the start/end chord) and render an unrotated border, so
+        // curve/broken/broken2/cubic lines whose path leaves the chord still get
+        // a border that wraps the actual drawn stroke.
         if (el.type === 'line') {
-          const { minX, maxX, minY, maxY } = getElementRange(el);
+          const { minX, maxX, minY, maxY } = getLineBounds(el);
           return (
             <BorderLine
               key={el.id}

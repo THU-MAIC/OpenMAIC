@@ -1,4 +1,4 @@
-import type { PPTElement } from '@openmaic/dsl';
+import type { PPTElement, PPTLineElement } from '@openmaic/dsl';
 
 // Reuse the renderer's single source of truth for element bounds instead of a
 // local re-implementation. `getElementRange` there is line-aware (derives
@@ -29,6 +29,37 @@ export interface ElementRange {
   maxX: number;
   minY: number;
   maxY: number;
+}
+
+/**
+ * Tight axis-aligned bounds of a line's actual drawn path, in canvas units.
+ *
+ * Unlike {@link getElementRange} (which only bounds `start`/`end`, i.e. the
+ * chord), this takes min/max over EVERY present control point — `start`, `end`,
+ * `broken`, `broken2`, `curve`, and both points of `cubic` — each offset by the
+ * element's `left`/`top` (`[px,py]` → `(left+px, top+py)`). For curved/bent
+ * lines whose control point leaves the chord (e.g. `start=[0,0]`,`end=[100,0]`,
+ * `curve=[50,80]`), the chord bbox is degenerate (zero height) while the real
+ * path spans 80px; this helper encloses the control point so the selection
+ * border wraps the visible stroke.
+ */
+export function getLineBounds(line: PPTLineElement): ElementRange {
+  const { left, top } = line;
+  const points: [number, number][] = [line.start, line.end];
+  if (line.broken) points.push(line.broken);
+  if (line.broken2) points.push(line.broken2);
+  if (line.curve) points.push(line.curve);
+  if (line.cubic) points.push(line.cubic[0], line.cubic[1]);
+
+  const xs = points.map((p) => left + p[0]);
+  const ys = points.map((p) => top + p[1]);
+
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
 }
 
 /** Union bbox of a list of elements, in canvas units. */

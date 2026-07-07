@@ -655,6 +655,89 @@ describe('EditableSlideCanvas', () => {
     expect(onSel).not.toHaveBeenCalled();
   });
 
+  it('a locked line blocks fall-through but is not selectable (emits no onSelectionChange)', () => {
+    // F2: a locked line, like a locked box, is inert — it consumes the pointer
+    // (blocks fall-through to an overlapped box beneath) but must NOT select.
+    const onSel = vi.fn();
+    const onCh = vi.fn();
+    const lockedLineOverBox = {
+      ...slide,
+      elements: [
+        (slide as unknown as { elements: unknown[] }).elements[0], // box 'a'
+        {
+          id: 'line1',
+          type: 'line',
+          left: 100,
+          top: 100,
+          start: [0, 0],
+          end: [100, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+          lock: true,
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lockedLineOverBox}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+    const blocker = container.querySelector('[data-hit-kind="line"]') as unknown as Element;
+    expect(blocker).not.toBeNull();
+    fireEvent.pointerDown(blocker, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(blocker, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(blocker, { clientX: 30, clientY: 20 });
+    // Locked: blocked the pointer (box beneath neither moved nor selected) and
+    // did not select the line itself.
+    expect(onSel).not.toHaveBeenCalled();
+    expect(onCh).not.toHaveBeenCalled();
+  });
+
+  it('re-clicking an already-sole-selected line does not re-emit onSelectionChange', () => {
+    // F3: mirror the box `alreadySolePrimary` guard — when the line is already
+    // the sole primary selection, a further pointer-down must not re-emit.
+    const onSel = vi.fn();
+    const lineSlide = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+        onSelectionChange={onSel}
+        onElementsChange={vi.fn()}
+        snapping={false}
+      />,
+    );
+    const blocker = container.querySelector('[data-hit-kind="line"]') as unknown as Element;
+    fireEvent.pointerDown(blocker, { clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(blocker, { clientX: 0, clientY: 0 });
+    // Already sole primary -> no redundant re-emit.
+    expect(onSel).not.toHaveBeenCalled();
+  });
+
   it('ignores a foreign pointerId; only the active pointer drives the gesture', () => {
     const { container } = render(
       <EditableSlideCanvas
