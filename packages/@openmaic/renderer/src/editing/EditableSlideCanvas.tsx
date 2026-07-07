@@ -3,6 +3,7 @@
 import { useRef } from 'react';
 
 import { SlideCanvas } from '../SlideCanvas';
+import { getLineElementPath } from '../utils/element';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { SelectionOverlay } from './handles/SelectionOverlay';
 import { useEditGesture } from './useEditGesture';
@@ -102,52 +103,83 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
         <div ref={overlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
           {interactive &&
             elements.map((el) => {
-              // Line elements: a line's real hit area is its thin (often
-              // diagonal) stroke, not its rectangular bounding box. Rendering a
-              // rectangular blocker over the bbox would wrongly swallow clicks
-              // on other visible elements around a thin diagonal line, but
-              // skipping the line entirely lets a pointer-down ON the stroke
-              // fall through to a box underneath (moving/selecting the wrong
-              // thing). Instead render an INERT stroke-shaped blocker: a thin
-              // rotated rectangle laid along the A->B segment. It consumes
-              // pointer-downs on the stroke (no gesture armed — `onPointerDown`
-              // only stops propagation) while leaving the rest of the bbox
-              // click-through. Selection + endpoint editing land in the line
-              // slice; SelectionOverlay still draws no border for lines.
+              // Line elements: a line's real hit area is its (often bent) stroke,
+              // not its rectangular bounding box. A rectangular bbox blocker
+              // would wrongly swallow clicks on other elements around a thin
+              // diagonal line, and a straight start->end strip misses the
+              // visible stroke of broken/broken2/curve/cubic lines (which bend
+              // away from that chord) while blocking empty space where nothing
+              // is drawn. Instead render an INERT SVG-path blocker that mirrors
+              // the v1 line renderer pixel-for-pixel.
+              //
+              // v1 (src/elements/line/BaseLineElement.tsx:70-132) draws the line
+              // at (el.left, el.top) inside SlideCanvas's `transform:
+              // scale(canvasScale)` element container (SlideCanvas.tsx:153-163),
+              // as an <svg overflow:visible> whose <path d={getLineElementPath}>
+              // is in raw canvas units with stroke-width = el.width canvas units.
+              // We reproduce that exactly: the wrapper sits at the same screen
+              // origin as the other hit layers (viewportStyles.left/top +
+              // coord*canvasScale) and the inner <svg> carries `transform:
+              // scale(canvasScale)` (origin 0 0), so its raw-canvas-unit path maps
+              // to the same on-screen pixels as the rendered line.
+              //
+              // `pointer-events: stroke` makes ONLY the fat transparent stroke a
+              // hit target: it covers the visible line for EVERY path shape (P2)
+              // and leaves the empty bbox click-through. The stroke width is the
+              // grab band, at least the rendered stroke and at least a 10px
+              // screen minimum (P3). It is INERT: `onPointerDown` only stops
+              // propagation — no `data-element-id`, no gesture armed.
               if (el.type === 'line') {
-                // Segment endpoints in canvas units: (left+start) -> (left+end).
-                const ax = el.left + el.start[0];
-                const ay = el.top + el.start[1];
-                const bx = el.left + el.end[0];
-                const by = el.top + el.end[1];
-                const lengthPx = Math.hypot(bx - ax, by - ay) * canvasScale;
-                const angleDeg = (Math.atan2(by - ay, bx - ax) * 180) / Math.PI;
-                // Fixed screen-space grab thickness (NOT scaled by zoom): a
-                // comfortable, zoom-independent hit band centered on the stroke.
-                const LINE_HIT_WIDTH_PX = 10;
+                const path = getLineElementPath(el);
+                // Match v1's svg box (min 24) so overflow:visible has a sensible
+                // frame; the fat stroke can extend beyond it (not clipped).
+                const spanW = Math.abs(el.start[0] - el.end[0]);
+                const spanH = Math.abs(el.start[1] - el.end[1]);
+                const svgWidth = spanW < 24 ? 24 : spanW;
+                const svgHeight = spanH < 24 ? 24 : spanH;
+                // Screen grab band, then converted to canvas units for the path
+                // drawn inside the scale(canvasScale) svg (divide by scale so the
+                // painted screen width is exactly `grabScreenPx`).
+                const grabScreenPx = Math.max(10, el.width * canvasScale);
+                const grabCanvas = canvasScale > 0 ? grabScreenPx / canvasScale : grabScreenPx;
                 return (
                   <div
                     key={el.id}
-                    data-hit-kind="line"
-                    onPointerDown={(e) => {
-                      e.stopPropagation();
-                    }}
                     style={{
                       position: 'absolute',
-                      // Anchor the div's left edge at endpoint A, then rotate the
-                      // strip about its left-center so it lies along A->B with
-                      // the stroke running through the band's vertical middle.
-                      left: `${viewportStyles.left + ax * canvasScale}px`,
-                      top: `${viewportStyles.top + ay * canvasScale}px`,
-                      width: `${lengthPx}px`,
-                      height: `${LINE_HIT_WIDTH_PX}px`,
-                      transform: `translateY(-${LINE_HIT_WIDTH_PX / 2}px) rotate(${angleDeg}deg)`,
-                      transformOrigin: 'left center',
-                      pointerEvents: 'auto',
-                      cursor: 'default',
-                      touchAction: 'none',
+                      left: `${viewportStyles.left + el.left * canvasScale}px`,
+                      top: `${viewportStyles.top + el.top * canvasScale}px`,
+                      width: 0,
+                      height: 0,
+                      pointerEvents: 'none',
+                      overflow: 'visible',
                     }}
-                  />
+                  >
+                    <svg
+                      overflow="visible"
+                      width={svgWidth}
+                      height={svgHeight}
+                      style={{
+                        overflow: 'visible',
+                        transform: `scale(${canvasScale})`,
+                        transformOrigin: '0 0',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      <path
+                        data-hit-kind="line"
+                        d={path}
+                        fill="none"
+                        stroke="transparent"
+                        strokeWidth={grabCanvas}
+                        pointerEvents="stroke"
+                        onPointerDown={(e) => {
+                          e.stopPropagation();
+                        }}
+                        style={{ cursor: 'default', touchAction: 'none' }}
+                      />
+                    </svg>
+                  </div>
                 );
               }
               // Non-line elements are narrowed here, so `width`/`height`/`rotate`

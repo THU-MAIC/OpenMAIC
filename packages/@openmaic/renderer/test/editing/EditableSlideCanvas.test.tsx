@@ -5,6 +5,7 @@ import { fireEvent } from '@testing-library/dom';
 import type { Slide } from '@openmaic/dsl';
 import { EditableSlideCanvas } from '../../src/editing/EditableSlideCanvas';
 import { useViewportSize } from '../../src/hooks/useViewportSize';
+import { getLineElementPath } from '../../src/utils/element';
 
 // Mock the shared viewport-fit hook so we can force a non-zero centering
 // offset. In jsdom the real hook reports container size 0 -> offset 0, which
@@ -159,12 +160,13 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelectorAll('[data-selection-border]')).toHaveLength(1);
   });
 
-  it('a line element renders an inert stroke-shaped blocker (not a bbox hit) and consumes pointer-downs', () => {
-    // R2: previously a line was skipped entirely from the hit layer, so a
-    // pointer-down over a rendered line fell through to a box underneath. Now
-    // a line gets an INERT stroke-shaped blocker laid along its A->B segment:
-    // it consumes pointer-downs on the stroke without selecting/moving the box
-    // beneath, while the rest of the line's bbox stays click-through.
+  it('a line renders an inert SVG-path blocker mirroring getLineElementPath (straight) and consumes stroke pointer-downs', () => {
+    // R2/P2: the blocker is now an SVG <path> whose `d` is the SAME path the v1
+    // renderer draws (getLineElementPath). `pointer-events: stroke` makes only
+    // the fat transparent stroke a hit target, so it covers the visible line
+    // (every path shape) and NOT the empty bbox: a pointer-down on the stroke
+    // consumes without selecting/moving the box beneath, while an off-stroke
+    // bbox click still reaches the box below.
     const onSel = vi.fn();
     const onCh = vi.fn();
     const lineOverBox = {
@@ -177,7 +179,7 @@ describe('EditableSlideCanvas', () => {
           left: 100,
           top: 100,
           start: [0, 0],
-          end: [100, 50], // segment length hypot(100,50) ≈ 111.8 (canvas units)
+          end: [100, 50],
           width: 2,
           style: 'solid',
           color: '#333',
@@ -196,22 +198,23 @@ describe('EditableSlideCanvas', () => {
       />,
     );
 
-    // The line blocker exists, is inert (no data-element-id), and is shaped
-    // like the stroke: length ≈ 112px, a thin fixed hit band (10px), rotated.
-    const blocker = container.querySelector('[data-hit-kind="line"]') as HTMLElement;
+    // The blocker is the SVG path, inert (no data-element-id), with `d` equal to
+    // the renderer's path and a stroke-only hit region.
+    const blocker = container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
     expect(blocker).not.toBeNull();
     expect(blocker.getAttribute('data-element-id')).toBeNull();
-    expect(Math.round(parseFloat(blocker.style.width))).toBe(112);
-    expect(blocker.style.height).toBe('10px');
-    expect(blocker.style.transform).toContain('rotate(');
-    // NOT the rectangular bbox (which would be width 100 for start/end span).
-    expect(blocker.style.width).not.toBe('100px');
+    expect(blocker.tagName.toLowerCase()).toBe('path');
+    expect(blocker.getAttribute('d')).toBe('M0,0 L100,50');
+    expect(blocker.getAttribute('pointer-events')).toBe('stroke');
+    expect(blocker.getAttribute('fill')).toBe('none');
+    // Grab band (canvas units): max(10, width*scale)=max(10,2)=10 at scale 1.
+    expect(blocker.getAttribute('stroke-width')).toBe('10');
 
     // A pointer-down on the stroke blocker is inert: the box beneath is neither
     // moved nor selected (the blocker consumed the pointer).
-    fireEvent.pointerDown(blocker, { clientX: 0, clientY: 0 });
-    fireEvent.pointerMove(blocker, { clientX: 30, clientY: 20 });
-    fireEvent.pointerUp(blocker, { clientX: 30, clientY: 20 });
+    fireEvent.pointerDown(blocker as unknown as Element, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(blocker as unknown as Element, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(blocker as unknown as Element, { clientX: 30, clientY: 20 });
     expect(onSel).not.toHaveBeenCalled();
     expect(onCh).not.toHaveBeenCalled();
 
@@ -223,6 +226,94 @@ describe('EditableSlideCanvas', () => {
     fireEvent.pointerMove(boxHit, { clientX: 30, clientY: 20 });
     fireEvent.pointerUp(boxHit, { clientX: 30, clientY: 20 });
     expect(onCh).toHaveBeenCalledTimes(1);
+  });
+
+  it('a non-straight line blocker uses the real getLineElementPath (covers the curve, not just the chord)', () => {
+    // P2: for curve/broken/cubic lines the drawn stroke bends away from the
+    // start->end chord; a chord-only blocker leaves the visible curve
+    // click-through. The blocker must reuse getLineElementPath so its `d`
+    // traces the identical bent path the renderer draws.
+    const curved = {
+      id: 'line1',
+      type: 'line',
+      left: 0,
+      top: 0,
+      start: [0, 0],
+      curve: [50, 80],
+      end: [100, 0],
+      width: 2,
+      style: 'solid',
+      color: '#333',
+      points: ['', ''],
+    };
+    const curvedSlide = { ...slide, elements: [curved] } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={curvedSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    const blocker = container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
+    expect(blocker).not.toBeNull();
+    const d = blocker.getAttribute('d');
+    // Exactly the path the renderer draws (a quadratic curve), NOT a straight chord.
+    expect(d).toBe(getLineElementPath(curved as never));
+    expect(d).toContain('Q');
+    expect(d).not.toBe('M0,0 L100,0');
+  });
+
+  it('the blocker grab band scales with el.width*canvasScale (min 10px screen)', () => {
+    // P3: a wider rendered stroke (large el.width, or zoomed canvas) must widen
+    // the grab band so its outer pixels are still covered. stroke-width is in
+    // canvas units inside a scale(canvasScale) svg, so screen band =
+    // stroke-width*canvasScale = max(10, el.width*canvasScale).
+    const mkLine = (id: string, width: number) => ({
+      id,
+      type: 'line',
+      left: 0,
+      top: 0,
+      start: [0, 0],
+      end: [100, 0],
+      width,
+      style: 'solid',
+      color: '#333',
+      points: ['', ''],
+    });
+
+    // At scale 1: thin(2) clamps to the 10px min; thick(40) yields a wider band.
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={{ ...slide, elements: [mkLine('thin', 2), mkLine('thick', 40)] } as unknown as Slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+      />,
+    );
+    const bands = Array.from(container.querySelectorAll('[data-hit-kind="line"]')).map((b) =>
+      parseFloat(b.getAttribute('stroke-width') || '0'),
+    );
+    expect(bands[0]).toBe(10); // thin clamped to the 10px minimum
+    expect(bands[1]).toBe(40); // thick -> wider band
+    expect(bands[1]).toBeGreaterThan(bands[0]);
+
+    // Under zoom the 10px SCREEN minimum is preserved: at scale 0.5 a thin line
+    // has canvas stroke-width 20 so its on-screen band is 20*0.5 = 10.
+    const { container: c2 } = render(
+      <EditableSlideCanvas
+        slide={{ ...slide, elements: [mkLine('thin', 2)] } as unknown as Slide}
+        scale={0.5}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+      />,
+    );
+    const swZoom = parseFloat(
+      (c2.querySelector('[data-hit-kind="line"]') as Element).getAttribute('stroke-width') || '0',
+    );
+    expect(swZoom).toBe(20);
+    expect(swZoom * 0.5).toBe(10); // screen band == 10px min
   });
 
   it('select-only host (no onElementsChange): no live movement during drag; pointer-up selects', () => {
