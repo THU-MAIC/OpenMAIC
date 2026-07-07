@@ -140,6 +140,8 @@ export interface TTSModelConfig {
   voice: string;
   speed?: number;
   format?: string;
+  /** Optional upstream request timeout. Omit to use the provider/runtime default. */
+  requestTimeoutMs?: number;
   providerOptions?: Record<string, unknown>;
 }
 

@@ -16,15 +16,16 @@ import {
   resolveTTSBaseUrl,
   resolveTTSModel,
 } from '@/lib/server/provider-config';
-import type { TTSProviderId } from '@/lib/audio/types';
+import { isCustomTTSProvider, type TTSProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
 
 const log = createLogger('TTS API');
+const INDEX_TTS_TIMEOUT_MS = 1_200_000;
 
-export const maxDuration = 30;
+export const maxDuration = 1200;
 
 export async function POST(req: NextRequest) {
   let ttsProviderId: string | undefined;
@@ -107,6 +108,7 @@ export async function POST(req: NextRequest) {
       speed: ttsSpeed ?? 1.0,
       apiKey,
       baseUrl,
+      requestTimeoutMs: isCustomTTSProvider(ttsProviderId) ? INDEX_TTS_TIMEOUT_MS : undefined,
       providerOptions: ttsProviderOptions,
     };
 

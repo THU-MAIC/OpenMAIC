@@ -145,8 +145,6 @@
  * - Upload + Poll: For async providers (AssemblyAI, Deepgram batch)
  */
 
-import { createOpenAI } from '@ai-sdk/openai';
-import { experimental_transcribe as transcribe } from 'ai';
 import type { ASRModelConfig } from './types';
 import { isCustomASRProvider } from './types';
 import { ASR_PROVIDERS } from './constants';
@@ -298,36 +296,46 @@ async function transcribeOpenAIWhisper(
   config: ASRModelConfig,
   audioBuffer: Buffer | Blob,
 ): Promise<ASRTranscriptionResult> {
-  const openai = createOpenAI({
-    apiKey: config.apiKey!,
-    baseURL: config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl,
-  });
+  const baseUrl = (config.baseUrl || ASR_PROVIDERS['openai-whisper'].defaultBaseUrl || '').replace(
+    /\/$/,
+    '',
+  );
+  const modelId =
+    config.modelId ||
+    (isCustomASRProvider(config.providerId) ? 'whisper-1' : 'gpt-4o-mini-transcribe');
 
-  // Convert to Buffer or Uint8Array (which is required by the AI SDK)
-  let audioData: Buffer | Uint8Array;
-  if (audioBuffer instanceof Buffer) {
-    audioData = audioBuffer;
-  } else if (audioBuffer instanceof Blob) {
-    const arrayBuffer = await audioBuffer.arrayBuffer();
-    audioData = new Uint8Array(arrayBuffer);
-  } else {
-    throw new Error('Invalid audio buffer type');
+  const audioBlob = await toAudioBlob(audioBuffer);
+  const fileName = audioBlob.type.includes('wav') ? 'audio.wav' : 'audio.webm';
+
+  const formData = new FormData();
+  formData.set('file', audioBlob, fileName);
+  formData.set('model', modelId);
+  formData.set('response_format', 'json');
+  if (config.language && config.language !== 'auto') {
+    formData.set('language', config.language);
   }
 
   try {
-    const result = await transcribe({
-      model: openai.transcription(config.modelId || 'gpt-4o-mini-transcribe'),
-      audio: audioData,
-      providerOptions: {
-        openai: {
-          language: config.language === 'auto' ? undefined : config.language,
-        },
-      },
+    const response = await fetch(`${baseUrl}/audio/transcriptions`, {
+      method: 'POST',
+      headers: getOptionalBearerAuthHeaders(config.apiKey),
+      body: formData,
     });
 
-    return { text: result.text || '' };
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => response.statusText);
+      if (errorText.includes('empty') || errorText.includes('too short')) {
+        return { text: '' };
+      }
+      throw new Error(
+        `OpenAI-compatible ASR API error (${response.status}): ${errorText || response.statusText}`,
+      );
+    }
+
+    const data = await response.json();
+    return { text: typeof data.text === 'string' ? data.text : '' };
   } catch (error: unknown) {
-    // Short/silent audio may cause the SDK to throw — treat as empty transcription
+    // Short/silent audio may cause the backend to throw — treat as empty transcription
     const errMsg = error instanceof Error ? error.message : '';
     if (errMsg.includes('empty') || errMsg.includes('too short')) {
       return { text: '' };

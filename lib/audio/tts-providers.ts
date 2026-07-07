@@ -213,6 +213,10 @@ async function generateOpenAITTS(
       voice: config.voice,
       speed: config.speed || 1.0,
     }),
+    signal:
+      config.requestTimeoutMs !== undefined
+        ? AbortSignal.timeout(config.requestTimeoutMs)
+        : undefined,
   });
 
   if (!response.ok) {

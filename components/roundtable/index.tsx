@@ -179,6 +179,7 @@ export function Roundtable({
   const ttsMuted = useSettingsStore((s) => s.ttsMuted);
   const setTTSMuted = useSettingsStore((s) => s.setTTSMuted);
   const ttsEnabled = useSettingsStore((state) => state.ttsEnabled);
+  const setTTSEnabled = useSettingsStore((state) => state.setTTSEnabled);
   const asrEnabled = useSettingsStore((state) => state.asrEnabled);
   const chatAreaWidth = useSettingsStore((s) => s.chatAreaWidth);
   const ttsVolume = useSettingsStore((s) => s.ttsVolume);
@@ -642,7 +643,14 @@ export function Roundtable({
       ttsEnabled={ttsEnabled}
       ttsMuted={ttsMuted}
       ttsVolume={ttsVolume}
-      onToggleMute={() => ttsEnabled && setTTSMuted(!ttsMuted)}
+      onToggleMute={() => {
+        if (!ttsEnabled) {
+          setTTSEnabled(true);
+          setTTSMuted(false);
+          return;
+        }
+        setTTSMuted(!ttsMuted);
+      }}
       onVolumeChange={(v) => setTTSVolume(v)}
       autoPlayLecture={autoPlayLecture}
       onToggleAutoPlay={() => setAutoPlayLecture(!autoPlayLecture)}

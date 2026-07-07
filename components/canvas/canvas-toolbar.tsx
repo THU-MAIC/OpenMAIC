@@ -187,17 +187,16 @@ export function CanvasToolbar({
             >
               <button
                 onClick={onToggleMute}
-                disabled={!ttsEnabled}
                 className={cn(
                   ctrlBtn,
                   'w-6 h-6',
                   !ttsEnabled
-                    ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
+                    ? 'text-gray-300 dark:text-gray-600'
                     : ttsMuted
                       ? 'text-red-500 dark:text-red-400'
                       : 'text-gray-500 dark:text-gray-400',
                 )}
-                aria-label={ttsMuted ? 'Unmute' : 'Mute'}
+                aria-label={!ttsEnabled ? 'Enable text-to-speech' : ttsMuted ? 'Unmute' : 'Mute'}
               >
                 <VolumeIcon muted={!!ttsMuted} volume={ttsVolume} disabled={!ttsEnabled} />
               </button>

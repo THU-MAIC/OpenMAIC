@@ -1,0 +1,25 @@
+{
+  "lastValidatedTimestamp": 1767999898134,
+  "projects": {},
+  "pnpmfiles": [],
+  "settings": {
+    "autoInstallPeers": true,
+    "dedupeDirectDeps": false,
+    "dedupeInjectedDeps": true,
+    "dedupePeerDependents": true,
+    "dev": true,
+    "excludeLinksFromLockfile": false,
+    "hoistPattern": [
+      "*"
+    ],
+    "hoistWorkspacePackages": true,
+    "injectWorkspacePackages": false,
+    "linkWorkspacePackages": false,
+    "nodeLinker": "hoisted",
+    "optional": true,
+    "preferWorkspacePackages": false,
+    "production": true,
+    "publicHoistPattern": []
+  },
+  "filteredInstall": false
+}
