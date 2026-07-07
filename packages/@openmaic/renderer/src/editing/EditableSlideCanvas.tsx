@@ -129,6 +129,11 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               // grab band, at least the rendered stroke and at least a 10px
               // screen minimum (P3). It is INERT: `onPointerDown` only stops
               // propagation — no `data-element-id`, no gesture armed.
+              // Known gap: endpoint markers (arrow/dot) can paint beyond the
+              // stroke; their extents are NOT part of this hit target. Covering
+              // them is deferred with line editing — the only fall-through case
+              // is a marked line overlapping other content exactly at an
+              // endpoint, on an element type that is not yet editable here.
               if (el.type === 'line') {
                 const path = getLineElementPath(el);
                 // Match v1's svg box (min 24) so overflow:visible has a sensible
