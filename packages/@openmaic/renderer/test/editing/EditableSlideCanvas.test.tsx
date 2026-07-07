@@ -91,6 +91,8 @@ describe('EditableSlideCanvas', () => {
     const hit = findHit(container);
     fireEvent.pointerDown(hit, { clientX: 0, clientY: 0 });
     fireEvent.pointerUp(hit, { clientX: 0, clientY: 0 });
+    // Selection happens once (on pointer-down); a plain click emits nothing more.
+    expect(onSel).toHaveBeenCalledTimes(1);
     expect(onSel).toHaveBeenCalledWith(
       expect.objectContaining({ elementIds: ['a'], primaryId: 'a' }),
     );
@@ -155,6 +157,100 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelector('[data-element-id="line1"]')).toBeNull();
     // Only the box element gets a selection border (one, not two).
     expect(container.querySelectorAll('[data-selection-border]')).toHaveLength(1);
+  });
+
+  it('a line element renders an inert stroke-shaped blocker (not a bbox hit) and consumes pointer-downs', () => {
+    // R2: previously a line was skipped entirely from the hit layer, so a
+    // pointer-down over a rendered line fell through to a box underneath. Now
+    // a line gets an INERT stroke-shaped blocker laid along its A->B segment:
+    // it consumes pointer-downs on the stroke without selecting/moving the box
+    // beneath, while the rest of the line's bbox stays click-through.
+    const onSel = vi.fn();
+    const onCh = vi.fn();
+    const lineOverBox = {
+      ...slide,
+      elements: [
+        (slide as unknown as { elements: unknown[] }).elements[0], // box 'a'
+        {
+          id: 'line1',
+          type: 'line',
+          left: 100,
+          top: 100,
+          start: [0, 0],
+          end: [100, 50], // segment length hypot(100,50) ≈ 111.8 (canvas units)
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineOverBox}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+
+    // The line blocker exists, is inert (no data-element-id), and is shaped
+    // like the stroke: length ≈ 112px, a thin fixed hit band (10px), rotated.
+    const blocker = container.querySelector('[data-hit-kind="line"]') as HTMLElement;
+    expect(blocker).not.toBeNull();
+    expect(blocker.getAttribute('data-element-id')).toBeNull();
+    expect(Math.round(parseFloat(blocker.style.width))).toBe(112);
+    expect(blocker.style.height).toBe('10px');
+    expect(blocker.style.transform).toContain('rotate(');
+    // NOT the rectangular bbox (which would be width 100 for start/end span).
+    expect(blocker.style.width).not.toBe('100px');
+
+    // A pointer-down on the stroke blocker is inert: the box beneath is neither
+    // moved nor selected (the blocker consumed the pointer).
+    fireEvent.pointerDown(blocker, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(blocker, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(blocker, { clientX: 30, clientY: 20 });
+    expect(onSel).not.toHaveBeenCalled();
+    expect(onCh).not.toHaveBeenCalled();
+
+    // A pointer-down in the line's bbox but away from the stroke still reaches
+    // the box: its own hit target is present and drives a move.
+    const boxHit = container.querySelector('[data-element-id="a"]') as HTMLElement;
+    expect(boxHit).not.toBeNull();
+    fireEvent.pointerDown(boxHit, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(boxHit, { clientX: 30, clientY: 20 });
+    fireEvent.pointerUp(boxHit, { clientX: 30, clientY: 20 });
+    expect(onCh).toHaveBeenCalledTimes(1);
+  });
+
+  it('select-only host (no onElementsChange): no live movement during drag; pointer-up selects', () => {
+    // R3: with only onSelectionChange, the working copy must NOT follow the
+    // pointer during pointermove (nothing can commit, so a live drag would just
+    // snap back). The element stays put; pointer-up selects it.
+    const onSel = vi.fn();
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        snapping={false}
+      />,
+    );
+    const hit = findHit(container);
+    fireEvent.pointerDown(hit, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { clientX: 30, clientY: 20 });
+    // No live movement: the rendered element position is unchanged mid-drag.
+    expect(findHit(container).style.left).toBe('100px');
+    expect(findHit(container).style.top).toBe('100px');
+    fireEvent.pointerUp(hit, { clientX: 30, clientY: 20 });
+    // Selection happened once (on pointer-down); no update channel to emit to.
+    expect(onSel).toHaveBeenCalledTimes(1);
+    expect(onSel).toHaveBeenCalledWith(
+      expect.objectContaining({ elementIds: ['a'], primaryId: 'a' }),
+    );
   });
 
   it('a drag emits exactly one element.update intent on pointer-up', () => {

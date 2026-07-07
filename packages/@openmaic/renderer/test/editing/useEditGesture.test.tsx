@@ -71,6 +71,65 @@ describe('useEditGesture — locked element (defense-in-depth)', () => {
     expect(onSelectionChange).not.toHaveBeenCalled();
   });
 
+  it('dragging a not-currently-selected element selects it (on pointer-down) AND emits exactly one element.update', () => {
+    // R1: a drag must leave the dragged element selected in the controlled
+    // `selection`. Starting from an empty selection, pointer-down selects the
+    // element and pointer-up (past the drag threshold) emits its move — one of
+    // each, no double-emit.
+    const unlockedSlide = makeSlide();
+    const el = unlockedSlide.elements[0];
+    const onElementsChange = vi.fn();
+    const onSelectionChange = vi.fn();
+
+    const { container } = render(
+      <Harness
+        slide={unlockedSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={onElementsChange}
+        targetEl={el}
+      />,
+    );
+
+    const hit = container.querySelector('[data-testid="hit"]') as HTMLElement;
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { pointerId: 1, clientX: 40, clientY: 40 });
+    fireEvent.pointerUp(hit, { pointerId: 1, clientX: 40, clientY: 40 });
+
+    expect(onSelectionChange).toHaveBeenCalledTimes(1);
+    expect(onSelectionChange).toHaveBeenCalledWith({ elementIds: ['a'], primaryId: 'a' });
+    expect(onElementsChange).toHaveBeenCalledTimes(1);
+    expect(onElementsChange.mock.calls[0][0]).toEqual([
+      { type: 'element.update', id: 'a', props: { left: 140, top: 140 } },
+    ]);
+  });
+
+  it('does NOT re-select an already-sole-primary element on interaction (no redundant emit)', () => {
+    // R1: if the element is already the sole/primary selection, pointer-down
+    // must not emit a redundant selection change.
+    const unlockedSlide = makeSlide();
+    const el = unlockedSlide.elements[0];
+    const onSelectionChange = vi.fn();
+
+    const { container } = render(
+      <Harness
+        slide={unlockedSlide}
+        scale={1}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={onSelectionChange}
+        onElementsChange={vi.fn()}
+        targetEl={el}
+      />,
+    );
+
+    const hit = container.querySelector('[data-testid="hit"]') as HTMLElement;
+    // Plain click on the already-selected element: no selection emit.
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerUp(hit, { pointerId: 1, clientX: 0, clientY: 0 });
+    expect(onSelectionChange).not.toHaveBeenCalled();
+  });
+
   it('control: an unlocked element still arms normally (same inputs, no lock)', () => {
     const unlockedSlide = makeSlide();
     const el = unlockedSlide.elements[0];

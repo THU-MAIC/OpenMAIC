@@ -56,7 +56,7 @@ interface Working {
  * Pure gesture glue: no store, no `@/` imports.
  */
 export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
-  const { slide, scale, snapping, onSelectionChange, onElementsChange } = args;
+  const { slide, scale, selection, snapping, onSelectionChange, onElementsChange } = args;
 
   const [working, setWorking] = useState<Working | null>(null);
 
@@ -91,6 +91,20 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
     if (activePointerRef.current !== null) return;
     activePointerRef.current = e.pointerId;
 
+    // Select-on-pointer-down: both a click and a drag then operate on a selected
+    // element, and — crucially — a drag ends with the dragged element selected
+    // (the controlled `selection` never goes stale against what's being moved).
+    // Skip the emit when this element is already the sole/primary selection so a
+    // plain click doesn't double-emit (down here + a redundant up). Multi-select
+    // is out of scope: starting a drag on any element collapses to just it.
+    const alreadySolePrimary =
+      selection.primaryId === el.id &&
+      selection.elementIds.length === 1 &&
+      selection.elementIds[0] === el.id;
+    if (!alreadySolePrimary) {
+      onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
+    }
+
     const startX = e.clientX;
     const startY = e.clientY;
     const others = slide.elements.filter((o) => o.id !== el.id);
@@ -120,6 +134,11 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
 
     const handleMove = (ev: PointerEvent) => {
       if (ev.pointerId !== activePointerRef.current) return;
+      // Select-only / read-only-ish hosts (no `onElementsChange`) can't commit a
+      // move, so a live working copy would just visibly follow the pointer and
+      // snap back on pointer-up. Skip live movement entirely when there's no
+      // mutation channel — the gesture only ends up selecting (see handleUp).
+      if (!onElementsChange) return;
       const { props, guides } = compute(ev.clientX, ev.clientY);
       const live: Slide = {
         ...slide,
@@ -146,15 +165,14 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
       // both axes must classify as a drag even if neither axis alone exceeds it.
       const movedPast = Math.hypot(ev.clientX - startX, ev.clientY - startY) > DRAG_THRESHOLD_PX;
 
-      // A move intent is only meaningful when the host can mutate. Without
-      // `onElementsChange`, a drag-classified gesture (even a >2px jitter on a
-      // read-only click-to-select host) falls back to selection so a pointer
-      // interaction always yields a selection rather than doing nothing.
+      // A move intent is only meaningful when the host can mutate. When it moved
+      // past the threshold and there's a mutation channel, emit exactly one move
+      // intent. Otherwise (a click, or a drag on a select-only host) there is
+      // nothing extra to emit here: the element was already selected on
+      // pointer-down, so re-emitting would be a redundant double selection.
       if (movedPast && onElementsChange) {
         const { props } = compute(ev.clientX, ev.clientY);
         onElementsChange([moveIntent(el.id, props)]);
-      } else {
-        onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
       }
 
       setWorking(null);
