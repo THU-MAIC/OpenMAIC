@@ -49,8 +49,16 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
-  // Whitelist: access-code endpoints, health check
-  if (pathname.startsWith('/api/access-code/') || pathname === '/api/health') {
+  // Whitelist: access-code endpoints, health check, and the PWA assets. The
+  // service worker script and web manifest must be publicly fetchable — if they
+  // are gated behind the access-code flow the PWA can't install or update.
+  // `endsWith` keeps this correct when the app is mounted under a basePath.
+  if (
+    pathname.startsWith('/api/access-code/') ||
+    pathname === '/api/health' ||
+    pathname.endsWith('/sw.js') ||
+    pathname.endsWith('/manifest.webmanifest')
+  ) {
     return NextResponse.next();
   }
 
@@ -73,5 +81,8 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|logos/).*)'],
+  // Exclude static assets and the PWA service worker + manifest, which must be
+  // publicly fetchable (the SW script and manifest can't be gated behind the
+  // access-code flow or the PWA won't install / update).
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|logos/|sw.js|manifest.webmanifest).*)'],
 };
