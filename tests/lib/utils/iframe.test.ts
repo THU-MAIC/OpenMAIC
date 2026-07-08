@@ -100,6 +100,46 @@ describe('patchHtmlForIframe', () => {
     expect(String(posts[3][0].message)).toContain('console boom');
   });
 
+  describe('render-blocking KaTeX assets (3G blank-slide root cause)', () => {
+    it('defers a render-blocking KaTeX <script> so the body can paint first', () => {
+      const html =
+        '<!DOCTYPE html><html><head>' +
+        '<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>' +
+        '<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"></script>' +
+        '</head><body><p>hi</p></body></html>';
+      const out = patchHtmlForIframe(html);
+      expect(out).toContain(
+        '<script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" defer></script>',
+      );
+      expect(out).toContain('contrib/auto-render.min.js" defer></script>');
+    });
+
+    it('makes the KaTeX stylesheet non-render-blocking', () => {
+      const html =
+        '<html><head><link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css"></head><body></body></html>';
+      const out = patchHtmlForIframe(html);
+      expect(out).toMatch(/katex@0\.16\.9\/dist\/katex\.min\.css"[^>]*media="print"/);
+      expect(out).toContain('onload="this.media=\'all\'"');
+    });
+
+    it('does NOT touch non-KaTeX scripts (safety — avoids breaking parse-time deps)', () => {
+      const html =
+        '<html><head><script src="https://cdn.example.com/lib.js"></script></head><body></body></html>';
+      const out = patchHtmlForIframe(html);
+      expect(out).toContain('<script src="https://cdn.example.com/lib.js"></script>');
+      expect(out).not.toContain('lib.js" defer');
+    });
+
+    it('is idempotent — already-deferred KaTeX is left alone', () => {
+      const html =
+        '<html><head><script src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" defer></script></head><body></body></html>';
+      const out = patchHtmlForIframe(html);
+      // exactly one `defer`, not doubled
+      expect(out).toContain('katex.min.js" defer></script>');
+      expect(out).not.toContain('defer defer');
+    });
+  });
+
   it('the error shim buffers errors and re-emits them on a parent replay request', () => {
     // Guards the subscribe-after-insert race: a page that throws synchronously
     // while srcDoc parses may post before the parent subscribes. The shim must
