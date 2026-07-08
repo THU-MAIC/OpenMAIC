@@ -437,8 +437,12 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               absolute SCREEN coordinates (baking in `viewportStyles`) and are
               gated on EDITABILITY (`onElementsChange`), not generic
               `interactive`: without a mutation channel the gestures no-op, so
-              a select-only mount shows no draggable handles. */}
+              a select-only mount shows no draggable handles. Shown only for a
+              SINGLE-element selection: these gestures transform one element,
+              and per-element handles on a multi-selection would misread as
+              group scaling (which is a later slice). */}
           {Boolean(onElementsChange) &&
+            activeSelection.elementIds.length === 1 &&
             elements.map((el) => {
               if (el.type === 'line') return null;
               if (!activeSelection.elementIds.includes(el.id) || el.lock) return null;

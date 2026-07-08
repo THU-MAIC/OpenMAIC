@@ -160,7 +160,15 @@ export function useResizeGesture(args: UseResizeGestureArgs): UseResizeGestureRe
       const movedPast = Math.hypot(ev.clientX - startX, ev.clientY - startY) > DRAG_THRESHOLD_PX;
       if (movedPast && onElementsChange) {
         const { props } = compute(ev.clientX, ev.clientY, modifierOf(ev));
-        onElementsChange([resizeIntent(element.id, props)]);
+        // Snapping can pull the box back to exactly its original geometry; a
+        // no-op update would still cost the host an undo entry, so skip it
+        // (same guard as the rotate gesture's unchanged-angle case).
+        const unchanged =
+          props.left === element.left &&
+          props.top === element.top &&
+          props.width === element.width &&
+          props.height === element.height;
+        if (!unchanged) onElementsChange([resizeIntent(element.id, props)]);
       }
 
       setResizeDrag(null);

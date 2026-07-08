@@ -81,6 +81,37 @@ describe('useResizeGesture', () => {
     ]);
   });
 
+  it('a drag whose snap returns the box to its origin emits nothing (no no-op undo entry)', () => {
+    // Sibling left edge sits exactly at the target's original right edge
+    // (100 + 200 = 300). A +3px drag on the `right` handle moves past the 2px
+    // threshold, but snapping (range 5) pulls the moving edge back to 300 —
+    // the computed box equals the origin, so no intent may be emitted.
+    const sibling = { ...baseElement, id: 'b', left: 300, top: 300 };
+    const slide = {
+      id: 's',
+      viewportSize: 1000,
+      viewportRatio: 0.5625,
+      elements: [baseElement, sibling],
+    } as unknown as Slide;
+    const el = slide.elements[0] as PPTBoxElement;
+    const onElementsChange = vi.fn();
+    const { container } = render(
+      <Harness
+        slide={slide}
+        scale={1}
+        snapping={true}
+        onElementsChange={onElementsChange}
+        targetEl={el}
+        handle="right"
+      />,
+    );
+    const hit = container.querySelector('[data-testid="hit"]') as HTMLElement;
+    fireEvent.pointerDown(hit, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(hit, { pointerId: 1, clientX: 3, clientY: 0 });
+    fireEvent.pointerUp(hit, { pointerId: 1, clientX: 3, clientY: 0 });
+    expect(onElementsChange).not.toHaveBeenCalled();
+  });
+
   it('converts the screen delta to canvas units through scale', () => {
     const slide = makeSlide();
     const el = slide.elements[0] as PPTBoxElement;

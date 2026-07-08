@@ -152,6 +152,22 @@ describe('EditableSlideCanvas — operate handle gates', () => {
     expect(container.querySelector('[data-resize-handle]')).toBeNull();
     expect(container.querySelector('[data-rotate-handle]')).toBeNull();
   });
+
+  it('a multi-element selection shows no operate handles (single-element gestures only)', () => {
+    // The resize/rotate gestures transform one element; per-element handles on
+    // a multi-selection would misread as group scaling, which is a later slice.
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={makeSlide([textEl, imageEl])}
+        scale={1}
+        selection={{ elementIds: ['txt', 'img'], primaryId: 'txt' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    expect(container.querySelector('[data-resize-handle]')).toBeNull();
+    expect(container.querySelector('[data-rotate-handle]')).toBeNull();
+  });
 });
 
 describe('EditableSlideCanvas — operate gestures end-to-end', () => {
