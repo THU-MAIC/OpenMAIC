@@ -91,7 +91,9 @@
       "empty": "강의 재생 후 여기에 노트가 표시됩니다",
       "emptyHint": "재생 버튼을 눌러 강의를 시작하세요",
       "pageLabel": "{{n}}페이지",
-      "currentPage": "현재"
+      "currentPage": "현재",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "Q&A",
@@ -502,6 +504,9 @@
     "autoPlay": "자동 재생",
     "autoPlayOff": "자동 재생 끄기",
     "speed": "속도",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "음성 입력",
     "voiceInputDisabled": "음성 입력 비활성화됨",
     "textInput": "텍스트 입력",

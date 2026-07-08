@@ -91,7 +91,9 @@
       "empty": "播放課程後，筆記將在此顯示",
       "emptyHint": "點擊播放按鈕開始授課",
       "pageLabel": "第 {{n}} 頁",
-      "currentPage": "目前頁"
+      "currentPage": "目前頁",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "Q&A",
@@ -487,6 +489,9 @@
     "autoPlay": "自動播放",
     "autoPlayOff": "關閉自動播放",
     "speed": "倍速",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "語音輸入",
     "voiceInputDisabled": "語音輸入已停用",
     "textInput": "文字輸入",
