@@ -13,6 +13,13 @@ export type ReorderCommand = 'front' | 'back' | 'forward' | 'backward';
 export type AlignCommand = 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom';
 
 /**
+ * The draggable handles on a line element. `start`/`end` are the two endpoints;
+ * `ctrl` is the single quadratic/broken control point (`broken`/`broken2`/`curve`);
+ * `ctrl1`/`ctrl2` are the two cubic control points (`cubic`).
+ */
+export type LineHandle = 'start' | 'end' | 'ctrl' | 'ctrl1' | 'ctrl2';
+
+/**
  * A single canvas edit intent. The canvas emits these on gesture commit; the host
  * owns the document and undo and applies them. One intent (or batch) per completed
  * gesture — never per animation frame — so it maps 1:1 onto one host undo entry.
