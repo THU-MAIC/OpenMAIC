@@ -15,8 +15,13 @@ interface StaticTableProps {
  */
 export function StaticTable({ elementInfo }: StaticTableProps) {
   const { width, data, colWidths, cellMinHeight, outline, theme } = elementInfo;
+  const tableData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
+  const tableColWidths = useMemo(() => (Array.isArray(colWidths) ? colWidths : []), [colWidths]);
+  const safeWidth = Number.isFinite(width) && width > 0 ? width : 1;
+  const safeCellMinHeight =
+    Number.isFinite(cellMinHeight) && cellMinHeight >= 0 ? cellMinHeight : 40;
 
-  const hiddenCells = useMemo(() => getHiddenCells(data), [data]);
+  const hiddenCells = useMemo(() => getHiddenCells(tableData), [tableData]);
 
   const [subThemeDark, subThemeLight] = useMemo(() => {
     if (!theme) return ['', ''];
@@ -42,8 +47,8 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
     if (cellBackcolor) return cellBackcolor;
     if (!theme) return undefined;
 
-    const rowCount = data.length;
-    const colCount = data[0]?.length ?? 0;
+    const rowCount = tableData.length;
+    const colCount = tableData[0]?.length ?? 0;
 
     // Row header (first row) gets theme color
     if (theme.rowHeader && rowIdx === 0) return theme.color;
@@ -66,7 +71,7 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
    */
   const getHeaderTextColor = (rowIdx: number): string | undefined => {
     if (!theme) return undefined;
-    const rowCount = data.length;
+    const rowCount = tableData.length;
     if (theme.rowHeader && rowIdx === 0) return '#fff';
     if (theme.rowFooter && rowIdx === rowCount - 1) return '#fff';
     return undefined;
@@ -81,19 +86,22 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
       }}
     >
       <colgroup>
-        {colWidths.map((w, i) => (
-          <col key={i} style={{ width: `${w * width}px` }} />
+        {tableColWidths.map((w, i) => (
+          <col key={i} style={{ width: `${(Number.isFinite(w) ? w : 1) * safeWidth}px` }} />
         ))}
       </colgroup>
       <tbody>
-        {data.map((row, rowIdx) => (
-          <tr key={rowIdx} style={{ height: `${cellMinHeight}px` }}>
-            {row.map((cell, colIdx) => {
+        {tableData.map((row, rowIdx) => (
+          <tr key={rowIdx} style={{ height: `${safeCellMinHeight}px` }}>
+            {(Array.isArray(row) ? row : []).map((cell, colIdx) => {
               if (hiddenCells.has(`${rowIdx}_${colIdx}`)) return null;
+              if (!cell) return null;
 
               const bgColor = getCellBg(rowIdx, colIdx, cell.style?.backcolor);
               const headerColor = getHeaderTextColor(rowIdx);
               const textStyle = getTextStyle(cell.style);
+              const colspan = Number.isFinite(cell.colspan) && cell.colspan > 0 ? cell.colspan : 1;
+              const rowspan = Number.isFinite(cell.rowspan) && cell.rowspan > 0 ? cell.rowspan : 1;
 
               // Header text color should be overridden only if cell doesn't have its own color
               if (headerColor && !cell.style?.color) {
@@ -102,9 +110,9 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
 
               return (
                 <td
-                  key={cell.id}
-                  colSpan={cell.colspan > 1 ? cell.colspan : undefined}
-                  rowSpan={cell.rowspan > 1 ? cell.rowspan : undefined}
+                  key={cell.id || `${rowIdx}-${colIdx}`}
+                  colSpan={colspan > 1 ? colspan : undefined}
+                  rowSpan={rowspan > 1 ? rowspan : undefined}
                   style={{
                     border: borderStyle,
                     backgroundColor: bgColor,

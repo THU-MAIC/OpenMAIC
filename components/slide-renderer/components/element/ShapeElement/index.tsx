@@ -63,8 +63,23 @@ export function ShapeElement({ elementInfo, selectElement }: ShapeElementProps) 
       defaultColor: '#000000',
     };
     if (!elementInfo.text) return defaultText;
-    return elementInfo.text;
+    return {
+      ...elementInfo.text,
+      content: typeof elementInfo.text.content === 'string' ? elementInfo.text.content : '',
+    };
   }, [elementInfo.text]);
+  const viewBoxWidth =
+    Array.isArray(elementInfo.viewBox) &&
+    Number.isFinite(elementInfo.viewBox[0]) &&
+    elementInfo.viewBox[0] > 0
+      ? elementInfo.viewBox[0]
+      : elementInfo.width || 1;
+  const viewBoxHeight =
+    Array.isArray(elementInfo.viewBox) &&
+    Number.isFinite(elementInfo.viewBox[1]) &&
+    elementInfo.viewBox[1] > 0
+      ? elementInfo.viewBox[1]
+      : elementInfo.height || 1;
 
   // Update text content
   const updateText = useCallback(
@@ -84,7 +99,8 @@ export function ShapeElement({ elementInfo, selectElement }: ShapeElementProps) 
   const checkEmptyText = useCallback(() => {
     if (!elementInfo.text) return;
 
-    const pureText = elementInfo.text.content.replace(/<[^>]+>/g, '');
+    const content = typeof elementInfo.text.content === 'string' ? elementInfo.text.content : '';
+    const pureText = content.replace(/<[^>]+>/g, '');
     if (!pureText) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 'text' is specific to PPTShapeElement, not in keyof PPTElement union
       removeElementProps({ id: elementInfo.id, propName: 'text' as any });
@@ -144,8 +160,8 @@ export function ShapeElement({ elementInfo, selectElement }: ShapeElementProps) 
               )}
             </defs>
             <g
-              transform={`scale(${elementInfo.width / elementInfo.viewBox[0]}, ${
-                elementInfo.height / elementInfo.viewBox[1]
+              transform={`scale(${elementInfo.width / viewBoxWidth}, ${
+                elementInfo.height / viewBoxHeight
               }) translate(0,0) matrix(1,0,0,1,0,0)`}
             >
               <path
