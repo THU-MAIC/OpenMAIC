@@ -1641,5 +1641,95 @@
     "title": "アクセスコードを入力",
     "placeholder": "アクセスコード",
     "error": "アクセスコードが正しくありません。もう一度お試しください。"
+  },
+  "learningReport": {
+    "title": "学習レポート",
+    "back": "戻る",
+    "loading": "レポートを生成しています…",
+    "emptyState": "まだコースがありません。学習を始めるとレポートが表示されます。",
+    "emptyStateCta": "コースへ",
+    "tabs": {
+      "overview": "概要",
+      "stages": "進捗",
+      "quiz": "クイズ",
+      "chat": "会話",
+      "achievements": "実績"
+    },
+    "overview": {
+      "progress": "進捗",
+      "quiz": "クイズ",
+      "chat": "会話",
+      "stageCount": "コース数",
+      "started": "開始済み",
+      "completed": "完了",
+      "avgProgress": "平均進捗",
+      "maxProgress": "最高進捗",
+      "quizAttempts": "クイズ回数",
+      "avgScore": "平均得点率",
+      "bestScore": "最高得点率",
+      "perfect": "満点回数",
+      "sessions": "セッション数",
+      "qa": "Q&A",
+      "lecture": "講義",
+      "messages": "メッセージ数"
+    },
+    "stages": {
+      "empty": "まだコースの進捗がありません。",
+      "notStarted": "未開始",
+      "scenePosition": "シーン {{position}} / {{total}}",
+      "quizBadge": "クイズ {{done}}/{{total}}",
+      "scoreBadge": "平均 {{pct}}%",
+      "chatBadge": "{{count}} 回"
+    },
+    "quiz": {
+      "empty": "まだクイズの提出がありません。"
+    },
+    "chat": {
+      "empty": "まだ会話がありません。",
+      "lecture": "講義",
+      "qa": "Q&A",
+      "discussion": "ディスカッション"
+    },
+    "ach": {
+      "summary": "解除済み {{earned}} / {{total}}",
+      "unlockedAt": "{{date}} に解除",
+      "locked": "まだ解除されていません",
+      "start": {
+        "title": "出発",
+        "desc": "任意のコースを開始する"
+      },
+      "finish1": {
+        "title": "コース修了",
+        "desc": "1 コースを修了する"
+      },
+      "finish3": {
+        "title": "成果あり",
+        "desc": "修了率 80% 以上"
+      },
+      "quiz1": {
+        "title": "初挑戦",
+        "desc": "初めてのクイズを完了する"
+      },
+      "perfect": {
+        "title": "満点達成",
+        "desc": "クイズで満点を取る"
+      },
+      "quiz80": {
+        "title": "安定した実力",
+        "desc": "クイズ平均得点率 80% 以上"
+      },
+      "chat1": {
+        "title": "アイスブレイク",
+        "desc": "初めての会話を始める"
+      },
+      "chat20": {
+        "title": "勤勉な学習者",
+        "desc": "累計 20 回の会話"
+      },
+      "msg100": {
+        "title": "雄弁",
+        "desc": "累計 100 メッセージ"
+      }
+    }
   }
 }

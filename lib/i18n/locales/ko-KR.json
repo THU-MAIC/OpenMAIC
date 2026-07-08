@@ -1641,5 +1641,95 @@
     "title": "접근 코드 입력",
     "placeholder": "접근 코드",
     "error": "유효하지 않은 접근 코드입니다. 다시 시도해 주세요."
+  },
+  "learningReport": {
+    "title": "학습 리포트",
+    "back": "뒤로",
+    "loading": "리포트를 생성하는 중…",
+    "emptyState": "아직 강좌가 없습니다. 학습을 시작하면 리포트가 표시됩니다.",
+    "emptyStateCta": "강좌로 이동",
+    "tabs": {
+      "overview": "개요",
+      "stages": "진행",
+      "quiz": "퀴즈",
+      "chat": "대화",
+      "achievements": "업적"
+    },
+    "overview": {
+      "progress": "진행",
+      "quiz": "퀴즈",
+      "chat": "대화",
+      "stageCount": "강좌 수",
+      "started": "시작함",
+      "completed": "완료",
+      "avgProgress": "평균 진행률",
+      "maxProgress": "최고 진행률",
+      "quizAttempts": "퀴즈 횟수",
+      "avgScore": "평균 점수율",
+      "bestScore": "최고 점수율",
+      "perfect": "만점 횟수",
+      "sessions": "세션 수",
+      "qa": "Q&A",
+      "lecture": "강의",
+      "messages": "메시지 수"
+    },
+    "stages": {
+      "empty": "아직 강좌 진행이 없습니다.",
+      "notStarted": "시작 안 함",
+      "scenePosition": "장면 {{position}} / {{total}}",
+      "quizBadge": "퀴즈 {{done}}/{{total}}",
+      "scoreBadge": "평균 {{pct}}%",
+      "chatBadge": "{{count}}회 세션"
+    },
+    "quiz": {
+      "empty": "아직 퀴즈 제출이 없습니다."
+    },
+    "chat": {
+      "empty": "아직 대화가 없습니다.",
+      "lecture": "강의",
+      "qa": "Q&A",
+      "discussion": "토론"
+    },
+    "ach": {
+      "summary": "해제 {{earned}} / {{total}}",
+      "unlockedAt": "{{date}}에 해제",
+      "locked": "아직 해제되지 않음",
+      "start": {
+        "title": "출발",
+        "desc": "아무 강좌나 시작하기"
+      },
+      "finish1": {
+        "title": "강좌 수료",
+        "desc": "강좌 1개 완료"
+      },
+      "finish3": {
+        "title": "성취",
+        "desc": "완료율 80% 이상"
+      },
+      "quiz1": {
+        "title": "첫 도전",
+        "desc": "첫 퀴즈 완료"
+      },
+      "perfect": {
+        "title": "만점왕",
+        "desc": "퀴즈에서 만점 획득"
+      },
+      "quiz80": {
+        "title": "안정적인 실력",
+        "desc": "퀴즈 평균 점수율 80% 이상"
+      },
+      "chat1": {
+        "title": "아이스브레이킹",
+        "desc": "첫 대화 시작"
+      },
+      "chat20": {
+        "title": "탐구심",
+        "desc": "누적 20회 대화"
+      },
+      "msg100": {
+        "title": "달변가",
+        "desc": "누적 100개 메시지"
+      }
+    }
   }
 }

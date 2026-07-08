@@ -1641,5 +1641,95 @@
       "quiz": "測驗",
       "slide": "頁面"
     }
+  },
+  "learningReport": {
+    "title": "學習報告",
+    "back": "返回",
+    "loading": "正在產生你的報告…",
+    "emptyState": "還沒有課程。開始學習後即可查看你的報告。",
+    "emptyStateCta": "前往課程頁",
+    "tabs": {
+      "overview": "概覽",
+      "stages": "進度",
+      "quiz": "測驗",
+      "chat": "對話",
+      "achievements": "成就"
+    },
+    "overview": {
+      "progress": "進度",
+      "quiz": "測驗",
+      "chat": "對話",
+      "stageCount": "課程數",
+      "started": "已開始",
+      "completed": "已完成",
+      "avgProgress": "平均進度",
+      "maxProgress": "最高進度",
+      "quizAttempts": "測驗次數",
+      "avgScore": "平均得分率",
+      "bestScore": "最高得分率",
+      "perfect": "滿分次數",
+      "sessions": "對話數",
+      "qa": "問答",
+      "lecture": "講授",
+      "messages": "訊息數"
+    },
+    "stages": {
+      "empty": "還沒有課程進度。",
+      "notStarted": "未開始",
+      "scenePosition": "第 {{position}} / {{total}} 節",
+      "quizBadge": "測驗 {{done}}/{{total}}",
+      "scoreBadge": "均分 {{pct}}%",
+      "chatBadge": "對話 {{count}}"
+    },
+    "quiz": {
+      "empty": "還沒有測驗提交。"
+    },
+    "chat": {
+      "empty": "還沒有對話。",
+      "lecture": "講授",
+      "qa": "問答",
+      "discussion": "討論"
+    },
+    "ach": {
+      "summary": "已解鎖 {{earned}} / {{total}}",
+      "unlockedAt": "解鎖於 {{date}}",
+      "locked": "尚未解鎖",
+      "start": {
+        "title": "啟程",
+        "desc": "開始學習任意課程"
+      },
+      "finish1": {
+        "title": "結課",
+        "desc": "完成 1 門課程"
+      },
+      "finish3": {
+        "title": "學有所成",
+        "desc": "課程完成率 ≥ 80%"
+      },
+      "quiz1": {
+        "title": "小試牛刀",
+        "desc": "完成首次測驗"
+      },
+      "perfect": {
+        "title": "滿分達人",
+        "desc": "獲得一次滿分測驗"
+      },
+      "quiz80": {
+        "title": "穩定發揮",
+        "desc": "測驗平均得分率 ≥ 80%"
+      },
+      "chat1": {
+        "title": "破冰",
+        "desc": "發起首次對話"
+      },
+      "chat20": {
+        "title": "勤學好問",
+        "desc": "累計 20 次對話"
+      },
+      "msg100": {
+        "title": "暢所欲言",
+        "desc": "累計 100 則訊息"
+      }
+    }
   }
 }

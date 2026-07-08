@@ -1641,5 +1641,95 @@
     "title": "请输入访问码",
     "placeholder": "访问码",
     "error": "访问码错误，请重试。"
+  },
+  "learningReport": {
+    "title": "学习报告",
+    "back": "返回",
+    "loading": "正在生成你的报告…",
+    "emptyState": "还没有课程。开始学习后即可查看你的报告。",
+    "emptyStateCta": "去课程页",
+    "tabs": {
+      "overview": "概览",
+      "stages": "进度",
+      "quiz": "测验",
+      "chat": "会话",
+      "achievements": "成就"
+    },
+    "overview": {
+      "progress": "进度",
+      "quiz": "测验",
+      "chat": "会话",
+      "stageCount": "课程数",
+      "started": "已开始",
+      "completed": "已完成",
+      "avgProgress": "平均进度",
+      "maxProgress": "最高进度",
+      "quizAttempts": "测验次数",
+      "avgScore": "平均得分率",
+      "bestScore": "最高得分率",
+      "perfect": "满分次数",
+      "sessions": "会话数",
+      "qa": "问答",
+      "lecture": "讲授",
+      "messages": "消息数"
+    },
+    "stages": {
+      "empty": "还没有课程进度。",
+      "notStarted": "未开始",
+      "scenePosition": "第 {{position}} / {{total}} 节",
+      "quizBadge": "测验 {{done}}/{{total}}",
+      "scoreBadge": "均分 {{pct}}%",
+      "chatBadge": "会话 {{count}}"
+    },
+    "quiz": {
+      "empty": "还没有测验提交。"
+    },
+    "chat": {
+      "empty": "还没有会话。",
+      "lecture": "讲授",
+      "qa": "问答",
+      "discussion": "讨论"
+    },
+    "ach": {
+      "summary": "已解锁 {{earned}} / {{total}}",
+      "unlockedAt": "解锁于 {{date}}",
+      "locked": "尚未解锁",
+      "start": {
+        "title": "启程",
+        "desc": "开始学习任意课程"
+      },
+      "finish1": {
+        "title": "结课",
+        "desc": "完成 1 门课程"
+      },
+      "finish3": {
+        "title": "学有所成",
+        "desc": "课程完成率 ≥ 80%"
+      },
+      "quiz1": {
+        "title": "小试牛刀",
+        "desc": "完成首次测验"
+      },
+      "perfect": {
+        "title": "满分达人",
+        "desc": "获得一次满分测验"
+      },
+      "quiz80": {
+        "title": "稳定发挥",
+        "desc": "测验平均得分率 ≥ 80%"
+      },
+      "chat1": {
+        "title": "破冰",
+        "desc": "发起首次会话"
+      },
+      "chat20": {
+        "title": "勤学好问",
+        "desc": "累计 20 次会话"
+      },
+      "msg100": {
+        "title": "畅所欲言",
+        "desc": "累计 100 条消息"
+      }
+    }
   }
 }

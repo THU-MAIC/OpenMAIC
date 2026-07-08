@@ -1641,5 +1641,95 @@
     "title": "Enter Access Code",
     "placeholder": "Access code",
     "error": "Invalid access code. Please try again."
+  },
+  "learningReport": {
+    "title": "Learning Report",
+    "back": "Back",
+    "loading": "Loading your report…",
+    "emptyState": "No courses yet. Start learning to see your report.",
+    "emptyStateCta": "Go to courses",
+    "tabs": {
+      "overview": "Overview",
+      "stages": "Progress",
+      "quiz": "Quiz",
+      "chat": "Chat",
+      "achievements": "Achievements"
+    },
+    "overview": {
+      "progress": "Progress",
+      "quiz": "Quiz",
+      "chat": "Chat",
+      "stageCount": "Courses",
+      "started": "Started",
+      "completed": "Completed",
+      "avgProgress": "Avg. progress",
+      "maxProgress": "Best progress",
+      "quizAttempts": "Quiz attempts",
+      "avgScore": "Avg. score",
+      "bestScore": "Best score",
+      "perfect": "Perfect scores",
+      "sessions": "Sessions",
+      "qa": "Q&A",
+      "lecture": "Lecture",
+      "messages": "Messages"
+    },
+    "stages": {
+      "empty": "No course progress yet.",
+      "notStarted": "Not started",
+      "scenePosition": "Scene {{position}} / {{total}}",
+      "quizBadge": "Quiz {{done}}/{{total}}",
+      "scoreBadge": "Avg {{pct}}%",
+      "chatBadge": "{{count}} sessions"
+    },
+    "quiz": {
+      "empty": "No quiz submissions yet."
+    },
+    "chat": {
+      "empty": "No chat sessions yet.",
+      "lecture": "Lecture",
+      "qa": "Q&A",
+      "discussion": "Discussion"
+    },
+    "ach": {
+      "summary": "Unlocked {{earned}} / {{total}}",
+      "unlockedAt": "Unlocked on {{date}}",
+      "locked": "Not unlocked yet",
+      "start": {
+        "title": "Liftoff",
+        "desc": "Start any course"
+      },
+      "finish1": {
+        "title": "Course Complete",
+        "desc": "Finish 1 course"
+      },
+      "finish3": {
+        "title": "Accomplished",
+        "desc": "Completion rate ≥ 80%"
+      },
+      "quiz1": {
+        "title": "First Try",
+        "desc": "Complete your first quiz"
+      },
+      "perfect": {
+        "title": "Perfectionist",
+        "desc": "Score full marks on a quiz"
+      },
+      "quiz80": {
+        "title": "Consistent",
+        "desc": "Average quiz score ≥ 80%"
+      },
+      "chat1": {
+        "title": "Icebreaker",
+        "desc": "Start your first session"
+      },
+      "chat20": {
+        "title": "Inquisitive",
+        "desc": "20 sessions in total"
+      },
+      "msg100": {
+        "title": "Talkative",
+        "desc": "100 messages in total"
+      }
+    }
   }
 }
