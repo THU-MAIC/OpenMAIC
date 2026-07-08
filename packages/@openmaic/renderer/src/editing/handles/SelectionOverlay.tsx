@@ -1,7 +1,9 @@
-import type { PPTElement } from '@openmaic/dsl';
+import type { PPTElement, PPTLineElement } from '@openmaic/dsl';
 import type { Selection } from '../types';
-import { getLineBounds } from '../core/geometry';
 import { BorderLine } from './BorderLine';
+
+/** A selectable element that carries a box model (`width`/`height`/`rotate`). */
+type PPTBoxElement = Exclude<PPTElement, PPTLineElement>;
 
 export interface SelectionOverlayProps {
   elements: PPTElement[];
@@ -14,40 +16,24 @@ export interface SelectionOverlayProps {
  * `selection.elementIds` against `elements` and renders a scaled,
  * rotated `BorderLine` for each match. Renders `null` when the selection
  * resolves to no elements (nothing selected, or ids not found).
+ *
+ * Line elements are intentionally skipped here: a selected line's chrome is its
+ * draggable endpoint/control handles (see `LineHandles`), which replace the
+ * approximate bbox border a line would otherwise get.
  */
 export function SelectionOverlay({ elements, selection, scale }: SelectionOverlayProps) {
   const selected = selection.elementIds
     .map((id) => elements.find((el) => el.id === id))
-    .filter((el): el is PPTElement => el != null);
+    .filter((el): el is PPTElement => el != null)
+    .filter((el): el is PPTBoxElement => el.type !== 'line');
 
   if (selected.length === 0) return null;
 
   return (
     <>
       {selected.map((el) => {
-        // Line elements have no box-model `width`/`height`/`rotate`; a line is
-        // selectable but not yet movable (line editing is deferred). Derive its
-        // bounding box from getLineBounds (which encloses every control point,
-        // not just the start/end chord) and render an unrotated border, so
-        // curve/broken/broken2/cubic lines whose path leaves the chord still get
-        // a border that wraps the actual drawn stroke.
-        if (el.type === 'line') {
-          const { minX, maxX, minY, maxY } = getLineBounds(el);
-          return (
-            <BorderLine
-              key={el.id}
-              width={(maxX - minX) * scale}
-              height={(maxY - minY) * scale}
-              style={{
-                left: `${minX * scale}px`,
-                top: `${minY * scale}px`,
-                pointerEvents: 'none',
-              }}
-            />
-          );
-        }
-        // Non-line elements are narrowed here, so `width`/`height`/`rotate` are
-        // directly available (no casts).
+        // Only non-line elements reach here (lines filtered out above), so
+        // `width`/`height`/`rotate` are directly available (no casts).
         return (
           <BorderLine
             key={el.id}

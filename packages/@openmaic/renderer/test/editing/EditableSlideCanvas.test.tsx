@@ -125,7 +125,7 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelector('[data-element-id]')).toBeNull();
   });
 
-  it('a line is selectable-not-draggable: no move hit node, but a selection border shows', () => {
+  it('a selected line shows endpoint handles (not a bbox border); the box keeps its border', () => {
     const lineSlide = {
       ...slide,
       elements: [
@@ -157,9 +157,167 @@ describe('EditableSlideCanvas', () => {
     // (its blocker is an inert SVG path, not a data-element-id move target).
     expect(container.querySelector('[data-element-id="a"]')).not.toBeNull();
     expect(container.querySelector('[data-element-id="line1"]')).toBeNull();
-    // The line is now selectable: with it in the controlled selection, both the
-    // box and the line get a selection border (two, not one).
-    expect(container.querySelectorAll('[data-selection-border]')).toHaveLength(2);
+    // The selected line's chrome is its endpoint handles, NOT a bbox border.
+    expect(container.querySelector('[data-line-handle="start"]')).not.toBeNull();
+    expect(container.querySelector('[data-line-handle="end"]')).not.toBeNull();
+    // Only the box element gets a selection border (the line does not).
+    expect(container.querySelectorAll('[data-selection-border]')).toHaveLength(1);
+  });
+
+  it('a selected line renders start+end handles at correct scaled screen positions', () => {
+    // Letterboxed container so the centering offset is exercised too.
+    vi.mocked(useViewportSize).mockReturnValue({
+      viewportStyles: { left: 160, top: 40, width: 1000, height: 562 },
+      fitScale: 1,
+    });
+    const lineSlide = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 20,
+          start: [0, 0],
+          end: [50, 30],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={0.5}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    const start = container.querySelector('[data-line-handle="start"]') as HTMLElement;
+    const end = container.querySelector('[data-line-handle="end"]') as HTMLElement;
+    // start: left = 160 + (10+0)*0.5 = 165; top = 40 + (20+0)*0.5 = 50.
+    expect(start.style.left).toBe('165px');
+    expect(start.style.top).toBe('50px');
+    // end: left = 160 + (10+50)*0.5 = 190; top = 40 + (20+30)*0.5 = 65.
+    expect(end.style.left).toBe('190px');
+    expect(end.style.top).toBe('65px');
+    // No ctrl handles for a straight line.
+    expect(container.querySelector('[data-line-handle="ctrl"]')).toBeNull();
+  });
+
+  it('dragging the end handle emits exactly one element.update for the line', () => {
+    const onCh = vi.fn();
+    const lineSlide = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+    const end = container.querySelector('[data-line-handle="end"]') as Element;
+    fireEvent.pointerDown(end, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(end, { clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(end, { clientX: 40, clientY: 30 });
+    // Exactly one reshape intent, targeting the line, of type element.update.
+    expect(onCh).toHaveBeenCalledTimes(1);
+    const intents = onCh.mock.calls[0][0];
+    expect(intents).toHaveLength(1);
+    expect(intents[0].type).toBe('element.update');
+    expect(intents[0].id).toBe('line1');
+    expect(intents[0].props).toBeTruthy();
+  });
+
+  it('a locked selected line renders no handles', () => {
+    const lockedLine = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+          lock: true,
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lockedLine}
+        scale={1}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    expect(container.querySelector('[data-line-handle]')).toBeNull();
+  });
+
+  it('with no onElementsChange, dragging a line handle emits nothing', () => {
+    const onSel = vi.fn();
+    const lineSlide = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+        onSelectionChange={onSel}
+        snapping={false}
+      />,
+    );
+    // Handles still render (interactive via onSelectionChange), but with no
+    // mutation channel a drag commits nothing.
+    const end = container.querySelector('[data-line-handle="end"]') as Element;
+    expect(end).not.toBeNull();
+    fireEvent.pointerDown(end, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(end, { clientX: 40, clientY: 30 });
+    fireEvent.pointerUp(end, { clientX: 40, clientY: 30 });
+    // No update channel -> no intent; and the handle drag never selects.
+    expect(onSel).not.toHaveBeenCalled();
   });
 
   it('a line renders an inert SVG-path blocker mirroring getLineElementPath (straight) and consumes stroke pointer-downs', () => {

@@ -6,7 +6,9 @@ import { SlideCanvas } from '../SlideCanvas';
 import { getLineElementPath } from '../utils/element';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { SelectionOverlay } from './handles/SelectionOverlay';
+import { LineHandles } from './handles/LineHandles';
 import { useEditGesture } from './useEditGesture';
+import { useLineHandleGesture } from './useLineHandleGesture';
 import { EMPTY_SELECTION, type EditableSlideCanvasProps } from './types';
 
 /**
@@ -71,7 +73,26 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     onElementsChange,
   });
 
-  const elements = workingSlide.elements;
+  // Line-handle reshape gesture. It owns its own working copy (the dragged
+  // line's re-normalized props) so a selected line's endpoint/control handles
+  // can be dragged to reshape it. This is independent of the box move gesture
+  // above — in practice only one is ever in flight — so we layer its working
+  // props on top of the box gesture's `workingSlide` below.
+  const { lineDrag, onHandlePointerDown } = useLineHandleGesture({
+    scale: canvasScale,
+    onElementsChange,
+  });
+
+  // The elements to render/hit-test: the box gesture's working copy, with the
+  // active line-handle drag's props merged in so the v1 canvas, the line's
+  // stroke blocker, and its handles all preview off the SAME working element
+  // and move together during a reshape.
+  const displayElements = lineDrag
+    ? workingSlide.elements.map((el) => (el.id === lineDrag.id ? { ...el, ...lineDrag.props } : el))
+    : workingSlide.elements;
+  const displaySlide = lineDrag ? { ...workingSlide, elements: displayElements } : workingSlide;
+
+  const elements = displayElements;
 
   return (
     // Outer wrapper carries the documented `className`/`style` pass-through
@@ -89,7 +110,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
         {/* Pass `props.scale` (possibly undefined) THROUGH so SlideCanvas
             auto-fits with the same `fitScale` the overlay reads above. */}
         <SlideCanvas
-          slide={workingSlide}
+          slide={displaySlide}
           scale={props.scale}
           renderImage={renderImage}
           renderVideo={renderVideo}
@@ -272,6 +293,29 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                     cursor: 'move',
                     touchAction: 'none',
                   }}
+                />
+              );
+            })}
+
+          {/* Line handles: a selected, unlocked line's endpoint/control handles
+              are its selection chrome (SelectionOverlay no longer draws a line
+              border). Rendered above the stroke blocker so a handle pointer-
+              down hits the handle, not the blocker beneath. Each handle reads
+              the WORKING line (via `displayElements`), so during a reshape drag
+              the handles track the previewed geometry. Handles use absolute
+              SCREEN coordinates (they bake in `viewportStyles`), so they sit as
+              direct children of the overlay, NOT inside the offset container. */}
+          {interactive &&
+            elements.map((el) => {
+              if (el.type !== 'line') return null;
+              if (!activeSelection.elementIds.includes(el.id) || el.lock) return null;
+              return (
+                <LineHandles
+                  key={`line-handles-${el.id}`}
+                  element={el}
+                  viewportStyles={viewportStyles}
+                  canvasScale={canvasScale}
+                  onHandlePointerDown={(handle, e) => onHandlePointerDown(el, handle, e)}
                 />
               );
             })}

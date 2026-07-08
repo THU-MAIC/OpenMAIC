@@ -36,7 +36,11 @@ describe('SelectionOverlay', () => {
     expect(border.style.left).toBe('50px'); // 100 * 0.5
     expect(border.style.width).toBe('100px'); // 200 * 0.5
   });
-  it('renders a border for a selected line element at its bounding box (no rotation)', () => {
+  it('skips line elements: a selected line gets no bbox border (handles are its chrome)', () => {
+    // A selected line's chrome is now its draggable endpoint/control handles
+    // (LineHandles), not an approximate bbox border. SelectionOverlay only
+    // borders box elements, so a mixed selection renders exactly ONE border
+    // (the box), not two.
     const line = {
       id: 'ln',
       type: 'line',
@@ -52,25 +56,14 @@ describe('SelectionOverlay', () => {
         scale={1}
       />,
     );
-    // Both the box element and the line now get a selection border.
     const borders = container.querySelectorAll('[data-selection-border]');
-    expect(borders).toHaveLength(2);
-    // The line border sits at its getElementRange bbox (no box-model width/
-    // height): minX=10, minY=10, width = (left+max(start.x,end.x)) - minX = 50,
-    // height = 50; no rotation for a line.
-    const lineBorder = Array.from(borders).find(
-      (b) => (b as HTMLElement).style.left === '10px',
-    ) as HTMLElement;
-    expect(lineBorder).toBeTruthy();
-    expect(lineBorder.style.top).toBe('10px');
-    expect(lineBorder.style.width).toBe('50px');
-    expect(lineBorder.style.height).toBe('50px');
-    expect(lineBorder.style.transform).toBe('');
+    expect(borders).toHaveLength(1);
+    // The single border is the box 'a', at its box-model geometry.
+    const border = borders[0] as HTMLElement;
+    expect(border.style.left).toBe('100px');
+    expect(border.style.width).toBe('200px');
   });
-  it('wraps the true drawn quadratic curve, not the raw control point', () => {
-    // start=[0,0], end=[100,0] is a zero-height chord; the curve control point
-    // sits at y=80, but the drawn quadratic (M0,0 Q50,80 100,0) only peaks at
-    // y=40 (t=0.5), so the selection border must span the tight bbox, not 80.
+  it('renders nothing when only a line is selected', () => {
     const line = {
       id: 'ln',
       type: 'line',
@@ -87,13 +80,7 @@ describe('SelectionOverlay', () => {
         scale={0.5}
       />,
     );
-    const border = container.querySelector('[data-selection-border]') as HTMLElement;
-    expect(border).not.toBeNull();
-    // width = (100-0)*0.5 = 50; height = (40-0)*0.5 = 20 (true quadratic peak).
-    expect(border.style.left).toBe('0px');
-    expect(border.style.top).toBe('0px');
-    expect(border.style.width).toBe('50px');
-    expect(border.style.height).toBe('20px');
-    expect(border.style.transform).toBe('');
+    // No box element in the selection -> no border at all.
+    expect(container.querySelector('[data-selection-border]')).toBeNull();
   });
 });
