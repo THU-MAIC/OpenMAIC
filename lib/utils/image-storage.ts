@@ -51,9 +51,11 @@ export async function storeImages(
 ): Promise<string[]> {
   const sessionId = nanoid(10);
   const storedIds: string[] = [];
+  let currentImageId: string | undefined;
 
   try {
     for (const img of images) {
+      currentImageId = img.id;
       const blob = base64ToBlob(img.src);
       const mimeMatch = img.src.match(/data:(.*?);/);
       const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
@@ -75,8 +77,11 @@ export async function storeImages(
     }
   } catch (error) {
     await Promise.allSettled(storedIds.map((id) => db.imageFiles.delete(id)));
-    log.error('Failed to store image bundle:', error);
-    throw error;
+    const message = `Failed to store image bundle${
+      currentImageId ? ` at image ${currentImageId}` : ''
+    }`;
+    log.error(`${message}:`, error);
+    throw new Error(message, { cause: error });
   }
 
   return storedIds;
