@@ -122,180 +122,208 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             line up with the rendered elements even when the container is
             letterboxed (aspect ratio != slide's). */}
         <div ref={overlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
-          {interactive &&
-            elements.map((el) => {
-              // Line elements: a line's real hit area is its (often bent) stroke,
-              // not its rectangular bounding box. A rectangular bbox blocker
-              // would wrongly swallow clicks on other elements around a thin
-              // diagonal line, and a straight start->end strip misses the
-              // visible stroke of broken/broken2/curve/cubic lines (which bend
-              // away from that chord) while blocking empty space where nothing
-              // is drawn. Instead render an INERT SVG-path blocker that mirrors
-              // the v1 line renderer pixel-for-pixel.
-              //
-              // v1 (src/elements/line/BaseLineElement.tsx:70-132) draws the line
-              // at (el.left, el.top) inside SlideCanvas's `transform:
-              // scale(canvasScale)` element container (SlideCanvas.tsx:153-163),
-              // as an <svg overflow:visible> whose <path d={getLineElementPath}>
-              // is in raw canvas units with stroke-width = el.width canvas units.
-              // We reproduce that exactly: the wrapper sits at the same screen
-              // origin as the other hit layers (viewportStyles.left/top +
-              // coord*canvasScale) and the inner <svg> carries `transform:
-              // scale(canvasScale)` (origin 0 0), so its raw-canvas-unit path maps
-              // to the same on-screen pixels as the rendered line.
-              //
-              // `pointer-events: stroke` makes ONLY the fat transparent stroke a
-              // hit target: it covers the visible line for EVERY path shape (P2)
-              // and leaves the empty bbox click-through. The stroke width is the
-              // grab band, at least the rendered stroke and at least a 10px
-              // screen minimum (P3). It is INERT: `onPointerDown` only stops
-              // propagation — no `data-element-id`, no gesture armed.
-              // Known gap: endpoint markers (arrow/dot) can paint beyond the
-              // stroke; their extents are NOT part of this hit target. Covering
-              // them is deferred with line editing — the only fall-through case
-              // is a marked line overlapping other content exactly at an
-              // endpoint, on an element type that is not yet editable here.
-              if (el.type === 'line') {
-                const path = getLineElementPath(el);
-                // Match v1's svg box (min 24) so overflow:visible has a sensible
-                // frame; the fat stroke can extend beyond it (not clipped).
-                const spanW = Math.abs(el.start[0] - el.end[0]);
-                const spanH = Math.abs(el.start[1] - el.end[1]);
-                const svgWidth = spanW < 24 ? 24 : spanW;
-                const svgHeight = spanH < 24 ? 24 : spanH;
-                // Screen grab band, then converted to canvas units for the path
-                // drawn inside the scale(canvasScale) svg (divide by scale so the
-                // painted screen width is exactly `grabScreenPx`).
-                const grabScreenPx = Math.max(10, el.width * canvasScale);
-                const grabCanvas = canvasScale > 0 ? grabScreenPx / canvasScale : grabScreenPx;
-                return (
-                  <div
-                    key={el.id}
+          {elements.map((el) => {
+            // Line elements: a line's real hit area is its (often bent) stroke,
+            // not its rectangular bounding box. A rectangular bbox blocker
+            // would wrongly swallow clicks on other elements around a thin
+            // diagonal line, and a straight start->end strip misses the
+            // visible stroke of broken/broken2/curve/cubic lines (which bend
+            // away from that chord) while blocking empty space where nothing
+            // is drawn. Instead render an INERT SVG-path blocker that mirrors
+            // the v1 line renderer pixel-for-pixel.
+            //
+            // v1 (src/elements/line/BaseLineElement.tsx:70-132) draws the line
+            // at (el.left, el.top) inside SlideCanvas's `transform:
+            // scale(canvasScale)` element container (SlideCanvas.tsx:153-163),
+            // as an <svg overflow:visible> whose <path d={getLineElementPath}>
+            // is in raw canvas units with stroke-width = el.width canvas units.
+            // We reproduce that exactly: the wrapper sits at the same screen
+            // origin as the other hit layers (viewportStyles.left/top +
+            // coord*canvasScale) and the inner <svg> carries `transform:
+            // scale(canvasScale)` (origin 0 0), so its raw-canvas-unit path maps
+            // to the same on-screen pixels as the rendered line.
+            //
+            // `pointer-events: stroke` makes ONLY the fat transparent stroke a
+            // hit target: it covers the visible line for EVERY path shape (P2)
+            // and leaves the empty bbox click-through. The stroke width is the
+            // grab band, at least the rendered stroke and at least a 10px
+            // screen minimum (P3). It is INERT: `onPointerDown` only stops
+            // propagation — no `data-element-id`, no gesture armed.
+            // Known gap: endpoint markers (arrow/dot) can paint beyond the
+            // stroke; their extents are NOT part of this hit target. Covering
+            // them is deferred with line editing — the only fall-through case
+            // is a marked line overlapping other content exactly at an
+            // endpoint, on an element type that is not yet editable here.
+            // A line is selected when its id is in the controlled selection.
+            // A selected line always shows a visible highlight stroke on its
+            // (otherwise transparent) blocker path — so it has selection
+            // feedback in EVERY state: read-only (no-callback), locked, or
+            // editable. Handles (drawn below) are only added when it is also
+            // interactive and unlocked.
+            const isSelected = activeSelection.elementIds.includes(el.id);
+            if (el.type === 'line') {
+              // Render the line's blocker/highlight path when it is either a
+              // live hit target (interactive) OR selected (to draw the
+              // highlight in a read-only mount). A read-only, unselected line
+              // needs neither, so skip it.
+              if (!interactive && !isSelected) return null;
+              const path = getLineElementPath(el);
+              // Match v1's svg box (min 24) so overflow:visible has a sensible
+              // frame; the fat stroke can extend beyond it (not clipped).
+              const spanW = Math.abs(el.start[0] - el.end[0]);
+              const spanH = Math.abs(el.start[1] - el.end[1]);
+              const svgWidth = spanW < 24 ? 24 : spanW;
+              const svgHeight = spanH < 24 ? 24 : spanH;
+              // Screen grab band, then converted to canvas units for the path
+              // drawn inside the scale(canvasScale) svg (divide by scale so the
+              // painted screen width is exactly `grabScreenPx`).
+              const grabScreenPx = Math.max(10, el.width * canvasScale);
+              const grabCanvas = canvasScale > 0 ? grabScreenPx / canvasScale : grabScreenPx;
+              // Selection highlight stroke width, in the SAME canvas units the
+              // blocker's stroke-width uses (the path is drawn inside a
+              // `scale(canvasScale)` svg). At least the rendered stroke, and at
+              // least 2 canvas units so a hairline line still shows a visible
+              // highlight (~`max(2, el.width) * canvasScale` screen px).
+              const highlightCanvas = Math.max(2, el.width);
+              return (
+                <div
+                  key={el.id}
+                  style={{
+                    position: 'absolute',
+                    left: `${viewportStyles.left + el.left * canvasScale}px`,
+                    top: `${viewportStyles.top + el.top * canvasScale}px`,
+                    width: 0,
+                    height: 0,
+                    pointerEvents: 'none',
+                    overflow: 'visible',
+                  }}
+                >
+                  <svg
+                    overflow="visible"
+                    width={svgWidth}
+                    height={svgHeight}
                     style={{
-                      position: 'absolute',
-                      left: `${viewportStyles.left + el.left * canvasScale}px`,
-                      top: `${viewportStyles.top + el.top * canvasScale}px`,
-                      width: 0,
-                      height: 0,
-                      pointerEvents: 'none',
                       overflow: 'visible',
+                      transform: `scale(${canvasScale})`,
+                      transformOrigin: '0 0',
+                      pointerEvents: 'none',
                     }}
                   >
-                    <svg
-                      overflow="visible"
-                      width={svgWidth}
-                      height={svgHeight}
-                      style={{
-                        overflow: 'visible',
-                        transform: `scale(${canvasScale})`,
-                        transformOrigin: '0 0',
-                        pointerEvents: 'none',
+                    <path
+                      data-hit-kind="line"
+                      d={path}
+                      fill="none"
+                      // Selected -> a visible accent highlight (feedback in
+                      // read-only/locked/editable alike); unselected -> a
+                      // transparent fat grab band. Either way the path stays
+                      // inert (no drag armed); pointer-events is disabled
+                      // entirely in a read-only mount so a selected-but-
+                      // read-only line never captures the pointer.
+                      stroke={isSelected ? '#3b82f6' : 'transparent'}
+                      strokeOpacity={isSelected ? 0.7 : undefined}
+                      strokeWidth={isSelected ? highlightCanvas : grabCanvas}
+                      pointerEvents={interactive ? 'stroke' : 'none'}
+                      onPointerDown={(e) => {
+                        // Deferred limitation: line selection is handled here
+                        // directly and bypasses `useEditGesture`, so it also
+                        // bypasses the `activePointerRef` multi-pointer guard.
+                        // A second pointer-down on a line during an in-flight
+                        // box drag can therefore change the selection mid-
+                        // gesture. This is deferred together with multi-touch/
+                        // multi-select support; single-pointer/mouse use (only
+                        // one active pointer at a time) is unaffected.
+                        //
+                        // Always consume the pointer to block fall-through to
+                        // an overlapped box beneath (even with no selection
+                        // callback, and even when the line is locked). When a
+                        // selection callback is provided, also select the line
+                        // — on pointer-down, for parity with box elements
+                        // (which select via onElementPointerDown). A line is
+                        // selectable but NOT draggable here: no working copy is
+                        // armed and no move intent is ever emitted (line
+                        // editing deferred).
+                        e.stopPropagation();
+                        // A locked line is inert like a locked box: it blocks
+                        // fall-through (stopPropagation above) but must not be
+                        // selected.
+                        if (el.lock) return;
+                        // Idempotent re-selection: skip the emit when this line
+                        // is already the sole primary selection, mirroring the
+                        // box `alreadySolePrimary` guard in useEditGesture — a
+                        // re-click on an already-selected line must not re-emit.
+                        const alreadySolePrimary =
+                          activeSelection.primaryId === el.id &&
+                          activeSelection.elementIds.length === 1 &&
+                          activeSelection.elementIds[0] === el.id;
+                        if (alreadySolePrimary) return;
+                        onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
                       }}
-                    >
-                      <path
-                        data-hit-kind="line"
-                        d={path}
-                        fill="none"
-                        stroke="transparent"
-                        strokeWidth={grabCanvas}
-                        pointerEvents="stroke"
-                        onPointerDown={(e) => {
-                          // Deferred limitation: line selection is handled here
-                          // directly and bypasses `useEditGesture`, so it also
-                          // bypasses the `activePointerRef` multi-pointer guard.
-                          // A second pointer-down on a line during an in-flight
-                          // box drag can therefore change the selection mid-
-                          // gesture. This is deferred together with multi-touch/
-                          // multi-select support; single-pointer/mouse use (only
-                          // one active pointer at a time) is unaffected.
-                          //
-                          // Always consume the pointer to block fall-through to
-                          // an overlapped box beneath (even with no selection
-                          // callback, and even when the line is locked). When a
-                          // selection callback is provided, also select the line
-                          // — on pointer-down, for parity with box elements
-                          // (which select via onElementPointerDown). A line is
-                          // selectable but NOT draggable here: no working copy is
-                          // armed and no move intent is ever emitted (line
-                          // editing deferred).
-                          e.stopPropagation();
-                          // A locked line is inert like a locked box: it blocks
-                          // fall-through (stopPropagation above) but must not be
-                          // selected.
-                          if (el.lock) return;
-                          // Idempotent re-selection: skip the emit when this line
-                          // is already the sole primary selection, mirroring the
-                          // box `alreadySolePrimary` guard in useEditGesture — a
-                          // re-click on an already-selected line must not re-emit.
-                          const alreadySolePrimary =
-                            activeSelection.primaryId === el.id &&
-                            activeSelection.elementIds.length === 1 &&
-                            activeSelection.elementIds[0] === el.id;
-                          if (alreadySolePrimary) return;
-                          onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
-                        }}
-                        style={{ cursor: 'default', touchAction: 'none' }}
-                      />
-                    </svg>
-                  </div>
-                );
-              }
-              // Non-line elements are narrowed here, so `width`/`height`/`rotate`
-              // are directly available (no casts).
-              return el.lock ? (
-                // Locked elements (`el.lock`): the app editor guards locked
-                // content from being moved, and — critically — a locked
-                // element is the top rendered DOM node in the real app, so
-                // it swallows the click rather than falling through to
-                // whatever unlocked element sits beneath it. Mirror that
-                // here with an INERT blocker at the same stacking position
-                // (same map order, so it's on top when it visually
-                // overlaps an unlocked element below it in the array):
-                // `pointerEvents: 'auto'` consumes the pointer, but
-                // `onPointerDown` is a no-op (no `onElementPointerDown`
-                // call, no `data-element-id`) so no gesture is ever armed
-                // and nothing beneath moves or gets selected. (A locked
-                // element's selection border, if selected, is unaffected —
-                // SelectionOverlay is untouched.)
-                <div
-                  key={el.id}
-                  data-hit-kind="blocker"
-                  onPointerDown={(e) => {
-                    e.stopPropagation();
-                  }}
-                  style={{
-                    position: 'absolute',
-                    left: `${viewportStyles.left + el.left * canvasScale}px`,
-                    top: `${viewportStyles.top + el.top * canvasScale}px`,
-                    width: `${el.width * canvasScale}px`,
-                    height: `${el.height * canvasScale}px`,
-                    transform: `rotate(${el.rotate}deg)`,
-                    transformOrigin: 'center',
-                    pointerEvents: 'auto',
-                    cursor: 'default',
-                    touchAction: 'none',
-                  }}
-                />
-              ) : (
-                <div
-                  key={el.id}
-                  data-element-id={el.id}
-                  onPointerDown={(e) => onElementPointerDown(el, e)}
-                  style={{
-                    position: 'absolute',
-                    left: `${viewportStyles.left + el.left * canvasScale}px`,
-                    top: `${viewportStyles.top + el.top * canvasScale}px`,
-                    width: `${el.width * canvasScale}px`,
-                    height: `${el.height * canvasScale}px`,
-                    transform: `rotate(${el.rotate}deg)`,
-                    transformOrigin: 'center',
-                    pointerEvents: 'auto',
-                    cursor: 'move',
-                    touchAction: 'none',
-                  }}
-                />
+                      style={{ cursor: 'default', touchAction: 'none' }}
+                    />
+                  </svg>
+                </div>
               );
-            })}
+            }
+            // Non-line elements never render an overlay node in a read-only
+            // mount (no hit targets, no chrome — their selection border comes
+            // from SelectionOverlay). Only lines draw a read-only highlight.
+            if (!interactive) return null;
+            // Non-line elements are narrowed here, so `width`/`height`/`rotate`
+            // are directly available (no casts).
+            return el.lock ? (
+              // Locked elements (`el.lock`): the app editor guards locked
+              // content from being moved, and — critically — a locked
+              // element is the top rendered DOM node in the real app, so
+              // it swallows the click rather than falling through to
+              // whatever unlocked element sits beneath it. Mirror that
+              // here with an INERT blocker at the same stacking position
+              // (same map order, so it's on top when it visually
+              // overlaps an unlocked element below it in the array):
+              // `pointerEvents: 'auto'` consumes the pointer, but
+              // `onPointerDown` is a no-op (no `onElementPointerDown`
+              // call, no `data-element-id`) so no gesture is ever armed
+              // and nothing beneath moves or gets selected. (A locked
+              // element's selection border, if selected, is unaffected —
+              // SelectionOverlay is untouched.)
+              <div
+                key={el.id}
+                data-hit-kind="blocker"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                }}
+                style={{
+                  position: 'absolute',
+                  left: `${viewportStyles.left + el.left * canvasScale}px`,
+                  top: `${viewportStyles.top + el.top * canvasScale}px`,
+                  width: `${el.width * canvasScale}px`,
+                  height: `${el.height * canvasScale}px`,
+                  transform: `rotate(${el.rotate}deg)`,
+                  transformOrigin: 'center',
+                  pointerEvents: 'auto',
+                  cursor: 'default',
+                  touchAction: 'none',
+                }}
+              />
+            ) : (
+              <div
+                key={el.id}
+                data-element-id={el.id}
+                onPointerDown={(e) => onElementPointerDown(el, e)}
+                style={{
+                  position: 'absolute',
+                  left: `${viewportStyles.left + el.left * canvasScale}px`,
+                  top: `${viewportStyles.top + el.top * canvasScale}px`,
+                  width: `${el.width * canvasScale}px`,
+                  height: `${el.height * canvasScale}px`,
+                  transform: `rotate(${el.rotate}deg)`,
+                  transformOrigin: 'center',
+                  pointerEvents: 'auto',
+                  cursor: 'move',
+                  touchAction: 'none',
+                }}
+              />
+            );
+          })}
 
           {/* Line handles: a selected, unlocked line's endpoint/control handles
               are its selection chrome (SelectionOverlay no longer draws a line

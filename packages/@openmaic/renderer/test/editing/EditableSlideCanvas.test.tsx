@@ -210,6 +210,7 @@ describe('EditableSlideCanvas', () => {
 
   it('dragging the end handle emits exactly one element.update for the line', () => {
     const onCh = vi.fn();
+    const onSel = vi.fn();
     const lineSlide = {
       ...slide,
       elements: [
@@ -232,7 +233,7 @@ describe('EditableSlideCanvas', () => {
         slide={lineSlide}
         scale={1}
         selection={{ elementIds: ['line1'], primaryId: 'line1' }}
-        onSelectionChange={vi.fn()}
+        onSelectionChange={onSel}
         onElementsChange={onCh}
         snapping={false}
       />,
@@ -248,6 +249,57 @@ describe('EditableSlideCanvas', () => {
     expect(intents[0].type).toBe('element.update');
     expect(intents[0].id).toBe('line1');
     expect(intents[0].props).toBeTruthy();
+    // A handle grab EDITS; it must never re-select. onSelectionChange stays
+    // untouched across the whole reshape (down/move/up).
+    expect(onSel).not.toHaveBeenCalled();
+  });
+
+  it('a selected curve line renders a ctrl handle whose drag emits one element.update', () => {
+    // F4: a `curve` line exposes a single control handle (`ctrl`). Dragging it
+    // reshapes the curve, emitting exactly one element.update — and, like every
+    // handle grab, never re-selects.
+    const onCh = vi.fn();
+    const onSel = vi.fn();
+    const curveSlide = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 0,
+          top: 0,
+          start: [0, 0],
+          end: [100, 0],
+          curve: [50, 80],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={curveSlide}
+        scale={1}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+        onSelectionChange={onSel}
+        onElementsChange={onCh}
+        snapping={false}
+      />,
+    );
+    const ctrl = container.querySelector('[data-line-handle="ctrl"]') as Element;
+    expect(ctrl).not.toBeNull();
+    fireEvent.pointerDown(ctrl, { clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(ctrl, { clientX: 20, clientY: -30 });
+    fireEvent.pointerUp(ctrl, { clientX: 20, clientY: -30 });
+    expect(onCh).toHaveBeenCalledTimes(1);
+    const intents = onCh.mock.calls[0][0];
+    expect(intents).toHaveLength(1);
+    expect(intents[0].type).toBe('element.update');
+    expect(intents[0].id).toBe('line1');
+    expect(intents[0].props.curve).toBeTruthy();
+    expect(onSel).not.toHaveBeenCalled();
   });
 
   it('a locked selected line renders no handles', () => {
@@ -562,6 +614,122 @@ describe('EditableSlideCanvas', () => {
     );
     expect(swZoom).toBe(20);
     expect(swZoom * 0.5).toBe(10); // screen band == 10px min
+  });
+
+  it('F1: a selected line paints a visible highlight stroke; an unselected line stays transparent', () => {
+    // A selected line must show selection chrome in EVERY state. Its blocker
+    // path is transparent when unselected but takes a visible accent stroke
+    // when selected — feedback even where handles are not (read-only/locked).
+    const mkLine = (id: string) => ({
+      id,
+      type: 'line',
+      left: 10,
+      top: 10,
+      start: [0, 0],
+      end: [50, 50],
+      width: 2,
+      style: 'solid',
+      color: '#333',
+      points: ['', ''],
+    });
+    const twoLines = {
+      ...slide,
+      elements: [mkLine('sel'), mkLine('unsel')],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={twoLines}
+        scale={1}
+        selection={{ elementIds: ['sel'], primaryId: 'sel' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    const paths = Array.from(
+      container.querySelectorAll('[data-hit-kind="line"]'),
+    ) as unknown as SVGPathElement[];
+    // Both lines render a blocker path; the selected one is highlighted, the
+    // other transparent.
+    const strokes = paths.map((p) => p.getAttribute('stroke'));
+    expect(strokes).toContain('transparent'); // the unselected line
+    const visible = strokes.filter((s) => s !== 'transparent');
+    expect(visible).toHaveLength(1);
+    expect(visible[0]).not.toBe('transparent');
+    expect(visible[0]).toBeTruthy();
+  });
+
+  it('F1: a locked selected line still shows the highlight (feedback) but no handles', () => {
+    const lockedLine = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+          lock: true,
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lockedLine}
+        scale={1}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    // Highlight present (selection feedback) even though the line is locked...
+    const path = container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
+    expect(path).not.toBeNull();
+    expect(path.getAttribute('stroke')).not.toBe('transparent');
+    // ...but a locked line is not reshapeable, so no handles.
+    expect(container.querySelector('[data-line-handle]')).toBeNull();
+  });
+
+  it('F1: a selected line in a read-only mount (no callbacks) still shows the highlight', () => {
+    // No selection/mutation callbacks -> the interaction layer is inert, but a
+    // selected line must STILL show its highlight. Its blocker path renders
+    // with a visible stroke and pointer-events disabled (never captures).
+    const lineSlide = {
+      ...slide,
+      elements: [
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: ['line1'], primaryId: 'line1' }}
+      />,
+    );
+    const path = container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
+    expect(path).not.toBeNull();
+    expect(path.getAttribute('stroke')).not.toBe('transparent');
+    // Inert: read-only mount never captures the pointer through the highlight.
+    expect(path.getAttribute('pointer-events')).toBe('none');
+    // No handles/hit targets in a read-only mount.
+    expect(container.querySelector('[data-line-handle]')).toBeNull();
+    expect(container.querySelector('[data-element-id]')).toBeNull();
   });
 
   it('select-only host (no onElementsChange): no live movement during drag; pointer-up selects', () => {

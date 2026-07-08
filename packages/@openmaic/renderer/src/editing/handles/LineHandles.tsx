@@ -21,7 +21,7 @@ const HANDLE_HALF = 5;
 /**
  * Presentational endpoint/control handles for a selected line. Props-driven
  * only: resolves the line's `start`/`end` (always) plus the single quadratic
- * control point (`ctrl` ← `curve`/`broken`/`broken2`) or the two cubic control
+ * control point (`ctrl` ← `broken`/`broken2`/`curve`) or the two cubic control
  * points (`ctrl1`/`ctrl2` ← `cubic`) when present, and draws a small draggable
  * box centered on each in screen space.
  *
@@ -42,7 +42,10 @@ export function LineHandles({
     { handle: 'end', point: element.end },
   ];
 
-  const ctrl = element.curve || element.broken || element.broken2;
+  // Field precedence MUST match `computeLineDrag` (core/line-drag.ts), which
+  // resolves the single control point as `broken || broken2 || curve`, so the
+  // rendered handle sits exactly where the drag math reads/writes it.
+  const ctrl = element.broken || element.broken2 || element.curve;
   if (ctrl) {
     points.push({ handle: 'ctrl', point: ctrl });
   } else if (element.cubic) {
