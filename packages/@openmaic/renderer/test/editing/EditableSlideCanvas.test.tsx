@@ -333,7 +333,11 @@ describe('EditableSlideCanvas', () => {
     expect(container.querySelector('[data-line-handle]')).toBeNull();
   });
 
-  it('with no onElementsChange, dragging a line handle emits nothing', () => {
+  it('FIX A: select-only mount (no onElementsChange) shows the highlight but NO line handles', () => {
+    // Line handles are gated on EDITABILITY (onElementsChange), not generic
+    // interactivity: the reshape gesture no-ops without a mutation channel, so
+    // a select-only mount must NOT show draggable handles that cannot commit.
+    // Selection feedback (the highlight stroke) still renders.
     const onSel = vi.fn();
     const lineSlide = {
       ...slide,
@@ -361,15 +365,14 @@ describe('EditableSlideCanvas', () => {
         snapping={false}
       />,
     );
-    // Handles still render (interactive via onSelectionChange), but with no
-    // mutation channel a drag commits nothing.
-    const end = container.querySelector('[data-line-handle="end"]') as Element;
-    expect(end).not.toBeNull();
-    fireEvent.pointerDown(end, { clientX: 0, clientY: 0 });
-    fireEvent.pointerMove(end, { clientX: 40, clientY: 30 });
-    fireEvent.pointerUp(end, { clientX: 40, clientY: 30 });
-    // No update channel -> no intent; and the handle drag never selects.
-    expect(onSel).not.toHaveBeenCalled();
+    // No editability -> NO handles at all.
+    expect(container.querySelector('[data-line-handle]')).toBeNull();
+    // But the selection highlight is still shown (feedback).
+    const highlight = container.querySelector(
+      '[data-hit-kind="line-highlight"]',
+    ) as unknown as SVGPathElement;
+    expect(highlight).not.toBeNull();
+    expect(highlight.getAttribute('stroke')).not.toBe('transparent');
   });
 
   it('a line renders an inert SVG-path blocker mirroring getLineElementPath (straight) and consumes stroke pointer-downs', () => {
@@ -616,10 +619,12 @@ describe('EditableSlideCanvas', () => {
     expect(swZoom * 0.5).toBe(10); // screen band == 10px min
   });
 
-  it('F1: a selected line paints a visible highlight stroke; an unselected line stays transparent', () => {
-    // A selected line must show selection chrome in EVERY state. Its blocker
-    // path is transparent when unselected but takes a visible accent stroke
-    // when selected — feedback even where handles are not (read-only/locked).
+  it('F1: a selected line paints a visible highlight (separate path); every blocker stays transparent', () => {
+    // A selected line must show selection chrome in EVERY state. The hit
+    // geometry and visual chrome are now split into two paths: the blocker is
+    // ALWAYS transparent; a separate highlight path (accent stroke) is added
+    // only when the line is selected — feedback even where handles are not
+    // (read-only/locked).
     const mkLine = (id: string) => ({
       id,
       type: 'line',
@@ -645,17 +650,80 @@ describe('EditableSlideCanvas', () => {
         onElementsChange={vi.fn()}
       />,
     );
-    const paths = Array.from(
+    // Both lines render a blocker path; ALL blockers are transparent.
+    const blockers = Array.from(
       container.querySelectorAll('[data-hit-kind="line"]'),
     ) as unknown as SVGPathElement[];
-    // Both lines render a blocker path; the selected one is highlighted, the
-    // other transparent.
-    const strokes = paths.map((p) => p.getAttribute('stroke'));
-    expect(strokes).toContain('transparent'); // the unselected line
-    const visible = strokes.filter((s) => s !== 'transparent');
-    expect(visible).toHaveLength(1);
-    expect(visible[0]).not.toBe('transparent');
-    expect(visible[0]).toBeTruthy();
+    expect(blockers).toHaveLength(2);
+    expect(blockers.every((p) => p.getAttribute('stroke') === 'transparent')).toBe(true);
+    // Exactly one visible highlight path (the selected line), on its own node.
+    const highlights = Array.from(
+      container.querySelectorAll('[data-hit-kind="line-highlight"]'),
+    ) as unknown as SVGPathElement[];
+    expect(highlights).toHaveLength(1);
+    expect(highlights[0].getAttribute('stroke')).not.toBe('transparent');
+    expect(highlights[0].getAttribute('stroke')).toBeTruthy();
+  });
+
+  it('FIX B: selecting a thin line does NOT shrink its hit band; highlight is non-interactive', () => {
+    // Regression: when the blocker was ALSO the visual chrome, selecting a thin
+    // line switched its stroke-width from the fat grab band to the thin
+    // highlight width, shrinking the `pointer-events: stroke` hit region so
+    // clicks fell through to a box beneath — a click-through that only appeared
+    // once the line was selected. With the split, the blocker's hit band is
+    // identical selected vs. unselected, and the highlight never hit-tests.
+    const mkLine = (id: string) => ({
+      id,
+      type: 'line',
+      left: 10,
+      top: 10,
+      start: [0, 0],
+      end: [50, 50],
+      width: 2, // thin: grab band clamps to the 10px min
+      style: 'solid',
+      color: '#333',
+      points: ['', ''],
+    });
+    // Unselected reference blocker.
+    const { container: cUnsel } = render(
+      <EditableSlideCanvas
+        slide={{ ...slide, elements: [mkLine('l')] } as unknown as Slide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    const unselBlocker = cUnsel.querySelector(
+      '[data-hit-kind="line"]',
+    ) as unknown as SVGPathElement;
+    const unselPe = unselBlocker.getAttribute('pointer-events');
+    const unselSw = unselBlocker.getAttribute('stroke-width');
+    expect(unselPe).toBe('stroke');
+    expect(unselSw).toBe('10'); // fat grab band
+
+    // Selected: the blocker's hit band must be UNCHANGED.
+    const { container: cSel } = render(
+      <EditableSlideCanvas
+        slide={{ ...slide, elements: [mkLine('l')] } as unknown as Slide}
+        scale={1}
+        selection={{ elementIds: ['l'], primaryId: 'l' }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+      />,
+    );
+    const selBlocker = cSel.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
+    expect(selBlocker.getAttribute('pointer-events')).toBe(unselPe); // still 'stroke'
+    expect(selBlocker.getAttribute('stroke-width')).toBe(unselSw); // still the fat band, not shrunk
+    expect(selBlocker.getAttribute('stroke')).toBe('transparent'); // blocker is never the chrome
+
+    // The highlight is a separate, purely-visual path: never hit-tests.
+    const selHighlight = cSel.querySelector(
+      '[data-hit-kind="line-highlight"]',
+    ) as unknown as SVGPathElement;
+    expect(selHighlight).not.toBeNull();
+    expect(selHighlight.getAttribute('pointer-events')).toBe('none');
+    expect(selHighlight.getAttribute('stroke')).not.toBe('transparent');
   });
 
   it('F1: a locked selected line still shows the highlight (feedback) but no handles', () => {
@@ -687,9 +755,11 @@ describe('EditableSlideCanvas', () => {
       />,
     );
     // Highlight present (selection feedback) even though the line is locked...
-    const path = container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
-    expect(path).not.toBeNull();
-    expect(path.getAttribute('stroke')).not.toBe('transparent');
+    const highlight = container.querySelector(
+      '[data-hit-kind="line-highlight"]',
+    ) as unknown as SVGPathElement;
+    expect(highlight).not.toBeNull();
+    expect(highlight.getAttribute('stroke')).not.toBe('transparent');
     // ...but a locked line is not reshapeable, so no handles.
     expect(container.querySelector('[data-line-handle]')).toBeNull();
   });
@@ -722,11 +792,17 @@ describe('EditableSlideCanvas', () => {
         selection={{ elementIds: ['line1'], primaryId: 'line1' }}
       />,
     );
-    const path = container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
-    expect(path).not.toBeNull();
-    expect(path.getAttribute('stroke')).not.toBe('transparent');
-    // Inert: read-only mount never captures the pointer through the highlight.
-    expect(path.getAttribute('pointer-events')).toBe('none');
+    // The highlight path renders with a visible stroke; it is purely visual.
+    const highlight = container.querySelector(
+      '[data-hit-kind="line-highlight"]',
+    ) as unknown as SVGPathElement;
+    expect(highlight).not.toBeNull();
+    expect(highlight.getAttribute('stroke')).not.toBe('transparent');
+    expect(highlight.getAttribute('pointer-events')).toBe('none');
+    // Inert: the blocker in a read-only mount never captures the pointer.
+    const blocker = container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
+    expect(blocker).not.toBeNull();
+    expect(blocker.getAttribute('pointer-events')).toBe('none');
     // No handles/hit targets in a read-only mount.
     expect(container.querySelector('[data-line-handle]')).toBeNull();
     expect(container.querySelector('[data-element-id]')).toBeNull();

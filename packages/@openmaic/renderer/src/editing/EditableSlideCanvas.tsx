@@ -155,11 +155,14 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             // is a marked line overlapping other content exactly at an
             // endpoint, on an element type that is not yet editable here.
             // A line is selected when its id is in the controlled selection.
-            // A selected line always shows a visible highlight stroke on its
-            // (otherwise transparent) blocker path — so it has selection
-            // feedback in EVERY state: read-only (no-callback), locked, or
-            // editable. Handles (drawn below) are only added when it is also
-            // interactive and unlocked.
+            // Hit geometry and visual chrome are SPLIT into two paths (below):
+            // a stable transparent blocker (the hit region, identical whether
+            // or not the line is selected — so selecting a line never shrinks
+            // its hit band) plus a separate, non-interactive highlight path
+            // drawn only when selected. So a selected line has feedback in
+            // EVERY state: read-only (no-callback), locked, or editable.
+            // Handles (drawn much further below) are only added when the line
+            // is EDITABLE (`onElementsChange`) and unlocked.
             const isSelected = activeSelection.elementIds.includes(el.id);
             if (el.type === 'line') {
               // Render the line's blocker/highlight path when it is either a
@@ -209,19 +212,24 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                       pointerEvents: 'none',
                     }}
                   >
+                    {/* Blocker path — the interaction hit region. It is
+                        ALWAYS the same regardless of selection: a fat
+                        transparent stroke (`grabCanvas`) whose `pointer-events:
+                        stroke` band never changes when the line is selected.
+                        This guarantees a selected thin line never lets clicks
+                        fall through to a box beneath (selecting a line does NOT
+                        shrink its hit band). It is INERT: `onPointerDown` only
+                        stops propagation + selects-unless-locked; no drag is
+                        armed. pointer-events is disabled entirely in a
+                        read-only mount so a selected-but-read-only line never
+                        captures the pointer. The visual selection chrome is a
+                        SEPARATE, non-interactive highlight path below. */}
                     <path
                       data-hit-kind="line"
                       d={path}
                       fill="none"
-                      // Selected -> a visible accent highlight (feedback in
-                      // read-only/locked/editable alike); unselected -> a
-                      // transparent fat grab band. Either way the path stays
-                      // inert (no drag armed); pointer-events is disabled
-                      // entirely in a read-only mount so a selected-but-
-                      // read-only line never captures the pointer.
-                      stroke={isSelected ? '#3b82f6' : 'transparent'}
-                      strokeOpacity={isSelected ? 0.7 : undefined}
-                      strokeWidth={isSelected ? highlightCanvas : grabCanvas}
+                      stroke="transparent"
+                      strokeWidth={grabCanvas}
                       pointerEvents={interactive ? 'stroke' : 'none'}
                       onPointerDown={(e) => {
                         // Deferred limitation: line selection is handled here
@@ -260,6 +268,25 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                       }}
                       style={{ cursor: 'default', touchAction: 'none' }}
                     />
+                    {/* Highlight path — selection chrome only, rendered when the
+                        line is selected. Purely visual (`pointer-events: none`),
+                        so it NEVER affects hit-testing — the blocker above owns
+                        the entire hit region. Same `d`/position/scale as the
+                        blocker; a thinner accent stroke (`highlightCanvas`).
+                        Layered above the blocker, below the handles. Feedback in
+                        read-only/locked/editable alike. */}
+                    {isSelected && (
+                      <path
+                        data-hit-kind="line-highlight"
+                        d={path}
+                        fill="none"
+                        stroke="#3b82f6"
+                        strokeOpacity={0.7}
+                        strokeWidth={highlightCanvas}
+                        pointerEvents="none"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                    )}
                   </svg>
                 </div>
               );
@@ -332,8 +359,14 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               the WORKING line (via `displayElements`), so during a reshape drag
               the handles track the previewed geometry. Handles use absolute
               SCREEN coordinates (they bake in `viewportStyles`), so they sit as
-              direct children of the overlay, NOT inside the offset container. */}
-          {interactive &&
+              direct children of the overlay, NOT inside the offset container.
+
+              Gated on EDITABILITY (`onElementsChange`), not generic
+              `interactive`: the reshape gesture no-ops without a mutation
+              channel, so a select-only mount (only `onSelectionChange`) would
+              otherwise show draggable handles that can never commit. In that
+              case show NO handles — only the stroke highlight (feedback). */}
+          {Boolean(onElementsChange) &&
             elements.map((el) => {
               if (el.type !== 'line') return null;
               if (!activeSelection.elementIds.includes(el.id) || el.lock) return null;
