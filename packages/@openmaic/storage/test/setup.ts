@@ -1,15 +1,23 @@
 // Test shims for the handful of browser globals the backends touch that Node
 // does not provide natively. The backends themselves take their `Storage` /
 // `IDBFactory` by injection, so tests pass fresh isolated instances; these
-// shims only cover the ambient APIs (object URLs, IndexedDB factory type,
+// shims only cover the ambient APIs (object URLs, IndexedDB key ranges,
 // crypto) a real browser supplies.
 import { webcrypto } from 'node:crypto';
+import { IDBKeyRange } from 'fake-indexeddb';
 import { beforeEach } from 'vitest';
 
 // Node ≥20 exposes `globalThis.crypto`, but guard for older/edge runners so
 // content-hashing (crypto.subtle.digest) works the same as in a browser.
 if (!globalThis.crypto?.subtle) {
   Object.defineProperty(globalThis, 'crypto', { value: webcrypto, configurable: true });
+}
+
+// The runtime backend builds its ranged record reads with the ambient
+// `IDBKeyRange`, which real browsers always pair with `indexedDB` but Node
+// lacks — supply the fake-indexeddb one that matches the injected factories.
+if (!('IDBKeyRange' in globalThis)) {
+  globalThis.IDBKeyRange = IDBKeyRange;
 }
 
 // object-URL registry: `createObjectURL(blob)` mints a unique `blob:` URL and
