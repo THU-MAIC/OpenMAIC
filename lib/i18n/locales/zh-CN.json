@@ -1729,7 +1729,65 @@
       "msg100": {
         "title": "畅所欲言",
         "desc": "累计 100 条消息"
+      },
+      "create3": {
+        "title": "开课达人",
+        "desc": "创建 3 门课程"
+      },
+      "content100": {
+        "title": "内容工厂",
+        "desc": "累计生成 100 个场景"
+      },
+      "finishAll": {
+        "title": "善始善终",
+        "desc": "完成全部课程(≥ 3 门)"
+      },
+      "quiz10": {
+        "title": "题海遨游",
+        "desc": "累计完成 10 次测验"
+      },
+      "perfect3": {
+        "title": "百发百中",
+        "desc": "获得 3 次满分测验"
+      },
+      "qa10": {
+        "title": "十万个为什么",
+        "desc": "累计 10 次问答会话"
+      },
+      "lecture5": {
+        "title": "专注聆听",
+        "desc": "累计 5 次讲授会话"
+      },
+      "discussion3": {
+        "title": "各抒己见",
+        "desc": "累计 3 次讨论会话"
+      },
+      "msg500": {
+        "title": "妙语连珠",
+        "desc": "累计 500 条消息"
+      },
+      "pbl1": {
+        "title": "项目实战",
+        "desc": "体验一次项目式学习场景"
+      },
+      "interactive1": {
+        "title": "互动探索",
+        "desc": "体验一次互动场景"
+      },
+      "multimodal": {
+        "title": "全能体验",
+        "desc": "体验全部 4 种场景类型"
       }
+    },
+    "views": {
+      "grid": "网格",
+      "star": "星图"
+    },
+    "groups": {
+      "course": "课程",
+      "quiz": "测验",
+      "chat": "对话",
+      "explore": "探索"
     }
   }
 }

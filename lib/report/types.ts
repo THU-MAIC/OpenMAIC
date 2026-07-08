@@ -8,10 +8,16 @@
 
 export type AchTier = 'gold' | null;
 
+/** Star-map branch a badge belongs to. */
+export type AchGroup = 'course' | 'quiz' | 'chat' | 'explore';
+
 export interface Achievement {
   id: string;
   category: 'completion';
-  icon: 'progress' | 'quiz' | 'chat';
+  group: AchGroup;
+  icon: 'progress' | 'create' | 'quiz' | 'chat' | 'explore';
+  /** 1-based level within its progression chain (Lv.1 → Lv.2 → …). */
+  level: number;
   title: string;
   desc: string;
   earned: boolean;
@@ -23,11 +29,12 @@ export interface Achievement {
 export interface StageVM {
   stageId: string;
   name: string;
-  sceneCount: number;
+  sceneCount: number; // scenes actually generated
+  plannedSceneCount: number; // scenes planned in the outline
   quizSceneCount: number;
   pblSceneCount: number;
   interactiveSceneCount: number;
-  currentScenePosition: number | null;
+  generationComplete: boolean;
   progressRatio: number | null;
   started: boolean;
   quizSubmissionCount: number;
@@ -69,6 +76,11 @@ export interface ReportMetric {
   completedStageCountProxy: number;
   avgProgressRatio: number | null;
   maxProgressRatio: number | null;
+  totalSceneCount: number;
+  slideSceneCount: number;
+  quizSceneCount: number;
+  pblSceneCount: number;
+  interactiveSceneCount: number;
   quizAttemptCount: number;
   quizStageCount: number;
   avgQuizScoreRatio: number | null;
@@ -77,6 +89,7 @@ export interface ReportMetric {
   chatSessionCount: number;
   qaSessionCount: number;
   lectureSessionCount: number;
+  discussionSessionCount: number;
   totalChatMessageCount: number;
   lastActivityAt: number | null;
 }

@@ -1729,7 +1729,65 @@
       "msg100": {
         "title": "暢所欲言",
         "desc": "累計 100 則訊息"
+      },
+      "create3": {
+        "title": "開課達人",
+        "desc": "建立 3 門課程"
+      },
+      "content100": {
+        "title": "內容工廠",
+        "desc": "累計產生 100 個場景"
+      },
+      "finishAll": {
+        "title": "善始善終",
+        "desc": "完成全部課程(≥ 3 門)"
+      },
+      "quiz10": {
+        "title": "題海遨遊",
+        "desc": "累計完成 10 次測驗"
+      },
+      "perfect3": {
+        "title": "百發百中",
+        "desc": "獲得 3 次滿分測驗"
+      },
+      "qa10": {
+        "title": "十萬個為什麼",
+        "desc": "累計 10 次問答對話"
+      },
+      "lecture5": {
+        "title": "專注聆聽",
+        "desc": "累計 5 次講授對話"
+      },
+      "discussion3": {
+        "title": "各抒己見",
+        "desc": "累計 3 次討論對話"
+      },
+      "msg500": {
+        "title": "妙語連珠",
+        "desc": "累計 500 則訊息"
+      },
+      "pbl1": {
+        "title": "專案實戰",
+        "desc": "體驗一次專案式學習場景"
+      },
+      "interactive1": {
+        "title": "互動探索",
+        "desc": "體驗一次互動場景"
+      },
+      "multimodal": {
+        "title": "全能體驗",
+        "desc": "體驗全部 4 種場景類型"
       }
+    },
+    "views": {
+      "grid": "網格",
+      "star": "星圖"
+    },
+    "groups": {
+      "course": "課程",
+      "quiz": "測驗",
+      "chat": "對話",
+      "explore": "探索"
     }
   }
 }

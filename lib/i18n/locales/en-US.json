@@ -1729,7 +1729,65 @@
       "msg100": {
         "title": "Talkative",
         "desc": "100 messages in total"
+      },
+      "create3": {
+        "title": "Course Creator",
+        "desc": "Create 3 courses"
+      },
+      "content100": {
+        "title": "Content Factory",
+        "desc": "Generate 100 scenes in total"
+      },
+      "finishAll": {
+        "title": "Finisher",
+        "desc": "Complete all of your courses (≥ 3)"
+      },
+      "quiz10": {
+        "title": "Quiz Voyager",
+        "desc": "Complete 10 quizzes in total"
+      },
+      "perfect3": {
+        "title": "Sharpshooter",
+        "desc": "Get 3 perfect quiz scores"
+      },
+      "qa10": {
+        "title": "Curious Mind",
+        "desc": "10 Q&A sessions in total"
+      },
+      "lecture5": {
+        "title": "Attentive Listener",
+        "desc": "5 lecture sessions in total"
+      },
+      "discussion3": {
+        "title": "Debater",
+        "desc": "3 discussion sessions in total"
+      },
+      "msg500": {
+        "title": "Eloquent",
+        "desc": "500 messages in total"
+      },
+      "pbl1": {
+        "title": "Project Builder",
+        "desc": "Try a project-based learning scene"
+      },
+      "interactive1": {
+        "title": "Explorer",
+        "desc": "Try an interactive scene"
+      },
+      "multimodal": {
+        "title": "All-Rounder",
+        "desc": "Experience all 4 scene types"
       }
+    },
+    "views": {
+      "grid": "Grid",
+      "star": "Star map"
+    },
+    "groups": {
+      "course": "Courses",
+      "quiz": "Quiz",
+      "chat": "Chat",
+      "explore": "Explore"
     }
   }
 }

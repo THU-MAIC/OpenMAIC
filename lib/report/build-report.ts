@@ -32,6 +32,7 @@ export async function buildLearnerReport(): Promise<LearnerReport> {
   const stages: StageVM[] = [];
   const quiz: QuizVM[] = [];
   const chat: ChatVM[] = [];
+  let totalSlideSceneCount = 0;
 
   // Timestamp pools for approximating achievement earnedAt.
   const stageTimes: number[] = [];
@@ -53,21 +54,23 @@ export async function buildLearnerReport(): Promise<LearnerReport> {
     const quizSceneCount = scenes.filter((s) => s.type === 'quiz').length;
     const pblSceneCount = scenes.filter((s) => s.type === 'pbl').length;
     const interactiveSceneCount = scenes.filter((s) => s.type === 'interactive').length;
+    totalSlideSceneCount += scenes.filter((s) => s.type === 'slide').length;
 
-    // Progress: use the RAW currentSceneId (loadStageData falls back to scene[0],
-    // which would mark every stage as "started"). Position is the 1-based index
-    // of that scene in the order-sorted list.
-    const currentSceneId = raw?.currentSceneId;
-    const started = !!currentSceneId;
-    let currentScenePosition: number | null = null;
-    let progressRatio: number | null = null;
-    if (started) {
-      const idx = scenes.findIndex((s) => s.id === currentSceneId);
-      if (idx >= 0) {
-        currentScenePosition = idx + 1;
-        progressRatio = sceneCount > 0 ? round4(currentScenePosition / sceneCount) : null;
-      }
-    }
+    // Progress signal. OpenMAIC's local build does NOT persist a learner's
+    // playback position (currentSceneId is reset to scene[0] on every classroom
+    // load and only advanced in memory; the playbackState table is never
+    // written). The only durable signals are the generation state: whether the
+    // course finished generating (stageOutlines.generationComplete) and how many
+    // of the planned scenes exist. So "progress" here = course build completeness.
+    const outlinesRec = await db.stageOutlines.get(item.id);
+    const plannedSceneCount = outlinesRec?.outlines?.length ?? sceneCount;
+    const generationComplete = outlinesRec?.generationComplete === true;
+    const started = sceneCount > 0;
+    const progressRatio = generationComplete
+      ? 1
+      : plannedSceneCount > 0
+        ? round4(Math.min(1, sceneCount / plannedSceneCount))
+        : null;
 
     // Quiz: each quiz scene with a graded ("reviewing") submission is one attempt.
     const stageQuizRatios: number[] = [];
@@ -125,10 +128,11 @@ export async function buildLearnerReport(): Promise<LearnerReport> {
       stageId: item.id,
       name: stageName,
       sceneCount,
+      plannedSceneCount,
       quizSceneCount,
       pblSceneCount,
       interactiveSceneCount,
-      currentScenePosition,
+      generationComplete,
       progressRatio,
       started,
       quizSubmissionCount: stageQuizRatios.length,
@@ -150,6 +154,11 @@ export async function buildLearnerReport(): Promise<LearnerReport> {
     completedStageCountProxy: progressValues.filter((r) => r >= COMPLETE_THRESHOLD).length,
     avgProgressRatio: round4(avg(progressValues)),
     maxProgressRatio: round4(max(progressValues)),
+    totalSceneCount: stages.reduce((sum, s) => sum + s.sceneCount, 0),
+    slideSceneCount: totalSlideSceneCount,
+    quizSceneCount: stages.reduce((sum, s) => sum + s.quizSceneCount, 0),
+    pblSceneCount: stages.reduce((sum, s) => sum + s.pblSceneCount, 0),
+    interactiveSceneCount: stages.reduce((sum, s) => sum + s.interactiveSceneCount, 0),
     quizAttemptCount: quiz.length,
     quizStageCount: new Set(quiz.map((q) => q.stageId)).size,
     avgQuizScoreRatio: round4(avg(quizRatios)),
@@ -158,6 +167,7 @@ export async function buildLearnerReport(): Promise<LearnerReport> {
     chatSessionCount: chat.reduce((sum, c) => sum + c.total, 0),
     qaSessionCount: chat.reduce((sum, c) => sum + c.qa, 0),
     lectureSessionCount: chat.reduce((sum, c) => sum + c.lecture, 0),
+    discussionSessionCount: chat.reduce((sum, c) => sum + c.discussion, 0),
     totalChatMessageCount: chat.reduce((sum, c) => sum + c.messages, 0),
     lastActivityAt: max([...stageTimes, ...quizTimes, ...chatTimes]),
   };
@@ -166,10 +176,18 @@ export async function buildLearnerReport(): Promise<LearnerReport> {
     stageCount: metric.stageCount,
     startedStageCount: metric.startedStageCount,
     completedStageCountProxy: metric.completedStageCountProxy,
+    totalSceneCount: metric.totalSceneCount,
+    slideSceneCount: metric.slideSceneCount,
+    quizSceneCount: metric.quizSceneCount,
+    pblSceneCount: metric.pblSceneCount,
+    interactiveSceneCount: metric.interactiveSceneCount,
     quizAttemptCount: metric.quizAttemptCount,
     perfectQuizAttemptCount: metric.perfectQuizAttemptCount,
     avgQuizScoreRatio: metric.avgQuizScoreRatio,
     chatSessionCount: metric.chatSessionCount,
+    qaSessionCount: metric.qaSessionCount,
+    lectureSessionCount: metric.lectureSessionCount,
+    discussionSessionCount: metric.discussionSessionCount,
     totalChatMessageCount: metric.totalChatMessageCount,
   };
   const achievements = computeAchievements(metricInput);
@@ -195,65 +213,64 @@ function fillEarnedAt(
     lastActivity: number | null;
   },
 ): void {
-  const at = (id: string): number | null => {
-    switch (id) {
+  const at = (a: Achievement): number | null => {
+    // "first-earned" ids anchor to the earliest event; the rest to the latest.
+    switch (a.id) {
       case 'start':
         return min(t.stageTimes);
-      case 'finish1':
-      case 'finish3':
-        return max(t.stageTimes);
       case 'quiz1':
         return min(t.quizTimes);
       case 'perfect':
         return min(t.perfectTimes);
-      case 'quiz80':
-        return max(t.quizTimes);
       case 'chat1':
         return min(t.chatTimes);
-      case 'chat20':
-      case 'msg100':
+    }
+    switch (a.group) {
+      case 'quiz':
+        return max(t.quizTimes);
+      case 'chat':
         return max(t.chatTimes);
-      default:
-        return t.lastActivity;
+      default: // course + explore anchor to stage activity
+        return max(t.stageTimes);
     }
   };
   for (const a of achievements) {
-    a.earnedAt = a.earned ? (at(a.id) ?? t.lastActivity) : null;
+    a.earnedAt = a.earned ? (at(a) ?? t.lastActivity) : null;
   }
 }
 
 function emptyReport(): LearnerReport {
+  const zero: MetricInput = {
+    stageCount: 0,
+    startedStageCount: 0,
+    completedStageCountProxy: 0,
+    totalSceneCount: 0,
+    slideSceneCount: 0,
+    quizSceneCount: 0,
+    pblSceneCount: 0,
+    interactiveSceneCount: 0,
+    quizAttemptCount: 0,
+    perfectQuizAttemptCount: 0,
+    avgQuizScoreRatio: null,
+    chatSessionCount: 0,
+    qaSessionCount: 0,
+    lectureSessionCount: 0,
+    discussionSessionCount: 0,
+    totalChatMessageCount: 0,
+  };
   return {
     metric: {
-      stageCount: 0,
-      startedStageCount: 0,
-      completedStageCountProxy: 0,
+      ...zero,
       avgProgressRatio: null,
       maxProgressRatio: null,
-      quizAttemptCount: 0,
       quizStageCount: 0,
-      avgQuizScoreRatio: null,
       bestQuizScoreRatio: null,
-      perfectQuizAttemptCount: 0,
-      chatSessionCount: 0,
-      qaSessionCount: 0,
-      lectureSessionCount: 0,
-      totalChatMessageCount: 0,
       lastActivityAt: null,
     },
     stages: [],
     quiz: [],
     chat: [],
-    achievements: computeAchievements({
-      stageCount: 0,
-      startedStageCount: 0,
-      completedStageCountProxy: 0,
-      quizAttemptCount: 0,
-      perfectQuizAttemptCount: 0,
-      avgQuizScoreRatio: null,
-      chatSessionCount: 0,
-      totalChatMessageCount: 0,
-    }),
+    achievements: computeAchievements(zero),
     isEmpty: true,
   };
 }

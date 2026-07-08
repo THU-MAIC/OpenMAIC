@@ -12,7 +12,7 @@ import { ReportOverview } from './report-overview';
 import { StageProgressList } from './stage-progress-list';
 import { QuizChart } from './quiz-chart';
 import { ChatChart } from './chat-chart';
-import { AchievementGrid } from './achievement-grid';
+import { AchievementSection } from './achievement-section';
 
 export function ReportView() {
   const { t } = useI18n();
@@ -82,7 +82,7 @@ export function ReportView() {
             <ChatChart chat={report.chat} />
           </TabsContent>
           <TabsContent value="achievements">
-            <AchievementGrid achievements={report.achievements} />
+            <AchievementSection achievements={report.achievements} />
           </TabsContent>
         </Tabs>
       ) : null}

@@ -1729,7 +1729,65 @@
       "msg100": {
         "title": "Comunicativo",
         "desc": "100 mensagens no total"
+      },
+      "create3": {
+        "title": "Criador de Cursos",
+        "desc": "Crie 3 cursos"
+      },
+      "content100": {
+        "title": "Fábrica de Conteúdo",
+        "desc": "Gere 100 cenas no total"
+      },
+      "finishAll": {
+        "title": "Finalizador",
+        "desc": "Conclua todos os seus cursos (≥ 3)"
+      },
+      "quiz10": {
+        "title": "Viajante de Quiz",
+        "desc": "Complete 10 quizzes no total"
+      },
+      "perfect3": {
+        "title": "Atirador Certeiro",
+        "desc": "Obtenha 3 notas máximas"
+      },
+      "qa10": {
+        "title": "Mente Curiosa",
+        "desc": "10 sessões de perguntas no total"
+      },
+      "lecture5": {
+        "title": "Ouvinte Atento",
+        "desc": "5 sessões de aula no total"
+      },
+      "discussion3": {
+        "title": "Debatedor",
+        "desc": "3 sessões de discussão no total"
+      },
+      "msg500": {
+        "title": "Eloquente",
+        "desc": "500 mensagens no total"
+      },
+      "pbl1": {
+        "title": "Construtor de Projetos",
+        "desc": "Experimente uma cena de PBL"
+      },
+      "interactive1": {
+        "title": "Explorador",
+        "desc": "Experimente uma cena interativa"
+      },
+      "multimodal": {
+        "title": "Completo",
+        "desc": "Experimente os 4 tipos de cena"
       }
+    },
+    "views": {
+      "grid": "Grade",
+      "star": "Mapa estelar"
+    },
+    "groups": {
+      "course": "Cursos",
+      "quiz": "Quiz",
+      "chat": "Conversa",
+      "explore": "Explorar"
     }
   }
 }

@@ -1729,7 +1729,65 @@
       "msg100": {
         "title": "달변가",
         "desc": "누적 100개 메시지"
+      },
+      "create3": {
+        "title": "강좌 제작자",
+        "desc": "강좌 3개 만들기"
+      },
+      "content100": {
+        "title": "콘텐츠 공장",
+        "desc": "누적 100개 장면 생성"
+      },
+      "finishAll": {
+        "title": "유종의 미",
+        "desc": "모든 강좌 완료(3개 이상)"
+      },
+      "quiz10": {
+        "title": "퀴즈 여행자",
+        "desc": "누적 10회 퀴즈 완료"
+      },
+      "perfect3": {
+        "title": "백발백중",
+        "desc": "만점 3회 획득"
+      },
+      "qa10": {
+        "title": "호기심 대장",
+        "desc": "누적 10회 Q&A 세션"
+      },
+      "lecture5": {
+        "title": "집중 청강생",
+        "desc": "누적 5회 강의 세션"
+      },
+      "discussion3": {
+        "title": "토론가",
+        "desc": "누적 3회 토론 세션"
+      },
+      "msg500": {
+        "title": "달변가",
+        "desc": "누적 500개 메시지"
+      },
+      "pbl1": {
+        "title": "프로젝트 실전",
+        "desc": "PBL 장면 체험하기"
+      },
+      "interactive1": {
+        "title": "탐험가",
+        "desc": "인터랙티브 장면 체험하기"
+      },
+      "multimodal": {
+        "title": "올라운더",
+        "desc": "4가지 장면 유형 모두 체험"
       }
+    },
+    "views": {
+      "grid": "그리드",
+      "star": "별자리"
+    },
+    "groups": {
+      "course": "강좌",
+      "quiz": "퀴즈",
+      "chat": "대화",
+      "explore": "탐색"
     }
   }
 }
