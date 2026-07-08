@@ -31,8 +31,10 @@ const DEFAULT_SNAP_RANGE = 5;
  * snap `range`: `true` enables both element- and canvas-snapping at the
  * default range; `false`/absent disables snapping entirely (`null`); an
  * explicit `SnappingOptions` object is used as-is, with `range` defaulted.
+ * Shared by the drag and resize cores so both gestures interpret the
+ * `snapping` prop identically.
  */
-function resolveSnapping(
+export function resolveSnapping(
   snapping: boolean | SnappingOptions | undefined,
 ): { opts: SnappingOptions; range: number } | null {
   if (snapping === true) {
