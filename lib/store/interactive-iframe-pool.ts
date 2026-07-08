@@ -17,8 +17,36 @@
  */
 
 import { create } from 'zustand';
+import { readNetworkQuality } from '@/lib/utils/network-quality';
 
 export const IFRAME_POOL_CAP = 3;
+
+/**
+ * On a slow / data-saver link, shrink the pool to ONE resident document.
+ *
+ * Each interactive scene's iframe loads heavy third-party libraries (KaTeX, and
+ * the simulator scenes pull Pyodide + the multi-MB `python_stdlib.zip`) from a
+ * CDN at view time. With the normal 3-document pool, walking slides 2→3→4 leaves
+ * the previous slides' iframes still mid-download; on weak 3G/4G those multi-MB
+ * fetches never finish and saturate the single connection, so even the active
+ * slide can't get its own resources through and renders blank while the
+ * (locally-cached) TTS audio plays. Holding only the active iframe gives it the
+ * full pipe; the once-downloaded libraries are then HTTP-cached, so the next
+ * simulator slide is fast. Keep-alive (instant return without reload) is the
+ * cost — an acceptable trade on a link where the priority is the slide loading
+ * at all. Fast links keep the full pool.
+ */
+export const SLOW_LINK_IFRAME_POOL_CAP = 1;
+
+/**
+ * Resolve the live pool cap from current network quality. Conservative: only
+ * shrinks on positive evidence of a slow/Save-Data link; when the Network
+ * Information API is unavailable (Safari/Firefox → `unknown`) it stays at the
+ * full cap, so we never degrade keep-alive on links we can't measure.
+ */
+export function getActiveIframePoolCap(): number {
+  return readNetworkQuality().isDataSaver ? SLOW_LINK_IFRAME_POOL_CAP : IFRAME_POOL_CAP;
+}
 
 export interface IframeRect {
   readonly left: number;
@@ -77,14 +105,15 @@ interface InteractiveIframePoolState {
 function evictLru(
   entries: Record<string, IframePoolEntry>,
   activeSceneId: string | null,
+  cap: number,
 ): Record<string, IframePoolEntry> {
   const ids = Object.keys(entries);
-  if (ids.length <= IFRAME_POOL_CAP) return entries;
+  if (ids.length <= cap) return entries;
   const evictable = ids
     .filter((id) => id !== activeSceneId)
     .sort((a, b) => entries[a].tick - entries[b].tick);
   const next = { ...entries };
-  let overflow = ids.length - IFRAME_POOL_CAP;
+  let overflow = ids.length - cap;
   for (const id of evictable) {
     if (overflow <= 0) break;
     delete next[id];
@@ -119,7 +148,11 @@ export const useInteractiveIframePool = create<InteractiveIframePoolState>((set)
         owner: existing?.owner ?? null,
         tick,
       };
-      const entries = evictLru({ ...state.entries, [sceneId]: entry }, state.activeSceneId);
+      const entries = evictLru(
+        { ...state.entries, [sceneId]: entry },
+        state.activeSceneId,
+        getActiveIframePoolCap(),
+      );
       return { entries, tick };
     }),
 
