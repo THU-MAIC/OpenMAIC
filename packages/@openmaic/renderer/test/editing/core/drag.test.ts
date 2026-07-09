@@ -159,6 +159,18 @@ describe('computeMultiDragMove', () => {
     expect(multi.guides).toEqual(single.guides);
   });
 
+  it('returns a do-nothing result for an empty selection (no ±Infinity ranges)', () => {
+    const r = computeMultiDragMove({
+      handleElement: a(),
+      selected: [],
+      others: [b()],
+      viewport: vp,
+      deltaCanvas: { x: 10, y: 5 },
+      snapping: true,
+    });
+    expect(r).toEqual({ updates: [], guides: [] });
+  });
+
   it('carries a selected line along by the delta (unlike lone-line single drag)', () => {
     const line = {
       id: 'l',

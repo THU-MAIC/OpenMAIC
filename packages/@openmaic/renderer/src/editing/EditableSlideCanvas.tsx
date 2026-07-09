@@ -11,6 +11,7 @@ import { LineHandles } from './handles/LineHandles';
 import { ResizeHandles } from './handles/ResizeHandles';
 import { RotateHandle } from './handles/RotateHandle';
 import { MarqueeBox } from './handles/MarqueeBox';
+import { isSelectionModifier, resolveClickSelection } from './core/selection';
 import { useEditGesture } from './useEditGesture';
 import { useLineHandleGesture } from './useLineHandleGesture';
 import { useMarqueeGesture } from './useMarqueeGesture';
@@ -115,8 +116,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   // Marquee (rubber-band) gesture. It arms from a blank-canvas pointer-down on
   // the capture surface below the element hit targets, tracks a live rectangle,
   // and on release REPLACES the selection with whatever it covers (or clears it
-  // on a sub-threshold blank click). Selection-only, so it is gated on
-  // `onSelectionChange`.
+  // on a sub-threshold blank click). The capture surface only mounts on
+  // editable hosts (`onElementsChange` — see the surface comment below), and
+  // the hook itself additionally requires `onSelectionChange` to publish.
   const { marqueeRect, onCanvasPointerDown } = useMarqueeGesture({
     slide,
     scale: canvasScale,
@@ -189,9 +191,13 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               while a pointer-down on empty canvas falls to this full-bleed layer
               and arms a rubber-band select. It is a sibling of the element hit
               divs (not an ancestor), so an element pointer-down never bubbles
-              into it. Selection-only, so it is gated on `onSelectionChange`;
-              without it the surface is absent and blank clicks do nothing. */}
-          {Boolean(onSelectionChange) && (
+              into it. Gated on EDITABILITY (`onElementsChange`), not on
+              `onSelectionChange`: this full-bleed `touchAction: 'none'` layer
+              would swallow native touch panning across the whole canvas, which
+              is only acceptable in a real editor. A select-only/viewer-ish
+              mount renders no surface — element tap-select still works via the
+              per-element hit targets; blank taps neither marquee nor clear. */}
+          {Boolean(onElementsChange) && (
             <div
               data-marquee-surface=""
               onPointerDown={onCanvasPointerDown}
@@ -313,34 +319,41 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                         // bypasses the `activePointerRef` multi-pointer guard.
                         // A second pointer-down on a line during an in-flight
                         // box drag can therefore change the selection mid-
-                        // gesture. This is deferred together with multi-touch/
-                        // multi-select support; single-pointer/mouse use (only
-                        // one active pointer at a time) is unaffected.
+                        // gesture. More generally, the single-pointer guarantee
+                        // is PER-HOOK: each gesture hook (move/marquee/line-
+                        // handle/resize/rotate) guards only its own active
+                        // pointer, so a second pointer can still arm a
+                        // DIFFERENT hook's gesture concurrently. Cross-hook
+                        // arbitration is deferred together with multi-touch
+                        // support; single-pointer/mouse use (only one active
+                        // pointer at a time) is unaffected.
                         //
                         // Always consume the pointer to block fall-through to
                         // an overlapped box beneath (even with no selection
                         // callback, and even when the line is locked). When a
-                        // selection callback is provided, also select the line
-                        // — on pointer-down, for parity with box elements
-                        // (which select via onElementPointerDown). A line is
-                        // selectable but NOT draggable here: no working copy is
-                        // armed and no move intent is ever emitted (line
-                        // editing deferred).
+                        // selection callback is provided, resolve the click
+                        // through the SAME modifier/selection table as box
+                        // elements ({@link resolveClickSelection}) so a
+                        // modifier click adds/removes a line from a multi-
+                        // selection too. A line is selectable but NOT draggable
+                        // here: `armDrag` is ignored, no working copy is armed,
+                        // and no move intent is ever emitted (line editing
+                        // deferred).
                         e.stopPropagation();
                         // A locked line is inert like a locked box: it blocks
                         // fall-through (stopPropagation above) but must not be
                         // selected.
                         if (el.lock) return;
-                        // Idempotent re-selection: skip the emit when this line
-                        // is already the sole primary selection, mirroring the
-                        // box `alreadySolePrimary` guard in useEditGesture — a
-                        // re-click on an already-selected line must not re-emit.
-                        const alreadySolePrimary =
-                          activeSelection.primaryId === el.id &&
-                          activeSelection.elementIds.length === 1 &&
-                          activeSelection.elementIds[0] === el.id;
-                        if (alreadySolePrimary) return;
-                        onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
+                        const { next } = resolveClickSelection({
+                          element: el,
+                          elements: slide.elements,
+                          selection: activeSelection,
+                          modifier: isSelectionModifier(e),
+                        });
+                        // `next` is null when nothing changes (e.g. a re-click
+                        // on the current primary, or a subtractive click that
+                        // would empty the selection) — no redundant re-emit.
+                        if (next) onSelectionChange?.(next);
                       }}
                       style={{ cursor: 'default', touchAction: 'none' }}
                     />

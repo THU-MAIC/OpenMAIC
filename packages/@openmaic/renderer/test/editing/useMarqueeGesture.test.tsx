@@ -214,6 +214,62 @@ describe('useMarqueeGesture', () => {
     expect(onSel).toHaveBeenCalledWith({ elementIds: ['a'], primaryId: 'a' });
   });
 
+  it('a non-main-button press neither arms a marquee nor clears the selection', () => {
+    const onSel = vi.fn();
+    const { container } = render(
+      <Harness
+        slide={makeSlide()}
+        scale={1}
+        viewportStyles={vp}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={onSel}
+      />,
+    );
+    const surface = container.querySelector('[data-testid="surface"]') as HTMLElement;
+    // Secondary (right) button: pointer-down must not arm, so the matching
+    // pointer-up is not a blank click and the selection survives.
+    fireEvent.pointerDown(surface, { pointerId: 1, button: 2, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(surface, { pointerId: 1, button: 2, clientX: 10, clientY: 10 });
+    expect(onSel).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-testid="live-rect"]')).toBeNull();
+    // The hook stayed unarmed: a fresh MAIN-button marquee still works.
+    fireEvent.pointerDown(surface, { pointerId: 2, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(surface, { pointerId: 2, clientX: 250, clientY: 250 });
+    fireEvent.pointerUp(surface, { pointerId: 2, clientX: 250, clientY: 250 });
+    expect(onSel).toHaveBeenCalledTimes(1);
+  });
+
+  it('release decisions read the LIVE selection, not the pointer-down closure', () => {
+    const onSel = vi.fn();
+    const { container, rerender } = render(
+      <Harness
+        slide={makeSlide()}
+        scale={1}
+        viewportStyles={vp}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+      />,
+    );
+    const surface = container.querySelector('[data-testid="surface"]') as HTMLElement;
+    fireEvent.pointerDown(surface, { pointerId: 1, clientX: 10, clientY: 10 });
+    // The host updates the controlled selection mid-gesture (e.g. programmatic
+    // select). The blank-click decision on release must see this live value.
+    rerender(
+      <Harness
+        slide={makeSlide()}
+        scale={1}
+        viewportStyles={vp}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={onSel}
+      />,
+    );
+    fireEvent.pointerUp(surface, { pointerId: 1, clientX: 11, clientY: 11 });
+    // Sub-threshold blank click over a now-NON-empty selection must clear it;
+    // the stale pointer-down-time empty selection would have skipped the emit.
+    expect(onSel).toHaveBeenCalledTimes(1);
+    expect(onSel).toHaveBeenCalledWith({ elementIds: [] });
+  });
+
   it('drops window move/up from a foreign pointerId', () => {
     const onSel = vi.fn();
     const { container } = render(

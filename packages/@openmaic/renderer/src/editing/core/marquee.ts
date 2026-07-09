@@ -1,4 +1,4 @@
-import type { PPTElement } from '@openmaic/dsl';
+import type { PPTElement, PPTLineElement } from '@openmaic/dsl';
 import { getElementRange, type ElementRange } from './geometry';
 
 /**
@@ -53,6 +53,49 @@ export function marqueeRect(start: MarqueePoint, current: MarqueePoint): Marquee
 }
 
 /**
+ * Conservative AABB for a line element's rendered path, in canvas units: the
+ * box over `start`, `end`, and every present path control point (`broken`,
+ * `broken2`, `curve`, `cubic`), offset by the element origin. `getElementRange`
+ * only spans start/end, so a bent line's visible path can bow outside that
+ * chord and a marquee over the bend would miss it.
+ *
+ * Correct-by-construction for every path shape: a straight/broken/broken2
+ * polyline's vertices are all drawn from these coordinates, and a quadratic/
+ * cubic Bézier lies within the convex hull of its control points — so this box
+ * NEVER misses the rendered path. It is conservative, not tight (a Bézier
+ * rarely reaches its control points), so `contain` mode may demand slightly
+ * more room around the bend than the rendered stroke strictly needs.
+ */
+function getLineMarqueeRange(el: PPTLineElement): ElementRange {
+  const xs = [el.start[0], el.end[0]];
+  const ys = [el.start[1], el.end[1]];
+  if (el.broken) {
+    xs.push(el.broken[0]);
+    ys.push(el.broken[1]);
+  }
+  if (el.broken2) {
+    xs.push(el.broken2[0]);
+    ys.push(el.broken2[1]);
+  }
+  if (el.curve) {
+    xs.push(el.curve[0]);
+    ys.push(el.curve[1]);
+  }
+  if (el.cubic) {
+    for (const [cx, cy] of el.cubic) {
+      xs.push(cx);
+      ys.push(cy);
+    }
+  }
+  return {
+    minX: el.left + Math.min(...xs),
+    maxX: el.left + Math.max(...xs),
+    minY: el.top + Math.min(...ys),
+    maxY: el.top + Math.max(...ys),
+  };
+}
+
+/**
  * Whether an element's bounding range hits the marquee per `mode`. `contain` is
  * inclusive of a boundary-touching edge (`>=`/`<=`); `intersect` requires a
  * strictly-positive overlap (`>`/`<`) so edge-to-edge touching does not count.
@@ -78,8 +121,10 @@ function hitsMarquee(range: ElementRange, rect: MarqueeRect, mode: MarqueeMode):
  * The ids the marquee `rect` selects from `elements`, in element (z-)order.
  *
  * Rules, ported from the app:
- * - Each element is tested by its rotation- and line-aware AABB
+ * - Non-line elements are tested by their rotation-aware AABB
  *   ({@link getElementRange}), so a rotated element uses its enclosing box.
+ * - Line elements are tested by a control-point-aware conservative AABB
+ *   ({@link getLineMarqueeRange}), so a bent line's bow is still hit-testable.
  * - Locked elements (and any `excludeIds`) are never selected.
  * - Group cohesion is all-or-nothing: a matched element that carries a
  *   `groupId` survives only if EVERY member of that group also matched — so a
@@ -99,7 +144,8 @@ export function computeMarqueeSelection(
   for (const el of elements) {
     if (el.lock) continue;
     if (excluded?.has(el.id)) continue;
-    if (hitsMarquee(getElementRange(el), rect, mode)) matched.push(el);
+    const range = el.type === 'line' ? getLineMarqueeRange(el) : getElementRange(el);
+    if (hitsMarquee(range, rect, mode)) matched.push(el);
   }
 
   const matchedIds = new Set(matched.map((el) => el.id));

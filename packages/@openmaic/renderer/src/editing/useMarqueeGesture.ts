@@ -72,6 +72,16 @@ export function useMarqueeGesture(args: UseMarqueeGestureArgs): UseMarqueeGestur
   // The pointerId owning the in-flight gesture (single-pointer guard).
   const activePointerRef = useRef<number | null>(null);
 
+  // The LIVE controlled selection, refreshed on every committed render. The
+  // window handlers below are created at pointer-down and would otherwise
+  // close over the selection as of that render; the host may update it
+  // mid-gesture, and the empty-skip/clear decisions on release must use the
+  // current value.
+  const selectionRef = useRef(selection);
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
   useEffect(
     () => () => {
       teardownRef.current?.();
@@ -82,6 +92,9 @@ export function useMarqueeGesture(args: UseMarqueeGestureArgs): UseMarqueeGestur
   );
 
   const onCanvasPointerDown = (e: ReactPointerEvent) => {
+    // Only the main button arms a marquee: a secondary/middle-button press on
+    // blank canvas must neither rubber-band nor clear the selection.
+    if (e.button !== 0) return;
     // A marquee only exists as a selection action; with no selection channel
     // there is nothing to publish, so don't arm at all.
     if (!onSelectionChange) return;
@@ -146,8 +159,10 @@ export function useMarqueeGesture(args: UseMarqueeGestureArgs): UseMarqueeGestur
 
       // Sub-threshold: a blank click. Clear the selection, but skip the emit
       // when it is already empty (idempotent — no redundant selection change).
+      // Read through `selectionRef` (not the pointer-down closure) so a
+      // selection the host updated mid-gesture is judged by its live value.
       if (!rectPastThreshold(rect)) {
-        if (selection.elementIds.length > 0) onSelectionChange(EMPTY_SELECTION);
+        if (selectionRef.current.elementIds.length > 0) onSelectionChange(EMPTY_SELECTION);
         return;
       }
 
@@ -161,7 +176,7 @@ export function useMarqueeGesture(args: UseMarqueeGestureArgs): UseMarqueeGestur
       // emit only when it was already empty). The top-most matched element (last
       // in z-order) becomes the primary/handle for a subsequent multi-drag.
       if (ids.length === 0) {
-        if (selection.elementIds.length > 0) onSelectionChange(EMPTY_SELECTION);
+        if (selectionRef.current.elementIds.length > 0) onSelectionChange(EMPTY_SELECTION);
         return;
       }
       onSelectionChange({ elementIds: ids, primaryId: ids[ids.length - 1] });

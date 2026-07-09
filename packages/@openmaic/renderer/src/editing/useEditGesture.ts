@@ -5,6 +5,7 @@ import type { PPTElement, Slide } from '@openmaic/dsl';
 
 import { computeDragMove, computeMultiDragMove } from './core/drag';
 import { moveIntent, moveManyIntent } from './core/intent';
+import { isSelectionModifier, resolveClickSelection } from './core/selection';
 import type { Guide } from './core/snapping';
 import type { EditIntent, Selection, SnappingOptions } from './types';
 
@@ -40,35 +41,22 @@ interface Working {
   guides: Guide[];
 }
 
-/** True when a click/drag modifier (Ctrl/Shift/Meta) is held. Meta is included
- * for mac parity with the resize aspect modifier — a deliberate superset of the
- * app's Ctrl/Shift. */
-function hasModifier(e: ReactPointerEvent): boolean {
-  return e.ctrlKey || e.shiftKey || e.metaKey;
-}
-
-/** Dedup ids preserving first-seen order (no lodash dep in this package). */
-function uniqIds(ids: readonly string[]): string[] {
-  return Array.from(new Set(ids));
-}
-
 /**
  * Owns one drag/click gesture. Pointer-down resolves the selection per the
- * modifier table below, then — for the cases that start a move — arms a drag and
- * records the pointer start + the base slide; window pointer-move (converted
- * screen→canvas via `scale`) republishes a working copy for live feedback;
- * pointer-up commits the move as ONE intent when the pointer moved past
- * `DRAG_THRESHOLD_PX`, otherwise reports a selection click. Emits one intent per
- * completed gesture — never per frame — and clears the working copy so the
- * host's controlled `slide` takes over again.
+ * modifier table in {@link resolveClickSelection} (group-cohesive: a click on a
+ * grouped element applies to its whole group), then — for the cases that start
+ * a move — arms a drag and records the pointer start + the base slide; window
+ * pointer-move (converted screen→canvas via `scale`) republishes a working copy
+ * for live feedback; pointer-up commits the move as ONE intent when the pointer
+ * moved past `DRAG_THRESHOLD_PX`, otherwise reports a selection click. Emits one
+ * intent per completed gesture — never per frame — and clears the working copy
+ * so the host's controlled `slide` takes over again.
  *
- * Selection on pointer-down (element `el`, current `selection`):
- * - not selected, no modifier → select only `[el]`, arm a SINGLE drag on it.
- * - not selected, modifier    → ADD `el` to the selection (uniq); no drag.
- * - selected, modifier        → REMOVE `el`; no-op if that would empty the
- *   selection; no drag.
- * - selected, no modifier      → KEEP the whole selection, make `el` the primary
- *   (handle), and arm a MULTI drag that translates every selected element.
+ * Locked elements in a multi-selection are never translated: they may stay in
+ * the controlled selection for feedback, but the drag set excludes them and they
+ * remain snap candidates. Holding Shift while the drag is in flight locks the
+ * translation to the dominant axis (Shift at pointer-down is a selection
+ * modifier and never arms a drag).
  *
  * A single-element move commits `element.update` (backward compat with hosts);
  * a multi-element move commits ONE `element.updateMany` = one host undo entry.
@@ -113,49 +101,17 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
     // Ignore additional pointer-downs while a gesture is already in flight.
     if (activePointerRef.current !== null) return;
 
-    // Resolve selection on pointer-down per the modifier table (see the hook
-    // JSDoc). `armDrag` decides whether this gesture becomes a move; `dragIds`
-    // is the set the move translates (the whole selection for a multi-drag).
-    const modifier = hasModifier(e);
-    const ids = selection.elementIds;
-    const inSelection = ids.includes(el.id);
-
-    let armDrag: boolean;
-    let dragIds: readonly string[];
-
-    if (!inSelection && !modifier) {
-      // Select only this element and arm a single-element drag. A drag then ends
-      // with the dragged element selected (the controlled `selection` never goes
-      // stale against what's being moved).
-      onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
-      armDrag = true;
-      dragIds = [el.id];
-    } else if (!inSelection && modifier) {
-      // Additive: extend the selection by this element (uniq); a modifier click
-      // is a pure selection action, so no drag is armed.
-      onSelectionChange?.({ elementIds: uniqIds([...ids, el.id]), primaryId: el.id });
-      armDrag = false;
-      dragIds = [el.id];
-    } else if (inSelection && modifier) {
-      // Subtractive: drop this element — unless it is the last one, since a
-      // modifier click must never clear the selection to empty. No drag.
-      const next = ids.filter((id) => id !== el.id);
-      if (next.length > 0) {
-        onSelectionChange?.({ elementIds: next, primaryId: next[next.length - 1] });
-      }
-      armDrag = false;
-      dragIds = [el.id];
-    } else {
-      // Already selected, no modifier: keep the whole selection, make this
-      // element the primary/handle, and arm a drag that moves every selected
-      // element together. Skip the emit when it is already the primary so a
-      // plain click doesn't double-emit (down here + a redundant up).
-      if (selection.primaryId !== el.id) {
-        onSelectionChange?.({ elementIds: ids, primaryId: el.id });
-      }
-      armDrag = true;
-      dragIds = ids;
-    }
+    // Resolve selection on pointer-down per the shared modifier table
+    // ({@link resolveClickSelection} — group-cohesive). `armDrag` decides
+    // whether this gesture becomes a move; `dragIds` is the set the move
+    // translates (the whole selection for a multi-drag).
+    const { next, armDrag, dragIds } = resolveClickSelection({
+      element: el,
+      elements: slide.elements,
+      selection,
+      modifier: isSelectionModifier(e),
+    });
+    if (next) onSelectionChange?.(next);
 
     // A pure selection action (modifier add/remove): no move gesture is armed,
     // so DON'T claim the active pointer — leave the hook ready for the next one.
@@ -166,11 +122,15 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
     const startY = e.clientY;
     // Base snapshots captured at pointer-down. `selectedElements` is the rigid
     // set the drag translates; `others` are the snap candidates (everything
-    // NOT being dragged). A 1-element selection routes through `computeDragMove`
-    // for exact backward compatibility; N > 1 routes through the multi core.
+    // NOT being dragged). Locked elements never move: even when selected they
+    // are excluded from the translated set (selection keeps them for feedback)
+    // and stay in `others` as snap candidates. A 1-mover drag routes through
+    // `computeDragMove` for exact backward compatibility; N > 1 routes through
+    // the multi core.
     const selectedSet = new Set(dragIds);
-    const selectedElements = slide.elements.filter((o) => selectedSet.has(o.id));
-    const others = slide.elements.filter((o) => !selectedSet.has(o.id));
+    const isMover = (o: PPTElement) => selectedSet.has(o.id) && !o.lock;
+    const selectedElements = slide.elements.filter(isMover);
+    const others = slide.elements.filter((o) => !isMover(o));
     const isMulti = selectedElements.length > 1;
     const viewport = {
       width: slide.viewportSize,
@@ -186,9 +146,14 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
 
     // Normalize both cores to a list of per-element `{id, props}` updates so the
     // working-copy and commit paths are identical regardless of selection size.
+    // `shiftKey` is read off the LIVE pointermove/pointerup event: holding Shift
+    // while the drag is in flight locks the translation to the dominant axis
+    // (the axis with the larger absolute delta) — Shift at pointer-down is a
+    // selection modifier and never arms a drag in the first place.
     const compute = (
       clientX: number,
       clientY: number,
+      shiftKey: boolean,
     ): {
       updates: Array<{ id: string; props: { left: number; top: number } }>;
       guides: Guide[];
@@ -197,6 +162,11 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
         x: (clientX - startX) / effectiveScale,
         y: (clientY - startY) / effectiveScale,
       };
+      const axisLock: 'x' | 'y' | undefined = shiftKey
+        ? Math.abs(deltaCanvas.x) >= Math.abs(deltaCanvas.y)
+          ? 'x'
+          : 'y'
+        : undefined;
       if (isMulti) {
         return computeMultiDragMove({
           handleElement: el,
@@ -204,6 +174,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
           others,
           viewport,
           deltaCanvas,
+          axisLock,
           snapping,
         });
       }
@@ -212,6 +183,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
         others,
         viewport,
         deltaCanvas,
+        axisLock,
         snapping,
       });
       return { updates: [{ id: el.id, props }], guides };
@@ -224,7 +196,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
       // snap back on pointer-up. Skip live movement entirely when there's no
       // mutation channel — the gesture only ends up selecting (see handleUp).
       if (!onElementsChange) return;
-      const { updates, guides } = compute(ev.clientX, ev.clientY);
+      const { updates, guides } = compute(ev.clientX, ev.clientY, ev.shiftKey);
       const patch = new Map(updates.map((u) => [u.id, u.props]));
       const live: Slide = {
         ...slide,
@@ -259,7 +231,7 @@ export function useEditGesture(args: UseEditGestureArgs): UseEditGestureResult {
       // click, or a drag on a select-only host) there is nothing extra to emit:
       // the element was already selected on pointer-down.
       if (movedPast && onElementsChange) {
-        const { updates } = compute(ev.clientX, ev.clientY);
+        const { updates } = compute(ev.clientX, ev.clientY, ev.shiftKey);
         const intent = isMulti
           ? moveManyIntent(updates)
           : moveIntent(updates[0].id, updates[0].props);

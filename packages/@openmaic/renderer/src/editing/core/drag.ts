@@ -147,6 +147,10 @@ export interface MultiDragResult {
 export function computeMultiDragMove(input: MultiDragInput): MultiDragResult {
   const { selected, others, viewport, deltaCanvas, axisLock, snapping } = input;
 
+  // Exported-API hardening: an empty set has no union bbox (a min/max over
+  // nothing degenerates to ±Infinity), so there is nothing to move or snap.
+  if (selected.length === 0) return { updates: [], guides: [] };
+
   const dx0 = axisLock === 'y' ? 0 : deltaCanvas.x;
   const dy0 = axisLock === 'x' ? 0 : deltaCanvas.y;
 

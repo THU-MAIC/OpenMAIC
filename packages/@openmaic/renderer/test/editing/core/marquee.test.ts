@@ -75,6 +75,54 @@ describe('computeMarqueeSelection — containment mode', () => {
   });
 });
 
+describe('computeMarqueeSelection — bent lines (control-point-aware bounds)', () => {
+  // A quadratic 'curve' line whose bend bows BELOW the start→end chord: the
+  // chord spans y=0 only, while the control point at y=80 pulls the rendered
+  // path down to y=40 at its apex. Chord-only bounds (getElementRange) would
+  // never see the bend.
+  const curveLine = {
+    id: 'l',
+    type: 'line',
+    left: 0,
+    top: 0,
+    start: [0, 0],
+    end: [100, 0],
+    curve: [50, 80],
+    width: 2,
+    style: 'solid',
+    color: '#333',
+    points: ['', ''],
+  } as unknown as PPTElement;
+
+  it('intersect: a marquee over the bend (entirely off the chord) selects the line', () => {
+    const overBend: MarqueeRect = { minX: 30, minY: 20, maxX: 70, maxY: 60 };
+    expect(computeMarqueeSelection(overBend, [curveLine], { mode: 'intersect' })).toEqual(['l']);
+  });
+
+  it('contain: a chord-only rect does not contain the bent line; room for the control-point box does', () => {
+    // Covers the chord but not the bend: the conservative box (down to the
+    // control point at y=80) demands more room than the rendered stroke, so
+    // contain rejects — never a false positive that splits from the visual.
+    const chordOnly: MarqueeRect = { minX: -10, minY: -10, maxX: 110, maxY: 10 };
+    expect(computeMarqueeSelection(chordOnly, [curveLine], { mode: 'contain' })).toEqual([]);
+    // A rect spanning the full conservative box contains it.
+    const roomy: MarqueeRect = { minX: -10, minY: -10, maxX: 110, maxY: 90 };
+    expect(computeMarqueeSelection(roomy, [curveLine], { mode: 'contain' })).toEqual(['l']);
+  });
+
+  it('intersect: a broken (polyline) line is hit at its elbow, off the chord', () => {
+    const brokenLine = {
+      ...(curveLine as unknown as Record<string, unknown>),
+      id: 'bk',
+      curve: undefined,
+      broken: [50, 60],
+    } as unknown as PPTElement;
+    // The elbow vertex sits at (50,60); a box around it (chord is y=0) hits.
+    const overElbow: MarqueeRect = { minX: 40, minY: 40, maxX: 60, maxY: 70 };
+    expect(computeMarqueeSelection(overElbow, [brokenLine], { mode: 'intersect' })).toEqual(['bk']);
+  });
+});
+
 describe('computeMarqueeSelection — exclusions', () => {
   const rect: MarqueeRect = { minX: 0, minY: 0, maxX: 500, maxY: 500 };
 
