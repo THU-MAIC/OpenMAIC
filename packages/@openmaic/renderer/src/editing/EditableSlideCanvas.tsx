@@ -156,6 +156,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       : { ...workingSlide, elements: displayElements };
 
   const elements = displayElements;
+  // Touch suppression belongs to mutation gestures: select-only hosts keep
+  // native touch panning, while tap-select still receives pointer events.
+  const editingTouchAction = onElementsChange ? 'none' : undefined;
 
   return (
     // Outer wrapper carries the documented `className`/`style` pass-through
@@ -204,7 +207,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                 position: 'absolute',
                 inset: 0,
                 pointerEvents: 'auto',
-                touchAction: onElementsChange ? 'none' : undefined,
+                touchAction: editingTouchAction,
               }}
             />
           )}
@@ -359,7 +362,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                         // would empty the selection) — no redundant re-emit.
                         if (next) onSelectionChange?.(next);
                       }}
-                      style={{ cursor: 'default', touchAction: 'none' }}
+                      style={{ cursor: 'default', touchAction: editingTouchAction }}
                     />
                     {/* Highlight path — selection chrome only, rendered when the
                         line is selected. Purely visual (`pointer-events: none`),
@@ -421,7 +424,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                   transformOrigin: 'center',
                   pointerEvents: 'auto',
                   cursor: 'default',
-                  touchAction: 'none',
+                  touchAction: editingTouchAction,
                 }}
               />
             ) : (
@@ -439,7 +442,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                   transformOrigin: 'center',
                   pointerEvents: 'auto',
                   cursor: 'move',
-                  touchAction: 'none',
+                  touchAction: editingTouchAction,
                 }}
               />
             );

@@ -5,6 +5,7 @@ import {
   getEditingElementListRange,
   getElementRange,
   getElementListRange,
+  getVisualElementRange,
   uniqAlignLines,
   pxToCanvas,
 } from '../../../src/editing/core/geometry';
@@ -60,6 +61,61 @@ describe('geometry', () => {
     } as unknown as PPTElement;
     expect(getElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 50 });
     expect(getEditingElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 130 });
+  });
+  it('visual range for a quadratic curve uses the Bezier extremum, not the control hull', () => {
+    const line = {
+      id: 'curve',
+      type: 'line',
+      left: 100,
+      top: 50,
+      start: [0, 0],
+      end: [120, 20],
+      curve: [60, 80],
+    } as unknown as PPTElement;
+    const t = (0 - 80) / (0 - 2 * 80 + 20);
+    const expectedMaxY = 50 + 2 * (1 - t) * t * 80 + t * t * 20;
+
+    expect(getEditingElementRange(line).maxY).toBe(130);
+    const visual = getVisualElementRange(line);
+    expect(visual.minY).toBe(50);
+    expect(visual.maxY).toBeCloseTo(expectedMaxY, 5);
+    expect(visual.maxY).not.toBe(130);
+  });
+  it('visual range for a cubic curve includes both derivative roots per axis', () => {
+    const line = {
+      id: 'cubic',
+      type: 'line',
+      left: 10,
+      top: 20,
+      start: [0, 0],
+      end: [100, 0],
+      cubic: [
+        [0, 120],
+        [100, -60],
+      ],
+    } as unknown as PPTElement;
+
+    const visual = getVisualElementRange(line);
+    expect(visual.minY).toBeLessThan(20);
+    expect(visual.maxY).toBeGreaterThan(20);
+    expect(visual.maxY).toBeLessThan(140);
+    expect(visual.minY).toBeGreaterThan(-40);
+  });
+  it('visual range for a polyline includes its rendered elbow vertex', () => {
+    const line = {
+      id: 'broken',
+      type: 'line',
+      left: 100,
+      top: 50,
+      start: [0, 0],
+      end: [120, 20],
+      broken: [80, 140],
+    } as unknown as PPTElement;
+    expect(getVisualElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 190 });
+  });
+  it('visual range for non-line elements delegates to the shared element range', () => {
+    const element = box({ rotate: 15 });
+    expect(getVisualElementRange(element)).toEqual(getElementRange(element));
   });
   it('list range is the union bbox', () => {
     expect(
