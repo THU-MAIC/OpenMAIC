@@ -4,6 +4,7 @@ import {
   IMPLICIT_WB_OPEN,
   EFFECT_AUTO_CLEAR_MS,
   DISCUSSION_TRIGGER_DELAY_MS,
+  DISCUSSION_AUTO_SKIP_MS,
   WB_OPEN_MS,
   WB_DRAW_MS,
   WB_EDIT_MS,
@@ -227,10 +228,12 @@ describe('resolveActionTimeline — per-action durations', () => {
     expect(resolveActionTimeline(table, { whiteboardOpen: true })[0].durationMs).toBe(WB_DRAW_MS);
   });
 
-  it('discussion dwells for the trigger delay (interactive wait is out of scope)', () => {
+  it('discussion dwells for trigger delay + card auto-skip (unattended playback)', () => {
     const scenes = [sc('S0', [act({ id: 'd', type: 'discussion', topic: 't' })])];
+    // Not skipped: the 3s trigger delay, then the ProactiveCard's 5s auto-skip
+    // countdown before playback continues.
     expect(resolveActionTimeline(scenes)[0]).toMatchObject({
-      durationMs: DISCUSSION_TRIGGER_DELAY_MS,
+      durationMs: DISCUSSION_TRIGGER_DELAY_MS + DISCUSSION_AUTO_SKIP_MS,
       blocking: true,
     });
   });
@@ -241,9 +244,9 @@ describe('resolveActionTimeline — per-action durations', () => {
     expect(resolveActionTimeline(scenes, { isDiscussionSkipped: () => true })[0].durationMs).toBe(
       0,
     );
-    // Not skipped → the trigger delay, same as the default.
+    // Not skipped → trigger delay + card auto-skip, same as the default.
     expect(resolveActionTimeline(scenes, { isDiscussionSkipped: () => false })[0].durationMs).toBe(
-      DISCUSSION_TRIGGER_DELAY_MS,
+      DISCUSSION_TRIGGER_DELAY_MS + DISCUSSION_AUTO_SKIP_MS,
     );
   });
 
@@ -261,16 +264,24 @@ describe('resolveActionTimeline — per-action durations', () => {
     ).toBe(0);
   });
 
-  it('play_video uses the supplied duration, capped, and 0 when unknown', () => {
+  it('play_video uses the supplied duration (capped); unresolved is explicit, not silent 0', () => {
     const scenes = [sc('S0', [act({ id: 'v', type: 'play_video', elementId: 'v1' })])];
-    expect(resolveActionTimeline(scenes)[0].durationMs).toBe(0);
+    // Supplied duration is used, capped at MAX_VIDEO_WAIT_MS (5min).
     expect(resolveActionTimeline(scenes, { getVideoDurationMs: () => 12_345 })[0].durationMs).toBe(
       12_345,
     );
-    // capped at MAX_VIDEO_WAIT_MS (5min)
     expect(
       resolveActionTimeline(scenes, { getVideoDurationMs: () => 60 * 60 * 1000 })[0].durationMs,
     ).toBe(5 * 60 * 1000);
+    // Unresolved: default policy THROWS rather than silently shifting later actions early.
+    expect(() => resolveActionTimeline(scenes)).toThrow(/play_video/);
+    // Opt-in policies: 'cap' → max wait, 'zero' → explicit no-dwell.
+    expect(resolveActionTimeline(scenes, { onUnresolvedVideoDuration: 'cap' })[0].durationMs).toBe(
+      5 * 60 * 1000,
+    );
+    expect(resolveActionTimeline(scenes, { onUnresolvedVideoDuration: 'zero' })[0].durationMs).toBe(
+      0,
+    );
   });
 });
 

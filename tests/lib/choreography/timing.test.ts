@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   EFFECT_AUTO_CLEAR_MS,
   DISCUSSION_TRIGGER_DELAY_MS,
+  DISCUSSION_AUTO_SKIP_MS,
   MAX_VIDEO_WAIT_MS,
   WB_OPEN_MS,
   WB_DRAW_MS,
@@ -18,6 +19,7 @@ describe('timing constants pin the values moved from the app engines', () => {
   it('effect / scene timing', () => {
     expect(EFFECT_AUTO_CLEAR_MS).toBe(5000);
     expect(DISCUSSION_TRIGGER_DELAY_MS).toBe(3000);
+    expect(DISCUSSION_AUTO_SKIP_MS).toBe(5000);
     expect(MAX_VIDEO_WAIT_MS).toBe(5 * 60 * 1000);
   });
 

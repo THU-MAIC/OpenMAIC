@@ -20,6 +20,16 @@ export const EFFECT_AUTO_CLEAR_MS = 5000;
 /** Delay (ms) before a discussion trigger shows its ProactiveCard (lets prior speech finish). */
 export const DISCUSSION_TRIGGER_DELAY_MS = 3000;
 
+/**
+ * Duration (ms) the ProactiveCard counts down in playback mode before it
+ * auto-skips and playback continues. In unattended playback / export a
+ * non-skipped discussion therefore blocks for
+ * `DISCUSSION_TRIGGER_DELAY_MS + DISCUSSION_AUTO_SKIP_MS`. The `ProactiveCard`
+ * component reads this same constant, so the card countdown and the timeline
+ * can't drift.
+ */
+export const DISCUSSION_AUTO_SKIP_MS = 5000;
+
 /** Safety cap (ms) on how long playback waits for a video to finish. */
 export const MAX_VIDEO_WAIT_MS = 5 * 60 * 1000;
 

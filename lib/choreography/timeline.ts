@@ -35,6 +35,7 @@ import { EMPTY_SCENE_DWELL } from './cursor';
 import {
   EFFECT_AUTO_CLEAR_MS,
   DISCUSSION_TRIGGER_DELAY_MS,
+  DISCUSSION_AUTO_SKIP_MS,
   MAX_VIDEO_WAIT_MS,
   WB_OPEN_MS,
   WB_DRAW_MS,
@@ -81,9 +82,18 @@ export interface ResolveTimelineOptions {
   getAudioDurationMs?: (action: SpeechAction) => number | null | undefined;
   /**
    * Real video duration (ms) for a play_video action. Return `null`/`undefined`
-   * when unknown (treated as 0, i.e. no dwell). Capped at {@link MAX_VIDEO_WAIT_MS}.
+   * when unknown — the {@link ResolveTimelineOptions.onUnresolvedVideoDuration}
+   * policy then decides. A resolved value is capped at {@link MAX_VIDEO_WAIT_MS}.
    */
   getVideoDurationMs?: (action: PlayVideoAction) => number | null | undefined;
+  /**
+   * What to do when a `play_video` duration is unresolved (no `getVideoDurationMs`,
+   * or it returned nullish). `play_video` blocks live playback until the video
+   * ends, so a silent 0 would shift every later action early — hence the default
+   * is `'throw'` (fail loudly). `'cap'` assumes the {@link MAX_VIDEO_WAIT_MS}
+   * safety cap; `'zero'` opts back into no-dwell explicitly.
+   */
+  onUnresolvedVideoDuration?: 'throw' | 'cap' | 'zero';
   /**
    * Live whiteboard element count when a wb_clear runs (the clear animation
    * scales with it). Defaults to 0 when not supplied, which yields a 0ms dwell
@@ -139,6 +149,35 @@ function codeLineCount(code: string): number {
 }
 
 /**
+ * Resolve a `play_video` action's blocking duration. Live playback treats
+ * `play_video` as blocking — it waits until the video ends or {@link MAX_VIDEO_WAIT_MS}
+ * fires — so an unknown duration must NOT silently become a zero-length segment
+ * (that would shift every later action early). When `getVideoDurationMs` returns
+ * a value it's capped at the wait limit; when it's missing/unresolved the
+ * {@link ResolveTimelineOptions.onUnresolvedVideoDuration} policy decides:
+ * `'throw'` (default — fail loudly), `'cap'` (assume the max wait), or `'zero'`
+ * (opt in to the old no-dwell behavior explicitly).
+ */
+function resolveVideoDurationMs(action: PlayVideoAction, opts: ResolveTimelineOptions): number {
+  const resolved = opts.getVideoDurationMs?.(action);
+  if (resolved != null) return Math.min(resolved, MAX_VIDEO_WAIT_MS);
+
+  switch (opts.onUnresolvedVideoDuration ?? 'throw') {
+    case 'zero':
+      return 0;
+    case 'cap':
+      return MAX_VIDEO_WAIT_MS;
+    case 'throw':
+    default:
+      throw new Error(
+        `resolveActionTimeline: play_video "${action.elementId}" has no resolved duration. ` +
+          `play_video is blocking, so a missing duration would silently shift later actions ` +
+          `early. Supply getVideoDurationMs, or set onUnresolvedVideoDuration to 'cap' or 'zero'.`,
+      );
+  }
+}
+
+/**
  * The visual duration (ms) of a single action — how long it is present on
  * screen. For blocking actions this is also how long the cursor waits.
  */
@@ -157,20 +196,21 @@ function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number 
     case 'spotlight':
     case 'laser':
       return EFFECT_AUTO_CLEAR_MS;
-    case 'discussion':
-      // Deterministic dwell before the ProactiveCard shows. A discussion the
-      // engine skips outright — already consumed, or its agent isn't selected —
-      // contributes no dwell (`processNext` recurses with no timer). That skip
-      // depends on runtime state (consumed set / selected agents), so the caller
-      // signals it via `isDiscussionSkipped`; the subsequent interactive wait
-      // (user answers/skips the shown card) is out of scope either way.
-      return opts.isDiscussionSkipped?.(action as DiscussionAction)
-        ? 0
-        : DISCUSSION_TRIGGER_DELAY_MS;
-    case 'play_video': {
-      const video = opts.getVideoDurationMs?.(action) ?? 0;
-      return Math.min(video, MAX_VIDEO_WAIT_MS);
+    case 'discussion': {
+      // A discussion the engine skips outright — already consumed, or its agent
+      // isn't selected — contributes no dwell (`processNext` recurses with no
+      // timer). That skip depends on runtime state (consumed set / selected
+      // agents), so the caller signals it via `isDiscussionSkipped`.
+      if (opts.isDiscussionSkipped?.(action as DiscussionAction)) return 0;
+      // Otherwise: the trigger delay before the ProactiveCard shows, then — in
+      // unattended playback/export — the card's own auto-skip countdown before
+      // playback continues. (An attended viewer joining/skipping the card early
+      // is interactive and out of scope; this models the deterministic
+      // no-interaction dwell.)
+      return DISCUSSION_TRIGGER_DELAY_MS + DISCUSSION_AUTO_SKIP_MS;
     }
+    case 'play_video':
+      return resolveVideoDurationMs(action as PlayVideoAction, opts);
     case 'wb_open':
       return WB_OPEN_MS;
     case 'wb_draw_text': {

@@ -137,6 +137,42 @@ const eslintConfig = defineConfig([
           message:
             'lib/choreography must not reference a host-app path (@/…) in a template literal. Depend only on @openmaic/dsl and relative siblings.',
         },
+        // Import allowlist (static imports/re-exports): the ONLY permitted
+        // sources are `@openmaic/dsl`(/subpaths), `zod`, and in-folder relatives
+        // (`./…`). Anything else — a parent-escape `../…` reaching back into the
+        // app, or any other bare package — fails. Enforced on Import/Export
+        // source string nodes via a negative-lookahead so the guard is a true
+        // allowlist, not a blocklist of known-bad names.
+        {
+          selector:
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/).+/]',
+          message:
+            'lib/choreography may import only from @openmaic/dsl, zod, or in-folder relatives (./…). No parent-escape (../…) into the app and no other packages — keep it pure so the exporter runs in plain Node.',
+        },
+        {
+          selector:
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/).+/]',
+          message:
+            'lib/choreography may re-export only from @openmaic/dsl, zod, or in-folder relatives (./…).',
+        },
+        {
+          selector:
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/).+/]',
+          message:
+            'lib/choreography may re-export only from @openmaic/dsl, zod, or in-folder relatives (./…).',
+        },
+        // No dynamic import() or require() — they bypass the static allowlist and
+        // can pull in a render backend at runtime.
+        {
+          selector: 'ImportExpression',
+          message:
+            'lib/choreography must not use dynamic import() — it bypasses the static import allowlist. Use a top-level import from @openmaic/dsl, zod, or a relative sibling.',
+        },
+        {
+          selector: "CallExpression[callee.name='require']",
+          message:
+            'lib/choreography must not use require() — it bypasses the static import allowlist.',
+        },
       ],
       'no-restricted-imports': [
         'error',
