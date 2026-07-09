@@ -153,6 +153,23 @@ describe('resolveActionTimeline — fire-and-forget effects do not advance the c
     expect(tl[2]).toMatchObject({ startMs: 6000, durationMs: EFFECT_AUTO_CLEAR_MS }); // laser: own 5000
   });
 
+  it('breaks the chain at an EXACT 5s boundary (earlier clear timer fires first)', () => {
+    // spotlight@0; speech of exactly 5000ms; laser@5000. The spotlight's clear
+    // timer was queued first (same 5000ms delay), so it fires before the laser
+    // resets it — the spotlight lives exactly 5000, not 10000.
+    const scenes = [
+      sc('S0', [
+        act({ id: 'sp', type: 'spotlight', elementId: 'e1' }),
+        speech('a', 'anything'), // 5000 via audio resolver
+        act({ id: 'la', type: 'laser', elementId: 'e2' }),
+        speech('b', 'anything'), // 5000 → completion 10000
+      ]),
+    ];
+    const tl = resolveActionTimeline(scenes, { getAudioDurationMs: () => 5000 });
+    expect(tl[0]).toMatchObject({ startMs: 0, durationMs: EFFECT_AUTO_CLEAR_MS }); // spotlight: exactly 5000
+    expect(tl[2]).toMatchObject({ startMs: 5000, durationMs: EFFECT_AUTO_CLEAR_MS }); // laser: own 5000
+  });
+
   it('a later scene never extends an earlier scene effect (boundary clears first)', () => {
     const scenes = [
       sc('S0', [act({ id: 'sp', type: 'spotlight', elementId: 'e1' }), speech('a', 'hi there')]), // 0..2000

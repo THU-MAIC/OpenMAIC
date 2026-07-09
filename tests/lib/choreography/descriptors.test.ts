@@ -90,6 +90,9 @@ describe('spotlight.v1 pins the source animation values', () => {
     // The dim rect is clipped by subtracting the cutout, so a non-React consumer
     // reconstructs "dim everywhere except the cutout" rather than a black box.
     expect(dim.maskedBy).toEqual({ layerId: 'cutout', mode: 'subtract' });
+    // It spans the whole 0..100 viewport — explicit so a literal consumer dims
+    // the full frame, not a zero-size rect.
+    expect(dim.staticProps).toMatchObject({ x: 0, y: 0, width: 100, height: 100 });
   });
 
   it('models the wrapper enter/exit opacity fade (Motion default 300ms)', () => {

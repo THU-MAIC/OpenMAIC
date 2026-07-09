@@ -337,7 +337,11 @@ function clampFireAndForgetLifetimes(segments: TimelineSegment[], completionMs: 
       const other = segments[j];
       if (other.sceneIndex !== seg.sceneIndex) break; // cleared at the boundary anyway
       if (other.blocking) continue; // blocking actions don't touch the effect timer
-      if (other.startMs > deadlineMs) break; // timer already fired; chain broken
+      // Chain breaks at exact equality too: the earlier effect's clear timer was
+      // registered first (same 5000ms delay as the reading timer that triggers
+      // the later effect), so it fires before the later effect resets it. Its
+      // predecessor is therefore cleared at exactly `deadlineMs`, not extended.
+      if (other.startMs >= deadlineMs) break; // timer already fired; chain broken
       deadlineMs = Math.max(deadlineMs, other.startMs + EFFECT_AUTO_CLEAR_MS);
     }
 

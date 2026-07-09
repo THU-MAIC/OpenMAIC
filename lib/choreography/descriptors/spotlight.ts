@@ -135,9 +135,11 @@ export const spotlightV1: AnimationDescriptor = {
     {
       id: 'dim',
       // Full-screen dim behind the cutout, with the cutout subtracted (SVG
-      // <mask>: white full-cover minus the black cutout rect).
+      // <mask>: white full-cover minus the black cutout rect). Spans the whole
+      // 0..100 viewport (`<rect width="100" height="100">` at the origin) — made
+      // explicit so a literal consumer dims the entire frame rather than nothing.
       maskedBy: { layerId: 'cutout', mode: 'subtract' },
-      staticProps: { fill: 'rgba(0,0,0,{dimness})' },
+      staticProps: { x: 0, y: 0, width: 100, height: 100, fill: 'rgba(0,0,0,{dimness})' },
       // The whole effect is wrapped in a motion.div that fades opacity 0→1 on
       // enter and →0 on exit. The source sets no explicit transition, so Motion
       // applies its default tween (300ms) — pinned here explicitly so a
