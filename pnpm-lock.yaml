@@ -104,6 +104,9 @@ importers:
       '@openmaic/renderer':
         specifier: workspace:*
         version: link:packages/@openmaic/renderer
+      '@openmaic/storage':
+        specifier: workspace:*
+        version: link:packages/@openmaic/storage
       '@radix-ui/react-checkbox':
         specifier: ^1.3.3
         version: 1.3.3(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.3(react@19.2.3))(react@19.2.3)

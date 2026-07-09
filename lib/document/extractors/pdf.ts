@@ -2,7 +2,7 @@ import { parseWithMinerUCloud } from '@/lib/pdf/mineru-cloud';
 import { parsePDF, parseWithMinerUDocument } from '@/lib/pdf/pdf-providers';
 import { PDF_PROVIDERS } from '@/lib/pdf/constants';
 import type { PDFProviderConfig, PDFProviderId } from '@/lib/pdf/types';
-import { DOCUMENT_MIME_TYPES } from '../mime';
+import { DOCUMENT_MIME_TYPES, MINERU_CLOUD_MIMES, MINERU_SELFHOST_MIMES } from '../mime';
 import { parsedPdfToDocumentArtifact } from '../pdf-compat';
 import type {
   DocumentExtractorCapabilities,
@@ -11,11 +11,6 @@ import type {
 } from '../types';
 
 const PDF_MIME_TYPES = [DOCUMENT_MIME_TYPES.pdf];
-const MINERU_DOCUMENT_MIME_TYPES = [
-  DOCUMENT_MIME_TYPES.pdf,
-  DOCUMENT_MIME_TYPES.docx,
-  DOCUMENT_MIME_TYPES.pptx,
-];
 
 function capabilitiesFromPdfProvider(
   provider: PDFProviderConfig,
@@ -40,7 +35,11 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
     id,
     displayName: pdfProvider.name,
     supportedMimeTypes:
-      id === 'mineru' || id === 'mineru-cloud' ? MINERU_DOCUMENT_MIME_TYPES : PDF_MIME_TYPES,
+      id === 'mineru'
+        ? MINERU_SELFHOST_MIMES
+        : id === 'mineru-cloud'
+          ? MINERU_CLOUD_MIMES
+          : PDF_MIME_TYPES,
     capabilities: capabilitiesFromPdfProvider(pdfProvider, id),
     async extract(input: DocumentExtractorInput) {
       const config = {

@@ -97,6 +97,7 @@
     "@openmaic/dsl": "workspace:*",
     "@openmaic/importer": "workspace:*",
     "@openmaic/renderer": "workspace:*",
+    "@openmaic/storage": "workspace:*",
     "prosemirror-commands": "^1.7.1",
     "prosemirror-dropcursor": "^1.8.2",
     "prosemirror-gapcursor": "^1.4.0",

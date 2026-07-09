@@ -1,14 +1,21 @@
 'use client';
 
-import { useRef } from 'react';
+import { Fragment, useRef } from 'react';
+import type { PPTElement } from '@openmaic/dsl';
 
 import { SlideCanvas } from '../SlideCanvas';
 import { getLineElementPath } from '../utils/element';
 import { useViewportSize } from '../hooks/useViewportSize';
 import { SelectionOverlay } from './handles/SelectionOverlay';
 import { LineHandles } from './handles/LineHandles';
+import { ResizeHandles } from './handles/ResizeHandles';
+import { RotateHandle } from './handles/RotateHandle';
 import { useEditGesture } from './useEditGesture';
 import { useLineHandleGesture } from './useLineHandleGesture';
+import { useResizeGesture } from './useResizeGesture';
+import { useRotateGesture } from './useRotateGesture';
+import { getResizeHandles } from './core/resize';
+import { canRotate } from './core/rotate';
 import { EMPTY_SELECTION, type EditableSlideCanvasProps } from './types';
 
 /**
@@ -83,14 +90,52 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     onElementsChange,
   });
 
+  // Resize gesture (8-point handles on selected box elements). Like the line
+  // gesture, it owns its own working copy (the resized box props), layered on
+  // the box gesture's `workingSlide` below.
+  const { resizeDrag, onResizeHandlePointerDown } = useResizeGesture({
+    slide,
+    scale: canvasScale,
+    snapping,
+    onElementsChange,
+  });
+
+  // Rotate gesture (the handle floating above a box's top edge). It converts
+  // absolute pointer positions to canvas coordinates, so it needs the overlay
+  // origin (`overlayRef` + `viewportStyles`) rather than just a scale.
+  const { rotateDrag, onRotateHandlePointerDown } = useRotateGesture({
+    overlayRef,
+    viewportStyles,
+    scale: canvasScale,
+    onElementsChange,
+  });
+
   // The elements to render/hit-test: the box gesture's working copy, with the
-  // active line-handle drag's props merged in so the v1 canvas, the line's
-  // stroke blocker, and its handles all preview off the SAME working element
-  // and move together during a reshape.
-  const displayElements = lineDrag
-    ? workingSlide.elements.map((el) => (el.id === lineDrag.id ? { ...el, ...lineDrag.props } : el))
-    : workingSlide.elements;
-  const displaySlide = lineDrag ? { ...workingSlide, elements: displayElements } : workingSlide;
+  // active handle drag's props (line reshape / resize box / rotate angle)
+  // merged in so the v1 canvas, the hit layers, and the handles all preview
+  // off the SAME working element and move together during a gesture. At most
+  // one handle gesture is ever in flight (single-pointer hooks), so the merges
+  // never compete.
+  let displayElements = workingSlide.elements;
+  if (lineDrag) {
+    displayElements = displayElements.map((el) =>
+      el.id === lineDrag.id ? ({ ...el, ...lineDrag.props } as PPTElement) : el,
+    );
+  }
+  if (resizeDrag) {
+    displayElements = displayElements.map((el) =>
+      el.id === resizeDrag.id ? ({ ...el, ...resizeDrag.props } as PPTElement) : el,
+    );
+  }
+  if (rotateDrag) {
+    displayElements = displayElements.map((el) =>
+      el.id === rotateDrag.id ? ({ ...el, rotate: rotateDrag.rotate } as PPTElement) : el,
+    );
+  }
+  const displaySlide =
+    displayElements === workingSlide.elements
+      ? workingSlide
+      : { ...workingSlide, elements: displayElements };
 
   const elements = displayElements;
 
@@ -378,6 +423,52 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                   canvasScale={canvasScale}
                   onHandlePointerDown={(handle, e) => onHandlePointerDown(el, handle, e)}
                 />
+              );
+            })}
+
+          {/* Box operate handles: a selected, unlocked box element gets its
+              8-point resize handles and, where the kind supports it, a rotate
+              handle above the top edge. Per-kind gates live in the cores:
+              `getResizeHandles` (text → width axis only, by `vertical`; code →
+              none) and `canRotate` (chart/video/audio excluded). Lines are
+              excluded entirely — their chrome is `LineHandles` above. Handles
+              read the WORKING element (`elements`), so they track the live
+              preview during a resize/rotate. Like the line handles they use
+              absolute SCREEN coordinates (baking in `viewportStyles`) and are
+              gated on EDITABILITY (`onElementsChange`), not generic
+              `interactive`: without a mutation channel the gestures no-op, so
+              a select-only mount shows no draggable handles. Shown only for a
+              SINGLE-element selection: these gestures transform one element,
+              and per-element handles on a multi-selection would misread as
+              group scaling (which is a later slice). */}
+          {Boolean(onElementsChange) &&
+            activeSelection.elementIds.length === 1 &&
+            elements.map((el) => {
+              if (el.type === 'line') return null;
+              if (!activeSelection.elementIds.includes(el.id) || el.lock) return null;
+              const handles = getResizeHandles(el);
+              const rotatable = canRotate(el);
+              if (handles.length === 0 && !rotatable) return null;
+              return (
+                <Fragment key={`operate-${el.id}`}>
+                  {handles.length > 0 && (
+                    <ResizeHandles
+                      element={el}
+                      handles={handles}
+                      viewportStyles={viewportStyles}
+                      canvasScale={canvasScale}
+                      onHandlePointerDown={(handle, e) => onResizeHandlePointerDown(el, handle, e)}
+                    />
+                  )}
+                  {rotatable && (
+                    <RotateHandle
+                      element={el}
+                      viewportStyles={viewportStyles}
+                      canvasScale={canvasScale}
+                      onPointerDown={(e) => onRotateHandlePointerDown(el, e)}
+                    />
+                  )}
+                </Fragment>
               );
             })}
 

@@ -28,6 +28,7 @@ a browser.
 | `StorageProvider` (from `@openmaic/dsl`) | the asset seam: `put(blob) → ref`, `resolve(ref) → url`, `remove(ref)` | `BrowserAssetProvider` over IndexedDB + object URLs |
 | `kvPersistStorage` | adapt a `KVStore` into a zustand `persist` storage | — |
 | `DocumentStore` | persist the DSL `document` aggregate (stage + scenes + embedded agents / quiz / actions + an outline snapshot) | `BrowserDocumentStore` over IndexedDB (normalized `stages` / `scenes` / `outlines`) |
+| `RuntimeStore` | persist what a learner produces while taking a course — sessions + append-only records (chat, quiz attempts, playback facts) | `BrowserRuntimeStore` over IndexedDB (`sessions` / `records`) |
 
 - **Scopes.** `account` values are user data a server-backed deployment syncs
   across devices; `device` values (theme, locale, layout) never leave the
@@ -50,11 +51,29 @@ a browser.
   kinds (`interactive` / `pbl`, content the DSL does not own) parameterizes the
   store over its scene union and injects a matching `validateScene`, so those
   scenes persist and the gate stays fail-loud for the app's shapes.
+- **Runtime layer.** `RuntimeStore` is partitioned by `(stageId, learnerKey)`:
+  a stage has many sessions — one or more per learner — so every listing is
+  partition-scoped (there is deliberately no global listing; single-session
+  operations are id-keyed, and `mergeLearner` is the one deliberate
+  cross-stage sweep). Sessions are **born stamped**: the store
+  writes `runtimeDslVersion` itself at `createSession`, and the runtime line
+  has no unversioned epoch, so an unstamped row fails loud instead of being
+  lifted like a legacy document. Records are **append-only** ordered facts
+  under an **active** session; the store assigns the per-session monotonic
+  `seq` on append — the sole replay ordering key, never timestamps. Record
+  payloads are gated per kind by injectable validators, defaulting to the DSL
+  skeleton guards for `chat` / `quizAttempt` (`playback` and app-defined kinds
+  carry app-owned payloads). `mergeLearner` re-keys an anonymous learner's
+  sessions to a signed-in key across all stages; `deleteLearnerRuntime`
+  cascades one learner's sessions + records on one stage, and
+  `deleteStageRuntime` clears a whole stage — the hook a document deletion
+  cascades through.
 
 ## Backend equivalence
 
 Each primitive has one implementation-agnostic contract suite
-(`test/kv-contract.ts`, `test/asset-contract.ts`, `test/document-contract.ts`).
+(`test/kv-contract.ts`, `test/asset-contract.ts`, `test/document-contract.ts`,
+`test/runtime-contract.ts`).
 Every backend is proven by running the same suite against it, so a new backend
 (the coming HTTP one) cannot silently diverge from the primitive's semantics.
 
@@ -65,8 +84,9 @@ Every backend is proven by running the same suite against it, so a new backend
 - [x] implementation-agnostic contract suites
 - [x] `DocumentStore` (aggregate ↔ normalized adapter, migrate-on-read via the
       DSL migration registry, validation gate) + browser backend
+- [x] `RuntimeStore` (sessions + append-only records, runtime version line,
+      per-kind payload gate) + browser backend
 - [ ] wire the app's zustand stores + ad-hoc `localStorage` through `KVStore`
-- [ ] `RuntimeStore`
 - [ ] HTTP backend + reference server + one HTTP contract
 
 ## License

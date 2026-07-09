@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useMemo } from 'react';
+import { useState, useRef, useMemo, useEffect } from 'react';
 import { Bot, Brain, Check, Paperclip, FileText, X, Globe2, Search } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -36,7 +36,7 @@ import {
 } from '@/lib/ai/thinking-config';
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
-import { COURSE_MATERIAL_ACCEPT, isSupportedCourseMaterial } from '@/lib/document/mime';
+import { getAcceptStringForProviders, isMimeSupportedByProviders } from '@/lib/document/mime';
 import {
   MAX_DOCUMENT_BUNDLE_FILES,
   MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
@@ -121,10 +121,46 @@ export function GenerationToolbar({
   const currentThinkingConfig =
     thinkingConfigs[getThinkingConfigKey(currentProviderId, currentModelId)];
 
-  // Course material handler
+  // Course material handler. `plain-text` is always active alongside the
+  // user-selected extractor so txt/md files remain uploadable without
+  // configuring an external service.
+  const activeDocumentProviderIds = useMemo(
+    () => [pdfProviderId, 'plain-text'] as const,
+    [pdfProviderId],
+  );
+  const acceptForCurrentProvider = useMemo(
+    () => getAcceptStringForProviders(activeDocumentProviderIds),
+    [activeDocumentProviderIds],
+  );
+
+  // If the user switches to a provider that doesn't support already attached
+  // materials, drop only the incompatible files so the eventual extraction
+  // request matches the current provider capability.
+  useEffect(() => {
+    const unsupportedMaterials = courseMaterials.filter(
+      (file) =>
+        !isMimeSupportedByProviders(
+          { mimeType: file.type, fileName: file.name },
+          activeDocumentProviderIds,
+        ),
+    );
+    if (unsupportedMaterials.length === 0) return;
+
+    for (const file of unsupportedMaterials) {
+      onCourseMaterialRemove(file.id);
+    }
+    onPdfError(t('upload.unsupportedCourseMaterial'));
+    // Intentionally omit callbacks/t from deps: adding them would re-run this
+    // provider capability cleanup on unrelated parent re-renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeDocumentProviderIds, courseMaterials]);
+
   const handleFilesSelect = (incomingFiles: File[]) => {
     const supportedFiles = incomingFiles.filter((file) =>
-      isSupportedCourseMaterial({ mimeType: file.type, fileName: file.name }),
+      isMimeSupportedByProviders(
+        { mimeType: file.type, fileName: file.name },
+        activeDocumentProviderIds,
+      ),
     );
     if (supportedFiles.length === 0) {
       onPdfError(t('upload.unsupportedCourseMaterial'));
@@ -273,7 +309,7 @@ export function GenerationToolbar({
                 type="file"
                 ref={fileInputRef}
                 className="hidden"
-                accept={COURSE_MATERIAL_ACCEPT}
+                accept={acceptForCurrentProvider}
                 multiple
                 onChange={(e) => {
                   const files = Array.from(e.target.files ?? []);
