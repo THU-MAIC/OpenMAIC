@@ -191,4 +191,40 @@ describe('resolveClickSelection — group cohesion', () => {
     });
     expect(r.next).toBeNull();
   });
+
+  it('plain-click on a partially selected group member normalizes to the whole group', () => {
+    const r = resolveClickSelection({
+      element: g1,
+      elements,
+      selection: { elementIds: ['g1'], primaryId: 'g1' },
+      modifier: false,
+    });
+    expect(r.next).toEqual({ elementIds: ['g1', 'g2'], primaryId: 'g1' });
+    expect(r.armDrag).toBe(true);
+    expect(r.dragIds).toEqual(['g1', 'g2']);
+  });
+
+  it('plain-click on a partial group plus an ungrouped member normalizes both selection and drag ids', () => {
+    const r = resolveClickSelection({
+      element: g1,
+      elements,
+      selection: { elementIds: ['g1', 'a'], primaryId: 'g1' },
+      modifier: false,
+    });
+    expect(r.next).toEqual({ elementIds: ['g1', 'g2', 'a'], primaryId: 'g1' });
+    expect(r.armDrag).toBe(true);
+    expect(r.dragIds).toEqual(['g1', 'g2', 'a']);
+  });
+
+  it('plain-click on an already cohesive primary group member remains a no-op emit', () => {
+    const r = resolveClickSelection({
+      element: g1,
+      elements,
+      selection: { elementIds: ['g1', 'g2'], primaryId: 'g1' },
+      modifier: false,
+    });
+    expect(r.next).toBeNull();
+    expect(r.armDrag).toBe(true);
+    expect(r.dragIds).toEqual(['g1', 'g2']);
+  });
 });

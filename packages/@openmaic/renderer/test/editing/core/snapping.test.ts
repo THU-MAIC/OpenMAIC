@@ -18,6 +18,26 @@ describe('snapping', () => {
     });
     expect(vertical.map((l) => l.value)).toEqual(expect.arrayContaining([100, 200, 300])); // left,center,right
   });
+  it('builds candidate lines from a bent line editing range, not just its chord', () => {
+    const curveLine = {
+      id: 'line',
+      type: 'line',
+      left: 100,
+      top: 50,
+      start: [0, 0],
+      end: [120, 0],
+      curve: [60, 80],
+      width: 2,
+      style: 'solid',
+      color: '#333',
+      points: ['', ''],
+    } as unknown as PPTElement;
+    const { horizontal } = buildAlignLines([curveLine], vp, {
+      toElements: true,
+      toCanvas: false,
+    });
+    expect(horizontal.map((l) => l.value)).toEqual(expect.arrayContaining([50, 90, 130]));
+  });
   it('snaps a target within range and reports a guide', () => {
     const lines = buildAlignLines([], vp, { toCanvas: true });
     const target = { minX: 3, maxX: 203, minY: 100, maxY: 180 }; // left edge 3px from x=0

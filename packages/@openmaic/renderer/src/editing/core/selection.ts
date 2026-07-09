@@ -24,6 +24,11 @@ export function uniqIds(ids: readonly string[]): string[] {
   return Array.from(new Set(ids));
 }
 
+/** Exact ordered id-list equality for no-op emit guards. */
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
 /**
  * The clicked element's cohesion unit: every member of its group (in element
  * order), or just the element itself when ungrouped. Group cohesion is
@@ -37,6 +42,22 @@ export function groupMemberIds(el: PPTElement, elements: readonly PPTElement[]):
   if (!el.groupId) return [el.id];
   const members = elements.filter((o) => o.groupId === el.groupId).map((o) => o.id);
   return members.length > 0 ? members : [el.id];
+}
+
+/**
+ * Group-close a host-provided selection: every known selected element expands
+ * to its full group unit, while unknown ids are preserved in-place. This keeps
+ * externally controlled selection state from leaking a split group into click
+ * resolution or into the drag set it returns.
+ */
+function closeSelectionGroupIds(ids: readonly string[], elements: readonly PPTElement[]): string[] {
+  const byId = new Map(elements.map((el) => [el.id, el]));
+  const closed: string[] = [];
+  for (const id of ids) {
+    const el = byId.get(id);
+    closed.push(...(el ? groupMemberIds(el, elements) : [id]));
+  }
+  return uniqIds(closed);
 }
 
 export interface ClickSelectionInput {
@@ -57,8 +78,8 @@ export interface ClickSelectionResult {
   armDrag: boolean;
   /**
    * The ids an armed drag translates: the clicked element's group unit for a
-   * fresh plain click, or the whole current selection for a plain click on an
-   * already-selected element. Meaningless when `armDrag` is false.
+   * fresh plain click, or the group-closed current selection for a plain click
+   * on an already-selected element. Meaningless when `armDrag` is false.
    */
   dragIds: readonly string[];
 }
@@ -76,10 +97,14 @@ export interface ClickSelectionResult {
  * - selected, no modifier     → KEEP the whole selection, make the clicked
  *   element the primary (no emit when it already is), and arm a drag that
  *   translates every selected element.
+ *
+ * Invariant: this resolver never returns a selection or armed drag set that
+ * splits a group, even when the incoming controlled selection already does.
  */
 export function resolveClickSelection(input: ClickSelectionInput): ClickSelectionResult {
   const { element: el, elements, selection, modifier } = input;
-  const ids = selection.elementIds;
+  const rawIds = selection.elementIds;
+  const ids = closeSelectionGroupIds(rawIds, elements);
   const inSelection = ids.includes(el.id);
   const unit = groupMemberIds(el, elements);
 
@@ -108,10 +133,12 @@ export function resolveClickSelection(input: ClickSelectionInput): ClickSelectio
   }
 
   // Already selected, no modifier: keep the whole selection, re-point the
-  // primary at the clicked element. Skip the emit when it is already the
-  // primary so a plain click doesn't double-emit.
+  // primary at the clicked element. Skip the emit only when the incoming
+  // selection was already group-closed and already points at the clicked
+  // primary, so a cohesive plain click doesn't double-emit.
+  const unchanged = selection.primaryId === el.id && sameIds(ids, rawIds);
   return {
-    next: selection.primaryId === el.id ? null : { elementIds: ids, primaryId: el.id },
+    next: unchanged ? null : { elementIds: ids, primaryId: el.id },
     armDrag: true,
     dragIds: ids,
   };

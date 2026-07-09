@@ -102,7 +102,7 @@ describe('EditableSlideCanvas — marquee', () => {
     });
   });
 
-  it('renders a blank-canvas capture surface only when the mount is EDITABLE (onElementsChange)', () => {
+  it('renders a blank-canvas capture surface with touch suppression when the mount is editable', () => {
     const { container } = render(
       <EditableSlideCanvas
         slide={makeSlide()}
@@ -112,13 +112,15 @@ describe('EditableSlideCanvas — marquee', () => {
         onElementsChange={vi.fn()}
       />,
     );
-    expect(surface(container)).not.toBeNull();
+    const s = surface(container);
+    expect(s).not.toBeNull();
+    expect(s.style.touchAction).toBe('none');
   });
 
-  it('a select-only mount renders NO capture surface (native touch pan preserved)', () => {
-    // The surface is a full-bleed `touchAction: 'none'` layer; a select-only/
-    // viewer-ish mount (no mutation channel) must not swallow touch scrolling.
-    // Element tap-select still works via the per-element hit targets.
+  it('a select-only mount renders a capture surface without disabling native touch pan', () => {
+    // Select-only hosts need blank clear and mouse/pen marquee, but should keep
+    // native touch scrolling because they have no mutation channel for a touch
+    // driven editing gesture.
     const { container } = render(
       <EditableSlideCanvas
         slide={makeSlide()}
@@ -127,9 +129,43 @@ describe('EditableSlideCanvas — marquee', () => {
         onSelectionChange={vi.fn()}
       />,
     );
-    expect(surface(container)).toBeNull();
+    const s = surface(container);
+    expect(s).not.toBeNull();
+    expect(s.style.touchAction).toBe('');
     // Element hit targets are still present for tap-select.
     expect(hit(container, 'a')).not.toBeNull();
+  });
+
+  it('a select-only mount can marquee-select and blank-clear through the capture surface', () => {
+    const onSel = vi.fn();
+    const { container, rerender } = render(
+      <EditableSlideCanvas
+        slide={makeSlide()}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+      />,
+    );
+    let s = surface(container);
+    fireEvent.pointerDown(s, { pointerId: 1, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(s, { pointerId: 1, clientX: 350, clientY: 250 });
+    fireEvent.pointerUp(s, { pointerId: 1, clientX: 350, clientY: 250 });
+    expect(onSel).toHaveBeenCalledTimes(1);
+    expect(onSel).toHaveBeenLastCalledWith({ elementIds: ['a'], primaryId: 'a' });
+
+    rerender(
+      <EditableSlideCanvas
+        slide={makeSlide()}
+        scale={1}
+        selection={{ elementIds: ['a'], primaryId: 'a' }}
+        onSelectionChange={onSel}
+      />,
+    );
+    s = surface(container);
+    fireEvent.pointerDown(s, { pointerId: 2, clientX: 10, clientY: 10 });
+    fireEvent.pointerUp(s, { pointerId: 2, clientX: 11, clientY: 11 });
+    expect(onSel).toHaveBeenCalledTimes(2);
+    expect(onSel).toHaveBeenLastCalledWith({ elementIds: [] });
   });
 
   it('a marquee past threshold REPLACES the selection with what it contains', () => {

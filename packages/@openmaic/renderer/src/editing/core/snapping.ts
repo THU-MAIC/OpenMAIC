@@ -1,10 +1,15 @@
 import type { PPTElement } from '@openmaic/dsl';
 import type { SnappingOptions } from '../types';
-import { getElementRange, uniqAlignLines, type AlignLine, type ElementRange } from './geometry';
+import {
+  getEditingElementRange,
+  uniqAlignLines,
+  type AlignLine,
+  type ElementRange,
+} from './geometry';
 
 /**
  * Pure alignment-snapping math for the editing surface. Consumes Task 1's
- * geometry primitives (`getElementRange`, `uniqAlignLines`, `AlignLine`,
+ * geometry primitives (`getEditingElementRange`, `uniqAlignLines`, `AlignLine`,
  * `ElementRange`) and the DSL element shape. No React, no store, no `@/`
  * imports — ported (decoupled) from the app's `useDragElement` drag-snap math
  * and `AlignmentLine` guide shape so it can be exercised with plain unit
@@ -39,7 +44,7 @@ export function buildAlignLines(
 
   if (opts.toElements) {
     for (const el of others) {
-      const { minX, maxX, minY, maxY } = getElementRange(el);
+      const { minX, maxX, minY, maxY } = getEditingElementRange(el);
       const centerX = minX + (maxX - minX) / 2;
       const centerY = minY + (maxY - minY) / 2;
 

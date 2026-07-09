@@ -1,6 +1,6 @@
 import type { PPTElement } from '@openmaic/dsl';
 import type { SnappingOptions } from '../types';
-import { getElementRange, getElementListRange } from './geometry';
+import { getElementRange, getEditingElementListRange } from './geometry';
 import { buildAlignLines, snapRange, type Guide } from './snapping';
 
 /**
@@ -127,8 +127,8 @@ export interface MultiDragResult {
 /**
  * Apply a drag delta to a MULTI-element selection as one rigid translation.
  * Composition mirrors {@link computeDragMove} but snaps the whole set together:
- * shift every selected element by `deltaCanvas` → take the UNION bounding box of
- * the shifted set (`getElementListRange`) → snap that union against
+ * shift every selected element by `deltaCanvas` → take the editing UNION
+ * bounding box of the shifted set (`getEditingElementListRange`) → snap that union against
  * `others`/the canvas → apply the SAME corrected delta to every selected
  * element's origin. The snap is computed once on the union (not per element), so
  * the set never deforms — spacing between selected elements is preserved.
@@ -163,7 +163,7 @@ export function computeMultiDragMove(input: MultiDragInput): MultiDragResult {
     const shifted = selected.map(
       (el) => ({ ...el, left: el.left + dx0, top: el.top + dy0 }) as PPTElement,
     );
-    const targetRange = getElementListRange(shifted);
+    const targetRange = getEditingElementListRange(shifted);
     const lines = buildAlignLines(others, viewport, resolved.opts);
     const snapped = snapRange(targetRange, lines, resolved.range);
     dx = snapped.dx;

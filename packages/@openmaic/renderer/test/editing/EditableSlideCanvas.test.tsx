@@ -448,8 +448,8 @@ describe('EditableSlideCanvas', () => {
   });
 
   it('a pointer-down on a line selects it via onSelectionChange but emits no element.update (selectable, not draggable)', () => {
-    // Regression (reviewer, PR #859): lines regressed to unselectable — the
-    // blocker only stopped propagation. It must now select the line on
+    // Regression: lines regressed to unselectable because the blocker only
+    // stopped propagation. It must now select the line on
     // pointer-down (parity with box elements) while staying drag-inert: no
     // working copy, no move intent, ever.
     const onSel = vi.fn();
@@ -996,8 +996,8 @@ describe('EditableSlideCanvas', () => {
   });
 
   it('a locked element overlapping an unlocked one blocks the pointer instead of falling through', () => {
-    // Regression for cr-fix-4 (round-4 cross-review P2): a locked element
-    // used to be skipped entirely from the hit layer, so a pointer-down over
+    // Regression: a locked element used to be skipped entirely from the hit
+    // layer, so a pointer-down over
     // its (visually on-top) area fell through to whatever unlocked element's
     // hit target happened to occupy the same region underneath — moving/
     // selecting the WRONG element. The locked element now gets an inert

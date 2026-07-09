@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import type { PPTElement } from '@openmaic/dsl';
 import {
+  getEditingElementRange,
+  getEditingElementListRange,
   getElementRange,
   getElementListRange,
   uniqAlignLines,
@@ -46,10 +48,40 @@ describe('geometry', () => {
     // Derived from left/top + max(start,end): x ∈ [100, 220], y ∈ [50, 90]
     expect(r).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 90 });
   });
+  it('editing range includes a line curve control point beyond the chord', () => {
+    const line = {
+      id: 'curve',
+      type: 'line',
+      left: 100,
+      top: 50,
+      start: [0, 0],
+      end: [120, 0],
+      curve: [60, 80],
+    } as unknown as PPTElement;
+    expect(getElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 50 });
+    expect(getEditingElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 130 });
+  });
   it('list range is the union bbox', () => {
     expect(
       getElementListRange([box(), box({ id: 'b', left: 400, top: 0, width: 50, height: 50 })]),
     ).toEqual({ minX: 100, maxX: 450, minY: 0, maxY: 130 });
+  });
+  it('editing list range unions line control points with box ranges', () => {
+    const line = {
+      id: 'curve',
+      type: 'line',
+      left: 400,
+      top: 20,
+      start: [0, 0],
+      end: [60, 0],
+      curve: [30, 160],
+    } as unknown as PPTElement;
+    expect(getEditingElementListRange([box(), line])).toEqual({
+      minX: 100,
+      maxX: 460,
+      minY: 20,
+      maxY: 180,
+    });
   });
   it('uniqAlignLines dedups by value and merges ranges', () => {
     expect(

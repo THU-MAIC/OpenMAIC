@@ -196,4 +196,34 @@ describe('computeMultiDragMove', () => {
     // line put; a multi-drag translates it).
     expect(r.updates).toContainEqual({ id: 'l', props: { left: 15, top: 25 } });
   });
+
+  it('uses a bent selected line range when snapping the multi-drag union bbox', () => {
+    const curveLine = {
+      id: 'curve',
+      type: 'line',
+      left: 300,
+      top: 100,
+      start: [0, 0],
+      end: [100, 0],
+      curve: [50, 80],
+      width: 2,
+      style: 'solid',
+      color: '#333',
+      points: ['', ''],
+    } as unknown as PPTElement;
+    const target = el({ id: 'target', left: 800, top: 181, width: 20, height: 20 });
+    const r = computeMultiDragMove({
+      handleElement: a(),
+      selected: [a(), curveLine],
+      others: [target],
+      viewport: vp,
+      deltaCanvas: { x: 0, y: 0 },
+      snapping: { toElements: true, range: 5 },
+    });
+    expect(r.updates).toEqual([
+      { id: 'a', props: { left: 100, top: 101 } },
+      { id: 'curve', props: { left: 300, top: 101 } },
+    ]);
+    expect(r.guides.some((g) => g.type === 'horizontal' && g.axis.y === 181)).toBe(true);
+  });
 });

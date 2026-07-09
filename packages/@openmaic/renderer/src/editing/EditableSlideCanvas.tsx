@@ -116,9 +116,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
   // Marquee (rubber-band) gesture. It arms from a blank-canvas pointer-down on
   // the capture surface below the element hit targets, tracks a live rectangle,
   // and on release REPLACES the selection with whatever it covers (or clears it
-  // on a sub-threshold blank click). The capture surface only mounts on
-  // editable hosts (`onElementsChange` — see the surface comment below), and
-  // the hook itself additionally requires `onSelectionChange` to publish.
+  // on a sub-threshold blank click). The capture surface mounts for selection
+  // hosts (`onSelectionChange` — see the surface comment below); the hook itself
+  // also requires `onSelectionChange` to publish.
   const { marqueeRect, onCanvasPointerDown } = useMarqueeGesture({
     slide,
     scale: canvasScale,
@@ -191,17 +191,21 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
               while a pointer-down on empty canvas falls to this full-bleed layer
               and arms a rubber-band select. It is a sibling of the element hit
               divs (not an ancestor), so an element pointer-down never bubbles
-              into it. Gated on EDITABILITY (`onElementsChange`), not on
-              `onSelectionChange`: this full-bleed `touchAction: 'none'` layer
-              would swallow native touch panning across the whole canvas, which
-              is only acceptable in a real editor. A select-only/viewer-ish
-              mount renders no surface — element tap-select still works via the
-              per-element hit targets; blank taps neither marquee nor clear. */}
-          {Boolean(onElementsChange) && (
+              into it. Gated on SELECTION (`onSelectionChange`) so select-only
+              mounts still get mouse/pen marquee and sub-threshold blank-clear.
+              Touch suppression is gated separately on EDITABILITY
+              (`onElementsChange`): select-only mounts preserve native touch
+              panning, while touch-driven marquee requires an editable mount. */}
+          {Boolean(onSelectionChange) && (
             <div
               data-marquee-surface=""
               onPointerDown={onCanvasPointerDown}
-              style={{ position: 'absolute', inset: 0, pointerEvents: 'auto', touchAction: 'none' }}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'auto',
+                touchAction: onElementsChange ? 'none' : undefined,
+              }}
             />
           )}
           {elements.map((el) => {
