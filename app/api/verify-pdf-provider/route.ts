@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     providerId = body.providerId;
-    const { apiKey, baseUrl } = body;
+    const { apiKey, baseUrl, accessKeyId, accessKeySecret } = body;
 
     if (!providerId) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Provider ID is required');
@@ -24,6 +24,35 @@ export async function POST(req: NextRequest) {
 
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('pdf', providerId);
+
+    // AliDocMind: verify AK/SK by issuing a lightweight authenticated query.
+    // A bogus job id returns a business error (not an auth error) when the
+    // credentials are valid, so anything other than a signature/auth failure
+    // means the credentials work.
+    if (providerId === 'alidocmind') {
+      const resolvedAk = managed ? undefined : (accessKeyId as string | undefined);
+      const resolvedSk = managed ? undefined : (accessKeySecret as string | undefined);
+      const ak = resolvedAk || process.env.ALIDOCMIND_ACCESS_KEY_ID;
+      const sk = resolvedSk || process.env.ALIDOCMIND_ACCESS_KEY_SECRET;
+      if (!ak || !sk) {
+        return apiError(
+          'MISSING_REQUIRED_FIELD',
+          400,
+          'AccessKey ID and AccessKey Secret are required for AliDocMind',
+        );
+      }
+
+      const { verifyAliDocMindCredentials } = await import('@/lib/pdf/alidocmind-client');
+      const result = await verifyAliDocMindCredentials({
+        accessKeyId: ak,
+        accessKeySecret: sk,
+        endpoint: (baseUrl as string | undefined) || undefined,
+      });
+      if (!result.ok) {
+        return apiError('INTERNAL_ERROR', 500, `Authentication failed: ${result.error}`);
+      }
+      return apiSuccess({ message: 'Connection successful' });
+    }
 
     // MinerU Cloud: verify by calling the cloud API with the token
     if (providerId === 'mineru-cloud') {

@@ -66,6 +66,8 @@ export async function POST(req: NextRequest) {
     const preferredProviderId = formData.get('providerId') as string | null;
     const apiKey = formData.get('apiKey') as string | null;
     const baseUrl = formData.get('baseUrl') as string | null;
+    const accessKeyId = formData.get('accessKeyId') as string | null;
+    const accessKeySecret = formData.get('accessKeySecret') as string | null;
 
     if (!documentFile) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'No course material file provided');
@@ -160,6 +162,10 @@ export async function POST(req: NextRequest) {
       baseUrl: isPdfProviderId(provider.id)
         ? resolvePDFBaseUrl(provider.id, clientBaseUrl)
         : clientBaseUrl,
+      // AliDocMind uses AK/SK; server-managed values take precedence via env
+      // fallback in the client, so pass client-entered values only when not managed.
+      accessKeyId: managed ? undefined : accessKeyId || undefined,
+      accessKeySecret: managed ? undefined : accessKeySecret || undefined,
     };
 
     const arrayBuffer = await documentFile.arrayBuffer();

@@ -1619,7 +1619,9 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清單。請在生成介面選擇需要使用的模型——是否可用取決於你的套餐等級，不支援的模型會在生成時報錯。"
     },
-    "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。"
+    "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "個人資料",

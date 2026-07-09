@@ -23,7 +23,7 @@ export const MEDIA_PARSE_PROVIDERS: Record<MediaParseProviderId, MediaParseProvi
     id: 'alidocmind',
     name: 'AliDocMind',
     requiresApiKey: true,
-    icon: '/logos/aliyun.png',
+    icon: '/logos/bailian.svg',
     features: ['transcript', 'keyframes', 'synopsis', 'ocr'],
     supportedMimeTypes: AUDIO_VIDEO_MIME_TYPES,
   },

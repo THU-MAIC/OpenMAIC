@@ -125,6 +125,10 @@ export interface SettingsState {
       enabled: boolean;
       requiresApiKey?: boolean;
       isServerConfigured?: boolean;
+      /** Aliyun AccessKey ID (AliDocMind). */
+      accessKeyId?: string;
+      /** Aliyun AccessKey Secret (AliDocMind). */
+      accessKeySecret?: string;
     }
   >;
   baiduSubSources: BaiduSubSources;
@@ -302,7 +306,13 @@ export interface SettingsState {
   setPDFProvider: (providerId: PDFProviderId) => void;
   setPDFProviderConfig: (
     providerId: PDFProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      accessKeyId: string;
+      accessKeySecret: string;
+    }>,
   ) => void;
 
   // Image Generation actions
@@ -489,7 +499,17 @@ const getDefaultPDFConfig = () => ({
     unpdf: { apiKey: '', baseUrl: '', enabled: true },
     mineru: { apiKey: '', baseUrl: '', enabled: false },
     'mineru-cloud': { apiKey: '', baseUrl: '', enabled: false },
-  } as Record<PDFProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+    alidocmind: { apiKey: '', baseUrl: '', enabled: false, accessKeyId: '', accessKeySecret: '' },
+  } as Record<
+    PDFProviderId,
+    {
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      accessKeyId?: string;
+      accessKeySecret?: string;
+    }
+  >,
 });
 
 // Initialize default Image config

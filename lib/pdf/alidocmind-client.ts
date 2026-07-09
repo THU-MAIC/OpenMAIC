@@ -204,3 +204,39 @@ async function fetchResult(client: Client, jobId: string): Promise<Record<string
 
   return merged;
 }
+
+/**
+ * Verify AliDocMind credentials without submitting a real job.
+ *
+ * Queries a bogus job id: valid credentials return a "not found"-style business
+ * error, while bad credentials surface a signature/auth error. We treat only
+ * auth-level failures as invalid.
+ */
+export async function verifyAliDocMindCredentials(
+  creds: Partial<AliDocMindCredentials>,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const resolved = resolveCredentials(creds);
+  const client = createClient(resolved);
+  try {
+    await client.queryDocParserStatus(
+      new $Docmind.QueryDocParserStatusRequest({ id: 'verify-connection-probe' }),
+    );
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    const lower = msg.toLowerCase();
+    const isAuthError =
+      lower.includes('signature') ||
+      lower.includes('accesskey') ||
+      lower.includes('access key') ||
+      lower.includes('forbidden') ||
+      lower.includes('unauthorized') ||
+      lower.includes('invalidaccesskey') ||
+      lower.includes('nopermission');
+    if (isAuthError) {
+      return { ok: false, error: msg };
+    }
+    // Any non-auth error (e.g. "job not found") means credentials are valid.
+    return { ok: true };
+  }
+}

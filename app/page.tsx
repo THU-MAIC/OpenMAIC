@@ -338,7 +338,9 @@ function HomePage() {
 
       let documentSources: SessionDocumentSource[] | undefined;
       let pdfProviderId: string | undefined;
-      let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
+      let pdfProviderConfig:
+        | { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
+        | undefined;
 
       if (form.courseMaterials.length > 0) {
         const settings = useSettingsStore.getState();
@@ -348,6 +350,8 @@ function HomePage() {
           pdfProviderConfig = {
             apiKey: providerCfg.apiKey,
             baseUrl: providerCfg.baseUrl,
+            accessKeyId: providerCfg.accessKeyId,
+            accessKeySecret: providerCfg.accessKeySecret,
           };
         }
 
