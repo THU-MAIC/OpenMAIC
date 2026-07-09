@@ -81,7 +81,8 @@ export const TrackSchema = z.object({
   property: z.string(),
   from: AnimatableValueSchema,
   to: AnimatableValueSchema,
-  durationMs: z.number(),
+  /** Omitted when the source specifies no explicit duration — use the consumer's engine default. */
+  durationMs: z.number().optional(),
   delayMs: z.number().optional(),
   /** Omitted when the source specifies no explicit easing. */
   easing: EasingSchema.optional(),

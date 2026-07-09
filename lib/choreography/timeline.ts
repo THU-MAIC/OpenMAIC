@@ -257,5 +257,61 @@ export function resolveActionTimeline(
     });
   });
 
+  clampFireAndForgetLifetimes(segments, clockMs);
+
   return segments;
+}
+
+/**
+ * Correct the visual `durationMs` of fire-and-forget effects (spotlight/laser)
+ * in place. Their nominal lifetime is {@link EFFECT_AUTO_CLEAR_MS}, but the
+ * engine cuts it short — and occasionally extends it:
+ *
+ * - **Scene boundary / completion.** `PlaybackEngine.processNext` calls
+ *   `clearEffects()` at the start of every new scene and once more when all
+ *   scenes are consumed. So an effect never outlives its scene: a spotlight late
+ *   in a scene (or the final action of the lecture) is cleared at the boundary /
+ *   completion, not a flat 5s later.
+ * - **Shared auto-clear timer.** `ActionEngine.scheduleEffectClear` uses one
+ *   timer that each new effect *resets*, and `clearAllEffects` drops every active
+ *   effect together. So back-to-back effects (within `EFFECT_AUTO_CLEAR_MS` of
+ *   each other) all live until the last one's fire + `EFFECT_AUTO_CLEAR_MS` —
+ *   the earlier effect is *extended*, not cleared on its own schedule.
+ *
+ * `advancesCursorMs` (0 for these) is untouched — only the visual hint changes.
+ *
+ * @param completionMs the final cursor clock (when the last scene's actions are
+ *        exhausted and playback completes → `clearEffects`).
+ */
+function clampFireAndForgetLifetimes(segments: TimelineSegment[], completionMs: number): void {
+  // First segment startMs per scene index → the wall-clock of that scene's
+  // boundary clearEffects. Every scene yields ≥1 segment, so all indices exist.
+  const sceneStartMs = new Map<number, number>();
+  for (const seg of segments) {
+    if (!sceneStartMs.has(seg.sceneIndex)) sceneStartMs.set(seg.sceneIndex, seg.startMs);
+  }
+
+  segments.forEach((seg, i) => {
+    if (seg.blocking) return; // only fire-and-forget effects have a clearable lifetime
+
+    // The next clearEffects boundary after this effect: the start of the next
+    // scene, or completion if this is the last scene.
+    const nextSceneStart = sceneStartMs.get(seg.sceneIndex + 1);
+    const boundaryMs = nextSceneStart ?? completionMs;
+
+    // Shared auto-clear deadline, chained through any later effects in THIS scene
+    // that fire before it elapses (each resets the shared timer). Segments are in
+    // non-decreasing startMs order, so a forward walk suffices.
+    let deadlineMs = seg.startMs + EFFECT_AUTO_CLEAR_MS;
+    for (let j = i + 1; j < segments.length; j++) {
+      const other = segments[j];
+      if (other.sceneIndex !== seg.sceneIndex) break; // cleared at the boundary anyway
+      if (other.blocking) continue; // blocking actions don't touch the effect timer
+      if (other.startMs > deadlineMs) break; // timer already fired; chain broken
+      deadlineMs = Math.max(deadlineMs, other.startMs + EFFECT_AUTO_CLEAR_MS);
+    }
+
+    const clearMs = Math.min(boundaryMs, deadlineMs);
+    seg.durationMs = Math.max(0, clearMs - seg.startMs);
+  });
 }

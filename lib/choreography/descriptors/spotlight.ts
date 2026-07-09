@@ -12,8 +12,14 @@ import type { AnimationDescriptor } from './types';
  *   "dim everywhere except the cutout" compositing rather than "draw a black
  *   rect".
  * - border: 500ms expo-out, delayed 50ms, fading in as it settles.
- * - dim: static `rgba(0,0,0,{dimness})`, dimness default 0.7, with the cutout
+ * - dim: static `rgba(0,0,0,{dimness})`, dimness default 0.5, with the cutout
  *   subtracted.
+ *
+ * The `dimness` default is 0.5 — the value the runtime actually renders: a
+ * spotlight action with no `dimOpacity` is stored as `action.dimOpacity ?? 0.5`
+ * (`ActionEngine.executeSpotlight`; DSL documents `dimOpacity` default 0.5), so
+ * the component's own `?? 0.7` fallback is unreachable at playback. The exporter
+ * must use 0.5 to match.
  *
  * Shared easing `[0.16, 1, 0.3, 1]` (the spotlight expo-out).
  */
@@ -21,7 +27,7 @@ export const spotlightV1: AnimationDescriptor = {
   id: 'spotlight.v1',
   version: 1,
   effect: 'spotlight',
-  params: { dimness: 0.7 },
+  params: { dimness: 0.5 },
   zIndex: 100,
   layers: [
     {
@@ -129,12 +135,18 @@ export const spotlightV1: AnimationDescriptor = {
     {
       id: 'dim',
       // Full-screen dim behind the cutout, with the cutout subtracted (SVG
-      // <mask>: white full-cover minus the black cutout rect). The container's
-      // opacity fade-in has no explicit duration in the source (engine default),
-      // so no track here.
+      // <mask>: white full-cover minus the black cutout rect).
       maskedBy: { layerId: 'cutout', mode: 'subtract' },
       staticProps: { fill: 'rgba(0,0,0,{dimness})' },
-      tracks: [],
+      // The whole effect is wrapped in a motion.div that fades opacity 0→1 on
+      // enter and →0 on exit (no explicit duration in the source — motion's
+      // engine default). Modeled here on the base layer so a consumer fades the
+      // spotlight in/out as a group rather than popping it on/off. `durationMs`
+      // omitted = use the consumer's engine default, matching the source.
+      tracks: [
+        { property: 'opacity', from: 0, to: 1, phase: 'enter' },
+        { property: 'opacity', from: 1, to: 0, phase: 'exit' },
+      ],
     },
   ],
 };

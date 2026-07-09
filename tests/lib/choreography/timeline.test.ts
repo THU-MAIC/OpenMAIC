@@ -68,7 +68,7 @@ describe('resolveActionTimeline — blocking actions advance the cursor', () => 
 });
 
 describe('resolveActionTimeline — fire-and-forget effects do not advance the cursor', () => {
-  it('spotlight/laser have duration EFFECT_AUTO_CLEAR_MS but advancesCursorMs 0', () => {
+  it('effects start at the cursor but advance it by 0 (blocking:false)', () => {
     const scenes = [
       sc('S0', [
         act({ id: 'sp', type: 'spotlight', elementId: 'e1' }),
@@ -78,15 +78,62 @@ describe('resolveActionTimeline — fire-and-forget effects do not advance the c
     ];
     const tl = resolveActionTimeline(scenes);
 
-    expect(tl[0]).toMatchObject({
-      startMs: 0,
-      durationMs: EFFECT_AUTO_CLEAR_MS,
-      advancesCursorMs: 0,
-      blocking: false,
-    });
-    // Second effect and the speech both start at 0 — the effects didn't move the clock.
+    // Both effects and the speech start at 0 — the effects didn't move the clock.
+    expect(tl[0]).toMatchObject({ startMs: 0, advancesCursorMs: 0, blocking: false });
     expect(tl[1]).toMatchObject({ startMs: 0, advancesCursorMs: 0, blocking: false });
     expect(tl[2]).toMatchObject({ startMs: 0, blocking: true });
+  });
+
+  it('an effect is cleared at playback completion, not a flat 5s later', () => {
+    // spotlight fires at 0; the only speech ends at 2000, then processNext hits
+    // completion → clearEffects. So the effect lives 2000ms, not EFFECT_AUTO_CLEAR_MS.
+    const scenes = [
+      sc('S0', [act({ id: 'sp', type: 'spotlight', elementId: 'e1' }), speech('s', 'hi there')]),
+    ];
+    const tl = resolveActionTimeline(scenes);
+    expect(tl[0]).toMatchObject({ startMs: 0, durationMs: 2000, blocking: false });
+  });
+
+  it('an effect is cleared at the next scene boundary', () => {
+    const scenes = [
+      sc('S0', [act({ id: 'sp', type: 'spotlight', elementId: 'e1' }), speech('a', 'hi there')]), // 0..2000
+      sc('S1', [speech('b', 'more')]),
+    ];
+    // clearEffects fires at the start of S1 (2000), cutting the spotlight there.
+    expect(resolveActionTimeline(scenes)[0].durationMs).toBe(2000);
+  });
+
+  it('lives its full EFFECT_AUTO_CLEAR_MS when the scene runs long enough', () => {
+    // speech dwell 6000 > 5000, so the auto-clear timer fires before the boundary.
+    const scenes = [
+      sc('S0', [
+        act({ id: 'sp', type: 'spotlight', elementId: 'e1' }),
+        speech('s', '中'.repeat(40)),
+      ]),
+    ];
+    expect(resolveActionTimeline(scenes)[0].durationMs).toBe(EFFECT_AUTO_CLEAR_MS);
+  });
+
+  it('a later effect resets the shared clear timer, extending earlier effects', () => {
+    // spotlight@0, then speech(3000), then laser@3000 (resets the shared timer),
+    // then speech(6000) → completion 9000. The shared timer last fires at
+    // 3000+5000=8000, so BOTH effects clear together at 8000: spotlight lives
+    // 8000ms (extended past its own 5000), laser lives 5000ms.
+    const scenes = [
+      sc('S0', [
+        act({ id: 'sp', type: 'spotlight', elementId: 'e1' }),
+        speech('a', '中'.repeat(20)), // 3000
+        act({ id: 'la', type: 'laser', elementId: 'e2' }),
+        speech('b', '中'.repeat(40)), // 6000
+      ]),
+    ];
+    const tl = resolveActionTimeline(scenes);
+    expect(tl[0]).toMatchObject({ startMs: 0, durationMs: 8000, blocking: false }); // spotlight
+    expect(tl[2]).toMatchObject({
+      startMs: 3000,
+      durationMs: EFFECT_AUTO_CLEAR_MS,
+      blocking: false,
+    }); // laser
   });
 });
 

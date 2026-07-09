@@ -60,7 +60,9 @@ describe('every shipped descriptor conforms to the zod schema', () => {
 describe('spotlight.v1 pins the source animation values', () => {
   it('has the dim/cutout/border layers and z-index 100', () => {
     expect(spotlightV1.zIndex).toBe(100);
-    expect(spotlightV1.params).toMatchObject({ dimness: 0.7 });
+    // 0.5 is the runtime default (executeSpotlight: action.dimOpacity ?? 0.5),
+    // not the component's unreachable ?? 0.7 fallback.
+    expect(spotlightV1.params).toMatchObject({ dimness: 0.5 });
     expect(spotlightV1.layers.map((l) => l.id).sort()).toEqual(['border', 'cutout', 'dim']);
   });
 
@@ -88,6 +90,17 @@ describe('spotlight.v1 pins the source animation values', () => {
     // The dim rect is clipped by subtracting the cutout, so a non-React consumer
     // reconstructs "dim everywhere except the cutout" rather than a black box.
     expect(dim.maskedBy).toEqual({ layerId: 'cutout', mode: 'subtract' });
+  });
+
+  it('models the wrapper enter/exit opacity fade (engine-default duration)', () => {
+    const dim = spotlightV1.layers.find((l) => l.id === 'dim')!;
+    const enter = dim.tracks.find((t) => t.property === 'opacity' && t.phase === 'enter')!;
+    const exit = dim.tracks.find((t) => t.property === 'opacity' && t.phase === 'exit')!;
+    expect(enter).toMatchObject({ from: 0, to: 1 });
+    expect(exit).toMatchObject({ from: 1, to: 0 });
+    // No explicit duration in the source → omitted, consumer uses its engine default.
+    expect(enter.durationMs).toBeUndefined();
+    expect(exit.durationMs).toBeUndefined();
   });
 });
 
