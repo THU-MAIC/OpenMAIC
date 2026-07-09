@@ -820,12 +820,12 @@
   },
   "upload": {
     "pdfSizeLimit": "50MBまでのPDFファイルに対応しています",
-    "courseMaterialSizeLimit": "50MBまでのPDF、DOCX、PPTX、TXT、Markdownファイルに対応しています",
+    "courseMaterialSizeLimit": "ドキュメント、スライド、表計算、画像、テキスト — 最大50MB（対応形式は選択したエクストラクタに依存）",
     "generateFailed": "教室の生成に失敗しました。もう一度お試しください",
     "requirementPlaceholder": "学びたいことを自由に入力してください。例えば：\n「Pythonをゼロから30分で教えて」\n「フーリエ変換をホワイトボードで解説して」\n「ボードゲーム『アバロン』の遊び方」",
     "requirementRequired": "コースの要件を入力してください",
     "fileTooLarge": "ファイルが大きすぎます。50MB以下のファイルを選択してください",
-    "unsupportedCourseMaterial": "対応していない教材形式です。PDF、DOCX、PPTX、TXT、Markdownをアップロードしてください。"
+    "unsupportedCourseMaterial": "現在の解析器はこの形式に対応していません。解析器を切り替えるか、別のファイルを選択してください。"
   },
   "generation": {
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",
@@ -1451,6 +1451,9 @@
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
     "pdfSettings": "PDF解析",
+    "documentParsingSettings": "ドキュメント解析",
+    "supportedFormats": "対応フォーマット",
+    "mineruSelfHostFormatsNote": "PDF と画像の解析には、MinerU サーバーに mineru[pipeline] または mineru[core] の追加依存関係が必要です。軽量版の mineru-api では Office 文書のみに対応する場合があります。",
     "pdfParsingSettings": "PDF解析設定",
     "pdfDescription": "テキスト抽出、画像処理、表認識に対応したPDF解析エンジンを選択",
     "pdfProvider": "PDFパーサー",

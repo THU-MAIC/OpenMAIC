@@ -16,6 +16,7 @@ import type { AgentInfo } from '@/lib/generation/generation-pipeline';
 import type { Scene } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
+import { measureAudioDuration } from '@/lib/audio/audio-duration';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
@@ -289,9 +290,14 @@ export async function generateAndStoreTTS(
     bytes[i] = binary.charCodeAt(i);
   }
   const blob = new Blob([bytes], { type: `audio/${data.format}` });
+  // Measure duration once at store time so video export (#854) can map this
+  // clip onto a timeline without re-decoding. null → leave undefined; the audio
+  // still persists and plays.
+  const duration = measureAudioDuration(bytes, data.format) ?? undefined;
   await db.audioFiles.put({
     id: audioId,
     blob,
+    duration,
     format: data.format,
     createdAt: Date.now(),
   });

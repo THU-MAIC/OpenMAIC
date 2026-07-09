@@ -820,12 +820,12 @@
   },
   "upload": {
     "pdfSizeLimit": "Suporta arquivos PDF de até 50 MB",
-    "courseMaterialSizeLimit": "Suporta PDF, DOCX, PPTX, TXT e Markdown de até 50 MB",
+    "courseMaterialSizeLimit": "Documentos, apresentações, planilhas, imagens e texto — até 50 MB (formatos aceitos dependem do extrator selecionado)",
     "generateFailed": "Falha ao gerar a sala, tente novamente",
     "requirementPlaceholder": "Conte-me o que você quer aprender, por exemplo:\n\"Me ensine Python do zero em 30 minutos\"\n\"Explique a Transformada de Fourier no quadro\"\n\"Como jogar o jogo de tabuleiro Avalon\"",
     "requirementRequired": "Por favor, descreva os objetivos do curso",
     "fileTooLarge": "Arquivo muito grande. Selecione um arquivo com menos de 50 MB",
-    "unsupportedCourseMaterial": "Tipo de material não suportado. Envie PDF, DOCX, PPTX, TXT ou Markdown."
+    "unsupportedCourseMaterial": "O extrator atual não suporta este formato. Troque o extrator ou escolha outro arquivo."
   },
   "generation": {
     "pdfLoadFailed": "Falha ao carregar o PDF, tente novamente",
@@ -1451,6 +1451,9 @@
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
     "pdfSettings": "Análise de PDF",
+    "documentParsingSettings": "Análise de Documentos",
+    "supportedFormats": "Formatos Suportados",
+    "mineruSelfHostFormatsNote": "A análise de PDF e imagens requer os extras mineru[pipeline] ou mineru[core] no seu servidor MinerU. Instalações leves do mineru-api podem processar apenas documentos do Office.",
     "pdfParsingSettings": "Configurações de Análise de PDF",
     "pdfDescription": "Escolha o mecanismo de análise de PDF com suporte a extração de texto, processamento de imagens e reconhecimento de tabelas",
     "pdfProvider": "Analisador de PDF",

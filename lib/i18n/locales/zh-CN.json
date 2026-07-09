@@ -820,12 +820,12 @@
   },
   "upload": {
     "pdfSizeLimit": "支持最大50MB的PDF文件",
-    "courseMaterialSizeLimit": "支持最大 50MB 的 PDF、DOCX、PPTX、TXT 和 Markdown 文件",
+    "courseMaterialSizeLimit": "支持文档、演示、表格、图像、纯文本，最大 50MB（具体支持格式随所选解析器而定）",
     "generateFailed": "生成课堂失败，请重试",
     "requirementPlaceholder": "输入你想学的任何内容，例如：\n「从零学 Python，30 分钟写出第一个程序」\n「用白板给我讲解傅里叶变换」\n「阿瓦隆桌游怎么玩」",
     "requirementRequired": "请输入课程需求",
     "fileTooLarge": "文件过大，请选择小于 50MB 的文件",
-    "unsupportedCourseMaterial": "不支持的课程材料类型，请上传 PDF、DOCX、PPTX、TXT 或 Markdown 文件"
+    "unsupportedCourseMaterial": "当前解析器不支持该格式，请切换解析器或选择其他文件"
   },
   "generation": {
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
@@ -1451,6 +1451,9 @@
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
     "pdfSettings": "PDF 解析",
+    "documentParsingSettings": "文档解析",
+    "supportedFormats": "支持的格式",
+    "mineruSelfHostFormatsNote": "解析 PDF 和图片需要 MinerU 服务器安装 mineru[pipeline] 或 mineru[core] 依赖。轻量版 mineru-api 可能仅支持 Office 文档。",
     "pdfParsingSettings": "PDF 解析设置",
     "pdfDescription": "选择 PDF 解析引擎，支持文本提取、图片处理和表格识别",
     "pdfProvider": "PDF 解析器",

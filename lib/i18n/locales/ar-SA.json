@@ -820,12 +820,12 @@
   },
   "upload": {
     "pdfSizeLimit": "يدعم ملفات PDF حتى 50 ميغابايت",
-    "courseMaterialSizeLimit": "يدعم ملفات PDF وDOCX وPPTX وTXT وMarkdown حتى 50 ميغابايت",
+    "courseMaterialSizeLimit": "المستندات والعروض التقديمية وجداول البيانات والصور والنصوص العادية — حتى 50 ميغابايت (تعتمد الصيغ المقبولة على المستخرج المحدد)",
     "generateFailed": "فشل توليد الفصل، يرجى المحاولة مرة أخرى",
     "requirementPlaceholder": "أخبرني بأي شيء تريد تعلمه، مثلاً:\n\"علمني بايثون من الصفر في 30 دقيقة\"\n\"اشرح تحويل فورييه على السبورة\"\n\"كيف تلعب لعبة أفالون\"",
     "requirementRequired": "يرجى إدخال متطلبات المقرر",
     "fileTooLarge": "الملف كبير جدًا. يرجى اختيار ملف أصغر من 50 ميغابايت",
-    "unsupportedCourseMaterial": "نوع مادة المقرر غير مدعوم. يرجى رفع PDF أو DOCX أو PPTX أو TXT أو Markdown."
+    "unsupportedCourseMaterial": "المستخرج الحالي لا يدعم هذه الصيغة. غيّر المستخرج أو اختر ملفًا آخر."
   },
   "generation": {
     "pdfLoadFailed": "فشل تحميل ملف PDF، يرجى المحاولة مرة أخرى",
@@ -1451,6 +1451,9 @@
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
     "pdfSettings": "تحليل PDF",
+    "documentParsingSettings": "تحليل المستندات",
+    "supportedFormats": "الصيغ المدعومة",
+    "mineruSelfHostFormatsNote": "يتطلب تحليل ملفات PDF والصور تثبيت الإضافات mineru[pipeline] أو mineru[core] على خادم MinerU. قد تدعم عمليات تثبيت mineru-api الخفيفة مستندات Office فقط.",
     "pdfParsingSettings": "إعدادات تحليل PDF",
     "pdfDescription": "اختر محرك تحليل PDF مع دعم استخراج النص ومعالجة الصور والتعرف على الجداول",
     "pdfProvider": "محلل PDF",

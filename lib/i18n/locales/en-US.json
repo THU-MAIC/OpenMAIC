@@ -820,12 +820,12 @@
   },
   "upload": {
     "pdfSizeLimit": "Supports PDF files up to 50MB",
-    "courseMaterialSizeLimit": "Supports PDF, DOCX, PPTX, TXT, and Markdown files up to 50MB",
+    "courseMaterialSizeLimit": "Documents, slides, spreadsheets, images, and plain text — up to 50MB (accepted formats depend on the selected extractor)",
     "generateFailed": "Failed to generate classroom, please try again",
     "requirementPlaceholder": "Tell me anything you want to learn, e.g.\n\"Teach me Python from scratch in 30 minutes\"\n\"Explain Fourier Transform on the whiteboard\"\n\"How to play the board game Avalon\"",
     "requirementRequired": "Please enter course requirements",
     "fileTooLarge": "File too large. Please select a file smaller than 50MB",
-    "unsupportedCourseMaterial": "Unsupported course material type. Please upload PDF, DOCX, PPTX, TXT, or Markdown."
+    "unsupportedCourseMaterial": "This format isn't supported by the current extractor. Switch the extractor or pick a different file."
   },
   "generation": {
     "pdfLoadFailed": "Failed to load PDF file, please try again",
@@ -1451,6 +1451,9 @@
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
     "pdfSettings": "PDF Parsing",
+    "documentParsingSettings": "Document Parsing",
+    "supportedFormats": "Supported Formats",
+    "mineruSelfHostFormatsNote": "PDF and image parsing require the mineru[pipeline] or mineru[core] extras on your MinerU server. Lightweight mineru-api installs may only handle Office documents.",
     "pdfParsingSettings": "PDF Parsing Settings",
     "pdfDescription": "Choose PDF parsing engine with support for text extraction, image processing, and table recognition",
     "pdfProvider": "PDF Parser",
