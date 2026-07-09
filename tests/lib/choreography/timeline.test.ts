@@ -6,6 +6,7 @@ import {
   DISCUSSION_TRIGGER_DELAY_MS,
   WB_OPEN_MS,
   WB_DRAW_MS,
+  WB_EDIT_MS,
   wbDrawCodeMs,
   wbClearMs,
   estimateSpeechDurationMs,
@@ -244,6 +245,20 @@ describe('resolveActionTimeline — per-action durations', () => {
     expect(resolveActionTimeline(scenes, { isDiscussionSkipped: () => false })[0].durationMs).toBe(
       DISCUSSION_TRIGGER_DELAY_MS,
     );
+  });
+
+  it('wb_edit_code is WB_EDIT_MS by default and 0ms when the caller flags a no-op', () => {
+    const scenes = [
+      sc('S0', [
+        act({ id: 'e', type: 'wb_edit_code', elementId: 'c1', operation: 'delete_lines' }),
+      ]),
+    ];
+    expect(resolveActionTimeline(scenes, { whiteboardOpen: true })[0].durationMs).toBe(WB_EDIT_MS);
+    // Stale target / non-code element → executeWbEditCode returns before its delay.
+    expect(
+      resolveActionTimeline(scenes, { whiteboardOpen: true, isEditCodeNoop: () => true })[0]
+        .durationMs,
+    ).toBe(0);
   });
 
   it('play_video uses the supplied duration, capped, and 0 when unknown', () => {

@@ -26,6 +26,7 @@ import type {
   WbDrawCodeAction,
   WbDrawTextAction,
   WbDrawTableAction,
+  WbEditCodeAction,
   DiscussionAction,
   WbClearAction,
 } from '@openmaic/dsl';
@@ -98,6 +99,13 @@ export interface ResolveTimelineOptions {
    * ({@link DISCUSSION_TRIGGER_DELAY_MS}).
    */
   isDiscussionSkipped?: (action: DiscussionAction) => boolean;
+  /**
+   * Whether a `wb_edit_code` action is a no-op the engine skips without delay
+   * (target block missing / not a code element / stale line refs). Depends on
+   * live whiteboard state, so the caller supplies it; defaults to a normal edit
+   * ({@link WB_EDIT_MS}).
+   */
+  isEditCodeNoop?: (action: WbEditCodeAction) => boolean;
   /**
    * Whether the whiteboard is already open when the timeline starts. Defaults to
    * `false`, matching the engine's post-`resetPlaybackVisualState()` state, so
@@ -187,7 +195,11 @@ function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number 
     case 'wb_draw_code':
       return wbDrawCodeMs(codeLineCount((action as WbDrawCodeAction).code));
     case 'wb_edit_code':
-      return WB_EDIT_MS;
+      // `executeWbEditCode` returns before its delay when the edit can't apply
+      // (missing/non-code target, or stale lineId/lineIds). That depends on live
+      // whiteboard state the pure timeline can't see, so the caller signals a
+      // no-op via `isEditCodeNoop`; otherwise it's the normal edit animation.
+      return opts.isEditCodeNoop?.(action as WbEditCodeAction) ? 0 : WB_EDIT_MS;
     case 'wb_clear': {
       // The engine early-returns with no delay when the board is already empty
       // (`executeWbClear`: elementCount === 0 → return), so an empty clear has a
