@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { PPTElement } from '@openmaic/dsl';
+import type { PPTElement, PPTLineElement } from '@openmaic/dsl';
 import {
   getEditingElementRange,
   getEditingElementListRange,
@@ -9,6 +9,7 @@ import {
   uniqAlignLines,
   pxToCanvas,
 } from '../../../src/editing/core/geometry';
+import { getLineElementPath } from '../../../src/utils/element';
 
 const box = (over: Partial<PPTElement> = {}) =>
   ({
@@ -112,6 +113,20 @@ describe('geometry', () => {
       broken: [80, 140],
     } as unknown as PPTElement;
     expect(getVisualElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 190 });
+  });
+  it('visual range for broken2 follows the rendered orthogonal elbows', () => {
+    const line = {
+      id: 'broken2',
+      type: 'line',
+      left: 100,
+      top: 50,
+      start: [0, 0],
+      end: [120, 20],
+      broken2: [80, 140],
+    } as unknown as PPTLineElement;
+
+    expect(getLineElementPath(line)).toBe('M0,0 L80,0 L80,20 120,20');
+    expect(getVisualElementRange(line)).toEqual({ minX: 100, maxX: 220, minY: 50, maxY: 70 });
   });
   it('visual range for non-line elements delegates to the shared element range', () => {
     const element = box({ rotate: 15 });

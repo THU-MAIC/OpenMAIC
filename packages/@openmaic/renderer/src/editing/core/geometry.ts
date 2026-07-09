@@ -150,8 +150,19 @@ export function getVisualElementRange(el: PPTElement): ElementRange {
     xs.push(el.broken[0]);
     ys.push(el.broken[1]);
   } else if (el.broken2) {
-    xs.push(el.broken2[0]);
-    ys.push(el.broken2[1]);
+    /**
+     * Mirrors `getLineElementPath`: `broken2` selects two orthogonal elbows,
+     * not a drawn vertex. Keep this in lockstep so visual snap bounds follow
+     * the rendered stroke instead of the control handle.
+     */
+    const { minX, maxX, minY, maxY } = getElementRange(el);
+    if (maxX - minX >= maxY - minY) {
+      xs.push(el.broken2[0], el.broken2[0]);
+      ys.push(start[1], end[1]);
+    } else {
+      xs.push(start[0], end[0]);
+      ys.push(el.broken2[1], el.broken2[1]);
+    }
   } else if (el.curve) {
     pushQuadraticExtrema(xs, start[0], el.curve[0], end[0]);
     pushQuadraticExtrema(ys, start[1], el.curve[1], end[1]);
