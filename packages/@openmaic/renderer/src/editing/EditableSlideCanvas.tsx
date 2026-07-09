@@ -10,8 +10,10 @@ import { SelectionOverlay } from './handles/SelectionOverlay';
 import { LineHandles } from './handles/LineHandles';
 import { ResizeHandles } from './handles/ResizeHandles';
 import { RotateHandle } from './handles/RotateHandle';
+import { MarqueeBox } from './handles/MarqueeBox';
 import { useEditGesture } from './useEditGesture';
 import { useLineHandleGesture } from './useLineHandleGesture';
+import { useMarqueeGesture } from './useMarqueeGesture';
 import { useResizeGesture } from './useResizeGesture';
 import { useRotateGesture } from './useRotateGesture';
 import { getResizeHandles } from './core/resize';
@@ -110,6 +112,20 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     onElementsChange,
   });
 
+  // Marquee (rubber-band) gesture. It arms from a blank-canvas pointer-down on
+  // the capture surface below the element hit targets, tracks a live rectangle,
+  // and on release REPLACES the selection with whatever it covers (or clears it
+  // on a sub-threshold blank click). Selection-only, so it is gated on
+  // `onSelectionChange`.
+  const { marqueeRect, onCanvasPointerDown } = useMarqueeGesture({
+    slide,
+    scale: canvasScale,
+    overlayRef,
+    viewportStyles,
+    selection: activeSelection,
+    onSelectionChange,
+  });
+
   // The elements to render/hit-test: the box gesture's working copy, with the
   // active handle drag's props (line reshape / resize box / rotate angle)
   // merged in so the v1 canvas, the hit layers, and the handles all preview
@@ -167,6 +183,21 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             line up with the rendered elements even when the container is
             letterboxed (aspect ratio != slide's). */}
         <div ref={overlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          {/* Blank-canvas marquee capture surface. Rendered FIRST so it sits
+              beneath the per-element hit targets in stacking order: a pointer-
+              down on an element hits that element's div (painted later, on top),
+              while a pointer-down on empty canvas falls to this full-bleed layer
+              and arms a rubber-band select. It is a sibling of the element hit
+              divs (not an ancestor), so an element pointer-down never bubbles
+              into it. Selection-only, so it is gated on `onSelectionChange`;
+              without it the surface is absent and blank clicks do nothing. */}
+          {Boolean(onSelectionChange) && (
+            <div
+              data-marquee-surface=""
+              onPointerDown={onCanvasPointerDown}
+              style={{ position: 'absolute', inset: 0, pointerEvents: 'auto', touchAction: 'none' }}
+            />
+          )}
           {elements.map((el) => {
             // Line elements: a line's real hit area is its (often bent) stroke,
             // not its rectangular bounding box. A rectangular bbox blocker
@@ -471,6 +502,17 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                 </Fragment>
               );
             })}
+
+          {/* Live marquee rectangle, drawn while a blank-canvas rubber-band
+              select is in flight. Purely visual (`pointerEvents: none`); it
+              shares the element container's origin via `viewportStyles`. */}
+          {marqueeRect && (
+            <MarqueeBox
+              rect={marqueeRect}
+              viewportStyles={viewportStyles}
+              canvasScale={canvasScale}
+            />
+          )}
 
           {/* SelectionOverlay is left untouched; wrap it in a positioning
               container matching SlideCanvas's element container so its
