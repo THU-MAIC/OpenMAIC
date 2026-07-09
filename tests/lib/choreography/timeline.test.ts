@@ -193,8 +193,20 @@ describe('resolveActionTimeline — per-action durations', () => {
   });
 
   it('wb_draw_* share WB_DRAW_MS', () => {
-    const scenes = [sc('S0', [act({ id: 't', type: 'wb_draw_text' })])];
+    const scenes = [sc('S0', [act({ id: 't', type: 'wb_draw_text', content: 'hi' })])];
     expect(resolveActionTimeline(scenes, { whiteboardOpen: true })[0].durationMs).toBe(WB_DRAW_MS);
+  });
+
+  it('no-op whiteboard draws cost 0ms (engine early-returns)', () => {
+    // wb_draw_text with empty content → executeWbDrawText returns before delay.
+    const emptyText = [sc('S0', [act({ id: 't', type: 'wb_draw_text', content: '' })])];
+    expect(resolveActionTimeline(emptyText, { whiteboardOpen: true })[0].durationMs).toBe(0);
+    // wb_draw_table with no rows → executeWbDrawTable returns early.
+    const emptyTable = [sc('S0', [act({ id: 'tb', type: 'wb_draw_table', data: [] })])];
+    expect(resolveActionTimeline(emptyTable, { whiteboardOpen: true })[0].durationMs).toBe(0);
+    // A populated table still costs WB_DRAW_MS.
+    const table = [sc('S0', [act({ id: 'tb2', type: 'wb_draw_table', data: [['a', 'b']] })])];
+    expect(resolveActionTimeline(table, { whiteboardOpen: true })[0].durationMs).toBe(WB_DRAW_MS);
   });
 
   it('discussion dwells for the trigger delay (interactive wait is out of scope)', () => {
@@ -203,6 +215,18 @@ describe('resolveActionTimeline — per-action durations', () => {
       durationMs: DISCUSSION_TRIGGER_DELAY_MS,
       blocking: true,
     });
+  });
+
+  it('a skipped discussion (consumed / agent not selected) contributes no dwell', () => {
+    const scenes = [sc('S0', [act({ id: 'd', type: 'discussion', topic: 't' })])];
+    // Engine skips it (processNext recurses with no timer) → 0ms.
+    expect(resolveActionTimeline(scenes, { isDiscussionSkipped: () => true })[0].durationMs).toBe(
+      0,
+    );
+    // Not skipped → the trigger delay, same as the default.
+    expect(resolveActionTimeline(scenes, { isDiscussionSkipped: () => false })[0].durationMs).toBe(
+      DISCUSSION_TRIGGER_DELAY_MS,
+    );
   });
 
   it('play_video uses the supplied duration, capped, and 0 when unknown', () => {
@@ -250,7 +274,7 @@ describe('resolveActionTimeline — scene boundaries', () => {
 
 describe('resolveActionTimeline — implicit whiteboard auto-open', () => {
   it('prepends a WB_OPEN_MS beat before the first wb_* mutation on a closed board', () => {
-    const scenes = [sc('S0', [act({ id: 'd', type: 'wb_draw_text' })])];
+    const scenes = [sc('S0', [act({ id: 'd', type: 'wb_draw_text', content: 'hi' })])];
     const tl = resolveActionTimeline(scenes); // whiteboardOpen defaults to false
 
     expect(tl).toHaveLength(2);

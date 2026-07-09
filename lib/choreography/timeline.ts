@@ -24,6 +24,9 @@ import type {
   SpeechAction,
   PlayVideoAction,
   WbDrawCodeAction,
+  WbDrawTextAction,
+  WbDrawTableAction,
+  DiscussionAction,
   WbClearAction,
 } from '@openmaic/dsl';
 import { FIRE_AND_FORGET_ACTIONS } from '@openmaic/dsl';
@@ -88,6 +91,14 @@ export interface ResolveTimelineOptions {
    */
   getClearElementCount?: (action: WbClearAction) => number;
   /**
+   * Whether a discussion action is skipped outright by the engine (already
+   * consumed, or its `agentId` isn't in the selected set) — in which case it
+   * contributes no dwell. Depends on runtime state the pure timeline can't see,
+   * so the caller supplies it; defaults to "not skipped"
+   * ({@link DISCUSSION_TRIGGER_DELAY_MS}).
+   */
+  isDiscussionSkipped?: (action: DiscussionAction) => boolean;
+  /**
    * Whether the whiteboard is already open when the timeline starts. Defaults to
    * `false`, matching the engine's post-`resetPlaybackVisualState()` state, so
    * the first whiteboard mutation triggers an implicit {@link IMPLICIT_WB_OPEN}
@@ -139,21 +150,38 @@ function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number 
     case 'laser':
       return EFFECT_AUTO_CLEAR_MS;
     case 'discussion':
-      // Deterministic dwell before the ProactiveCard shows. The subsequent
-      // interactive wait (user answers/skips) is not part of the deterministic
-      // timeline and is out of scope here.
-      return DISCUSSION_TRIGGER_DELAY_MS;
+      // Deterministic dwell before the ProactiveCard shows. A discussion the
+      // engine skips outright — already consumed, or its agent isn't selected —
+      // contributes no dwell (`processNext` recurses with no timer). That skip
+      // depends on runtime state (consumed set / selected agents), so the caller
+      // signals it via `isDiscussionSkipped`; the subsequent interactive wait
+      // (user answers/skips the shown card) is out of scope either way.
+      return opts.isDiscussionSkipped?.(action as DiscussionAction)
+        ? 0
+        : DISCUSSION_TRIGGER_DELAY_MS;
     case 'play_video': {
       const video = opts.getVideoDurationMs?.(action) ?? 0;
       return Math.min(video, MAX_VIDEO_WAIT_MS);
     }
     case 'wb_open':
       return WB_OPEN_MS;
-    case 'wb_draw_text':
+    case 'wb_draw_text': {
+      // The engine no-ops (no delay) when there's nothing to draw:
+      // `executeWbDrawText` returns early on empty content.
+      const content = (action as WbDrawTextAction).content ?? '';
+      return content ? WB_DRAW_MS : 0;
+    }
+    case 'wb_draw_table': {
+      // `executeWbDrawTable` returns early (no delay) when the table has no rows
+      // or no columns.
+      const data = (action as WbDrawTableAction).data;
+      const rows = data?.length ?? 0;
+      const cols = rows > 0 ? (data[0]?.length ?? 0) : 0;
+      return rows === 0 || cols === 0 ? 0 : WB_DRAW_MS;
+    }
     case 'wb_draw_shape':
     case 'wb_draw_chart':
     case 'wb_draw_latex':
-    case 'wb_draw_table':
     case 'wb_draw_line':
       return WB_DRAW_MS;
     case 'wb_draw_code':
