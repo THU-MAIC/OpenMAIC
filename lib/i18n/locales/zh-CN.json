@@ -1655,23 +1655,41 @@
       "chat": "会话",
       "achievements": "成就"
     },
+    "sections": {
+      "overviewSub": "你的学习全景一览",
+      "stagesSub": "各门课程的构建与学习进度",
+      "quizSub": "测验成绩与逐次表现",
+      "chatSub": "与 AI 的对话互动情况"
+    },
+    "sceneTypes": {
+      "slide": "讲解",
+      "quiz": "测验",
+      "pbl": "项目",
+      "interactive": "互动"
+    },
     "overview": {
       "progress": "进度",
       "quiz": "测验",
       "chat": "会话",
+      "scenes": "内容",
       "stageCount": "课程数",
       "started": "已开始",
       "completed": "已完成",
       "avgProgress": "平均进度",
       "maxProgress": "最高进度",
       "quizAttempts": "测验次数",
+      "quizStages": "覆盖课程",
       "avgScore": "平均得分率",
       "bestScore": "最高得分率",
       "perfect": "满分次数",
       "sessions": "会话数",
       "qa": "问答",
       "lecture": "讲授",
-      "messages": "消息数"
+      "discussion": "讨论",
+      "messages": "消息数",
+      "totalScenes": "场景总数",
+      "lastActivity": "最近活跃",
+      "neverActive": "暂无活动"
     },
     "stages": {
       "empty": "还没有课程进度。",
@@ -1679,7 +1697,10 @@
       "scenePosition": "第 {{position}} / {{total}} 节",
       "quizBadge": "测验 {{done}}/{{total}}",
       "scoreBadge": "均分 {{pct}}%",
-      "chatBadge": "会话 {{count}}"
+      "chatBadge": "会话 {{count}}",
+      "summaryStarted": "已开始",
+      "summaryCompleted": "已完成",
+      "summaryScenes": "场景总数"
     },
     "quiz": {
       "empty": "还没有测验提交。"
@@ -1688,7 +1709,12 @@
       "empty": "还没有会话。",
       "lecture": "讲授",
       "qa": "问答",
-      "discussion": "讨论"
+      "discussion": "讨论",
+      "total": "总会话",
+      "messages": "消息数",
+      "completed": "已完成",
+      "active": "进行中",
+      "interrupted": "已中断"
     },
     "ach": {
       "summary": "已解锁 {{earned}} / {{total}}",

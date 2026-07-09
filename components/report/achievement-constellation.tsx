@@ -7,20 +7,20 @@ import { ACH_GROUPS, ACH_CHAINS } from '@/lib/report/achievements';
 import { AchievementEmblem } from './achievement-emblems';
 import type { Achievement, AchGroup } from '@/lib/report/types';
 
-// Radial skill-tree. Each progression chain (承接关系) is a straight radial
-// spoke, one level per node. Width comes from arranging the spokes into two
-// horizontal fans (right + left) with the deepest chains centered on the
-// horizontal axis — not from stretching. Node spacing is set by STEP (a real
-// distance), so "bigger" means genuinely farther-apart nodes. Connectors are
-// curved with per-badge varied bow direction/size. The hub shows the learner's
-// OpenMAIC avatar.
-const CX = 360; // center of the 720×340 viewBox
-const CY = 170;
+// Radial skill-tree, laid out vertically (portrait) so it fits a narrow side
+// column. Each progression chain (承接关系) is a straight radial spoke, one
+// level per node. Width comes from arranging the spokes into two vertical fans
+// (down + up) with the deepest chains centered on the vertical axis — not from
+// stretching. Node spacing is set by STEP (a real distance), so "bigger" means
+// genuinely farther-apart nodes. Connectors are curved with per-badge varied
+// bow direction/size. The hub shows the learner's OpenMAIC avatar.
+const CX = 170; // center of the 340×720 (portrait) viewBox
+const CY = 360;
 const HUB_R = 34; // center hub (avatar) radius
 const R0 = 120; // radius of a chain's first (Lv.1) node
 const STEP = 62; // distance between consecutive levels
 const NODE_R = 15; // node radius
-const FAN = 54; // half-span of each horizontal fan (deg)
+const FAN = 54; // half-span of each vertical fan (deg)
 const CURVE = 0.18; // base connector bow (fraction of segment length)
 
 const GROUP_COLOR: Record<AchGroup, string> = {
@@ -117,7 +117,7 @@ export function AchievementConstellation({
 
     const placed: { chain: string[]; color: string; base: number }[] = [];
     sides.forEach((sideChains, sideIdx) => {
-      const center = sideIdx === 0 ? 0 : 180; // right / left
+      const center = sideIdx === 0 ? 90 : 270; // down / up (portrait fans)
       const m = sideChains.length;
       const order = centerOrder(m);
       sideChains.forEach((c, pos) => {
@@ -161,9 +161,9 @@ export function AchievementConstellation({
   return (
     <div className="flex flex-col items-center gap-4">
       <svg
-        viewBox="0 0 720 340"
-        className="mx-auto h-auto w-full max-w-[840px]"
-        style={{ aspectRatio: '720 / 340' }}
+        viewBox="0 0 340 720"
+        className="mx-auto w-auto max-w-full h-[56vh] lg:h-[calc(100dvh-16rem)]"
+        style={{ aspectRatio: '340 / 720' }}
         role="img"
         aria-label={t('learningReport.tabs.achievements')}
       >

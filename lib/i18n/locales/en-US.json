@@ -1655,23 +1655,41 @@
       "chat": "Chat",
       "achievements": "Achievements"
     },
+    "sections": {
+      "overviewSub": "A bird's-eye view of your learning",
+      "stagesSub": "Build and study progress per course",
+      "quizSub": "Quiz scores and attempt-by-attempt performance",
+      "chatSub": "Your interactions with the AI"
+    },
+    "sceneTypes": {
+      "slide": "Slides",
+      "quiz": "Quiz",
+      "pbl": "Project",
+      "interactive": "Interactive"
+    },
     "overview": {
       "progress": "Progress",
       "quiz": "Quiz",
       "chat": "Chat",
+      "scenes": "Content",
       "stageCount": "Courses",
       "started": "Started",
       "completed": "Completed",
       "avgProgress": "Avg. progress",
       "maxProgress": "Best progress",
       "quizAttempts": "Quiz attempts",
+      "quizStages": "Courses covered",
       "avgScore": "Avg. score",
       "bestScore": "Best score",
       "perfect": "Perfect scores",
       "sessions": "Sessions",
       "qa": "Q&A",
       "lecture": "Lecture",
-      "messages": "Messages"
+      "discussion": "Discussion",
+      "messages": "Messages",
+      "totalScenes": "Total scenes",
+      "lastActivity": "Last active",
+      "neverActive": "No activity yet"
     },
     "stages": {
       "empty": "No course progress yet.",
@@ -1679,7 +1697,10 @@
       "scenePosition": "Scene {{position}} / {{total}}",
       "quizBadge": "Quiz {{done}}/{{total}}",
       "scoreBadge": "Avg {{pct}}%",
-      "chatBadge": "{{count}} sessions"
+      "chatBadge": "{{count}} sessions",
+      "summaryStarted": "Started",
+      "summaryCompleted": "Completed",
+      "summaryScenes": "Total scenes"
     },
     "quiz": {
       "empty": "No quiz submissions yet."
@@ -1688,7 +1709,12 @@
       "empty": "No chat sessions yet.",
       "lecture": "Lecture",
       "qa": "Q&A",
-      "discussion": "Discussion"
+      "discussion": "Discussion",
+      "total": "Total sessions",
+      "messages": "Messages",
+      "completed": "Completed",
+      "active": "Active",
+      "interrupted": "Interrupted"
     },
     "ach": {
       "summary": "Unlocked {{earned}} / {{total}}",

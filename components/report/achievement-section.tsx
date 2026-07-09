@@ -18,7 +18,13 @@ import type { Achievement } from '@/lib/report/types';
 
 type View = 'grid' | 'star';
 
-export function AchievementSection({ achievements }: { achievements: Achievement[] }) {
+export function AchievementSection({
+  achievements,
+  compact = false,
+}: {
+  achievements: Achievement[];
+  compact?: boolean;
+}) {
   const { t, locale } = useI18n();
   const [view, setView] = useState<View>('grid');
   const [selected, setSelected] = useState<Achievement | null>(null);
@@ -62,7 +68,7 @@ export function AchievementSection({ achievements }: { achievements: Achievement
       </div>
 
       {view === 'grid' ? (
-        <AchievementGrid achievements={achievements} onSelect={setSelected} />
+        <AchievementGrid achievements={achievements} onSelect={setSelected} compact={compact} />
       ) : (
         <AchievementConstellation achievements={achievements} onSelect={setSelected} />
       )}

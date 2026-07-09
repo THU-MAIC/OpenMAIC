@@ -1,22 +1,23 @@
 'use client';
 
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { cn } from '@/lib/utils';
 import type { ReportMetric } from '@/lib/report/types';
+import { StatTile, type Stat } from './report-primitives';
 
 const pct = (r: number | null): string => (r == null ? '—' : `${Math.round(r * 100)}%`);
 const num = (n: number): string => String(n);
 
-interface Tile {
-  label: string;
-  value: string;
-  hint?: string;
-}
-
 export function ReportOverview({ metric }: { metric: ReportMetric }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
-  const groups: { title: string; tiles: Tile[] }[] = [
+  const lastActive =
+    metric.lastActivityAt == null
+      ? t('learningReport.overview.neverActive')
+      : new Intl.DateTimeFormat(locale, { dateStyle: 'medium' }).format(
+          new Date(metric.lastActivityAt),
+        );
+
+  const groups: { title: string; tiles: Stat[] }[] = [
     {
       title: t('learningReport.overview.progress'),
       tiles: [
@@ -28,6 +29,16 @@ export function ReportOverview({ metric }: { metric: ReportMetric }) {
         },
         { label: t('learningReport.overview.avgProgress'), value: pct(metric.avgProgressRatio) },
         { label: t('learningReport.overview.maxProgress'), value: pct(metric.maxProgressRatio) },
+      ],
+    },
+    {
+      title: t('learningReport.overview.scenes'),
+      tiles: [
+        { label: t('learningReport.overview.totalScenes'), value: num(metric.totalSceneCount) },
+        { label: t('learningReport.sceneTypes.slide'), value: num(metric.slideSceneCount) },
+        { label: t('learningReport.sceneTypes.quiz'), value: num(metric.quizSceneCount) },
+        { label: t('learningReport.sceneTypes.pbl'), value: num(metric.pblSceneCount) },
+        { label: t('learningReport.sceneTypes.interactive'), value: num(metric.interactiveSceneCount) },
       ],
     },
     {
@@ -52,6 +63,13 @@ export function ReportOverview({ metric }: { metric: ReportMetric }) {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 rounded-xl border bg-card px-4 py-3">
+        <span className="text-xs text-muted-foreground">
+          {t('learningReport.overview.lastActivity')}
+        </span>
+        <span className="text-sm font-medium">{lastActive}</span>
+      </div>
+
       {groups.map((g) => (
         <section key={g.title} className="flex flex-col gap-3">
           <h3 className="text-sm font-semibold text-muted-foreground">{g.title}</h3>
@@ -62,21 +80,6 @@ export function ReportOverview({ metric }: { metric: ReportMetric }) {
           </div>
         </section>
       ))}
-    </div>
-  );
-}
-
-function StatTile({ tile }: { tile: Tile }) {
-  return (
-    <div
-      className={cn(
-        'rounded-xl border bg-card p-4 flex flex-col gap-1',
-        'transition-colors hover:bg-accent/40',
-      )}
-    >
-      <span className="text-xs text-muted-foreground">{tile.label}</span>
-      <span className="text-2xl font-semibold tabular-nums">{tile.value}</span>
-      {tile.hint && <span className="text-[11px] text-muted-foreground">{tile.hint}</span>}
     </div>
   );
 }

@@ -4,6 +4,9 @@ import { useI18n } from '@/lib/hooks/use-i18n';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import type { StageVM } from '@/lib/report/types';
+import { StatStrip, type Stat } from './report-primitives';
+
+const COMPLETE_THRESHOLD = 0.999;
 
 export function StageProgressList({ stages }: { stages: StageVM[] }) {
   const { t } = useI18n();
@@ -12,8 +15,25 @@ export function StageProgressList({ stages }: { stages: StageVM[] }) {
     return <p className="text-sm text-muted-foreground">{t('learningReport.stages.empty')}</p>;
   }
 
+  const summary: Stat[] = [
+    {
+      label: t('learningReport.stages.summaryStarted'),
+      value: String(stages.filter((s) => s.started).length),
+    },
+    {
+      label: t('learningReport.stages.summaryCompleted'),
+      value: String(stages.filter((s) => (s.progressRatio ?? 0) >= COMPLETE_THRESHOLD).length),
+    },
+    {
+      label: t('learningReport.stages.summaryScenes'),
+      value: String(stages.reduce((sum, s) => sum + s.sceneCount, 0)),
+    },
+  ];
+
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
+      <StatStrip items={summary} />
+      <div className="flex flex-col gap-3">
       {stages.map((s) => {
         const ratio = s.progressRatio ?? 0;
         const value = Math.min(100, Math.round(ratio * 100));
@@ -64,6 +84,7 @@ export function StageProgressList({ stages }: { stages: StageVM[] }) {
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
