@@ -88,6 +88,9 @@ export const laserV1: AnimationDescriptor = {
     },
     {
       id: 'ring',
+      // Nested inside the animated dot wrapper in the source, so it rides the
+      // dot's fly-in/exit position + fade, then adds its own scale/opacity pulse.
+      inheritsFrom: { parentId: 'dot', props: ['left', 'top', 'opacity'] },
       // Circular pulse ring, absolutely positioned to fill the dot group.
       staticProps: {
         position: 'absolute',
@@ -118,6 +121,9 @@ export const laserV1: AnimationDescriptor = {
     },
     {
       id: 'core',
+      // Nested inside the animated dot wrapper too — rides the dot's fly-in/exit
+      // position + fade. It has no animation of its own.
+      inheritsFrom: { parentId: 'dot', props: ['left', 'top', 'opacity'] },
       // Circular light core (rounded-full).
       staticProps: {
         width: 10,

@@ -75,6 +75,11 @@ export const spotlightV1: AnimationDescriptor = {
     },
     {
       id: 'border',
+      // The white outline sits inside the same wrapper motion.div as the dim
+      // rect, so it fades in/out with the whole effect. `dim` carries the
+      // canonical wrapper opacity fade; the border rides it (on top of its own
+      // geometry + border-opacity tracks below).
+      inheritsFrom: { parentId: 'dim', props: ['opacity'] },
       staticProps: {
         stroke: 'rgba(255,255,255,0.7)',
         strokeWidth: 1.2,
@@ -144,8 +149,8 @@ export const spotlightV1: AnimationDescriptor = {
       // enter and →0 on exit. The source sets no explicit transition, so Motion
       // applies its default tween (300ms) — pinned here explicitly so a
       // non-Motion consumer (the exporter) reproduces the fade instead of
-      // popping the spotlight on/off. Modeled on the base layer so it fades as a
-      // group.
+      // popping the spotlight on/off. This layer carries the canonical wrapper
+      // fade; the border layer inherits its opacity so both fade out together.
       tracks: [
         { property: 'opacity', from: 0, to: 1, durationMs: 300, phase: 'enter' },
         { property: 'opacity', from: 1, to: 0, durationMs: 300, phase: 'exit' },

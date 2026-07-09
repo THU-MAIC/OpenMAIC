@@ -114,6 +114,26 @@ export const MaskRefSchema = z.object({
   mode: MaskModeSchema,
 });
 
+/** Which of a parent layer's animated properties a child inherits. */
+export const InheritablePropSchema = z.enum(['left', 'top', 'x', 'y', 'opacity', 'scale']);
+
+/**
+ * A layer's inheritance from a parent layer in the same descriptor. In the
+ * source, the effect nests some layers inside an animated wrapper so they ride
+ * its motion (the laser ring/core sit inside the animated dot; the spotlight
+ * border sits inside the fading SVG wrapper). A flat layer list can't express
+ * that, so a child names its `parentId` and the `props` it rides — a literal
+ * consumer composes the parent's animation for those props with the child's own
+ * (e.g. the ring inherits the dot's left/top/opacity and adds its own scale
+ * pulse). `props` defaults to all of the parent's animated properties.
+ */
+export const InheritRefSchema = z.object({
+  /** `id` of the parent layer whose animation this layer rides. */
+  parentId: z.string(),
+  /** Properties inherited from the parent. Omit to inherit all of them. */
+  props: z.array(InheritablePropSchema).optional(),
+});
+
 /**
  * A visual layer of the effect (e.g. the spotlight cutout, its border, the
  * laser ring). Groups animated `tracks` with non-animated `staticProps`.
@@ -122,6 +142,10 @@ export const MaskRefSchema = z.object({
  * is referenced by another layer's `maskedBy` to clip it. This lets a non-React
  * consumer reconstruct compositing relationships (e.g. the spotlight dim rect
  * with the cutout punched out) that independent layers alone cannot express.
+ *
+ * A layer with `inheritsFrom` rides a parent layer's animation for the named
+ * properties (the source nests it inside that animated wrapper), on top of its
+ * own `tracks`.
  */
 export const LayerSchema = z.object({
   id: z.string(),
@@ -129,6 +153,8 @@ export const LayerSchema = z.object({
   role: LayerRoleSchema.optional(),
   /** This (content) layer is clipped by the referenced `mask`-role layer. */
   maskedBy: MaskRefSchema.optional(),
+  /** This layer rides a parent layer's animation (it is nested inside it in the source). */
+  inheritsFrom: InheritRefSchema.optional(),
   tracks: z.array(TrackSchema),
   staticProps: StaticPropsSchema.optional(),
 });
@@ -158,5 +184,7 @@ export type Track = z.infer<typeof TrackSchema>;
 export type LayerRole = z.infer<typeof LayerRoleSchema>;
 export type MaskMode = z.infer<typeof MaskModeSchema>;
 export type MaskRef = z.infer<typeof MaskRefSchema>;
+export type InheritableProp = z.infer<typeof InheritablePropSchema>;
+export type InheritRef = z.infer<typeof InheritRefSchema>;
 export type Layer = z.infer<typeof LayerSchema>;
 export type AnimationDescriptor = z.infer<typeof AnimationDescriptorSchema>;

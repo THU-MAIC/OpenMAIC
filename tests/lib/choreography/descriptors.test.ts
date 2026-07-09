@@ -104,6 +104,13 @@ describe('spotlight.v1 pins the source animation values', () => {
     expect(enter).toMatchObject({ from: 0, to: 1, durationMs: 300 });
     expect(exit).toMatchObject({ from: 1, to: 0, durationMs: 300 });
   });
+
+  it('the border rides the wrapper fade (inherits the dim layer opacity)', () => {
+    const border = spotlightV1.layers.find((l) => l.id === 'border')!;
+    // The outline sits in the same fading wrapper as the dim rect, so it fades
+    // out with the whole effect rather than lingering after the dimming clears.
+    expect(border.inheritsFrom).toEqual({ parentId: 'dim', props: ['opacity'] });
+  });
 });
 
 describe('laser.v1 pins the source animation values', () => {
@@ -143,5 +150,14 @@ describe('laser.v1 pins the source animation values', () => {
     // Ring and core are circles (rounded-full → borderRadius 9999), not squares.
     expect(ring.staticProps).toMatchObject({ borderRadius: 9999, position: 'absolute', inset: 0 });
     expect(core.staticProps).toMatchObject({ borderRadius: 9999, width: 10, height: 10 });
+  });
+
+  it('the ring and core ride the dot fly-in/exit (inherit its left/top/opacity)', () => {
+    const ring = laserV1.layers.find((l) => l.id === 'ring')!;
+    const core = laserV1.layers.find((l) => l.id === 'core')!;
+    // Both are nested inside the animated dot wrapper in the source, so they
+    // follow its motion instead of sitting at a static default origin.
+    expect(ring.inheritsFrom).toEqual({ parentId: 'dot', props: ['left', 'top', 'opacity'] });
+    expect(core.inheritsFrom).toEqual({ parentId: 'dot', props: ['left', 'top', 'opacity'] });
   });
 });
