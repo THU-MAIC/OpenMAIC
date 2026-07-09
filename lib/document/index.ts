@@ -1,9 +1,15 @@
 export { extractDocument } from './extract';
+export { extractMedia } from './extract-media';
 export {
   getDocumentExtractorProvider,
   getDocumentExtractorProviders,
   selectDocumentExtractorProvider,
 } from './extractors/registry';
+export {
+  getMediaExtractorProvider,
+  getMediaExtractorProviders,
+  selectMediaExtractorProvider,
+} from './extractors/media-registry';
 export {
   COURSE_MATERIAL_ACCEPT,
   DOCUMENT_MIME_TYPES,
@@ -30,5 +36,16 @@ export type {
   DocumentExtractorInput,
   DocumentExtractorProvider,
   DocumentExtractorProviderId,
+  ExtractionArtifact,
+  ExtractionError,
+  ExtractionJob,
+  ExtractionResult,
+  MediaArtifact,
+  MediaExtractorCapabilities,
+  MediaExtractorInput,
+  MediaExtractorProvider,
+  MediaExtractorProviderId,
+  MediaKeyframe,
+  MediaTranscriptSegment,
 } from './types';
 export type { DocumentBundleResult, ParsedDocumentImage, ParsedDocumentPart } from './bundle';

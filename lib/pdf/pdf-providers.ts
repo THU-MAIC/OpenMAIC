@@ -145,6 +145,7 @@ import { PDF_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
 import { extractMinerUResult } from './mineru-parser';
 import { parseWithMinerUCloud } from './mineru-cloud';
+import { parseWithAliDocMindClient } from './alidocmind-client';
 
 const log = createLogger('PDFProviders');
 const DEFAULT_MINERU_BACKEND = 'pipeline';
@@ -194,6 +195,7 @@ export function describeSelfHostedMinerUError(status: number, rawBody: string): 
 export async function parsePDF(
   config: PDFParserConfig,
   pdfBuffer: Buffer,
+  options?: { fileName?: string; mimeType?: string },
 ): Promise<ParsedPdfContent> {
   const provider = PDF_PROVIDERS[config.providerId];
   if (!provider) {
@@ -202,7 +204,13 @@ export async function parsePDF(
 
   // Validate API key if required
   if (provider.requiresApiKey && !config.apiKey) {
-    throw new Error(`API key required for PDF provider: ${config.providerId}`);
+    // AliDocMind uses AK/SK instead of a single apiKey; check separately.
+    if (
+      config.providerId !== 'alidocmind' ||
+      (!config.accessKeyId && !process.env.ALIDOCMIND_ACCESS_KEY_ID)
+    ) {
+      throw new Error(`API key required for PDF provider: ${config.providerId}`);
+    }
   }
 
   const startTime = Date.now();
@@ -219,7 +227,11 @@ export async function parsePDF(
       break;
 
     case 'mineru-cloud':
-      result = await parseWithMinerUCloud(config, pdfBuffer);
+      result = await parseWithMinerUCloud(config, pdfBuffer, options?.fileName);
+      break;
+
+    case 'alidocmind':
+      result = await parseWithAliDocMind(config, pdfBuffer, options);
       break;
 
     default:
@@ -329,6 +341,109 @@ async function parseWithMinerU(
   });
 }
 
+/**
+ * Parse a document via AliDocMind (Aliyun Document Mind LLM version).
+ * Supports pdf/docx/pptx/xlsx and image types via the same submit → poll → get flow.
+ */
+async function parseWithAliDocMind(
+  config: PDFParserConfig,
+  documentBuffer: Buffer,
+  options?: { fileName?: string; mimeType?: string },
+): Promise<ParsedPdfContent> {
+  const fileName = options?.fileName || 'document.pdf';
+  const result = await parseWithAliDocMindClient(
+    {
+      accessKeyId: config.accessKeyId,
+      accessKeySecret: config.accessKeySecret,
+      endpoint: config.baseUrl,
+    },
+    {
+      buffer: documentBuffer,
+      fileName,
+      llmEnhancement: true,
+      enhancementMode: 'VLM',
+      outputHtmlTable: true,
+    },
+  );
+
+  return aliDocMindLayoutsToParsedPdf(result, fileName);
+}
+
+/**
+ * Map AliDocMind layouts[] shape → ParsedPdfContent.
+ *
+ * Layout schema (per AliDocMind docs):
+ *   { text, markdownContent, type, subType, pageNum, level, index, uniqueId, alignment,
+ *     llmResult?, layoutConf?, pos?, ... }
+ *   type ∈ { title, text, figure, picture, table, formula, multicolumn, foot, head, ... }
+ */
+function aliDocMindLayoutsToParsedPdf(
+  result: { data: Record<string, unknown>; pageCountEstimate?: number; jobId?: string },
+  fileName: string,
+): ParsedPdfContent {
+  const layouts = (Array.isArray(result.data.layouts) ? result.data.layouts : []) as Array<{
+    text?: string;
+    markdownContent?: string;
+    type?: string;
+    subType?: string;
+    pageNum?: number;
+    llmResult?: string;
+    layoutConf?: number;
+  }>;
+
+  const textParts: string[] = [];
+  const layout: NonNullable<ParsedPdfContent['layout']> = [];
+  let maxPage = 0;
+
+  for (const l of layouts) {
+    const md = l.markdownContent ?? l.text ?? '';
+    if (md) textParts.push(md);
+    const pageNum = (l.pageNum ?? 0) + 1;
+    maxPage = Math.max(maxPage, pageNum);
+    if (l.type) {
+      const mappedType = mapLayoutType(l.type);
+      if (mappedType) {
+        layout.push({
+          page: pageNum,
+          type: mappedType,
+          content: l.text ?? l.markdownContent ?? l.llmResult ?? '',
+        });
+      }
+    }
+  }
+
+  return {
+    text: textParts.join('\n\n'),
+    images: [],
+    layout: layout.length ? layout : undefined,
+    metadata: {
+      fileName,
+      pageCount: result.pageCountEstimate ?? maxPage,
+      parser: 'alidocmind',
+      taskId: result.jobId,
+    },
+  };
+}
+
+function mapLayoutType(type: string): 'title' | 'text' | 'image' | 'table' | 'formula' | null {
+  switch (type) {
+    case 'title':
+      return 'title';
+    case 'text':
+    case 'multicolumn':
+      return 'text';
+    case 'figure':
+    case 'picture':
+      return 'image';
+    case 'table':
+      return 'table';
+    case 'formula':
+      return 'formula';
+    default:
+      return null;
+  }
+}
+
 export async function parseWithMinerUDocument(
   config: PDFParserConfig,
   documentBuffer: Buffer,
@@ -422,6 +537,8 @@ export async function getCurrentPDFConfig(): Promise<PDFParserConfig> {
     providerId: pdfProviderId,
     apiKey: providerConfig?.apiKey,
     baseUrl: providerConfig?.baseUrl,
+    accessKeyId: (providerConfig as { accessKeyId?: string })?.accessKeyId,
+    accessKeySecret: (providerConfig as { accessKeySecret?: string })?.accessKeySecret,
   };
 }
 

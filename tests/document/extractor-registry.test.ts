@@ -16,6 +16,7 @@ describe('document extractor registry', () => {
       'unpdf',
       'mineru',
       'mineru-cloud',
+      'alidocmind',
     ]);
     expect(providers.every((provider) => provider.supportedMimeTypes)).toBe(true);
     expect(
@@ -173,5 +174,20 @@ describe('document extractor registry', () => {
     for (const provider of getDocumentExtractorProviders()) {
       expect(PROVIDER_SUPPORTED_MIME_TYPES[provider.id]).toEqual(provider.supportedMimeTypes);
     }
+  });
+
+  it('exposes AliDocMind with pdf/office/image support and async OCR capability', () => {
+    const alidocmind = getDocumentExtractorProvider('alidocmind');
+    expect(alidocmind).toBeDefined();
+    expect(alidocmind?.displayName).toBe('AliDocMind');
+    expect(alidocmind?.supportedMimeTypes).toContain('application/pdf');
+    expect(alidocmind?.supportedMimeTypes).toContain('image/png');
+    expect(alidocmind?.capabilities).toMatchObject({
+      text: true,
+      tables: true,
+      formulas: true,
+      ocr: true,
+      async: true,
+    });
   });
 });

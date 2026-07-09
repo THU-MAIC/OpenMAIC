@@ -5,7 +5,7 @@
 /**
  * PDF Provider IDs
  */
-export type PDFProviderId = 'unpdf' | 'mineru' | 'mineru-cloud';
+export type PDFProviderId = 'unpdf' | 'mineru' | 'mineru-cloud' | 'alidocmind';
 
 /**
  * PDF Provider Configuration
@@ -26,6 +26,10 @@ export interface PDFParserConfig {
   providerId: PDFProviderId;
   apiKey?: string;
   baseUrl?: string;
+  /** Aliyun AccessKey ID (AliDocMind) */
+  accessKeyId?: string;
+  /** Aliyun AccessKey Secret (AliDocMind) */
+  accessKeySecret?: string;
 }
 
 // Note: ParsedPdfContent is imported from @/lib/types/pdf to avoid duplication

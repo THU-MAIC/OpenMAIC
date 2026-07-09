@@ -132,10 +132,24 @@ export const MINERU_CLOUD_MIMES: readonly string[] = [
 /** Local text extractor — no external dependency. */
 export const PLAIN_TEXT_MIMES: readonly string[] = [M.txt, M.markdown, 'text/x-markdown'];
 
+/**
+ * AliDocMind (LLM version): pdf + modern Office + images.
+ * Per the product docs it also accepts legacy Office, but we advertise the
+ * same modern set as MinerU self-host for now (add legacy formats when tested).
+ */
+export const ALIDOCMIND_MIMES: readonly string[] = [
+  M.pdf,
+  M.docx,
+  M.pptx,
+  M.xlsx,
+  ...MINERU_IMAGE_MIMES,
+];
+
 export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = {
   unpdf: [M.pdf],
   mineru: MINERU_SELFHOST_MIMES,
   'mineru-cloud': MINERU_CLOUD_MIMES,
+  alidocmind: ALIDOCMIND_MIMES,
   'plain-text': PLAIN_TEXT_MIMES,
 };
 
