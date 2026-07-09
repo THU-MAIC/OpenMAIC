@@ -135,6 +135,42 @@ describe('resolveActionTimeline — fire-and-forget effects do not advance the c
       blocking: false,
     }); // laser
   });
+
+  it('breaks the chain when the gap between effects exceeds EFFECT_AUTO_CLEAR_MS', () => {
+    // spotlight@0; speech(6000) > 5000, so the shared timer for the spotlight
+    // already fired at 5000 before the laser@6000 arrives. The laser starts a
+    // fresh 5000 window. Long trailing speech keeps both within their own scene.
+    const scenes = [
+      sc('S0', [
+        act({ id: 'sp', type: 'spotlight', elementId: 'e1' }),
+        speech('a', '中'.repeat(40)), // 6000
+        act({ id: 'la', type: 'laser', elementId: 'e2' }),
+        speech('b', '中'.repeat(40)), // 6000 → completion 12000
+      ]),
+    ];
+    const tl = resolveActionTimeline(scenes);
+    expect(tl[0]).toMatchObject({ startMs: 0, durationMs: EFFECT_AUTO_CLEAR_MS }); // spotlight: own 5000
+    expect(tl[2]).toMatchObject({ startMs: 6000, durationMs: EFFECT_AUTO_CLEAR_MS }); // laser: own 5000
+  });
+
+  it('a later scene never extends an earlier scene effect (boundary clears first)', () => {
+    const scenes = [
+      sc('S0', [act({ id: 'sp', type: 'spotlight', elementId: 'e1' }), speech('a', 'hi there')]), // 0..2000
+      sc('S1', [act({ id: 'la', type: 'laser', elementId: 'e2' }), speech('b', 'more')]),
+    ];
+    // S0's spotlight is cut at S1's start (2000), NOT extended by S1's laser@2000.
+    expect(resolveActionTimeline(scenes)[0].durationMs).toBe(2000);
+  });
+
+  it('an effect as the last action of a scene has 0ms visual duration', () => {
+    // The engine fires the effect, queueMicrotask(processNext) hits completion,
+    // and clearEffects runs before real time elapses → 0ms.
+    const scenes = [
+      sc('S0', [speech('a', 'hi there'), act({ id: 'sp', type: 'spotlight', elementId: 'e1' })]),
+    ];
+    const tl = resolveActionTimeline(scenes);
+    expect(tl[1]).toMatchObject({ startMs: 2000, durationMs: 0, blocking: false });
+  });
 });
 
 describe('resolveActionTimeline — per-action durations', () => {

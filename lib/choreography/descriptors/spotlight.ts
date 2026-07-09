@@ -139,13 +139,14 @@ export const spotlightV1: AnimationDescriptor = {
       maskedBy: { layerId: 'cutout', mode: 'subtract' },
       staticProps: { fill: 'rgba(0,0,0,{dimness})' },
       // The whole effect is wrapped in a motion.div that fades opacity 0→1 on
-      // enter and →0 on exit (no explicit duration in the source — motion's
-      // engine default). Modeled here on the base layer so a consumer fades the
-      // spotlight in/out as a group rather than popping it on/off. `durationMs`
-      // omitted = use the consumer's engine default, matching the source.
+      // enter and →0 on exit. The source sets no explicit transition, so Motion
+      // applies its default tween (300ms) — pinned here explicitly so a
+      // non-Motion consumer (the exporter) reproduces the fade instead of
+      // popping the spotlight on/off. Modeled on the base layer so it fades as a
+      // group.
       tracks: [
-        { property: 'opacity', from: 0, to: 1, phase: 'enter' },
-        { property: 'opacity', from: 1, to: 0, phase: 'exit' },
+        { property: 'opacity', from: 0, to: 1, durationMs: 300, phase: 'enter' },
+        { property: 'opacity', from: 1, to: 0, durationMs: 300, phase: 'exit' },
       ],
     },
   ],

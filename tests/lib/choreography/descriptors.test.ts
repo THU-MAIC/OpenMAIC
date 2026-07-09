@@ -92,15 +92,14 @@ describe('spotlight.v1 pins the source animation values', () => {
     expect(dim.maskedBy).toEqual({ layerId: 'cutout', mode: 'subtract' });
   });
 
-  it('models the wrapper enter/exit opacity fade (engine-default duration)', () => {
+  it('models the wrapper enter/exit opacity fade (Motion default 300ms)', () => {
     const dim = spotlightV1.layers.find((l) => l.id === 'dim')!;
     const enter = dim.tracks.find((t) => t.property === 'opacity' && t.phase === 'enter')!;
     const exit = dim.tracks.find((t) => t.property === 'opacity' && t.phase === 'exit')!;
-    expect(enter).toMatchObject({ from: 0, to: 1 });
-    expect(exit).toMatchObject({ from: 1, to: 0 });
-    // No explicit duration in the source → omitted, consumer uses its engine default.
-    expect(enter.durationMs).toBeUndefined();
-    expect(exit.durationMs).toBeUndefined();
+    // Pinned to Motion's default tween so a non-Motion consumer reproduces the
+    // fade instead of popping the effect on/off.
+    expect(enter).toMatchObject({ from: 0, to: 1, durationMs: 300 });
+    expect(exit).toMatchObject({ from: 1, to: 0, durationMs: 300 });
   });
 });
 
@@ -129,5 +128,17 @@ describe('laser.v1 pins the source animation values', () => {
     const exitLeft = dot.tracks.find((t) => t.property === 'left' && t.phase === 'exit')!;
     expect(enterLeft.durationMs).toBe(500);
     expect(exitLeft.durationMs).toBe(250);
+  });
+
+  it('captures the dot center-anchor and circular ring/core geometry', () => {
+    const dot = laserV1.layers.find((l) => l.id === 'dot')!;
+    const ring = laserV1.layers.find((l) => l.id === 'ring')!;
+    const core = laserV1.layers.find((l) => l.id === 'core')!;
+    // The dot group is centered on the target (translate -50%,-50%), so a
+    // literal renderer doesn't offset it to a top-left anchor.
+    expect(dot.staticProps).toMatchObject({ transform: 'translate(-50%, -50%)' });
+    // Ring and core are circles (rounded-full → borderRadius 9999), not squares.
+    expect(ring.staticProps).toMatchObject({ borderRadius: 9999, position: 'absolute', inset: 0 });
+    expect(core.staticProps).toMatchObject({ borderRadius: 9999, width: 10, height: 10 });
   });
 });

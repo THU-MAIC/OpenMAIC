@@ -14,6 +14,12 @@ import type { AnimationDescriptor } from './types';
  *   repeat delay.
  * - core: 10px square (`w-2.5 h-2.5`), glow `0 0 8px 2px {color}60`.
  *
+ * Static geometry captured too, so a literal (non-React) renderer matches the
+ * app rather than drawing an offset square: the dot group is centered on the
+ * target via `translate(-50%, -50%)` (`-translate-x/y-1/2`), and both the ring
+ * and core are circles (`rounded-full` → `borderRadius: 9999px`); the ring is
+ * `position: absolute; inset: 0` inside the group.
+ *
  * Color default `#ff0000` — the app store's laserOptions default
  * (`lib/store/canvas.ts`), which the caller passes in; the component's own
  * fallback `#ff3b30` is only used when no options exist, which does not happen
@@ -28,6 +34,8 @@ export const laserV1: AnimationDescriptor = {
   layers: [
     {
       id: 'dot',
+      // The dot group is anchored at its own center on the target coordinate.
+      staticProps: { transform: 'translate(-50%, -50%)' },
       tracks: [
         {
           property: 'left',
@@ -80,7 +88,13 @@ export const laserV1: AnimationDescriptor = {
     },
     {
       id: 'ring',
-      staticProps: { border: '1.5px solid {color}' },
+      // Circular pulse ring, absolutely positioned to fill the dot group.
+      staticProps: {
+        position: 'absolute',
+        inset: 0,
+        borderRadius: 9999,
+        border: '1.5px solid {color}',
+      },
       tracks: [
         {
           property: 'scale',
@@ -104,9 +118,11 @@ export const laserV1: AnimationDescriptor = {
     },
     {
       id: 'core',
+      // Circular light core (rounded-full).
       staticProps: {
         width: 10,
         height: 10,
+        borderRadius: 9999,
         backgroundColor: '{color}',
         boxShadow: '0 0 8px 2px {color}60',
       },

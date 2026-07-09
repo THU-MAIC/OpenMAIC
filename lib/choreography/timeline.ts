@@ -267,11 +267,13 @@ export function resolveActionTimeline(
  * in place. Their nominal lifetime is {@link EFFECT_AUTO_CLEAR_MS}, but the
  * engine cuts it short — and occasionally extends it:
  *
- * - **Scene boundary / completion.** `PlaybackEngine.processNext` calls
- *   `clearEffects()` at the start of every new scene and once more when all
- *   scenes are consumed. So an effect never outlives its scene: a spotlight late
- *   in a scene (or the final action of the lecture) is cleared at the boundary /
- *   completion, not a flat 5s later.
+ * - **Scene boundary / completion.** The app plays one `PlaybackEngine` per
+ *   scene: switching scenes tears the engine down (`stop()` → `clearEffects()`)
+ *   and each scene ends via the completion path (`getCurrentAction()` returns
+ *   null → `clearEffects()`). Either way effects never outlive their scene, so
+ *   in this continuous clock a spotlight late in a scene (or the final action of
+ *   the lecture) is cleared at the next scene's start / at completion, not a
+ *   flat 5s later.
  * - **Shared auto-clear timer.** `ActionEngine.scheduleEffectClear` uses one
  *   timer that each new effect *resets*, and `clearAllEffects` drops every active
  *   effect together. So back-to-back effects (within `EFFECT_AUTO_CLEAR_MS` of
