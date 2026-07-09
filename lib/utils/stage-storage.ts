@@ -11,6 +11,7 @@ import { db } from './database';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
 import { clearPlaybackState } from './playback-storage';
 import { clearAllForScene } from '@/lib/quiz/persistence';
+import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('StageStorage');
@@ -143,6 +144,12 @@ export async function deleteStageData(stageId: string): Promise<void> {
     for (const sceneId of sceneIds) {
       clearAllForScene(sceneId);
     }
+
+    // Learner-runtime data lives in a separate IndexedDB database, so it is
+    // cascaded after the Dexie work: it cannot join those transactions, and a
+    // runtime failure must not abort them (the helper warns instead of
+    // throwing).
+    await deleteStageRuntimeSafely(stageId);
 
     log.info(`Deleted stage: ${stageId}`);
   } catch (error) {

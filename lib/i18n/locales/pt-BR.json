@@ -91,7 +91,9 @@
       "empty": "As anotações aparecerão aqui após a reprodução da aula",
       "emptyHint": "Pressione play para iniciar a aula",
       "pageLabel": "Página {{n}}",
-      "currentPage": "Atual"
+      "currentPage": "Atual",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "P&R",
@@ -502,6 +504,9 @@
     "autoPlay": "Reprodução automática",
     "autoPlayOff": "Parar reprodução automática",
     "speed": "Velocidade",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "Entrada por voz",
     "voiceInputDisabled": "Entrada por voz desativada",
     "textInput": "Entrada por texto",

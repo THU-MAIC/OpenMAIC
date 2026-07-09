@@ -156,6 +156,59 @@ Which aggregate carries the `dslVersion` field — a whole `Stage`, a single Sce
 row, or a bundle — is left to the store that first consumes this pipeline; the
 runner only needs the envelope field.
 
+## Runtime envelope (#869)
+
+Learner-produced runtime data (chat, quiz attempts, playback facts) is persisted
+outside the document, per learner, through a `RuntimeStore` (`@openmaic/storage`).
+This package owns the envelope: `RuntimeSession` (identity + lifecycle, keyed by
+stage/learner/kind) and `RuntimeRecord<TPayload>` (ordered facts; the
+store-assigned `seq` is the replay ordering key). Core-kind payload skeletons
+(`chat`, `quizAttempt`) live here; payload internals are app-owned, validated at
+the store boundary via injected validators (`runtime.ts` guards + `validate.ts`).
+A `RuntimeSession` carries its **own** version envelope field,
+`runtimeDslVersion` — mechanically disjoint from a document's `dslVersion` — and
+rides its **own** version line: `RUNTIME_DSL_VERSION` and a dedicated
+`RUNTIME_DSL_MIGRATIONS` ladder, walked by `migrateRuntime` (not `migrate`), with
+`runtimeDslVersionOf` / `needsRuntimeMigration` as the runtime-line counterparts
+of `dslVersionOf` / `needsMigration`.
+
+Unlike the document line, the runtime line has **no unversioned epoch**. Real
+pre-versioning documents exist, so `migrate` lifts an unstamped document from
+`UNVERSIONED_DSL_VERSION` via its first ladder entry. Nothing legitimately
+predates the runtime envelope, though — it is a brand-new contract, and the
+future `RuntimeStore` stamps `RUNTIME_DSL_VERSION` at write time. So a
+`RuntimeSession` is **born stamped** (`runtimeDslVersion` is a **required** field,
+not optional), `RUNTIME_DSL_MIGRATIONS` ships **empty** (no legacy-lift entry;
+the first real runtime shape change appends a step from the pinned
+`INITIAL_RUNTIME_DSL_VERSION` and bumps `RUNTIME_DSL_VERSION`), and an unstamped
+object reaching any runtime-line function (`migrateRuntime`,
+`needsRuntimeMigration`, `runtimeDslVersionOf`) **throws** — it is a misrouted
+legacy document or an unstamped producer write, not legacy data to lift.
+(Non-objects stay exempt: they are not migratable aggregates and read as
+unversioned on every line.) An empty ladder is still fully functional — a
+stamped-current session early-returns as already current, and a session stamped
+at an unknown older version hits the "no migration path" fail-loud.
+
+The two lines stamp **different fields**, so neither ladder reads the other's
+version — but disjoint fields alone are not enough: a session lacking
+`dslVersion` would still read as *unversioned* to the document runner and be
+lifted onto the wrong line. The **cross-line guard** —
+enforced in the shared envelope reader, so the plain `dslVersionOf` /
+`runtimeDslVersionOf` reads, the `needs*Migration` predicates, and the runners
+all give one answer per envelope — closes this with three-case semantics: (1) own line's stamp present → migrate normally
+on the own line, regardless of the other key; (2) both stamps absent → genuine
+legacy data, walk the own ladder; (3) own stamp absent but the sibling line's
+stamp present → **throw**. Case (3) is undecidable from the envelope — the
+other line's aggregate misrouted here is byte-identical to this line's data
+carrying a stray foreign stamp; migrating would mangle the former, returning it
+unchanged would permanently orphan the latter from its own line — so it is
+treated like a malformed stamp and fails loud. `validateRuntimeSession`
+likewise rejects a session **missing** its `runtimeDslVersion` (born stamped, no
+legacy epoch) and a **stray** `dslVersion` on a session at the door. The runner
+mechanism (contiguous ladder, idempotent, forward-compatible, fail-loud) is
+shared; only the ladder, target version, own stamp field, and the sibling field
+the guard checks differ.
+
 ## Status
 
 Both consumers are now wired to `@openmaic/dsl` and no longer vendor their own copy

@@ -91,7 +91,9 @@
       "empty": "ستظهر الملاحظات هنا بعد تشغيل المحاضرة",
       "emptyHint": "اضغط تشغيل لبدء المحاضرة",
       "pageLabel": "الصفحة {{n}}",
-      "currentPage": "الحالية"
+      "currentPage": "الحالية",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "أسئلة",
@@ -502,6 +504,9 @@
     "autoPlay": "تشغيل تلقائي",
     "autoPlayOff": "إيقاف التشغيل التلقائي",
     "speed": "السرعة",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "إدخال صوتي",
     "voiceInputDisabled": "الإدخال الصوتي معطّل",
     "textInput": "إدخال نصي",

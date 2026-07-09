@@ -91,7 +91,9 @@
       "empty": "Заметки появятся здесь после воспроизведения лекции",
       "emptyHint": "Нажмите воспроизведение для начала лекции",
       "pageLabel": "Страница {{n}}",
-      "currentPage": "Текущая"
+      "currentPage": "Текущая",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "Вопросы",
@@ -502,6 +504,9 @@
     "autoPlay": "Автовоспр.",
     "autoPlayOff": "Остановить",
     "speed": "Скорость",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "Голосовой ввод",
     "voiceInputDisabled": "Голосовой ввод отключён",
     "textInput": "Текстовый ввод",

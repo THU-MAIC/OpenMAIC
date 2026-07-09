@@ -91,7 +91,9 @@
       "empty": "Notes will appear here after lecture playback",
       "emptyHint": "Press play to start the lecture",
       "pageLabel": "Page {{n}}",
-      "currentPage": "Current"
+      "currentPage": "Current",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "Q&A",
@@ -502,6 +504,9 @@
     "autoPlay": "Auto-play",
     "autoPlayOff": "Stop auto-play",
     "speed": "Speed",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "Voice input",
     "voiceInputDisabled": "Voice input disabled",
     "textInput": "Text input",
