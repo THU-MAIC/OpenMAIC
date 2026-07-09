@@ -1361,6 +1361,7 @@
     "pdfSettings": "PDF 解析",
     "documentParsingSettings": "文件解析",
     "supportedFormats": "支援的格式",
+    "mineruSelfHostFormatsNote": "解析 PDF 和圖片需要 MinerU 伺服器安裝 mineru[pipeline] 或 mineru[core] 相依套件。輕量版 mineru-api 可能僅支援 Office 文件。",
     "pdfParsingSettings": "PDF 解析設定",
     "pdfDescription": "選擇 PDF 解析引擎，支援文字擷取、圖片處理和表格辨識",
     "pdfProvider": "PDF 解析器",

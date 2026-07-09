@@ -1448,6 +1448,7 @@
     "pdfSettings": "PDF 파싱",
     "documentParsingSettings": "문서 파싱",
     "supportedFormats": "지원 형식",
+    "mineruSelfHostFormatsNote": "PDF 및 이미지 파싱에는 MinerU 서버에 mineru[pipeline] 또는 mineru[core] 추가 종속성이 필요합니다. 경량 mineru-api 설치에서는 Office 문서만 처리할 수 있습니다.",
     "pdfParsingSettings": "PDF 파싱 설정",
     "pdfDescription": "텍스트 추출, 이미지 처리, 표 인식을 지원하는 PDF 파싱 엔진을 선택하세요",
     "pdfProvider": "PDF 파서",

@@ -291,6 +291,13 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
             </Badge>
           ))}
         </div>
+        {/* Self-hosted MinerU can under-deliver on PDF/image formats when the
+            server lacks the pipeline/core extras — warn against over-promising. */}
+        {isSelfHosted && (
+          <p className="text-xs text-muted-foreground">
+            {t('settings.mineruSelfHostFormatsNote')}
+          </p>
+        )}
       </div>
 
       {/* Features List */}

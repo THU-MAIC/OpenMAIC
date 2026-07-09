@@ -149,6 +149,41 @@ import { parseWithMinerUCloud } from './mineru-cloud';
 const log = createLogger('PDFProviders');
 
 /**
+ * Turn a self-hosted MinerU error body into an actionable message.
+ *
+ * A lightweight `mineru-api` install (without the `mineru[pipeline]` or
+ * `mineru[core]` extras) accepts uploads but fails to parse PDFs/images,
+ * surfacing a raw Python traceback (ModuleNotFoundError / ImportError) or a
+ * "Device string must not be empty" error. We detect those signatures and
+ * return a friendly explanation instead of dumping the raw JSON at the user.
+ *
+ * Exported for unit testing.
+ */
+export function describeSelfHostedMinerUError(status: number, rawBody: string): string {
+  const body = rawBody.toLowerCase();
+  const missingDependency =
+    body.includes('modulenotfounderror') ||
+    body.includes('no module named') ||
+    body.includes('importerror') ||
+    body.includes('device string must not be empty') ||
+    (body.includes('pipeline') && (body.includes('not install') || body.includes('unavailable')));
+
+  if (missingDependency) {
+    return (
+      'The self-hosted MinerU service cannot parse PDF/image files: the ' +
+      'pipeline/core dependencies are not installed. Install `mineru[pipeline]` ' +
+      'or `mineru[core]` on the MinerU server (and start it with ' +
+      '`--backend pipeline`), or switch to MinerU Cloud.'
+    );
+  }
+
+  // Unknown failure — keep the raw detail but bound its length so the UI stays
+  // readable rather than showing an entire JSON blob or traceback.
+  const detail = rawBody.trim().slice(0, 300);
+  return `MinerU API error (${status})${detail ? `: ${detail}` : ''}`;
+}
+
+/**
  * Parse PDF using specified provider
  */
 export async function parsePDF(
@@ -341,7 +376,7 @@ export async function parseWithMinerUDocument(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
-    throw new Error(`MinerU API error (${response.status}): ${errorText}`);
+    throw new Error(describeSelfHostedMinerUError(response.status, errorText));
   }
 
   const json = await response.json();

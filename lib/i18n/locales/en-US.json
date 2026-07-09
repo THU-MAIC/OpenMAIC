@@ -1448,6 +1448,7 @@
     "pdfSettings": "PDF Parsing",
     "documentParsingSettings": "Document Parsing",
     "supportedFormats": "Supported Formats",
+    "mineruSelfHostFormatsNote": "PDF and image parsing require the mineru[pipeline] or mineru[core] extras on your MinerU server. Lightweight mineru-api installs may only handle Office documents.",
     "pdfParsingSettings": "PDF Parsing Settings",
     "pdfDescription": "Choose PDF parsing engine with support for text extraction, image processing, and table recognition",
     "pdfProvider": "PDF Parser",

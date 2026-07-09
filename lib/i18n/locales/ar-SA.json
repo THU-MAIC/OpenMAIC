@@ -1448,6 +1448,7 @@
     "pdfSettings": "تحليل PDF",
     "documentParsingSettings": "تحليل المستندات",
     "supportedFormats": "الصيغ المدعومة",
+    "mineruSelfHostFormatsNote": "يتطلب تحليل ملفات PDF والصور تثبيت الإضافات mineru[pipeline] أو mineru[core] على خادم MinerU. قد تدعم عمليات تثبيت mineru-api الخفيفة مستندات Office فقط.",
     "pdfParsingSettings": "إعدادات تحليل PDF",
     "pdfDescription": "اختر محرك تحليل PDF مع دعم استخراج النص ومعالجة الصور والتعرف على الجداول",
     "pdfProvider": "محلل PDF",

@@ -1448,6 +1448,7 @@
     "pdfSettings": "PDF解析",
     "documentParsingSettings": "ドキュメント解析",
     "supportedFormats": "対応フォーマット",
+    "mineruSelfHostFormatsNote": "PDF と画像の解析には、MinerU サーバーに mineru[pipeline] または mineru[core] の追加依存関係が必要です。軽量版の mineru-api では Office 文書のみに対応する場合があります。",
     "pdfParsingSettings": "PDF解析設定",
     "pdfDescription": "テキスト抽出、画像処理、表認識に対応したPDF解析エンジンを選択",
     "pdfProvider": "PDFパーサー",

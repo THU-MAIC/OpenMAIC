@@ -1448,6 +1448,7 @@
     "pdfSettings": "Обработка PDF",
     "documentParsingSettings": "Обработка документов",
     "supportedFormats": "Поддерживаемые форматы",
+    "mineruSelfHostFormatsNote": "Для обработки PDF и изображений на сервере MinerU требуются дополнительные пакеты mineru[pipeline] или mineru[core]. Облегчённые установки mineru-api могут обрабатывать только документы Office.",
     "pdfParsingSettings": "Настройки обработки PDF",
     "pdfDescription": "Выберите движок для обработки PDF с поддержкой извлечения текста, изображений и таблиц",
     "pdfProvider": "PDF-парсер",

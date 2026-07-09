@@ -1448,6 +1448,7 @@
     "pdfSettings": "Análise de PDF",
     "documentParsingSettings": "Análise de Documentos",
     "supportedFormats": "Formatos Suportados",
+    "mineruSelfHostFormatsNote": "A análise de PDF e imagens requer os extras mineru[pipeline] ou mineru[core] no seu servidor MinerU. Instalações leves do mineru-api podem processar apenas documentos do Office.",
     "pdfParsingSettings": "Configurações de Análise de PDF",
     "pdfDescription": "Escolha o mecanismo de análise de PDF com suporte a extração de texto, processamento de imagens e reconhecimento de tabelas",
     "pdfProvider": "Analisador de PDF",
