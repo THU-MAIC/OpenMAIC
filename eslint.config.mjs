@@ -111,6 +111,57 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Module boundary (machine-enforced): lib/choreography is the shared
+  // orchestration spec (timing + action timeline). It lives in the app (not a
+  // package) because its semantics co-evolve with the playback engine, but it
+  // must stay pure so the classroom-video exporter can interpret it in a pure
+  // Node environment. Two guards, mirroring the package boundaries above:
+  //   1. NO `@/…` host-app path-alias string — it authors none; it depends only
+  //      on @openmaic/dsl (types + the fire-and-forget partition) and relative
+  //      siblings. The app and exporter import it, never the reverse.
+  //   2. NO React / DOM / render-backend runtime import (react, react-dom, gsap,
+  //      framer-motion, motion) — these are bare specifiers the `@/` rule can't
+  //      see. A descriptor describes animation; it never renders it.
+  {
+    files: ['lib/choreography/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/^@\\//]',
+          message:
+            'lib/choreography must not reference a host-app path (@/…). It authors no `@/…` strings — depend only on @openmaic/dsl and relative siblings, so the exporter can interpret it in pure Node. The app and exporter import it, not the reverse.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/^@\\//]',
+          message:
+            'lib/choreography must not reference a host-app path (@/…) in a template literal. Depend only on @openmaic/dsl and relative siblings.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'react',
+                'react-dom',
+                'react/*',
+                'react-dom/*',
+                'gsap',
+                'gsap/*',
+                'framer-motion',
+                'motion',
+                'motion/*',
+              ],
+              message:
+                'lib/choreography must stay render-backend-agnostic (pure Node): no React / DOM / GSAP / framer-motion. It describes timing and animation as data; the app effect components and the exporter render it.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

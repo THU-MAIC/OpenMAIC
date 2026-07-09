@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { resolvePlaybackCursor, EMPTY_SCENE_DWELL } from '@/lib/playback/engine-cursor';
+import { resolvePlaybackCursor, EMPTY_SCENE_DWELL } from '@/lib/choreography';
 import type { Action } from '@/lib/types/action';
 import type { Scene } from '@/lib/types/stage';
 
