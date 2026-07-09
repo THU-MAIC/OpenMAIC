@@ -45,14 +45,34 @@ import {
 
 const FIRE_AND_FORGET = new Set<string>(FIRE_AND_FORGET_ACTIONS);
 
+/**
+ * Synthetic segment emitted when a whiteboard mutation runs while the board is
+ * closed. The app's `ActionEngine.execute()` awaits `ensureWhiteboardOpen()`
+ * (a `WB_OPEN_MS` open animation) before any `wb_*` action other than
+ * `wb_open`/`wb_close`, so the exporter must lay down that same beat or every
+ * later segment starts `WB_OPEN_MS` too early. Distinct id so consumers can
+ * tell it apart from an authored `wb_open`.
+ */
+export const IMPLICIT_WB_OPEN: Action = {
+  id: '__implicit_wb_open__',
+  type: 'wb_open',
+} as Action;
+
+/** Whiteboard mutations that trigger an implicit auto-open when the board is closed. */
+function isImplicitOpenTrigger(type: string): boolean {
+  return type.startsWith('wb_') && type !== 'wb_open' && type !== 'wb_close';
+}
+
 export interface ResolveTimelineOptions {
-  /** Playback speed multiplier applied to the no-audio speech estimate. Default 1. */
+  /** Playback speed multiplier applied to speech dwell (estimate and real audio alike). Default 1. */
   playbackSpeed?: number;
   /**
    * Real narration duration (ms) for a speech action when pre-generated audio
    * exists. Return `null`/`undefined` to fall back to the deterministic
    * {@link estimateSpeechDurationMs}. The exporter, which knows each clip's
-   * stored audio duration (issue #861), supplies this.
+   * stored audio duration (issue #861), supplies this. The returned length is
+   * the clip's natural (1×) duration; the timeline divides it by `playbackSpeed`
+   * to match the live `AudioPlayer.setPlaybackRate` path.
    */
   getAudioDurationMs?: (action: SpeechAction) => number | null | undefined;
   /**
@@ -62,10 +82,18 @@ export interface ResolveTimelineOptions {
   getVideoDurationMs?: (action: PlayVideoAction) => number | null | undefined;
   /**
    * Live whiteboard element count when a wb_clear runs (the clear animation
-   * scales with it). Defaults to 0 (the animation floor) when not supplied; the
-   * exporter, which replays whiteboard state, can provide the true count.
+   * scales with it). Defaults to 0 when not supplied, which yields a 0ms dwell
+   * (an empty clear is a no-op in the engine); the exporter, which replays
+   * whiteboard state, can provide the true count.
    */
   getClearElementCount?: (action: WbClearAction) => number;
+  /**
+   * Whether the whiteboard is already open when the timeline starts. Defaults to
+   * `false`, matching the engine's post-`resetPlaybackVisualState()` state, so
+   * the first whiteboard mutation triggers an implicit {@link IMPLICIT_WB_OPEN}
+   * beat.
+   */
+  whiteboardOpen?: boolean;
 }
 
 export interface TimelineSegment {
@@ -98,9 +126,14 @@ function codeLineCount(code: string): number {
 function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number {
   switch (action.type) {
     case 'speech': {
+      const speed = opts.playbackSpeed ?? 1;
+      // The live path plays pre-generated audio at `AudioPlayer.setPlaybackRate(speed)`,
+      // so a stored clip's wall-clock dwell is its length divided by speed — the
+      // same scaling the no-audio estimate applies. Keeping the two paths in
+      // lockstep is what stops non-1× exports from drifting.
       const audio = opts.getAudioDurationMs?.(action);
-      if (audio != null) return audio;
-      return estimateSpeechDurationMs(action.text, { speed: opts.playbackSpeed ?? 1 });
+      if (audio != null) return audio / speed;
+      return estimateSpeechDurationMs(action.text, { speed });
     }
     case 'spotlight':
     case 'laser':
@@ -127,8 +160,13 @@ function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number 
       return wbDrawCodeMs(codeLineCount((action as WbDrawCodeAction).code));
     case 'wb_edit_code':
       return WB_EDIT_MS;
-    case 'wb_clear':
-      return wbClearMs(opts.getClearElementCount?.(action as WbClearAction) ?? 0);
+    case 'wb_clear': {
+      // The engine early-returns with no delay when the board is already empty
+      // (`executeWbClear`: elementCount === 0 → return), so an empty clear has a
+      // 0ms dwell, not the `wbClearMs(0)` animation floor.
+      const count = opts.getClearElementCount?.(action as WbClearAction) ?? 0;
+      return count === 0 ? 0 : wbClearMs(count);
+    }
     case 'wb_delete':
       return WB_DELETE_MS;
     case 'wb_close':
@@ -149,6 +187,12 @@ function actionDurationMs(action: Action, opts: ResolveTimelineOptions): number 
  * {@link EMPTY_SCENE_DWELL} beat (a blank speech clip's dwell) so it still
  * shows, mirroring {@link resolvePlaybackCursor}.
  *
+ * Whiteboard auto-open is modeled: a `wb_*` mutation (draw/edit/clear/delete)
+ * that runs while the board is closed is preceded by a synthetic
+ * {@link IMPLICIT_WB_OPEN} beat ({@link WB_OPEN_MS}), exactly as the engine's
+ * `ensureWhiteboardOpen` does. The open state carries across scenes and is
+ * toggled by `wb_open` / `wb_close`; seed it via {@link ResolveTimelineOptions.whiteboardOpen}.
+ *
  * @returns segments in play order, each stamped with `startMs`, its visual
  *          `durationMs`, and how far it `advancesCursorMs`.
  *
@@ -161,6 +205,10 @@ export function resolveActionTimeline(
 ): TimelineSegment[] {
   const segments: TimelineSegment[] = [];
   let clockMs = 0;
+  // Mirrors the engine's whiteboard-open flag: false after
+  // resetPlaybackVisualState(), flipped by wb_open / wb_close, and read to
+  // decide whether a wb_* mutation must first pay the implicit open animation.
+  let whiteboardOpen = opts.whiteboardOpen ?? false;
 
   const push = (action: Action, sceneId: string, sceneIndex: number, actionIndex: number) => {
     const durationMs = actionDurationMs(action, opts);
@@ -179,6 +227,24 @@ export function resolveActionTimeline(
     clockMs += advancesCursorMs;
   };
 
+  const pushWithWhiteboard = (
+    action: Action,
+    sceneId: string,
+    sceneIndex: number,
+    actionIndex: number,
+  ) => {
+    // A wb_* mutation on a closed board is auto-preceded by an open animation
+    // (engine: `execute` awaits `ensureWhiteboardOpen`). Emit that beat first so
+    // later segments don't start WB_OPEN_MS early.
+    if (!whiteboardOpen && isImplicitOpenTrigger(action.type)) {
+      push(IMPLICIT_WB_OPEN, sceneId, sceneIndex, actionIndex);
+      whiteboardOpen = true;
+    }
+    push(action, sceneId, sceneIndex, actionIndex);
+    if (action.type === 'wb_open') whiteboardOpen = true;
+    else if (action.type === 'wb_close') whiteboardOpen = false;
+  };
+
   scenes.forEach((scene, sceneIndex) => {
     const actions = scene.actions ?? [];
     if (actions.length === 0) {
@@ -187,7 +253,7 @@ export function resolveActionTimeline(
       return;
     }
     actions.forEach((action, actionIndex) => {
-      push(action, scene.id, sceneIndex, actionIndex);
+      pushWithWhiteboard(action, scene.id, sceneIndex, actionIndex);
     });
   });
 

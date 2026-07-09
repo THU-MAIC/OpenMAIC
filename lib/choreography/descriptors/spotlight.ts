@@ -7,8 +7,13 @@ import type { AnimationDescriptor } from './types';
  * rect; a white border traces the cutout. Values captured verbatim from the
  * `SpotlightOverlay` effect component (`motion/react`):
  * - cutout: 600ms expo-out, insets from ±8/rx4 to the tight ±~0.5/rx1 frame.
+ *   Modeled as a `role: 'mask'` layer — it is not painted itself; the `dim`
+ *   layer subtracts it (`maskedBy`), so a non-React consumer reconstructs the
+ *   "dim everywhere except the cutout" compositing rather than "draw a black
+ *   rect".
  * - border: 500ms expo-out, delayed 50ms, fading in as it settles.
- * - dim: static `rgba(0,0,0,{dimness})`, dimness default 0.7.
+ * - dim: static `rgba(0,0,0,{dimness})`, dimness default 0.7, with the cutout
+ *   subtracted.
  *
  * Shared easing `[0.16, 1, 0.3, 1]` (the spotlight expo-out).
  */
@@ -21,6 +26,8 @@ export const spotlightV1: AnimationDescriptor = {
   layers: [
     {
       id: 'cutout',
+      // Geometry only — subtracted from `dim` (see its maskedBy), not painted.
+      role: 'mask',
       staticProps: { fill: '#000000' },
       tracks: [
         {
@@ -121,8 +128,11 @@ export const spotlightV1: AnimationDescriptor = {
     },
     {
       id: 'dim',
-      // Full-screen dim behind the cutout. The container's opacity fade-in has
-      // no explicit duration in the source (engine default), so no track here.
+      // Full-screen dim behind the cutout, with the cutout subtracted (SVG
+      // <mask>: white full-cover minus the black cutout rect). The container's
+      // opacity fade-in has no explicit duration in the source (engine default),
+      // so no track here.
+      maskedBy: { layerId: 'cutout', mode: 'subtract' },
       staticProps: { fill: 'rgba(0,0,0,{dimness})' },
       tracks: [],
     },

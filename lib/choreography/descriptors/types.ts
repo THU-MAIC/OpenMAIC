@@ -94,12 +94,40 @@ export const TrackSchema = z.object({
 /** Non-animated static value on a layer; strings may carry `{param}` placeholders. */
 const StaticPropsSchema = z.record(z.string(), z.union([z.number(), z.string()]));
 
+/** Whether a layer is painted directly, or only defines geometry used as a mask. */
+export const LayerRoleSchema = z.enum(['content', 'mask']);
+
+/**
+ * How a content layer is clipped by a `mask`-role layer:
+ * - `subtract` — the mask region is removed (made transparent). Models an SVG
+ *   `<mask>` of a white full-cover minus a black shape (the spotlight: the dim
+ *   rect shows everywhere *except* the cutout).
+ * - `intersect` — only the mask region is kept.
+ */
+export const MaskModeSchema = z.enum(['subtract', 'intersect']);
+
+/** A content layer's clip relationship to a `mask`-role layer in the same descriptor. */
+export const MaskRefSchema = z.object({
+  /** `id` of the sibling layer (role `mask`) whose animated geometry clips this one. */
+  layerId: z.string(),
+  mode: MaskModeSchema,
+});
+
 /**
  * A visual layer of the effect (e.g. the spotlight cutout, its border, the
  * laser ring). Groups animated `tracks` with non-animated `staticProps`.
+ *
+ * A layer with `role: 'mask'` is not painted on its own — its animated geometry
+ * is referenced by another layer's `maskedBy` to clip it. This lets a non-React
+ * consumer reconstruct compositing relationships (e.g. the spotlight dim rect
+ * with the cutout punched out) that independent layers alone cannot express.
  */
 export const LayerSchema = z.object({
   id: z.string(),
+  /** Default `content` (painted). `mask` layers only supply geometry for a `maskedBy` ref. */
+  role: LayerRoleSchema.optional(),
+  /** This (content) layer is clipped by the referenced `mask`-role layer. */
+  maskedBy: MaskRefSchema.optional(),
   tracks: z.array(TrackSchema),
   staticProps: StaticPropsSchema.optional(),
 });
@@ -126,5 +154,8 @@ export type AnimatableValue = z.infer<typeof AnimatableValueSchema>;
 export type Easing = z.infer<typeof EasingSchema>;
 export type TrackPhase = z.infer<typeof TrackPhaseSchema>;
 export type Track = z.infer<typeof TrackSchema>;
+export type LayerRole = z.infer<typeof LayerRoleSchema>;
+export type MaskMode = z.infer<typeof MaskModeSchema>;
+export type MaskRef = z.infer<typeof MaskRefSchema>;
 export type Layer = z.infer<typeof LayerSchema>;
 export type AnimationDescriptor = z.infer<typeof AnimationDescriptorSchema>;

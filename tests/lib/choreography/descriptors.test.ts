@@ -79,6 +79,16 @@ describe('spotlight.v1 pins the source animation values', () => {
       expect(t.delayMs).toBe(50);
     }
   });
+
+  it('models the dim layer as the cutout subtracted (SVG mask), not an opaque black rect', () => {
+    const cutout = spotlightV1.layers.find((l) => l.id === 'cutout')!;
+    const dim = spotlightV1.layers.find((l) => l.id === 'dim')!;
+    // The cutout supplies geometry only — it is not painted on its own.
+    expect(cutout.role).toBe('mask');
+    // The dim rect is clipped by subtracting the cutout, so a non-React consumer
+    // reconstructs "dim everywhere except the cutout" rather than a black box.
+    expect(dim.maskedBy).toEqual({ layerId: 'cutout', mode: 'subtract' });
+  });
 });
 
 describe('laser.v1 pins the source animation values', () => {
