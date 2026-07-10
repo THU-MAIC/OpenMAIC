@@ -939,7 +939,8 @@
     "webSearchingDesc": "Searching the web for up-to-date information",
     "webSearchFailed": "Web search failed",
     "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
-    "jumpToBlankTitle": "Jump to a section that still needs a title"
+    "jumpToBlankTitle": "Jump to a section that still needs a title",
+    "analyzingMediaMaterial": "Analyzing audio/video"
   },
   "settings": {
     "title": "Settings",

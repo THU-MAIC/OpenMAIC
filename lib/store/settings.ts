@@ -744,6 +744,23 @@ function ensureBuiltInImageProviders(state: Partial<SettingsState>): void {
 }
 
 /**
+ * Backfill built-in PDF/document providers into persisted state. Without this,
+ * a provider added after a user's persisted state was written (e.g. AliDocMind)
+ * never appears in `pdfProvidersConfig`, so it can't be selected and never
+ * picks up its server-configured flag on rehydrate.
+ */
+function ensureBuiltInPDFProviders(state: Partial<SettingsState>): void {
+  if (!state.pdfProvidersConfig) return;
+  const defaultConfig = getDefaultPDFConfig().pdfProvidersConfig;
+  Object.keys(PDF_PROVIDERS).forEach((pid) => {
+    const providerId = pid as PDFProviderId;
+    if (!state.pdfProvidersConfig![providerId]) {
+      state.pdfProvidersConfig![providerId] = defaultConfig[providerId];
+    }
+  });
+}
+
+/**
  * Ensure videoProvidersConfig includes all built-in video providers.
  * Called on every rehydrate so newly added video providers appear automatically.
  */
@@ -1885,6 +1902,7 @@ export const useSettingsStore = create<SettingsState>()(
         // Ensure image/video configs have all built-in providers
         ensureBuiltInImageProviders(state);
         ensureBuiltInVideoProviders(state);
+        ensureBuiltInPDFProviders(state);
 
         // Migrate from old ttsModel to new ttsProviderId
         if (state.ttsModel && !state.ttsProviderId) {
@@ -2083,6 +2101,7 @@ export const useSettingsStore = create<SettingsState>()(
         ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
+        ensureBuiltInPDFProviders(merged as Partial<SettingsState>);
         ensureBuiltInWebSearchProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
         stripLegacyServerBaseUrl(merged as Partial<SettingsState>);

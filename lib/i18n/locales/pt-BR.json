@@ -939,7 +939,8 @@
     "webSearchingDesc": "Pesquisando informações atualizadas na web",
     "webSearchFailed": "Falha na pesquisa na web",
     "outlinesReadyCount": "{{ready}} / {{total}} seções prontas",
-    "jumpToBlankTitle": "Ir para uma seção que ainda precisa de título"
+    "jumpToBlankTitle": "Ir para uma seção que ainda precisa de título",
+    "analyzingMediaMaterial": "Analisando áudio/vídeo"
   },
   "settings": {
     "title": "Configurações",

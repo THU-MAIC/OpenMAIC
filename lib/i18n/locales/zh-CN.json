@@ -939,7 +939,8 @@
     "webSearchingDesc": "正在搜索网络获取最新资料",
     "webSearchFailed": "网络搜索失败",
     "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
-    "jumpToBlankTitle": "跳到待补充标题的章节"
+    "jumpToBlankTitle": "跳到待补充标题的章节",
+    "analyzingMediaMaterial": "解析音视频内容"
   },
   "settings": {
     "title": "设置",

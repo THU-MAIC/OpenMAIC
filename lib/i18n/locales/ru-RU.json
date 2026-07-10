@@ -939,7 +939,8 @@
     "webSearchingDesc": "Поиск актуальной информации в сети",
     "webSearchFailed": "Ошибка веб-поиска",
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
-    "jumpToBlankTitle": "Перейти к разделу без заголовка"
+    "jumpToBlankTitle": "Перейти к разделу без заголовка",
+    "analyzingMediaMaterial": "Анализ аудио/видео"
   },
   "settings": {
     "title": "Настройки",

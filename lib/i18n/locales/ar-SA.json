@@ -939,7 +939,8 @@
     "webSearchingDesc": "جارٍ البحث في الإنترنت عن معلومات محدّثة",
     "webSearchFailed": "فشل البحث في الإنترنت",
     "outlinesReadyCount": "{{ready}} / {{total}} أقسام جاهزة",
-    "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان"
+    "jumpToBlankTitle": "الانتقال إلى قسم بحاجة إلى عنوان",
+    "analyzingMediaMaterial": "تحليل الصوت/الفيديو"
   },
   "settings": {
     "title": "الإعدادات",

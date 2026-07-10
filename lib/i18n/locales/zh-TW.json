@@ -924,7 +924,8 @@
     "webSearchingDesc": "正在搜尋網路取得最新資料",
     "webSearchFailed": "網路搜尋失敗",
     "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
-    "jumpToBlankTitle": "跳到待補充標題的章節"
+    "jumpToBlankTitle": "跳到待補充標題的章節",
+    "analyzingMediaMaterial": "解析音視訊內容"
   },
   "settings": {
     "title": "設定",
