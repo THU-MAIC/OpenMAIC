@@ -141,6 +141,15 @@ export async function parseWithAliDocMindClient(
     const statusRes = await client.queryDocParserStatus(
       new $Docmind.QueryDocParserStatusRequest({ id: jobId }),
     );
+    // A body-level error (NoPermission, throttling, expired job, …) carries a
+    // non-200 code and often no status — surface it now instead of polling for
+    // the full timeout waiting for a status that will never arrive.
+    const code = statusRes.body?.code;
+    if (code !== undefined && code !== null && String(code) !== '200') {
+      throw new Error(
+        `AliDocMind status query failed (code ${code}): ${statusRes.body?.message ?? 'unknown'}`,
+      );
+    }
     const data = statusRes.body?.data;
     const status = (data?.status ?? '').toLowerCase();
     if (status && status !== lastStatus) {
@@ -233,16 +242,19 @@ async function fetchResult(client: Client, jobId: string): Promise<Record<string
  * Verify AliDocMind credentials without submitting a real job.
  *
  * Probes with a bogus job id. Empirically (docmind-api.cn-hangzhou):
- *   - valid creds  → the SDK does NOT throw; the response body carries a
- *     business code like `BizIdNotExistOrResultExpired` (the job doesn't exist).
- *   - invalid creds → the SDK throws with an Aliyun error code such as
- *     `InvalidAccessKeyId.NotFound` / `SignatureDoesNotMatch` / `Forbidden`.
+ *   - creds with DocMind access → the SDK does NOT throw and the response body
+ *     carries `code: "BizIdNotExistOrResultExpired"` (auth + DocMind permission
+ *     are fine; only the bogus job id is rejected).
+ *   - creds WITHOUT DocMind permission → also no throw, but the body carries
+ *     `code: "NoPermission"` (OSS-only keys hit this).
+ *   - invalid AK/SK → the SDK throws (`InvalidAccessKeyId.NotFound`,
+ *     `SignatureDoesNotMatch`, `Forbidden`, …).
  *
- * We treat ONLY a clear signal as valid (no-throw response, or a thrown error
- * whose code is a known "job/bizId not found" business error). Anything else —
- * an unrecognized throw, an unreachable endpoint, a localized message we can't
- * parse — is reported as a failure, so we never green-light bad credentials or
- * a mistyped endpoint. This is a whitelist, not an auth-error blacklist.
+ * We accept ONLY a positive signal: a success/200 body, or the explicit
+ * job-not-found/expired business code. Every other body code (NoPermission,
+ * throttling, …), any thrown error, an unreachable endpoint, or a localized
+ * message we can't parse is reported as a failure — so an OSS-only key or a
+ * mistyped endpoint can never show "connection successful".
  */
 export async function verifyAliDocMindCredentials(
   creds: Partial<AliDocMindCredentials>,
@@ -250,19 +262,36 @@ export async function verifyAliDocMindCredentials(
   const resolved = resolveCredentials(creds);
   const client = createClient(resolved);
   try {
-    // No throw = the request was authenticated and reached the service.
-    await client.queryDocParserStatus(
+    const res = await client.queryDocParserStatus(
       new $Docmind.QueryDocParserStatusRequest({ id: 'verify-connection-probe' }),
     );
-    return { ok: true };
+    // No throw = authenticated, but the body may still carry a permission or
+    // business error. Only a success code or the job-not-found probe response
+    // proves DocMind is actually usable with these credentials.
+    const code = res.body?.code;
+    const codeStr = code === undefined || code === null ? '' : String(code);
+    const lower = codeStr.toLowerCase();
+    const isProbeOk =
+      codeStr === '' || // some success responses omit code
+      codeStr === '200' ||
+      lower.includes('bizidnotexist') ||
+      lower.includes('resultexpired') ||
+      lower === 'success';
+    if (isProbeOk) {
+      return { ok: true };
+    }
+    return {
+      ok: false,
+      error: `${codeStr}: ${res.body?.message ?? 'AliDocMind rejected the request'}`,
+    };
   } catch (err) {
     const code =
       err && typeof err === 'object' && 'code' in err
         ? String((err as { code: unknown }).code)
         : '';
     const msg = err instanceof Error ? err.message : String(err);
-    // A "job not found" business error still proves the credentials + endpoint
-    // are good (the request authenticated; only the bogus id was rejected).
+    // A thrown "job not found" business error still proves creds + endpoint are
+    // good (the request authenticated; only the bogus id was rejected).
     const lower = `${code} ${msg}`.toLowerCase();
     const isBizNotFound =
       lower.includes('bizidnotexist') ||

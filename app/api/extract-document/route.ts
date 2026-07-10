@@ -11,6 +11,7 @@ import {
   documentArtifactToParsedPdfContent,
   extractMedia,
   getDocumentExtractorProvider,
+  getMediaExtractorProvider,
   selectDocumentExtractorProvider,
 } from '@/lib/document';
 import type { MediaArtifact } from '@/lib/document';
@@ -93,9 +94,13 @@ function mediaArtifactToText(artifact: MediaArtifact): string {
 
 function formatTimestamp(ms: number): string {
   const totalSeconds = Math.floor(ms / 1000);
-  const m = Math.floor(totalSeconds / 60);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
   const s = totalSeconds % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  // Use HH:MM:SS once past an hour so a 75-minute video reads 01:15:03, not 75:03.
+  return h > 0 ? `${String(h).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -151,6 +156,17 @@ export async function POST(req: NextRequest) {
     // downstream generation path.
     if (SUPPORTED_MEDIA_MIME_TYPES.includes(mimeType)) {
       resolvedProviderId = preferredProviderId || 'alidocmind';
+      // Reject a document-only provider (e.g. unpdf/mineru) for a media upload
+      // with a clear 4xx instead of forwarding it into the media registry and
+      // surfacing an opaque 500.
+      const mediaProvider = getMediaExtractorProvider(resolvedProviderId);
+      if (!mediaProvider || !mediaProvider.supportedMimeTypes.includes(mimeType)) {
+        return apiError(
+          'INVALID_REQUEST',
+          400,
+          `Provider "${resolvedProviderId}" cannot extract ${mimeType}. Choose a media-capable provider (e.g. AliDocMind).`,
+        );
+      }
       const mediaManaged = isServerConfiguredProvider('pdf', resolvedProviderId);
       const mediaClientBaseUrl = mediaManaged ? undefined : baseUrl || undefined;
       // Same SSRF guard the document path applies: a client-supplied endpoint
@@ -180,6 +196,16 @@ export async function POST(req: NextRequest) {
       });
 
       const mediaText = mediaArtifactToText(mediaArtifact);
+      // An artifact with no transcript, keyframes, or synopsis carries no usable
+      // content. Returning empty text as 200 would silently generate from
+      // nothing — surface a parse error instead.
+      if (!mediaText.trim()) {
+        return apiError(
+          'PARSE_FAILED',
+          422,
+          `No transcript, keyframes, or synopsis could be extracted from "${documentFile.name}".`,
+        );
+      }
       const mediaResult: ParsedPdfContent = {
         text: mediaText,
         images: [],

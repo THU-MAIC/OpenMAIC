@@ -371,21 +371,60 @@ async function parseWithAliDocMind(
 /** Match markdown image syntax `![alt](url)` and capture the URL. */
 const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\((https?:\/\/[^)]+)\)/g;
 
+/** Max images downloaded per document (bounds memory + request fan-out). */
+const ALIDOCMIND_MAX_IMAGES = 200;
+/** Max bytes per image (bounds memory; AliDocMind crops are small PNGs). */
+const ALIDOCMIND_MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+/** Concurrent image downloads. */
+const ALIDOCMIND_IMAGE_CONCURRENCY = 6;
+
+/**
+ * AliDocMind returns image URLs on Aliyun OSS. Restrict fetches to OSS hosts so
+ * a compromised/custom endpoint can't turn image extraction into an SSRF vector
+ * pointing at internal hosts. Matches `*.oss-*.aliyuncs.com` (and the
+ * doc-mind-video bucket host family).
+ */
+function isTrustedAliyunOssUrl(url: string): boolean {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    const host = u.hostname.toLowerCase();
+    return /(^|\.)oss-[a-z0-9-]+\.aliyuncs\.com$/.test(host) || host.endsWith('.aliyuncs.com');
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Download an AliDocMind image URL and return a PNG base64 data URL.
- * AliDocMind serves cropped page regions from OSS with short-lived signed URLs,
- * so we fetch them at extraction time (before they expire) and inline them,
- * matching the base64 `images[]` contract unpdf/MinerU produce. Returns null on
- * failure so one bad image never fails the whole parse.
+ * Only trusted Aliyun OSS hosts are fetched; downloads are size-capped and
+ * redirects are disallowed (an OSS signed URL never needs one). Returns null on
+ * any failure so one bad image never fails the whole parse.
  */
 async function fetchAliDocMindImageAsBase64(url: string): Promise<string | null> {
+  if (!isTrustedAliyunOssUrl(url)) {
+    log.warn(`[AliDocMind] refusing non-OSS image URL: ${url.slice(0, 80)}`);
+    return null;
+  }
   try {
-    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(30_000),
+      redirect: 'error', // signed OSS URLs are direct; a redirect is suspicious
+    });
     if (!res.ok) {
       log.warn(`[AliDocMind] image fetch ${res.status} for ${url.slice(0, 80)}`);
       return null;
     }
+    const declared = Number(res.headers.get('content-length') || 0);
+    if (declared > ALIDOCMIND_MAX_IMAGE_BYTES) {
+      log.warn(`[AliDocMind] image too large (${declared} bytes), skipping`);
+      return null;
+    }
     const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.byteLength > ALIDOCMIND_MAX_IMAGE_BYTES) {
+      log.warn(`[AliDocMind] image body too large (${buf.byteLength} bytes), skipping`);
+      return null;
+    }
     const png = await sharp(buf).png().toBuffer();
     return `data:image/png;base64,${png.toString('base64')}`;
   } catch (err) {
@@ -394,6 +433,24 @@ async function fetchAliDocMindImageAsBase64(url: string): Promise<string | null>
     );
     return null;
   }
+}
+
+/** Run `fn` over items with a bounded number of concurrent workers. */
+async function mapWithConcurrency<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 /**
@@ -424,7 +481,7 @@ async function aliDocMindLayoutsToParsedPdf(
 
   const textParts: string[] = [];
   const layout: NonNullable<ParsedPdfContent['layout']> = [];
-  const imageUrls: string[] = [];
+  const imageRefs: Array<{ url: string; pageNumber: number }> = [];
   let maxPage = 0;
 
   for (const l of layouts) {
@@ -446,7 +503,9 @@ async function aliDocMindLayoutsToParsedPdf(
 
     if (isImage && md) {
       for (const m of md.matchAll(MARKDOWN_IMAGE_RE)) {
-        if (m[1]) imageUrls.push(m[1]);
+        if (m[1] && imageRefs.length < ALIDOCMIND_MAX_IMAGES) {
+          imageRefs.push({ url: m[1], pageNumber: pageNum });
+        }
       }
       // Drop the remote-URL markdown from text; keep any chart llmResult instead.
       md = l.llmResult ?? '';
@@ -466,15 +525,16 @@ async function aliDocMindLayoutsToParsedPdf(
     }
   }
 
-  // Download images concurrently, drop failures.
-  const images = (await Promise.all(imageUrls.map(fetchAliDocMindImageAsBase64))).filter(
-    (x): x is string => x !== null,
-  );
-  const pdfImagesMeta = images.map((src, i) => ({
-    id: `img_${i + 1}`,
-    src,
-    pageNumber: 1,
-  }));
+  // Download images with bounded concurrency; keep the source page number so
+  // downstream image→page association is correct. Failed downloads drop out.
+  const fetched = await mapWithConcurrency(imageRefs, ALIDOCMIND_IMAGE_CONCURRENCY, async (ref) => {
+    const src = await fetchAliDocMindImageAsBase64(ref.url);
+    return src ? { src, pageNumber: ref.pageNumber } : null;
+  });
+  const pdfImagesMeta = fetched
+    .filter((x): x is { src: string; pageNumber: number } => x !== null)
+    .map((x, i) => ({ id: `img_${i + 1}`, src: x.src, pageNumber: x.pageNumber }));
+  const images = pdfImagesMeta.map((m) => m.src);
 
   return {
     text: textParts.join('\n\n'),

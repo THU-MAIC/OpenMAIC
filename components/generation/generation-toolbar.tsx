@@ -289,8 +289,12 @@ export function GenerationToolbar({
                 <SelectContent>
                   {Object.values(PDF_PROVIDERS).map((provider) => {
                     const cfg = pdfProvidersConfig[provider.id];
+                    // AliDocMind authenticates with an AK/SK pair rather than a
+                    // single apiKey — recognize either credential shape.
+                    const hasCredentials =
+                      !!cfg?.apiKey || (!!cfg?.accessKeyId && !!cfg?.accessKeySecret);
                     const available =
-                      !provider.requiresApiKey || !!cfg?.apiKey || !!cfg?.isServerConfigured;
+                      !provider.requiresApiKey || hasCredentials || !!cfg?.isServerConfigured;
                     return (
                       <SelectItem key={provider.id} value={provider.id} disabled={!available}>
                         <div

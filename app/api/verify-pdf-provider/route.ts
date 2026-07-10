@@ -3,6 +3,7 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import {
   isServerConfiguredProvider,
+  resolveManagedAliDocMindCredentials,
   resolvePDFApiKey,
   resolvePDFBaseUrl,
 } from '@/lib/server/provider-config';
@@ -25,31 +26,53 @@ export async function POST(req: NextRequest) {
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('pdf', providerId);
 
-    // AliDocMind: verify AK/SK by issuing a lightweight authenticated query.
-    // A bogus job id returns a business error (not an auth error) when the
-    // credentials are valid, so anything other than a signature/auth failure
-    // means the credentials work.
+    // AliDocMind: verify AK/SK by issuing a lightweight authenticated probe.
     if (providerId === 'alidocmind') {
-      const resolvedAk = managed ? undefined : (accessKeyId as string | undefined);
-      const resolvedSk = managed ? undefined : (accessKeySecret as string | undefined);
-      const ak = resolvedAk || process.env.ALIDOCMIND_ACCESS_KEY_ID;
-      const sk = resolvedSk || process.env.ALIDOCMIND_ACCESS_KEY_SECRET;
-      if (!ak || !sk) {
-        return apiError(
-          'MISSING_REQUIRED_FIELD',
-          400,
-          'AccessKey ID and AccessKey Secret are required for AliDocMind',
-        );
+      let ak: string | undefined;
+      let sk: string | undefined;
+      let endpoint: string | undefined;
+
+      if (managed) {
+        // Managed: use server-owned credentials + endpoint only. Ignore any
+        // client-supplied AK/SK/baseUrl.
+        const serverCreds = resolveManagedAliDocMindCredentials();
+        if (!serverCreds) {
+          return apiError('INTERNAL_ERROR', 500, 'AliDocMind is not configured on the server');
+        }
+        ak = serverCreds.accessKeyId;
+        sk = serverCreds.accessKeySecret;
+        endpoint = serverCreds.baseUrl;
+      } else {
+        // Unmanaged: client credentials only — never fall back to server env.
+        ak = (accessKeyId as string | undefined) || undefined;
+        sk = (accessKeySecret as string | undefined) || undefined;
+        endpoint = (baseUrl as string | undefined) || undefined;
+        if (!ak || !sk) {
+          return apiError(
+            'MISSING_REQUIRED_FIELD',
+            400,
+            'AccessKey ID and AccessKey Secret are required for AliDocMind',
+          );
+        }
+        // Validate a client-supplied endpoint before we sign a request to it.
+        if (endpoint && process.env.NODE_ENV === 'production') {
+          const ssrfError = await validateUrlForSSRF(
+            endpoint.startsWith('http') ? endpoint : `https://${endpoint}`,
+          );
+          if (ssrfError) {
+            return apiError('INVALID_URL', 403, ssrfError);
+          }
+        }
       }
 
       const { verifyAliDocMindCredentials } = await import('@/lib/pdf/alidocmind-client');
       const result = await verifyAliDocMindCredentials({
         accessKeyId: ak,
         accessKeySecret: sk,
-        endpoint: (baseUrl as string | undefined) || undefined,
+        endpoint,
       });
       if (!result.ok) {
-        return apiError('INTERNAL_ERROR', 500, `Authentication failed: ${result.error}`);
+        return apiError('INVALID_CREDENTIALS', 400, `Authentication failed: ${result.error}`);
       }
       return apiSuccess({ message: 'Connection successful' });
     }

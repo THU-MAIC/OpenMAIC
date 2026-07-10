@@ -182,6 +182,10 @@ describe('document extractor registry', () => {
     expect(alidocmind?.displayName).toBe('AliDocMind');
     expect(alidocmind?.supportedMimeTypes).toContain('application/pdf');
     expect(alidocmind?.supportedMimeTypes).toContain('image/png');
+    // Official image contract is JPG/JPEG/PNG/BMP/GIF — no WebP or JP2 (those
+    // are MinerU-only). Guards against re-advertising unsupported formats.
+    expect(alidocmind?.supportedMimeTypes).not.toContain('image/webp');
+    expect(alidocmind?.supportedMimeTypes).not.toContain('image/jp2');
     expect(alidocmind?.capabilities).toMatchObject({
       text: true,
       tables: true,

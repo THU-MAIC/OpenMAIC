@@ -158,16 +158,21 @@ export const MINERU_CLOUD_MIMES: readonly string[] = [
 export const PLAIN_TEXT_MIMES: readonly string[] = [M.txt, M.markdown, 'text/x-markdown'];
 
 /**
- * AliDocMind (LLM version): pdf + modern Office + images.
- * Per the product docs it also accepts legacy Office, but we advertise the
- * same modern set as MinerU self-host for now (add legacy formats when tested).
+ * AliDocMind (LLM version) image formats per the official contract:
+ * JPG/JPEG/PNG/BMP/GIF. Note: no WebP or JP2 (unlike MinerU).
+ * https://help.aliyun.com/zh/document-mind/developer-reference/document-parsing-large-model-version
+ */
+export const ALIDOCMIND_IMAGE_MIMES: readonly string[] = [M.png, M.jpeg, M.bmp, M.gif];
+
+/**
+ * AliDocMind (LLM version): pdf + modern Office + its supported image set.
  */
 export const ALIDOCMIND_MIMES: readonly string[] = [
   M.pdf,
   M.docx,
   M.pptx,
   M.xlsx,
-  ...MINERU_IMAGE_MIMES,
+  ...ALIDOCMIND_IMAGE_MIMES,
 ];
 
 export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = {
@@ -183,7 +188,10 @@ export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = 
 // to the document extractor registry). Media flows through extractMedia() and
 // yields a MediaArtifact rather than a DocumentArtifact.
 
-/** AliDocMind audio/video support (LLM version). */
+/**
+ * AliDocMind audio/video support per the official contract:
+ * MP4/MKV/AVI/MOV/WMV (video) and MP3/WAV/AAC (audio). Note: no M4A.
+ */
 export const ALIDOCMIND_MEDIA_MIMES: readonly string[] = [
   M.mp4,
   M.mov,
@@ -191,7 +199,6 @@ export const ALIDOCMIND_MEDIA_MIMES: readonly string[] = [
   M.mkv,
   M.wmv,
   M.mp3,
-  M.m4a,
   M.wav,
   M.aac,
 ];
