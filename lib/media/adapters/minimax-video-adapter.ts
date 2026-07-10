@@ -10,6 +10,7 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { runPolledTask } from '../polled-task';
 
 const BASE_URL = 'https://api.minimaxi.com';
 const POLL_INTERVAL_MS = 5000;
@@ -160,46 +161,45 @@ export async function generateWithMiniMaxVideo(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
-  // Step 1: Submit task
-  const taskId = await submitTask(config, options);
+  return runPolledTask<VideoGenerationResult>({
+    submit: async () => ({
+      status: 'submitted',
+      taskId: await submitTask(config, options),
+    }),
+    poll: async (taskId) => {
+      const result = await pollTaskStatus(config, taskId);
 
-  // Step 2: Poll until complete
-  let lastStatus = '';
-  let attempts = 0;
+      if (result.status === 'Success') {
+        if (!result.file_id) {
+          throw new Error(`MiniMax Video: task succeeded but no file_id returned`);
+        }
 
-  while (attempts < MAX_POLL_ATTEMPTS) {
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-
-    const result = await pollTaskStatus(config, taskId);
-    lastStatus = result.status;
-
-    if (result.status === 'Success') {
-      if (!result.file_id) {
-        throw new Error(`MiniMax Video: task succeeded but no file_id returned`);
+        return {
+          status: 'done',
+          result: {
+            url: await retrieveFileDownloadUrl(config, result.file_id),
+            width: result.video_width || 1920,
+            height: result.video_height || 1080,
+            duration: options.duration || 6,
+          },
+        };
       }
 
-      const videoUrl = await retrieveFileDownloadUrl(config, result.file_id);
+      if (result.status === 'Fail') {
+        return {
+          status: 'failed',
+          message: `MiniMax Video generation failed: ${result.base_resp?.status_msg || 'unknown'}`,
+        };
+      }
 
-      return {
-        url: videoUrl,
-        width: result.video_width || 1920,
-        height: result.video_height || 1080,
-        duration: options.duration || 6,
-      };
-    }
-
-    if (result.status === 'Fail') {
-      throw new Error(
-        `MiniMax Video generation failed: ${result.base_resp?.status_msg || 'unknown'}`,
-      );
-    }
-
-    attempts++;
-  }
-
-  throw new Error(
-    `MiniMax Video: timeout after ${MAX_POLL_ATTEMPTS} polls, last status: ${lastStatus}`,
-  );
+      return { status: 'pending', detail: result.status };
+    },
+    intervalMs: POLL_INTERVAL_MS,
+    maxAttempts: MAX_POLL_ATTEMPTS,
+    label: 'MiniMax Video',
+    formatTimeout: ({ attempts, lastPendingDetail }) =>
+      `MiniMax Video: timeout after ${attempts} polls, last status: ${lastPendingDetail ?? ''}`,
+  });
 }
 
 export async function testMiniMaxVideoConnectivity(
