@@ -57,9 +57,18 @@ const ACTION_ICON_ONLY: Record<string, { Icon: typeof Flashlight; style: string 
 interface LectureNotesViewProps {
   notes: LectureNoteEntry[];
   currentSceneId?: string | null;
+  currentActionIndex?: number | null;
+  canJumpToAction?: (sceneId: string, actionIndex: number) => boolean;
+  onJumpToAction?: (sceneId: string, actionIndex: number) => void;
 }
 
-export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProps) {
+export function LectureNotesView({
+  notes,
+  currentSceneId,
+  currentActionIndex,
+  canJumpToAction,
+  onJumpToAction,
+}: LectureNotesViewProps) {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -149,8 +158,14 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                 // Build render rows: group inline actions (spotlight/laser) with next speech,
                 // but render discussion as its own block
                 type Row =
-                  | { kind: 'speech'; inlineActions: string[]; text: string }
-                  | { kind: 'discussion'; label?: string }
+                  | {
+                      kind: 'speech';
+                      inlineActions: string[];
+                      text: string;
+                      actionIndex: number;
+                      actionId: string;
+                    }
+                  | { kind: 'discussion'; label?: string; actionIndex: number; actionId: string }
                   | { kind: 'trailing'; inlineActions: string[] };
                 const rows: Row[] = [];
                 let pendingInline: string[] = [];
@@ -164,7 +179,12 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                       });
                       pendingInline = [];
                     }
-                    rows.push({ kind: 'discussion', label: item.label });
+                    rows.push({
+                      kind: 'discussion',
+                      label: item.label,
+                      actionIndex: item.actionIndex,
+                      actionId: item.actionId,
+                    });
                   } else if (item.kind === 'action') {
                     pendingInline.push(item.type);
                   } else {
@@ -172,6 +192,8 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                       kind: 'speech',
                       inlineActions: pendingInline,
                       text: item.text,
+                      actionIndex: item.actionIndex,
+                      actionId: item.actionId,
                     });
                     pendingInline = [];
                   }
@@ -194,11 +216,19 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                     );
                   }
                   const actions = row.kind === 'trailing' ? row.inlineActions : row.inlineActions;
-                  return (
-                    <p
-                      key={i}
-                      className="text-[12px] leading-[1.8] text-gray-700 dark:text-gray-300"
-                    >
+                  const isSpeech = row.kind === 'speech';
+                  const isActiveSpeech =
+                    isCurrent && isSpeech && row.actionIndex === currentActionIndex;
+                  const canJump =
+                    isCurrent &&
+                    isSpeech &&
+                    !!onJumpToAction &&
+                    (canJumpToAction?.(note.sceneId, row.actionIndex) ?? false);
+                  const jumpTitle = canJump
+                    ? t('chat.lectureNotes.jumpToLine')
+                    : t('chat.lectureNotes.jumpUnavailable');
+                  const content = (
+                    <>
                       {actions.map((a, j) => {
                         const cfg = ACTION_ICON_ONLY[a];
                         if (!cfg) return null;
@@ -215,7 +245,38 @@ export function LectureNotesView({ notes, currentSceneId }: LectureNotesViewProp
                           </span>
                         );
                       })}
-                      {row.kind === 'speech' ? row.text : null}
+                      {isSpeech ? row.text : null}
+                    </>
+                  );
+                  if (isSpeech) {
+                    return (
+                      <button
+                        key={row.actionId}
+                        type="button"
+                        disabled={!canJump}
+                        title={jumpTitle}
+                        onClick={() => onJumpToAction?.(note.sceneId, row.actionIndex)}
+                        className={cn(
+                          'block w-full text-left rounded-md px-1 py-0.5 text-[12px] leading-[1.8] transition-colors',
+                          isActiveSpeech
+                            ? 'bg-purple-100/80 text-purple-800 dark:bg-purple-900/35 dark:text-purple-200'
+                            : 'text-gray-700 dark:text-gray-300',
+                          canJump
+                            ? 'cursor-pointer hover:bg-purple-50 dark:hover:bg-purple-950/25'
+                            : 'cursor-default',
+                        )}
+                        aria-label={jumpTitle}
+                      >
+                        {content}
+                      </button>
+                    );
+                  }
+                  return (
+                    <p
+                      key={i}
+                      className="text-[12px] leading-[1.8] text-gray-700 dark:text-gray-300"
+                    >
+                      {content}
                     </p>
                   );
                 });

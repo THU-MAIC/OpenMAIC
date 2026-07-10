@@ -832,7 +832,7 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
               )}
             >
               <FileText className="h-4 w-4 shrink-0" />
-              <span className="truncate">{t('settings.pdfSettings')}</span>
+              <span className="truncate">{t('settings.documentParsingSettings')}</span>
             </button>
 
             <button

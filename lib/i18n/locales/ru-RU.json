@@ -91,7 +91,9 @@
       "empty": "Заметки появятся здесь после воспроизведения лекции",
       "emptyHint": "Нажмите воспроизведение для начала лекции",
       "pageLabel": "Страница {{n}}",
-      "currentPage": "Текущая"
+      "currentPage": "Текущая",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "Вопросы",
@@ -502,6 +504,9 @@
     "autoPlay": "Автовоспр.",
     "autoPlayOff": "Остановить",
     "speed": "Скорость",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "Голосовой ввод",
     "voiceInputDisabled": "Голосовой ввод отключён",
     "textInput": "Текстовый ввод",
@@ -815,12 +820,12 @@
   },
   "upload": {
     "pdfSizeLimit": "Поддержка PDF до 50 МБ",
-    "courseMaterialSizeLimit": "Поддержка PDF, DOCX, PPTX, TXT и Markdown до 50 МБ",
+    "courseMaterialSizeLimit": "Документы, презентации, таблицы, изображения, текст — до 50 МБ (список форматов зависит от выбранного парсера)",
     "generateFailed": "Ошибка генерации, попробуйте снова",
     "requirementPlaceholder": "Расскажите, что вы хотите изучить, например:\n\"Научи меня Python с нуля за 30 минут\"\n\"Объясни преобразование Фурье на доске\"\n\"Как играть в настольную игру Авалон\"",
     "requirementRequired": "Пожалуйста, укажите требования к курсу",
     "fileTooLarge": "Файл слишком большой. Выберите файл до 50 МБ",
-    "unsupportedCourseMaterial": "Неподдерживаемый тип материала. Загрузите PDF, DOCX, PPTX, TXT или Markdown."
+    "unsupportedCourseMaterial": "Текущий парсер не поддерживает этот формат. Смените парсер или выберите другой файл."
   },
   "generation": {
     "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",
@@ -1446,6 +1451,9 @@
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
     "pdfSettings": "Обработка PDF",
+    "documentParsingSettings": "Обработка документов",
+    "supportedFormats": "Поддерживаемые форматы",
+    "mineruSelfHostFormatsNote": "Для обработки PDF и изображений на сервере MinerU требуются дополнительные пакеты mineru[pipeline] или mineru[core]. Облегчённые установки mineru-api могут обрабатывать только документы Office.",
     "pdfParsingSettings": "Настройки обработки PDF",
     "pdfDescription": "Выберите движок для обработки PDF с поддержкой извлечения текста, изображений и таблиц",
     "pdfProvider": "PDF-парсер",

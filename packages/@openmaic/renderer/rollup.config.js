@@ -1,6 +1,7 @@
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import commonjs from '@rollup/plugin-commonjs';
 import typescript from '@rollup/plugin-typescript';
+import preserveDirectives from 'rollup-plugin-preserve-directives';
 
 const external = [
   /^@openmaic\/dsl($|\/)/,
@@ -33,6 +34,11 @@ const plugins = [
     declarationMap: false,
     rootDir: 'src',
   }),
+  // Preserve module-level directives (e.g. 'use client') into the built output.
+  // Rollup strips them by default (see the MODULE_LEVEL_DIRECTIVE warning silenced
+  // in onwarn above), which drops the client-boundary marker from dist/ — breaking
+  // Next App Router server-component consumers of the editing entry.
+  preserveDirectives(),
 ];
 
 const entries = {
@@ -40,6 +46,7 @@ const entries = {
   'elements/index': 'src/elements/index.ts',
   'types/index': 'src/types/index.ts',
   'snapshot/index': 'src/snapshot/index.ts',
+  'editing/index': 'src/editing/index.ts',
 };
 
 // ESM-only: @openmaic/dsl (kept external) is ESM-only, so a CJS renderer bundle
@@ -54,6 +61,10 @@ const buildBundle = () => ({
     format: 'es',
     entryFileNames: '[name].js',
     chunkFileNames: 'chunks/[name]-[hash].js',
+    // Emit one file per source module so per-module directives ('use client')
+    // survive into dist (rollup-plugin-preserve-directives requires this); a
+    // bundled build would mix client and non-client modules and drop the marker.
+    preserveModules: true,
     preserveModulesRoot: 'src',
     sourcemap: true,
   },
