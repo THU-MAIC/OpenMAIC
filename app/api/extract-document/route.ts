@@ -9,10 +9,12 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import {
   documentArtifactToParsedPdfContent,
+  extractMedia,
   getDocumentExtractorProvider,
   selectDocumentExtractorProvider,
 } from '@/lib/document';
-import { normalizeDocumentMimeType } from '@/lib/document/mime';
+import type { MediaArtifact } from '@/lib/document';
+import { normalizeDocumentMimeType, SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
@@ -45,6 +47,55 @@ function requestedTypeLabel(mimeType: string): string {
     return 'PPTX';
   }
   return mimeType;
+}
+
+/**
+ * Flatten a MediaArtifact (transcript + keyframes + synopsis) into the
+ * text-shaped ParsedPdfContent the generation pipeline consumes. Media takes
+ * the same route + downstream path as documents; only the extraction differs.
+ */
+function mediaArtifactToText(artifact: MediaArtifact): string {
+  const parts: string[] = [];
+
+  const synopsis =
+    artifact.providerRaw &&
+    typeof artifact.providerRaw === 'object' &&
+    'synopsis' in artifact.providerRaw
+      ? String((artifact.providerRaw as { synopsis?: unknown }).synopsis ?? '')
+      : '';
+  if (synopsis.trim()) {
+    parts.push(`## Synopsis\n\n${synopsis.trim()}`);
+  }
+
+  if (artifact.transcript?.length) {
+    const lines = artifact.transcript
+      .filter((seg) => seg.text?.trim())
+      .map((seg) => {
+        const ts = formatTimestamp(seg.startMs);
+        const speaker = seg.speaker ? `${seg.speaker}: ` : '';
+        return `[${ts}] ${speaker}${seg.text.trim()}`;
+      });
+    if (lines.length) parts.push(`## Transcript\n\n${lines.join('\n')}`);
+  }
+
+  if (artifact.keyframes?.length) {
+    const lines = artifact.keyframes
+      .filter((kf) => (kf.description || kf.ocrText)?.trim())
+      .map((kf) => {
+        const ts = formatTimestamp(kf.timeMs);
+        return `[${ts}] ${(kf.description || kf.ocrText || '').trim()}`;
+      });
+    if (lines.length) parts.push(`## Keyframes\n\n${lines.join('\n')}`);
+  }
+
+  return parts.join('\n\n');
+}
+
+function formatTimestamp(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const m = Math.floor(totalSeconds / 60);
+  const s = totalSeconds % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 export async function POST(req: NextRequest) {
@@ -93,6 +144,43 @@ export async function POST(req: NextRequest) {
           MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES / 1024 / 1024,
         )}MB.`,
       );
+    }
+
+    // Media (audio/video) takes the media extraction path → MediaArtifact,
+    // flattened to the same text shape documents produce. Same route, same
+    // downstream generation path.
+    if (SUPPORTED_MEDIA_MIME_TYPES.includes(mimeType)) {
+      resolvedProviderId = preferredProviderId || 'alidocmind';
+      const mediaManaged = isServerConfiguredProvider('pdf', resolvedProviderId);
+      const arrayBuffer = await documentFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const mediaArtifact = await extractMedia({
+        buffer,
+        fileName: documentFile.name,
+        fileSize: documentFile.size,
+        mimeType,
+        config: {
+          providerId: resolvedProviderId,
+          apiKey: mediaManaged ? undefined : apiKey || undefined,
+          baseUrl: mediaManaged ? undefined : baseUrl || undefined,
+          accessKeyId: mediaManaged ? undefined : accessKeyId || undefined,
+          accessKeySecret: mediaManaged ? undefined : accessKeySecret || undefined,
+        },
+      });
+
+      const mediaText = mediaArtifactToText(mediaArtifact);
+      const mediaResult: ParsedPdfContent = {
+        text: mediaText,
+        images: [],
+        metadata: {
+          pageCount: 0,
+          fileName: documentFile.name,
+          fileSize: documentFile.size,
+          mimeType,
+          parser: mediaArtifact.metadata.providerId ?? resolvedProviderId,
+        },
+      };
+      return apiSuccess({ data: mediaResult });
     }
 
     let provider = preferredProviderId
