@@ -131,9 +131,9 @@ describe('document MIME normalization', () => {
     });
 
     it('normalizes a browser-reported audio/mp3 alias to canonical audio/mpeg', () => {
-      expect(
-        normalizeDocumentMimeType({ mimeType: 'audio/mp3', fileName: 'lecture.mp3' }),
-      ).toBe('audio/mpeg');
+      expect(normalizeDocumentMimeType({ mimeType: 'audio/mp3', fileName: 'lecture.mp3' })).toBe(
+        'audio/mpeg',
+      );
     });
   });
 });

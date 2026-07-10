@@ -35,11 +35,10 @@ describeIf('AliDocMind smoke', () => {
     'parses a PDF into ParsedPdfContent with non-empty text',
     async () => {
       const buffer = await fetchBuffer(SAMPLE_PDF_URL);
-      const result: ParsedPdfContent = await parsePDF(
-        { providerId: 'alidocmind' },
-        buffer,
-        { fileName: 'sample.pdf', mimeType: 'application/pdf' },
-      );
+      const result: ParsedPdfContent = await parsePDF({ providerId: 'alidocmind' }, buffer, {
+        fileName: 'sample.pdf',
+        mimeType: 'application/pdf',
+      });
       expect(result.text.length).toBeGreaterThan(0);
       expect(result.metadata?.parser).toBe('alidocmind');
     },

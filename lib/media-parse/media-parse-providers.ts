@@ -128,9 +128,10 @@ function aliDocMindSegmentsToMediaArtifact(
     });
   });
 
-  const synopsis = typeof result.data.synopsis_result === 'string'
-    ? (result.data.synopsis_result as string)
-    : undefined;
+  const synopsis =
+    typeof result.data.synopsis_result === 'string'
+      ? (result.data.synopsis_result as string)
+      : undefined;
 
   return {
     metadata: {
@@ -161,12 +162,15 @@ export async function getCurrentMediaParseConfig(): Promise<MediaParserConfig> {
     'alidocmind',
     { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
   > =
-    (state as unknown as {
-      mediaParseProvidersConfig?: Record<
-        'alidocmind',
-        { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
-      >;
-    }).mediaParseProvidersConfig ?? ({} as Record<
+    (
+      state as unknown as {
+        mediaParseProvidersConfig?: Record<
+          'alidocmind',
+          { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
+        >;
+      }
+    ).mediaParseProvidersConfig ??
+    ({} as Record<
       'alidocmind',
       { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
     >);

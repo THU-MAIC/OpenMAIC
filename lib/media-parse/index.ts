@@ -3,10 +3,7 @@ export {
   getAllMediaParseProviders,
   getMediaParseProvider,
 } from './constants';
-export {
-  getCurrentMediaParseConfig,
-  parseMedia,
-} from './media-parse-providers';
+export { getCurrentMediaParseConfig, parseMedia } from './media-parse-providers';
 export type {
   MediaParseInput,
   MediaParseProviderConfig,

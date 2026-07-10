@@ -1,9 +1,6 @@
 import { parseMedia } from '@/lib/media-parse';
 import { MEDIA_PARSE_PROVIDERS } from '@/lib/media-parse/constants';
-import type {
-  MediaParseProviderConfig,
-  MediaParseProviderId,
-} from '@/lib/media-parse/types';
+import type { MediaParseProviderConfig, MediaParseProviderId } from '@/lib/media-parse/types';
 import type {
   MediaExtractorCapabilities,
   MediaExtractorInput,

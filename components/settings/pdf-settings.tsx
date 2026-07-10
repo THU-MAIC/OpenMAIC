@@ -50,8 +50,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
   const isCloud = selectedProviderId === 'mineru-cloud';
   const isSelfHosted = selectedProviderId === 'mineru';
   const isAliDocMind = selectedProviderId === 'alidocmind';
-  const hasAccessKeys =
-    !!providerConfig?.accessKeyId && !!providerConfig?.accessKeySecret;
+  const hasAccessKeys = !!providerConfig?.accessKeyId && !!providerConfig?.accessKeySecret;
   const needsRemoteConfig = isSelfHosted || isCloud || isAliDocMind;
 
   // For cloud: test requires API key (user-entered or server-configured);
@@ -210,11 +209,7 @@ export function PDFSettings({ selectedProviderId }: PDFSettingsProps) {
                         onClick={() => setShowApiKey(!showApiKey)}
                         className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
                       >
-                        {showApiKey ? (
-                          <EyeOff className="h-4 w-4" />
-                        ) : (
-                          <Eye className="h-4 w-4" />
-                        )}
+                        {showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                       </button>
                     </div>
                     <Button
