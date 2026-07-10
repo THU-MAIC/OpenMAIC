@@ -7,6 +7,11 @@
  *   export ALIDOCMIND_ACCESS_KEY_ID=xxx
  *   export ALIDOCMIND_ACCESS_KEY_SECRET=yyy
  *   npx vitest run tests/document/alidocmind.smoke.test.ts
+ *
+ * Note: the video case can occasionally fail even when the code is correct —
+ * whether AliDocMind returns transcript/keyframes for a given public clip is
+ * non-deterministic server-side. A re-run usually passes. It verifies the live
+ * submit → poll → map path, not deterministic content.
  */
 
 import { describe, it, expect } from 'vitest';
