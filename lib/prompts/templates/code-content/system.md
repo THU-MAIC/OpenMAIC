@@ -139,7 +139,10 @@ window.addEventListener('message', function(event) {
     case 'SET_WIDGET_STATE':
       // e.g. { code: "...", run: true } — set editor contents, optionally run.
       if (state && typeof state.code === 'string') {
-        if (typeof editor?.setValue === 'function') editor.setValue(state.code);
+        // Guard the identifier itself: `editor?.setValue` still throws
+        // ReferenceError when no `editor` variable is declared (e.g. a
+        // textarea-only widget). `typeof editor` is safe for that case.
+        if (typeof editor !== 'undefined' && typeof editor.setValue === 'function') editor.setValue(state.code);
         else { const ta = document.getElementById('code-input'); if (ta) ta.value = state.code; }
       }
       if (state && state.run && typeof runCode === 'function') runCode();
