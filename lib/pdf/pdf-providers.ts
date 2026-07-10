@@ -428,6 +428,7 @@ async function aliDocMindLayoutsToParsedPdf(
   let maxPage = 0;
 
   for (const l of layouts) {
+    // AliDocMind pageNum is 0-based; normalize to 1-based page numbers.
     const pageNum = (l.pageNum ?? 0) + 1;
     maxPage = Math.max(maxPage, pageNum);
 
@@ -481,7 +482,11 @@ async function aliDocMindLayoutsToParsedPdf(
     layout: layout.length ? layout : undefined,
     metadata: {
       fileName,
-      pageCount: result.pageCountEstimate ?? maxPage,
+      // AliDocMind pageNum and pageCountEstimate are both 0-based (verified
+      // against a real response: a 14-page doc reports pageNum 0..13 and
+      // pageCountEstimate 13). maxPage is already normalized to 1-based, so
+      // prefer it; fall back to pageCountEstimate+1 only if we saw no blocks.
+      pageCount: maxPage || (result.pageCountEstimate ?? 0) + 1,
       parser: 'alidocmind',
       taskId: result.jobId,
       imageMapping: Object.fromEntries(pdfImagesMeta.map((m) => [m.id, m.src])),
