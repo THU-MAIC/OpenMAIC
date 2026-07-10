@@ -38,6 +38,7 @@ function createMediaBackedExtractor(id: MediaParseProviderId): MediaExtractorPro
           baseUrl: input.config.baseUrl,
           accessKeyId: input.config.accessKeyId,
           accessKeySecret: input.config.accessKeySecret,
+          allowEnvFallback: input.config.allowEnvFallback,
         },
       });
     },

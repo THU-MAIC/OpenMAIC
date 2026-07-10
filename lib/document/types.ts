@@ -18,6 +18,8 @@ export interface DocumentExtractorConfig {
   accessKeyId?: string;
   /** Aliyun AccessKey Secret (AliDocMind). */
   accessKeySecret?: string;
+  /** Allow AliDocMind to use server env credentials (trusted context only). */
+  allowEnvFallback?: boolean;
 }
 
 export interface DocumentExtractorInput {

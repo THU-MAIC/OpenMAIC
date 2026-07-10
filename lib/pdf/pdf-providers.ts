@@ -205,10 +205,8 @@ export async function parsePDF(
   // Validate API key if required
   if (provider.requiresApiKey && !config.apiKey) {
     // AliDocMind uses AK/SK instead of a single apiKey; check separately.
-    if (
-      config.providerId !== 'alidocmind' ||
-      (!config.accessKeyId && !process.env.ALIDOCMIND_ACCESS_KEY_ID)
-    ) {
+    const envAvailable = config.allowEnvFallback && !!process.env.ALIDOCMIND_ACCESS_KEY_ID;
+    if (config.providerId !== 'alidocmind' || (!config.accessKeyId && !envAvailable)) {
       throw new Error(`API key required for PDF provider: ${config.providerId}`);
     }
   }
@@ -356,6 +354,7 @@ async function parseWithAliDocMind(
       accessKeyId: config.accessKeyId,
       accessKeySecret: config.accessKeySecret,
       endpoint: config.baseUrl,
+      allowEnvFallback: config.allowEnvFallback,
     },
     {
       buffer: documentBuffer,
@@ -396,7 +395,12 @@ function aliDocMindLayoutsToParsedPdf(
   let maxPage = 0;
 
   for (const l of layouts) {
-    const md = l.markdownContent ?? l.text ?? '';
+    // Tables and charts carry their extracted content (HTML table / markdown)
+    // in `llmResult`, not `markdownContent`, when outputHtmlTable/LLM enhancement
+    // is on. Prefer it for those types so table content isn't silently dropped.
+    const isTabular = l.type === 'table' || l.type === 'figure';
+    const md =
+      (isTabular ? l.llmResult : undefined) ?? l.markdownContent ?? l.text ?? l.llmResult ?? '';
     if (md) textParts.push(md);
     const pageNum = (l.pageNum ?? 0) + 1;
     maxPage = Math.max(maxPage, pageNum);
@@ -406,7 +410,7 @@ function aliDocMindLayoutsToParsedPdf(
         layout.push({
           page: pageNum,
           type: mappedType,
-          content: l.text ?? l.markdownContent ?? l.llmResult ?? '',
+          content: (isTabular ? l.llmResult : undefined) ?? l.text ?? l.markdownContent ?? '',
         });
       }
     }

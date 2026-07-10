@@ -1,19 +1,5 @@
+import { ALIDOCMIND_MEDIA_MIMES } from '@/lib/document/mime';
 import type { MediaParseProviderConfig, MediaParseProviderId } from './types';
-
-const AUDIO_VIDEO_MIME_TYPES = [
-  // Video
-  'video/mp4',
-  'video/quicktime', // .mov
-  'video/x-msvideo', // .avi
-  'video/x-matroska', // .mkv
-  'video/x-ms-wmv',
-  // Audio
-  'audio/mpeg',
-  'audio/mp4',
-  'audio/wav',
-  'audio/x-wav',
-  'audio/aac',
-] as const;
 
 /**
  * Media Parse Provider Registry
@@ -25,7 +11,9 @@ export const MEDIA_PARSE_PROVIDERS: Record<MediaParseProviderId, MediaParseProvi
     requiresApiKey: true,
     icon: '/logos/aliyun.svg',
     features: ['transcript', 'keyframes', 'synopsis', 'ocr'],
-    supportedMimeTypes: AUDIO_VIDEO_MIME_TYPES,
+    // Single source of truth in lib/document/mime.ts so the picker's accept
+    // string and this registry can't drift.
+    supportedMimeTypes: ALIDOCMIND_MEDIA_MIMES,
   },
 };
 

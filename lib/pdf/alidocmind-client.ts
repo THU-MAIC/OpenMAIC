@@ -26,6 +26,13 @@ export interface AliDocMindCredentials {
   accessKeyId: string;
   accessKeySecret: string;
   endpoint?: string;
+  /**
+   * Allow falling back to ALIDOCMIND_ACCESS_KEY_ID/SECRET env vars when the
+   * caller supplies no AK/SK. Defaults to false so an unauthenticated client
+   * request cannot silently run on the server's Aliyun account. Set true only
+   * in a server-managed/trusted context (or local dev/tests via env).
+   */
+  allowEnvFallback?: boolean;
 }
 
 export interface AliDocMindSubmitOptions {
@@ -58,13 +65,13 @@ export interface AliDocMindResult {
 }
 
 function resolveCredentials(creds: Partial<AliDocMindCredentials>): AliDocMindCredentials {
-  const accessKeyId = creds.accessKeyId || process.env.ALIDOCMIND_ACCESS_KEY_ID;
-  const accessKeySecret = creds.accessKeySecret || process.env.ALIDOCMIND_ACCESS_KEY_SECRET;
+  const allowEnv = creds.allowEnvFallback ?? false;
+  const accessKeyId =
+    creds.accessKeyId || (allowEnv ? process.env.ALIDOCMIND_ACCESS_KEY_ID : undefined);
+  const accessKeySecret =
+    creds.accessKeySecret || (allowEnv ? process.env.ALIDOCMIND_ACCESS_KEY_SECRET : undefined);
   if (!accessKeyId || !accessKeySecret) {
-    throw new Error(
-      'AliDocMind credentials missing: set accessKeyId + accessKeySecret ' +
-        '(or ALIDOCMIND_ACCESS_KEY_ID + ALIDOCMIND_ACCESS_KEY_SECRET env vars)',
-    );
+    throw new Error('AliDocMind credentials missing: provide accessKeyId + accessKeySecret');
   }
   const endpoint = (creds.endpoint || ALIDOCMIND_DEFAULT_BASE).replace(/^https?:\/\//, '');
   return { accessKeyId, accessKeySecret, endpoint };
@@ -178,6 +185,17 @@ async function fetchResult(client: Client, jobId: string): Promise<Record<string
         layoutStepSize: STEP,
       }),
     );
+
+    // Surface a real API error instead of silently returning empty text.
+    // A success job whose result call errors (throttling, expired result,
+    // permission) must not look like "extracted nothing".
+    const code = res.body?.code;
+    if (code !== undefined && code !== null && String(code) !== '200') {
+      throw new Error(
+        `AliDocMind getDocParserResult failed (code ${code}): ${res.body?.message ?? 'unknown'}`,
+      );
+    }
+
     const data = (res.body?.data ?? {}) as Record<string, unknown>;
 
     const layouts = Array.isArray(data.layouts) ? (data.layouts as unknown[]) : [];
@@ -194,8 +212,14 @@ async function fetchResult(client: Client, jobId: string): Promise<Record<string
       if (merged[k] === undefined) merged[k] = v;
     }
 
-    if (layouts.length < STEP && segments.length < STEP) break;
-    layoutNum += Math.max(layouts.length, segments.length);
+    // Media results (segments[]) are not paginated by layoutNum/layoutStepSize —
+    // those params address layout blocks. Re-requesting with an advanced offset
+    // would return the same segments and loop until the safety cap. Stop after
+    // the first page whenever segments are present.
+    if (segments.length) break;
+
+    if (layouts.length < STEP) break;
+    layoutNum += layouts.length;
     if (layoutNum > 100_000) {
       log.warn(`AliDocMind result exceeded 100k blocks, truncating`);
       break;
@@ -208,9 +232,17 @@ async function fetchResult(client: Client, jobId: string): Promise<Record<string
 /**
  * Verify AliDocMind credentials without submitting a real job.
  *
- * Queries a bogus job id: valid credentials return a "not found"-style business
- * error, while bad credentials surface a signature/auth error. We treat only
- * auth-level failures as invalid.
+ * Probes with a bogus job id. Empirically (docmind-api.cn-hangzhou):
+ *   - valid creds  → the SDK does NOT throw; the response body carries a
+ *     business code like `BizIdNotExistOrResultExpired` (the job doesn't exist).
+ *   - invalid creds → the SDK throws with an Aliyun error code such as
+ *     `InvalidAccessKeyId.NotFound` / `SignatureDoesNotMatch` / `Forbidden`.
+ *
+ * We treat ONLY a clear signal as valid (no-throw response, or a thrown error
+ * whose code is a known "job/bizId not found" business error). Anything else —
+ * an unrecognized throw, an unreachable endpoint, a localized message we can't
+ * parse — is reported as a failure, so we never green-light bad credentials or
+ * a mistyped endpoint. This is a whitelist, not an auth-error blacklist.
  */
 export async function verifyAliDocMindCredentials(
   creds: Partial<AliDocMindCredentials>,
@@ -218,25 +250,28 @@ export async function verifyAliDocMindCredentials(
   const resolved = resolveCredentials(creds);
   const client = createClient(resolved);
   try {
+    // No throw = the request was authenticated and reached the service.
     await client.queryDocParserStatus(
       new $Docmind.QueryDocParserStatusRequest({ id: 'verify-connection-probe' }),
     );
     return { ok: true };
   } catch (err) {
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code: unknown }).code)
+        : '';
     const msg = err instanceof Error ? err.message : String(err);
-    const lower = msg.toLowerCase();
-    const isAuthError =
-      lower.includes('signature') ||
-      lower.includes('accesskey') ||
-      lower.includes('access key') ||
-      lower.includes('forbidden') ||
-      lower.includes('unauthorized') ||
-      lower.includes('invalidaccesskey') ||
-      lower.includes('nopermission');
-    if (isAuthError) {
-      return { ok: false, error: msg };
+    // A "job not found" business error still proves the credentials + endpoint
+    // are good (the request authenticated; only the bogus id was rejected).
+    const lower = `${code} ${msg}`.toLowerCase();
+    const isBizNotFound =
+      lower.includes('bizidnotexist') ||
+      lower.includes('does not exist') ||
+      lower.includes('resultexpired') ||
+      lower.includes('result is expired');
+    if (isBizNotFound) {
+      return { ok: true };
     }
-    // Any non-auth error (e.g. "job not found") means credentials are valid.
-    return { ok: true };
+    return { ok: false, error: code ? `${code}: ${msg}` : msg };
   }
 }

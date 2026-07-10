@@ -27,6 +27,11 @@ export interface MediaParserConfig {
   accessKeyId?: string;
   /** Aliyun AccessKey Secret (AliDocMind). */
   accessKeySecret?: string;
+  /**
+   * Allow AliDocMind to fall back to ALIDOCMIND_ACCESS_KEY_ID/SECRET env vars.
+   * Off by default; enable only in a trusted server/dev/test context.
+   */
+  allowEnvFallback?: boolean;
 }
 
 export interface MediaParseInput {

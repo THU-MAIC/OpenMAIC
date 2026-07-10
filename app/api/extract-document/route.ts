@@ -152,6 +152,15 @@ export async function POST(req: NextRequest) {
     if (SUPPORTED_MEDIA_MIME_TYPES.includes(mimeType)) {
       resolvedProviderId = preferredProviderId || 'alidocmind';
       const mediaManaged = isServerConfiguredProvider('pdf', resolvedProviderId);
+      const mediaClientBaseUrl = mediaManaged ? undefined : baseUrl || undefined;
+      // Same SSRF guard the document path applies: a client-supplied endpoint
+      // must not let the server connect to internal/metadata hosts.
+      if (mediaClientBaseUrl && process.env.NODE_ENV === 'production') {
+        const ssrfError = await validateUrlForSSRF(mediaClientBaseUrl);
+        if (ssrfError) {
+          return apiError('INVALID_URL', 403, ssrfError);
+        }
+      }
       const arrayBuffer = await documentFile.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       const mediaArtifact = await extractMedia({
@@ -162,9 +171,11 @@ export async function POST(req: NextRequest) {
         config: {
           providerId: resolvedProviderId,
           apiKey: mediaManaged ? undefined : apiKey || undefined,
-          baseUrl: mediaManaged ? undefined : baseUrl || undefined,
+          baseUrl: mediaClientBaseUrl,
           accessKeyId: mediaManaged ? undefined : accessKeyId || undefined,
           accessKeySecret: mediaManaged ? undefined : accessKeySecret || undefined,
+          // Only a server-managed provider may use the server's env credentials.
+          allowEnvFallback: mediaManaged,
         },
       });
 
@@ -250,10 +261,11 @@ export async function POST(req: NextRequest) {
       baseUrl: isPdfProviderId(provider.id)
         ? resolvePDFBaseUrl(provider.id, clientBaseUrl)
         : clientBaseUrl,
-      // AliDocMind uses AK/SK; server-managed values take precedence via env
-      // fallback in the client, so pass client-entered values only when not managed.
+      // AliDocMind uses AK/SK; pass client-entered values only when not managed.
       accessKeyId: managed ? undefined : accessKeyId || undefined,
       accessKeySecret: managed ? undefined : accessKeySecret || undefined,
+      // Only a server-managed provider may use the server's env credentials.
+      allowEnvFallback: managed,
     };
 
     const arrayBuffer = await documentFile.arrayBuffer();

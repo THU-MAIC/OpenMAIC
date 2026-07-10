@@ -35,10 +35,14 @@ describeIf('AliDocMind smoke', () => {
     'parses a PDF into ParsedPdfContent with non-empty text',
     async () => {
       const buffer = await fetchBuffer(SAMPLE_PDF_URL);
-      const result: ParsedPdfContent = await parsePDF({ providerId: 'alidocmind' }, buffer, {
-        fileName: 'sample.pdf',
-        mimeType: 'application/pdf',
-      });
+      const result: ParsedPdfContent = await parsePDF(
+        { providerId: 'alidocmind', allowEnvFallback: true },
+        buffer,
+        {
+          fileName: 'sample.pdf',
+          mimeType: 'application/pdf',
+        },
+      );
       expect(result.text.length).toBeGreaterThan(0);
       expect(result.metadata?.parser).toBe('alidocmind');
     },
@@ -53,13 +57,19 @@ describeIf('AliDocMind smoke', () => {
         buffer,
         fileName: 'sample.mp4',
         mimeType: 'video/mp4',
-        config: { providerId: 'alidocmind' },
+        config: { providerId: 'alidocmind', allowEnvFallback: true },
       });
       const hasContent =
         (artifact.transcript && artifact.transcript.length > 0) ||
         (artifact.keyframes && artifact.keyframes.length > 0);
       expect(hasContent).toBe(true);
       expect(artifact.metadata.providerId).toBe('alidocmind');
+      // Timestamps must be in milliseconds: a ~52s trailer should yield a
+      // duration in the tens-of-thousands of ms, not tens (which would mean
+      // the units were seconds). Guards against a silent ms/s mismatch.
+      if (artifact.metadata.durationMs !== undefined) {
+        expect(artifact.metadata.durationMs).toBeGreaterThan(1000);
+      }
     },
     10 * 60 * 1000,
   );

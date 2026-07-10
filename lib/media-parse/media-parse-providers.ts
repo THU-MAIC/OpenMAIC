@@ -17,7 +17,7 @@
 
 import { parseWithAliDocMindClient } from '@/lib/pdf/alidocmind-client';
 import type { MediaArtifact, MediaKeyframe, MediaTranscriptSegment } from '@/lib/document';
-import type { MediaParseInput, MediaParserConfig, MediaParseResult } from './types';
+import type { MediaParseInput, MediaParseResult } from './types';
 import { MEDIA_PARSE_PROVIDERS } from './constants';
 import { createLogger } from '@/lib/logger';
 
@@ -57,6 +57,7 @@ async function parseWithAliDocMind(input: MediaParseInput): Promise<MediaArtifac
       accessKeyId: input.config.accessKeyId,
       accessKeySecret: input.config.accessKeySecret,
       endpoint: input.config.baseUrl,
+      allowEnvFallback: input.config.allowEnvFallback,
     },
     {
       buffer: input.buffer,
@@ -144,45 +145,6 @@ function aliDocMindSegmentsToMediaArtifact(
     transcript: transcript.length ? transcript : undefined,
     keyframes: keyframes.length ? keyframes : undefined,
     providerRaw: synopsis ? { synopsis, jobId: result.jobId } : { jobId: result.jobId },
-  };
-}
-
-/**
- * Get current media parser configuration from settings store (browser only).
- */
-export async function getCurrentMediaParseConfig(): Promise<MediaParserConfig> {
-  if (typeof window === 'undefined') {
-    throw new Error('getCurrentMediaParseConfig() can only be called in browser context');
-  }
-  const { useSettingsStore } = await import('@/lib/store/settings');
-  const state = useSettingsStore.getState();
-  const providerId = (state as unknown as { mediaParseProviderId?: 'alidocmind' })
-    .mediaParseProviderId;
-  const providersConfig: Record<
-    'alidocmind',
-    { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
-  > =
-    (
-      state as unknown as {
-        mediaParseProvidersConfig?: Record<
-          'alidocmind',
-          { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
-        >;
-      }
-    ).mediaParseProvidersConfig ??
-    ({} as Record<
-      'alidocmind',
-      { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
-    >);
-  const resolvedId: 'alidocmind' = providerId ?? 'alidocmind';
-  const providerConfig = providersConfig[resolvedId];
-
-  return {
-    providerId: resolvedId,
-    apiKey: providerConfig?.apiKey,
-    baseUrl: providerConfig?.baseUrl,
-    accessKeyId: providerConfig?.accessKeyId,
-    accessKeySecret: providerConfig?.accessKeySecret,
   };
 }
 
