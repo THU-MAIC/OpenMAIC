@@ -368,6 +368,34 @@ async function parseWithAliDocMind(
   return aliDocMindLayoutsToParsedPdf(result, fileName);
 }
 
+/** Match markdown image syntax `![alt](url)` and capture the URL. */
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*\]\((https?:\/\/[^)]+)\)/g;
+
+/**
+ * Download an AliDocMind image URL and return a PNG base64 data URL.
+ * AliDocMind serves cropped page regions from OSS with short-lived signed URLs,
+ * so we fetch them at extraction time (before they expire) and inline them,
+ * matching the base64 `images[]` contract unpdf/MinerU produce. Returns null on
+ * failure so one bad image never fails the whole parse.
+ */
+async function fetchAliDocMindImageAsBase64(url: string): Promise<string | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+    if (!res.ok) {
+      log.warn(`[AliDocMind] image fetch ${res.status} for ${url.slice(0, 80)}`);
+      return null;
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    const png = await sharp(buf).png().toBuffer();
+    return `data:image/png;base64,${png.toString('base64')}`;
+  } catch (err) {
+    log.warn(
+      `[AliDocMind] image fetch/convert failed: ${err instanceof Error ? err.message : err}`,
+    );
+    return null;
+  }
+}
+
 /**
  * Map AliDocMind layouts[] shape → ParsedPdfContent.
  *
@@ -375,11 +403,15 @@ async function parseWithAliDocMind(
  *   { text, markdownContent, type, subType, pageNum, level, index, uniqueId, alignment,
  *     llmResult?, layoutConf?, pos?, ... }
  *   type ∈ { title, text, figure, picture, table, formula, multicolumn, foot, head, ... }
+ *
+ * Images: figure/picture blocks embed OSS image URLs inside `markdownContent`
+ * (markdown `![](url)`), NOT a dedicated field. We download+inline them to
+ * base64 and strip the remote URLs from the emitted text (they expire).
  */
-function aliDocMindLayoutsToParsedPdf(
+async function aliDocMindLayoutsToParsedPdf(
   result: { data: Record<string, unknown>; pageCountEstimate?: number; jobId?: string },
   fileName: string,
-): ParsedPdfContent {
+): Promise<ParsedPdfContent> {
   const layouts = (Array.isArray(result.data.layouts) ? result.data.layouts : []) as Array<{
     text?: string;
     markdownContent?: string;
@@ -392,39 +424,68 @@ function aliDocMindLayoutsToParsedPdf(
 
   const textParts: string[] = [];
   const layout: NonNullable<ParsedPdfContent['layout']> = [];
+  const imageUrls: string[] = [];
   let maxPage = 0;
 
   for (const l of layouts) {
-    // Tables and charts carry their extracted content (HTML table / markdown)
-    // in `llmResult`, not `markdownContent`, when outputHtmlTable/LLM enhancement
-    // is on. Prefer it for those types so table content isn't silently dropped.
-    const isTabular = l.type === 'table' || l.type === 'figure';
-    const md =
-      (isTabular ? l.llmResult : undefined) ?? l.markdownContent ?? l.text ?? l.llmResult ?? '';
-    if (md) textParts.push(md);
     const pageNum = (l.pageNum ?? 0) + 1;
     maxPage = Math.max(maxPage, pageNum);
+
+    // Tables carry their extracted content (HTML/markdown) in `llmResult` when
+    // outputHtmlTable/LLM enhancement is on — markdownContent may be empty.
+    const isTable = l.type === 'table';
+    // figure/picture embed image URLs in markdownContent; a chart-type figure
+    // may additionally have llmResult (chart→table). Collect URLs, then strip
+    // them from the text we emit (signed URLs expire; downstream wants base64).
+    const isImage = l.type === 'figure' || l.type === 'picture';
+
+    let md = isTable
+      ? (l.llmResult ?? l.markdownContent ?? l.text ?? '')
+      : (l.markdownContent ?? l.text ?? l.llmResult ?? '');
+
+    if (isImage && md) {
+      for (const m of md.matchAll(MARKDOWN_IMAGE_RE)) {
+        if (m[1]) imageUrls.push(m[1]);
+      }
+      // Drop the remote-URL markdown from text; keep any chart llmResult instead.
+      md = l.llmResult ?? '';
+    }
+
+    if (md) textParts.push(md);
+
     if (l.type) {
       const mappedType = mapLayoutType(l.type);
       if (mappedType) {
         layout.push({
           page: pageNum,
           type: mappedType,
-          content: (isTabular ? l.llmResult : undefined) ?? l.text ?? l.markdownContent ?? '',
+          content: isTable ? (l.llmResult ?? '') : (l.text ?? l.markdownContent ?? ''),
         });
       }
     }
   }
 
+  // Download images concurrently, drop failures.
+  const images = (await Promise.all(imageUrls.map(fetchAliDocMindImageAsBase64))).filter(
+    (x): x is string => x !== null,
+  );
+  const pdfImagesMeta = images.map((src, i) => ({
+    id: `img_${i + 1}`,
+    src,
+    pageNumber: 1,
+  }));
+
   return {
     text: textParts.join('\n\n'),
-    images: [],
+    images,
     layout: layout.length ? layout : undefined,
     metadata: {
       fileName,
       pageCount: result.pageCountEstimate ?? maxPage,
       parser: 'alidocmind',
       taskId: result.jobId,
+      imageMapping: Object.fromEntries(pdfImagesMeta.map((m) => [m.id, m.src])),
+      pdfImages: pdfImagesMeta,
     },
   };
 }
