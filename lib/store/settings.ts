@@ -11,6 +11,7 @@ import { PROVIDERS } from '@/lib/ai/providers';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thinking-config';
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
+import type { AgentVoiceOverride } from '@/lib/audio/voice-resolver';
 import { isCustomTTSProvider, isCustomASRProvider } from '@/lib/audio/types';
 import { ASR_PROVIDERS, DEFAULT_TTS_VOICES, TTS_PROVIDERS } from '@/lib/audio/constants';
 import { DEFAULT_VOXCPM_BACKEND, VOXCPM_MODEL_ID, VOXCPM_VLLM_MODEL_ID } from '@/lib/audio/voxcpm';
@@ -138,6 +139,7 @@ export interface SettingsState {
       enabled: boolean;
       isServerConfigured?: boolean;
       customModels?: Array<{ id: string; name: string }>;
+      replaceBuiltInModels?: boolean;
     }
   >;
 
@@ -152,6 +154,7 @@ export interface SettingsState {
       enabled: boolean;
       isServerConfigured?: boolean;
       customModels?: Array<{ id: string; name: string }>;
+      replaceBuiltInModels?: boolean;
     }
   >;
 
@@ -177,6 +180,10 @@ export interface SettingsState {
   ttsEnabled: boolean;
   asrEnabled: boolean;
 
+  // Server-configured opt-in parallel scene-content concurrency (#572).
+  // 0 = off (serial generation); populated by fetchServerProviders.
+  parallelSceneConcurrency: number;
+
   // Auto-config lifecycle flag (persisted)
   autoConfigApplied: boolean;
 
@@ -190,6 +197,19 @@ export interface SettingsState {
   selectedAgentIds: string[];
   agentMode: 'preset' | 'auto';
   autoAgentCount: number;
+  /**
+   * Per-agent voice picks made in the AgentBar, keyed by agent id. Lives here
+   * (persisted) rather than on registry AgentConfig records because default
+   * agents are reset from code and generated agents are rebuilt from IndexedDB
+   * on every load. Highest-priority input to resolveAgentVoice.
+   */
+  agentVoiceOverrides: Record<string, AgentVoiceOverride>;
+  /**
+   * Whether agentMode/selectedAgentIds were explicitly set by the user (in the
+   * AgentBar), as opposed to stage-derived defaults written by a classroom
+   * load. Only a user-set selection carries across classrooms on restore.
+   */
+  agentSelectionIsUserSet: boolean;
 
   // Layout preferences (persisted via localStorage)
   sidebarCollapsed: boolean;
@@ -216,6 +236,9 @@ export interface SettingsState {
   setSelectedAgentIds: (ids: string[]) => void;
   setAgentMode: (mode: 'preset' | 'auto') => void;
   setAutoAgentCount: (count: number) => void;
+  /** Set (or clear, with `undefined`) the persisted voice pick for one agent. */
+  setAgentVoiceOverride: (agentId: string, voice: AgentVoiceOverride | undefined) => void;
+  setAgentSelectionIsUserSet: (isUserSet: boolean) => void;
 
   // Layout actions
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -291,6 +314,7 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       customModels: Array<{ id: string; name: string }>;
+      replaceBuiltInModels: boolean;
     }>,
   ) => void;
 
@@ -304,6 +328,7 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       customModels: Array<{ id: string; name: string }>;
+      replaceBuiltInModels: boolean;
     }>,
   ) => void;
 
@@ -371,6 +396,24 @@ function resolveLLMSelection(
     ? resolveSelectedModel(currentModelId, config[providerId]?.models ?? [])
     : '';
   return { providerId, modelId };
+}
+
+function resolveMediaModels<T extends { id: string; name: string }>(
+  builtInModels: T[],
+  config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+): T[] {
+  const customModels = config?.customModels ?? [];
+  return config?.replaceBuiltInModels && customModels.length > 0
+    ? customModels
+    : [...builtInModels, ...customModels];
+}
+
+function isUsableMediaProvider(
+  provider: { requiresApiKey: boolean } | undefined,
+  config: { apiKey?: string; enabled?: boolean; isServerConfigured?: boolean } | undefined,
+): boolean {
+  if (!provider || config?.enabled === false) return false;
+  return !provider.requiresApiKey || !!config?.apiKey || !!config?.isServerConfigured;
 }
 
 // Initialize default audio config
@@ -442,6 +485,7 @@ const getDefaultImageConfig = () => ({
     'nano-banana': { apiKey: '', baseUrl: '', enabled: false },
     'minimax-image': { apiKey: '', baseUrl: '', enabled: false },
     'grok-image': { apiKey: '', baseUrl: '', enabled: false },
+    'comfyui-image': { apiKey: '', baseUrl: '', enabled: false },
     lemonade: { apiKey: '', baseUrl: '', enabled: false },
   } as Record<ImageProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
@@ -449,7 +493,7 @@ const getDefaultImageConfig = () => ({
 // Initialize default Video config
 const getDefaultVideoConfig = () => ({
   videoProviderId: 'seedance' as VideoProviderId,
-  videoModelId: 'doubao-seedance-1-5-pro-251215',
+  videoModelId: 'doubao-seedance-2-0-260128',
   videoProvidersConfig: {
     seedance: { apiKey: '', baseUrl: '', enabled: false },
     kling: { apiKey: '', baseUrl: '', enabled: false },
@@ -477,6 +521,12 @@ const getDefaultWebSearchConfig = () => ({
     minimax: {
       apiKey: '',
       baseUrl: WEB_SEARCH_PROVIDERS.minimax.defaultBaseUrl || '',
+      enabled: true,
+      requiresApiKey: true,
+    },
+    doubao: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.doubao.defaultBaseUrl || '',
       enabled: true,
       requiresApiKey: true,
     },
@@ -810,6 +860,8 @@ export const useSettingsStore = create<SettingsState>()(
         selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
         agentMode: 'auto' as const,
         autoAgentCount: 3,
+        agentVoiceOverrides: {},
+        agentSelectionIsUserSet: false,
 
         // Playback controls
         ttsMuted: false,
@@ -847,6 +899,9 @@ export const useSettingsStore = create<SettingsState>()(
         // provider stay off and show an "enable browser-native" CTA (#665).
         ttsEnabled: false,
         asrEnabled: true,
+
+        // Off until the server reports a concurrency via fetchServerProviders.
+        parallelSceneConcurrency: 0,
 
         autoConfigApplied: false,
 
@@ -928,6 +983,17 @@ export const useSettingsStore = create<SettingsState>()(
 
         setAgentMode: (mode) => set({ agentMode: mode }),
         setAutoAgentCount: (count) => set({ autoAgentCount: count }),
+        setAgentVoiceOverride: (agentId, voice) =>
+          set((state) => {
+            const next = { ...state.agentVoiceOverrides };
+            if (voice) {
+              next[agentId] = voice;
+            } else {
+              delete next[agentId];
+            }
+            return { agentVoiceOverrides: next };
+          }),
+        setAgentSelectionIsUserSet: (isUserSet) => set({ agentSelectionIsUserSet: isUserSet }),
 
         // Layout actions
         setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
@@ -977,15 +1043,26 @@ export const useSettingsStore = create<SettingsState>()(
         setASRLanguage: (language) => set({ asrLanguage: language }),
 
         setTTSProviderConfig: (providerId, config) =>
-          set((state) => ({
-            ttsProvidersConfig: {
+          set((state) => {
+            const ttsProvidersConfig = {
               ...state.ttsProvidersConfig,
               [providerId]: {
                 ...state.ttsProvidersConfig[providerId],
                 ...config,
               },
-            },
-          })),
+            };
+            // Disabling the active provider (e.g. removing a token plan) switches
+            // the selection back to the always-available browser TTS so playback
+            // doesn't keep pointing at a disabled provider with an empty key.
+            if (state.ttsProviderId === providerId && config.enabled === false) {
+              return {
+                ttsProvidersConfig,
+                ttsProviderId: getDefaultAudioConfig().ttsProviderId,
+                ttsVoice: 'default',
+              };
+            }
+            return { ttsProvidersConfig };
+          }),
 
         setASRProviderConfig: (providerId, config) =>
           set((state) => ({
@@ -1018,7 +1095,10 @@ export const useSettingsStore = create<SettingsState>()(
             imageProviderId: providerId,
             imageModelId: resolveSelectedModel(
               state.imageModelId,
-              IMAGE_PROVIDERS[providerId]?.models ?? [],
+              resolveMediaModels(
+                IMAGE_PROVIDERS[providerId]?.models ?? [],
+                state.imageProvidersConfig[providerId],
+              ),
             ),
           })),
         setImageModelId: (modelId) => set({ imageModelId: modelId }),
@@ -1034,14 +1114,37 @@ export const useSettingsStore = create<SettingsState>()(
               [providerId]: mergedProvider,
             };
             const base = { imageProvidersConfig };
-            // Atomic invariant (#580): a config edit on the active image
-            // provider (e.g. deleting the selected custom model) must not
-            // leave imageModelId pointing at a model that no longer exists.
             if (state.imageProviderId === providerId) {
-              const models = [
-                ...(IMAGE_PROVIDERS[providerId]?.models ?? []),
-                ...(mergedProvider.customModels ?? []),
-              ];
+              // Disabling the active provider (e.g. removing a token plan) must
+              // switch the selection away to the default, or generation paths
+              // keep pointing at a disabled provider with an empty key.
+              if (config.enabled === false) {
+                const providerIds = Object.keys(IMAGE_PROVIDERS) as ImageProviderId[];
+                const usableFallback = providerIds.find(
+                  (id) =>
+                    id !== providerId &&
+                    isUsableMediaProvider(IMAGE_PROVIDERS[id], imageProvidersConfig[id]),
+                );
+                const fallback =
+                  usableFallback ?? providerIds.find((id) => id !== providerId) ?? providerId;
+                const fallbackModels = resolveMediaModels(
+                  IMAGE_PROVIDERS[fallback]?.models ?? [],
+                  imageProvidersConfig[fallback],
+                );
+                return {
+                  ...base,
+                  imageProviderId: fallback,
+                  imageModelId: resolveSelectedModel(state.imageModelId, fallbackModels),
+                  ...(!usableFallback ? { imageGenerationEnabled: false } : {}),
+                };
+              }
+              // Atomic invariant (#580): a config edit on the active image
+              // provider (e.g. deleting the selected custom model) must not
+              // leave imageModelId pointing at a model that no longer exists.
+              const models = resolveMediaModels(
+                IMAGE_PROVIDERS[providerId]?.models ?? [],
+                mergedProvider,
+              );
               const imageModelId = resolveSelectedModel(state.imageModelId, models);
               if (imageModelId) {
                 return { ...base, imageModelId };
@@ -1056,7 +1159,10 @@ export const useSettingsStore = create<SettingsState>()(
             videoProviderId: providerId,
             videoModelId: resolveSelectedModel(
               state.videoModelId,
-              VIDEO_PROVIDERS[providerId]?.models ?? [],
+              resolveMediaModels(
+                VIDEO_PROVIDERS[providerId]?.models ?? [],
+                state.videoProvidersConfig[providerId],
+              ),
             ),
           })),
         setVideoModelId: (modelId) => set({ videoModelId: modelId }),
@@ -1072,13 +1178,36 @@ export const useSettingsStore = create<SettingsState>()(
               [providerId]: mergedProvider,
             };
             const base = { videoProvidersConfig };
-            // Atomic invariant (#580): symmetric with image — a config edit on
-            // the active video provider must not leave videoModelId stale.
             if (state.videoProviderId === providerId) {
-              const models = [
-                ...(VIDEO_PROVIDERS[providerId]?.models ?? []),
-                ...(mergedProvider.customModels ?? []),
-              ];
+              // Symmetric with image: disabling the active provider switches the
+              // selection back to the default so nothing keeps pointing at a
+              // disabled provider with an empty key.
+              if (config.enabled === false) {
+                const providerIds = Object.keys(VIDEO_PROVIDERS) as VideoProviderId[];
+                const usableFallback = providerIds.find(
+                  (id) =>
+                    id !== providerId &&
+                    isUsableMediaProvider(VIDEO_PROVIDERS[id], videoProvidersConfig[id]),
+                );
+                const fallback =
+                  usableFallback ?? providerIds.find((id) => id !== providerId) ?? providerId;
+                const fallbackModels = resolveMediaModels(
+                  VIDEO_PROVIDERS[fallback]?.models ?? [],
+                  videoProvidersConfig[fallback],
+                );
+                return {
+                  ...base,
+                  videoProviderId: fallback,
+                  videoModelId: resolveSelectedModel(state.videoModelId, fallbackModels),
+                  ...(!usableFallback ? { videoGenerationEnabled: false } : {}),
+                };
+              }
+              // Atomic invariant (#580): symmetric with image — a config edit on
+              // the active video provider must not leave videoModelId stale.
+              const models = resolveMediaModels(
+                VIDEO_PROVIDERS[providerId]?.models ?? [],
+                mergedProvider,
+              );
               const videoModelId = resolveSelectedModel(state.videoModelId, models);
               if (videoModelId) {
                 return { ...base, videoModelId };
@@ -1176,15 +1305,24 @@ export const useSettingsStore = create<SettingsState>()(
         // Web Search actions
         setWebSearchProvider: (providerId) => set({ webSearchProviderId: providerId }),
         setWebSearchProviderConfig: (providerId, config) =>
-          set((state) => ({
-            webSearchProvidersConfig: {
+          set((state) => {
+            const webSearchProvidersConfig = {
               ...state.webSearchProvidersConfig,
               [providerId]: {
                 ...state.webSearchProvidersConfig[providerId],
                 ...config,
               },
-            },
-          })),
+            };
+            // Disabling the active provider switches the selection back to the
+            // default so web search doesn't keep pointing at a disabled provider.
+            if (state.webSearchProviderId === providerId && config.enabled === false) {
+              return {
+                webSearchProvidersConfig,
+                webSearchProviderId: getDefaultWebSearchConfig().webSearchProviderId,
+              };
+            }
+            return { webSearchProvidersConfig };
+          }),
         setBaiduSubSources: (sources) =>
           set((state) => {
             const next = {
@@ -1214,6 +1352,7 @@ export const useSettingsStore = create<SettingsState>()(
               image: Record<string, { models?: string[] }>;
               video: Record<string, Record<string, never>>;
               webSearch: Record<string, Record<string, never>>;
+              generation?: { parallelSceneConcurrency?: number };
             };
 
             set((state) => {
@@ -1469,13 +1608,21 @@ export const useSettingsStore = create<SettingsState>()(
               const validLLMModel = validLLMProvider
                 ? resolveSelectedModel(state.modelId, llmModels)
                 : '';
-              const imageModels =
-                IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [];
+              const imageModels = validImageProvider
+                ? resolveMediaModels(
+                    IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [],
+                    newImageConfig[validImageProvider as ImageProviderId],
+                  )
+                : [];
               const validImageModel = validImageProvider
                 ? resolveSelectedModel(state.imageModelId, imageModels)
                 : '';
-              const videoModels =
-                VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [];
+              const videoModels = validVideoProvider
+                ? resolveMediaModels(
+                    VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [],
+                    newVideoConfig[validVideoProvider as VideoProviderId],
+                  )
+                : [];
               const validVideoModel = validVideoProvider
                 ? resolveSelectedModel(state.videoModelId, videoModels)
                 : '';
@@ -1582,6 +1729,13 @@ export const useSettingsStore = create<SettingsState>()(
                 imageProvidersConfig: newImageConfig,
                 videoProvidersConfig: newVideoConfig,
                 webSearchProvidersConfig: newWebSearchConfig,
+                // Already clamped server-side (getParallelSceneConcurrency); this
+                // re-clamp is intentional belt-and-suspenders against a malformed
+                // response. The consumer (use-scene-generator) clamps once more.
+                parallelSceneConcurrency: Math.max(
+                  0,
+                  Math.floor(data.generation?.parallelSceneConcurrency ?? 0),
+                ),
                 autoConfigApplied: true,
                 // Validated selections
                 ...(validLLMProvider !== state.providerId && {

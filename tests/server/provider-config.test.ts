@@ -132,6 +132,38 @@ describe('provider-config', () => {
     });
   });
 
+  describe('getParallelSceneConcurrency', () => {
+    beforeEach(() => {
+      delete process.env.PARALLEL_SCENE_CONCURRENCY;
+    });
+
+    it('defaults to 0 (serial) when unset', async () => {
+      const { getParallelSceneConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelSceneConcurrency()).toBe(0);
+    });
+
+    it('reads a positive integer from the env var', async () => {
+      vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', '3');
+      const { getParallelSceneConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelSceneConcurrency()).toBe(3);
+    });
+
+    it('clamps to a maximum of 10', async () => {
+      vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', '50');
+      const { getParallelSceneConcurrency } = await import('@/lib/server/provider-config');
+      expect(getParallelSceneConcurrency()).toBe(10);
+    });
+
+    it('treats zero, negative, and non-numeric values as off', async () => {
+      for (const value of ['0', '-2', 'abc']) {
+        vi.resetModules();
+        vi.stubEnv('PARALLEL_SCENE_CONCURRENCY', value);
+        const { getParallelSceneConcurrency } = await import('@/lib/server/provider-config');
+        expect(getParallelSceneConcurrency(), `value=${value}`).toBe(0);
+      }
+    });
+  });
+
   describe('resolveBaseUrl', () => {
     it('returns client URL for an unmanaged provider', async () => {
       const { resolveBaseUrl } = await import('@/lib/server/provider-config');
@@ -350,6 +382,32 @@ pdf:
       const providers = getServerPDFProviders();
 
       expect(providers.mineru).toBeUndefined();
+    });
+
+    it('includes MinerU Cloud from env when only API key is configured', async () => {
+      vi.stubEnv('PDF_MINERU_CLOUD_API_KEY', 'mineru-cloud-key');
+      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers['mineru-cloud']).toBeDefined();
+      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-key');
+      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
+    });
+
+    it('includes MinerU Cloud from YAML when only API key is configured', async () => {
+      yamlOverride = `
+pdf:
+  mineru-cloud:
+    apiKey: mineru-cloud-yaml-key
+`;
+      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers['mineru-cloud']).toBeDefined();
+      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-yaml-key');
+      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
     });
   });
 

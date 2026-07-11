@@ -17,6 +17,7 @@
  */
 
 import { NextRequest } from 'next/server';
+import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import { generateVideo, normalizeVideoOptions } from '@/lib/media/video-providers';
 import {
   isServerConfiguredProvider,
@@ -82,6 +83,14 @@ export async function POST(request: NextRequest) {
     log.info(
       `Video generated: url=${result.url ? 'yes' : 'no'}, ${result.width}x${result.height}, ${result.duration}s`,
     );
+
+    void recordGenerationUsage({
+      kind: 'video',
+      unit: 'second',
+      providerId,
+      modelId: clientModel,
+      quantity: result.duration,
+    });
 
     return apiSuccess({ result });
   } catch (error) {

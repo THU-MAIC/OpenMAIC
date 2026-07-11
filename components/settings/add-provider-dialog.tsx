@@ -16,6 +16,8 @@ export interface NewProviderData {
   baseUrl: string;
   icon: string;
   requiresApiKey: boolean;
+  /** Optional explicit /models URL override (kept for parity; unused by manual form). */
+  modelsUrl?: string;
 }
 
 interface AddProviderDialogProps {
@@ -27,7 +29,6 @@ interface AddProviderDialogProps {
 export function AddProviderDialog({ open, onOpenChange, onAdd }: AddProviderDialogProps) {
   const { t } = useI18n();
 
-  // Internal state
   const [name, setName] = useState('');
   const [type, setType] = useState<'openai' | 'anthropic' | 'google'>('openai');
   const [baseUrl, setBaseUrl] = useState('');
@@ -47,19 +48,8 @@ export function AddProviderDialog({ open, onOpenChange, onAdd }: AddProviderDial
     }
   }
 
-  const handleClose = () => {
-    onOpenChange(false);
-  };
-
-  const handleAdd = () => {
-    onAdd({
-      name,
-      type,
-      baseUrl,
-      icon,
-      requiresApiKey,
-    });
-  };
+  const handleClose = () => onOpenChange(false);
+  const handleAdd = () => onAdd({ name, type, baseUrl, icon, requiresApiKey });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -87,39 +77,26 @@ export function AddProviderDialog({ open, onOpenChange, onAdd }: AddProviderDial
           <div className="space-y-2">
             <Label>{t('settings.providerApiMode')}</Label>
             <div className="grid grid-cols-3 gap-2">
-              <button
-                onClick={() => setType('openai')}
-                className={cn(
-                  'p-2 rounded-lg border text-left text-sm transition-colors',
-                  type === 'openai'
-                    ? 'bg-primary/5 border-primary/50'
-                    : 'hover:bg-muted/50 border-transparent',
-                )}
-              >
-                {t('settings.apiModeOpenAI')}
-              </button>
-              <button
-                onClick={() => setType('anthropic')}
-                className={cn(
-                  'p-2 rounded-lg border text-left text-sm transition-colors',
-                  type === 'anthropic'
-                    ? 'bg-primary/5 border-primary/50'
-                    : 'hover:bg-muted/50 border-transparent',
-                )}
-              >
-                {t('settings.apiModeAnthropic')}
-              </button>
-              <button
-                onClick={() => setType('google')}
-                className={cn(
-                  'p-2 rounded-lg border text-left text-sm transition-colors',
-                  type === 'google'
-                    ? 'bg-primary/5 border-primary/50'
-                    : 'hover:bg-muted/50 border-transparent',
-                )}
-              >
-                {t('settings.apiModeGoogle')}
-              </button>
+              {(['openai', 'anthropic', 'google'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setType(mode)}
+                  className={cn(
+                    'p-2 rounded-lg border text-left text-sm transition-colors',
+                    type === mode
+                      ? 'bg-primary/5 border-primary/50'
+                      : 'hover:bg-muted/50 border-transparent',
+                  )}
+                >
+                  {t(
+                    mode === 'openai'
+                      ? 'settings.apiModeOpenAI'
+                      : mode === 'anthropic'
+                        ? 'settings.apiModeAnthropic'
+                        : 'settings.apiModeGoogle',
+                  )}
+                </button>
+              ))}
             </div>
           </div>
 

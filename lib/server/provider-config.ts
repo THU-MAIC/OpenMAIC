@@ -167,15 +167,22 @@ function loadEnvSection(
   {
     requiresBaseUrl = false,
     keylessProviders = new Set<string>(),
-  }: { requiresBaseUrl?: boolean; keylessProviders?: Set<string> } = {},
+    baseUrlOptionalProviders = new Set<string>(),
+  }: {
+    requiresBaseUrl?: boolean;
+    keylessProviders?: Set<string>;
+    baseUrlOptionalProviders?: Set<string>;
+  } = {},
 ): Record<string, ServerProviderEntry> {
   const result: Record<string, ServerProviderEntry> = {};
+  const requiresBaseUrlForProvider = (providerId: string) =>
+    requiresBaseUrl && !baseUrlOptionalProviders.has(providerId);
 
   // First, add everything from YAML as defaults
   if (yamlSection) {
     for (const [id, entry] of Object.entries(yamlSection)) {
       if (
-        requiresBaseUrl
+        requiresBaseUrlForProvider(id)
           ? !!entry?.baseUrl
           : entry?.apiKey || (entry?.baseUrl && keylessProviders.has(id))
       ) {
@@ -211,7 +218,7 @@ function loadEnvSection(
 
     // Activate on API key, or base URL alone for keyless providers (e.g. Ollama)
     if (
-      requiresBaseUrl
+      requiresBaseUrlForProvider(providerId)
         ? !envBaseUrl
         : !(envApiKey || (envBaseUrl && keylessProviders.has(providerId)))
     )
@@ -305,7 +312,10 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr, {
       keylessProviders: new Set(['lemonade-asr']),
     }),
-    pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
+    pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
+      requiresBaseUrl: true,
+      baseUrlOptionalProviders: new Set(['mineru-cloud']),
+    }),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
     webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
@@ -445,6 +455,18 @@ export function resolveTTSBaseUrl(providerId: string, clientBaseUrl?: string): s
   return resolveSectionBaseUrl('tts', providerId, clientBaseUrl);
 }
 
+/**
+ * Resolve the TTS model. A managed provider may pin its model server-side
+ * (`${PREFIX}_MODELS`, first entry) — authoritative like its key/baseUrl, since
+ * the managed-provider UI does not expose a model field. Otherwise the client
+ * model wins.
+ */
+export function resolveTTSModel(providerId: string, clientModel?: string): string | undefined {
+  const entry = getConfig().tts[providerId];
+  if (entry?.models && entry.models.length > 0) return entry.models[0];
+  return clientModel;
+}
+
 // ---------------------------------------------------------------------------
 // Public API — ASR
 // ---------------------------------------------------------------------------
@@ -567,4 +589,19 @@ export function resolveServerWebSearchProviderId(preferredProviderId?: string): 
   if (webSearch.baidu?.apiKey) return 'baidu';
   if (webSearch.minimax?.apiKey) return 'minimax';
   return Object.keys(webSearch)[0];
+}
+
+/**
+ * Opt-in concurrency for parallel scene-content generation (#572).
+ *
+ * Returns the server-configured `PARALLEL_SCENE_CONCURRENCY`, clamped to
+ * [0, 10]. `0` (the default) means the client keeps the original serial
+ * generation loop; a value `> 1` enables the hybrid two-phase path. Kept
+ * server-side because many deployments use API keys with low per-key
+ * concurrency quotas, where a bursty default would surface as 429s.
+ */
+export function getParallelSceneConcurrency(): number {
+  const raw = Number.parseInt(process.env.PARALLEL_SCENE_CONCURRENCY ?? '', 10);
+  if (!Number.isFinite(raw) || raw <= 0) return 0;
+  return Math.min(raw, 10);
 }

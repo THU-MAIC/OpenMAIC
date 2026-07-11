@@ -18,6 +18,7 @@ import type {
   ImageGenerationOptions,
   ImageGenerationResult,
 } from '../types';
+import { probeAuth } from '../probe-auth';
 
 const DEFAULT_MODEL = 'grok-imagine-image';
 const DEFAULT_BASE_URL = 'https://api.x.ai/v1';
@@ -30,30 +31,22 @@ export async function testGrokImageConnectivity(
   config: ImageGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  try {
-    const response = await fetch(`${baseUrl}/images/generations`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model || DEFAULT_MODEL,
-        prompt: '',
-        n: 1,
+  return probeAuth({
+    providerName: 'Grok Image',
+    request: () =>
+      fetch(`${baseUrl}/images/generations`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.model || DEFAULT_MODEL,
+          prompt: '',
+          n: 1,
+        }),
       }),
-    });
-    if (response.status === 401 || response.status === 403) {
-      const text = await response.text();
-      return {
-        success: false,
-        message: `Grok Image auth failed (${response.status}): ${text}`,
-      };
-    }
-    return { success: true, message: 'Connected to Grok Image' };
-  } catch (err) {
-    return { success: false, message: `Grok Image connectivity error: ${err}` };
-  }
+  });
 }
 
 export async function generateWithGrokImage(

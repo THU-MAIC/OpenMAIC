@@ -52,6 +52,7 @@ export interface UserRequirements {
   userBio?: string; // Student background for personalization
   webSearch?: boolean; // Enable web search for richer context
   interactiveMode?: boolean; // Enable Interactive Mode for interactive-first generation
+  taskEngineMode?: boolean; // Enable vocational task-engine generation path
 }
 
 // ==================== Stage 1 Output: Scene Outlines (Simplified) ====================
@@ -72,6 +73,12 @@ export interface WidgetOutline {
   visualizationType?: 'molecular' | 'solar' | 'anatomy' | 'geometry' | 'physics' | 'custom'; // visualization3d
   objects?: string[]; // visualization3d
   interactions?: string[]; // visualization3d
+  procedureType?: 'repair' | 'assembly' | 'inspection' | 'operation' | 'custom'; // procedural-skill
+  task?: string; // procedural-skill - task to perform
+  tools?: string[]; // procedural-skill - tools or materials involved
+  steps?: string[]; // procedural-skill - ordered procedure steps
+  successCriteria?: string[]; // procedural-skill - checks for completion
+  errorConsequences?: string[]; // procedural-skill - consequences for unsafe or incorrect actions
   challenge?: string; // game - description of what player does
   playerControls?: string[]; // game - what player controls
   nodeCount?: number; // diagram - approximate node count
@@ -118,6 +125,10 @@ export interface SceneOutline {
     projectDescription: string;
     targetSkills: string[];
     issueCount?: number;
+    /** Opt into role-play scenario planning on top of the standard PBL v2 structure. */
+    scenarioRoleplay?: boolean;
+    /** Optional scenario brief used only when scenarioRoleplay is true. */
+    scenarioBrief?: string;
   };
   // Widget fields (required for type === 'interactive' in unified mode)
   widgetType?: WidgetType;
@@ -126,7 +137,7 @@ export interface SceneOutline {
 
 // ==================== Stage 3 Output: Generated Content ====================
 
-import type { PPTElement, SlideBackground } from './slides';
+import type { PPTElement, SlideBackground } from '@openmaic/dsl';
 import type { QuizQuestion } from './stage';
 
 /**
@@ -148,17 +159,22 @@ export interface GeneratedQuizContent {
 // ==================== PBL Generation Types ====================
 
 import type { PBLProjectConfig } from '@/lib/pbl/types';
+import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 /**
- * AI-generated PBL content
+ * AI-generated PBL content.
+ *
+ * PBL v2 generation returns a legacy-compatible `projectConfig` plus the full
+ * v2 payload so existing storage/rendering paths can migrate incrementally.
  */
 export interface GeneratedPBLContent {
   projectConfig: PBLProjectConfig;
+  projectV2?: PBLProjectV2;
 }
 
 // ==================== Interactive Generation Types ====================
 
-import type { WidgetConfig, TeacherAction, WidgetType } from './widgets';
+import type { WidgetConfig, WidgetType } from './widgets';
 
 /**
  * Scientific model output from scientific modeling stage
@@ -178,7 +194,6 @@ export interface GeneratedInteractiveContent {
   scientificModel?: ScientificModel;
   widgetType?: WidgetType;
   widgetConfig?: WidgetConfig;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Legacy Types (for compatibility) ====================
@@ -204,26 +219,4 @@ export interface SuggestedAction {
   type: ActionType;
   description: string;
   timing?: 'start' | 'middle' | 'end' | 'after-content';
-}
-
-// ==================== Generation Session ====================
-
-export interface GenerationProgress {
-  currentStage: 1 | 2 | 3;
-  overallProgress: number; // 0-100
-  stageProgress: number; // 0-100
-  statusMessage: string;
-  scenesGenerated: number;
-  totalScenes: number;
-  errors?: string[];
-}
-
-export interface GenerationSession {
-  id: string;
-  requirements: UserRequirements;
-  sceneOutlines?: SceneOutline[];
-  progress: GenerationProgress;
-  startedAt: Date;
-  completedAt?: Date;
-  generatedStageId?: string;
 }

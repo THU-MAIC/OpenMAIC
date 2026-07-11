@@ -4,6 +4,7 @@
  */
 
 import type { TTSProviderId } from '@/lib/audio/types';
+import type { VoiceDesign } from '@/lib/audio/voice-design';
 
 export interface AgentConfig {
   id: string; // Unique agent ID
@@ -15,6 +16,7 @@ export interface AgentConfig {
   allowedActions: string[]; // Action types this agent can use
   priority: number; // Priority for director selection (1-10)
   voiceConfig?: { providerId: TTSProviderId; modelId?: string; voiceId: string }; // Per-agent TTS voice selection
+  voiceDesign?: VoiceDesign; // 3-layer vocal descriptor for auto voice (provider-neutral)
 
   // Metadata
   createdAt: Date;
@@ -36,6 +38,7 @@ export interface AgentTemplate {
   allowedActions: string[];
   priority: number;
   voiceConfig?: { providerId: TTSProviderId; modelId?: string; voiceId: string }; // Per-agent TTS voice selection
+  voiceDesign?: VoiceDesign; // 3-layer vocal descriptor for auto voice (provider-neutral)
 
   // LLM-generated agent fields
   isGenerated?: boolean; // true for LLM-generated agents

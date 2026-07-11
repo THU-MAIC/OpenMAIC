@@ -146,6 +146,13 @@ export interface ModelInfo {
     vision?: boolean;
     thinking?: ThinkingCapability;
   };
+  /**
+   * Where this model entry came from. `'probed'` marks entries auto-discovered
+   * by fetching the provider's /models endpoint — these are replaced wholesale
+   * on a re-fetch (after a base-URL/key change) instead of accumulating stale
+   * ids. Catalog and manually-added models leave this unset and are preserved.
+   */
+  source?: 'probed' | 'manual';
 }
 
 /**

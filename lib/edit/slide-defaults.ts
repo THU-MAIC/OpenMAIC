@@ -1,6 +1,7 @@
 import { nanoid } from 'nanoid';
-import type { Slide, SlideTheme, PPTElement } from '@/lib/types/slides';
+import type { Slide, SlideTheme, PPTElement } from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
+import type { Action } from '@/lib/types/action';
 import { createElementIdMap } from '@/lib/utils/element';
 import { CURRENT_SLIDE_CONTENT_SCHEMA_VERSION } from '@/lib/edit/slide-schema';
 
@@ -17,6 +18,12 @@ const DEFAULT_THEME: SlideTheme = {
  * Build a fresh blank slide scene for `+ Add slide` in the Pro mode rail.
  * Matches the SceneBuilder default theme so user-added slides look the
  * same as AI-generated ones until customized.
+ *
+ * Starts with NO actions: the playback engine dwells on a zero-action scene
+ * (showing the slide for a short beat) rather than skipping it, so a fresh
+ * slide is playable without seeding a meaningless empty speech clip. The empty
+ * script timeline surfaces inline as a "fill me in" cue for the user / MAIC
+ * Agent instead.
  */
 export function createBlankSlideScene(stageId: string, title: string, order: number): Scene {
   const slide: Slide = {
@@ -34,6 +41,8 @@ export function createBlankSlideScene(stageId: string, title: string, order: num
     canvas: slide,
   };
 
+  const actions: Action[] = [];
+
   return {
     id: nanoid(),
     stageId,
@@ -41,6 +50,7 @@ export function createBlankSlideScene(stageId: string, title: string, order: num
     title,
     order,
     content,
+    actions,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
@@ -80,12 +90,36 @@ export function duplicateSlideScene(source: Scene, copySuffix: string, order: nu
 
   const title = copySuffix ? `${source.title} ${copySuffix}` : source.title;
 
+  // Clone the playback actions too: reseed each action id (so the copy doesn't
+  // share audio-cache keys / React keys with the source), remap element-bound
+  // cues onto the cloned element ids, and drop the stale audioId so the copy
+  // re-derives / regenerates its own narration audio.
+  const clonedActions = source.actions?.map((action) => {
+    // Deep-clone so nested cue data (chart/table/line data, points, themeColors)
+    // isn't shared by reference with the source — same reason the canvas
+    // elements are deep-cloned above.
+    const next: Record<string, unknown> = { ...structuredClone(action), id: nanoid() };
+    const elId = next.elementId;
+    if (typeof elId === 'string' && elIdMap[elId]) next.elementId = elIdMap[elId];
+    // Drop both audio refs — playback prefers audioUrl, so leaving it would make
+    // the copy keep playing the source's server-generated TTS.
+    delete next.audioId;
+    delete next.audioUrl;
+    return next as unknown as Action;
+  });
+
   return {
     ...source,
     id: nanoid(),
+    // A duplicate is NOT generated from the source's outline, so it must not
+    // inherit `outlineId` — otherwise the editor agent would resolve the copy's
+    // context to the original slide's outline. Cleared so resolveSceneOutline
+    // falls back to the copy's own title / content.
+    outlineId: undefined,
     title,
     order,
     content,
+    actions: clonedActions,
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };

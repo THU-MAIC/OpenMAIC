@@ -5,6 +5,7 @@ const searchWithBraveMock = vi.hoisted(() => vi.fn());
 const searchWithBaiduMock = vi.hoisted(() => vi.fn());
 const searchWithTavilyMock = vi.hoisted(() => vi.fn());
 const searchWithMiniMaxMock = vi.hoisted(() => vi.fn());
+const searchWithDoubaoMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/web-search/bocha', () => ({
   searchWithBocha: searchWithBochaMock,
@@ -26,6 +27,10 @@ vi.mock('@/lib/web-search/minimax', () => ({
   searchWithMiniMax: searchWithMiniMaxMock,
 }));
 
+vi.mock('@/lib/web-search/doubao', () => ({
+  searchWithDoubao: searchWithDoubaoMock,
+}));
+
 import { searchWeb } from '@/lib/web-search';
 
 describe('searchWeb', () => {
@@ -35,6 +40,7 @@ describe('searchWeb', () => {
     searchWithBaiduMock.mockReset();
     searchWithTavilyMock.mockReset();
     searchWithMiniMaxMock.mockReset();
+    searchWithDoubaoMock.mockReset();
   });
 
   it('dispatches Tavily provider requests', async () => {
@@ -170,5 +176,36 @@ describe('searchWeb', () => {
       maxResults: 5,
       baseUrl: 'https://api.minimaxi.com',
     });
+  });
+
+  it('dispatches Doubao provider requests', async () => {
+    searchWithDoubaoMock.mockResolvedValueOnce({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.6,
+    });
+
+    await expect(
+      searchWeb({
+        providerId: 'doubao',
+        query: 'q',
+        apiKey: 'ark-key',
+        maxResults: 10,
+        baseUrl: 'https://open.feedcoopapi.com',
+      }),
+    ).resolves.toEqual({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.6,
+    });
+    expect(searchWithDoubaoMock).toHaveBeenCalledWith({
+      query: 'q',
+      apiKey: 'ark-key',
+      maxResults: 10,
+      baseUrl: 'https://open.feedcoopapi.com',
+    });
+    expect(searchWithMiniMaxMock).not.toHaveBeenCalled();
   });
 });

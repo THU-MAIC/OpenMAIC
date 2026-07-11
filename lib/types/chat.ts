@@ -197,8 +197,21 @@ export function toSessionListItem(session: ChatSession): SessionListItem {
  * Ordered to match the original action sequence in the scene.
  */
 export type LectureNoteItem =
-  | { kind: 'speech'; text: string }
-  | { kind: 'action'; type: string; label?: string };
+  | {
+      kind: 'speech';
+      text: string;
+      actionIndex: number;
+      actionId: string;
+      actionType: string;
+    }
+  | {
+      kind: 'action';
+      type: string;
+      label?: string;
+      actionIndex: number;
+      actionId: string;
+      actionType: string;
+    };
 
 /**
  * A completed lecture note entry for one scene.
@@ -241,6 +254,25 @@ export interface StatelessChatRequest {
     currentSceneId: string | null;
     mode: StageMode;
     whiteboardOpen: boolean;
+    /**
+     * Post-submit quiz state for the CURRENT scene, hydrated by the client
+     * from localStorage when the active scene is a graded quiz. Lets the
+     * agent give targeted feedback on the student's actual answers
+     * (correct/incorrect, written response, AI grader comment) instead of
+     * guessing. Absent when the student has not submitted yet, or when the
+     * active scene is not a quiz.
+     */
+    quizResults?: {
+      sceneId: string;
+      answers: Record<string, string | string[]>;
+      results: Array<{
+        questionId: string;
+        correct: boolean | null;
+        status: 'correct' | 'incorrect';
+        earned: number;
+        aiComment?: string;
+      }>;
+    };
   };
   /** Agent configuration */
   config: {

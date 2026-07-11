@@ -22,6 +22,7 @@ import {
   Sparkles,
   Atom,
   X,
+  Presentation,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -36,6 +37,7 @@ import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
 import { storePdfBlob } from '@/lib/utils/image-storage';
+import { normalizeDocumentMimeType } from '@/lib/document/mime';
 import type { UserRequirements } from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
@@ -48,14 +50,17 @@ import {
   getFirstSlideByStages,
   revokeThumbnailSlideMediaUrls,
 } from '@/lib/utils/stage-storage';
-import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
-import type { Slide } from '@/lib/types/slides';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
+import type { Slide } from '@openmaic/dsl';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { toast } from 'sonner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
+import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
+import { useImportPptx } from '@/lib/import/use-import-pptx';
+import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 
 const log = createLogger('Home');
 
@@ -63,11 +68,18 @@ const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 
+// PPTX import is still scaffolding: `useImportPptx` has no `onImported` consumer
+// yet, so the flow only logs the parsed slides. Hide the entry point behind a
+// flag until it's wired end-to-end, so the UI doesn't expose a no-op button.
+// Enable with NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true.
+const PPTX_IMPORT_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PPTX_IMPORT === 'true';
+
 interface FormState {
   pdfFile: File | null;
   requirement: string;
   webSearch: boolean;
   interactiveMode: boolean;
+  vocationalTestMode: boolean;
 }
 
 const initialFormState: FormState = {
@@ -75,12 +87,14 @@ const initialFormState: FormState = {
   requirement: '',
   webSearch: false,
   interactiveMode: false,
+  vocationalTestMode: false,
 };
 
 function HomePage() {
   const { t } = useI18n();
   const { theme, setTheme } = useTheme();
   const router = useRouter();
+  const showVocationalTestUi = shouldShowVocationalTestUi();
   const [form, setForm] = useState<FormState>(initialFormState);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<
@@ -198,6 +212,13 @@ function HomePage() {
     },
   );
 
+  const {
+    importing: pptxImporting,
+    fileInputRef: pptxFileInputRef,
+    triggerFileSelect: triggerPptxFileSelect,
+    handleFileChange: handlePptxFileChange,
+  } = useImportPptx();
+
   useEffect(() => {
     // Clear stale media store to prevent cross-course thumbnail contamination.
     // The store may hold tasks from a previously visited classroom whose elementIds
@@ -282,17 +303,23 @@ function HomePage() {
         userNickname: userProfile.nickname || undefined,
         userBio: userProfile.bio || undefined,
         webSearch: form.webSearch || undefined,
-        interactiveMode: form.interactiveMode,
+        interactiveMode: form.vocationalTestMode ? true : form.interactiveMode,
+        ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
       };
 
       let pdfStorageKey: string | undefined;
       let pdfFileName: string | undefined;
+      let documentMimeType: string | undefined;
       let pdfProviderId: string | undefined;
       let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
 
       if (form.pdfFile) {
         pdfStorageKey = await storePdfBlob(form.pdfFile);
         pdfFileName = form.pdfFile.name;
+        documentMimeType = normalizeDocumentMimeType({
+          mimeType: form.pdfFile.type,
+          fileName: form.pdfFile.name,
+        });
 
         const settings = useSettingsStore.getState();
         pdfProviderId = settings.pdfProviderId;
@@ -313,6 +340,7 @@ function HomePage() {
         imageStorageIds: [],
         pdfStorageKey,
         pdfFileName,
+        documentMimeType,
         pdfProviderId,
         pdfProviderConfig,
         sceneOutlines: null,
@@ -357,6 +385,15 @@ function HomePage() {
         onChange={handleFileChange}
         className="hidden"
       />
+      {PPTX_IMPORT_ENABLED && (
+        <input
+          ref={pptxFileInputRef}
+          type="file"
+          accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
+          onChange={handlePptxFileChange}
+          className="hidden"
+        />
+      )}
       {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
@@ -541,28 +578,11 @@ function HomePage() {
               {/* Interactive mode toggle */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                    onClick={() => updateForm('interactiveMode', !form.interactiveMode)}
-                    className={cn(
-                      'relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border shrink-0 h-8',
-                      form.interactiveMode
-                        ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-500 shadow-[0_0_12px_rgba(6,182,212,0.35)] dark:shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                        : 'border-cyan-300/60 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20',
-                    )}
-                  >
-                    {form.interactiveMode && (
-                      <span
-                        className="absolute inset-[-4px] rounded-full border border-cyan-400/40 dark:border-cyan-400/25"
-                        style={{
-                          animation: 'interactive-mode-breathe 2s ease-in-out infinite',
-                        }}
-                      />
-                    )}
-                    <Atom className="size-3.5 relative z-10 animate-[spin_3s_linear_infinite]" />
-                    <span className="relative z-10">{t('toolbar.interactiveModeLabel')}</span>
-                  </motion.button>
+                  <InteractiveModeButton
+                    pressed={form.interactiveMode}
+                    label={t('toolbar.interactiveModeLabel')}
+                    onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                  />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
                   {t('toolbar.interactiveModeHint')}
@@ -599,6 +619,54 @@ function HomePage() {
           </div>
         </motion.div>
 
+        {showVocationalTestUi && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.4 }}
+            className="mt-2 flex w-full justify-start px-1"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={form.vocationalTestMode}
+                  onClick={() => updateForm('vocationalTestMode', !form.vocationalTestMode)}
+                  className={cn(
+                    'inline-flex h-7 items-center gap-2 rounded-full border px-2.5 text-[11px] font-medium transition-colors',
+                    form.vocationalTestMode
+                      ? 'border-cyan-400/70 bg-cyan-50 text-cyan-700 shadow-[0_0_10px_rgba(6,182,212,0.16)] dark:bg-cyan-950/40 dark:text-cyan-300'
+                      : 'border-border/70 bg-background/70 text-muted-foreground hover:border-cyan-300/60 hover:text-cyan-700 dark:hover:text-cyan-300',
+                  )}
+                >
+                  <span className="rounded-full bg-cyan-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-normal text-cyan-700 dark:bg-cyan-900/45 dark:text-cyan-300">
+                    测试功能
+                  </span>
+                  <Sparkles className="size-3.5" />
+                  <span>职教任务</span>
+                  <span
+                    className={cn(
+                      'relative h-3.5 w-6 rounded-full transition-colors',
+                      form.vocationalTestMode ? 'bg-cyan-500' : 'bg-muted-foreground/25',
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'absolute top-0.5 size-2.5 rounded-full bg-white transition-transform',
+                        form.vocationalTestMode ? 'translate-x-3' : 'translate-x-0.5',
+                      )}
+                    />
+                  </span>
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom" className="text-xs">
+                从当前输入框提交职教实操训练测试
+              </TooltipContent>
+            </Tooltip>
+          </motion.div>
+        )}
+
         {/* ── Error ── */}
         <AnimatePresence>
           {error && (
@@ -613,16 +681,28 @@ function HomePage() {
           )}
         </AnimatePresence>
 
-        {/* ── Import button (empty state) ── */}
+        {/* ── Import buttons (empty state) ── */}
         {classrooms.length === 0 && (
-          <button
-            onClick={triggerFileSelect}
-            disabled={importing}
-            className="relative z-10 mt-4 flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
-          >
-            <Upload className="size-3.5" />
-            <span>{t('import.classroom')}</span>
-          </button>
+          <div className="relative z-10 mt-4 flex items-center gap-4">
+            <button
+              onClick={triggerFileSelect}
+              disabled={importing}
+              className="flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+            >
+              <Upload className="size-3.5" />
+              <span>{t('import.classroom')}</span>
+            </button>
+            {PPTX_IMPORT_ENABLED && (
+              <button
+                onClick={triggerPptxFileSelect}
+                disabled={pptxImporting}
+                className="flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
+              >
+                <Presentation className="size-3.5" />
+                <span>{t('import.pptx')}</span>
+              </button>
+            )}
+          </div>
         )}
       </motion.div>
 
@@ -745,6 +825,18 @@ function HomePage() {
                   {t('import.classroom')}
                 </span>
               </button>
+              {PPTX_IMPORT_ENABLED && (
+                <button
+                  onClick={triggerPptxFileSelect}
+                  disabled={pptxImporting}
+                  className="group/import-pptx grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
+                >
+                  <Presentation className="size-3" />
+                  <span className="overflow-hidden opacity-0 group-hover/import-pptx:opacity-100 transition-opacity duration-200 whitespace-nowrap">
+                    {t('import.pptx')}
+                  </span>
+                </button>
+              )}
             </div>
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
           </div>
@@ -1133,6 +1225,11 @@ function ClassroomCard({
     if (editing) nameInputRef.current?.focus();
   }, [editing]);
 
+  const isTaskEngineMode = classroom.taskEngineMode === true;
+  const showModeBadge = classroom.interactiveMode || isTaskEngineMode;
+  const ModeBadgeIcon = isTaskEngineMode ? Sparkles : Atom;
+  const modeBadgeLabel = isTaskEngineMode ? 'Vocational Mode' : t('toolbar.interactiveModeLabel');
+
   const startRename = (e: React.MouseEvent) => {
     e.stopPropagation();
     setNameDraft(classroom.name);
@@ -1156,7 +1253,7 @@ function ClassroomCard({
         className="relative w-full aspect-[16/9] rounded-2xl bg-slate-100 dark:bg-slate-800/80 overflow-hidden transition-transform duration-200 group-hover:scale-[1.02]"
       >
         {slide && thumbWidth > 0 ? (
-          <ThumbnailSlide
+          <SlideThumbnail
             slide={slide}
             size={thumbWidth}
             viewportSize={slide.viewportSize ?? 1000}
@@ -1170,15 +1267,20 @@ function ClassroomCard({
           </div>
         ) : null}
 
-        {classroom.interactiveMode && (
+        {showModeBadge && (
           <Tooltip>
             <TooltipTrigger asChild>
               <span
-                aria-label={t('toolbar.interactiveModeLabel')}
+                aria-label={modeBadgeLabel}
                 onClick={(e) => e.stopPropagation()}
-                className="absolute bottom-2 left-2 inline-flex items-center justify-center size-5 rounded-full bg-white/70 dark:bg-slate-900/60 text-cyan-600 dark:text-cyan-300 backdrop-blur-sm shadow-sm ring-1 ring-cyan-500/30 z-10"
+                className={cn(
+                  'absolute bottom-2 left-2 inline-flex items-center justify-center size-5 rounded-full bg-white/70 dark:bg-slate-900/60 backdrop-blur-sm shadow-sm z-10',
+                  isTaskEngineMode
+                    ? 'text-amber-600 dark:text-amber-300 ring-1 ring-amber-500/35'
+                    : 'text-cyan-600 dark:text-cyan-300 ring-1 ring-cyan-500/30',
+                )}
               >
-                <Atom className="size-3" />
+                <ModeBadgeIcon className="size-3" />
               </span>
             </TooltipTrigger>
             {/* Negative sideOffset compensates for the global Tooltip Arrow's
@@ -1190,7 +1292,7 @@ function ClassroomCard({
               collisionPadding={0}
               className="text-xs"
             >
-              {t('toolbar.interactiveModeLabel')}
+              {modeBadgeLabel}
             </TooltipContent>
           </Tooltip>
         )}

@@ -14,7 +14,7 @@ import {
   Trophy,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { ThumbnailInteractive } from '@/components/slide-renderer/components/ThumbnailInteractive';
 import { useStageStore, useCanvasStore } from '@/lib/store';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -202,7 +202,7 @@ export function SceneSidebar({
                 <div className="relative aspect-video w-full rounded overflow-hidden bg-gray-100 dark:bg-gray-800 ring-1 ring-black/5 dark:ring-white/5">
                   <div className="absolute inset-0 flex items-center justify-center">
                     {isSlide && slideContent ? (
-                      <ThumbnailSlide
+                      <SlideThumbnail
                         slide={slideContent.canvas}
                         viewportSize={viewportSize}
                         viewportRatio={viewportRatio}

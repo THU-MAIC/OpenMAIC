@@ -2,8 +2,6 @@
  * Type definitions for the generation pipeline.
  */
 
-import type { GenerationProgress } from '@/lib/types/generation';
-
 // ==================== Agent Info ====================
 
 /** Lightweight agent info passed to the generation pipeline */
@@ -57,12 +55,6 @@ export interface GenerationResult<T> {
   success: boolean;
   data?: T;
   error?: string;
-}
-
-export interface GenerationCallbacks {
-  onProgress?: (progress: GenerationProgress) => void;
-  onStageComplete?: (stage: 1 | 2 | 3, result: unknown) => void;
-  onError?: (error: string) => void;
 }
 
 export type AICallFn = (

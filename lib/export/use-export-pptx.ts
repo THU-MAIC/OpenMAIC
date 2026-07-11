@@ -10,12 +10,7 @@ import { useStageStore } from '@/lib/store';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import type {
-  Slide,
-  PPTElementOutline,
-  PPTElementShadow,
-  PPTElementLink,
-} from '@/lib/types/slides';
+import type { Slide, PPTElementOutline, PPTElementShadow, PPTElementLink } from '@openmaic/dsl';
 import type { Scene, SlideContent } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { getElementRange, getLineElementPath, getTableSubThemeColor } from '@/lib/utils/element';
@@ -295,8 +290,11 @@ function getShadowOption(shadow: PPTElementShadow, ratioPx2Pt: number): pptxgen.
     type: 'outer',
     color: c.color.replace('#', ''),
     opacity: c.alpha,
+    // pptxgenjs shadow blur AND offset are in points; the source model is in
+    // pixels. blur was converted but offset was not, so shadows exported ~33%
+    // too far at the default viewport (ratioPx2Pt = 96/72 × viewportSize/960).
     blur: shadow.blur / ratioPx2Pt,
-    offset,
+    offset: offset / ratioPx2Pt,
     angle,
   };
 }
