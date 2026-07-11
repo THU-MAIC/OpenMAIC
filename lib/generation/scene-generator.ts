@@ -22,7 +22,6 @@ import type {
 import type { WidgetType, WidgetConfig } from '@/lib/types/widgets';
 import type { PromptId } from '@/lib/prompts/types';
 import type { LanguageModel } from 'ai';
-import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { generatePBLContent } from '@/lib/pbl/generate-pbl';
 import { generatePBLV2Project, PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
@@ -50,8 +49,6 @@ import type {
   SceneGenerationContext,
   GeneratedSlideData,
   AICallFn,
-  GenerationResult,
-  GenerationCallbacks,
 } from './pipeline-types';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
@@ -99,104 +96,6 @@ export interface SceneActionsOptions {
   agents?: AgentInfo[];
   userProfile?: string;
   languageDirective?: string;
-}
-
-// ==================== Stage 2: Full Scenes (Two-Step) ====================
-
-/**
- * Stage 3: Generate full scenes (parallel version)
- *
- * Two steps:
- * - Step 3.1: Outline -> Page content (slide/quiz)
- * - Step 3.2: Content + script -> Action list
- *
- * All scenes generated in parallel using Promise.all
- */
-export async function generateFullScenes(
-  sceneOutlines: SceneOutline[],
-  store: StageStore,
-  aiCall: AICallFn,
-  callbacks?: GenerationCallbacks,
-  languageDirective?: string,
-): Promise<GenerationResult<string[]>> {
-  const api = createStageAPI(store);
-  const totalScenes = sceneOutlines.length;
-  let completedCount = 0;
-
-  callbacks?.onProgress?.({
-    currentStage: 3,
-    overallProgress: 66,
-    stageProgress: 0,
-    statusMessage: `正在并行生成 ${totalScenes} 个场景...`,
-    scenesGenerated: 0,
-    totalScenes,
-  });
-
-  // Generate all scenes in parallel
-  const results = await Promise.all(
-    sceneOutlines.map(async (outline, index) => {
-      try {
-        const sceneId = await generateSingleScene(outline, api, aiCall, languageDirective);
-
-        // Update progress (not atomic, but sufficient for UI display)
-        completedCount++;
-        callbacks?.onProgress?.({
-          currentStage: 3,
-          overallProgress: 66 + Math.floor((completedCount / totalScenes) * 34),
-          stageProgress: Math.floor((completedCount / totalScenes) * 100),
-          statusMessage: `已完成 ${completedCount}/${totalScenes} 个场景`,
-          scenesGenerated: completedCount,
-          totalScenes,
-        });
-
-        return { success: true, sceneId, index };
-      } catch (error) {
-        completedCount++;
-        callbacks?.onError?.(`Failed to generate scene ${outline.title}: ${error}`);
-        return { success: false, sceneId: null, index };
-      }
-    }),
-  );
-
-  // Collect successful sceneIds in original order
-  const sceneIds = results
-    .filter(
-      (r): r is { success: true; sceneId: string; index: number } =>
-        r.success && r.sceneId !== null,
-    )
-    .sort((a, b) => a.index - b.index)
-    .map((r) => r.sceneId);
-
-  return { success: true, data: sceneIds };
-}
-
-/**
- * Generate a single scene (two-step process)
- *
- * Step 3.1: Generate content
- * Step 3.2: Generate Actions
- */
-async function generateSingleScene(
-  outline: SceneOutline,
-  api: ReturnType<typeof createStageAPI>,
-  aiCall: AICallFn,
-  languageDirective?: string,
-): Promise<string | null> {
-  // Step 3.1: Generate content
-  log.info(`Step 3.1: Generating content for: ${outline.title}`);
-  const content = await generateSceneContent(outline, aiCall, { languageDirective });
-  if (!content) {
-    log.error(`Failed to generate content for: ${outline.title}`);
-    return null;
-  }
-
-  // Step 3.2: Generate Actions
-  log.info(`Step 3.2: Generating actions for: ${outline.title}`);
-  const actions = await generateSceneActions(outline, content, aiCall, { languageDirective });
-  log.info(`Generated ${actions.length} actions for: ${outline.title}`);
-
-  // Create complete Scene
-  return createSceneWithActions(outline, content, actions, api);
 }
 
 // ==================== Backward Compatibility Helpers ====================

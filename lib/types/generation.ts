@@ -220,25 +220,3 @@ export interface SuggestedAction {
   description: string;
   timing?: 'start' | 'middle' | 'end' | 'after-content';
 }
-
-// ==================== Generation Session ====================
-
-export interface GenerationProgress {
-  currentStage: 1 | 2 | 3;
-  overallProgress: number; // 0-100
-  stageProgress: number; // 0-100
-  statusMessage: string;
-  scenesGenerated: number;
-  totalScenes: number;
-  errors?: string[];
-}
-
-export interface GenerationSession {
-  id: string;
-  requirements: UserRequirements;
-  sceneOutlines?: SceneOutline[];
-  progress: GenerationProgress;
-  startedAt: Date;
-  completedAt?: Date;
-  generatedStageId?: string;
-}
