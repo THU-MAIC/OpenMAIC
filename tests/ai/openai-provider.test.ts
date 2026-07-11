@@ -105,9 +105,105 @@ describe('OpenAI provider defaults', () => {
     expect(model).toEqual({ endpoint: 'responses', modelId: 'gpt-5.5' });
   });
 
+  it('includes latest official GLM and Kimi coding models', () => {
+    expect(getModelInfo('glm', 'glm-5.2')).toMatchObject({
+      id: 'glm-5.2',
+      name: 'GLM-5.2',
+      contextWindow: 1000000,
+      outputWindow: 128000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: false,
+      },
+    });
+    expect(getModelInfo('kimi', 'kimi-k2.7-code')).toMatchObject({
+      id: 'kimi-k2.7-code',
+      name: 'Kimi K2.7 Code',
+      contextWindow: 256000,
+      outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+    expect(getModelInfo('kimi', 'kimi-k2.7-code-highspeed')).toMatchObject({
+      id: 'kimi-k2.7-code-highspeed',
+      name: 'Kimi K2.7 Code HighSpeed',
+      contextWindow: 256000,
+      outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+  });
+
+  it('includes latest official Doubao Seed chat models', () => {
+    expect(getModelInfo('doubao', 'doubao-seed-2-1-pro-260628')).toMatchObject({
+      id: 'doubao-seed-2-1-pro-260628',
+      name: 'Doubao Seed 2.1 Pro',
+      contextWindow: 256000,
+      outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+    expect(getModelInfo('doubao', 'doubao-seed-2-1-turbo-260628')).toMatchObject({
+      id: 'doubao-seed-2-1-turbo-260628',
+      name: 'Doubao Seed 2.1 Turbo',
+      contextWindow: 256000,
+      outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+    expect(getModelInfo('doubao', 'doubao-seed-evolving')).toMatchObject({
+      id: 'doubao-seed-evolving',
+      name: 'Doubao Seed Evolving',
+      contextWindow: 256000,
+      outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+    expect(getModelInfo('doubao', 'doubao-seed-character-260628')).toMatchObject({
+      id: 'doubao-seed-character-260628',
+      name: 'Doubao Seed Character',
+      contextWindow: 256000,
+      outputWindow: 32768,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+      },
+    });
+  });
+
   it.each([
     ['kimi', 'kimi-k2.6', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     ['glm', 'glm-5.1', { mode: 'enabled' }, { thinking: { type: 'enabled' } }],
+    [
+      'glm',
+      'glm-5.2',
+      { mode: 'enabled', effort: 'minimal' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'minimal' },
+    ],
+    [
+      'glm',
+      'glm-5.2',
+      { mode: 'enabled', effort: 'xhigh' },
+      { thinking: { type: 'enabled' }, reasoning_effort: 'xhigh' },
+    ],
+    ['glm', 'glm-5.2', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     ['xiaomi', 'mimo-v2.5', { mode: 'disabled' }, { thinking: { type: 'disabled' } }],
     [
       'deepseek',
@@ -132,6 +228,24 @@ describe('OpenAI provider defaults', () => {
       'doubao-seed-2-0-pro-260215',
       { mode: 'enabled', effort: 'high' },
       { reasoning_effort: 'high' },
+    ],
+    [
+      'doubao',
+      'doubao-seed-2-1-pro-260628',
+      { mode: 'enabled', effort: 'high' },
+      { reasoning_effort: 'high' },
+    ],
+    [
+      'doubao',
+      'doubao-seed-evolving',
+      { mode: 'enabled', effort: 'medium' },
+      { reasoning_effort: 'medium' },
+    ],
+    [
+      'doubao',
+      'doubao-seed-character-260628',
+      { mode: 'disabled' },
+      { thinking: { type: 'disabled' } },
     ],
     [
       'openrouter',

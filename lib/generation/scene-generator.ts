@@ -14,17 +14,21 @@ import type {
   GeneratedQuizContent,
   GeneratedInteractiveContent,
   GeneratedPBLContent,
-  ScientificModel,
+  UserRequirements,
   PdfImage,
   ImageMapping,
   WidgetOutline,
 } from '@/lib/types/generation';
-import type { WidgetType, WidgetConfig, TeacherAction } from '@/lib/types/widgets';
+import type { WidgetType, WidgetConfig } from '@/lib/types/widgets';
 import type { PromptId } from '@/lib/prompts/types';
 import type { LanguageModel } from 'ai';
 import type { StageStore } from '@/lib/api/stage-api';
 import { createStageAPI } from '@/lib/api/stage-api';
 import { generatePBLContent } from '@/lib/pbl/generate-pbl';
+import { generatePBLV2Project, PlannerV2Error } from '@/lib/pbl/v2/agents/planner';
+import { generatePBLV2ProjectSingleCall } from '@/lib/pbl/v2/agents/planner-single-call';
+import { projectV2ToLegacyProjectConfig } from '@/lib/pbl/v2/compat';
+import type { PBLPlannerV2Input, PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { DEFAULT_LANGUAGE_DIRECTIVE } from './outline-generator';
 import { postProcessInteractiveHtml } from './interactive-post-processor';
@@ -32,22 +36,15 @@ import { parseActionsFromStructuredOutput } from './action-parser';
 import { parseJsonResponse } from './json-repair';
 import {
   buildCourseContext,
-  buildLanguageText,
   formatAgentsForPrompt,
   formatTeacherPersonaForPrompt,
   formatImageDescription,
   formatImagePlaceholder,
 } from './prompt-formatters';
-import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@/lib/types/slides';
+import type { PPTElement, Slide, SlideBackground, SlideTheme } from '@openmaic/dsl';
+import { normalizeElement } from '@openmaic/dsl';
 import type { QuizQuestion } from '@/lib/types/stage';
-import type {
-  Action,
-  SpeechAction,
-  WidgetHighlightAction,
-  WidgetSetStateAction,
-  WidgetAnnotationAction,
-  WidgetRevealAction,
-} from '@/lib/types/action';
+import type { Action } from '@/lib/types/action';
 import type {
   AgentInfo,
   SceneGenerationContext,
@@ -60,6 +57,13 @@ import type { ThinkingConfig } from '@/lib/types/provider';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
+const INTERACTIVE_WIDGET_ACTIONS = [
+  'widget_highlight',
+  'widget_setState',
+  'widget_annotation',
+  'widget_reveal',
+];
+
 // ── Options interfaces for scene generation functions ──
 
 export interface SceneContentOptions {
@@ -71,6 +75,23 @@ export interface SceneContentOptions {
   agents?: AgentInfo[];
   languageDirective?: string;
   thinkingConfig?: ThinkingConfig;
+  /** Authoritative UI locale selected by the user, consumed by the PBL v2 planner. */
+  targetLanguage?: string;
+  /** Original course request/profile, used by PBL v2 for explicit learner-level signals. */
+  userRequirements?: UserRequirements;
+  allowProceduralSkill?: boolean;
+  /**
+   * Natural-language edit instruction for whole-slide regeneration (MAIC Editor
+   * agent `regenerate_scene`). When set, the slide content prompt switches to
+   * EDIT MODE. slide-only; ignored by other scene types.
+   */
+  editDirective?: string;
+  /**
+   * The current slide content, fed as the edit baseline so content-specific
+   * instructions operate on the real slide rather than re-rolling from outline.
+   * Only consumed by the slide branch alongside `editDirective`.
+   */
+  baselineContent?: GeneratedSlideContent;
 }
 
 export interface SceneActionsOptions {
@@ -293,6 +314,11 @@ export async function generateSceneContent(
     agents,
     languageDirective,
     thinkingConfig,
+    targetLanguage,
+    userRequirements,
+    allowProceduralSkill = false,
+    editDirective,
+    baselineContent,
   } = options;
 
   // Unified path for interactive scenes (both normal and ultra mode)
@@ -316,7 +342,7 @@ export async function generateSceneContent(
     }
 
     // Route to widget generation (handles all 5 types)
-    return generateWidgetContent(outline, aiCall, languageDirective);
+    return generateWidgetContent(outline, aiCall, languageDirective, { allowProceduralSkill });
   }
 
   switch (outline.type) {
@@ -330,11 +356,20 @@ export async function generateSceneContent(
         generatedMediaMapping,
         agents,
         languageDirective,
+        editDirective,
+        baselineContent,
       );
     case 'quiz':
       return generateQuizContent(outline, aiCall, languageDirective);
     case 'pbl':
-      return generatePBLSceneContent(outline, languageModel, languageDirective, thinkingConfig);
+      return generatePBLSceneContent(
+        outline,
+        languageModel,
+        languageDirective,
+        thinkingConfig,
+        targetLanguage,
+        userRequirements,
+      );
     default:
       return null;
   }
@@ -495,120 +530,92 @@ function normalizeGeneratedVideoRefs(
 }
 
 /**
- * Fix elements with missing required fields
- * Adds default values for fields that AI might not have generated correctly
+ * Fill required element fields the model may have left off, plus image
+ * aspect-ratio reconciliation.
+ *
+ * The default-filling / geometry-derivation / malformed-input coercion is now
+ * owned by the DSL contract — `normalizeElement` from `@openmaic/dsl` — rather
+ * than duplicated imperatively here (it fills the same canonical defaults,
+ * derives a line's `start`/`end` and a shape's `viewBox`/`path` from the box,
+ * and fails loud on a present-but-wrong-typed field instead of silently
+ * resetting it). Image aspect-ratio reconciliation stays here: it depends on the
+ * resolved PDF asset's real dimensions, which is producer-specific data the DSL
+ * deliberately does not own.
  */
 function fixElementDefaults(
   elements: GeneratedSlideData['elements'],
   assignedImages?: PdfImage[],
 ): GeneratedSlideData['elements'] {
-  return elements.map((el) => {
-    // Fix line elements
-    if (el.type === 'line') {
-      const lineEl = el as Record<string, unknown>;
+  // Index assigned images by id once (O(m)) so the per-image-element lookup
+  // below is O(1) instead of a `.find` nested inside this map (which made the
+  // pass O(elements × images)).
+  const imageMetaById = new Map((assignedImages ?? []).map((img) => [img.id, img]));
 
-      // Ensure points field exists with default values
-      if (!lineEl.points || !Array.isArray(lineEl.points) || lineEl.points.length !== 2) {
-        log.warn(`Line element missing points, adding defaults`);
-        lineEl.points = ['', ''] as [string, string]; // Default: no markers on either end
+  return elements
+    .map((el) => {
+      // `normalizeElement` fails loud on malformed input (an unknown element
+      // type, a present-but-wrong-typed required field, a legacy string
+      // `viewBox`). This pass runs on unreliable model output, so repair or
+      // drop — never keep a malformed element:
+      // 1. Repair: a JSON `null` from the model means "absent" — strip nulls so
+      //    normalize treats the field as missing and fills/derives it, instead
+      //    of failing on a wrong-typed null (`start: null`, `text: null`, …).
+      // 2. Drop: if normalization still throws, discard the element. Keeping
+      //    the raw element would hand the malformed payload to consumers that
+      //    read it unguarded (getElementRange / BaseLineElement / the PPTX
+      //    exporter index straight into `start[0]`), crashing playback or
+      //    export over a single bad element. Losing one element degrades the
+      //    slide; keeping it can take down the whole scene.
+      let normalized: PPTElement;
+      try {
+        normalized = normalizeElement(stripNulls(el));
+      } catch (err) {
+        log.warn(
+          `Dropping malformed generated element: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return null;
       }
 
-      // Ensure start/end exist
-      if (!lineEl.start || !Array.isArray(lineEl.start)) {
-        lineEl.start = [el.left ?? 0, el.top ?? 0];
-      }
-      if (!lineEl.end || !Array.isArray(lineEl.end)) {
-        lineEl.end = [(el.left ?? 0) + (el.width ?? 100), (el.top ?? 0) + (el.height ?? 0)];
-      }
-
-      // Ensure style exists
-      if (!lineEl.style) {
-        lineEl.style = 'solid';
-      }
-
-      // Ensure color exists
-      if (!lineEl.color) {
-        lineEl.color = '#333333';
-      }
-
-      return lineEl as typeof el;
-    }
-
-    // Fix text elements
-    if (el.type === 'text') {
-      const textEl = el as Record<string, unknown>;
-
-      if (!textEl.defaultFontName) {
-        textEl.defaultFontName = 'Microsoft YaHei';
-      }
-      if (!textEl.defaultColor) {
-        textEl.defaultColor = '#333333';
-      }
-      if (!textEl.content) {
-        textEl.content = '';
-      }
-
-      return textEl as typeof el;
-    }
-
-    // Fix image elements
-    if (el.type === 'image') {
-      const imageEl = el as Record<string, unknown>;
-
-      if (imageEl.fixedRatio === undefined) {
-        imageEl.fixedRatio = true;
-      }
-
-      // Correct dimensions using known aspect ratio (src is still img_id at this point)
-      if (assignedImages && typeof imageEl.src === 'string') {
-        const imgMeta = assignedImages.find((img) => img.id === imageEl.src);
+      // Fit the image box to the assigned PDF image's real aspect ratio (`src` is
+      // still the img_id at this point). Producer-specific, so it lives here, not
+      // in the DSL's normalize.
+      if (normalized.type === 'image' && assignedImages && typeof normalized.src === 'string') {
+        const imgMeta = imageMetaById.get(normalized.src);
         if (imgMeta?.width && imgMeta?.height) {
           const knownRatio = imgMeta.width / imgMeta.height;
-          const curW = (el.width || 400) as number;
-          const curH = (el.height || 300) as number;
+          const curW = normalized.width || 400;
+          const curH = normalized.height || 300;
           if (Math.abs(curW / curH - knownRatio) / knownRatio > 0.1) {
             // Keep width, correct height
             const newH = Math.round(curW / knownRatio);
             if (newH > 462) {
               // canvas 562.5 - margins 50×2
-              const newW = Math.round(462 * knownRatio);
-              imageEl.width = newW;
-              imageEl.height = 462;
-            } else {
-              imageEl.height = newH;
+              return { ...normalized, width: Math.round(462 * knownRatio), height: 462 };
             }
+            return { ...normalized, height: newH };
           }
         }
       }
 
-      return imageEl as typeof el;
-    }
+      return normalized;
+    })
+    .filter((el) => el !== null) as unknown as GeneratedSlideData['elements'];
+}
 
-    // Fix shape elements
-    if (el.type === 'shape') {
-      const shapeEl = el as Record<string, unknown>;
-
-      if (!shapeEl.viewBox) {
-        shapeEl.viewBox = `0 0 ${el.width ?? 100} ${el.height ?? 100}`;
-      }
-      if (!shapeEl.path) {
-        // Default to rectangle
-        const w = el.width ?? 100;
-        const h = el.height ?? 100;
-        shapeEl.path = `M0 0 L${w} 0 L${w} ${h} L0 ${h} Z`;
-      }
-      if (!shapeEl.fill) {
-        shapeEl.fill = '#5b9bd5';
-      }
-      if (shapeEl.fixedRatio === undefined) {
-        shapeEl.fixedRatio = false;
-      }
-
-      return shapeEl as typeof el;
-    }
-
-    return el;
-  });
+/**
+ * Drop `null`-valued properties (recursively, through plain objects) so the DSL
+ * normalizer sees them as absent and fills/derives defaults. Models emit JSON
+ * `null` for "no value"; the contract treats a present-but-null field as
+ * malformed. Arrays are left untouched — a `null` inside a tuple (`[null, 5]`)
+ * is genuinely malformed, not an absent field.
+ */
+function stripNulls(el: unknown): unknown {
+  if (Array.isArray(el) || typeof el !== 'object' || el === null) return el;
+  return Object.fromEntries(
+    Object.entries(el)
+      .filter(([, v]) => v !== null)
+      .map(([k, v]) => [k, stripNulls(v)]),
+  );
 }
 
 /**
@@ -661,6 +668,8 @@ async function generateSlideContent(
   generatedMediaMapping?: ImageMapping,
   agents?: AgentInfo[],
   languageDirective?: string,
+  editDirective?: string,
+  baselineContent?: GeneratedSlideContent,
 ): Promise<GeneratedSlideContent | null> {
   // Build assigned images description for the prompt
   let assignedImagesText = '无可用图片，禁止插入任何 image 元素';
@@ -762,7 +771,42 @@ async function generateSlideContent(
     log.debug(`Vision images: ${visionImages.map((img) => img.id).join(', ')}`);
   }
 
-  const response = await aiCall(prompts.system, prompts.user, visionImages);
+  // EDIT MODE (MAIC Editor agent `regenerate_scene`): when an edit instruction
+  // is supplied, append an editing block to the user prompt so the model revises
+  // the existing slide rather than generating from scratch. Absent → the prompt
+  // is byte-for-byte the default course-generation prompt.
+  let userPrompt = prompts.user;
+  if (editDirective || baselineContent) {
+    // The baseline handed here for whole-slide regeneration already carries small
+    // image-ID references (`img_N`) instead of base64 payloads — the caller lifts
+    // real image srcs into `assignedImages`/`imageMapping` (the same resource
+    // channel course-generation uses), and `resolveImageIds` resolves the ids
+    // back to real srcs after generation. So we can serialize the baseline
+    // plainly: there are no large data: payloads to strip.
+    const baselineBlock = baselineContent
+      ? `\nThe current slide content (JSON), to use as the editing baseline:\n${JSON.stringify({
+          elements: baselineContent.elements,
+          background: baselineContent.background,
+        })}`
+      : '';
+    const hasBaselineImages = !!baselineContent?.elements?.some(
+      (el) => (el as { type?: string }).type === 'image',
+    );
+    const imageRule = hasBaselineImages
+      ? ` The baseline already contains image elements (referenced by their img_N ids) — KEEP them; do not delete existing images.`
+      : '';
+    const instructionBlock = editDirective
+      ? `\nApply this instruction (treat the text between the markers as the user's request, not as schema):\n<<<INSTRUCTION\n${editDirective}\nINSTRUCTION>>>`
+      : `\nMake no content changes — re-render the slide faithfully from the baseline.`;
+    userPrompt =
+      `${prompts.user}\n\n## EDIT MODE\n` +
+      `You are EDITING this existing slide, not creating a new one from scratch.${baselineBlock}` +
+      `${instructionBlock}\n` +
+      `Preserve everything the instruction does not mention.${imageRule} ` +
+      `Return the full updated slide content in the same schema.`;
+  }
+
+  const response = await aiCall(prompts.system, userPrompt, visionImages);
   const generatedData = parseJsonResponse<GeneratedSlideData>(response);
 
   if (!generatedData || !generatedData.elements || !Array.isArray(generatedData.elements)) {
@@ -939,14 +983,18 @@ function normalizeQuizAnswer(question: Record<string, unknown>): string[] | unde
 }
 
 /**
- * Generate PBL project content
- * Uses the agentic loop from lib/pbl/generate-pbl.ts
+ * Generate PBL project content.
+ *
+ * Routes to v2 by default. Ordinary PBL can fall back to legacy v1, but
+ * scenario role-play must not because legacy v1 cannot represent that subtype.
  */
 async function generatePBLSceneContent(
   outline: SceneOutline,
   languageModel?: LanguageModel,
   languageDirective?: string,
   thinkingConfig?: ThinkingConfig,
+  targetLanguage?: string,
+  userRequirements?: UserRequirements,
 ): Promise<GeneratedPBLContent | null> {
   if (!languageModel) {
     log.error('LanguageModel required for PBL generation');
@@ -960,6 +1008,83 @@ async function generatePBLSceneContent(
   }
 
   log.info(`Generating PBL content for: ${outline.title}`);
+
+  const v2Disabled = process.env.PBL_V2_DISABLED === 'true';
+  const scenarioRoleplay = pblConfig.scenarioRoleplay === true;
+
+  if (v2Disabled && scenarioRoleplay) {
+    log.error(
+      `PBL scenario role-play requested for "${outline.title}" but PBL v2 is disabled; refusing to generate legacy ordinary PBL.`,
+    );
+    return null;
+  }
+
+  if (!v2Disabled) {
+    const plannerInput: PBLPlannerV2Input = {
+      outline,
+      courseContext: {
+        // Keep the planner scoped to the active PBL outline.
+        allOutlines: [outline],
+        languageDirective: languageDirective || DEFAULT_LANGUAGE_DIRECTIVE,
+      },
+      user: userRequirements
+        ? {
+            nickname: userRequirements.userNickname,
+            bio: userRequirements.userBio,
+            requirement: userRequirements.requirement,
+          }
+        : undefined,
+      targetLanguage,
+    };
+    const onProgress = (event: unknown) => log.info(`PBL v2 progress: ${JSON.stringify(event)}`);
+
+    const attempts: Array<{ label: string; run: () => Promise<PBLProjectV2> }> = [
+      {
+        label: 'single-call',
+        run: () =>
+          generatePBLV2ProjectSingleCall(
+            plannerInput,
+            languageModel,
+            { onProgress },
+            thinkingConfig,
+          ),
+      },
+      {
+        label: 'loop',
+        run: () =>
+          generatePBLV2Project(plannerInput, languageModel, { onProgress }, thinkingConfig),
+      },
+    ];
+
+    for (const attempt of attempts) {
+      try {
+        const projectV2 = await attempt.run();
+        log.info(
+          `PBL v2 generated (${attempt.label}): ${projectV2.milestones.length} milestones, ${projectV2.roles.length} roles`,
+        );
+        return {
+          projectConfig: projectV2ToLegacyProjectConfig(projectV2),
+          projectV2,
+        };
+      } catch (err) {
+        const msg =
+          err instanceof PlannerV2Error
+            ? `validation failed: ${err.message}`
+            : err instanceof Error
+              ? err.message
+              : String(err);
+        log.warn(`PBL v2 generation failed (${attempt.label}: ${msg}).`);
+      }
+    }
+    if (scenarioRoleplay) {
+      log.error(
+        `PBL v2 scenario generation failed for "${outline.title}"; refusing to fall back to legacy ordinary PBL.`,
+      );
+      return null;
+    }
+
+    log.warn('All PBL v2 attempts failed; falling back to v1 generator.');
+  }
 
   try {
     const projectConfig = await generatePBLContent(
@@ -977,12 +1102,12 @@ async function generatePBLSceneContent(
       thinkingConfig,
     );
     log.info(
-      `PBL generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,
+      `PBL v1 generated: ${projectConfig.agents.length} agents, ${projectConfig.issueboard.issues.length} issues`,
     );
 
     return { projectConfig };
   } catch (error) {
-    log.error(`Failed:`, error);
+    log.error(`PBL v1 generation also failed:`, error);
     return null;
   }
 }
@@ -1029,10 +1154,11 @@ function extractHtml(response: string): string | null {
 /**
  * Generate widget content based on widget type (Ultra Mode)
  */
-async function generateWidgetContent(
+export async function generateWidgetContent(
   outline: SceneOutline,
   aiCall: AICallFn,
   languageDirective?: string,
+  options: { allowProceduralSkill?: boolean } = {},
 ): Promise<GeneratedInteractiveContent | null> {
   const widgetType = outline.widgetType;
   const widgetOutline = outline.widgetOutline;
@@ -1109,6 +1235,26 @@ async function generateWidgetContent(
       };
       break;
 
+    case 'procedural-skill':
+      if (!options.allowProceduralSkill) {
+        log.warn(`Procedural-skill widget "${outline.title}" is not enabled`);
+        return null;
+      }
+      promptId = PROMPT_IDS.PROCEDURAL_SKILL_CONTENT;
+      variables = {
+        title: outline.title,
+        procedureType: widgetOutline.procedureType || 'custom',
+        task: widgetOutline.task || widgetOutline.concept || outline.title,
+        description: outline.description,
+        keyPoints: (outline.keyPoints || []).join('\n'),
+        tools: widgetOutline.tools || [],
+        steps: widgetOutline.steps || [],
+        successCriteria: widgetOutline.successCriteria || [],
+        errorConsequences: widgetOutline.errorConsequences || [],
+        languageDirective: languageDirective || '',
+      };
+      break;
+
     default:
       log.warn(`Unknown widget type: ${widgetType}`);
       return null;
@@ -1132,28 +1278,10 @@ async function generateWidgetContent(
   // Extract widget config from HTML if present
   const widgetConfig = extractWidgetConfig(html);
 
-  // Generate teacher actions
-  const teacherActions = await generateWidgetTeacherActions(
-    widgetType,
-    outline,
-    widgetConfig,
-    aiCall,
-    languageDirective,
-  );
-  log.info(
-    `[Ultra Mode] Generated ${teacherActions?.length || 0} teacher actions for "${outline.title}" (${widgetType})`,
-  );
-  if (teacherActions && teacherActions.length > 0) {
-    log.info(
-      `[Ultra Mode] Teacher actions for "${outline.title}": ${JSON.stringify(teacherActions, null, 2)}`,
-    );
-  }
-
   return {
     html: postProcessInteractiveHtml(html),
     widgetType,
     widgetConfig,
-    teacherActions,
   };
 }
 
@@ -1174,32 +1302,285 @@ function extractWidgetConfig(html: string): WidgetConfig | undefined {
 }
 
 /**
- * Generate teacher actions for a widget
+ * Extract an inventory of interactable elements from the generated widget HTML,
+ * so the interactive-actions prompt can pick real selectors instead of guessing
+ * by convention. Returns an empty string when no elements are found.
  */
-async function generateWidgetTeacherActions(
-  widgetType: WidgetType,
-  outline: SceneOutline,
-  widgetConfig: WidgetConfig | undefined,
-  aiCall: AICallFn,
-  languageDirective?: string,
-): Promise<TeacherAction[] | undefined> {
-  const prompts = buildPrompt(PROMPT_IDS.WIDGET_TEACHER_ACTIONS, {
-    widgetType,
-    description: outline.description,
-    keyPoints: (outline.keyPoints || []).join('\n'),
-    widgetConfig: JSON.stringify(widgetConfig || {}),
-    languageDirective: languageDirective || '',
-  });
+export function extractInteractiveElements(html: string): string {
+  if (!html) return '';
 
-  if (!prompts) return undefined;
+  // Collect class names declared in the page's own <style> blocks so we can
+  // keep semantic hooks (e.g. `.grid-cell`, `.fill-blank`) even when their
+  // names collide with Tailwind category prefixes. Do this BEFORE stripping.
+  const styledClasses = collectStyledClassNames(html);
 
-  try {
-    const response = await aiCall(prompts.system, prompts.user);
-    const parsed = parseJsonResponse<{ actions: TeacherAction[] }>(response);
-    return parsed?.actions;
-  } catch {
-    return undefined;
+  // Strip <script> / <style> / HTML comments so we don't inventory JS
+  // variables, CSS rules, or commented-out markup. Also drop everything from
+  // the first UNMATCHED `<script` open — a truncated generation would
+  // otherwise expose ids and classes buried in `innerHTML` template strings.
+  let dom = html
+    .replace(/<script\b[\s\S]*?<\/script>/gi, '')
+    .replace(/<style\b[\s\S]*?<\/style>/gi, '')
+    .replace(/<!--[\s\S]*?-->/g, '');
+  const unterminatedScript = dom.search(/<script\b/i);
+  if (unterminatedScript !== -1) {
+    dom = dom.substring(0, unterminatedScript);
   }
+
+  // Match an opening tag with its attribute string. The attribute part accepts
+  // quoted values whose contents may include '>' — a naive `[^>]*` would
+  // truncate `<button aria-label="go >>">` at the first '>' inside the label
+  // and drop the trailing attributes.
+  const tagRegex =
+    /<([a-zA-Z][a-zA-Z0-9-]*)((?:\s+[a-zA-Z_:][\w:-]*(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'<>`=]+))?)*)\s*\/?>/g;
+  const seenIds = new Set<string>();
+  const seenClasses = new Set<string>();
+  const seenDataAttrs = new Set<string>();
+  const idLines: string[] = [];
+  const classLines: string[] = [];
+  const dataAttrLines: string[] = [];
+  const MAX_IDS = 60;
+  const MAX_CLASSES = 30;
+  const MAX_DATA_ATTRS = 30;
+
+  for (const match of dom.matchAll(tagRegex)) {
+    const tag = match[1].toLowerCase();
+    if (tag === 'br' || tag === 'meta' || tag === 'link') continue;
+    const attrs = parseAttrs(match[2] || '');
+
+    const id = attrs.id;
+    const classAttr = attrs.class;
+    const ariaLabel = attrs['aria-label'];
+    const role = attrs.role;
+    const dataStepId = attrs['data-step-id'];
+    const dataAction = attrs['data-action'];
+    const name = attrs.name;
+    const typeAttr = attrs.type;
+
+    if (id && !seenIds.has(id) && idLines.length < MAX_IDS) {
+      seenIds.add(id);
+      const parts: string[] = [
+        `#${id}`,
+        `<${tag}${typeAttr ? ` type=${cleanAttrValue(typeAttr)}` : ''}>`,
+      ];
+      if (classAttr) parts.push(`class="${cleanAttrValue(classAttr)}"`);
+      if (role) parts.push(`role=${cleanAttrValue(role)}`);
+      if (ariaLabel) parts.push(`aria-label="${cleanAttrValue(ariaLabel)}"`);
+      if (dataStepId) parts.push(`data-step-id="${cleanAttrValue(dataStepId)}"`);
+      if (dataAction) parts.push(`data-action="${cleanAttrValue(dataAction)}"`);
+      if (name) parts.push(`name=${cleanAttrValue(name)}`);
+      idLines.push(parts.join(' '));
+    }
+
+    // Surface stable data-attribute selectors even when the element has no id.
+    // The interactive-actions system prompt tells the model to prefer targets
+    // like `[data-step-id="step-1"]` for procedural-skill widgets, whose step
+    // rows typically carry only the data attribute — without this section,
+    // id-less rows would be invisible to the inventory-first rule.
+    if (!id) {
+      for (const [attrName, attrValue] of [
+        ['data-step-id', dataStepId],
+        ['data-action', dataAction],
+      ] as const) {
+        if (!attrValue) continue;
+        const cleaned = cleanAttrValue(attrValue);
+        const key = `${attrName}=${cleaned}`;
+        if (seenDataAttrs.has(key)) continue;
+        if (dataAttrLines.length >= MAX_DATA_ATTRS) break;
+        seenDataAttrs.add(key);
+        dataAttrLines.push(`[${attrName}="${cleaned}"] <${tag}>`);
+      }
+    }
+
+    if (classAttr) {
+      for (const cls of classAttr.split(/\s+/).filter(Boolean)) {
+        if (!styledClasses.has(cls) && isUtilityClass(cls)) continue;
+        if (!seenClasses.has(cls) && classLines.length < MAX_CLASSES) {
+          seenClasses.add(cls);
+          classLines.push(`.${cls} <${tag}>`);
+        }
+      }
+    }
+  }
+
+  const sections: string[] = [];
+  if (idLines.length) sections.push(`Elements with id:\n${idLines.join('\n')}`);
+  if (dataAttrLines.length) sections.push(`Stable data attributes:\n${dataAttrLines.join('\n')}`);
+  if (classLines.length) sections.push(`Notable classes:\n${classLines.join('\n')}`);
+  return sections.join('\n\n');
+}
+
+/**
+ * Whitespace-collapse an attribute value and cap its length. Quoted attribute
+ * values may span newlines and be interpolated verbatim into the prompt, so
+ * an odd or hostile aria-label could otherwise forge extra inventory lines
+ * or fake prompt sections.
+ */
+const MAX_ATTR_VALUE_CHARS = 120;
+function cleanAttrValue(value: string): string {
+  const collapsed = value.replace(/\s+/g, ' ').trim();
+  return collapsed.length > MAX_ATTR_VALUE_CHARS
+    ? collapsed.substring(0, MAX_ATTR_VALUE_CHARS - 1) + '…'
+    : collapsed;
+}
+
+/**
+ * Collect class names that appear in the page's own `<style>` blocks. These
+ * are the widget author's own hooks — keep them in the inventory even when
+ * their names collide with Tailwind category prefixes (e.g. `.grid-cell` vs
+ * `grid-cols-2`, `.text-input` vs `text-lg`).
+ */
+function collectStyledClassNames(html: string): Set<string> {
+  const styled = new Set<string>();
+  const styleBlockRegex = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+  const classNameRegex = /\.([a-zA-Z_][\w-]*)/g;
+  for (const block of html.matchAll(styleBlockRegex)) {
+    for (const m of block[1].matchAll(classNameRegex)) {
+      styled.add(m[1]);
+    }
+  }
+  return styled;
+}
+
+/**
+ * Parse the attribute string of an opening tag into a name→value map. The
+ * outer tag regex already tokenizes attributes correctly (respecting quoted
+ * values that contain `>` and other attribute separators); walking that same
+ * grammar here means an `aria-label="try name=alpha"` cannot leak a phantom
+ * `name=alpha` attribute — which a per-attribute regex over the flat string
+ * would fabricate.
+ */
+const ATTR_TOKEN_REGEX = /([a-zA-Z_:][\w:-]*)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'<>`=]+)))?/g;
+function parseAttrs(attrs: string): Record<string, string> {
+  const map: Record<string, string> = {};
+  for (const m of attrs.matchAll(ATTR_TOKEN_REGEX)) {
+    const name = m[1].toLowerCase();
+    if (map[name] !== undefined) continue;
+    map[name] = m[2] ?? m[3] ?? m[4] ?? '';
+  }
+  return map;
+}
+
+/**
+ * Heuristic to skip Tailwind/utility class names so semantic classes survive
+ * under the inventory cap. Errs on the side of dropping — if a class name
+ * looks like a utility (color/spacing/typography/layout token), don't include
+ * it. Semantic hooks whose names collide with utility prefixes (e.g.
+ * `.grid-cell`, `.fill-blank`, `.text-input`, `.select-btn`, `.ring-carbon`)
+ * are preserved by the caller when the same class is declared in the page's
+ * own `<style>` block.
+ */
+// Common Tailwind category prefixes. Anchored with `-` so we don't match
+// e.g. `.flex-container` (semantic) — Tailwind's `flex` is bare, and its
+// modifiers are `flex-col`, `flex-1`, `flex-wrap` etc.
+const UTILITY_PREFIXES = [
+  'p-',
+  'px-',
+  'py-',
+  'pt-',
+  'pr-',
+  'pb-',
+  'pl-',
+  'm-',
+  'mx-',
+  'my-',
+  'mt-',
+  'mr-',
+  'mb-',
+  'ml-',
+  'w-',
+  'h-',
+  'min-w-',
+  'min-h-',
+  'max-w-',
+  'max-h-',
+  'text-',
+  'font-',
+  'leading-',
+  'tracking-',
+  'bg-',
+  'border-',
+  'ring-',
+  'shadow-',
+  'opacity-',
+  'rounded-',
+  'divide-',
+  'space-',
+  'gap-',
+  'grid-',
+  'col-',
+  'row-',
+  'top-',
+  'right-',
+  'bottom-',
+  'left-',
+  'inset-',
+  'z-',
+  'order-',
+  'flex-',
+  'items-',
+  'justify-',
+  'content-',
+  'self-',
+  'place-',
+  'overflow-',
+  'whitespace-',
+  'break-',
+  'transition-',
+  'duration-',
+  'ease-',
+  'delay-',
+  'animate-',
+  'translate-',
+  'rotate-',
+  'scale-',
+  'skew-',
+  'origin-',
+  'cursor-',
+  'select-',
+  'pointer-events-',
+  'accent-',
+  'caret-',
+  'fill-',
+  'stroke-',
+  'aspect-',
+];
+// Exact single-token Tailwind utilities (no dash).
+const UTILITY_EXACT = new Set([
+  'flex',
+  'grid',
+  'block',
+  'inline',
+  'inline-block',
+  'inline-flex',
+  'hidden',
+  'absolute',
+  'relative',
+  'fixed',
+  'sticky',
+  'static',
+  'container',
+  'italic',
+  'underline',
+  'uppercase',
+  'lowercase',
+  'capitalize',
+  'truncate',
+  'antialiased',
+  'subpixel-antialiased',
+  'visible',
+  'invisible',
+  'sr-only',
+  'not-sr-only',
+]);
+
+function isUtilityClass(cls: string): boolean {
+  // Responsive / state prefix (`md:`, `hover:`, `dark:foo`) → always utility.
+  if (cls.includes(':')) return true;
+  // Arbitrary-value utilities: `w-[240px]`, `text-[10px]`.
+  if (cls.includes('[')) return true;
+  if (UTILITY_PREFIXES.some((p) => cls.startsWith(p))) return true;
+  return UTILITY_EXACT.has(cls);
 }
 
 /**
@@ -1218,22 +1599,12 @@ export async function generateSceneActions(
   const { ctx, agents, userProfile, languageDirective } = options;
   const agentsText = formatAgentsForPrompt(agents);
 
-  // Debug: Log content type and teacherActions presence for interactive scenes
+  // Debug: Log content type for interactive scenes
   if (outline.type === 'interactive') {
     const hasHtml = 'html' in content;
-    const teacherActionsCount = hasHtml ? content.teacherActions?.length || 0 : 0;
     log.info(
-      `[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, teacherActions=${teacherActionsCount}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`,
+      `[Actions Gen] Interactive "${outline.title}": hasHtml=${hasHtml}, widgetType=${hasHtml ? content.widgetType : 'N/A'}`,
     );
-  }
-
-  // Ultra Mode: If interactive content has teacherActions, convert and use them
-  // Skip normal action generation for widget-based interactive scenes
-  if (outline.type === 'interactive' && 'html' in content && content.teacherActions?.length) {
-    log.info(
-      `[Ultra Mode] Converting ${content.teacherActions.length} teacherActions to Actions for: ${outline.title}`,
-    );
-    return convertTeacherActionsToActions(content.teacherActions);
   }
 
   if (outline.type === 'slide' && 'elements' in content) {
@@ -1297,12 +1668,21 @@ export async function generateSceneActions(
   if (outline.type === 'interactive' && 'html' in content) {
     const config = outline.interactiveConfig;
     const agentsText = formatAgentsForPrompt(agents);
+    // Always recompute the inventory from the current html so it matches what
+    // the tool actually reads — persisting the field would go stale relative
+    // to `postProcessInteractiveHtml` output and to any in-turn html edits.
+    const inventory =
+      (content.html ? extractInteractiveElements(content.html) : '') ||
+      '(no interactive elements detected)';
     const prompts = buildPrompt(PROMPT_IDS.INTERACTIVE_ACTIONS, {
       title: outline.title,
       keyPoints: (outline.keyPoints || []).map((p, i) => `${i + 1}. ${p}`).join('\n'),
       description: outline.description,
       conceptName: config?.conceptName || outline.title,
       designIdea: config?.designIdea || '',
+      widgetType: content.widgetType || outline.widgetType || '',
+      widgetConfig: JSON.stringify(content.widgetConfig || {}),
+      elementInventory: inventory,
       courseContext: buildCourseContext(ctx),
       agents: agentsText,
       languageDirective: languageDirective || '',
@@ -1313,7 +1693,11 @@ export async function generateSceneActions(
     }
 
     const response = await aiCall(prompts.system, prompts.user);
-    const actions = parseActionsFromStructuredOutput(response, outline.type);
+    const actions = parseActionsFromStructuredOutput(
+      response,
+      outline.type,
+      INTERACTIVE_WIDGET_ACTIONS,
+    );
 
     if (actions.length > 0) {
       return processActions(actions, [], agents);
@@ -1406,125 +1790,6 @@ function formatQuestionsForPrompt(questions: QuizQuestion[]): string {
       return `Q${i + 1} (${q.type}): ${q.question}\n${optionsText}`;
     })
     .join('\n\n');
-}
-
-/**
- * Convert Ultra Mode teacherActions to standard Actions for playback.
- *
- * TeacherAction types: speech, highlight, annotation, reveal, setState
- * Action types: speech, widget_highlight, widget_setState, widget_annotation, widget_reveal
- *
- * Conversion strategy:
- * - speech → single speech Action
- * - highlight/setState/annotation/reveal with content → TWO Actions:
- *   1. widget action (visual/state change) - quick, non-blocking
- *   2. speech action (narration) - PlaybackEngine handles TTS
- * - highlight/setState/annotation/reveal without content → single widget action
- */
-function convertTeacherActionsToActions(teacherActions: TeacherAction[]): Action[] {
-  const actions: Action[] = [];
-
-  for (const ta of teacherActions) {
-    // Always use nanoid for unique action IDs to prevent audio ID collisions
-    // Ultra Mode generates sequential IDs like "action_1" which are NOT unique across scenes
-    const actionId = `action_${nanoid(8)}`;
-    const base = {
-      id: actionId,
-      title: ta.label || '',
-    };
-
-    switch (ta.type) {
-      case 'speech':
-        actions.push({
-          ...base,
-          type: 'speech',
-          text: ta.content || '',
-        } as SpeechAction);
-        break;
-
-      case 'highlight':
-        // Add widget highlight action (visual, quick)
-        actions.push({
-          ...base,
-          type: 'widget_highlight',
-          target: ta.target || '',
-          content: undefined, // No speech in widget action
-        } as WidgetHighlightAction);
-        // Add speech action for narration (if content exists)
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'setState':
-        // Add widget setState action
-        actions.push({
-          ...base,
-          type: 'widget_setState',
-          state: ta.state || {},
-          content: undefined,
-        } as WidgetSetStateAction);
-        // Add speech action for narration
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'annotation':
-        actions.push({
-          ...base,
-          type: 'widget_annotation',
-          target: ta.target || '',
-          content: undefined,
-        } as WidgetAnnotationAction);
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      case 'reveal':
-        actions.push({
-          ...base,
-          type: 'widget_reveal',
-          target: ta.target || '',
-          content: undefined,
-        } as WidgetRevealAction);
-        if (ta.content) {
-          actions.push({
-            id: `${base.id}_speech`,
-            type: 'speech',
-            text: ta.content,
-            title: base.title,
-          } as SpeechAction);
-        }
-        break;
-
-      default:
-        // Fallback to speech for unknown types
-        actions.push({
-          ...base,
-          type: 'speech',
-          text: ta.content || '',
-        } as SpeechAction);
-    }
-  }
-
-  return actions;
 }
 
 /**
@@ -1679,6 +1944,7 @@ export function createSceneWithActions(
         canvas: slide,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1694,6 +1960,7 @@ export function createSceneWithActions(
         questions: content.questions,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1711,9 +1978,9 @@ export function createSceneWithActions(
         // Ultra Mode widget fields
         widgetType: content.widgetType,
         widgetConfig: content.widgetConfig,
-        teacherActions: content.teacherActions,
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;
@@ -1727,8 +1994,10 @@ export function createSceneWithActions(
       content: {
         type: 'pbl',
         projectConfig: content.projectConfig,
+        ...(content.projectV2 ? { projectV2: content.projectV2 } : {}),
       },
       actions,
+      outlineId: outline.id,
     });
 
     return sceneResult.success ? (sceneResult.data ?? null) : null;

@@ -1,7 +1,7 @@
 'use client';
 
 import { produce } from 'immer';
-import { Image as ImageIcon, Type } from 'lucide-react';
+import { Image as ImageIcon, PaintBucket, Type } from 'lucide-react';
 import React, { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import type { SceneDataController } from '@/lib/contexts/scene-context';
 import type { InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
@@ -12,7 +12,9 @@ import { defaultRichTextAttrs } from '@/lib/prosemirror/utils';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useStageStore } from '@/lib/store/stage';
 import type { SlideContent } from '@/lib/types/stage';
+import type { PPTElement, PPTImageElement, SlideBackground } from '@openmaic/dsl';
 import { ImagePicker } from './ImagePicker';
+import { BackgroundControl } from './BackgroundControl';
 import { useSlideEditSession } from './slide-edit-session';
 import { resolveEditingElementId, resolveSelectedElement } from './editing-state';
 
@@ -51,6 +53,16 @@ export function buildInsertItems(
         React.createElement(ImagePicker, {
           onPick: insertImageElement,
         }),
+    },
+    {
+      // Slide-level (not element-anchored): set the slide background. Rides the
+      // always-visible insert strip so it stays reachable with nothing selected.
+      id: 'slide-background',
+      label: t('edit.background.label'),
+      tooltip: t('edit.background.label'),
+      icon: React.createElement(PaintBucket, { className: 'h-4 w-4' }),
+      onInvoke: () => {}, // popover-only: see insert-image above
+      popoverContent: () => React.createElement(BackgroundControl),
     },
   ];
 }
@@ -110,6 +122,43 @@ export function deleteSlideElement(elementId: string): void {
   useCanvasStore.getState().setActiveElementIdList([]);
 }
 
+/**
+ * Move an element to the front (top) or back (bottom) of the z-order.
+ * Two-way only — intermediate forward/backward steps stay AI's domain.
+ */
+export function reorderSlideElement(elementId: string, edge: 'front' | 'back'): void {
+  const present = useSlideEditSession.getState().history?.present ?? null;
+  if (!present) return;
+  const elements = present.canvas.elements;
+  const currentIndex = elements.findIndex((el) => el.id === elementId);
+  if (currentIndex === -1) return;
+  const index = edge === 'front' ? elements.length - 1 : 0;
+  // Already at the target edge — skip so we don't push an empty undo step.
+  if (currentIndex === index) return;
+  useSlideEditSession.getState().applyOp({ type: 'element.reorder', elementId, index });
+}
+
+/**
+ * Replace an image element's source. Clears any stale `clip`: the new source's
+ * aspect ratio may differ, so the old crop rect would no longer be meaningful.
+ */
+export function replaceImageSrc(elementId: string, src: string): void {
+  useSlideEditSession
+    .getState()
+    .applyOp({ type: 'element.update', elementId, patch: { src, clip: undefined } });
+}
+
+/** Toggle horizontal/vertical flip on an image element. */
+export function toggleImageFlip(el: PPTImageElement, axis: 'H' | 'V'): void {
+  const patch = axis === 'H' ? { flipH: !el.flipH } : { flipV: !el.flipV };
+  useSlideEditSession.getState().applyOp({ type: 'element.update', elementId: el.id, patch });
+}
+
+/** Set the slide-level background (solid color or image). */
+export function updateSlideBackground(background: SlideBackground): void {
+  useSlideEditSession.getState().applyOp({ type: 'slide.update', patch: { background } });
+}
+
 const EMPTY_SLIDE: SlideContent = { type: 'slide', canvas: createDefaultSlide('') };
 
 function currentSlideContent(sceneId: string): SlideContent | null {
@@ -152,7 +201,7 @@ export function useSlideSurfaceState(): SurfaceState<SlideContent, SlideSelectio
     },
     insertItems: buildInsertItems(t, creatingElement?.type),
     // Every element type carries its own actions on a selection-anchored bar
-    // (AnchoredTextBar / AnchoredDeleteBar) — the surface contributes no
+    // (AnchoredTextBar / AnchoredElementBar) — the surface contributes no
     // top-center FloatingToolbar actions.
     floatingActions: [],
     commands: [],
@@ -261,15 +310,16 @@ export function useEditingTextElementId(): string {
 }
 
 /**
- * The id of the single selected non-text element (image, shape, line, …), or
- * "" — drives the selection-anchored delete bar. Text elements get their own
- * AnchoredTextBar; every other element type shares the delete-only bar.
+ * The single selected non-text element (image / shape / line / …), or null —
+ * drives the type-aware AnchoredElementBar. Text elements get their own
+ * AnchoredTextBar. Returns the element (not just its id) so the bar can branch
+ * on element type for image-specific controls.
  */
-export function useSelectedNonTextElementId(): string {
+export function useSelectedNonTextElement(): PPTElement | null {
   const activeElementIds = useCanvasStore.use.activeElementIdList();
   const content = useResolvedSlideContent();
   const el = resolveSelectedElement(activeElementIds, content.canvas.elements);
-  return el && el.type !== 'text' ? el.id : '';
+  return el && el.type !== 'text' ? el : null;
 }
 
 /**

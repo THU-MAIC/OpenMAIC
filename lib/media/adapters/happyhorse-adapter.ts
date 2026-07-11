@@ -11,6 +11,7 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { runPolledTask } from '../polled-task';
 
 const DEFAULT_MODEL = 'happyhorse-1.0-t2v';
 const DEFAULT_BASE_URL = 'https://dashscope.aliyuncs.com';
@@ -53,10 +54,6 @@ interface HappyHorsePollResponse {
 
 function normalizeBaseUrl(baseUrl?: string): string {
   return (baseUrl || DEFAULT_BASE_URL).replace(/\/$/, '');
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function authHeaders(apiKey: string): Record<string, string> {
@@ -175,17 +172,21 @@ export async function generateWithHappyHorse(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
-  const taskId = await submitHappyHorseTask(config, options);
-
-  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-    await delay(POLL_INTERVAL_MS);
-    const result = await pollHappyHorseTask(config, taskId);
-    if (result) return result;
-  }
-
-  throw new Error(
-    `HappyHorse video generation timed out after ${(MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS) / 1000}s (task: ${taskId})`,
-  );
+  return runPolledTask<VideoGenerationResult>({
+    submit: async () => ({
+      status: 'submitted',
+      taskId: await submitHappyHorseTask(config, options),
+    }),
+    poll: async (taskId) => {
+      const result = await pollHappyHorseTask(config, taskId);
+      return result ? { status: 'done', result } : { status: 'pending' };
+    },
+    intervalMs: POLL_INTERVAL_MS,
+    maxAttempts: MAX_POLL_ATTEMPTS,
+    label: 'HappyHorse video generation',
+    formatTimeout: ({ taskId, elapsedMs }) =>
+      `HappyHorse video generation timed out after ${elapsedMs / 1000}s (task: ${taskId})`,
+  });
 }
 
 export async function testHappyHorseConnectivity(

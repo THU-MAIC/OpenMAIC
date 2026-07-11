@@ -79,7 +79,7 @@ export function parse(html, options = {}) {
       }
       if (
         level > -1 &&
-        textContainerNames.includes[arr[level].name] &&
+        textContainerNames.includes(arr[level].name) &&
         nextChar !== '<' &&
         nextChar
       ) {

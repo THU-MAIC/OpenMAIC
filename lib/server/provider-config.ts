@@ -167,15 +167,22 @@ function loadEnvSection(
   {
     requiresBaseUrl = false,
     keylessProviders = new Set<string>(),
-  }: { requiresBaseUrl?: boolean; keylessProviders?: Set<string> } = {},
+    baseUrlOptionalProviders = new Set<string>(),
+  }: {
+    requiresBaseUrl?: boolean;
+    keylessProviders?: Set<string>;
+    baseUrlOptionalProviders?: Set<string>;
+  } = {},
 ): Record<string, ServerProviderEntry> {
   const result: Record<string, ServerProviderEntry> = {};
+  const requiresBaseUrlForProvider = (providerId: string) =>
+    requiresBaseUrl && !baseUrlOptionalProviders.has(providerId);
 
   // First, add everything from YAML as defaults
   if (yamlSection) {
     for (const [id, entry] of Object.entries(yamlSection)) {
       if (
-        requiresBaseUrl
+        requiresBaseUrlForProvider(id)
           ? !!entry?.baseUrl
           : entry?.apiKey || (entry?.baseUrl && keylessProviders.has(id))
       ) {
@@ -211,7 +218,7 @@ function loadEnvSection(
 
     // Activate on API key, or base URL alone for keyless providers (e.g. Ollama)
     if (
-      requiresBaseUrl
+      requiresBaseUrlForProvider(providerId)
         ? !envBaseUrl
         : !(envApiKey || (envBaseUrl && keylessProviders.has(providerId)))
     )
@@ -305,7 +312,10 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr, {
       keylessProviders: new Set(['lemonade-asr']),
     }),
-    pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, { requiresBaseUrl: true }),
+    pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
+      requiresBaseUrl: true,
+      baseUrlOptionalProviders: new Set(['mineru-cloud']),
+    }),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
     webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
