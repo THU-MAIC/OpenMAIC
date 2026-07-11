@@ -277,6 +277,48 @@ describe('generationComplete', () => {
     expect(healed.generationComplete).toBe(true);
   });
 
+  it('does not infer completion for a legacy deck while an outline is failed', async () => {
+    useStageStore.setState({ stage: makeStage(), failedOutlines: [makeOutline(2)] });
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
+      currentSceneId: 'a',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-1',
+      outlines: [makeOutline(1), makeOutline(2)],
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().generationComplete).toBe(false);
+    expect(stageOutlinesPut).not.toHaveBeenCalled();
+  });
+
+  it('does not let failed outlines from another stage block legacy completion inference', async () => {
+    useStageStore.setState({
+      stage: { ...makeStage(), id: 'other-stage' },
+      failedOutlines: [makeOutline(2)],
+    });
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
+      currentSceneId: 'a',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-1',
+      outlines: [makeOutline(1), makeOutline(2)],
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().generationComplete).toBe(true);
+    const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
+    expect(healed.generationComplete).toBe(true);
+  });
+
   // Resume-on-refresh for a genuinely interrupted generation is preserved:
   // when not complete, the missing outline still drives a placeholder.
   it('keeps generating placeholders on load when generation is not complete', async () => {

@@ -36,6 +36,18 @@ import type {
   WidgetRevealAction,
 } from '@/lib/types/action';
 import type { CodeLine } from '@openmaic/dsl';
+import {
+  EFFECT_AUTO_CLEAR_MS,
+  MAX_VIDEO_WAIT_MS,
+  WB_OPEN_MS,
+  WB_DRAW_MS,
+  WB_EDIT_MS,
+  WB_DELETE_MS,
+  WB_CLOSE_MS,
+  WIDGET_MS,
+  wbDrawCodeMs,
+  wbClearMs,
+} from '@/lib/choreography';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
 
@@ -70,9 +82,6 @@ function generateLineIds(count: number): string[] {
 }
 
 // ==================== ActionEngine ====================
-
-/** Default duration (ms) before fire-and-forget effects auto-clear */
-const EFFECT_AUTO_CLEAR_MS = 5000;
 
 /** Callback for sending messages to widget iframe */
 export type WidgetMessageCallback = (type: string, payload: Record<string, unknown>) => void;
@@ -293,7 +302,6 @@ export class ActionEngine {
     // the playback engine from hanging indefinitely if the video element is
     // invalid or the state change is missed.
     return new Promise<void>((resolve) => {
-      const MAX_VIDEO_WAIT_MS = 5 * 60 * 1000; // 5 minutes
       const timeout = setTimeout(() => {
         unsubscribe();
         log.warn(`[playVideo] Timeout waiting for video ${action.elementId} to finish`);
@@ -365,7 +373,7 @@ export class ActionEngine {
     useCanvasStore.getState().setWhiteboardOpen(true);
     if (options.silent) return;
     // Wait for open animation to complete (slow spring: stiffness 120, damping 18, mass 1.2)
-    await delay(2000);
+    await delay(WB_OPEN_MS);
   }
 
   private async executeWbDrawText(
@@ -401,7 +409,7 @@ export class ActionEngine {
 
     if (!options.silent) {
       // Wait for element fade-in animation
-      await delay(800);
+      await delay(WB_DRAW_MS);
     }
   }
 
@@ -432,7 +440,7 @@ export class ActionEngine {
 
     if (!options.silent) {
       // Wait for element fade-in animation
-      await delay(800);
+      await delay(WB_DRAW_MS);
     }
   }
 
@@ -460,7 +468,7 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    if (!options.silent) await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
   private async executeWbDrawLatex(
@@ -499,7 +507,7 @@ export class ActionEngine {
       return;
     }
 
-    if (!options.silent) await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
   private async executeWbDrawTable(
@@ -558,7 +566,7 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    if (!options.silent) await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
   private async executeWbDrawLine(
@@ -595,7 +603,7 @@ export class ActionEngine {
 
     if (!options.silent) {
       // Wait for element fade-in animation
-      await delay(800);
+      await delay(WB_DRAW_MS);
     }
   }
 
@@ -628,8 +636,8 @@ export class ActionEngine {
     );
 
     if (!options.silent) {
-      // Wait for typing animation: base 800ms + 50ms per line, capped at 3s
-      const animMs = Math.min(800 + lines.length * 50, 3000);
+      // Wait for typing animation (base 800ms + 50ms/line, capped at 3s)
+      const animMs = wbDrawCodeMs(lines.length);
       await delay(animMs);
     }
   }
@@ -697,7 +705,7 @@ export class ActionEngine {
 
     if (!options.silent) {
       // Wait for edit animation
-      await delay(600);
+      await delay(WB_EDIT_MS);
     }
   }
 
@@ -709,7 +717,7 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     this.stageAPI.whiteboard.deleteElement(action.elementId, wb.data.id);
-    if (!options.silent) await delay(300);
+    if (!options.silent) await delay(WB_DELETE_MS);
   }
 
   private async executeWbClear(options: ActionExecutionOptions = {}): Promise<void> {
@@ -731,8 +739,8 @@ export class ActionEngine {
     // Trigger cascade exit animation
     useCanvasStore.getState().setWhiteboardClearing(true);
 
-    // Wait for cascade: base 380ms + 55ms per element, capped at 1400ms
-    const animMs = Math.min(380 + elementCount * 55, 1400);
+    // Wait for cascade (base 380ms + 55ms/element, capped at 1400ms)
+    const animMs = wbClearMs(elementCount);
     await delay(animMs);
 
     // Actually remove elements
@@ -744,7 +752,7 @@ export class ActionEngine {
     useCanvasStore.getState().setWhiteboardOpen(false);
     if (options.silent) return;
     // Wait for close animation (500ms ease-out tween)
-    await delay(700);
+    await delay(WB_CLOSE_MS);
   }
 
   // ==================== Widget Actions ====================
@@ -765,14 +773,14 @@ export class ActionEngine {
       content: action.content,
     });
     // Quick delay for visual effect
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget setState action */
   private async executeWidgetSetState(action: WidgetSetStateAction): Promise<void> {
     this.sendWidgetMessage('SET_WIDGET_STATE', { state: action.state, content: action.content });
     // Quick delay for state change to propagate
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget annotation action */
@@ -781,12 +789,12 @@ export class ActionEngine {
       target: action.target,
       content: action.content,
     });
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget reveal action */
   private async executeWidgetReveal(action: WidgetRevealAction): Promise<void> {
     this.sendWidgetMessage('REVEAL_ELEMENT', { target: action.target, content: action.content });
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 }

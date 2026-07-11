@@ -131,6 +131,18 @@ interface StageState {
   clearStore: () => void;
 }
 
+function isDeckComplete({
+  outlines,
+  scenes,
+  failedOutlines,
+}: Pick<StageState, 'outlines' | 'scenes' | 'failedOutlines'>): boolean {
+  return (
+    outlines.length > 0 &&
+    failedOutlines.length === 0 &&
+    outlines.every((o) => scenes.some((s) => s.order === o.order))
+  );
+}
+
 const useStageStoreBase = create<StageState>()((set, get) => ({
   // Initial state
   stage: null,
@@ -237,11 +249,8 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     // flag existed, or edited without a reload so loadFromStorage's self-heal
     // never ran. Without this, the deletion breaks the scenes===outlines count
     // and the "Course complete" page disappears.
-    const wasComplete =
-      !get().generationComplete &&
-      get().outlines.length > 0 &&
-      get().failedOutlines.length === 0 &&
-      get().outlines.every((o) => get().scenes.some((s) => s.order === o.order));
+    const state = get();
+    const wasComplete = !state.generationComplete && isDeckComplete(state);
 
     const scenes = get().scenes.filter((scene) => scene.id !== sceneId);
     const currentSceneId = get().currentSceneId;
@@ -345,11 +354,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   markGenerationCompleteIfDone: () => {
     const { outlines, scenes, failedOutlines, generationComplete } = get();
     if (generationComplete) return;
-    const done =
-      outlines.length > 0 &&
-      failedOutlines.length === 0 &&
-      outlines.every((o) => scenes.some((s) => s.order === o.order));
-    if (done) get().setGenerationComplete(true);
+    if (isDeckComplete({ outlines, scenes, failedOutlines })) get().setGenerationComplete(true);
   },
 
   setGenerationStatus: (generationStatus) => set({ generationStatus }),
@@ -445,19 +450,27 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         const migrated = data.scenes.map(migrateScene);
 
         // Self-heal decks generated before generationComplete was tracked: if
-        // every outline already has a matching scene, generation must have
-        // finished, so treat the deck as complete and persist the flag. This
-        // prevents a pre-existing finished deck from regenerating a slide the
-        // user deletes before the flag was ever recorded.
+        // every outline already has a matching scene and none failed,
+        // generation must have finished, so treat the deck as complete and
+        // persist the flag. This prevents a pre-existing finished deck from
+        // regenerating a slide the user deletes before the flag was ever
+        // recorded.
         //
         // Matching is by `order`, consistent with the rest of the resume
         // pipeline. For a never-edited deck order is a faithful key; the only
         // way it diverges is Pro-mode insert/reorder, which is blocked while
         // outlines are still pending (see stage-mode edit gating), so an
         // interrupted deck cannot be edited into a false "all materialized".
-        const allMaterialized =
-          outlines.length > 0 && outlines.every((o) => migrated.some((s) => s.order === o.order));
-        const generationComplete = persistedComplete || allMaterialized;
+        const inMemoryState = get();
+        const failedOutlines =
+          inMemoryState.stage?.id === stageId ? inMemoryState.failedOutlines : [];
+        const generationComplete =
+          persistedComplete ||
+          isDeckComplete({
+            outlines,
+            scenes: migrated,
+            failedOutlines,
+          });
         if (generationComplete && !persistedComplete) {
           db.stageOutlines.put({
             stageId,
