@@ -26,6 +26,14 @@ import type {
 } from '../types';
 import { microtaskEngagement, recordEvent } from './engagement';
 import { clearPendingTaskCompletion } from './task-completion';
+import {
+  appendRuntimeEvent,
+  appendStatusChangedRuntimeEvent,
+  milestoneIdForMicrotask,
+  mintRuntimeEventId,
+  normalizationRepairEventId,
+  patchStatusChangedRuntimeEventId,
+} from './runtime-events';
 
 export const MILESTONE_DIVIDER_PREFIX = '[MILESTONE_DIVIDER]';
 export const TASK_DIVIDER_PREFIX = '[TASK_DIVIDER]';
@@ -103,7 +111,16 @@ export function normalizeProjectRuntime(project: PBLProjectV2): boolean {
         project.milestones.find((m) => m.status !== 'completed') ??
         project.milestones[project.milestones.length - 1];
       if (active && active.status !== 'active') {
+        const from = active.status;
         active.status = 'active';
+        appendStatusChangedRuntimeEvent(project, {
+          id: normalizationRepairEventId(project, 'milestone', active.id, from, active.status),
+          entityType: 'milestone',
+          entityId: active.id,
+          from,
+          to: active.status,
+          milestoneId: active.id,
+        });
         changed = true;
       }
     }
@@ -114,7 +131,23 @@ export function normalizeProjectRuntime(project: PBLProjectV2): boolean {
     const taskToOpen =
       current ?? active?.microtasks.find((t) => t.status !== 'completed' && t.status !== 'skipped');
     if (taskToOpen && taskToOpen.status !== 'in_progress') {
+      const from = taskToOpen.status;
       taskToOpen.status = 'in_progress';
+      appendStatusChangedRuntimeEvent(project, {
+        id: normalizationRepairEventId(
+          project,
+          'microtask',
+          taskToOpen.id,
+          from,
+          taskToOpen.status,
+        ),
+        entityType: 'microtask',
+        entityId: taskToOpen.id,
+        from,
+        to: taskToOpen.status,
+        microtaskId: taskToOpen.id,
+        milestoneId: active?.id,
+      });
       changed = true;
     }
   }
@@ -168,8 +201,10 @@ export function hasStartedProject(project: PBLProjectV2): boolean {
  * Pure: returns a new project, does not mutate the input.
  */
 export function resetProjectProgress(project: PBLProjectV2): PBLProjectV2 {
-  return {
+  const reset: PBLProjectV2 = {
     ...project,
+    runtimeEvents: project.runtimeEvents ? [...project.runtimeEvents] : undefined,
+    runtimeResetEpoch: (project.runtimeResetEpoch ?? 0) + 1,
     uiPhase: 'hero',
     status: 'active',
     submissions: [],
@@ -192,6 +227,52 @@ export function resetProjectProgress(project: PBLProjectV2): PBLProjectV2 {
     })),
     updatedAt: new Date().toISOString(),
   };
+  appendRuntimeEvent(reset, {
+    id: mintRuntimeEventId(),
+    kind: 'project_reset',
+    actorType: 'user',
+    ts: reset.updatedAt,
+  });
+  appendStatusChangedRuntimeEvent(reset, {
+    actorType: 'user',
+    entityType: 'ui_phase',
+    entityId: 'project',
+    from: project.uiPhase,
+    to: reset.uiPhase,
+  });
+  appendStatusChangedRuntimeEvent(reset, {
+    actorType: 'user',
+    entityType: 'project',
+    entityId: 'project',
+    from: project.status,
+    to: reset.status,
+  });
+  project.milestones.forEach((milestone, milestoneIndex) => {
+    const resetMilestone = reset.milestones[milestoneIndex];
+    if (!resetMilestone) return;
+    appendStatusChangedRuntimeEvent(reset, {
+      actorType: 'user',
+      entityType: 'milestone',
+      entityId: resetMilestone.id,
+      from: milestone.status,
+      to: resetMilestone.status,
+      milestoneId: resetMilestone.id,
+    });
+    milestone.microtasks.forEach((microtask, microtaskIndex) => {
+      const resetMicrotask = resetMilestone.microtasks[microtaskIndex];
+      if (!resetMicrotask) return;
+      appendStatusChangedRuntimeEvent(reset, {
+        actorType: 'user',
+        entityType: 'microtask',
+        entityId: resetMicrotask.id,
+        from: microtask.status,
+        to: resetMicrotask.status,
+        microtaskId: resetMicrotask.id,
+        milestoneId: resetMilestone.id,
+      });
+    });
+  });
+  return reset;
 }
 
 export function findMicrotask(
@@ -347,10 +428,27 @@ export function startMicrotask(project: PBLProjectV2, microtaskId: string): void
   // Activate parent milestone if it was LOCKED — happens after a
   // milestone handover click.
   if (milestone.status === 'locked') {
+    const from = milestone.status;
     milestone.status = 'active';
+    appendStatusChangedRuntimeEvent(project, {
+      entityType: 'milestone',
+      entityId: milestone.id,
+      from,
+      to: milestone.status,
+      milestoneId: milestone.id,
+    });
   }
   if (microtask.status === 'todo') {
+    const from = microtask.status;
     microtask.status = 'in_progress';
+    appendStatusChangedRuntimeEvent(project, {
+      entityType: 'microtask',
+      entityId: microtask.id,
+      from,
+      to: microtask.status,
+      microtaskId,
+      milestoneId: milestone.id,
+    });
     recordEvent(project, 'microtask_opened', {
       microtaskId,
       milestoneId: milestone.id,
@@ -388,7 +486,23 @@ export function advanceMicrotask(
 
   clearPendingTaskCompletion(project, microtaskId);
 
+  const microtaskStatusFrom = microtask.status;
   microtask.status = 'completed';
+  appendStatusChangedRuntimeEvent(project, {
+    id: patchStatusChangedRuntimeEventId(
+      project,
+      'microtask',
+      microtask.id,
+      microtaskStatusFrom,
+      microtask.status,
+    ),
+    entityType: 'microtask',
+    entityId: microtask.id,
+    from: microtaskStatusFrom,
+    to: microtask.status,
+    microtaskId,
+    milestoneId: milestone.id,
+  });
   microtask.completionReason = reason;
   microtask.internalAssessment = assessment;
 
@@ -414,7 +528,23 @@ export function advanceMicrotask(
   // Find next not-yet-terminal microtask in the same milestone.
   const next = milestone.microtasks.find((t) => t.status === 'todo' || t.status === 'in_progress');
   if (next) {
+    const nextStatusFrom = next.status;
     next.status = 'in_progress';
+    appendStatusChangedRuntimeEvent(project, {
+      id: patchStatusChangedRuntimeEventId(
+        project,
+        'microtask',
+        next.id,
+        nextStatusFrom,
+        next.status,
+      ),
+      entityType: 'microtask',
+      entityId: next.id,
+      from: nextStatusFrom,
+      to: next.status,
+      microtaskId: next.id,
+      milestoneId: milestone.id,
+    });
     recordEvent(project, 'microtask_opened', {
       microtaskId: next.id,
       milestoneId: milestone.id,
@@ -429,7 +559,23 @@ export function advanceMicrotask(
   }
 
   // No next microtask in this milestone — complete the milestone.
+  const milestoneStatusFrom = milestone.status;
   milestone.status = 'completed';
+  appendStatusChangedRuntimeEvent(project, {
+    id: patchStatusChangedRuntimeEventId(
+      project,
+      'milestone',
+      milestone.id,
+      milestoneStatusFrom,
+      milestone.status,
+    ),
+    entityType: 'milestone',
+    entityId: milestone.id,
+    from: milestoneStatusFrom,
+    to: milestone.status,
+    milestoneId: milestone.id,
+    microtaskId,
+  });
   milestone.internalAssessment = assessment;
 
   // Look for the next milestone in order.
@@ -449,6 +595,17 @@ export function advanceMicrotask(
       consumed: false,
     };
     project.pendingHandover = handover;
+    appendRuntimeEvent(project, {
+      id: mintRuntimeEventId(),
+      kind: 'handover_staged',
+      actorType: 'system',
+      completedMilestoneId: handover.completedMilestoneId,
+      nextMilestoneId: handover.nextMilestoneId,
+      nextMicrotaskId: handover.nextTaskId,
+      ts: new Date().toISOString(),
+      milestoneId: milestone.id,
+      microtaskId,
+    });
     project.updatedAt = new Date().toISOString();
     return { ok: true, milestoneCompleted: true, projectCompleted: false };
   }
@@ -457,7 +614,23 @@ export function advanceMicrotask(
   // workspace so the chained milestone/final evaluators can render
   // their cards in chat. The learner enters the completion report
   // explicitly via the final-evaluation CTA.
+  const projectStatusFrom = project.status;
   project.status = 'completed';
+  appendStatusChangedRuntimeEvent(project, {
+    id: patchStatusChangedRuntimeEventId(
+      project,
+      'project',
+      'project',
+      projectStatusFrom,
+      project.status,
+    ),
+    entityType: 'project',
+    entityId: 'project',
+    from: projectStatusFrom,
+    to: project.status,
+    milestoneId: milestone.id,
+    microtaskId,
+  });
   project.updatedAt = new Date().toISOString();
   return { ok: true, milestoneCompleted: true, projectCompleted: true };
 }
@@ -508,7 +681,16 @@ export function completeRoleplayAct(
   // Freeze each beat's engagement snapshot exactly like advanceMicrotask, so
   // the scenario final evaluator still has per-beat telemetry to score against.
   for (const beat of open) {
+    const from = beat.status;
     beat.status = 'completed';
+    appendStatusChangedRuntimeEvent(project, {
+      entityType: 'microtask',
+      entityId: beat.id,
+      from,
+      to: beat.status,
+      microtaskId: beat.id,
+      milestoneId: milestone.id,
+    });
     beat.completionReason = reason;
     recordEvent(project, 'microtask_completed', {
       microtaskId: beat.id,
@@ -523,7 +705,15 @@ export function completeRoleplayAct(
   // it should go straight to the next stage — no separate "continue" click.
   // We stage the handover and immediately consume it (activating the next
   // milestone's first task), exactly as if the learner had clicked Continue.
+  const milestoneStatusFrom = milestone.status;
   milestone.status = 'completed';
+  appendStatusChangedRuntimeEvent(project, {
+    entityType: 'milestone',
+    entityId: milestone.id,
+    from: milestoneStatusFrom,
+    to: milestone.status,
+    milestoneId: milestone.id,
+  });
   const nextMs = project.milestones
     .filter((m) => m.status === 'locked')
     .sort((a, b) => a.order - b.order)[0];
@@ -538,13 +728,31 @@ export function completeRoleplayAct(
       nextTaskTitle: firstTodo?.title,
       consumed: false,
     };
+    appendRuntimeEvent(project, {
+      id: mintRuntimeEventId(),
+      kind: 'handover_staged',
+      actorType: 'system',
+      completedMilestoneId: milestone.id,
+      nextMilestoneId: nextMs.id,
+      nextMicrotaskId: firstTodo?.id,
+      ts: new Date().toISOString(),
+      milestoneId: milestone.id,
+    });
     // One-step: consume the handover now so no "next stage" button is needed.
     continueAfterHandover(project);
     project.updatedAt = new Date().toISOString();
     return { ok: true, milestoneCompleted: true, projectCompleted: false };
   }
   // No next milestone (shouldn't happen — a coherent scenario ends in wrapup).
+  const projectStatusFrom = project.status;
   project.status = 'completed';
+  appendStatusChangedRuntimeEvent(project, {
+    entityType: 'project',
+    entityId: 'project',
+    from: projectStatusFrom,
+    to: project.status,
+    milestoneId: milestone.id,
+  });
   project.updatedAt = new Date().toISOString();
   return { ok: true, milestoneCompleted: true, projectCompleted: true };
 }
@@ -558,18 +766,46 @@ export function continueAfterHandover(project: PBLProjectV2): {
   if (!h || h.consumed) return { ok: false };
   const nextMs = project.milestones.find((m) => m.id === h.nextMilestoneId);
   if (!nextMs) return { ok: false };
+  const nextMilestoneStatusFrom = nextMs.status;
   nextMs.status = 'active';
+  appendStatusChangedRuntimeEvent(project, {
+    entityType: 'milestone',
+    entityId: nextMs.id,
+    from: nextMilestoneStatusFrom,
+    to: nextMs.status,
+    milestoneId: nextMs.id,
+  });
   const first =
     (h.nextTaskId && nextMs.microtasks.find((t) => t.id === h.nextTaskId)) ||
     nextMs.microtasks.find((t) => t.status === 'todo');
   if (first) {
+    const firstStatusFrom = first.status;
     first.status = 'in_progress';
+    appendStatusChangedRuntimeEvent(project, {
+      entityType: 'microtask',
+      entityId: first.id,
+      from: firstStatusFrom,
+      to: first.status,
+      microtaskId: first.id,
+      milestoneId: nextMs.id,
+    });
     recordEvent(project, 'microtask_opened', {
       microtaskId: first.id,
       milestoneId: nextMs.id,
     });
   }
   project.pendingHandover = { ...h, consumed: true };
+  appendRuntimeEvent(project, {
+    id: mintRuntimeEventId(),
+    kind: 'handover_consumed',
+    actorType: 'system',
+    completedMilestoneId: h.completedMilestoneId,
+    nextMilestoneId: h.nextMilestoneId,
+    activatedMicrotaskId: first?.id,
+    ts: new Date().toISOString(),
+    milestoneId: nextMs.id,
+    microtaskId: first?.id,
+  });
   appendMilestoneDividerMessage(project, h, first?.id);
   project.updatedAt = new Date().toISOString();
   return { ok: true, activatedMicrotaskId: first?.id };
@@ -598,13 +834,25 @@ export function appendTaskDividerMessage(
   const content = `${TASK_DIVIDER_PREFIX}${left} ｜ ${right}`;
   if (thread.messages.some((m) => m.content === content)) return;
 
-  thread.messages.push({
+  const message: PBLChatMessage = {
     id: 'msg_' + Date.now().toString(16) + Math.random().toString(16).slice(2, 6),
     agentId: instructor.id,
     roleType: 'instructor',
     content,
     ts: new Date().toISOString(),
     microtaskId: args.nextMicrotaskId,
+  };
+  thread.messages.push(message);
+  appendRuntimeEvent(project, {
+    id: mintRuntimeEventId(),
+    kind: 'message_created',
+    actorType: 'agent',
+    actorRoleId: instructor.id,
+    messageId: message.id,
+    threadId: thread.agentId,
+    ts: message.ts,
+    microtaskId: message.microtaskId,
+    milestoneId: milestoneIdForMicrotask(project, message.microtaskId),
   });
 }
 
@@ -689,6 +937,17 @@ function appendMilestoneDividerMessage(
     microtaskId,
   };
   thread.messages.push(message);
+  appendRuntimeEvent(project, {
+    id: mintRuntimeEventId(),
+    kind: 'message_created',
+    actorType: 'agent',
+    actorRoleId: instructor.id,
+    messageId: message.id,
+    threadId: thread.agentId,
+    ts: message.ts,
+    microtaskId: message.microtaskId,
+    milestoneId: milestoneIdForMicrotask(project, message.microtaskId),
+  });
 }
 
 function milestoneDividerLabel(language: string | undefined, handover: PBLHandover): string {

@@ -27,7 +27,7 @@ export interface DocumentExtractorInput {
 export interface DocumentExtractorProvider {
   id: DocumentExtractorProviderId;
   displayName: string;
-  supportedMimeTypes: string[];
+  supportedMimeTypes: readonly string[];
   capabilities: DocumentExtractorCapabilities;
   extract(input: DocumentExtractorInput): Promise<DocumentArtifact>;
 }

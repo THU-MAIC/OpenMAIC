@@ -1675,6 +1675,7 @@ export async function* runInstructorTurn(
     milestone.scenarioStage === 'wrapup' &&
     assistantText.trim()
   ) {
+    const runtimeEventIdsBefore = new Set((project.runtimeEvents ?? []).map((event) => event.id));
     const adv = advanceMicrotaskOp(project, microtask.id, 'scenario_wrapup_complete', {});
     if (adv.ok) {
       mainTurnAdvanced = true;
@@ -1686,6 +1687,7 @@ export async function* runInstructorTurn(
           projectCompleted: adv.projectCompleted,
           nextMicrotaskId: adv.nextMicrotaskId,
           shouldEvaluateTask: false,
+          runtimeEventIdsBefore,
         }),
       };
     }

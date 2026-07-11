@@ -49,6 +49,7 @@ function makeSlideScene(id: string, order: number, stageId = 'stage-1'): Scene {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   useStageStore.setState({
     stage: makeStage(),
     scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2), makeSlideScene('c', 3)],
@@ -56,8 +57,14 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
-  useStageStore.getState().clearStore();
+afterEach(async () => {
+  try {
+    await vi.runOnlyPendingTimersAsync();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    useStageStore.getState().clearStore();
+    vi.useRealTimers();
+  }
 });
 
 describe('insertSceneAfter', () => {

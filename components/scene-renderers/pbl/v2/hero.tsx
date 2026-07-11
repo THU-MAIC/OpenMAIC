@@ -31,6 +31,7 @@ import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 import { useStageStore } from '@/lib/store/stage';
 import { buildQuizSnapshot } from '@/lib/pbl/v2/operations/quiz-snapshot';
 import { hasStartedProject, resetProjectProgress } from '@/lib/pbl/v2/operations/progress';
+import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/runtime-events';
 import { prepareWorkspaceLaunchProject } from '@/lib/pbl/v2/operations/workspace-launch';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import {
@@ -123,7 +124,7 @@ export function PBLV2Hero({
   // progress intact. Reuse the launch path so the 1.3s reveal plays, same
   // as a first entry.
   const handleContinue = () => {
-    const ready = { ...project, uiPhase: 'workspace' as const };
+    const ready = transitionProjectUiPhase(project, 'workspace');
     if (onLaunchReady) onLaunchReady(ready);
     else onProjectChange(ready);
   };

@@ -10,8 +10,11 @@ import { SelectionOverlay } from './handles/SelectionOverlay';
 import { LineHandles } from './handles/LineHandles';
 import { ResizeHandles } from './handles/ResizeHandles';
 import { RotateHandle } from './handles/RotateHandle';
+import { MarqueeBox } from './handles/MarqueeBox';
+import { isSelectionModifier, resolveClickSelection } from './core/selection';
 import { useEditGesture } from './useEditGesture';
 import { useLineHandleGesture } from './useLineHandleGesture';
+import { useMarqueeGesture } from './useMarqueeGesture';
 import { useResizeGesture } from './useResizeGesture';
 import { useRotateGesture } from './useRotateGesture';
 import { getResizeHandles } from './core/resize';
@@ -110,6 +113,21 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
     onElementsChange,
   });
 
+  // Marquee (rubber-band) gesture. It arms from a blank-canvas pointer-down on
+  // the capture surface below the element hit targets, tracks a live rectangle,
+  // and on release REPLACES the selection with whatever it covers (or clears it
+  // on a sub-threshold blank click). The capture surface mounts for selection
+  // hosts (`onSelectionChange` — see the surface comment below); the hook itself
+  // also requires `onSelectionChange` to publish.
+  const { marqueeRect, onCanvasPointerDown } = useMarqueeGesture({
+    slide,
+    scale: canvasScale,
+    overlayRef,
+    viewportStyles,
+    selection: activeSelection,
+    onSelectionChange,
+  });
+
   // The elements to render/hit-test: the box gesture's working copy, with the
   // active handle drag's props (line reshape / resize box / rotate angle)
   // merged in so the v1 canvas, the hit layers, and the handles all preview
@@ -138,6 +156,9 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
       : { ...workingSlide, elements: displayElements };
 
   const elements = displayElements;
+  // Touch suppression belongs to mutation gestures: select-only hosts keep
+  // native touch panning, while tap-select still receives pointer events.
+  const editingTouchAction = onElementsChange ? 'none' : undefined;
 
   return (
     // Outer wrapper carries the documented `className`/`style` pass-through
@@ -167,6 +188,29 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
             line up with the rendered elements even when the container is
             letterboxed (aspect ratio != slide's). */}
         <div ref={overlayRef} style={{ position: 'absolute', inset: 0, pointerEvents: 'none' }}>
+          {/* Blank-canvas marquee capture surface. Rendered FIRST so it sits
+              beneath the per-element hit targets in stacking order: a pointer-
+              down on an element hits that element's div (painted later, on top),
+              while a pointer-down on empty canvas falls to this full-bleed layer
+              and arms a rubber-band select. It is a sibling of the element hit
+              divs (not an ancestor), so an element pointer-down never bubbles
+              into it. Gated on SELECTION (`onSelectionChange`) so select-only
+              mounts still get mouse/pen marquee and sub-threshold blank-clear.
+              Touch suppression is gated separately on EDITABILITY
+              (`onElementsChange`): select-only mounts preserve native touch
+              panning, while touch-driven marquee requires an editable mount. */}
+          {Boolean(onSelectionChange) && (
+            <div
+              data-marquee-surface=""
+              onPointerDown={onCanvasPointerDown}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'auto',
+                touchAction: editingTouchAction,
+              }}
+            />
+          )}
           {elements.map((el) => {
             // Line elements: a line's real hit area is its (often bent) stroke,
             // not its rectangular bounding box. A rectangular bbox blocker
@@ -282,36 +326,43 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                         // bypasses the `activePointerRef` multi-pointer guard.
                         // A second pointer-down on a line during an in-flight
                         // box drag can therefore change the selection mid-
-                        // gesture. This is deferred together with multi-touch/
-                        // multi-select support; single-pointer/mouse use (only
-                        // one active pointer at a time) is unaffected.
+                        // gesture. More generally, the single-pointer guarantee
+                        // is PER-HOOK: each gesture hook (move/marquee/line-
+                        // handle/resize/rotate) guards only its own active
+                        // pointer, so a second pointer can still arm a
+                        // DIFFERENT hook's gesture concurrently. Cross-hook
+                        // arbitration is deferred together with multi-touch
+                        // support; single-pointer/mouse use (only one active
+                        // pointer at a time) is unaffected.
                         //
                         // Always consume the pointer to block fall-through to
                         // an overlapped box beneath (even with no selection
                         // callback, and even when the line is locked). When a
-                        // selection callback is provided, also select the line
-                        // — on pointer-down, for parity with box elements
-                        // (which select via onElementPointerDown). A line is
-                        // selectable but NOT draggable here: no working copy is
-                        // armed and no move intent is ever emitted (line
-                        // editing deferred).
+                        // selection callback is provided, resolve the click
+                        // through the SAME modifier/selection table as box
+                        // elements ({@link resolveClickSelection}) so a
+                        // modifier click adds/removes a line from a multi-
+                        // selection too. A line is selectable but NOT draggable
+                        // here: `armDrag` is ignored, no working copy is armed,
+                        // and no move intent is ever emitted (line editing
+                        // deferred).
                         e.stopPropagation();
                         // A locked line is inert like a locked box: it blocks
                         // fall-through (stopPropagation above) but must not be
                         // selected.
                         if (el.lock) return;
-                        // Idempotent re-selection: skip the emit when this line
-                        // is already the sole primary selection, mirroring the
-                        // box `alreadySolePrimary` guard in useEditGesture — a
-                        // re-click on an already-selected line must not re-emit.
-                        const alreadySolePrimary =
-                          activeSelection.primaryId === el.id &&
-                          activeSelection.elementIds.length === 1 &&
-                          activeSelection.elementIds[0] === el.id;
-                        if (alreadySolePrimary) return;
-                        onSelectionChange?.({ elementIds: [el.id], primaryId: el.id });
+                        const { next } = resolveClickSelection({
+                          element: el,
+                          elements: slide.elements,
+                          selection: activeSelection,
+                          modifier: isSelectionModifier(e),
+                        });
+                        // `next` is null when nothing changes (e.g. a re-click
+                        // on the current primary, or a subtractive click that
+                        // would empty the selection) — no redundant re-emit.
+                        if (next) onSelectionChange?.(next);
                       }}
-                      style={{ cursor: 'default', touchAction: 'none' }}
+                      style={{ cursor: 'default', touchAction: editingTouchAction }}
                     />
                     {/* Highlight path — selection chrome only, rendered when the
                         line is selected. Purely visual (`pointer-events: none`),
@@ -373,7 +424,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                   transformOrigin: 'center',
                   pointerEvents: 'auto',
                   cursor: 'default',
-                  touchAction: 'none',
+                  touchAction: editingTouchAction,
                 }}
               />
             ) : (
@@ -391,7 +442,7 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                   transformOrigin: 'center',
                   pointerEvents: 'auto',
                   cursor: 'move',
-                  touchAction: 'none',
+                  touchAction: editingTouchAction,
                 }}
               />
             );
@@ -471,6 +522,17 @@ export function EditableSlideCanvas(props: EditableSlideCanvasProps) {
                 </Fragment>
               );
             })}
+
+          {/* Live marquee rectangle, drawn while a blank-canvas rubber-band
+              select is in flight. Purely visual (`pointerEvents: none`); it
+              shares the element container's origin via `viewportStyles`. */}
+          {marqueeRect && (
+            <MarqueeBox
+              rect={marqueeRect}
+              viewportStyles={viewportStyles}
+              canvasScale={canvasScale}
+            />
+          )}
 
           {/* SelectionOverlay is left untouched; wrap it in a positioning
               container matching SlideCanvas's element container so its

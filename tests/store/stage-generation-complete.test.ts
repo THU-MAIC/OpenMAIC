@@ -71,8 +71,18 @@ beforeEach(() => {
   loadStageDataMock.mockReset();
 });
 
-afterEach(() => {
-  useStageStore.getState().clearStore();
+afterEach(async () => {
+  try {
+    if (vi.isFakeTimers()) {
+      await vi.runOnlyPendingTimersAsync();
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  } finally {
+    if (vi.isFakeTimers()) {
+      vi.useRealTimers();
+    }
+    useStageStore.getState().clearStore();
+  }
 });
 
 describe('generationComplete', () => {
@@ -126,6 +136,7 @@ describe('generationComplete', () => {
   });
 
   it('starting a new stage resets generationComplete to false', () => {
+    vi.useFakeTimers();
     useStageStore.setState({ generationComplete: true });
     useStageStore.getState().setStage(makeStage());
     expect(useStageStore.getState().generationComplete).toBe(false);
@@ -136,6 +147,10 @@ describe('generationComplete', () => {
     // flag existed, or edited without a reload so self-heal never ran) must
     // record completion when a slide is deleted — otherwise the count breaks
     // and the "Course complete" end page disappears.
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
     it('marks complete when deleting from a fully-materialized deck whose flag was unset', () => {
       useStageStore.setState({
         stage: makeStage(),

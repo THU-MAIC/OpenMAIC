@@ -1,14 +1,19 @@
 import type { PPTElement } from '@openmaic/dsl';
 import type { SnappingOptions } from '../types';
-import { getElementRange, uniqAlignLines, type AlignLine, type ElementRange } from './geometry';
+import {
+  getVisualElementRange,
+  uniqAlignLines,
+  type AlignLine,
+  type ElementRange,
+} from './geometry';
 
 /**
- * Pure alignment-snapping math for the editing surface. Consumes Task 1's
- * geometry primitives (`getElementRange`, `uniqAlignLines`, `AlignLine`,
- * `ElementRange`) and the DSL element shape. No React, no store, no `@/`
- * imports — ported (decoupled) from the app's `useDragElement` drag-snap math
- * and `AlignmentLine` guide shape so it can be exercised with plain unit
- * tests and reused by any host.
+ * Pure alignment-snapping math for the editing surface. Consumes geometry
+ * primitives (`getVisualElementRange`, `uniqAlignLines`, `AlignLine`,
+ * `ElementRange`) and the DSL element shape. No React, no store, no `@/` imports
+ * — ported (decoupled) from the app's `useDragElement` drag-snap math and
+ * `AlignmentLine` guide shape so it can be exercised with plain unit tests and
+ * reused by any host.
  */
 
 /** A single alignment guide line to render during a drag/resize gesture. */
@@ -27,7 +32,11 @@ const GUIDE_OVERHANG = 50;
  * Build the candidate snap lines for a drag/resize gesture: other elements'
  * edges + centers (`toElements`) and the viewport's left/centerX/right and
  * top/centerY/bottom lines (`toCanvas`). Each axis list is deduplicated by
- * value via `uniqAlignLines`. Does not mutate `others`.
+ * value via `uniqAlignLines`. Element candidates use visual ranges: the
+ * conservative editing hull answers "could this be here?" for selection and
+ * multi-drag unions, while guides answer "what visibly aligns?" and must not
+ * point at Bezier control-hull geometry the user never sees. Does not mutate
+ * `others`.
  */
 export function buildAlignLines(
   others: PPTElement[],
@@ -39,7 +48,7 @@ export function buildAlignLines(
 
   if (opts.toElements) {
     for (const el of others) {
-      const { minX, maxX, minY, maxY } = getElementRange(el);
+      const { minX, maxX, minY, maxY } = getVisualElementRange(el);
       const centerX = minX + (maxX - minX) / 2;
       const centerY = minY + (maxY - minY) / 2;
 

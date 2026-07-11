@@ -22,6 +22,10 @@ import {
 } from './adapters/minimax-image-adapter';
 import { generateWithGrokImage, testGrokImageConnectivity } from './adapters/grok-image-adapter';
 import {
+  generateWithComfyuiImage,
+  testComfyuiImageConnectivity,
+} from './adapters/comfyui-image-adapter';
+import {
   generateWithLemonadeImage,
   testLemonadeImageConnectivity,
 } from './adapters/lemonade-image-adapter';
@@ -121,6 +125,26 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     ],
     supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
   },
+  'comfyui-image': {
+    id: 'comfyui-image',
+    name: 'ComfyUI Image',
+    requiresApiKey: false,
+    defaultBaseUrl: 'http://localhost:8188',
+    // No static models here — real selectable workflows are discovered at
+    // runtime from GET /api/comfyui-workflows (files in public/) and picked
+    // in Settings. A placeholder id like "comfyui-image" doesn't correspond
+    // to any real workflow file, so resolveSelectedModel() would resolve it
+    // to a dead path the first time this provider became active (#P2).
+    // With models: [], imageModelId resolves to '' when this provider is
+    // selected with no workflow chosen yet. In that case (and on the
+    // autonomous classroom-media path, which has no model id to pass) the
+    // adapter's loadWorkflow() defaults to the first workflow file discovered
+    // in public/ via listComfyuiWorkflowFilenames() — not a hard-coded
+    // filename, since no particular workflow name is guaranteed to exist.
+    models: [],
+    supportedAspectRatios: ['16:9', '4:3', '1:1', '9:16'],
+    maxResolution: { width: 1920, height: 1920 },
+  },
   lemonade: {
     id: 'lemonade',
     name: 'Lemonade',
@@ -152,6 +176,8 @@ export async function testImageConnectivity(
       return testMiniMaxImageConnectivity(config);
     case 'grok-image':
       return testGrokImageConnectivity(config);
+    case 'comfyui-image':
+      return testComfyuiImageConnectivity(config);
     case 'lemonade':
       return testLemonadeImageConnectivity(config);
     default:
@@ -179,6 +205,8 @@ export async function generateImage(
       return generateWithMiniMaxImage(config, options);
     case 'grok-image':
       return generateWithGrokImage(config, options);
+    case 'comfyui-image':
+      return generateWithComfyuiImage(config, options);
     case 'lemonade':
       return generateWithLemonadeImage(config, options);
     default:

@@ -5,6 +5,7 @@ import {
   getDocumentExtractorProviders,
   selectDocumentExtractorProvider,
 } from '@/lib/document';
+import { PROVIDER_SUPPORTED_MIME_TYPES } from '@/lib/document/mime';
 
 describe('document extractor registry', () => {
   it('exposes existing PDF providers through the document extractor boundary', () => {
@@ -50,10 +51,19 @@ describe('document extractor registry', () => {
 
     expect(mineru).toBeDefined();
     expect(mineru?.displayName).toBe('MinerU');
+    // Self-host MinerU (v3.1+): pdf + modern Office (docx/pptx/xlsx) + images.
+    // No legacy OLE (.doc/.ppt/.xls) — those are cloud-only.
     expect(mineru?.supportedMimeTypes).toEqual([
       'application/pdf',
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'image/png',
+      'image/jpeg',
+      'image/webp',
+      'image/gif',
+      'image/bmp',
+      'image/jp2',
     ]);
     expect(mineru?.capabilities).toMatchObject({
       text: true,
@@ -65,7 +75,13 @@ describe('document extractor registry', () => {
       async: false,
     });
     expect(mineruCloud).toBeDefined();
-    expect(mineruCloud?.supportedMimeTypes).toEqual(mineru?.supportedMimeTypes);
+    // Cloud adds legacy OLE formats on top of self-host list.
+    expect(mineruCloud?.supportedMimeTypes).toEqual([
+      ...(mineru?.supportedMimeTypes ?? []),
+      'application/msword',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.ms-excel',
+    ]);
     expect(mineruCloud?.capabilities).toMatchObject({
       text: true,
       images: true,
@@ -120,7 +136,7 @@ describe('document extractor registry', () => {
   it('returns a clear error when no provider supports the MIME type', () => {
     expect(() =>
       selectDocumentExtractorProvider({
-        mimeType: 'application/vnd.ms-excel',
+        mimeType: 'application/x-shockwave-flash',
       }),
     ).toThrow(/No document extractor supports MIME type/);
   });
@@ -149,5 +165,13 @@ describe('document extractor registry', () => {
         requiredCapabilities: { text: true },
       }).id,
     ).toBe('plain-text');
+  });
+
+  it('keeps PROVIDER_SUPPORTED_MIME_TYPES in sync with the extractor registry', () => {
+    // Drift guard: mime.ts (client-safe, drives the upload UI) and the registry
+    // (server-side extractors) must advertise the same MIME lists per provider.
+    for (const provider of getDocumentExtractorProviders()) {
+      expect(PROVIDER_SUPPORTED_MIME_TYPES[provider.id]).toEqual(provider.supportedMimeTypes);
+    }
   });
 });
