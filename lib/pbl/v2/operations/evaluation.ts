@@ -9,6 +9,7 @@
  */
 
 import type { PBLEvaluation, PBLEvaluationKind, PBLProjectV2, PBLScenarioActGoals } from '../types';
+import { appendRuntimeEvent, milestoneIdForMicrotask, mintRuntimeEventId } from './runtime-events';
 
 function newId(prefix: string): string {
   return (
@@ -50,6 +51,15 @@ export function addEvaluation(
     createdAt: new Date().toISOString(),
   };
   project.evaluations.push(evaluation);
+  appendRuntimeEvent(project, {
+    id: mintRuntimeEventId(),
+    kind: 'evaluation_created',
+    actorType: 'system',
+    evaluationId: evaluation.id,
+    ts: evaluation.createdAt,
+    microtaskId: evaluation.microtaskId,
+    milestoneId: evaluation.milestoneId ?? milestoneIdForMicrotask(project, evaluation.microtaskId),
+  });
   project.updatedAt = evaluation.createdAt;
   return evaluation;
 }

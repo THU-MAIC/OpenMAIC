@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const { setSelectedAgentIds } = vi.hoisted(() => ({
+  setSelectedAgentIds: vi.fn(),
+}));
+
 // IndexedDB / stage-storage modules are imported dynamically inside the
 // store's save/load actions. Mock them so the debounced save doesn't try
 // to talk to a real (or jsdom) IndexedDB in the test environment.
@@ -12,6 +16,11 @@ vi.mock('@/lib/utils/database', () => ({
 }));
 vi.mock('@/lib/orchestration/registry/store', () => ({
   saveGeneratedAgents: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('@/lib/store/settings', () => ({
+  useSettingsStore: {
+    getState: () => ({ setSelectedAgentIds }),
+  },
 }));
 
 import { useStageStore } from '@/lib/store/stage';
@@ -42,6 +51,7 @@ function makeAgentConfig(id: string): GeneratedAgentConfig {
 }
 
 beforeEach(() => {
+  vi.useFakeTimers();
   useStageStore.setState({
     stage: makeStage(),
     scenes: [],
@@ -49,8 +59,15 @@ beforeEach(() => {
   });
 });
 
-afterEach(() => {
-  useStageStore.getState().clearStore();
+afterEach(async () => {
+  try {
+    await vi.runOnlyPendingTimersAsync();
+    await vi.dynamicImportSettled();
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    useStageStore.getState().clearStore();
+    vi.useRealTimers();
+  }
 });
 
 describe('setStageAgents', () => {
@@ -89,13 +106,9 @@ describe('setStageAgents', () => {
 
 describe('setStageAgents persistence (debounced save)', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
     vi.mocked(saveStageData).mockClear();
     vi.mocked(saveGeneratedAgents).mockClear();
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
+    setSelectedAgentIds.mockClear();
   });
 
   it('includes generatedAgentConfigs in saveStageData after debounce', async () => {

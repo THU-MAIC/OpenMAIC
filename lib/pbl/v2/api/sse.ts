@@ -19,6 +19,7 @@ import type {
   PBLMicrotask,
   PBLMilestone,
   PBLEngagementEvent,
+  PBLRuntimeEvent,
 } from '../types';
 
 // ---------------------------------------------------------------------------
@@ -70,6 +71,7 @@ export interface SSEProjectPatchEvent {
         nextMicrotask?: PBLMicrotask;
         milestone?: PBLMilestone;
         engagementEvents?: PBLEngagementEvent[];
+        runtimeEvents?: PBLRuntimeEvent[];
         /**
          * Should the client follow up with /api/pbl/v2/evaluate after
          * the Instructor stream closes? Three orthogonal flags so the

@@ -23,7 +23,10 @@ function isPdfProviderId(providerId: string): providerId is PDFProviderId {
   return providerId in PDF_PROVIDERS;
 }
 
-function supportsMimeType(provider: { supportedMimeTypes: string[] }, mimeType: string): boolean {
+function supportsMimeType(
+  provider: { supportedMimeTypes: readonly string[] },
+  mimeType: string,
+): boolean {
   return provider.supportedMimeTypes.map((type) => type.toLowerCase()).includes(mimeType);
 }
 

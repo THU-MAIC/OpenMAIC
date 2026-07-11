@@ -11,6 +11,8 @@ import { db } from './database';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
 import { clearPlaybackState } from './playback-storage';
 import { clearAllForScene } from '@/lib/quiz/persistence';
+import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
+import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('StageStorage');
@@ -142,6 +144,17 @@ export async function deleteStageData(stageId: string): Promise<void> {
     // Sweep quiz persistence keys for each deleted scene.
     for (const sceneId of sceneIds) {
       clearAllForScene(sceneId);
+    }
+
+    // Learner-runtime data lives in a separate IndexedDB database, so it is
+    // cascaded after the Dexie work: it cannot join those transactions, and a
+    // runtime failure must not abort them (the helper warns instead of
+    // throwing).
+    await deleteStageRuntimeSafely(stageId);
+    try {
+      await clearStageDrainWatermarks(stageId);
+    } catch (error) {
+      log.warn(`Failed to clear PBL drain watermarks for stage ${stageId}:`, error);
     }
 
     log.info(`Deleted stage: ${stageId}`);

@@ -10,6 +10,11 @@ import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { extractMinerUResult } from './mineru-parser';
 import { MINERU_CLOUD_DEFAULT_BASE } from './constants';
+import {
+  getExtensionsForMimes,
+  getExtensionsForProviders,
+  MINERU_IMAGE_MIMES,
+} from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MinerUCloud');
@@ -24,13 +29,22 @@ const TIMEOUTS = {
 const POLL_INTERVAL_MS = 2_500;
 const POLL_MAX_MS = 15 * 60 * 1_000; // 15 minutes
 
-const MIME_MAP: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  gif: 'image/gif',
-};
+// Extension → MIME for image types MinerU can emit inside its result zip.
+// Derived from MINERU_IMAGE_MIMES so this table can't drift from the accept
+// list; used only to build `data:MIME;base64,…` URLs for embedded images.
+const MIME_MAP: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const mime of MINERU_IMAGE_MIMES) {
+    for (const ext of getExtensionsForMimes([mime])) {
+      map[ext] = mime;
+    }
+  }
+  return map;
+})();
+
+// Match every image extension MinerU may include as an asset in the result
+// zip. Kept in lockstep with MIME_MAP by deriving from the same source.
+const IMAGE_EXTENSION_RE = new RegExp(`\\.(${Object.keys(MIME_MAP).join('|')})$`, 'i');
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -93,7 +107,7 @@ async function readMinerUJson<T>(res: Response, context: string): Promise<T> {
 
 // ── Filename sanitization ─────────────────────────────────────────────────────
 
-const MINERU_CLOUD_SUPPORTED_EXTENSIONS = new Set(['pdf', 'docx', 'pptx']);
+const MINERU_CLOUD_SUPPORTED_EXTENSIONS = new Set(getExtensionsForProviders(['mineru-cloud']));
 
 function sanitizeFileName(name: string | undefined): string {
   const fallback = 'document.pdf';
@@ -191,7 +205,7 @@ async function parseMinerUZip(zipUrl: string): Promise<ParsedPdfContent> {
 
   // Also scan for image files not in content_list (fallback)
   for (const p of filePaths) {
-    if (/\.(png|jpe?g|webp|gif)$/i.test(p)) {
+    if (IMAGE_EXTENSION_RE.test(p)) {
       const basename = p.split('/').pop() ?? p;
       if (!imageData[basename]) {
         const base64 = await readImage(p);
