@@ -29,6 +29,7 @@ import {
   taskEvaluationCanComplete,
 } from '@/lib/pbl/v2/operations/task-completion';
 import { recordEvent } from '@/lib/pbl/v2/operations/engagement';
+import { runtimeEventEpoch } from '@/lib/pbl/v2/operations/runtime-events';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
 
 function makeProject(): PBLProjectV2 {
@@ -205,6 +206,28 @@ describe('PBL v2 progress — runtime normalization', () => {
     expect(normalizeProjectRuntime(p)).toBe(true);
     expect(p.milestones[0].status).toBe('active');
     expect(p.milestones[0].microtasks[0].status).toBe('in_progress');
+  });
+
+  it('emits deterministic repair ids for the same normalization transition on clones', () => {
+    const first = makeProject();
+    first.milestones[0].status = 'locked';
+    const second = structuredClone(first) as PBLProjectV2;
+
+    expect(normalizeProjectRuntime(first)).toBe(true);
+    expect(normalizeProjectRuntime(second)).toBe(true);
+
+    const firstIds = (first.runtimeEvents ?? [])
+      .filter((event) => event.kind === 'status_changed')
+      .map((event) => event.id);
+    const secondIds = (second.runtimeEvents ?? [])
+      .filter((event) => event.kind === 'status_changed')
+      .map((event) => event.id);
+
+    expect(firstIds).toEqual([
+      'norm:0:milestone:ms-1:locked:active',
+      'norm:0:microtask:mt-1:todo:in_progress',
+    ]);
+    expect(secondIds).toEqual(firstIds);
   });
 
   it('does not open the next milestone while a handover is waiting for Continue', () => {
@@ -729,6 +752,69 @@ describe('PBL v2 progress — resetProjectProgress', () => {
     expect(reset.engagementEvents).toEqual([]);
     expect(reset.pendingHandover).toBeUndefined();
     expect(hasStartedProject(reset)).toBe(false);
+  });
+
+  it('emits project_reset before the reset status events', () => {
+    const reset = resetProjectProgress(makeStartedProject());
+    const events = reset.runtimeEvents ?? [];
+    const firstStatusIndex = events.findIndex((event) => event.kind === 'status_changed');
+
+    expect(events[0]).toMatchObject({
+      kind: 'project_reset',
+      actorType: 'user',
+    });
+    expect(firstStatusIndex).toBeGreaterThan(0);
+  });
+
+  it('keeps the reset epoch after the visible project_reset marker is evicted', () => {
+    const firstReset = resetProjectProgress(makeStartedProject());
+    expect(runtimeEventEpoch(firstReset)).toBe(1);
+
+    firstReset.runtimeEvents = firstReset.runtimeEvents?.filter(
+      (event) => event.kind !== 'project_reset',
+    );
+    expect(firstReset.runtimeEvents?.some((event) => event.kind === 'project_reset')).toBe(false);
+    expect(runtimeEventEpoch(firstReset)).toBe(1);
+
+    const secondReset = resetProjectProgress(firstReset);
+    expect(runtimeEventEpoch(secondReset)).toBe(2);
+  });
+
+  it('keeps repeated deterministic status transitions after reset while deduplicating normalization echoes in one epoch', () => {
+    const project = makeProject();
+    startMicrotask(project, 'mt-1');
+    const firstAdvance = advanceMicrotask(project, 'mt-1', 'first pass', {});
+    expect(firstAdvance.ok).toBe(true);
+
+    const reset = resetProjectProgress(project);
+    startMicrotask(reset, 'mt-1');
+    const secondAdvance = advanceMicrotask(reset, 'mt-1', 'second pass', {});
+    expect(secondAdvance.ok).toBe(true);
+
+    const completionEvents = (reset.runtimeEvents ?? []).filter(
+      (event) =>
+        event.kind === 'status_changed' &&
+        event.entityType === 'microtask' &&
+        event.entityId === 'mt-1' &&
+        event.from === 'in_progress' &&
+        event.to === 'completed',
+    );
+    expect(completionEvents).toHaveLength(2);
+    expect(new Set(completionEvents.map((event) => event.id)).size).toBe(2);
+
+    const normalized = makeProject();
+    normalized.milestones[0].status = 'locked';
+    expect(normalizeProjectRuntime(normalized)).toBe(true);
+    normalized.milestones[0].status = 'locked';
+    normalized.milestones[0].microtasks[0].status = 'todo';
+    expect(normalizeProjectRuntime(normalized)).toBe(true);
+
+    const normalizationEvents = (normalized.runtimeEvents ?? []).filter(
+      (event) =>
+        event.kind === 'status_changed' &&
+        (event.id.startsWith('norm:0:milestone:') || event.id.startsWith('norm:0:microtask:')),
+    );
+    expect(normalizationEvents).toHaveLength(2);
   });
 
   it('clears every microtask back to todo and re-locks all but the first milestone', () => {

@@ -175,6 +175,83 @@ const objectY = groundY - BOTTOM_MARGIN - (altitude / maxHeight) * playableHeigh
 - Use padding or margins to create "safe zones" for game objects
 - Position game objects within the visible canvas area, not under overlays
 
+## CRITICAL: postMessage Listener for Widget Actions (REQUIRED)
+
+The platform drives this widget by posting messages into the iframe
+(`SET_WIDGET_STATE`, `HIGHLIGHT_ELEMENT`, `ANNOTATE_ELEMENT`, `REVEAL_ELEMENT`).
+Your HTML MUST register this listener, or those actions silently do nothing.
+Register it at the end of the body (or inside your DOMContentLoaded setup) so the
+game can be driven the same way a player would drive it:
+
+```javascript
+window.addEventListener('message', function(event) {
+  const { type, target, state, content } = event.data;
+
+  switch (type) {
+    case 'SET_WIDGET_STATE':
+      // Apply state to controls / game params. Keys map to controls by id;
+      // route to the game via a global setter when one exists.
+      if (state) {
+        Object.entries(state).forEach(([key, value]) => {
+          const control = document.getElementById(key + '-slider') || document.getElementById(key) || document.querySelector('[data-var="' + key + '"]');
+          if (control) {
+            control.value = value;
+            control.dispatchEvent(new Event('input', { bubbles: true }));
+          }
+          if (typeof window.setGameParam === 'function') window.setGameParam(key, value);
+        });
+      }
+      break;
+
+    case 'HIGHLIGHT_ELEMENT':
+      const highlightEl = document.querySelector(target);
+      if (highlightEl) {
+        highlightEl.style.outline = '3px solid rgba(139, 92, 246, 0.8)';
+        highlightEl.style.outlineOffset = '4px';
+        highlightEl.style.animation = 'pulse-highlight 2s infinite';
+        setTimeout(() => {
+          highlightEl.style.outline = '';
+          highlightEl.style.animation = '';
+        }, 3000);
+      }
+      break;
+
+    case 'ANNOTATE_ELEMENT':
+      const annotateEl = document.querySelector(target);
+      if (annotateEl && content) {
+        const rect = annotateEl.getBoundingClientRect();
+        const tooltip = document.createElement('div');
+        tooltip.className = 'teacher-annotation';
+        tooltip.style.cssText = 'position:fixed; top:' + (rect.top - 40) + 'px; left:' + rect.left + 'px; background:rgba(139,92,246,0.95); color:white; padding:8px 12px; border-radius:8px; font-size:14px; z-index:1000; animation:fadeIn 0.3s;';
+        tooltip.textContent = content;
+        document.body.appendChild(tooltip);
+        setTimeout(() => tooltip.remove(), 4000);
+      }
+      break;
+
+    case 'REVEAL_ELEMENT':
+      const revealEl = document.querySelector(target);
+      if (revealEl) {
+        revealEl.style.display = '';
+        revealEl.style.opacity = '1';
+      }
+      break;
+  }
+});
+
+const style = document.createElement('style');
+style.textContent = '@keyframes pulse-highlight { 0%, 100% { outline-color: rgba(139, 92, 246, 0.8); } 50% { outline-color: rgba(139, 92, 246, 0.4); } } @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }';
+document.head.appendChild(style);
+```
+
+### Element Naming Convention
+
+So highlight/annotate/reveal can target controls, use consistent ids:
+- Sliders: `id="{param}-slider"` (e.g., `id="thrust-slider"`)
+- Buttons: `id="{action}-btn"` (e.g., `id="start-btn"`, `id="reset-btn"`)
+- If game parameters live only in JS state, expose `window.setGameParam(key, value)`
+  so `SET_WIDGET_STATE` can drive them.
+
 ## Output Format (CRITICAL)
 
 **Return EXACTLY ONE HTML document.** Do NOT:

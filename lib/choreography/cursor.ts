@@ -1,5 +1,12 @@
-import type { Action } from '@/lib/types/action';
-import type { Scene } from '@/lib/types/stage';
+/**
+ * Playback cursor — resolve the current action from a `(sceneIndex, actionIndex)`
+ * cursor over a scene list.
+ *
+ * Moved verbatim from the app's `lib/playback/engine-cursor.ts` so the app
+ * runtime and the video exporter walk scenes identically. Pure — types come
+ * from `@openmaic/dsl`, no runtime dependencies.
+ */
+import type { Action, SceneCore } from '@openmaic/dsl';
 
 /**
  * Synthetic dwell beat yielded for a scene that carries no actions. It is an
@@ -30,10 +37,12 @@ export interface CursorResult {
  * yields one {@link EMPTY_SCENE_DWELL} beat (when its action cursor is still 0)
  * rather than being skipped. Returns `null` once every scene is consumed.
  *
- * Pure: it does not mutate inputs; the caller adopts the returned cursor.
+ * Pure: it does not mutate inputs; the caller adopts the returned cursor. Typed
+ * against {@link SceneCore} (only `id` + `actions` are read), so an app-widened
+ * `Scene` (extra content kinds) is accepted without casting.
  */
 export function resolvePlaybackCursor(
-  scenes: Scene[],
+  scenes: SceneCore[],
   sceneIndex: number,
   actionIndex: number,
 ): CursorResult | null {

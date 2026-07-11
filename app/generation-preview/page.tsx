@@ -49,6 +49,12 @@ import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
 
+type SceneGenerationFailure = {
+  error?: string;
+  errorCode?: string;
+  statusCode?: number;
+};
+
 function GenerationPreviewContent() {
   const router = useRouter();
   const { t } = useI18n();
@@ -95,6 +101,34 @@ function GenerationPreviewContent() {
   const activeSteps = getActiveSteps(session);
   const isOutlineReady = session?.previewPhase === 'outline-ready';
   const isReviewingOutlines = session?.previewPhase === 'review';
+
+  const sceneGenerationErrorMessage = (failure: SceneGenerationFailure): string => {
+    if (
+      failure.errorCode === 'MISSING_API_KEY' ||
+      failure.statusCode === 401 ||
+      failure.statusCode === 403
+    ) {
+      return t('generation.sceneGenerateAuthFailed');
+    }
+
+    if (failure.errorCode === 'RATE_LIMITED' || failure.statusCode === 429) {
+      return t('generation.sceneGenerateRateLimited');
+    }
+
+    if (failure.errorCode === 'UPSTREAM_ERROR' && failure.statusCode && failure.statusCode >= 500) {
+      return t('generation.sceneGenerateProviderUnavailable');
+    }
+
+    if (failure.errorCode === 'INTERNAL_ERROR') {
+      return t('generation.sceneGenerateFailed');
+    }
+
+    if (failure.errorCode === 'GENERATION_FAILED') {
+      return t('generation.sceneGenerateInvalidResponse');
+    }
+
+    return failure.error || t('generation.sceneGenerateFailed');
+  };
 
   const persistSession = (nextSession: GenerationSessionState) => {
     setSession(nextSession);
@@ -874,7 +908,7 @@ function GenerationPreviewContent() {
       );
 
       if (!contentData.success || !contentData.content) {
-        throw new Error(contentData.error || t('generation.sceneGenerateFailed'));
+        throw new Error(sceneGenerationErrorMessage(contentData));
       }
 
       // Generate actions (activate actions step indicator)
@@ -897,7 +931,7 @@ function GenerationPreviewContent() {
       );
 
       if (!data.success || !data.scene) {
-        throw new Error(data.error || t('generation.sceneGenerateFailed'));
+        throw new Error(sceneGenerationErrorMessage(data));
       }
       const firstScene = data.scene;
 

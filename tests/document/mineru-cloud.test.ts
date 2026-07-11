@@ -88,7 +88,7 @@ describe('MinerU Cloud document upload', () => {
     ]);
   });
 
-  it('falls back to a supported filename for legacy Office extensions outside route scope', async () => {
+  it('preserves legacy Office filenames (cloud accepts .doc/.ppt/.xls)', async () => {
     const zip = new JSZip();
     zip.file('full.md', '# Parsed legacy lesson');
     const zipBuffer = await zip.generateAsync({ type: 'nodebuffer' });
@@ -103,13 +103,13 @@ describe('MinerU Cloud document upload', () => {
             msg: 'ok',
             data: {
               batch_id: 'batch-legacy',
-              file_urls: ['https://upload.example/document.pdf'],
+              file_urls: ['https://upload.example/legacy.doc'],
             },
           }),
           { status: 200 },
         );
       }
-      if (url === 'https://upload.example/document.pdf') {
+      if (url === 'https://upload.example/legacy.doc') {
         return new Response('', { status: 200 });
       }
       if (url.endsWith('/extract-results/batch/batch-legacy')) {
@@ -119,7 +119,7 @@ describe('MinerU Cloud document upload', () => {
             msg: 'ok',
             data: {
               extract_result: {
-                file_name: 'document.pdf',
+                file_name: 'legacy.doc',
                 state: 'done',
                 full_zip_url: 'https://download.example/legacy.zip',
               },
@@ -154,7 +154,7 @@ describe('MinerU Cloud document upload', () => {
     expect(result.text).toContain('Parsed legacy lesson');
     expect(batchBodies).toEqual([
       expect.objectContaining({
-        files: [{ name: 'document.pdf' }],
+        files: [{ name: 'legacy.doc' }],
       }),
     ]);
   });

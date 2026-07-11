@@ -141,6 +141,62 @@ describe('browser scene generation retry wrappers', () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 
+  it('preserves scene content error metadata for localized UI messages', async () => {
+    const { fetchSceneContent } = await import('@/lib/hooks/use-scene-generator');
+    mockFetch.mockResolvedValue(
+      jsonResponse(429, {
+        success: false,
+        errorCode: 'RATE_LIMITED',
+        error: 'Upstream rate limit reached. Please try again shortly.',
+      }),
+    );
+
+    const result = await fetchSceneContent(
+      {
+        outline,
+        allOutlines: [outline],
+        stageId: 'stage-1',
+        stageInfo: { name: 'Retry Course' },
+      },
+      undefined,
+      { ...retryOptions, maxRetries: 0 },
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      errorCode: 'RATE_LIMITED',
+      statusCode: 429,
+    });
+  });
+
+  it('preserves internal scene content errors for localized fallback messages', async () => {
+    const { fetchSceneContent } = await import('@/lib/hooks/use-scene-generator');
+    mockFetch.mockResolvedValue(
+      jsonResponse(500, {
+        success: false,
+        errorCode: 'INTERNAL_ERROR',
+        error: 'Scene generation failed. Please try again.',
+      }),
+    );
+
+    const result = await fetchSceneContent(
+      {
+        outline,
+        allOutlines: [outline],
+        stageId: 'stage-1',
+        stageInfo: { name: 'Retry Course' },
+      },
+      undefined,
+      { ...retryOptions, maxRetries: 0 },
+    );
+
+    expect(result).toMatchObject({
+      success: false,
+      errorCode: 'INTERNAL_ERROR',
+      statusCode: 500,
+    });
+  });
+
   it('rethrows an aborted scene content request', async () => {
     const { fetchSceneContent } = await import('@/lib/hooks/use-scene-generator');
     const abort = Object.assign(new Error('Aborted'), { name: 'AbortError' });
