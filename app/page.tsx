@@ -60,6 +60,7 @@ import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
+import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 
 const log = createLogger('Home');
 
@@ -577,28 +578,11 @@ function HomePage() {
               {/* Interactive mode toggle */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                    onClick={() => updateForm('interactiveMode', !form.interactiveMode)}
-                    className={cn(
-                      'relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border shrink-0 h-8',
-                      form.interactiveMode
-                        ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-500 shadow-[0_0_12px_rgba(6,182,212,0.35)] dark:shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                        : 'border-cyan-300/60 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20',
-                    )}
-                  >
-                    {form.interactiveMode && (
-                      <span
-                        className="absolute inset-[-4px] rounded-full border border-cyan-400/40 dark:border-cyan-400/25"
-                        style={{
-                          animation: 'interactive-mode-breathe 2s ease-in-out infinite',
-                        }}
-                      />
-                    )}
-                    <Atom className="size-3.5 relative z-10 animate-[spin_3s_linear_infinite]" />
-                    <span className="relative z-10">{t('toolbar.interactiveModeLabel')}</span>
-                  </motion.button>
+                  <InteractiveModeButton
+                    pressed={form.interactiveMode}
+                    label={t('toolbar.interactiveModeLabel')}
+                    onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                  />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
                   {t('toolbar.interactiveModeHint')}
