@@ -20,6 +20,7 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
 
 const DEFAULT_MODEL = 'grok-imagine-video';
@@ -83,26 +84,18 @@ export async function testGrokVideoConnectivity(
   config: VideoGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  try {
-    const response = await fetch(`${baseUrl}/videos/generations`, {
-      method: 'POST',
-      headers: apiHeaders(config.apiKey),
-      body: JSON.stringify({
-        model: config.model || DEFAULT_MODEL,
-        prompt: '',
+  return probeAuth({
+    providerName: 'Grok Video',
+    request: () =>
+      fetch(`${baseUrl}/videos/generations`, {
+        method: 'POST',
+        headers: apiHeaders(config.apiKey),
+        body: JSON.stringify({
+          model: config.model || DEFAULT_MODEL,
+          prompt: '',
+        }),
       }),
-    });
-    if (response.status === 401 || response.status === 403) {
-      const text = await response.text();
-      return {
-        success: false,
-        message: `Grok Video auth failed (${response.status}): ${text}`,
-      };
-    }
-    return { success: true, message: 'Connected to Grok Video' };
-  } catch (err) {
-    return { success: false, message: `Grok Video connectivity error: ${err}` };
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------

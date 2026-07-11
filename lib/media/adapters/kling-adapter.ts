@@ -23,6 +23,7 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
 
 const DEFAULT_MODEL = 'kling-v2-6';
@@ -129,25 +130,17 @@ export async function testKlingConnectivity(
   config: VideoGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  try {
-    const { accessKey, secretKey } = parseApiKey(config.apiKey);
-    const token = generateJWT(accessKey, secretKey);
-    // Use a GET to a non-existent task to validate auth
-    const response = await fetch(`${baseUrl}/v1/videos/text2video/connectivity-test`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (response.status === 401 || response.status === 403) {
-      const text = await response.text();
-      return {
-        success: false,
-        message: `Kling auth failed (${response.status}): ${text}`,
-      };
-    }
-    return { success: true, message: 'Connected to Kling' };
-  } catch (err) {
-    return { success: false, message: `Kling connectivity error: ${err}` };
-  }
+  return probeAuth({
+    providerName: 'Kling',
+    request: () => {
+      const { accessKey, secretKey } = parseApiKey(config.apiKey);
+      const token = generateJWT(accessKey, secretKey);
+      return fetch(`${baseUrl}/v1/videos/text2video/connectivity-test`, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------

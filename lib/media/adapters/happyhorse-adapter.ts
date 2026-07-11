@@ -11,6 +11,7 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { probeAuth } from '../probe-auth';
 import { runPolledTask } from '../polled-task';
 
 const DEFAULT_MODEL = 'happyhorse-1.0-t2v';
@@ -192,23 +193,14 @@ export async function generateWithHappyHorse(
 export async function testHappyHorseConnectivity(
   config: VideoGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
-  try {
-    const baseUrl = normalizeBaseUrl(config.baseUrl);
-    const response = await fetch(`${baseUrl}/api/v1/tasks/connectivity-test-nonexistent`, {
-      method: 'GET',
-      headers: authHeaders(config.apiKey),
-    });
-
-    if (response.status === 401 || response.status === 403) {
-      const text = await response.text();
-      return {
-        success: false,
-        message: `HappyHorse auth failed (${response.status}): ${text}`,
-      };
-    }
-
-    return { success: true, message: 'Connected to HappyHorse' };
-  } catch (err) {
-    return { success: false, message: `HappyHorse connectivity error: ${err}` };
-  }
+  return probeAuth({
+    providerName: 'HappyHorse',
+    request: () => {
+      const baseUrl = normalizeBaseUrl(config.baseUrl);
+      return fetch(`${baseUrl}/api/v1/tasks/connectivity-test-nonexistent`, {
+        method: 'GET',
+        headers: authHeaders(config.apiKey),
+      });
+    },
+  });
 }
