@@ -5,6 +5,8 @@ import zhTW from '@/lib/i18n/locales/zh-TW.json';
 import jaJP from '@/lib/i18n/locales/ja-JP.json';
 import ruRU from '@/lib/i18n/locales/ru-RU.json';
 import arSA from '@/lib/i18n/locales/ar-SA.json';
+import koKR from '@/lib/i18n/locales/ko-KR.json';
+import ptBR from '@/lib/i18n/locales/pt-BR.json';
 
 const locales = {
   'en-US': enUS,
@@ -13,6 +15,8 @@ const locales = {
   'ja-JP': jaJP,
   'ru-RU': ruRU,
   'ar-SA': arSA,
+  'ko-KR': koKR,
+  'pt-BR': ptBR,
 } as const;
 
 const outlineReviewKeys = [
@@ -59,6 +63,28 @@ const outlineReviewKeys = [
   'generation.deleteSceneConfirmAction',
   'generation.collapseEditor',
   'generation.quizConfigSummary',
+  'generation.interactiveWidgetKind',
+  'generation.widgetSimulation',
+  'generation.widgetDiagram',
+  'generation.widgetCode',
+  'generation.widgetGame',
+  'generation.widgetVisualization3d',
+  'generation.interactiveConcept',
+  'generation.interactiveConceptPlaceholder',
+  'generation.pblConfigSummary',
+  'generation.pblSubtype',
+  'generation.pblSubtypeProject',
+  'generation.pblSubtypeScenario',
+  'generation.pblProjectTopic',
+  'generation.pblProjectTopicPlaceholder',
+  'generation.pblProjectDescription',
+  'generation.pblProjectDescriptionPlaceholder',
+  'generation.pblScenarioBrief',
+  'generation.pblScenarioBriefPlaceholder',
+  'generation.pblTargetSkills',
+  'generation.pblAddSkill',
+  'generation.widgetProceduralSkill',
+  'generation.removeSkill',
 ] as const;
 
 const countInterpolatedKeys = [

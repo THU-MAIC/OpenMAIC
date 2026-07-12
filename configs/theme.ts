@@ -1,4 +1,4 @@
-import type { PPTElementOutline, PPTElementShadow } from '@/lib/types/slides';
+import type { PPTElementOutline, PPTElementShadow } from '@openmaic/dsl';
 
 export interface PresetTheme {
   background: string;

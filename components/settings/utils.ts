@@ -1,5 +1,33 @@
-import type { ProviderId, ProviderType } from '@/lib/types/provider';
+import type { ProviderId, ProviderType, ModelInfo } from '@/lib/types/provider';
 import type { ProviderSettings } from '@/lib/types/settings';
+import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
+
+/** Heuristic: model ids matching this are treated as vision-capable. */
+const VISION_MODEL_PATTERN = /vision|vl|omni|4o|gpt-5|gemini|claude/i;
+
+/**
+ * Builds a default ModelInfo from a probed model id. Vision capability is
+ * inferred from the id via {@link VISION_MODEL_PATTERN}. Shared by the provider
+ * panel and the token-plan apply flow so the heuristic stays in one place.
+ *
+ * When `providerId` is given, the built-in thinking capability for that
+ * (provider, model) pair is overlaid — so a model that supports configurable
+ * thinking keeps its `capabilities.thinking` instead of silently losing it
+ * (which would hide InlineThinkingControl). Unknown pairs are unaffected.
+ */
+export function modelInfoFromId(id: string, providerId?: string): ModelInfo {
+  const thinking = providerId ? getCatalogThinkingCapability(providerId, id) : undefined;
+  return {
+    id,
+    name: id,
+    capabilities: {
+      streaming: true,
+      tools: true,
+      vision: VISION_MODEL_PATTERN.test(id),
+      ...(thinking ? { thinking } : {}),
+    },
+  };
+}
 
 interface NewCustomProviderConfig {
   name: string;
@@ -7,6 +35,8 @@ interface NewCustomProviderConfig {
   baseUrl: string;
   icon: string;
   requiresApiKey: boolean;
+  /** Optional explicit /models URL override (from a preset). */
+  modelsUrl?: string;
 }
 
 export function formatContextWindow(size?: number): string {
@@ -51,6 +81,7 @@ export function createCustomProviderSettings(
     icon: providerData.icon || undefined,
     requiresApiKey: providerData.requiresApiKey,
     isBuiltIn: false,
+    modelsUrl: providerData.modelsUrl || undefined,
   };
 }
 

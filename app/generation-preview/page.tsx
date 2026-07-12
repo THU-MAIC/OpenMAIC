@@ -14,8 +14,15 @@ import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getEnabledProvidersWithVoices } from '@/lib/audio/voice-resolver';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
-import { getVoxCPMProviderOptions, useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
+import { useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import {
+  fetchSceneActions,
+  fetchSceneContent,
+  generateAndStoreTTS,
+} from '@/lib/hooks/use-scene-generator';
+import { isAbortError } from '@/lib/generation/generation-retry';
+import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
   loadPdfBlob,
@@ -23,7 +30,6 @@ import {
   storeImages,
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import { db } from '@/lib/utils/database';
 import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
@@ -31,11 +37,23 @@ import type { Stage } from '@/lib/types/stage';
 import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
-import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
+import {
+  type GenerationSessionState,
+  ALL_STEPS,
+  getActiveSteps,
+  getGenerationStepText,
+} from './types';
 import { StepVisualizer } from './components/visualizers';
+import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
+
+type SceneGenerationFailure = {
+  error?: string;
+  errorCode?: string;
+  statusCode?: number;
+};
 
 function GenerationPreviewContent() {
   const router = useRouter();
@@ -83,6 +101,34 @@ function GenerationPreviewContent() {
   const activeSteps = getActiveSteps(session);
   const isOutlineReady = session?.previewPhase === 'outline-ready';
   const isReviewingOutlines = session?.previewPhase === 'review';
+
+  const sceneGenerationErrorMessage = (failure: SceneGenerationFailure): string => {
+    if (
+      failure.errorCode === 'MISSING_API_KEY' ||
+      failure.statusCode === 401 ||
+      failure.statusCode === 403
+    ) {
+      return t('generation.sceneGenerateAuthFailed');
+    }
+
+    if (failure.errorCode === 'RATE_LIMITED' || failure.statusCode === 429) {
+      return t('generation.sceneGenerateRateLimited');
+    }
+
+    if (failure.errorCode === 'UPSTREAM_ERROR' && failure.statusCode && failure.statusCode >= 500) {
+      return t('generation.sceneGenerateProviderUnavailable');
+    }
+
+    if (failure.errorCode === 'INTERNAL_ERROR') {
+      return t('generation.sceneGenerateFailed');
+    }
+
+    if (failure.errorCode === 'GENERATION_FAILED') {
+      return t('generation.sceneGenerateInvalidResponse');
+    }
+
+    return failure.error || t('generation.sceneGenerateFailed');
+  };
 
   const persistSession = (nextSession: GenerationSessionState) => {
     setSession(nextSession);
@@ -144,6 +190,7 @@ function GenerationPreviewContent() {
         if (parsed.previewPhase === 'review' && !parsed.sceneOutlines?.length) {
           outlineReviewIntentRef.current = true;
         }
+        parsed.taskEngineMode = parsed.taskEngineMode === true;
         setSession(parsed);
       } catch (e) {
         log.error('Failed to parse generation session:', e);
@@ -223,7 +270,7 @@ function GenerationPreviewContent() {
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    // Use a local mutable copy so we can update it after PDF parsing
+    // Use a local mutable copy so we can update it after document extraction
     let currentSession = generationSession;
 
     setError(null);
@@ -233,38 +280,38 @@ function GenerationPreviewContent() {
       // Compute active steps for this session (recomputed after session mutations)
       let activeSteps = getActiveSteps(currentSession);
 
-      // Determine if we need the PDF analysis step
+      // Determine if we need the document analysis step
       const hasPdfToAnalyze = !!currentSession.pdfStorageKey && !currentSession.pdfText;
-      // If no PDF to analyze, skip to the next available step
+      // If no document to analyze, skip to the next available step
       if (!hasPdfToAnalyze) {
         const firstNonPdfIdx = activeSteps.findIndex((s) => s.id !== 'pdf-analysis');
         setCurrentStepIndex(Math.max(0, firstNonPdfIdx));
       }
 
-      // Step 0: Parse PDF if needed
+      // Step 0: Extract uploaded course material if needed
       if (hasPdfToAnalyze) {
-        log.debug('=== Generation Preview: Parsing PDF ===');
+        log.debug('=== Generation Preview: Extracting course material ===');
         const pdfBlob = await loadPdfBlob(currentSession.pdfStorageKey!);
         if (!pdfBlob) {
-          throw new Error(t('generation.pdfLoadFailed'));
+          throw new Error(t('generation.courseMaterialLoadFailed'));
         }
 
         // Ensure pdfBlob is a valid Blob with content
         if (!(pdfBlob instanceof Blob) || pdfBlob.size === 0) {
-          log.error('Invalid PDF blob:', {
+          log.error('Invalid course material blob:', {
             type: typeof pdfBlob,
             size: pdfBlob instanceof Blob ? pdfBlob.size : 'N/A',
           });
-          throw new Error(t('generation.pdfLoadFailed'));
+          throw new Error(t('generation.courseMaterialLoadFailed'));
         }
 
         // Wrap as a File to guarantee multipart/form-data with correct content-type
         const pdfFile = new File([pdfBlob], currentSession.pdfFileName || 'document.pdf', {
-          type: 'application/pdf',
+          type: currentSession.documentMimeType || pdfBlob.type || 'application/pdf',
         });
 
         const parseFormData = new FormData();
-        parseFormData.append('pdf', pdfFile);
+        parseFormData.append('file', pdfFile);
 
         if (currentSession.pdfProviderId) {
           parseFormData.append('providerId', currentSession.pdfProviderId);
@@ -276,7 +323,7 @@ function GenerationPreviewContent() {
           parseFormData.append('baseUrl', currentSession.pdfProviderConfig.baseUrl);
         }
 
-        const parseResponse = await fetch('/api/parse-pdf', {
+        const parseResponse = await fetch('/api/extract-document', {
           method: 'POST',
           body: parseFormData,
           signal,
@@ -284,12 +331,12 @@ function GenerationPreviewContent() {
 
         if (!parseResponse.ok) {
           const errorData = await parseResponse.json();
-          throw new Error(errorData.error || t('generation.pdfParseFailed'));
+          throw new Error(errorData.error || t('generation.courseMaterialParseFailed'));
         }
 
         const parseResult = await parseResponse.json();
         if (!parseResult.success || !parseResult.data) {
-          throw new Error(t('generation.pdfParseFailed'));
+          throw new Error(t('generation.courseMaterialParseFailed'));
         }
 
         let pdfText = parseResult.data.text as string;
@@ -350,7 +397,7 @@ function GenerationPreviewContent() {
           }),
         );
 
-        // Update session with parsed PDF data
+        // Update session with extracted document data
         const updatedSession = {
           ...currentSession,
           pdfText,
@@ -451,11 +498,13 @@ function GenerationPreviewContent() {
         createdAt: Date.now(),
         updatedAt: Date.now(),
         interactiveMode: !!currentSession.requirements.interactiveMode,
+        taskEngineMode: currentSession.taskEngineMode === true,
       };
 
       // ── Generate outlines first (infers languageDirective) ──
       let outlines = currentSession.sceneOutlines;
       let languageDirective = currentSession.languageDirective;
+      let courseTitle = currentSession.courseTitle;
 
       const outlineStepIdx = activeSteps.findIndex((s) => s.id === 'outline');
       setCurrentStepIndex(outlineStepIdx >= 0 ? outlineStepIdx : 0);
@@ -467,9 +516,12 @@ function GenerationPreviewContent() {
         const outlineResult = await new Promise<{
           outlines: SceneOutline[];
           languageDirective: string;
+          courseTitle?: string;
+          taskEngineMode: boolean;
         }>((resolve, reject) => {
           const collected: SceneOutline[] = [];
           let directive: string | undefined;
+          let title: string | undefined;
 
           fetch('/api/generate/scene-outlines-stream', {
             method: 'POST',
@@ -514,11 +566,19 @@ function GenerationPreviewContent() {
                         const evt = JSON.parse(line.slice(6));
                         if (evt.type === 'languageDirective') {
                           directive = evt.data;
+                        } else if (evt.type === 'courseTitle') {
+                          title = evt.data;
                         } else if (evt.type === 'outline') {
                           collected.push(evt.data);
                           setStreamingOutlines([...collected]);
                         } else if (evt.type === 'retry') {
                           collected.length = 0;
+                          // Drop any directive/title latched from the failed
+                          // attempt — the server resets these per attempt, so a
+                          // succeeding attempt that omits them must fall back, not
+                          // inherit the previous attempt's stale values.
+                          directive = undefined;
+                          title = undefined;
                           setStreamingOutlines([]);
                           setStatusMessage(t('generation.outlineRetrying'));
                         } else if (evt.type === 'done') {
@@ -528,6 +588,8 @@ function GenerationPreviewContent() {
                             languageDirective:
                               directive ||
                               'Teach in the language that matches the user requirement.',
+                            courseTitle: evt.courseTitle || title,
+                            taskEngineMode: resolveTaskEngineModeFromOutlineDoneEvent(evt),
                           });
                           return;
                         } else if (evt.type === 'error') {
@@ -545,6 +607,12 @@ function GenerationPreviewContent() {
                         outlines: collected,
                         languageDirective:
                           directive || 'Teach in the language that matches the user requirement.',
+                        // Carry any title latched from a streaming `courseTitle`
+                        // event here too — symmetric with languageDirective — so
+                        // a stream that ends without an explicit `done` event
+                        // does not silently drop a valid inferred title.
+                        courseTitle: title,
+                        taskEngineMode: false,
                       });
                     } else {
                       reject(new Error(t('generation.outlineEmptyResponse')));
@@ -561,6 +629,8 @@ function GenerationPreviewContent() {
 
         outlines = outlineResult.outlines;
         languageDirective = outlineResult.languageDirective;
+        courseTitle = outlineResult.courseTitle;
+        const effectiveTaskEngineMode = outlineResult.taskEngineMode;
         setIsOutlineStreaming(false);
 
         // Mid-stream review intent (sticky ref) overrides the auto-continue timer.
@@ -571,6 +641,8 @@ function GenerationPreviewContent() {
           ...currentSession,
           sceneOutlines: outlines,
           languageDirective,
+          courseTitle,
+          taskEngineMode: effectiveTaskEngineMode,
           previewPhase: shouldReviewOutlines ? 'review' : 'outline-ready',
         };
         persistSession(updatedSession);
@@ -584,6 +656,7 @@ function GenerationPreviewContent() {
         currentSession = {
           ...currentSession,
           sceneOutlines: outlines,
+          taskEngineMode: effectiveTaskEngineMode,
           previewPhase: 'generating-content',
         };
         persistSession(currentSession);
@@ -604,10 +677,17 @@ function GenerationPreviewContent() {
       if (!outlines || outlines.length === 0) {
         throw new Error(t('generation.outlineEmptyResponse'));
       }
+      stage.taskEngineMode = currentSession.taskEngineMode === true;
 
       // Store languageDirective on the stage
       if (languageDirective) {
         stage.languageDirective = languageDirective;
+      }
+
+      // Adopt the LLM-inferred course title as the stage name when available,
+      // replacing the raw-requirement placeholder set at stage creation time.
+      if (courseTitle) {
+        stage.name = courseTitle;
       }
 
       // ── Agent generation (after outlines — uses languageDirective + outlines) ──
@@ -719,6 +799,8 @@ function GenerationPreviewContent() {
           const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
           const savedIds = await saveGeneratedAgents(stage.id, agentData.agents);
           settings.setSelectedAgentIds(savedIds);
+          // Stage-derived, not a user choice — must not carry across classrooms.
+          settings.setAgentSelectionIsUserSet(false);
           stage.agentIds = savedIds;
 
           // Show card-reveal modal, continue generation once all cards are revealed
@@ -809,65 +891,49 @@ function GenerationPreviewContent() {
       const firstOutline = outlines[0];
 
       // Step 2: Generate content (currentStepIndex is already 2)
-      const contentResp = await fetch('/api/generate/scene-content', {
-        method: 'POST',
-        headers: getApiHeaders(),
-        body: JSON.stringify(
-          withThinkingConfig({
-            outline: firstOutline,
-            allOutlines: outlines,
-            pdfImages: currentSession.pdfImages,
-            imageMapping,
-            stageInfo,
-            stageId: stage.id,
-            agents,
-            languageDirective,
-          }),
-        ),
+      const contentData = await fetchSceneContent(
+        {
+          outline: firstOutline,
+          allOutlines: outlines,
+          pdfImages: currentSession.pdfImages,
+          imageMapping,
+          stageInfo,
+          stageId: stage.id,
+          agents,
+          languageDirective,
+          requirements: currentSession.requirements,
+        },
         signal,
-      });
+        FOREGROUND_SCENE_RETRY_OPTIONS,
+      );
 
-      if (!contentResp.ok) {
-        const errorData = await contentResp.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(errorData.error || t('generation.sceneGenerateFailed'));
-      }
-
-      const contentData = await contentResp.json();
       if (!contentData.success || !contentData.content) {
-        throw new Error(contentData.error || t('generation.sceneGenerateFailed'));
+        throw new Error(sceneGenerationErrorMessage(contentData));
       }
 
       // Generate actions (activate actions step indicator)
       const actionsStepIdx = activeSteps.findIndex((s) => s.id === 'actions');
       setCurrentStepIndex(actionsStepIdx >= 0 ? actionsStepIdx : currentStepIndex + 1);
 
-      const actionsResp = await fetch('/api/generate/scene-actions', {
-        method: 'POST',
-        headers: getApiHeaders(),
-        body: JSON.stringify(
-          withThinkingConfig({
-            outline: contentData.effectiveOutline || firstOutline,
-            allOutlines: outlines,
-            content: contentData.content,
-            stageId: stage.id,
-            agents,
-            previousSpeeches: [],
-            userProfile,
-            languageDirective,
-          }),
-        ),
+      const data = await fetchSceneActions(
+        {
+          outline: contentData.effectiveOutline || firstOutline,
+          allOutlines: outlines,
+          content: contentData.content,
+          stageId: stage.id,
+          agents,
+          previousSpeeches: [],
+          userProfile,
+          languageDirective,
+        },
         signal,
-      });
+        FOREGROUND_SCENE_RETRY_OPTIONS,
+      );
 
-      if (!actionsResp.ok) {
-        const errorData = await actionsResp.json().catch(() => ({ error: 'Request failed' }));
-        throw new Error(errorData.error || t('generation.sceneGenerateFailed'));
-      }
-
-      const data = await actionsResp.json();
       if (!data.success || !data.scene) {
-        throw new Error(data.error || t('generation.sceneGenerateFailed'));
+        throw new Error(sceneGenerationErrorMessage(data));
       }
+      const firstScene = data.scene;
 
       // Generate TTS for first scene (part of actions step — blocking)
       if (
@@ -878,19 +944,17 @@ function GenerationPreviewContent() {
           settings.ttsProvidersConfig?.[settings.ttsProviderId],
         )
       ) {
-        const ttsProviderConfig = settings.ttsProvidersConfig?.[settings.ttsProviderId];
-        const providerOptions =
-          settings.ttsProviderId === 'voxcpm-tts'
-            ? {
-                ...(ttsProviderConfig?.providerOptions || {}),
-                ...(await getVoxCPMProviderOptions(settings.ttsVoice, {
-                  role: 'teacher',
-                  language: languageDirective,
-                })),
-              }
-            : undefined;
-        const speechActions = (data.scene.actions || []).filter(
-          (a: { type: string; text?: string }) => a.type === 'speech' && a.text,
+        const speechActions = (firstScene.actions || []).filter(
+          (a: {
+            id: string;
+            type: string;
+            text?: string;
+          }): a is {
+            id: string;
+            type: 'speech';
+            text: string;
+            audioId?: string;
+          } => a.type === 'speech' && !!a.text,
         );
 
         let ttsFailCount = 0;
@@ -898,47 +962,16 @@ function GenerationPreviewContent() {
           const audioId = `tts_${action.id}`;
           action.audioId = audioId;
           try {
-            const resp = await fetch('/api/generate/tts', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                text: action.text,
-                audioId,
-                ttsProviderId: settings.ttsProviderId,
-                ttsModelId: ttsProviderConfig?.modelId,
-                ttsVoice: settings.ttsVoice,
-                ttsSpeed: settings.ttsSpeed,
-                ttsApiKey: ttsProviderConfig?.apiKey || undefined,
-                // Managed providers resolve their base URL server-side; only
-                // send the client's own base URL (custom providers).
-                ttsBaseUrl:
-                  ttsProviderConfig?.baseUrl ||
-                  ttsProviderConfig?.customDefaultBaseUrl ||
-                  undefined,
-                ttsProviderOptions: providerOptions,
-              }),
+            await generateAndStoreTTS(
+              audioId,
+              action.text,
+              languageDirective,
               signal,
-            });
-            if (!resp.ok) {
-              ttsFailCount++;
-              continue;
-            }
-            const ttsData = await resp.json();
-            if (!ttsData.success) {
-              ttsFailCount++;
-              continue;
-            }
-            const binary = atob(ttsData.base64);
-            const bytes = new Uint8Array(binary.length);
-            for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-            const blob = new Blob([bytes], { type: `audio/${ttsData.format}` });
-            await db.audioFiles.put({
-              id: audioId,
-              blob,
-              format: ttsData.format,
-              createdAt: Date.now(),
-            });
+              FOREGROUND_SCENE_RETRY_OPTIONS,
+            );
           } catch (err) {
+            if (isAbortError(err)) throw err;
+
             log.warn(`[TTS] Failed for ${audioId}:`, err);
             ttsFailCount++;
           }
@@ -950,11 +983,11 @@ function GenerationPreviewContent() {
       }
 
       // Add scene to store and navigate
-      store.addScene(data.scene);
-      store.setCurrentSceneId(data.scene.id);
+      store.addScene(firstScene);
+      store.setCurrentSceneId(firstScene.id);
 
       // Set remaining outlines as skeleton placeholders
-      const remaining = outlines.filter((o) => o.order !== data.scene.order);
+      const remaining = outlines.filter((o) => o.order !== firstScene.order);
       store.setGeneratingOutlines(remaining);
 
       // Store generation params for classroom to continue generation
@@ -974,7 +1007,7 @@ function GenerationPreviewContent() {
     } catch (err) {
       setIsOutlineStreaming(false);
       // AbortError is expected when navigating away — don't show as error
-      if (err instanceof DOMException && err.name === 'AbortError') {
+      if (isAbortError(err)) {
         log.info('[GenerationPreview] Generation aborted');
         return;
       }
@@ -1143,6 +1176,7 @@ function GenerationPreviewContent() {
     activeSteps.length > 0
       ? activeSteps[Math.min(currentStepIndex, activeSteps.length - 1)]
       : ALL_STEPS[0];
+  const activeStepText = getGenerationStepText(activeStep, session);
 
   if (isReviewingOutlines) {
     const outlineStepIndex = Math.max(
@@ -1333,14 +1367,14 @@ function GenerationPreviewContent() {
                         ? t('generation.generationFailed')
                         : isComplete
                           ? t('generation.generationComplete')
-                          : t(activeStep.title)}
+                          : t(activeStepText.title, activeStepText.titleValues)}
                     </h2>
                     <p className="text-muted-foreground text-base">
                       {error
                         ? error
                         : isComplete
                           ? t('generation.classroomReady')
-                          : statusMessage || t(activeStep.description)}
+                          : statusMessage || t(activeStepText.description)}
                     </p>
                   </motion.div>
                 </AnimatePresence>

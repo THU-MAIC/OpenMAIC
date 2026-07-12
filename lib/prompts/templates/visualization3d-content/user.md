@@ -38,7 +38,7 @@ Generate a complete, interactive 3D visualization using Three.js with these MAND
 1. Create 3D objects based on the visualization type
 2. Use appropriate materials (Phong, Standard, Emissive)
 3. Add meaningful colors and textures
-4. Store objects in a `objects` dictionary for teacher actions
+4. Store objects in an `objects` dictionary for widget actions
 
 ### Interactions
 1. **Sliders** for controlling parameters (speed, scale, etc.)

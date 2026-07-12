@@ -14,6 +14,7 @@ RUN apk add --no-cache python3 build-base g++ cairo-dev pango-dev jpeg-dev gifli
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY packages/ ./packages/
+COPY scripts/ ./scripts/
 
 RUN pnpm install --frozen-lockfile
 
@@ -23,6 +24,7 @@ FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages ./packages
 COPY . .
+COPY --from=deps /app/public/vendor ./public/vendor
 
 RUN pnpm build
 

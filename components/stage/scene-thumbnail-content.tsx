@@ -2,7 +2,7 @@
 
 import { BookOpen, Globe } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { ThumbnailSlide } from '@/components/slide-renderer/components/ThumbnailSlide';
+import { SlideThumbnail } from '@/components/slide-renderer/SlideThumbnail';
 import { ThumbnailInteractive } from '@/components/slide-renderer/components/ThumbnailInteractive';
 import type { Scene, SlideContent, InteractiveContent } from '@/lib/types/stage';
 
@@ -46,7 +46,7 @@ export function SceneThumbnailContent({
   if (scene.type === 'slide') {
     const slideContent = scene.content as SlideContent;
     return (
-      <ThumbnailSlide
+      <SlideThumbnail
         slide={slideContent.canvas}
         viewportSize={viewportSize}
         viewportRatio={viewportRatio}

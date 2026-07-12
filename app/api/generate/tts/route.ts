@@ -9,11 +9,13 @@
 
 import { NextRequest } from 'next/server';
 import { generateTTS, TTSRateLimitError } from '@/lib/audio/tts-providers';
+import { recordGenerationUsage } from '@/lib/server/usage-storage';
 import {
   isServerConfiguredProvider,
   isServerTTSProviderDisabled,
   resolveTTSApiKey,
   resolveTTSBaseUrl,
+  resolveTTSModel,
 } from '@/lib/server/provider-config';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
@@ -68,10 +70,15 @@ export async function POST(req: NextRequest) {
 
     const voxcpmVoicePrompt =
       typeof ttsProviderOptions?.voicePrompt === 'string' ? ttsProviderOptions.voicePrompt : '';
+    const voxcpmRegisteredVoiceId =
+      typeof ttsProviderOptions?.registeredVoiceId === 'string'
+        ? ttsProviderOptions.registeredVoiceId
+        : '';
     if (
       ttsProviderId === VOXCPM_TTS_PROVIDER_ID &&
       ttsVoice === VOXCPM_AUTO_VOICE_ID &&
-      !voxcpmVoicePrompt.trim()
+      !voxcpmVoicePrompt.trim() &&
+      !voxcpmRegisteredVoiceId.trim()
     ) {
       return apiError(
         'VOXCPM_AUTO_VOICE_REQUIRES_CONTEXT',
@@ -93,10 +100,10 @@ export async function POST(req: NextRequest) {
     const apiKey = resolveTTSApiKey(ttsProviderId, managed ? undefined : ttsApiKey || undefined);
     const baseUrl = resolveTTSBaseUrl(ttsProviderId, clientBaseUrl);
 
-    // Build TTS config
+    // Build TTS config (managed providers may pin the model server-side)
     const config = {
       providerId: ttsProviderId as TTSProviderId,
-      modelId: ttsModelId,
+      modelId: resolveTTSModel(ttsProviderId, ttsModelId),
       voice: ttsVoice,
       speed: ttsSpeed ?? 1.0,
       apiKey,
@@ -105,11 +112,20 @@ export async function POST(req: NextRequest) {
     };
 
     log.info(
-      `Generating TTS: provider=${ttsProviderId}, model=${ttsModelId || 'default'}, voice=${ttsVoice}, audioId=${audioId}, textLen=${text.length}`,
+      `Generating TTS: provider=${ttsProviderId}, model=${config.modelId || 'default'}, voice=${ttsVoice}, ` +
+        `registeredVoiceId=${voxcpmRegisteredVoiceId || 'none'}, audioId=${audioId}, textLen=${text.length}`,
     );
 
     // Generate audio
     const { audio, format } = await generateTTS(config, text);
+
+    void recordGenerationUsage({
+      kind: 'tts',
+      unit: 'character',
+      providerId: ttsProviderId,
+      modelId: config.modelId,
+      quantity: text.length,
+    });
 
     // Convert to base64
     const base64 = Buffer.from(audio).toString('base64');

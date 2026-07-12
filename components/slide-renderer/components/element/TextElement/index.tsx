@@ -4,7 +4,7 @@ import { useRef, useEffect, useState, useCallback } from 'react';
 import { debounce } from 'lodash';
 import { useCanvasStore } from '@/lib/store';
 import { useHistorySnapshot } from '@/lib/hooks/use-history-snapshot';
-import type { PPTTextElement } from '@/lib/types/slides';
+import type { PPTTextElement } from '@openmaic/dsl';
 import { useElementShadow } from '../hooks/useElementShadow';
 import { ElementOutline } from '../ElementOutline';
 import { ProsemirrorEditor } from '../ProsemirrorEditor';
@@ -147,7 +147,8 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
   const checkEmptyText = useCallback(() => {
     const debouncedCheck = debounce(
       () => {
-        const pureText = elementInfo.content.replace(/<[^>]+>/g, '');
+        const content = typeof elementInfo.content === 'string' ? elementInfo.content : '';
+        const pureText = content.replace(/<[^>]+>/g, '');
         if (!pureText) deleteElement(elementInfo.id);
       },
       300,
@@ -209,7 +210,7 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
               defaultColor={elementInfo.defaultColor}
               defaultFontName={elementInfo.defaultFontName}
               editable={!elementInfo.lock}
-              value={elementInfo.content}
+              value={typeof elementInfo.content === 'string' ? elementInfo.content : ''}
               onUpdate={({ value, ignore }) => updateContent(value, ignore)}
               onMouseDown={(e) => handleSelectElement(e as React.MouseEvent, false)}
             />

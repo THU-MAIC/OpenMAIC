@@ -10,6 +10,11 @@ import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { extractMinerUResult } from './mineru-parser';
 import { MINERU_CLOUD_DEFAULT_BASE } from './constants';
+import {
+  getExtensionsForMimes,
+  getExtensionsForProviders,
+  MINERU_IMAGE_MIMES,
+} from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MinerUCloud');
@@ -24,13 +29,22 @@ const TIMEOUTS = {
 const POLL_INTERVAL_MS = 2_500;
 const POLL_MAX_MS = 15 * 60 * 1_000; // 15 minutes
 
-const MIME_MAP: Record<string, string> = {
-  png: 'image/png',
-  jpg: 'image/jpeg',
-  jpeg: 'image/jpeg',
-  webp: 'image/webp',
-  gif: 'image/gif',
-};
+// Extension → MIME for image types MinerU can emit inside its result zip.
+// Derived from MINERU_IMAGE_MIMES so this table can't drift from the accept
+// list; used only to build `data:MIME;base64,…` URLs for embedded images.
+const MIME_MAP: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  for (const mime of MINERU_IMAGE_MIMES) {
+    for (const ext of getExtensionsForMimes([mime])) {
+      map[ext] = mime;
+    }
+  }
+  return map;
+})();
+
+// Match every image extension MinerU may include as an asset in the result
+// zip. Kept in lockstep with MIME_MAP by deriving from the same source.
+const IMAGE_EXTENSION_RE = new RegExp(`\\.(${Object.keys(MIME_MAP).join('|')})$`, 'i');
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -93,12 +107,15 @@ async function readMinerUJson<T>(res: Response, context: string): Promise<T> {
 
 // ── Filename sanitization ─────────────────────────────────────────────────────
 
+const MINERU_CLOUD_SUPPORTED_EXTENSIONS = new Set(getExtensionsForProviders(['mineru-cloud']));
+
 function sanitizeFileName(name: string | undefined): string {
   const fallback = 'document.pdf';
   const raw = (name ?? fallback).split(/[/\\]/).pop()?.trim() ?? fallback;
   const trimmed = raw.slice(0, 240);
-  if (!trimmed.toLowerCase().endsWith('.pdf')) return fallback;
   if (trimmed.includes('..')) return fallback;
+  const extension = trimmed.split('.').pop()?.toLowerCase();
+  if (!extension || !MINERU_CLOUD_SUPPORTED_EXTENSIONS.has(extension)) return fallback;
   return trimmed || fallback;
 }
 
@@ -188,7 +205,7 @@ async function parseMinerUZip(zipUrl: string): Promise<ParsedPdfContent> {
 
   // Also scan for image files not in content_list (fallback)
   for (const p of filePaths) {
-    if (/\.(png|jpe?g|webp|gif)$/i.test(p)) {
+    if (IMAGE_EXTENSION_RE.test(p)) {
       const basename = p.split('/').pop() ?? p;
       if (!imageData[basename]) {
         const base64 = await readImage(p);
@@ -198,25 +215,32 @@ async function parseMinerUZip(zipUrl: string): Promise<ParsedPdfContent> {
   }
 
   // Build a synthetic fileResult compatible with extractMinerUResult
-  return extractMinerUResult({
+  const parsed = extractMinerUResult({
     md_content: mdContent,
     images: imageData,
     content_list: contentList,
   });
+  return {
+    ...parsed,
+    metadata: {
+      ...(parsed.metadata ?? { pageCount: 0 }),
+      parser: 'mineru-cloud',
+    },
+  };
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
 
 /**
- * Parse a PDF using the MinerU Cloud v4 API.
+ * Parse a document using the MinerU Cloud v4 API.
  *
  * @param config - Must have `apiKey` (required) and optionally `baseUrl` (defaults to mineru.net/api/v4)
- * @param pdfBuffer - Raw PDF bytes
+ * @param documentBuffer - Raw document bytes
  * @param sourceFileName - Original filename for the upload
  */
 export async function parseWithMinerUCloud(
   config: PDFParserConfig,
-  pdfBuffer: Buffer,
+  documentBuffer: Buffer,
   sourceFileName?: string,
 ): Promise<ParsedPdfContent> {
   const token = config.apiKey;
@@ -227,7 +251,7 @@ export async function parseWithMinerUCloud(
   const apiRoot = (config.baseUrl || MINERU_CLOUD_DEFAULT_BASE).replace(/\/+$/, '');
   const uploadFileName = sanitizeFileName(sourceFileName);
 
-  log.info(`[MinerU Cloud] Starting parse: ${uploadFileName} (${pdfBuffer.byteLength} bytes)`);
+  log.info(`[MinerU Cloud] Starting parse: ${uploadFileName} (${documentBuffer.byteLength} bytes)`);
 
   // Step 1: Create batch — request presigned upload URL
   const batchData = await fetchWithRetry(async () => {
@@ -257,17 +281,17 @@ export async function parseWithMinerUCloud(
     throw new Error('MinerU Cloud batch response missing batch_id or upload URLs');
   }
 
-  log.info(`[MinerU Cloud] Batch ${batchData.batch_id} created, uploading PDF...`);
+  log.info(`[MinerU Cloud] Batch ${batchData.batch_id} created, uploading document...`);
 
-  // Step 2: Upload PDF to presigned URL
+  // Step 2: Upload document to presigned URL
   const putRes = await fetchWithRetry(
     () =>
       fetch(uploadUrls[0], {
         method: 'PUT',
         body: new Blob([
-          pdfBuffer.buffer.slice(
-            pdfBuffer.byteOffset,
-            pdfBuffer.byteOffset + pdfBuffer.byteLength,
+          documentBuffer.buffer.slice(
+            documentBuffer.byteOffset,
+            documentBuffer.byteOffset + documentBuffer.byteLength,
           ) as ArrayBuffer,
         ]),
         signal: AbortSignal.timeout(TIMEOUTS.upload),

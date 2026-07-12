@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feat/maic-editor-v0]
+    branches: [main, feat/maic-editor-v0, feat/maic-editor-v1]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -40,6 +40,15 @@ jobs:
 
       - name: Unit Tests
         run: pnpm test
+
+      - name: Unit Tests (importer)
+        run: pnpm --filter @openmaic/importer test
+
+      - name: Unit Tests (dsl)
+        run: pnpm --filter @openmaic/dsl test
+
+      - name: Unit Tests (storage)
+        run: pnpm --filter @openmaic/storage test
 
   e2e:
     name: E2E Tests
