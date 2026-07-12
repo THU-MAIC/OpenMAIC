@@ -159,4 +159,4 @@ Please report security vulnerabilities through [GitHub Security Advisories](http
 
 ## License
 
-By contributing to OpenMAIC, you agree that your contributions will be licensed under the [AGPL-3.0 License](LICENSE).
+By contributing to OpenMAIC, you agree that your contributions will be licensed under the [MIT License](LICENSE).

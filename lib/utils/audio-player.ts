@@ -20,6 +20,15 @@ export class AudioPlayer {
   private muted: boolean = false;
   private volume: number = 1;
   private playbackRate: number = 1;
+  private requestToken: number = 0;
+
+  private stopAudioElement(): void {
+    if (this.audio) {
+      this.audio.pause();
+      this.audio.currentTime = 0;
+      this.audio = null;
+    }
+  }
 
   /**
    * Play audio (from URL or IndexedDB pre-generated cache)
@@ -28,10 +37,12 @@ export class AudioPlayer {
    * @returns true if audio started playing, false if no audio (TTS disabled or not generated)
    */
   public async play(audioId: string, audioUrl?: string): Promise<boolean> {
+    const requestToken = ++this.requestToken;
     try {
       // 1. Try audioUrl first (server-generated TTS)
       if (audioUrl) {
-        this.stop();
+        this.stopAudioElement();
+        if (requestToken !== this.requestToken) return false;
         this.audio = new Audio();
         this.audio.src = audioUrl;
         if (this.muted) this.audio.volume = 0;
@@ -42,12 +53,14 @@ export class AudioPlayer {
           this.onEndedCallback?.();
         });
         await this.audio.play();
+        if (requestToken !== this.requestToken) return false;
         this.audio.playbackRate = this.playbackRate;
         return true;
       }
 
       // 2. Fall back to IndexedDB (client-generated TTS)
       const audioRecord = await db.audioFiles.get(audioId);
+      if (requestToken !== this.requestToken) return false;
 
       if (!audioRecord) {
         // Pre-generated audio does not exist (generation failed), skip silently
@@ -55,7 +68,8 @@ export class AudioPlayer {
       }
 
       // Stop current playback
-      this.stop();
+      this.stopAudioElement();
+      if (requestToken !== this.requestToken) return false;
 
       // Create audio element
       this.audio = new Audio();
@@ -85,6 +99,10 @@ export class AudioPlayer {
         URL.revokeObjectURL(blobUrl);
         throw playError;
       }
+      if (requestToken !== this.requestToken) {
+        URL.revokeObjectURL(blobUrl);
+        return false;
+      }
       // Re-apply after play() — some browsers reset during load
       this.audio.playbackRate = this.playbackRate;
       return true;
@@ -98,6 +116,7 @@ export class AudioPlayer {
    * Pause playback
    */
   public pause(): void {
+    this.requestToken += 1;
     if (this.audio && !this.audio.paused) {
       this.audio.pause();
     }
@@ -107,11 +126,8 @@ export class AudioPlayer {
    * Stop playback
    */
   public stop(): void {
-    if (this.audio) {
-      this.audio.pause();
-      this.audio.currentTime = 0;
-      this.audio = null;
-    }
+    this.requestToken += 1;
+    this.stopAudioElement();
     // Note: onEndedCallback intentionally NOT cleared here because play()
     // calls stop() internally — clearing would break the callback chain.
     // Stale callbacks are harmless: engine mode check prevents processNext().

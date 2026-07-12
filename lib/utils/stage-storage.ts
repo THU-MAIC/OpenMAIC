@@ -5,12 +5,14 @@
  * Each stage has its own storage key based on stageId
  */
 
-import { Stage, Scene } from '../types/stage';
+import { makeScene, Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { db } from './database';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
 import { clearPlaybackState } from './playback-storage';
 import { clearAllForScene } from '@/lib/quiz/persistence';
+import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
+import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('StageStorage');
@@ -30,6 +32,7 @@ export interface StageListItem {
   createdAt: number;
   updatedAt: number;
   interactiveMode?: boolean;
+  taskEngineMode?: boolean;
 }
 
 /**
@@ -52,6 +55,8 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
       agentIds: data.stage.agentIds,
       videoManifest: data.stage.videoManifest,
       interactiveMode: data.stage.interactiveMode,
+      taskEngineMode: data.stage.taskEngineMode,
+      generatedAgentConfigs: data.stage.generatedAgentConfigs,
     });
 
     // Delete old scenes first to avoid orphaned data
@@ -104,7 +109,10 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 
     return {
       stage,
-      scenes,
+      // `SceneRecord` is the loose persisted shape (independent `type` + `content`);
+      // re-bind each to a discriminated `AppScene`, deriving `type` from the stored
+      // `content.type`. Spreads the full record, so `whiteboard` etc. are preserved.
+      scenes: scenes.map((s) => makeScene(s, s.content)),
       currentSceneId: stage.currentSceneId || scenes[0]?.id || null,
       chats,
     };
@@ -138,6 +146,17 @@ export async function deleteStageData(stageId: string): Promise<void> {
       clearAllForScene(sceneId);
     }
 
+    // Learner-runtime data lives in a separate IndexedDB database, so it is
+    // cascaded after the Dexie work: it cannot join those transactions, and a
+    // runtime failure must not abort them (the helper warns instead of
+    // throwing).
+    await deleteStageRuntimeSafely(stageId);
+    try {
+      await clearStageDrainWatermarks(stageId);
+    } catch (error) {
+      log.warn(`Failed to clear PBL drain watermarks for stage ${stageId}:`, error);
+    }
+
     log.info(`Deleted stage: ${stageId}`);
   } catch (error) {
     log.error('Failed to delete stage:', error);
@@ -164,6 +183,7 @@ export async function listStages(): Promise<StageListItem[]> {
           createdAt: stage.createdAt,
           updatedAt: stage.updatedAt,
           interactiveMode: stage.interactiveMode,
+          taskEngineMode: stage.taskEngineMode,
         };
       }),
     );
@@ -182,7 +202,7 @@ type ThumbnailMediaElement = {
   poster?: string;
 };
 
-type ThumbnailSlide = import('../types/slides').Slide;
+type ThumbnailSlide = import('@openmaic/dsl').Slide;
 
 function isGeneratedMediaRef(value: unknown): value is string {
   return typeof value === 'string' && /^gen_(img|vid)_[\w-]+$/i.test(value);

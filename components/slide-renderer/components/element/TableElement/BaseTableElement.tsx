@@ -1,6 +1,6 @@
 'use client';
 
-import type { PPTTableElement } from '@/lib/types/slides';
+import type { PPTTableElement } from '@openmaic/dsl';
 import { StaticTable } from './StaticTable';
 
 export interface BaseTableElementProps {

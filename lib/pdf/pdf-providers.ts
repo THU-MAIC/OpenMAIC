@@ -149,6 +149,41 @@ import { parseWithMinerUCloud } from './mineru-cloud';
 const log = createLogger('PDFProviders');
 
 /**
+ * Turn a self-hosted MinerU error body into an actionable message.
+ *
+ * A lightweight `mineru-api` install (without the `mineru[pipeline]` or
+ * `mineru[core]` extras) accepts uploads but fails to parse PDFs/images,
+ * surfacing a raw Python traceback (ModuleNotFoundError / ImportError) or a
+ * "Device string must not be empty" error. We detect those signatures and
+ * return a friendly explanation instead of dumping the raw JSON at the user.
+ *
+ * Exported for unit testing.
+ */
+export function describeSelfHostedMinerUError(status: number, rawBody: string): string {
+  const body = rawBody.toLowerCase();
+  const missingDependency =
+    body.includes('modulenotfounderror') ||
+    body.includes('no module named') ||
+    body.includes('importerror') ||
+    body.includes('device string must not be empty') ||
+    (body.includes('pipeline') && (body.includes('not install') || body.includes('unavailable')));
+
+  if (missingDependency) {
+    return (
+      'The self-hosted MinerU service cannot parse PDF/image files: the ' +
+      'pipeline/core dependencies are not installed. Install `mineru[pipeline]` ' +
+      'or `mineru[core]` on the MinerU server (and start it with ' +
+      '`--backend pipeline`), or switch to MinerU Cloud.'
+    );
+  }
+
+  // Unknown failure — keep the raw detail but bound its length so the UI stays
+  // readable rather than showing an entire JSON blob or traceback.
+  const detail = rawBody.trim().slice(0, 300);
+  return `MinerU API error (${status})${detail ? `: ${detail}` : ''}`;
+}
+
+/**
  * Parse PDF using specified provider
  */
 export async function parsePDF(
@@ -283,6 +318,17 @@ async function parseWithMinerU(
   config: PDFParserConfig,
   pdfBuffer: Buffer,
 ): Promise<ParsedPdfContent> {
+  return parseWithMinerUDocument(config, pdfBuffer, {
+    fileName: 'document.pdf',
+    mimeType: 'application/pdf',
+  });
+}
+
+export async function parseWithMinerUDocument(
+  config: PDFParserConfig,
+  documentBuffer: Buffer,
+  options: { fileName: string; mimeType: string },
+): Promise<ParsedPdfContent> {
   if (!config.baseUrl) {
     throw new Error(
       'MinerU base URL is required. ' +
@@ -291,22 +337,20 @@ async function parseWithMinerU(
     );
   }
 
-  log.info('[MinerU] Parsing PDF with MinerU server:', config.baseUrl);
-
-  const fileName = 'document.pdf';
+  log.info(`[MinerU] Parsing document with MinerU server: ${config.baseUrl}`);
 
   // Create FormData for file upload
   const formData = new FormData();
 
   // Convert Buffer to Blob
-  const arrayBuffer = pdfBuffer.buffer.slice(
-    pdfBuffer.byteOffset,
-    pdfBuffer.byteOffset + pdfBuffer.byteLength,
+  const arrayBuffer = documentBuffer.buffer.slice(
+    documentBuffer.byteOffset,
+    documentBuffer.byteOffset + documentBuffer.byteLength,
   );
   const blob = new Blob([arrayBuffer as ArrayBuffer], {
-    type: 'application/pdf',
+    type: options.mimeType,
   });
-  formData.append('files', blob, fileName);
+  formData.append('files', blob, options.fileName);
 
   // MinerU API form fields
   // Defaults already: return_md=true, formula_enable=true, table_enable=true
@@ -332,13 +376,13 @@ async function parseWithMinerU(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => response.statusText);
-    throw new Error(`MinerU API error (${response.status}): ${errorText}`);
+    throw new Error(describeSelfHostedMinerUError(response.status, errorText));
   }
 
   const json = await response.json();
 
   // Response: { results: { "<fileName>": { md_content, images, content_list, ... } } }
-  const fileResult = json.results?.[fileName];
+  const fileResult = json.results?.[options.fileName];
   if (!fileResult) {
     const keys = json.results ? Object.keys(json.results) : [];
     // Try first available key in case filename doesn't match exactly
@@ -346,7 +390,7 @@ async function parseWithMinerU(
     if (!fallback) {
       throw new Error(`MinerU returned no results. Response keys: ${JSON.stringify(keys)}`);
     }
-    log.warn(`[MinerU] Filename mismatch, using key "${keys[0]}" instead of "${fileName}"`);
+    log.warn(`[MinerU] Filename mismatch, using key "${keys[0]}" instead of "${options.fileName}"`);
     return extractMinerUResult(fallback);
   }
 

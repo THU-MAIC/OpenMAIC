@@ -53,6 +53,30 @@ pnpm dev
 
 Open [http://localhost:3000](http://localhost:3000). You should see the OpenMAIC classroom generator. Drop a topic or PDF, click Generate, and watch an AI teacher build a full multi-scene classroom.
 
+## Troubleshooting
+
+### Dev server crashes when generating large content
+
+If the dev server dies while generating a large classroom (for example from a long multi-chapter outline) with an error like:
+
+```
+Jest worker encountered 2 child process exceptions, exceeding retry limit
+```
+
+this is a dev-only Next.js limitation, not a bug in OpenMAIC's runtime. In dev mode, Next forks an internal worker process for App Router dynamic routes (such as `/classroom/[id]`); when a large generation holds a big in-memory object as that worker is forked, the worker can be OOM-killed and take the dev server down with it. The "Jest worker" name is just Next's internal process pool and is unrelated to testing.
+
+Raise the dev heap limit, sized to your machine's RAM (don't over-set it past available memory or you trade a V8 OOM for a system-level one):
+
+```bash
+# macOS / Linux
+NODE_OPTIONS=--max-old-space-size=4096 pnpm dev
+
+# Windows (PowerShell)
+$env:NODE_OPTIONS="--max-old-space-size=4096"; pnpm dev
+```
+
+Production builds are unaffected — they are prebuilt and never fork this worker.
+
 ## Build for production
 
 ```bash

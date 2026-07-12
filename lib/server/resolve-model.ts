@@ -15,6 +15,7 @@ import {
   resolveProxy,
 } from '@/lib/server/provider-config';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { getStageRoute, type LlmStage } from '@/lib/server/model-routes';
 
 export interface ResolvedModel extends ModelWithInfo {
   /** Original model string (e.g. "openai/gpt-4o-mini") */
@@ -38,20 +39,52 @@ export interface ResolvedModel extends ModelWithInfo {
  */
 export async function resolveModel(params: {
   modelString?: string;
+  /**
+   * Optional generation stage (a `callLLM` source label, e.g. 'scene-content').
+   * When set and a route is configured via `MODEL_ROUTES`, the route wins for
+   * this call — even over a client-sent `modelString` (x-model). Unrouted
+   * stages fall back to `modelString` then `DEFAULT_MODEL`. See
+   * lib/server/model-routes.ts.
+   */
+  stage?: LlmStage;
   apiKey?: string;
   baseUrl?: string;
   providerType?: string;
   thinkingConfig?: ThinkingConfig;
 }): Promise<ResolvedModel> {
-  const modelString = params.modelString || process.env.DEFAULT_MODEL || 'gpt-5.4-mini';
+  // Resolution order: stage route > x-model > DEFAULT_MODEL.
+  // A configured stage route is the operator's deliberate per-stage choice and
+  // wins even over a client-sent x-model (otherwise the browser UI, which always
+  // sends its saved model, would shadow every route). Unrouted stages fall back
+  // to the client x-model, then DEFAULT_MODEL. There is intentionally no hardcoded
+  // model fallback — if nothing resolves we fail loud rather than silently pick a
+  // vendor default.
+  const stageRoute = getStageRoute(params.stage);
+  const stageModel = stageRoute?.model;
+  const modelString = stageModel || params.modelString || process.env.DEFAULT_MODEL;
+  if (!modelString) {
+    throw new Error(
+      'No model could be resolved. Configure DEFAULT_MODEL (and/or a MODEL_ROUTES entry for this stage), or send a model via x-model.',
+    );
+  }
   const { providerId, modelId } = parseModelString(modelString);
+
+  // When a stage route overrides the client's model, the client-sent connection
+  // params (apiKey/baseUrl/providerType) belong to the client's *other* model
+  // and must not bleed onto the routed provider — otherwise e.g. a routed
+  // Anthropic model would be built with the client's OpenAI providerType/key.
+  // A routed model resolves purely from server config, as if no x-model was sent.
+  const routed = Boolean(stageModel);
+  const clientApiKey = routed ? undefined : params.apiKey;
+  const clientProviderType = routed ? undefined : params.providerType;
+  const clientBaseUrlParam = routed ? undefined : params.baseUrl;
 
   // Server-managed providers are admin-owned: the operator's key and base URL
   // are authoritative and any client-sent override is ignored. SSRF validation
   // therefore applies only to unmanaged providers, where the base URL really is
   // client-supplied. (Server-configured URLs are trusted by the operator.)
   const managed = isServerConfiguredProvider('providers', providerId);
-  const clientBaseUrl = managed ? undefined : params.baseUrl || undefined;
+  const clientBaseUrl = managed ? undefined : clientBaseUrlParam || undefined;
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
     const ssrfError = await validateUrlForSSRF(clientBaseUrl);
     if (ssrfError) {
@@ -59,7 +92,7 @@ export async function resolveModel(params: {
     }
   }
 
-  const apiKey = resolveApiKey(providerId, params.apiKey || '');
+  const apiKey = resolveApiKey(providerId, clientApiKey || '');
   const baseUrl = resolveBaseUrl(providerId, clientBaseUrl);
   const proxy = resolveProxy(providerId);
   const { model, modelInfo } = getModel({
@@ -68,8 +101,19 @@ export async function resolveModel(params: {
     apiKey,
     baseUrl,
     proxy,
-    providerType: params.providerType as 'openai' | 'anthropic' | 'google' | undefined,
+    providerType: clientProviderType as 'openai' | 'anthropic' | 'google' | undefined,
   });
+
+  // Thinking arbitration mirrors model routing — the route carries a full
+  // ThinkingConfig (mode/effort/level/enabled/budgetTokens/…) which callLLM
+  // normalizes against the model's capability:
+  //  - routed + thinking set → the route's thinking wins (over client thinking).
+  //  - routed + no thinking  → routed model uses its own default; client thinking
+  //    is dropped (it belonged to the client's other model).
+  //  - unrouted              → honor the client's thinking config.
+  const thinkingConfig: ThinkingConfig | undefined = routed
+    ? stageRoute?.thinking
+    : params.thinkingConfig;
 
   return {
     model,
@@ -79,7 +123,7 @@ export async function resolveModel(params: {
     modelId,
     apiKey,
     baseUrl,
-    thinkingConfig: params.thinkingConfig,
+    thinkingConfig,
   };
 }
 
@@ -97,12 +141,18 @@ function getThinkingConfigFromBody(body: unknown): ThinkingConfig | undefined {
  * Note: requiresApiKey is derived server-side from the provider registry,
  * never from client headers, to prevent auth bypass.
  */
-export async function resolveModelFromHeaders(req: NextRequest): Promise<ResolvedModel> {
+export async function resolveModelFromHeaders(
+  req: NextRequest,
+  stage?: LlmStage,
+  thinkingConfig?: ThinkingConfig,
+): Promise<ResolvedModel> {
   return resolveModel({
     modelString: req.headers.get('x-model') || undefined,
+    stage,
     apiKey: req.headers.get('x-api-key') || undefined,
     baseUrl: req.headers.get('x-base-url') || undefined,
     providerType: req.headers.get('x-provider-type') || undefined,
+    thinkingConfig,
   });
 }
 
@@ -115,10 +165,9 @@ export async function resolveModelFromHeaders(req: NextRequest): Promise<Resolve
 export async function resolveModelFromRequest(
   req: NextRequest,
   body: unknown,
+  stage?: LlmStage,
 ): Promise<ResolvedModel> {
-  const resolved = await resolveModelFromHeaders(req);
-  return {
-    ...resolved,
-    thinkingConfig: getThinkingConfigFromBody(body) ?? resolved.thinkingConfig,
-  };
+  // Pass the client's body thinking into resolveModel so the single arbiter
+  // there decides (a routed stage may override or drop it). See resolveModel.
+  return resolveModelFromHeaders(req, stage, getThinkingConfigFromBody(body));
 }

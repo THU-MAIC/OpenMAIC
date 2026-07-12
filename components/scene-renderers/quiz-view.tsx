@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { memo, useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   PieChart,
@@ -23,6 +23,7 @@ import type { QuizQuestion } from '@/lib/types/stage';
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { gradeChoiceQuestions, isShortAnswer, type QuestionResult } from '@/lib/quiz/grading';
+import { renderQuizMathText } from '@/lib/quiz/math-text';
 import {
   clearSubmitted,
   draftKey,
@@ -40,6 +41,43 @@ interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
 }
+
+const QuizMathText = memo(function QuizMathText({
+  text,
+  className,
+  allowDisplayMode = false,
+}: {
+  text: string;
+  className?: string;
+  allowDisplayMode?: boolean;
+}) {
+  const segments = useMemo(() => renderQuizMathText(text), [text]);
+  if (segments.length === 1 && segments[0].type === 'text') {
+    return <span className={className}>{segments[0].value}</span>;
+  }
+
+  return (
+    <span className={className}>
+      {segments.map((segment, index) => {
+        if (segment.type === 'text') {
+          return <span key={index}>{segment.value}</span>;
+        }
+
+        return (
+          <span
+            key={index}
+            className={cn(
+              allowDisplayMode && segment.displayMode
+                ? 'block my-1 overflow-x-auto [&_.katex-display]:!my-0'
+                : 'inline-block align-baseline [&_.katex-display]:!my-0',
+            )}
+            dangerouslySetInnerHTML={{ __html: segment.html }}
+          />
+        );
+      })}
+    </span>
+  );
+});
 
 /** Call /api/quiz-grade for a single short-answer question. */
 async function gradeShortAnswerQuestion(
@@ -255,7 +293,7 @@ function SingleChoiceQuestion({
                   isReview && !isCorrectOpt && !selected && 'text-gray-400 dark:text-gray-500',
                 )}
               >
-                {opt.label}
+                <QuizMathText text={opt.label} />
               </span>
               {isReview && isCorrectOpt && (
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -360,7 +398,7 @@ function MultipleChoiceQuestion({
                   isReview && !isCorrectOpt && !isSelected && 'text-gray-400 dark:text-gray-500',
                 )}
               >
-                {opt.label}
+                <QuizMathText text={opt.label} />
               </span>
               {isReview && isCorrectOpt && (
                 <CheckCircle2 className="w-5 h-5 text-emerald-500 shrink-0" />
@@ -425,7 +463,9 @@ function ShortAnswerQuestion({
         <div className="space-y-3">
           <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-800/50 border border-gray-100 dark:border-gray-700 text-sm text-gray-700 dark:text-gray-300">
             <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">{t('quiz.yourAnswer')}</p>
-            {value || (
+            {value ? (
+              <QuizMathText text={value} />
+            ) : (
               <span className="text-gray-400 dark:text-gray-500 italic">
                 {t('quiz.notAnswered')}
               </span>
@@ -439,7 +479,7 @@ function ShortAnswerQuestion({
                   {t('quiz.aiComment')}
                 </p>
                 <p className="text-xs text-violet-600/80 dark:text-violet-400/80">
-                  {result.aiComment}
+                  <QuizMathText text={result.aiComment} />
                 </p>
               </div>
               <span className="ml-auto text-xs font-bold text-violet-600 dark:text-violet-400 shrink-0">
@@ -514,9 +554,9 @@ function QuestionCard({
             {index + 1}
           </span>
           <div>
-            <p className="text-sm font-medium text-gray-800 dark:text-gray-100 leading-relaxed">
-              {question.question}
-            </p>
+            <div className="text-sm font-medium text-gray-800 dark:text-gray-100 leading-relaxed">
+              <QuizMathText text={question.question} allowDisplayMode />
+            </div>
             <p className="text-xs text-gray-400 mt-0.5">
               {question.type === 'single'
                 ? t('quiz.singleChoice')
@@ -543,7 +583,7 @@ function QuestionCard({
       {isReview && question.analysis && (
         <div className="mt-3 p-3 rounded-lg bg-blue-50/70 dark:bg-blue-900/30 border border-blue-100 dark:border-blue-800 text-xs text-blue-700 dark:text-blue-300 leading-relaxed">
           <span className="font-medium">{t('quiz.analysis')}</span>
-          {question.analysis}
+          <QuizMathText text={question.analysis} allowDisplayMode />
         </div>
       )}
     </motion.div>
