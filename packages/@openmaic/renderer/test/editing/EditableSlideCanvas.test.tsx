@@ -39,6 +39,10 @@ function findHit(container: HTMLElement) {
   return container.querySelector('[data-element-id="a"]') as HTMLElement;
 }
 
+function findLineHit(container: HTMLElement) {
+  return container.querySelector('[data-hit-kind="line"]') as unknown as SVGPathElement;
+}
+
 describe('EditableSlideCanvas', () => {
   beforeEach(() => {
     // Default: no centering offset (matches jsdom's zero-size container), so
@@ -448,8 +452,8 @@ describe('EditableSlideCanvas', () => {
   });
 
   it('a pointer-down on a line selects it via onSelectionChange but emits no element.update (selectable, not draggable)', () => {
-    // Regression (reviewer, PR #859): lines regressed to unselectable — the
-    // blocker only stopped propagation. It must now select the line on
+    // Regression: lines regressed to unselectable because the blocker only
+    // stopped propagation. It must now select the line on
     // pointer-down (parity with box elements) while staying drag-inert: no
     // working copy, no move intent, ever.
     const onSel = vi.fn();
@@ -836,6 +840,88 @@ describe('EditableSlideCanvas', () => {
     );
   });
 
+  it('select-only host leaves box and line hit layers touch-pan friendly while preserving tap selection', () => {
+    // Touch suppression belongs to edit gestures, not selection. A select-only
+    // mount still exposes hit layers for tap-select, but native touch panning
+    // must survive when there is no mutation channel to commit a drag.
+    const onSel = vi.fn();
+    const lineSlide = {
+      ...slide,
+      elements: [
+        (slide as unknown as { elements: unknown[] }).elements[0],
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={onSel}
+        snapping={false}
+      />,
+    );
+
+    const boxHit = findHit(container);
+    const lineHit = findLineHit(container);
+    expect(boxHit.style.touchAction).toBe('');
+    expect(lineHit.style.touchAction).toBe('');
+
+    fireEvent.pointerDown(boxHit, { clientX: 0, clientY: 0 });
+    expect(onSel).toHaveBeenLastCalledWith(
+      expect.objectContaining({ elementIds: ['a'], primaryId: 'a' }),
+    );
+    fireEvent.pointerDown(lineHit, { clientX: 0, clientY: 0 });
+    expect(onSel).toHaveBeenLastCalledWith(
+      expect.objectContaining({ elementIds: ['line1'], primaryId: 'line1' }),
+    );
+  });
+
+  it('editable host suppresses touch panning on box and line hit layers', () => {
+    const lineSlide = {
+      ...slide,
+      elements: [
+        (slide as unknown as { elements: unknown[] }).elements[0],
+        {
+          id: 'line1',
+          type: 'line',
+          left: 10,
+          top: 10,
+          start: [0, 0],
+          end: [50, 50],
+          width: 2,
+          style: 'solid',
+          color: '#333',
+          points: ['', ''],
+        },
+      ],
+    } as unknown as Slide;
+    const { container } = render(
+      <EditableSlideCanvas
+        slide={lineSlide}
+        scale={1}
+        selection={{ elementIds: [] }}
+        onSelectionChange={vi.fn()}
+        onElementsChange={vi.fn()}
+        snapping={false}
+      />,
+    );
+
+    expect(findHit(container).style.touchAction).toBe('none');
+    expect(findLineHit(container).style.touchAction).toBe('none');
+  });
+
   it('a drag emits exactly one element.update intent on pointer-up', () => {
     const onCh = vi.fn();
     const { container } = render(
@@ -996,8 +1082,8 @@ describe('EditableSlideCanvas', () => {
   });
 
   it('a locked element overlapping an unlocked one blocks the pointer instead of falling through', () => {
-    // Regression for cr-fix-4 (round-4 cross-review P2): a locked element
-    // used to be skipped entirely from the hit layer, so a pointer-down over
+    // Regression: a locked element used to be skipped entirely from the hit
+    // layer, so a pointer-down over
     // its (visually on-top) area fell through to whatever unlocked element's
     // hit target happened to occupy the same region underneath — moving/
     // selecting the WRONG element. The locked element now gets an inert

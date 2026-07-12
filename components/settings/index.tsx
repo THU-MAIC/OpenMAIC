@@ -176,6 +176,7 @@ const IMAGE_PROVIDER_NAMES: Record<ImageProviderId, string> = {
   'nano-banana': 'providerNanoBanana',
   'minimax-image': 'providerMiniMaxImage',
   'grok-image': 'providerGrokImage',
+  'comfyui-image': 'providerComfyUIImage',
   lemonade: 'providerLemonadeImage',
 };
 
@@ -186,6 +187,7 @@ const IMAGE_PROVIDER_ICONS: Record<ImageProviderId, string> = {
   'nano-banana': '/logos/gemini.svg',
   'minimax-image': '/logos/minimax.svg',
   'grok-image': '/logos/grok.svg',
+  'comfyui-image': '/logos/comfyui.svg',
   lemonade: '/logos/lemonade.svg',
 };
 

@@ -27,3 +27,16 @@ export function resizeIntent(
 export function rotateIntent(id: string, rotate: number): EditIntent {
   return { type: 'element.update', id, props: { rotate } };
 }
+
+/**
+ * Build the single `element.updateMany` intent for a completed MULTI-element
+ * move gesture: every selected element's new `left`/`top` in one intent, so the
+ * whole rigid translation lands as ONE host undo entry (never one intent per
+ * element). Single-element drags keep emitting `element.update` (backward compat
+ * with hosts); this is only for N > 1.
+ */
+export function moveManyIntent(
+  updates: Array<{ id: string; props: { left: number; top: number } }>,
+): EditIntent {
+  return { type: 'element.updateMany', updates };
+}

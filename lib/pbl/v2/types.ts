@@ -462,6 +462,9 @@ export interface PBLRuntimeEventBase {
  *  product does not execute arbitrary agent tools yet; these event variants
  *  reserve a stable JSON shape so future tool execution does not get encoded
  *  as chat text or ad-hoc message fields. */
+/** Fold baseline contract: folds initialize project status `active` and
+ *  uiPhase `hero` from design-time defaults. Generation-time packaging
+ *  deliberately emits no runtime events. */
 export type PBLRuntimeEvent =
   | (PBLRuntimeEventBase & {
       kind: 'message_created';
@@ -494,10 +497,41 @@ export type PBLRuntimeEvent =
     })
   | (PBLRuntimeEventBase & {
       kind: 'status_changed';
-      entityType: 'project' | 'milestone' | 'microtask';
+      entityType: 'project' | 'milestone' | 'microtask' | 'ui_phase';
       entityId: string;
       from: string;
       to: string;
+    })
+  /** Epoch marker emitted before reset status events. Folds MUST treat it as
+   *  an epoch boundary: accumulated learner state from events before it is
+   *  cleared. */
+  | (PBLRuntimeEventBase & {
+      kind: 'project_reset';
+    })
+  | (PBLRuntimeEventBase & {
+      kind: 'handover_staged';
+      completedMilestoneId: string;
+      nextMilestoneId: string;
+      nextMicrotaskId?: string;
+    })
+  | (PBLRuntimeEventBase & {
+      kind: 'handover_consumed';
+      completedMilestoneId: string;
+      nextMilestoneId: string;
+      activatedMicrotaskId?: string;
+    })
+  | (PBLRuntimeEventBase & {
+      kind: 'task_completion_staged';
+      reason: string;
+    })
+  | (PBLRuntimeEventBase & {
+      kind: 'task_completion_cleared';
+    })
+  | (PBLRuntimeEventBase & {
+      kind: 'proficiency_updated';
+      tier: PBLProficiency;
+      score: number;
+      confidence: number;
     });
 
 // ---------------------------------------------------------------------------
@@ -824,6 +858,10 @@ export interface PBLProjectV2 {
    *  calls, submissions, evaluations and state changes. It remains optional
    *  for old v2 projects; future runtime-split work can make it required. */
   runtimeEvents?: PBLRuntimeEvent[];
+
+  /** Monotonically incremented by resetProjectProgress, never derived from
+   *  the bounded runtime event ring buffer. */
+  runtimeResetEpoch?: number;
 
   /** Cross-milestone hand-off state. Present after Instructor
    *  completes a milestone's last microtask, until the learner clicks

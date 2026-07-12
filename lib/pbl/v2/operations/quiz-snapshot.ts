@@ -26,6 +26,7 @@
 import { readSubmittedState } from '@/lib/quiz/persistence';
 import type { Scene } from '@/lib/types/stage';
 import { applyQuizSnapshot, ensureAssessment } from './proficiency';
+import { appendProficiencyUpdatedRuntimeEvent } from './runtime-events';
 import type { PBLProjectV2, PriorQuizResult } from '../types';
 
 /** Build a `PriorQuizResult[]` from the scenes preceding the PBL
@@ -104,6 +105,7 @@ export function applyQuizSignalsToProject(
   if (tierChanged) {
     project.proficiency = next.tier;
   }
+  appendProficiencyUpdatedRuntimeEvent(project);
   project.updatedAt = next.lastUpdatedAt;
   return { updated: true, tierChanged };
 }

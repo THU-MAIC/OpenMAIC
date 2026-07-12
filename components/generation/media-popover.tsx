@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, Fragment } from 'react';
+import { useState, useCallback, useMemo, Fragment, useEffect } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Image as ImageIcon,
@@ -45,6 +45,7 @@ const IMAGE_PROVIDER_ICONS: Record<string, string> = {
   'qwen-image': '/logos/bailian.svg',
   'nano-banana': '/logos/gemini.svg',
   'grok-image': '/logos/grok.svg',
+  'comfyui-image': '/logos/comfyui.svg',
 };
 const VIDEO_PROVIDER_ICONS: Record<string, string> = {
   seedance: '/logos/doubao.svg',
@@ -107,6 +108,14 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const setASRProvider = useSettingsStore((s) => s.setASRProvider);
   const setASRLanguage = useSettingsStore((s) => s.setASRLanguage);
 
+  const [comfyWorkflows, setComfyWorkflows] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    fetch('/api/comfyui-workflows')
+      .then((r) => r.json())
+      .then((d) => setComfyWorkflows(d.workflows || []))
+      .catch(() => setComfyWorkflows([]));
+  }, []);
+
   const enabledMap: Record<TabId, boolean> = {
     image: imageGenerationEnabled,
     video: videoGenerationEnabled,
@@ -135,17 +144,25 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     () =>
       Object.values(IMAGE_PROVIDERS)
         .filter((p) => cfgOk(imageProvidersConfig, p.id, p.requiresApiKey))
-        .map((p) => ({
-          groupId: p.id,
-          groupName: p.name,
-          groupIcon: IMAGE_PROVIDER_ICONS[p.id],
-          available: true,
-          items: providerModels(p.models, imageProvidersConfig[p.id]).map((m) => ({
-            id: m.id,
-            name: m.name,
-          })),
-        })),
-    [cfgOk, imageProvidersConfig],
+        .map((p) => {
+          const items =
+            p.id === 'comfyui-image'
+              ? comfyWorkflows
+              : providerModels(p.models, imageProvidersConfig[p.id]);
+
+          return {
+            groupId: p.id,
+            groupName: p.name,
+            groupIcon: IMAGE_PROVIDER_ICONS[p.id],
+            available: true,
+            // Map to a consistent format here
+            items: items.map((m) => ({
+              id: m.id,
+              name: m.name,
+            })),
+          };
+        }),
+    [cfgOk, imageProvidersConfig, comfyWorkflows],
   );
 
   const videoGroups = useMemo(

@@ -36,6 +36,8 @@ interface SceneContentResult {
   content?: unknown;
   effectiveOutline?: SceneOutline;
   error?: string;
+  errorCode?: string;
+  statusCode?: number;
 }
 
 interface SceneActionsResult {
@@ -43,6 +45,8 @@ interface SceneActionsResult {
   scene?: Scene;
   previousSpeeches?: string[];
   error?: string;
+  errorCode?: string;
+  statusCode?: number;
 }
 
 type ClientRetryOptions<T> = Partial<
@@ -90,22 +94,34 @@ async function readJsonResponse(response: Response): Promise<Record<string, unkn
 
 function createHttpError(
   response: Response,
-  data: { details?: unknown; error?: unknown },
+  data: { details?: unknown; error?: unknown; errorCode?: unknown },
   fallback: string,
-): Error & { statusCode?: number } {
+): Error & { errorCode?: string; statusCode?: number } {
   const message =
     typeof data.details === 'string'
       ? data.details
       : typeof data.error === 'string'
         ? data.error
         : `${fallback}: HTTP ${response.status}`;
-  const error = new Error(message) as Error & { statusCode?: number };
+  const error = new Error(message) as Error & { errorCode?: string; statusCode?: number };
+  if (typeof data.errorCode === 'string') {
+    error.errorCode = data.errorCode;
+  }
   error.statusCode = response.status;
   return error;
 }
 
 function messageFromError(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function errorMeta(error: unknown): Pick<SceneContentResult, 'errorCode' | 'statusCode'> {
+  if (!error || typeof error !== 'object') return {};
+  const record = error as { errorCode?: unknown; statusCode?: unknown };
+  return {
+    ...(typeof record.errorCode === 'string' ? { errorCode: record.errorCode } : {}),
+    ...(typeof record.statusCode === 'number' ? { statusCode: record.statusCode } : {}),
+  };
 }
 
 /** Call POST /api/generate/scene-content (step 1) */
@@ -155,7 +171,11 @@ export async function fetchSceneContent(
     );
   } catch (error) {
     if (isAbortError(error)) throw error;
-    return { success: false, error: messageFromError(error, 'Content generation failed') };
+    return {
+      success: false,
+      error: messageFromError(error, 'Content generation failed'),
+      ...errorMeta(error),
+    };
   }
 }
 
@@ -200,7 +220,11 @@ export async function fetchSceneActions(
     );
   } catch (error) {
     if (isAbortError(error)) throw error;
-    return { success: false, error: messageFromError(error, 'Actions generation failed') };
+    return {
+      success: false,
+      error: messageFromError(error, 'Actions generation failed'),
+      ...errorMeta(error),
+    };
   }
 }
 

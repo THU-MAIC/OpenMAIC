@@ -71,8 +71,18 @@ beforeEach(() => {
   loadStageDataMock.mockReset();
 });
 
-afterEach(() => {
-  useStageStore.getState().clearStore();
+afterEach(async () => {
+  try {
+    if (vi.isFakeTimers()) {
+      await vi.runOnlyPendingTimersAsync();
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  } finally {
+    if (vi.isFakeTimers()) {
+      vi.useRealTimers();
+    }
+    useStageStore.getState().clearStore();
+  }
 });
 
 describe('generationComplete', () => {
@@ -126,6 +136,7 @@ describe('generationComplete', () => {
   });
 
   it('starting a new stage resets generationComplete to false', () => {
+    vi.useFakeTimers();
     useStageStore.setState({ generationComplete: true });
     useStageStore.getState().setStage(makeStage());
     expect(useStageStore.getState().generationComplete).toBe(false);
@@ -136,6 +147,10 @@ describe('generationComplete', () => {
     // flag existed, or edited without a reload so self-heal never ran) must
     // record completion when a slide is deleted — otherwise the count breaks
     // and the "Course complete" end page disappears.
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
     it('marks complete when deleting from a fully-materialized deck whose flag was unset', () => {
       useStageStore.setState({
         stage: makeStage(),
@@ -258,6 +273,48 @@ describe('generationComplete', () => {
     expect(useStageStore.getState().generationComplete).toBe(true);
     expect(useStageStore.getState().generatingOutlines).toEqual([]);
     // Healed flag is written back so the next load is authoritative.
+    const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
+    expect(healed.generationComplete).toBe(true);
+  });
+
+  it('does not infer completion for a legacy deck while an outline is failed', async () => {
+    useStageStore.setState({ stage: makeStage(), failedOutlines: [makeOutline(2)] });
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
+      currentSceneId: 'a',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-1',
+      outlines: [makeOutline(1), makeOutline(2)],
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().generationComplete).toBe(false);
+    expect(stageOutlinesPut).not.toHaveBeenCalled();
+  });
+
+  it('does not let failed outlines from another stage block legacy completion inference', async () => {
+    useStageStore.setState({
+      stage: { ...makeStage(), id: 'other-stage' },
+      failedOutlines: [makeOutline(2)],
+    });
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
+      currentSceneId: 'a',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-1',
+      outlines: [makeOutline(1), makeOutline(2)],
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().generationComplete).toBe(true);
     const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
     expect(healed.generationComplete).toBe(true);
   });

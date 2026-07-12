@@ -35,7 +35,11 @@ import type {
 } from './types';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 import { ActionEngine } from '@/lib/action/engine';
-import { resolvePlaybackCursor } from './engine-cursor';
+import {
+  resolvePlaybackCursor,
+  estimateSpeechDurationMs,
+  DISCUSSION_TRIGGER_DELAY_MS,
+} from '@/lib/choreography';
 import {
   canJumpWithinReconstructablePrefix,
   isWhiteboardPlaybackAction,
@@ -564,21 +568,13 @@ export class PlaybackEngine {
         });
 
         // Estimated reading time when no pre-generated audio (TTS disabled).
-        // CJK text: ~150ms/char (one char ≈ one word).
-        // Non-CJK text: ~240ms/word (≈250 WPM).
-        // Min 2s. Cancelled on pause; resume() calls processNext directly.
+        // The estimate (CJK vs word-based pace, 2s floor, speed-adjusted) lives
+        // in @/lib/choreography so the video exporter dwells identically.
+        // Cancelled on pause; resume() calls processNext directly.
         const scheduleReadingTimer = () => {
           if (!this.isCurrentGeneration(generation)) return;
-          const text = speechAction.text;
-          const cjkCount = (
-            text.match(/[\u4e00-\u9fff\u3400-\u4dbf\u3040-\u309f\u30a0-\u30ff\uac00-\ud7af]/g) || []
-          ).length;
-          const isCJK = cjkCount > text.length * 0.3;
           const speed = this.callbacks.getPlaybackSpeed?.() ?? 1;
-          const rawMs = isCJK
-            ? Math.max(2000, text.length * 150)
-            : Math.max(2000, text.split(/\s+/).filter(Boolean).length * 240);
-          const readingMs = rawMs / speed;
+          const readingMs = estimateSpeechDurationMs(speechAction.text, { speed });
           this.speechTimerStart = Date.now();
           this.speechTimerRemaining = readingMs;
           this.speechTimer = setTimeout(() => {
@@ -685,7 +681,7 @@ export class PlaybackEngine {
           this.currentTrigger = trigger;
           this.callbacks.onProactiveShow?.(trigger);
           // Engine pauses here — user calls confirmDiscussion() or skipDiscussion()
-        }, 3000);
+        }, DISCUSSION_TRIGGER_DELAY_MS);
         break;
       }
 

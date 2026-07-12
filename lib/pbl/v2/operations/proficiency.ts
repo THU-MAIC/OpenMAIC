@@ -48,6 +48,7 @@ import type {
   ProficiencyTransition,
 } from '../types';
 import type { SceneOutline } from '@/lib/types/generation';
+import { appendProficiencyUpdatedRuntimeEvent } from './runtime-events';
 
 // ---------------------------------------------------------------------------
 // Tunable constants — keep these grouped so the algorithm's behaviour
@@ -869,6 +870,7 @@ export function updateProjectAssessment(
   if (transition) {
     project.proficiency = transition.to;
   }
+  appendProficiencyUpdatedRuntimeEvent(project);
   project.updatedAt = next.lastUpdatedAt;
   return { transition };
 }

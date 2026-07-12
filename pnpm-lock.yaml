@@ -363,6 +363,9 @@ importers:
       eslint-config-next:
         specifier: 16.1.2
         version: 16.1.2(eslint@9.39.4(jiti@2.6.1))(typescript@5.9.3)
+      fake-indexeddb:
+        specifier: ^6.2.5
+        version: 6.2.5
       prettier:
         specifier: 3.8.1
         version: 3.8.1

@@ -34,6 +34,12 @@ import type {
   PBLScenarioCharacter,
 } from '@/lib/pbl/v2/types';
 import { normalizeProjectRuntime, PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import {
+  appendRuntimeEvent,
+  milestoneIdForMicrotask,
+  mintRuntimeEventId,
+  transitionProjectUiPhase,
+} from '@/lib/pbl/v2/operations/runtime-events';
 import { stripEvaluationTail } from '@/lib/pbl/v2/operations/eval-tail-parser';
 import { isTaskCompletionReadyMessageContent } from '@/lib/pbl/v2/operations/task-completion';
 import { cn } from '@/lib/utils/cn';
@@ -85,12 +91,23 @@ function appendUserMessage(
   normalizeProjectRuntime(next);
   const thread = next.threads.find((t) => t.agentId === instructorAgentId);
   if (!thread) return next;
-  thread.messages.push({
+  const message: PBLChatMessage = {
     id: newClientMessageId(),
     roleType: 'user',
     content: text,
     ts: new Date().toISOString(),
     microtaskId,
+  };
+  thread.messages.push(message);
+  appendRuntimeEvent(next, {
+    id: mintRuntimeEventId(),
+    kind: 'message_created',
+    actorType: 'user',
+    messageId: message.id,
+    threadId: thread.agentId,
+    ts: message.ts,
+    microtaskId: message.microtaskId,
+    milestoneId: milestoneIdForMicrotask(next, message.microtaskId),
   });
   next.updatedAt = new Date().toISOString();
   return next;
@@ -584,7 +601,7 @@ export function PBLV2Chat({
             return (
               <div key={ev.id} className="space-y-3">
                 <CompletionCtaCard
-                  onView={() => onProjectChange({ ...project, uiPhase: 'completed' })}
+                  onView={() => onProjectChange(transitionProjectUiPhase(project, 'completed'))}
                 />
               </div>
             );

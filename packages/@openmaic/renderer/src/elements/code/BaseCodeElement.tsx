@@ -476,17 +476,13 @@ export function BaseCodeElement({ elementInfo, animate }: BaseCodeElementProps) 
           states.set(line.id, { type: 'typing', timestamp: i * 80 });
         });
       } else {
-        const prevIds = new Set(prevLinesRef.current.map((l) => l.id));
+        const prevById = new Map(prevLinesRef.current.map((l) => [l.id, l]));
 
         for (const line of lines) {
-          if (!prevIds.has(line.id)) {
+          const prev = prevById.get(line.id);
+          if (!prev) {
             states.set(line.id, { type: 'inserted', timestamp: 0 });
-          }
-        }
-
-        for (const line of lines) {
-          const prev = prevLinesRef.current.find((p) => p.id === line.id);
-          if (prev && prev.content !== line.content) {
+          } else if (prev.content !== line.content) {
             states.set(line.id, { type: 'replaced', timestamp: 0 });
           }
         }

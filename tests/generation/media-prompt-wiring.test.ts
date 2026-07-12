@@ -25,7 +25,6 @@ describe('media prompt condition wiring', () => {
       undefined,
       undefined,
       aiCall,
-      undefined,
       { imageGenerationEnabled: false, videoGenerationEnabled: true },
     );
 

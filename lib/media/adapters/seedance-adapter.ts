@@ -32,6 +32,8 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { probeAuth } from '../probe-auth';
+import { runPolledTask } from '../polled-task';
 
 const DEFAULT_MODEL = 'doubao-seedance-2-0-260128';
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
@@ -122,26 +124,14 @@ export async function testSeedanceConnectivity(
   config: VideoGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  try {
-    const response = await fetch(
-      `${resolveArkRoot(baseUrl)}/contents/generations/tasks/connectivity-test-nonexistent`,
-      {
+  return probeAuth({
+    providerName: 'Seedance',
+    request: () =>
+      fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks/connectivity-test-nonexistent`, {
         method: 'GET',
         headers: { Authorization: `Bearer ${config.apiKey}` },
-      },
-    );
-    // 401/403 means key invalid; anything else (404, 400, 200) means key works
-    if (response.status === 401 || response.status === 403) {
-      const text = await response.text();
-      return {
-        success: false,
-        message: `Seedance auth failed (${response.status}): ${text}`,
-      };
-    }
-    return { success: true, message: 'Connected to Seedance' };
-  } catch (err) {
-    return { success: false, message: `Seedance connectivity error: ${err}` };
-  }
+      }),
+  });
 }
 
 export async function submitSeedanceTask(
@@ -244,15 +234,19 @@ export async function generateWithSeedance(
   config: VideoGenerationConfig,
   options: VideoGenerationOptions,
 ): Promise<VideoGenerationResult> {
-  const taskId = await submitSeedanceTask(config, options);
-
-  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, POLL_INTERVAL_MS));
-    const result = await pollSeedanceTask(config, taskId);
-    if (result) return result;
-  }
-
-  throw new Error(
-    `Seedance video generation timed out after ${(MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS) / 1000}s (task: ${taskId})`,
-  );
+  return runPolledTask<VideoGenerationResult>({
+    submit: async () => ({
+      status: 'submitted',
+      taskId: await submitSeedanceTask(config, options),
+    }),
+    poll: async (taskId) => {
+      const result = await pollSeedanceTask(config, taskId);
+      return result ? { status: 'done', result } : { status: 'pending' };
+    },
+    intervalMs: POLL_INTERVAL_MS,
+    maxAttempts: MAX_POLL_ATTEMPTS,
+    label: 'Seedance video generation',
+    formatTimeout: ({ taskId, elapsedMs }) =>
+      `Seedance video generation timed out after ${elapsedMs / 1000}s (task: ${taskId})`,
+  });
 }

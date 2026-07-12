@@ -20,15 +20,13 @@ import type {
   VideoGenerationOptions,
   VideoGenerationResult,
 } from '../types';
+import { probeAuth } from '../probe-auth';
+import { runPolledTask } from '../polled-task';
 
 const DEFAULT_MODEL = 'grok-imagine-video';
 const DEFAULT_BASE_URL = 'https://api.x.ai/v1';
 const POLL_INTERVAL_MS = 10_000; // 10 seconds
 const MAX_POLL_ATTEMPTS = 60; // 10 minutes max
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 /** Dimension defaults per aspect ratio */
 function getDimensions(aspectRatio?: string): {
@@ -86,26 +84,18 @@ export async function testGrokVideoConnectivity(
   config: VideoGenerationConfig,
 ): Promise<{ success: boolean; message: string }> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
-  try {
-    const response = await fetch(`${baseUrl}/videos/generations`, {
-      method: 'POST',
-      headers: apiHeaders(config.apiKey),
-      body: JSON.stringify({
-        model: config.model || DEFAULT_MODEL,
-        prompt: '',
+  return probeAuth({
+    providerName: 'Grok Video',
+    request: () =>
+      fetch(`${baseUrl}/videos/generations`, {
+        method: 'POST',
+        headers: apiHeaders(config.apiKey),
+        body: JSON.stringify({
+          model: config.model || DEFAULT_MODEL,
+          prompt: '',
+        }),
       }),
-    });
-    if (response.status === 401 || response.status === 403) {
-      const text = await response.text();
-      return {
-        success: false,
-        message: `Grok Video auth failed (${response.status}): ${text}`,
-      };
-    }
-    return { success: true, message: 'Connected to Grok Video' };
-  } catch (err) {
-    return { success: false, message: `Grok Video connectivity error: ${err}` };
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -177,33 +167,43 @@ export async function generateWithGrokVideo(
   const model = config.model || DEFAULT_MODEL;
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  // 1. Submit
-  const requestId = await submitVideoGeneration(baseUrl, config.apiKey, model, options);
+  return runPolledTask<VideoGenerationResult>({
+    submit: async () => ({
+      status: 'submitted',
+      taskId: await submitVideoGeneration(baseUrl, config.apiKey, model, options),
+    }),
+    poll: async (requestId) => {
+      const result = await pollVideoStatus(baseUrl, config.apiKey, requestId);
 
-  // 2. Poll until done
-  for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt++) {
-    await delay(POLL_INTERVAL_MS);
-    const result = await pollVideoStatus(baseUrl, config.apiKey, requestId);
-
-    if (result.status === 'done') {
-      if (!result.video?.url) {
-        throw new Error('Grok video task completed but no video URL returned');
+      if (result.status === 'done') {
+        if (!result.video?.url) {
+          throw new Error('Grok video task completed but no video URL returned');
+        }
+        const { width, height } = getDimensions(options.aspectRatio);
+        return {
+          status: 'done',
+          result: {
+            url: result.video.url,
+            duration: result.video.duration || options.duration || 6,
+            width,
+            height,
+          },
+        };
       }
-      const { width, height } = getDimensions(options.aspectRatio);
-      return {
-        url: result.video.url,
-        duration: result.video.duration || options.duration || 6,
-        width,
-        height,
-      };
-    }
 
-    if (result.status === 'failed') {
-      throw new Error(`Grok video generation failed: ${JSON.stringify(result)}`);
-    }
-  }
+      if (result.status === 'failed') {
+        return {
+          status: 'failed',
+          message: `Grok video generation failed: ${JSON.stringify(result)}`,
+        };
+      }
 
-  throw new Error(
-    `Grok video generation timed out after ${(MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS) / 1000}s (request: ${requestId})`,
-  );
+      return { status: 'pending' };
+    },
+    intervalMs: POLL_INTERVAL_MS,
+    maxAttempts: MAX_POLL_ATTEMPTS,
+    label: 'Grok video generation',
+    formatTimeout: ({ taskId, elapsedMs }) =>
+      `Grok video generation timed out after ${elapsedMs / 1000}s (request: ${taskId})`,
+  });
 }

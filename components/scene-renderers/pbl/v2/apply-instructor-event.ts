@@ -14,7 +14,14 @@ import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
 import { applyAdvanceProjectPatch } from '@/lib/pbl/v2/operations/advance-patch';
 import { capEngagementEvents } from '@/lib/pbl/v2/operations/engagement';
 import { PBL_SIMULATOR_AGENT_ID } from '@/lib/pbl/v2/operations/progress';
+import {
+  appendProficiencyUpdatedRuntimeEvent,
+  appendRuntimeEvent,
+  milestoneIdForMicrotask,
+  mintRuntimeEventId,
+} from '@/lib/pbl/v2/operations/runtime-events';
 import { isStandaloneDividerMessage, stripEmbeddedDividerMarkers } from './protocol-markers';
+import type { PBLChatMessage, PBLRuntimeActorType } from '@/lib/pbl/v2/types';
 
 function cleanProtocolMarkersFromMessage<M extends { content: string }>(message: M): M {
   const trimmed = message.content.trimStart();
@@ -24,6 +31,12 @@ function cleanProtocolMarkersFromMessage<M extends { content: string }>(message:
   const cleaned = stripEmbeddedDividerMarkers(message.content);
   if (cleaned === message.content) return message;
   return { ...message, content: cleaned };
+}
+
+function actorTypeForMessage(message: PBLChatMessage): PBLRuntimeActorType {
+  if (message.roleType === 'user') return 'user';
+  if (message.roleType === 'system') return 'system';
+  return 'agent';
 }
 
 export function applyInstructorEvent(
@@ -65,6 +78,18 @@ export function applyInstructorEvent(
           const message = cleanProtocolMarkersFromMessage(patch.message);
           if (thread && !thread.messages.some((m) => m.id === message.id) && message.content) {
             thread.messages.push(message);
+            const actorType = actorTypeForMessage(message);
+            appendRuntimeEvent(next, {
+              id: mintRuntimeEventId(),
+              kind: 'message_created',
+              actorType,
+              actorRoleId: actorType === 'agent' ? message.agentId : undefined,
+              messageId: message.id,
+              threadId: thread.agentId,
+              ts: message.ts,
+              microtaskId: message.microtaskId,
+              milestoneId: milestoneIdForMicrotask(next, message.microtaskId),
+            });
           }
           // A message patch is the committed version of the live
           // assistant draft. Clear the draft immediately so the UI
@@ -94,10 +119,32 @@ export function applyInstructorEvent(
         }
         case 'handover': {
           next.pendingHandover = patch.handover;
+          appendRuntimeEvent(next, {
+            id: mintRuntimeEventId(),
+            kind: 'handover_staged',
+            actorType: 'system',
+            completedMilestoneId: patch.handover.completedMilestoneId,
+            nextMilestoneId: patch.handover.nextMilestoneId,
+            nextMicrotaskId: patch.handover.nextTaskId,
+            ts: new Date().toISOString(),
+            milestoneId: patch.handover.completedMilestoneId,
+            microtaskId: patch.handover.nextTaskId,
+          });
           break;
         }
         case 'evaluation': {
           next.evaluations.push(patch.evaluation);
+          appendRuntimeEvent(next, {
+            id: mintRuntimeEventId(),
+            kind: 'evaluation_created',
+            actorType: 'system',
+            evaluationId: patch.evaluation.id,
+            ts: patch.evaluation.createdAt,
+            microtaskId: patch.evaluation.microtaskId,
+            milestoneId:
+              patch.evaluation.milestoneId ??
+              milestoneIdForMicrotask(next, patch.evaluation.microtaskId),
+          });
           // Evaluation patches are the committed version of the live
           // evaluator draft. Clear it here for the same reason we
           // clear message drafts above: the learner should not see a
@@ -113,6 +160,7 @@ export function applyInstructorEvent(
           // render this — it's only consumed by the dev badge.
           next.proficiencyAssessment = patch.assessment;
           next.proficiency = patch.assessment.tier;
+          appendProficiencyUpdatedRuntimeEvent(next);
           break;
         }
       }

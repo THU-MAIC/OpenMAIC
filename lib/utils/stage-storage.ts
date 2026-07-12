@@ -12,6 +12,7 @@ import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-s
 import { clearPlaybackState } from './playback-storage';
 import { clearAllForScene } from '@/lib/quiz/persistence';
 import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
+import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('StageStorage');
@@ -150,6 +151,11 @@ export async function deleteStageData(stageId: string): Promise<void> {
     // runtime failure must not abort them (the helper warns instead of
     // throwing).
     await deleteStageRuntimeSafely(stageId);
+    try {
+      await clearStageDrainWatermarks(stageId);
+    } catch (error) {
+      log.warn(`Failed to clear PBL drain watermarks for stage ${stageId}:`, error);
+    }
 
     log.info(`Deleted stage: ${stageId}`);
   } catch (error) {
