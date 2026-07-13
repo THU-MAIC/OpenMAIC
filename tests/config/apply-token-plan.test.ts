@@ -150,6 +150,39 @@ describe('applyTokenPlan', () => {
     expect(cfg.models[1].capabilities?.thinking).toBeDefined();
   });
 
+  it('preserves GPT-5.6 Sol catalog metadata when a plan uses the explicit model ID', () => {
+    const actions = makeActions();
+    const preset: TokenPlanPreset = {
+      ...deepseek,
+      modalities: {
+        llm: {
+          providerId: 'openai',
+          baseUrl: 'https://api.openai.com/v1',
+          apiFormat: 'openai',
+          defaultModels: ['gpt-5.6-sol'],
+        },
+      },
+    };
+
+    applyTokenPlan(preset, 'sk-test', actions);
+    const config = (actions.setProviderConfig as ReturnType<typeof vi.fn>).mock.calls[0][1] as {
+      models: Array<{
+        id: string;
+        contextWindow?: number;
+        outputWindow?: number;
+        capabilities?: { vision?: boolean; thinking?: unknown };
+      }>;
+    };
+
+    expect(config.models[0]).toMatchObject({
+      id: 'gpt-5.6-sol',
+      contextWindow: 1050000,
+      outputWindow: 128000,
+      capabilities: { vision: true },
+    });
+    expect(config.models[0].capabilities?.thinking).toBeDefined();
+  });
+
   it('isolates a failing modality without aborting the rest', () => {
     const actions = makeActions();
     (actions.setImageProviderConfig as ReturnType<typeof vi.fn>).mockImplementation(() => {

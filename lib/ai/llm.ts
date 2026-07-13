@@ -10,6 +10,7 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { getModelMetadataKey } from './model-metadata';
+import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
 import {
   getThinkingMode,
@@ -140,9 +141,10 @@ function buildThinkingProviderOptions(
   modelId: string,
   config: ThinkingConfig,
 ): ProviderOptions | undefined {
+  const lookupModelId = providerId ? getCanonicalModelId(providerId, modelId) : modelId;
   const info = providerId
-    ? MODEL_THINKING_MAP.get(getModelMetadataKey(providerId, modelId))
-    : UNIQUE_MODEL_THINKING_MAP.get(modelId);
+    ? MODEL_THINKING_MAP.get(getModelMetadataKey(providerId, lookupModelId))
+    : UNIQUE_MODEL_THINKING_MAP.get(lookupModelId);
   if (!info?.thinking) return undefined; // model has no thinking capability
   const thinking = info.thinking;
   if (thinking.control === 'none') return undefined;
@@ -278,8 +280,9 @@ const DEFAULT_VALIDATE = (text: string) => text.trim().length > 0;
 // ---------------------------------------------------------------------------
 
 function buildUsageMeta(params: GenerateTextParams | StreamTextParams, source: string) {
-  const modelId = getModelId(params);
+  const rawModelId = getModelId(params);
   const providerId = getModelProviderId(params) ?? 'unknown';
+  const modelId = getCanonicalModelId(providerId, rawModelId);
   return { source, providerId, modelId, modelString: `${providerId}:${modelId}` };
 }
 

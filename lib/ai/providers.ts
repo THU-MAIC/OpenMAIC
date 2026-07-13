@@ -39,6 +39,7 @@ import type {
   ThinkingConfig,
 } from '@/lib/types/provider';
 import { applyModelMetadata, getCatalogThinkingCapability } from './model-metadata';
+import { findModelById } from './model-aliases';
 import { getDefaultThinkingConfig, getThinkingMode, pickThinkingBudget } from './thinking-config';
 import { createLogger } from '@/lib/logger';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
@@ -66,6 +67,54 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/openai.svg',
     models: [
+      {
+        id: 'gpt-5.6',
+        name: 'GPT-5.6 Sol',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.6-terra',
+        name: 'GPT-5.6 Terra',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
       {
         id: 'gpt-5.5',
         name: 'GPT-5.5',
@@ -1421,6 +1470,7 @@ function shouldUseOpenAIResponsesApi(providerId: ProviderId, modelId: string): b
 
   return (
     /^gpt-5\.\d+-pro(?:-|$)/.test(modelId) ||
+    /^gpt-5\.6(?:-|$)/.test(modelId) ||
     /^gpt-5\.5(?:-|$)/.test(modelId) ||
     /^gpt-5\.[3-9]-codex(?:-|$)/.test(modelId)
   );
@@ -1659,7 +1709,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   }
 
   // Look up model info from the provider registry
-  const modelInfo = provider?.models.find((m) => m.id === config.modelId) || null;
+  const modelInfo = findModelById(config.providerId, provider?.models, config.modelId) ?? null;
 
   return { model, modelInfo };
 }
@@ -1713,5 +1763,5 @@ export function getProvider(providerId: ProviderId): ProviderConfig | undefined 
  */
 export function getModelInfo(providerId: ProviderId, modelId: string): ModelInfo | undefined {
   const provider = PROVIDERS[providerId];
-  return provider?.models.find((m) => m.id === modelId);
+  return findModelById(providerId, provider?.models, modelId);
 }

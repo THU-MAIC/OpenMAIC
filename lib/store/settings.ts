@@ -8,6 +8,7 @@ import { persist } from 'zustand/middleware';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
+import { findModelById, getCanonicalModelId } from '@/lib/ai/model-aliases';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thinking-config';
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
@@ -393,9 +394,26 @@ function resolveLLMSelection(
     ? currentProviderId
     : ((Object.keys(config) as ProviderId[]).find(isUsable) ?? ('' as ProviderId));
   const modelId = providerId
-    ? resolveSelectedModel(currentModelId, config[providerId]?.models ?? [])
+    ? resolveSelectedLLMModel(providerId, currentModelId, config[providerId]?.models ?? [])
     : '';
   return { providerId, modelId };
+}
+
+/** Keep the caller's wire model ID when it resolves to a known catalog alias. */
+function resolveSelectedLLMModel(
+  providerId: ProviderId,
+  currentModelId: string,
+  availableModels: Array<{ id: string }>,
+): string {
+  if (availableModels.some((model) => model.id === currentModelId)) return currentModelId;
+  const canonicalModelId = getCanonicalModelId(providerId, currentModelId);
+  if (
+    canonicalModelId !== currentModelId &&
+    availableModels.some((model) => model.id === canonicalModelId)
+  ) {
+    return currentModelId;
+  }
+  return availableModels[0]?.id ?? '';
 }
 
 function resolveMediaModels<T extends { id: string; name: string }>(
@@ -1376,9 +1394,27 @@ export const useSettingsStore = create<SettingsState>()(
                   const currentModels = newProvidersConfig[key].models;
                   // When server specifies allowed models, filter the models list
                   // while preserving custom IDs from env/YAML in server order.
-                  const currentModelMap = new Map(currentModels.map((m) => [m.id, m]));
                   const filteredModels = info.models?.length
-                    ? info.models.map((id) => currentModelMap.get(id) ?? { id, name: id })
+                    ? info.models.map((id) => {
+                        const currentModel = findModelById(key, currentModels, id);
+                        const builtInModel = findModelById(key, PROVIDERS[key]?.models, id);
+                        const model =
+                          currentModel && builtInModel
+                            ? {
+                                ...builtInModel,
+                                ...currentModel,
+                                name:
+                                  currentModel.name === currentModel.id
+                                    ? builtInModel.name
+                                    : currentModel.name,
+                                capabilities: {
+                                  ...builtInModel.capabilities,
+                                  ...currentModel.capabilities,
+                                },
+                              }
+                            : (currentModel ?? builtInModel);
+                        return model ? { ...model, id, name: model.name || id } : { id, name: id };
+                      })
                     : currentModels;
                   newProvidersConfig[key] = {
                     ...newProvidersConfig[key],
@@ -1606,7 +1642,7 @@ export const useSettingsStore = create<SettingsState>()(
                 ? (newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [])
                 : [];
               const validLLMModel = validLLMProvider
-                ? resolveSelectedModel(state.modelId, llmModels)
+                ? resolveSelectedLLMModel(validLLMProvider as ProviderId, state.modelId, llmModels)
                 : '';
               const imageModels = validImageProvider
                 ? resolveMediaModels(
