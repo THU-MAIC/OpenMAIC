@@ -205,6 +205,7 @@
     "insert": {
       "textBox": "텍스트 상자",
       "dragToolbar": "삽입 도구 이동",
+      "dragToolbarKeyboard": "삽입 도구 이동: Enter 또는 Space를 누른 다음 방향키로 이동",
       "image": "이미지",
       "imageDrop": "이미지를 끌어다 놓거나 클릭하여 파일을 선택하세요",
       "imageOr": "또는 이미지 URL 붙여넣기",

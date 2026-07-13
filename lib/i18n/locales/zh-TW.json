@@ -205,6 +205,7 @@
     "insert": {
       "textBox": "文字方塊",
       "dragToolbar": "拖動工具列",
+      "dragToolbarKeyboard": "移動工具列：按 Enter 或空白鍵開始，再使用方向鍵移動",
       "image": "圖片",
       "imageDrop": "拖曳圖片或點按選擇檔案",
       "imageOr": "或貼上圖片網址",

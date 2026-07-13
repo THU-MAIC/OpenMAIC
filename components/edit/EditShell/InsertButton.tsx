@@ -27,6 +27,7 @@ export function InsertButton({ item, iconOnly = false, popoverSide = 'bottom' }:
       disabled={item.disabled}
       onClick={item.popoverContent ? undefined : item.onInvoke}
       aria-label={iconOnly ? item.label : undefined}
+      aria-pressed={typeof item.active === 'boolean' ? item.active : undefined}
       className={cn(
         'group flex h-9 items-center rounded-xl transition-colors disabled:pointer-events-none disabled:opacity-40',
         iconOnly ? 'w-9 justify-center px-0' : 'gap-1.5 px-3',

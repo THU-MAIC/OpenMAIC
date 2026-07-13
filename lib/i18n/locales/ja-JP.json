@@ -205,6 +205,7 @@
     "insert": {
       "textBox": "テキストボックス",
       "dragToolbar": "挿入ツールを移動",
+      "dragToolbarKeyboard": "挿入ツールを移動：Enter または Space を押してから矢印キーで移動",
       "image": "画像",
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",

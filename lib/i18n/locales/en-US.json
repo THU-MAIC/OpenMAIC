@@ -205,6 +205,7 @@
     "insert": {
       "textBox": "Text box",
       "dragToolbar": "Move insert tools",
+      "dragToolbarKeyboard": "Move insert tools: press Enter or Space, then use the arrow keys",
       "image": "Image",
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",
