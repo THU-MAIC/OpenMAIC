@@ -834,7 +834,7 @@
   "generation": {
     "pdfLoadFailed": "PDF 파일 불러오기에 실패했습니다. 다시 시도해주세요",
     "pdfParseFailed": "PDF 파싱에 실패했습니다",
-    "analyzingCourseMaterial": "{{type}} 파일 분석 중",
+    "analyzingCourseMaterial": "문서 분석 중",
     "analyzingCourseMaterialDesc": "문서 구조와 내용을 추출하고 있어요...",
     "courseMaterialLoadFailed": "강의 자료를 불러오지 못했습니다. 다시 시도해주세요",
     "courseMaterialParseFailed": "강의 자료 파싱에 실패했습니다",

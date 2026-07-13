@@ -819,7 +819,7 @@
   "generation": {
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",
     "pdfParseFailed": "PDF 解析失敗",
-    "analyzingCourseMaterial": "解析 {{type}} 檔案",
+    "analyzingCourseMaterial": "解析文件",
     "analyzingCourseMaterialDesc": "正在擷取文件結構和內容...",
     "courseMaterialLoadFailed": "無法載入課程材料，請重試",
     "courseMaterialParseFailed": "課程材料解析失敗",

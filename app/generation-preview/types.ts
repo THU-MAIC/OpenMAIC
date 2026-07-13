@@ -45,33 +45,14 @@ export type GenerationStep = {
   type: 'analysis' | 'writing' | 'visual';
 };
 
-function getDocumentTypeLabel(session: GenerationSessionState | null): string {
-  const mimeType = session?.documentMimeType;
-  if (mimeType) {
-    if (mimeType === 'application/pdf') return 'PDF';
-    if (mimeType.includes('wordprocessingml')) return 'DOCX';
-    if (mimeType.includes('presentationml')) return 'PPTX';
-    if (mimeType === 'text/plain') return 'TXT';
-    if (mimeType.includes('markdown')) return 'Markdown';
-  }
-  const extension = session?.pdfFileName?.split('.').pop()?.trim().toLowerCase();
-  if (extension === 'pdf') return 'PDF';
-  if (extension === 'docx') return 'DOCX';
-  if (extension === 'pptx') return 'PPTX';
-  if (extension === 'txt') return 'TXT';
-  if (extension === 'md' || extension === 'markdown') return 'Markdown';
-  return 'document';
-}
-
 export function getGenerationStepText(
   step: GenerationStep,
-  session: GenerationSessionState | null,
+  _session: GenerationSessionState | null,
 ) {
   if (step.id === 'pdf-analysis') {
-    const documentType = getDocumentTypeLabel(session);
     return {
       title: 'generation.analyzingCourseMaterial',
-      titleValues: { type: documentType },
+      titleValues: undefined,
       description: 'generation.analyzingCourseMaterialDesc',
     };
   }
