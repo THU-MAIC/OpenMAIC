@@ -26,6 +26,7 @@
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
+import { createAzure } from '@ai-sdk/azure';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { wrapLanguageModel, extractReasoningMiddleware } from 'ai';
@@ -42,6 +43,7 @@ import { applyModelMetadata, getCatalogThinkingCapability } from './model-metada
 import { findModelById } from './model-aliases';
 import { getDefaultThinkingConfig, getThinkingMode, pickThinkingBudget } from './thinking-config';
 import { createLogger } from '@/lib/logger';
+import { normalizeAzureBaseUrl } from './azure';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
 // which is server-only, and this file is also used on the client via
 // settings.ts. The thinking context is read from globalThis instead
@@ -196,6 +198,18 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         },
       },
     ],
+  },
+
+  azure: {
+    id: 'azure',
+    name: 'Azure OpenAI',
+    type: 'azure',
+    baseUrlPlaceholder: 'https://YOUR-RESOURCE.openai.azure.com/openai',
+    supportsModelDiscovery: false,
+    requiresApiKey: true,
+    icon: '/logos/azure.svg',
+    // Azure requests use user-defined deployment names rather than model IDs.
+    models: [],
   },
 
   anthropic: {
@@ -1516,6 +1530,15 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   let model: LanguageModel;
 
   switch (providerType) {
+    case 'azure': {
+      const azure = createAzure({
+        apiKey: effectiveApiKey,
+        baseURL: normalizeAzureBaseUrl(effectiveBaseUrl),
+      });
+      model = azure(config.modelId);
+      break;
+    }
+
     case 'openai': {
       const openaiOptions: Parameters<typeof createOpenAI>[0] = {
         apiKey: effectiveApiKey,

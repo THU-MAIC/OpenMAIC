@@ -1016,6 +1016,7 @@
     "addProviderDescription": "Adicione provedores de modelo personalizados para ampliar os modelos de IA disponíveis",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1038,6 +1039,7 @@
     },
     "providerTypes": {
       "openai": "Protocolo OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Protocolo Claude",
       "google": "Protocolo Gemini"
     },
@@ -1056,6 +1058,7 @@
     "importFromClipboard": "Importar da Área de Transferência",
     "apiSecret": "Chave de API",
     "apiHost": "URL Base",
+    "azureDeploymentHint": "Informe o endpoint do Azure OpenAI acima e adicione cada nome de implantação do Azure como um modelo.",
     "baseUrlRegion": {
       "china": "China",
       "international": "Internacional",

@@ -1016,6 +1016,7 @@
     "addProviderDescription": "Добавьте провайдеров моделей для расширения доступных AI-моделей",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1038,6 +1039,7 @@
     },
     "providerTypes": {
       "openai": "Протокол OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Протокол Claude",
       "google": "Протокол Gemini"
     },
@@ -1056,6 +1058,7 @@
     "importFromClipboard": "Импорт из буфера",
     "apiSecret": "API-ключ",
     "apiHost": "Base URL",
+    "azureDeploymentHint": "Укажите конечную точку Azure OpenAI выше, затем добавьте имя каждого развертывания Azure как модель.",
     "baseUrlRegion": {
       "china": "Китай",
       "international": "Международный",

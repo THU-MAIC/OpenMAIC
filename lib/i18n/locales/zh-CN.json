@@ -1016,6 +1016,7 @@
     "addProviderDescription": "添加自定义模型提供方以扩展可用的AI模型",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1038,6 +1039,7 @@
     },
     "providerTypes": {
       "openai": "OpenAI 协议",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude 协议",
       "google": "Gemini 协议"
     },
@@ -1056,6 +1058,7 @@
     "importFromClipboard": "从剪贴板导入",
     "apiSecret": "API 密钥",
     "apiHost": "Base URL",
+    "azureDeploymentHint": "请在上方填写 Azure OpenAI Endpoint，并将每个 Azure Deployment 名称添加为模型。",
     "baseUrlRegion": {
       "china": "国内站",
       "international": "国际站",

@@ -1016,6 +1016,7 @@
     "addProviderDescription": "カスタムモデルプロバイダーを追加して利用可能なAIモデルを拡張",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1038,6 +1039,7 @@
     },
     "providerTypes": {
       "openai": "OpenAIプロトコル",
+      "azure": "Azure OpenAI",
       "anthropic": "Claudeプロトコル",
       "google": "Geminiプロトコル"
     },
@@ -1056,6 +1058,7 @@
     "importFromClipboard": "クリップボードからインポート",
     "apiSecret": "APIキー",
     "apiHost": "ベースURL",
+    "azureDeploymentHint": "上に Azure OpenAI エンドポイントを入力し、各 Azure デプロイ名をモデルとして追加してください。",
     "baseUrlRegion": {
       "china": "中国",
       "international": "国際",

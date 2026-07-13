@@ -1016,6 +1016,7 @@
     "addProviderDescription": "사용 가능한 AI 모델을 확장하기 위해 사용자 지정 모델 제공업체를 추가하세요",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1038,6 +1039,7 @@
     },
     "providerTypes": {
       "openai": "OpenAI 프로토콜",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude 프로토콜",
       "google": "Gemini 프로토콜"
     },
@@ -1056,6 +1058,7 @@
     "importFromClipboard": "클립보드에서 가져오기",
     "apiSecret": "API 키",
     "apiHost": "기본 URL",
+    "azureDeploymentHint": "위에 Azure OpenAI 엔드포인트를 입력한 다음 각 Azure 배포 이름을 모델로 추가하세요.",
     "baseUrlRegion": {
       "china": "중국",
       "international": "국제",

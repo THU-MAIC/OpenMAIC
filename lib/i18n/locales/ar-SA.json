@@ -1016,6 +1016,7 @@
     "addProviderDescription": "أضف مزوّدي نماذج مخصصين لتوسيع نماذج الذكاء الاصطناعي المتاحة",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1038,6 +1039,7 @@
     },
     "providerTypes": {
       "openai": "بروتوكول OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "بروتوكول Claude",
       "google": "بروتوكول Gemini"
     },
@@ -1056,6 +1058,7 @@
     "importFromClipboard": "استيراد من الحافظة",
     "apiSecret": "مفتاح API",
     "apiHost": "العنوان الأساسي",
+    "azureDeploymentHint": "أدخل نقطة نهاية Azure OpenAI أعلاه، ثم أضف اسم كل عملية نشر في Azure كنموذج.",
     "baseUrlRegion": {
       "china": "الصين",
       "international": "دولي",
