@@ -41,8 +41,24 @@ export function sanitizeFilenamePart(value: string): string {
   return normalized.slice(0, 80) || 'scene';
 }
 
-/** File extension for an asset from its `format`/`mimeType`, falling back per kind. */
+/**
+ * File extension for an asset from its `format`/`mimeType`, falling back per
+ * kind. The result is sanitized to a bare, traversal-free extension token
+ * (alphanumeric, lowercased) so a hostile `format` such as `../../escape` cannot
+ * steer the planned zip path outside its directory — the ZIP-writing stage
+ * receives only safe extensions.
+ */
 function extension(meta: AssetMeta, fallback: string): string {
+  const raw = extensionRaw(meta, fallback);
+  const safe = raw
+    .toLowerCase()
+    .replace(/^\.+/, '')
+    .replace(/[^a-z0-9]/g, '');
+  return safe || fallback;
+}
+
+/** The unsanitized extension candidate from `format` / `mimeType` / fallback. */
+function extensionRaw(meta: AssetMeta, fallback: string): string {
   if (meta.format) return meta.format.replace(/^\./, '');
   const mime = meta.mimeType;
   if (mime) {
@@ -188,7 +204,9 @@ export function planAssets(
       const meta = sourceScene ? assetSource.media(seg.elementId, sourceScene) : null;
       if (!meta) {
         // No media asset is associated with the element at all (distinct from a
-        // referenced asset whose bytes are missing, below).
+        // referenced asset whose bytes are missing, below). No plan entry — there
+        // is no asset id to bundle. The timeline pass already gave it a 0ms
+        // 'skipped' dwell so later actions are not shifted.
         diagnostics.push({
           severity: 'warn',
           code: 'skipped-media',
@@ -196,9 +214,20 @@ export function planAssets(
           actionId: seg.actionId,
           message: `No media asset is associated with play_video element "${seg.elementId}".`,
         });
-        return seg;
+        return { ...seg, present: false, durationSource: 'skipped' as const };
       }
-      if (!meta.present) {
+      // A referenced asset: plan an entry either way so a present:false clip is
+      // represented structurally (assetId + present on the segment AND an
+      // AssetPlanEntry), not only in a free-form diagnostic. The exporter can
+      // distinguish "no association" (no assetId) from "referenced but missing"
+      // (assetId present, present:false) without parsing messages.
+      const { path, present } = planner.plan(
+        meta.id,
+        'video',
+        `media/${sanitizeFilenamePart(seg.elementId)}.${extension(meta, 'mp4')}`,
+        meta.present,
+      );
+      if (!present) {
         diagnostics.push({
           severity: 'warn',
           code: 'skipped-media',
@@ -206,15 +235,14 @@ export function planAssets(
           actionId: seg.actionId,
           message: `Video media "${meta.id}" for element "${seg.elementId}" is referenced but its bytes are unavailable.`,
         });
-        return { ...seg };
+        return {
+          ...seg,
+          assetId: meta.id,
+          present: false,
+          durationSource: 'skipped' as const,
+        };
       }
-      const { path } = planner.plan(
-        meta.id,
-        'video',
-        `media/${sanitizeFilenamePart(seg.elementId)}.${extension(meta, 'mp4')}`,
-        true,
-      );
-      return { ...seg, assetRef: path };
+      return { ...seg, assetId: meta.id, present: true, assetRef: path };
     });
 
     return { ...scene, base, narration, videos };

@@ -5,7 +5,16 @@ import {
   MAX_VIDEO_WAIT_MS,
 } from '@/lib/choreography';
 import { buildTimeline, buildTimelineOptions } from '@/lib/video-export';
-import { NO_PROBE, playVideo, slide, speech, spotlight, stubProbe, wbDrawText } from './helpers';
+import {
+  NO_PROBE,
+  laser,
+  playVideo,
+  slide,
+  speech,
+  spotlight,
+  stubProbe,
+  wbDrawText,
+} from './helpers';
 
 describe('buildTimeline — narration + subtitles', () => {
   it('uses stored audio durations and derives one subtitle cue per non-empty speech', () => {
@@ -79,6 +88,20 @@ describe('buildTimeline — effects', () => {
     const tl = buildTimeline([slide('s', [spotlight('sp', 'e1')])], buildTimelineOptions(NO_PROBE));
     expect(tl.scenes[0].effects[0].durationMs).toBe(0);
     expect(EFFECT_AUTO_CLEAR_MS).toBe(5000); // sanity: shared constant is in play
+  });
+
+  it('carries descriptor default params when the action has no override', () => {
+    const tl = buildTimeline([slide('s', [spotlight('sp', 'e1')])], buildTimelineOptions(NO_PROBE));
+    expect(tl.scenes[0].effects[0].params).toEqual({ dimness: 0.5 });
+  });
+
+  it('merges authored spotlight dimOpacity and laser color overrides into params', () => {
+    const tl = buildTimeline(
+      [slide('s', [spotlight('sp', 'e1', 0.8), laser('lz', 'e2', '#00ff00')])],
+      buildTimelineOptions(NO_PROBE),
+    );
+    expect(tl.scenes[0].effects[0].params).toMatchObject({ dimness: 0.8 });
+    expect(tl.scenes[0].effects[1].params).toMatchObject({ color: '#00ff00' });
   });
 });
 

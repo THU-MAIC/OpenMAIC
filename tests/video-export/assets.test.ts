@@ -132,18 +132,40 @@ describe('planAssets — base frame & video', () => {
     expect(res.scenes[0].videos.map((v) => v.assetRef)).toEqual(['media/v.mp4', 'media/v-2.mp4']);
   });
 
-  it('dedups two distinct elements that share one media asset id', () => {
+  it('represents a referenced-but-missing video structurally (assetId + present:false + entry)', () => {
     const res = plan(
-      [slide('s', [playVideo('a', 'e1'), playVideo('b', 'e2')])],
+      [slide('s', [playVideo('v', 'clip')])],
       {},
-      {
-        e1: { id: 'shared', present: true, format: 'mp4' },
-        e2: { id: 'shared', present: true, format: 'mp4' },
-      },
+      { clip: { id: 'media-x', present: false, format: 'mp4' } },
+      stubProbe({}, { v: 8000 }),
     );
-    const videoEntries = res.plan.entries.filter((e) => e.kind === 'video');
-    expect(videoEntries).toHaveLength(2);
-    expect(videoEntries[1]).toMatchObject({ dedupOf: 'shared', path: videoEntries[0].path });
-    expect(res.scenes[0].videos.map((v) => v.assetRef)).toEqual(['media/e1.mp4', 'media/e1.mp4']);
+    const seg = res.scenes[0].videos[0];
+    // Distinguishable from "no association" (which has no assetId) without
+    // parsing the diagnostic message.
+    expect(seg).toMatchObject({ assetId: 'media-x', present: false, durationSource: 'skipped' });
+    expect(seg.assetRef).toBeUndefined();
+    expect(res.plan.entries).toContainEqual(
+      expect.objectContaining({ assetId: 'media-x', kind: 'video', present: false }),
+    );
+  });
+
+  it('marks a video with no media association present:false / skipped and plans no entry', () => {
+    const res = plan([slide('s', [playVideo('v', 'clip')])], {}, {}, stubProbe({}, { v: 8000 }));
+    const seg = res.scenes[0].videos[0];
+    expect(seg).toMatchObject({ present: false, durationSource: 'skipped' });
+    expect(seg.assetId).toBeUndefined();
+    expect(res.plan.entries.filter((e) => e.kind === 'video')).toHaveLength(0);
+  });
+
+  it('sanitizes a hostile asset extension so the planned path cannot traverse', () => {
+    const res = plan(
+      [slide('s', [playVideo('v', 'clip')])],
+      {},
+      { clip: { id: 'm', present: true, format: '../../escape' } },
+      stubProbe({}, { v: 8000 }),
+    );
+    const path = res.scenes[0].videos[0].assetRef!;
+    expect(path).not.toContain('..');
+    expect(path).toBe('media/clip.escape');
   });
 });

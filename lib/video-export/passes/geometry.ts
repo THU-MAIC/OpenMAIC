@@ -1,20 +1,21 @@
 /**
- * `geometry` pass — resolve each effect segment's `elementId` to viewBox coords.
+ * `geometry` pass — resolve each effect and video segment's `elementId` to
+ * viewBox coords.
  *
- * Spotlight/laser effects target a slide element; the exporter needs its 0–100
- * geometry to place the animation (the descriptor's `from`/`to` are expressed
- * relative to it). This pass looks the element up on the scene's canvas via the
- * pure {@link findElementGeometry}. A miss (element gone, or the effect sits on a
- * non-slide scene with no canvas) does not throw: the effect is kept with
- * `geometry: null`, marked `degraded`, and an `unresolved-element` diagnostic is
- * recorded so the export report shows what could not be placed.
+ * Spotlight/laser effects and `play_video` clips both target a slide element;
+ * the exporter needs the element's 0–100 geometry (and, for video, rotation) to
+ * place them. This pass looks the element up on the scene's canvas via the pure
+ * {@link findElementGeometry} / {@link findElementPlacement}. A miss (element
+ * gone, or a non-slide scene with no canvas) does not throw: the segment is kept
+ * with `geometry: null`, marked `degraded`, and an `unresolved-element`
+ * diagnostic is recorded so the export report shows what could not be placed.
  *
  * Pure: no IO; reads only the scene's canvas elements.
  */
 import type { PPTElement } from '@openmaic/dsl';
 import type { CompilerScene } from '../deps';
-import { findElementGeometry } from '../geometry';
-import type { Diagnostic, EffectSegment, VideoTimelineScene } from '../ir';
+import { findElementGeometry, findElementPlacement } from '../geometry';
+import type { Diagnostic, EffectSegment, VideoSegment, VideoTimelineScene } from '../ir';
 
 export interface GeometryResult {
   scenes: VideoTimelineScene[];
@@ -36,8 +37,28 @@ export function resolveEffectGeometry(
 }
 
 /**
- * Fill every effect segment's geometry across all scenes. `timelineScenes` and
- * `sourceScenes` are aligned by index (both are the normalized scene list).
+ * Resolve a video segment's placement (geometry + rotation). Returns the
+ * enriched segment (never throws); `degraded: true` + `geometry: null` +
+ * `rotate: 0` when the element could not be located.
+ */
+export function resolveVideoPlacement(
+  video: VideoSegment,
+  elements: readonly PPTElement[] | undefined,
+): { video: VideoSegment; unresolved: boolean } {
+  const placement = elements ? findElementPlacement([...elements], video.elementId) : null;
+  if (placement) {
+    return {
+      video: { ...video, geometry: placement.geometry, rotate: placement.rotate, degraded: false },
+      unresolved: false,
+    };
+  }
+  return { video: { ...video, geometry: null, rotate: 0, degraded: true }, unresolved: true };
+}
+
+/**
+ * Fill every effect and video segment's geometry across all scenes.
+ * `timelineScenes` and `sourceScenes` are aligned by index (both are the
+ * normalized scene list).
  */
 export function applyGeometry(
   timelineScenes: readonly VideoTimelineScene[],
@@ -46,9 +67,10 @@ export function applyGeometry(
   const diagnostics: Diagnostic[] = [];
 
   const scenes = timelineScenes.map((scene, index) => {
-    if (scene.effects.length === 0) return scene;
+    if (scene.effects.length === 0 && scene.videos.length === 0) return scene;
 
     const elements = sourceScenes[index]?.content?.canvas?.elements;
+
     const effects = scene.effects.map((effect) => {
       const { effect: resolved, unresolved } = resolveEffectGeometry(effect, elements);
       if (unresolved) {
@@ -63,7 +85,21 @@ export function applyGeometry(
       return resolved;
     });
 
-    return { ...scene, effects };
+    const videos = scene.videos.map((video) => {
+      const { video: resolved, unresolved } = resolveVideoPlacement(video, elements);
+      if (unresolved) {
+        diagnostics.push({
+          severity: 'warn',
+          code: 'unresolved-element',
+          sceneId: scene.id,
+          actionId: video.actionId,
+          message: `play_video target element "${video.elementId}" has no geometry; placement degraded.`,
+        });
+      }
+      return resolved;
+    });
+
+    return { ...scene, effects, videos };
   });
 
   return { scenes, diagnostics };

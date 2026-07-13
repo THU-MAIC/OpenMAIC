@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { MAX_VIDEO_WAIT_MS } from '@/lib/choreography';
 import { compileVideoTimeline, emitManifest, VideoTimelineCompileError } from '@/lib/video-export';
 import {
   NO_ASSETS,
   NO_PROBE,
   el,
+  playVideo,
   quiz,
   slide,
   speech,
@@ -131,5 +133,64 @@ describe('compileVideoTimeline — degradation & edges', () => {
         { timing: NO_PROBE, assets: NO_ASSETS },
       ),
     ).toThrow(VideoTimelineCompileError);
+  });
+});
+
+describe('compileVideoTimeline — play_video placement & availability', () => {
+  const scene = () =>
+    slide('s', [speech('a', 'x'), playVideo('v', 'clip'), speech('b', 'y')], {
+      elements: [el('clip', { left: 100, top: 100, width: 400, height: 300, rotate: 15 })],
+    });
+
+  it('carries the target element placement (geometry + rotate) into the video segment', () => {
+    const ir = compileVideoTimeline(
+      { stage: { id: 'stg', name: 'x' }, scenes: [scene()] },
+      {
+        timing: stubProbe({ a: 1000, b: 1000 }, { v: 4000 }),
+        assets: stubAssets({}, { clip: { id: 'm', present: true, format: 'mp4' } }),
+      },
+    );
+    const video = ir.scenes[0].videos[0];
+    expect(video.rotate).toBe(15);
+    expect(video.geometry).toMatchObject({ x: 10, w: 40 });
+    expect(video.degraded).toBe(false);
+    expect(video.assetRef).toBe('media/clip.mp4');
+    expect(video.durationSource).toBe('stored');
+  });
+
+  it('skips an unavailable video (0ms) so later actions are NOT shifted by the safety cap', () => {
+    const deps = {
+      timing: stubProbe({ a: 1000, b: 1000 }),
+      assets: stubAssets({}, { clip: { id: 'm', present: false, format: 'mp4' } }),
+    };
+    const ir = compileVideoTimeline({ stage: { id: 'stg', name: 'x' }, scenes: [scene()] }, deps);
+    const video = ir.scenes[0].videos[0];
+    expect(video.durationMs).toBe(0);
+    expect(video.durationSource).toBe('skipped');
+    expect(video.present).toBe(false);
+    // The trailing speech starts right after the first (1000), not 1000 + cap.
+    expect(ir.scenes[0].narration[1].startMs).toBe(1000);
+    expect(ir.totalDurationMs).toBe(2000);
+    expect(ir.totalDurationMs).toBeLessThan(MAX_VIDEO_WAIT_MS);
+  });
+
+  it('degrades placement (geometry null, rotate 0) when the target element is missing', () => {
+    const ir = compileVideoTimeline(
+      {
+        stage: { id: 'stg', name: 'x' },
+        scenes: [slide('s', [playVideo('v', 'ghost')], { elements: [] })],
+      },
+      {
+        timing: stubProbe({}, { v: 4000 }),
+        assets: stubAssets({}, { ghost: { id: 'm', present: true, format: 'mp4' } }),
+      },
+    );
+    const video = ir.scenes[0].videos[0];
+    expect(video.geometry).toBeNull();
+    expect(video.rotate).toBe(0);
+    expect(video.degraded).toBe(true);
+    expect(ir.diagnostics).toContainEqual(
+      expect.objectContaining({ code: 'unresolved-element', actionId: 'v' }),
+    );
   });
 });

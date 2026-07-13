@@ -14,9 +14,16 @@
  *
  * Pure: no IO; timing comes entirely through the injected options.
  */
-import type { Action, SpeechAction, PlayVideoAction } from '@openmaic/dsl';
+import type {
+  Action,
+  SpeechAction,
+  PlayVideoAction,
+  SpotlightAction,
+  LaserAction,
+} from '@openmaic/dsl';
 import {
   resolveActionTimeline,
+  getDescriptor,
   EMPTY_SCENE_DWELL,
   IMPLICIT_WB_OPEN,
   MAX_VIDEO_WAIT_MS,
@@ -48,6 +55,23 @@ const DESCRIPTOR_ID: Record<'spotlight' | 'laser', string> = {
   spotlight: 'spotlight.v1',
   laser: 'laser.v1',
 };
+
+/**
+ * Effective per-instance effect params: the descriptor's declared defaults
+ * merged with the authored action overrides playback honors (spotlight
+ * `dimOpacity` → `dimness`, laser `color`). An IR-only emitter reads these
+ * directly; descriptor defaults alone cannot recover an authored override.
+ */
+function effectParams(action: SpotlightAction | LaserAction): Record<string, number | string> {
+  const descriptor = getDescriptor(DESCRIPTOR_ID[action.type]);
+  const params: Record<string, number | string> = { ...(descriptor?.params ?? {}) };
+  if (action.type === 'spotlight') {
+    if (action.dimOpacity != null) params.dimness = action.dimOpacity;
+  } else if (action.color != null) {
+    params.color = action.color;
+  }
+  return params;
+}
 
 /** Per-scene mutable accumulator, sealed into a {@link VideoTimelineScene} at the end. */
 interface SceneBuckets {
@@ -192,8 +216,9 @@ function dispatchSegment(
         descriptorId: DESCRIPTOR_ID[action.type],
         startMs: seg.startMs,
         durationMs: seg.durationMs,
-        elementId: (action as { elementId: string }).elementId,
+        elementId: (action as SpotlightAction | LaserAction).elementId,
         geometry: null, // filled by the geometry pass
+        params: effectParams(action as SpotlightAction | LaserAction),
         degraded: false,
       });
       return;
@@ -215,6 +240,10 @@ function dispatchSegment(
         startMs: seg.startMs,
         durationMs: seg.durationMs,
         elementId: (action as PlayVideoAction).elementId,
+        geometry: null, // filled by the geometry pass
+        rotate: 0, // filled by the geometry pass
+        present: false, // filled by the assets pass
+        degraded: false, // set by the geometry pass
         durationSource,
       });
       return;

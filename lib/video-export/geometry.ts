@@ -62,3 +62,28 @@ export function findElementGeometry(
   if (!element) return null;
   return getElementPercentageGeometry(element, viewportSize);
 }
+
+/** An element's placement: percentage geometry + rotation (degrees). */
+export interface ElementPlacement {
+  geometry: PercentageGeometry;
+  /** Rotation in degrees; 0 for elements that carry no `rotate`. */
+  rotate: number;
+}
+
+/**
+ * Find an element and return both its percentage geometry and rotation, or null
+ * when the element is absent or unpositioned. Used to place `play_video` clips
+ * (position + size + rotation) into the IR so an emitter needs no scene DSL.
+ */
+export function findElementPlacement(
+  elements: PPTElement[],
+  elementId: string,
+  viewportSize = 1000,
+): ElementPlacement | null {
+  const element = elements.find((el) => el.id === elementId);
+  if (!element) return null;
+  const geometry = getElementPercentageGeometry(element, viewportSize);
+  if (!geometry) return null;
+  const rotate = 'rotate' in element && typeof element.rotate === 'number' ? element.rotate : 0;
+  return { geometry, rotate };
+}

@@ -8,11 +8,11 @@ export const act = (a: { id: string; type: string; [k: string]: unknown }): Acti
 export const speech = (id: string, text: string, extra: Record<string, unknown> = {}): Action =>
   act({ id, type: 'speech', text, ...extra });
 
-export const spotlight = (id: string, elementId: string): Action =>
-  act({ id, type: 'spotlight', elementId });
+export const spotlight = (id: string, elementId: string, dimOpacity?: number): Action =>
+  act({ id, type: 'spotlight', elementId, ...(dimOpacity != null ? { dimOpacity } : {}) });
 
-export const laser = (id: string, elementId: string): Action =>
-  act({ id, type: 'laser', elementId });
+export const laser = (id: string, elementId: string, color?: string): Action =>
+  act({ id, type: 'laser', elementId, ...(color != null ? { color } : {}) });
 
 export const playVideo = (id: string, elementId: string): Action =>
   act({ id, type: 'play_video', elementId });
@@ -23,7 +23,7 @@ export const wbDrawText = (id: string, content: string): Action =>
 /** A positioned slide element (only geometry fields matter here). */
 export const el = (
   id: string,
-  box: { left: number; top: number; width: number; height: number },
+  box: { left: number; top: number; width: number; height: number; rotate?: number },
 ): PPTElement => ({ id, type: 'text', ...box }) as unknown as PPTElement;
 
 export function slide(

@@ -223,27 +223,31 @@ const eslintConfig = defineConfig([
           message:
             'lib/video-export must not reference a host-app path (@/…) in a template literal. Depend only on @openmaic/dsl, zod, ../choreography, and relative siblings.',
         },
-        // Import allowlist: @openmaic/dsl(/subpaths), zod, in-folder relatives
-        // (./…), and the sibling choreography spec (../choreography, at any depth).
-        // Anything else — a parent-escape into the rest of the app, or another
-        // bare package — fails.
+        // Import allowlist: @openmaic/dsl(/subpaths), zod, in-module relatives,
+        // and the sibling choreography spec. Relative paths are constrained so a
+        // pass cannot escape the module: `./…` (children) and single-level
+        // `../…` (a pass reaching a module-root file, which stays inside
+        // lib/video-export) are allowed, but a two-level `../../…` escape is
+        // rejected UNLESS it is exactly `../../choreography` — the one declared
+        // cross-module dependency. This closes the earlier hole where any
+        // `.`-prefixed path (e.g. `../../components/foo`) passed.
         {
           selector:
-            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/\\.\\.\\/choreography(\\/|$)|\\.\\.\\/(?!\\.\\.\\/)).+/]',
           message:
-            'lib/video-export may import only from @openmaic/dsl, zod, ../choreography, or relative paths within the module. Other bare packages are blocked; host-app code (imported via @/…) and render backends are caught by the separate @/ and no-restricted-imports guards.',
+            'lib/video-export may import only from @openmaic/dsl, zod, ../../choreography, or in-module relative paths (./… or a single ../… that stays inside the module). A ../../ escape into the rest of the app is rejected; host-app @/… and render backends are caught by the separate guards.',
         },
         {
           selector:
-            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/\\.\\.\\/choreography(\\/|$)|\\.\\.\\/(?!\\.\\.\\/)).+/]',
           message:
-            'lib/video-export may re-export only from @openmaic/dsl, zod, ../choreography, or relative paths within the module.',
+            'lib/video-export may re-export only from @openmaic/dsl, zod, ../../choreography, or in-module relative paths.',
         },
         {
           selector:
-            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/\\.\\.\\/choreography(\\/|$)|\\.\\.\\/(?!\\.\\.\\/)).+/]',
           message:
-            'lib/video-export may re-export only from @openmaic/dsl, zod, ../choreography, or relative paths within the module.',
+            'lib/video-export may re-export only from @openmaic/dsl, zod, ../../choreography, or in-module relative paths.',
         },
         {
           selector: 'ImportExpression',

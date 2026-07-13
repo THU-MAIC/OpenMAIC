@@ -128,6 +128,11 @@ export const NarrationSegmentSchema = z.object({
  * `geometry` is the resolved target geometry (null when the element could not be
  * located, in which case `degraded` is true and an `unresolved-element`
  * diagnostic was emitted).
+ *
+ * `params` carries the **effective** per-instance parameters: the descriptor's
+ * defaults with the authored action overrides merged in (spotlight `dimOpacity`,
+ * laser `color`). An IR-only emitter reads these directly — descriptor defaults
+ * alone cannot recover an authored override.
  */
 export const EffectSegmentSchema = z.object({
   actionId: z.string().optional(),
@@ -139,18 +144,41 @@ export const EffectSegmentSchema = z.object({
   durationMs: z.number(),
   elementId: z.string(),
   geometry: PercentageGeometrySchema.nullable(),
+  /** Effective params: descriptor defaults merged with authored overrides. */
+  params: z.record(z.string(), z.union([z.number(), z.string()])),
   degraded: z.boolean(),
 });
 
-/** Video-playback segment (`play_video`). */
+/**
+ * Video-playback segment (`play_video`). Carries the target element's placement
+ * (`geometry` in 0–100 space + `rotate` in degrees) so an IR-only emitter can
+ * position the real clip without re-reading the scene DSL, and the resolved
+ * media identity (`assetId` / `assetRef` / `present`) so a referenced-but-missing
+ * clip is represented structurally, not only in a diagnostic.
+ *
+ * `durationSource`:
+ * - `stored` — a real clip duration within the safety cap.
+ * - `capped` — a resolved duration clamped to `MAX_VIDEO_WAIT_MS`, or an
+ *   available clip whose duration was unknown (assumed the cap).
+ * - `zero` — an unresolved duration under the explicit `'zero'` policy.
+ * - `skipped` — the media is unavailable (no association or bytes missing); the
+ *   segment occupies **0ms** so later actions are not shifted (skip + diagnostic).
+ */
 export const VideoSegmentSchema = z.object({
   actionId: z.string().optional(),
   actionIndex: z.number(),
   startMs: z.number(),
   durationMs: z.number(),
   elementId: z.string(),
+  geometry: PercentageGeometrySchema.nullable(),
+  /** Element rotation in degrees; 0 when unresolved. */
+  rotate: z.number(),
+  assetId: z.string().optional(),
   assetRef: z.string().optional(),
-  durationSource: z.enum(['stored', 'capped', 'zero']),
+  present: z.boolean(),
+  /** True when the target element's geometry could not be resolved. */
+  degraded: z.boolean(),
+  durationSource: z.enum(['stored', 'capped', 'zero', 'skipped']),
 });
 
 /**

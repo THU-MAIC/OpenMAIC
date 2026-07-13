@@ -18,7 +18,7 @@
  *
  * Pure: no IO beyond the injected dependencies.
  */
-import type { SceneType } from '@openmaic/dsl';
+import type { SceneType, PlayVideoAction } from '@openmaic/dsl';
 import type { AssetSource, CompileConfig, CompilerScene, TimingProbe } from './deps';
 import {
   CANVAS,
@@ -96,19 +96,48 @@ function markUnsupported(
   });
 }
 
+/**
+ * Pre-resolve which `play_video` actions have available media, keyed by action
+ * id. An action is "available" only when the {@link AssetSource} returns a meta
+ * with `present: true`. The timeline pass uses this to give an unavailable clip
+ * a 0ms dwell (skip), instead of letting a silent safety-cap shift later actions.
+ * Availability must be decided here — before `resolveActionTimeline` fixes
+ * dwell — because asset planning runs after the timeline is laid out.
+ */
+function resolveAvailableVideos(
+  scenes: readonly CompilerScene[],
+  assets: AssetSource,
+): Set<string> {
+  const available = new Set<string>();
+  for (const scene of scenes) {
+    for (const action of scene.actions ?? []) {
+      if (action.type !== 'play_video') continue;
+      const meta = assets.media((action as PlayVideoAction).elementId, scene);
+      if (meta?.present) available.add(action.id);
+    }
+  }
+  return available;
+}
+
 export function compileVideoTimeline(input: CompileInput, deps: CompileDeps): VideoTimeline {
   const config = deps.config ?? {};
 
   // 1. normalize — deterministic order + action validation.
   const normalized = normalizeScenes(input.scenes);
 
-  // 2. probe — adapt the TimingProbe into the choreography option shape.
-  const opts = buildTimelineOptions(deps.timing, config);
+  // 2. probe — adapt the TimingProbe into the choreography option shape. Video
+  //    availability is resolved up front (via the AssetSource) so an unavailable
+  //    play_video gets a 0ms dwell in the timeline pass — it is skipped, not
+  //    blocked for up to MAX_VIDEO_WAIT_MS, so later actions are not shifted.
+  const availableVideoActionIds = resolveAvailableVideos(normalized.scenes, deps.assets);
+  const opts = buildTimelineOptions(deps.timing, config, (action) =>
+    availableVideoActionIds.has(action.id),
+  );
 
   // 3. timeline — index→time expansion folded into per-scene buckets + subtitles.
   const timeline = buildTimeline(normalized.scenes, opts);
 
-  // 4. geometry — resolve effect element geometry (degrade on miss).
+  // 4. geometry — resolve effect + video element placement (degrade on miss).
   const geometry = applyGeometry(timeline.scenes, normalized.scenes);
 
   // 5. assets — dedup + naming plan; stamp asset refs onto segments.
