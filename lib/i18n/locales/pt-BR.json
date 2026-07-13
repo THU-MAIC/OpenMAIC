@@ -248,7 +248,7 @@
       "commentPromptLabel": "Orientação de correção",
       "commentPromptPlaceholder": "Como esta resposta aberta deve ser avaliada?",
       "empty": "Nenhuma pergunta ainda",
-      "emptyHint": "Use “Adicionar pergunta” acima para criar a primeira.",
+      "emptyHint": "Use “Adicionar pergunta” para criar a primeira.",
       "type": {
         "single": "Escolha única",
         "multiple": "Múltipla escolha",

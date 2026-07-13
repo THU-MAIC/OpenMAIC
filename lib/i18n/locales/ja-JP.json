@@ -263,7 +263,7 @@
       "commentPromptLabel": "採点ガイド",
       "commentPromptPlaceholder": "この記述式をどう採点しますか？",
       "empty": "問題がありません",
-      "emptyHint": "上の「問題を追加」から最初の問題を作成します。",
+      "emptyHint": "「問題を追加」から最初の問題を作成します。",
       "type": {
         "single": "単一選択",
         "multiple": "複数選択",

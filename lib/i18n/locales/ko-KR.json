@@ -385,7 +385,7 @@
       "deleteOption": "선택지 삭제",
       "deleteQuestion": "문항 삭제",
       "empty": "아직 문항이 없습니다",
-      "emptyHint": "위의 “문항 추가” 버튼으로 첫 문항을 만드세요.",
+      "emptyHint": "“문항 추가” 버튼으로 첫 문항을 만드세요.",
       "markCorrect": "정답으로 표시",
       "moveDown": "아래로 이동",
       "moveUp": "위로 이동",

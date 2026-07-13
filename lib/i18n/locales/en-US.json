@@ -263,7 +263,7 @@
       "commentPromptLabel": "Grading guidance",
       "commentPromptPlaceholder": "How should this open response be graded?",
       "empty": "No questions yet",
-      "emptyHint": "Use the “Add question” button above to create the first one.",
+      "emptyHint": "Use “Add question” to create the first one.",
       "type": {
         "single": "Single choice",
         "multiple": "Multiple choice",
