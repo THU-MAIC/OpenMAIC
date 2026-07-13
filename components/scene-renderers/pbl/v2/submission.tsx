@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 
 import { addSubmission, listSubmissionsForMicrotask } from '@/lib/pbl/v2/operations/submission';
+import { findModelById } from '@/lib/ai/model-aliases';
 import {
   TEXT_PDF_IMAGE_ACCEPT,
   isImageFile,
@@ -920,7 +921,7 @@ function SubmissionModal({
   // Whether the currently-selected model can read images. Reactive so that
   // switching models (in Settings) updates the image-caption gating live.
   const hasVision = useSettingsStore((s) => {
-    const model = s.providersConfig[s.providerId]?.models.find((m) => m.id === s.modelId);
+    const model = findModelById(s.providerId, s.providersConfig[s.providerId]?.models, s.modelId);
     return !!model?.capabilities?.vision;
   });
   const [mode, setMode] = useState<'paste' | 'file'>('paste');

@@ -39,7 +39,7 @@ import type {
   ThinkingConfig,
 } from '@/lib/types/provider';
 import { applyModelMetadata, getCatalogThinkingCapability } from './model-metadata';
-import { getCanonicalModelId } from './model-aliases';
+import { findModelById } from './model-aliases';
 import { getDefaultThinkingConfig, getThinkingMode, pickThinkingBudget } from './thinking-config';
 import { createLogger } from '@/lib/logger';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
@@ -1709,8 +1709,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   }
 
   // Look up model info from the provider registry
-  const canonicalModelId = getCanonicalModelId(config.providerId, config.modelId);
-  const modelInfo = provider?.models.find((m) => m.id === canonicalModelId) || null;
+  const modelInfo = findModelById(config.providerId, provider?.models, config.modelId) ?? null;
 
   return { model, modelInfo };
 }
@@ -1764,6 +1763,5 @@ export function getProvider(providerId: ProviderId): ProviderConfig | undefined 
  */
 export function getModelInfo(providerId: ProviderId, modelId: string): ModelInfo | undefined {
   const provider = PROVIDERS[providerId];
-  const canonicalModelId = getCanonicalModelId(providerId, modelId);
-  return provider?.models.find((m) => m.id === canonicalModelId);
+  return findModelById(providerId, provider?.models, modelId);
 }

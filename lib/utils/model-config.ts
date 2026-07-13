@@ -4,7 +4,7 @@ import {
   normalizeThinkingConfig,
   supportsConfigurableThinking,
 } from '@/lib/ai/thinking-config';
-import { getCanonicalModelId } from '@/lib/ai/model-aliases';
+import { findModelById } from '@/lib/ai/model-aliases';
 import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
 
 /**
@@ -16,10 +16,7 @@ export function getCurrentModelConfig() {
 
   // Get current provider's config
   const providerConfig = providersConfig[providerId];
-  const canonicalModelId = getCanonicalModelId(providerId, modelId);
-  const modelInfo = providerConfig?.models.find(
-    (model) => getCanonicalModelId(providerId, model.id) === canonicalModelId,
-  );
+  const modelInfo = findModelById(providerId, providerConfig?.models, modelId);
   const thinking =
     modelInfo?.capabilities?.thinking ?? getCatalogThinkingCapability(providerId, modelId);
   const thinkingConfig = supportsConfigurableThinking(thinking)
