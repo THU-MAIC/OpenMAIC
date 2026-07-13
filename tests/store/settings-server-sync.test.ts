@@ -320,7 +320,7 @@ describe('settings rehydrate — built-in provider models', () => {
     expect(openai.isServerConfigured).toBe(true);
   });
 
-  it('removes the retired insert-toolbar collapse preference on v5 migration', async () => {
+  it('removes the retired insert-toolbar collapse preference on rehydrate', async () => {
     storage.set(
       'settings-storage',
       JSON.stringify({

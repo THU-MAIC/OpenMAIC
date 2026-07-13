@@ -1799,7 +1799,7 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: 'settings-storage',
-      version: 5,
+      version: 4,
       // Migrate persisted state
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<SettingsState>;
@@ -1988,13 +1988,6 @@ export const useSettingsStore = create<SettingsState>()(
           }
         }
 
-        // v4 → v5: the insert toolbar is draggable and no longer collapses.
-        // Remove the retired preference so the custom merge cannot carry it
-        // forward as an undeclared runtime property on every persistence write.
-        if (version < 5) {
-          delete (state as Record<string, unknown>).editInsertToolbarCollapsed;
-        }
-
         ensureValidProviderSelections(state);
         ensureBuiltInAudioProviders(state);
         ensureBuiltInWebSearchProviders(state);
@@ -2005,7 +1998,12 @@ export const useSettingsStore = create<SettingsState>()(
       // Custom merge: always sync built-in providers on every rehydrate,
       // so newly added providers/models appear without clearing cache.
       merge: (persistedState, currentState) => {
-        const merged = { ...currentState, ...(persistedState as object) };
+        // The insert toolbar is draggable and no longer collapses. Sanitize
+        // this retired property on every rehydrate instead of bumping the
+        // storage version and replaying unrelated legacy migrations.
+        const persisted = { ...(persistedState as object) } as Record<string, unknown>;
+        delete persisted.editInsertToolbarCollapsed;
+        const merged = { ...currentState, ...persisted };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
         promoteLegacyCustomProviderBaseUrls(merged as Partial<SettingsState>);
         ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
