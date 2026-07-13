@@ -67,6 +67,70 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/openai.svg',
     models: [
       {
+        id: 'gpt-5.6',
+        name: 'GPT-5.6',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.6-terra',
+        name: 'GPT-5.6 Terra',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
         id: 'gpt-5.5',
         name: 'GPT-5.5',
         contextWindow: 1050000,
@@ -1421,6 +1485,7 @@ function shouldUseOpenAIResponsesApi(providerId: ProviderId, modelId: string): b
 
   return (
     /^gpt-5\.\d+-pro(?:-|$)/.test(modelId) ||
+    /^gpt-5\.6(?:-|$)/.test(modelId) ||
     /^gpt-5\.5(?:-|$)/.test(modelId) ||
     /^gpt-5\.[3-9]-codex(?:-|$)/.test(modelId)
   );

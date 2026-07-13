@@ -227,7 +227,22 @@ const doubaoSeed20Effort: ThinkingCapability = {
 
 const minimaxM3Thinking = toggleCapability('anthropic', false);
 
+const openaiGpt56Effort: ThinkingCapability = {
+  control: 'effort',
+  requestAdapter: 'openai',
+  effortValues: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  defaultEffort: 'medium',
+  defaultMode: 'enabled',
+  toggleable: true,
+  budgetAdjustable: true,
+  defaultEnabled: true,
+};
+
 const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
+  [getModelMetadataKey('openai', 'gpt-5.6')]: openaiGpt56Effort,
+  [getModelMetadataKey('openai', 'gpt-5.6-sol')]: openaiGpt56Effort,
+  [getModelMetadataKey('openai', 'gpt-5.6-terra')]: openaiGpt56Effort,
+  [getModelMetadataKey('openai', 'gpt-5.6-luna')]: openaiGpt56Effort,
   [getModelMetadataKey('openai', 'gpt-5.5')]: effortCapability(
     'openai',
     ['low', 'medium', 'high', 'xhigh'],
