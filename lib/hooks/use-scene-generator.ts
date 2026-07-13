@@ -21,7 +21,7 @@ import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
-import { lazyBoundedMap } from '@/lib/utils/concurrency';
+import { lazyBoundedMap, mapWithConcurrency } from '@/lib/utils/concurrency';
 import { createLogger } from '@/lib/logger';
 import {
   isAbortError,
@@ -347,7 +347,9 @@ async function generateTTSForScene(
   // This prevents audio collision when action IDs are sequential (e.g., action_1, action_2)
   const sceneOrder = scene.order;
 
-  for (const action of speechActions) {
+  // Generate + store one action's audio. Failures are counted, not thrown, so
+  // one bad clip never aborts the rest of the scene.
+  const generateOne = async (action: SpeechAction) => {
     // Include scene order in audioId to prevent collision across scenes
     const audioId = `tts_s${sceneOrder}_${action.id}`;
     action.audioId = audioId;
@@ -366,6 +368,23 @@ async function generateTTSForScene(
         textLength: action.text.length,
         error: lastError,
       });
+    }
+  };
+
+  // #660 follow-up: speech actions within a scene are independent — each renders
+  // its own audio under its own audioId, with no cross-action ordering — so when
+  // the server opts into parallel generation, render them with bounded
+  // concurrency (reusing the PARALLEL_SCENE_CONCURRENCY knob) instead of one at a
+  // time. Default (0 / unset) keeps the original strictly-serial behaviour.
+  const ttsConcurrency = Math.max(
+    0,
+    Math.floor(useSettingsStore.getState().parallelSceneConcurrency ?? 0),
+  );
+  if (ttsConcurrency > 1 && speechActions.length > 1) {
+    await mapWithConcurrency(speechActions, ttsConcurrency, generateOne);
+  } else {
+    for (const action of speechActions) {
+      await generateOne(action);
     }
   }
 
