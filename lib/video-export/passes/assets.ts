@@ -67,22 +67,42 @@ function extension(meta: AssetMeta, fallback: string): string {
 class AssetPlanner {
   readonly entries: AssetPlanEntry[] = [];
   private readonly usedPaths = new Map<string, number>();
-  private readonly ownerPath = new Map<string, string>();
+  /** assetId → the first (owner) entry, whose path + presence every later ref inherits. */
+  private readonly owner = new Map<string, AssetPlanEntry>();
 
   /**
-   * Plan one asset reference. Returns the path it maps to (a fresh unique path,
-   * or the shared path of an earlier reference to the same `assetId`).
+   * Plan one asset reference. Returns the path it maps to and the *authoritative*
+   * presence for its `assetId`.
+   *
+   * Presence is a property of the asset id, not of an individual reference: the
+   * first reference to an id decides it, and every later reference (and the
+   * caller's segment) inherits that value. This keeps the plan internally
+   * consistent even if an {@link AssetSource} returns inconsistent `present` for
+   * the same id — otherwise a dedup entry could claim a different presence than
+   * its owner.
    */
-  plan(assetId: string, kind: AssetKind, desiredPath: string, present: boolean): string {
-    if (this.ownerPath.has(assetId)) {
-      const path = this.ownerPath.get(assetId)!;
-      this.entries.push({ assetId, kind, path, present, dedupOf: assetId });
-      return path;
+  plan(
+    assetId: string,
+    kind: AssetKind,
+    desiredPath: string,
+    present: boolean,
+  ): { path: string; present: boolean } {
+    const existing = this.owner.get(assetId);
+    if (existing) {
+      this.entries.push({
+        assetId,
+        kind,
+        path: existing.path,
+        present: existing.present,
+        dedupOf: assetId,
+      });
+      return { path: existing.path, present: existing.present };
     }
     const path = this.unique(desiredPath);
-    this.ownerPath.set(assetId, path);
-    this.entries.push({ assetId, kind, path, present });
-    return path;
+    const entry: AssetPlanEntry = { assetId, kind, path, present };
+    this.owner.set(assetId, entry);
+    this.entries.push(entry);
+    return { path, present };
   }
 
   /** Suffix a path (`stem-2.ext`) until it is unique among planned paths. */
@@ -113,7 +133,7 @@ export function planAssets(
     // Base frame — planned for renderable (slide) scenes; the exporter renders it.
     let base = scene.base;
     if (scene.base.kind === 'slide-snapshot') {
-      const path = planner.plan(`frame:${scene.id}`, 'frame', `frames/${sceneSlug}.png`, true);
+      const { path } = planner.plan(`frame:${scene.id}`, 'frame', `frames/${sceneSlug}.png`, true);
       base = { ...scene.base, assetRef: path };
     }
 
@@ -137,13 +157,13 @@ export function planAssets(
         return seg;
       }
 
-      const path = planner.plan(
+      const { path, present } = planner.plan(
         meta.id,
         'audio',
         `audio/${sceneSlug}/speech-${String(speechSeq).padStart(3, '0')}.${extension(meta, 'mp3')}`,
         meta.present,
       );
-      if (!meta.present) {
+      if (!present) {
         diagnostics.push({
           severity: 'warn',
           code: 'skipped-media',
@@ -157,8 +177,8 @@ export function planAssets(
         audio: {
           ...seg.audio,
           assetId: meta.id,
-          present: meta.present,
-          ...(meta.present ? { assetRef: path } : {}),
+          present,
+          ...(present ? { assetRef: path } : {}),
         },
       };
     });
@@ -188,7 +208,7 @@ export function planAssets(
         });
         return { ...seg };
       }
-      const path = planner.plan(
+      const { path } = planner.plan(
         meta.id,
         'video',
         `media/${sanitizeFilenamePart(seg.elementId)}.${extension(meta, 'mp4')}`,

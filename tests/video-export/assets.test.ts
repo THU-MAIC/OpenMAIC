@@ -76,6 +76,22 @@ describe('planAssets — audio', () => {
     expect(audioEntries[0]).not.toHaveProperty('dedupOf');
     expect(audioEntries[1]).toMatchObject({ dedupOf: 'shared', path: audioEntries[0].path });
   });
+
+  it('makes presence authoritative per assetId — a later ref inherits the owner, not its own meta', () => {
+    // First ref to `shared` is absent; a later ref claims present:true. The plan
+    // must stay internally consistent: the owner's presence wins for both the
+    // dedup entry and the stamped segment (no entry disagreeing with its owner).
+    const res = plan([slide('s', [speech('a', 'x'), speech('b', 'y')])], {
+      a: { id: 'shared', present: false, format: 'mp3' },
+      b: { id: 'shared', present: true, format: 'mp3' },
+    });
+    const audioEntries = res.plan.entries.filter((e) => e.kind === 'audio');
+    expect(audioEntries.map((e) => e.present)).toEqual([false, false]);
+    expect(audioEntries[1].dedupOf).toBe('shared');
+    // Both segments reflect the authoritative (owner) presence: absent → no assetRef.
+    expect(res.scenes[0].narration.map((n) => n.audio.present)).toEqual([false, false]);
+    expect(res.scenes[0].narration.every((n) => n.audio.assetRef === undefined)).toBe(true);
+  });
 });
 
 describe('planAssets — base frame & video', () => {
