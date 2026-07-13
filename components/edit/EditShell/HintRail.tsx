@@ -17,7 +17,7 @@ export function HintRail({ hints }: HintRailProps) {
 
   return (
     <div className="pointer-events-none absolute bottom-4 left-1/2 z-20 -translate-x-1/2">
-      <div className="pointer-events-auto flex max-w-md flex-col gap-2">
+      <div className="flex max-w-md flex-col gap-2">
         {hints.map((hint) => (
           <HintCard key={hint.id} hint={hint} />
         ))}
@@ -52,7 +52,7 @@ function HintCard({ hint }: { readonly hint: EditorHint }) {
         <button
           type="button"
           onClick={hint.action.onInvoke}
-          className="shrink-0 rounded-md bg-white/60 px-2.5 py-1 text-xs font-medium hover:bg-white dark:bg-zinc-800/60 dark:hover:bg-zinc-800"
+          className="pointer-events-auto shrink-0 rounded-md bg-white/60 px-2.5 py-1 text-xs font-medium hover:bg-white dark:bg-zinc-800/60 dark:hover:bg-zinc-800"
         >
           {hint.action.label}
         </button>
