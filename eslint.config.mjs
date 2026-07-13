@@ -198,6 +198,88 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Module boundary (machine-enforced): lib/video-export is the classroom-video
+  // compiler (issue #864). It produces the VideoTimeline IR with pure passes and
+  // must stay interpretable in pure Node (no FFmpeg / Chrome / DOM), so runtime
+  // app state enters only through the injected TimingProbe / AssetSource. Same
+  // two guards as lib/choreography, with ONE addition to the import allowlist:
+  // it may also import the sibling lib/choreography spec (via ../choreography),
+  // which it consumes for the shared timeline/timing/descriptor semantics. The
+  // relative allowlist permits any dot-relative path (the module has subdirs, so
+  // in-module imports use ../ir etc.); the real purity teeth are the @/ ban, the
+  // bare-package allowlist (only @openmaic/dsl + zod), and the render-backend ban.
+  {
+    files: ['lib/video-export/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/^@\\//]',
+          message:
+            'lib/video-export must not reference a host-app path (@/…). Live app state enters only through the injected TimingProbe / AssetSource — depend only on @openmaic/dsl, zod, ../choreography, and relative siblings, so the compiler runs in pure Node.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/^@\\//]',
+          message:
+            'lib/video-export must not reference a host-app path (@/…) in a template literal. Depend only on @openmaic/dsl, zod, ../choreography, and relative siblings.',
+        },
+        // Import allowlist: @openmaic/dsl(/subpaths), zod, in-folder relatives
+        // (./…), and the sibling choreography spec (../choreography, at any depth).
+        // Anything else — a parent-escape into the rest of the app, or another
+        // bare package — fails.
+        {
+          selector:
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
+          message:
+            'lib/video-export may import only from @openmaic/dsl, zod, ../choreography, or in-folder relatives (./…). No other parent-escape into the app and no other packages — keep it pure so the compiler runs in plain Node.',
+        },
+        {
+          selector:
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
+          message:
+            'lib/video-export may re-export only from @openmaic/dsl, zod, ../choreography, or in-folder relatives (./…).',
+        },
+        {
+          selector:
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
+          message:
+            'lib/video-export may re-export only from @openmaic/dsl, zod, ../choreography, or in-folder relatives (./…).',
+        },
+        {
+          selector: 'ImportExpression',
+          message:
+            'lib/video-export must not use dynamic import() — it bypasses the static import allowlist. Use a top-level import from @openmaic/dsl, zod, ../choreography, or a relative sibling.',
+        },
+        {
+          selector: "CallExpression[callee.name='require']",
+          message:
+            'lib/video-export must not use require() — it bypasses the static import allowlist.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'react',
+                'react-dom',
+                'react/*',
+                'react-dom/*',
+                'gsap',
+                'gsap/*',
+                'framer-motion',
+                'motion',
+                'motion/*',
+              ],
+              message:
+                'lib/video-export must stay render-backend-agnostic (pure Node): no React / DOM / GSAP / framer-motion. The compiler emits the IR as data; the downstream Hyperframes emitter renders it.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;
