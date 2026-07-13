@@ -61,6 +61,18 @@ describe('verifyAliDocMindCredentials', () => {
     await expect(verifyAliDocMindCredentials(CREDS)).resolves.toEqual({ ok: true });
   });
 
+  it('rejects an empty/absent response body code (malformed or custom endpoint)', async () => {
+    // A blank code is NOT a positive signal — a working key always returns the
+    // job-not-found business code for the bogus probe id.
+    queryDocParserStatus.mockResolvedValue({ body: {} });
+    const empty = await verifyAliDocMindCredentials(CREDS);
+    expect(empty.ok).toBe(false);
+
+    queryDocParserStatus.mockResolvedValue({ body: undefined });
+    const noBody = await verifyAliDocMindCredentials(CREDS);
+    expect(noBody.ok).toBe(false);
+  });
+
   it('rejects a thrown auth error (invalid AK/SK)', async () => {
     queryDocParserStatus.mockRejectedValue(
       Object.assign(new Error('Specified access key is not found'), {

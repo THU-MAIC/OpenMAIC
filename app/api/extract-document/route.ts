@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import {
   isServerConfiguredProvider,
+  resolveManagedAliDocMindCredentials,
   resolvePDFApiKey,
   resolvePDFBaseUrl,
 } from '@/lib/server/provider-config';
@@ -168,6 +169,10 @@ export async function POST(req: NextRequest) {
         );
       }
       const mediaManaged = isServerConfiguredProvider('pdf', resolvedProviderId);
+      // When managed, resolve the server-owned AK/SK (env OR YAML) explicitly so
+      // a YAML-only deployment works — the client-level env fallback reads env
+      // vars only. Client-entered creds are used only when unmanaged.
+      const mediaManagedCreds = mediaManaged ? resolveManagedAliDocMindCredentials() : undefined;
       const mediaClientBaseUrl = mediaManaged ? undefined : baseUrl || undefined;
       // Same SSRF guard the document path applies: a client-supplied endpoint
       // must not let the server connect to internal/metadata hosts.
@@ -187,10 +192,13 @@ export async function POST(req: NextRequest) {
         config: {
           providerId: resolvedProviderId,
           apiKey: mediaManaged ? undefined : apiKey || undefined,
-          baseUrl: mediaClientBaseUrl,
-          accessKeyId: mediaManaged ? undefined : accessKeyId || undefined,
-          accessKeySecret: mediaManaged ? undefined : accessKeySecret || undefined,
-          // Only a server-managed provider may use the server's env credentials.
+          baseUrl: mediaManaged ? mediaManagedCreds?.baseUrl : mediaClientBaseUrl,
+          accessKeyId: mediaManaged ? mediaManagedCreds?.accessKeyId : accessKeyId || undefined,
+          accessKeySecret: mediaManaged
+            ? mediaManagedCreds?.accessKeySecret
+            : accessKeySecret || undefined,
+          // Env fallback is a last resort for a managed provider whose creds
+          // weren't resolved above (defensive; resolver already covers env+YAML).
           allowEnvFallback: mediaManaged,
         },
       });
@@ -279,18 +287,24 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // For a managed AliDocMind provider, resolve server-owned AK/SK (env OR
+    // YAML) explicitly so a YAML-only deployment extracts successfully — the
+    // client-level env fallback reads env vars only.
+    const managedAliCreds =
+      managed && provider.id === 'alidocmind' ? resolveManagedAliDocMindCredentials() : undefined;
     const config = {
       providerId: provider.id,
       apiKey: isPdfProviderId(provider.id)
         ? resolvePDFApiKey(provider.id, managed ? undefined : apiKey || undefined)
         : apiKey || undefined,
       baseUrl: isPdfProviderId(provider.id)
-        ? resolvePDFBaseUrl(provider.id, clientBaseUrl)
+        ? (managedAliCreds?.baseUrl ?? resolvePDFBaseUrl(provider.id, clientBaseUrl))
         : clientBaseUrl,
-      // AliDocMind uses AK/SK; pass client-entered values only when not managed.
-      accessKeyId: managed ? undefined : accessKeyId || undefined,
-      accessKeySecret: managed ? undefined : accessKeySecret || undefined,
-      // Only a server-managed provider may use the server's env credentials.
+      // AliDocMind uses AK/SK: managed → server-owned creds; else client values.
+      accessKeyId: managed ? managedAliCreds?.accessKeyId : accessKeyId || undefined,
+      accessKeySecret: managed ? managedAliCreds?.accessKeySecret : accessKeySecret || undefined,
+      // Env fallback is a last resort for a managed provider (defensive; the
+      // resolver already covers env+YAML).
       allowEnvFallback: managed,
     };
 

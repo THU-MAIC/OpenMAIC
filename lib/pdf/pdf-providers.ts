@@ -384,12 +384,21 @@ const ALIDOCMIND_IMAGE_CONCURRENCY = 6;
  * pointing at internal hosts. Matches `*.oss-*.aliyuncs.com` (and the
  * doc-mind-video bucket host family).
  */
+/**
+ * AliDocMind returns image URLs on Aliyun OSS. Restrict fetches to Aliyun OSS
+ * hosts so a compromised/custom endpoint can't turn image extraction into an
+ * SSRF vector pointing at internal hosts. Only `*.aliyuncs.com` over http/https
+ * is allowed (OSS signed URLs are sometimes served over http; the fetch upgrades
+ * them to https).
+ */
 function isTrustedAliyunOssUrl(url: string): boolean {
   try {
     const u = new URL(url);
     if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
     const host = u.hostname.toLowerCase();
-    return /(^|\.)oss-[a-z0-9-]+\.aliyuncs\.com$/.test(host) || host.endsWith('.aliyuncs.com');
+    // Must be an oss-*.aliyuncs.com host (rules out arbitrary *.aliyuncs.com
+    // subdomains that aren't object storage).
+    return /(^|\.)oss-[a-z0-9-]+\.aliyuncs\.com$/.test(host);
   } catch {
     return false;
   }
@@ -401,30 +410,54 @@ function isTrustedAliyunOssUrl(url: string): boolean {
  * redirects are disallowed (an OSS signed URL never needs one). Returns null on
  * any failure so one bad image never fails the whole parse.
  */
-async function fetchAliDocMindImageAsBase64(url: string): Promise<string | null> {
+export async function fetchAliDocMindImageAsBase64(url: string): Promise<string | null> {
   if (!isTrustedAliyunOssUrl(url)) {
     log.warn(`[AliDocMind] refusing non-OSS image URL: ${url.slice(0, 80)}`);
     return null;
   }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
     const res = await fetch(url, {
-      signal: AbortSignal.timeout(30_000),
+      signal: controller.signal,
       redirect: 'error', // signed OSS URLs are direct; a redirect is suspicious
     });
     if (!res.ok) {
       log.warn(`[AliDocMind] image fetch ${res.status} for ${url.slice(0, 80)}`);
       return null;
     }
+    // Reject early on a declared oversized length…
     const declared = Number(res.headers.get('content-length') || 0);
     if (declared > ALIDOCMIND_MAX_IMAGE_BYTES) {
       log.warn(`[AliDocMind] image too large (${declared} bytes), skipping`);
+      controller.abort();
       return null;
     }
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.byteLength > ALIDOCMIND_MAX_IMAGE_BYTES) {
-      log.warn(`[AliDocMind] image body too large (${buf.byteLength} bytes), skipping`);
-      return null;
+    // …but a missing/false Content-Length can't be trusted, so stream and abort
+    // the moment the cumulative byte count exceeds the cap — the whole body is
+    // never buffered past the limit.
+    const body = res.body;
+    if (!body) return null;
+    const chunks: Uint8Array[] = [];
+    let total = 0;
+    const reader = body.getReader();
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > ALIDOCMIND_MAX_IMAGE_BYTES) {
+          log.warn(
+            `[AliDocMind] image stream exceeded ${ALIDOCMIND_MAX_IMAGE_BYTES} bytes, aborting`,
+          );
+          controller.abort();
+          await reader.cancel().catch(() => {});
+          return null;
+        }
+        chunks.push(value);
+      }
     }
+    const buf = Buffer.concat(chunks.map((c) => Buffer.from(c)));
     const png = await sharp(buf).png().toBuffer();
     return `data:image/png;base64,${png.toString('base64')}`;
   } catch (err) {
@@ -432,6 +465,8 @@ async function fetchAliDocMindImageAsBase64(url: string): Promise<string | null>
       `[AliDocMind] image fetch/convert failed: ${err instanceof Error ? err.message : err}`,
     );
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 

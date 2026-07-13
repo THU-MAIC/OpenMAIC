@@ -266,13 +266,14 @@ export async function verifyAliDocMindCredentials(
       new $Docmind.QueryDocParserStatusRequest({ id: 'verify-connection-probe' }),
     );
     // No throw = authenticated, but the body may still carry a permission or
-    // business error. Only a success code or the job-not-found probe response
-    // proves DocMind is actually usable with these credentials.
+    // business error. Only an explicit positive signal proves DocMind is usable
+    // with these credentials — the probe uses a bogus job id, so a working key
+    // always returns the job-not-found business code (or a 200/success). An
+    // empty/absent code (malformed or custom endpoint) is NOT accepted.
     const code = res.body?.code;
     const codeStr = code === undefined || code === null ? '' : String(code);
     const lower = codeStr.toLowerCase();
     const isProbeOk =
-      codeStr === '' || // some success responses omit code
       codeStr === '200' ||
       lower.includes('bizidnotexist') ||
       lower.includes('resultexpired') ||
@@ -282,7 +283,9 @@ export async function verifyAliDocMindCredentials(
     }
     return {
       ok: false,
-      error: `${codeStr}: ${res.body?.message ?? 'AliDocMind rejected the request'}`,
+      error: codeStr
+        ? `${codeStr}: ${res.body?.message ?? 'AliDocMind rejected the request'}`
+        : 'AliDocMind returned an unrecognized response (empty status code)',
     };
   } catch (err) {
     const code =

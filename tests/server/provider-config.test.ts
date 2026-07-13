@@ -62,6 +62,9 @@ function clearProviderEnv() {
   delete process.env.TAVILY_API_KEY;
   delete process.env.BOCHA_API_KEY;
   delete process.env.BOCHA_BASE_URL;
+  delete process.env.ALIDOCMIND_ACCESS_KEY_ID;
+  delete process.env.ALIDOCMIND_ACCESS_KEY_SECRET;
+  delete process.env.ALIDOCMIND_BASE_URL;
 }
 
 vi.mock('fs', async (importOriginal) => {
@@ -531,6 +534,40 @@ pdf:
       const { isServerTTSProviderDisabled } = await import('@/lib/server/provider-config');
       expect(isServerTTSProviderDisabled('openai-tts')).toBe(true);
       expect(isServerTTSProviderDisabled('qwen-tts')).toBe(false);
+    });
+  });
+
+  describe('resolveManagedAliDocMindCredentials (AK/SK)', () => {
+    it('resolves YAML-managed AK/SK with NO ALIDOCMIND_* env vars', async () => {
+      // Regression: verification resolved YAML creds but extraction only had an
+      // env fallback, so a YAML-only deployment verified then failed to extract.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n    accessKeyId: yaml-ak\n    accessKeySecret: yaml-sk\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(true);
+      expect(resolveManagedAliDocMindCredentials()).toEqual({
+        accessKeyId: 'yaml-ak',
+        accessKeySecret: 'yaml-sk',
+        baseUrl: undefined,
+      });
+    });
+
+    it('resolves AK/SK from env vars', async () => {
+      vi.stubEnv('ALIDOCMIND_ACCESS_KEY_ID', 'env-ak');
+      vi.stubEnv('ALIDOCMIND_ACCESS_KEY_SECRET', 'env-sk');
+      const { resolveManagedAliDocMindCredentials } = await import('@/lib/server/provider-config');
+      expect(resolveManagedAliDocMindCredentials()).toMatchObject({
+        accessKeyId: 'env-ak',
+        accessKeySecret: 'env-sk',
+      });
+    });
+
+    it('returns undefined when neither env nor YAML configures AliDocMind', async () => {
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(resolveManagedAliDocMindCredentials()).toBeUndefined();
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(false);
     });
   });
 });
