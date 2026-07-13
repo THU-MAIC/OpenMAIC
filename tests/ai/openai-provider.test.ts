@@ -75,8 +75,7 @@ describe('OpenAI provider defaults', () => {
   });
 
   it.each([
-    ['gpt-5.6', 'GPT-5.6'],
-    ['gpt-5.6-sol', 'GPT-5.6 Sol'],
+    ['gpt-5.6', 'GPT-5.6 Sol'],
     ['gpt-5.6-terra', 'GPT-5.6 Terra'],
     ['gpt-5.6-luna', 'GPT-5.6 Luna'],
   ])('includes %s as a built-in OpenAI model', (modelId, name) => {

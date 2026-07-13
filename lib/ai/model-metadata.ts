@@ -240,7 +240,6 @@ const openaiGpt56Effort: ThinkingCapability = {
 
 const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
   [getModelMetadataKey('openai', 'gpt-5.6')]: openaiGpt56Effort,
-  [getModelMetadataKey('openai', 'gpt-5.6-sol')]: openaiGpt56Effort,
   [getModelMetadataKey('openai', 'gpt-5.6-terra')]: openaiGpt56Effort,
   [getModelMetadataKey('openai', 'gpt-5.6-luna')]: openaiGpt56Effort,
   [getModelMetadataKey('openai', 'gpt-5.5')]: effortCapability(
