@@ -290,18 +290,24 @@ function applyAliDocMindFallback(
   pdfConfig: Record<string, ServerProviderEntry>,
   yamlPdfSection: Record<string, Partial<ServerProviderEntry>> | undefined,
 ): Record<string, ServerProviderEntry> {
-  if (pdfConfig[ALIDOCMIND_PROVIDER_ID]) return pdfConfig;
-
   const yamlEntry = yamlPdfSection?.[ALIDOCMIND_PROVIDER_ID];
   const accessKeyId = process.env.ALIDOCMIND_ACCESS_KEY_ID || yamlEntry?.accessKeyId;
   const accessKeySecret = process.env.ALIDOCMIND_ACCESS_KEY_SECRET || yamlEntry?.accessKeySecret;
   if (!accessKeyId || !accessKeySecret) return pdfConfig;
 
+  // Merge the AK/SK into any entry the generic env/YAML loader already created.
+  // That loader copies only apiKey/baseUrl/models/proxy — never AK/SK — and a
+  // YAML entry with a `baseUrl` makes it create the entry, so returning early
+  // here would leave a "managed" provider with no usable credentials.
+  const existing = pdfConfig[ALIDOCMIND_PROVIDER_ID];
   pdfConfig[ALIDOCMIND_PROVIDER_ID] = {
-    apiKey: '',
+    apiKey: existing?.apiKey ?? '',
     accessKeyId,
     accessKeySecret,
-    baseUrl: yamlEntry?.baseUrl || process.env.ALIDOCMIND_BASE_URL || undefined,
+    baseUrl:
+      existing?.baseUrl || yamlEntry?.baseUrl || process.env.ALIDOCMIND_BASE_URL || undefined,
+    models: existing?.models,
+    proxy: existing?.proxy,
   };
   return pdfConfig;
 }

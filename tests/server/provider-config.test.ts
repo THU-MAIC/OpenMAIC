@@ -553,6 +553,25 @@ pdf:
       });
     });
 
+    it('resolves YAML AK/SK even when the entry also has baseUrl', async () => {
+      // Regression: a YAML entry WITH baseUrl makes the generic loader create a
+      // pdf.alidocmind entry (copying only apiKey/baseUrl/models/proxy, never
+      // AK/SK). The fallback must merge AK/SK into that entry, not skip it.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n' +
+        '    accessKeyId: review-ak\n' +
+        '    accessKeySecret: review-sk\n' +
+        '    baseUrl: https://docmind-api.cn-hangzhou.aliyuncs.com\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(true);
+      expect(resolveManagedAliDocMindCredentials()).toEqual({
+        accessKeyId: 'review-ak',
+        accessKeySecret: 'review-sk',
+        baseUrl: 'https://docmind-api.cn-hangzhou.aliyuncs.com',
+      });
+    });
+
     it('resolves AK/SK from env vars', async () => {
       vi.stubEnv('ALIDOCMIND_ACCESS_KEY_ID', 'env-ak');
       vi.stubEnv('ALIDOCMIND_ACCESS_KEY_SECRET', 'env-sk');
