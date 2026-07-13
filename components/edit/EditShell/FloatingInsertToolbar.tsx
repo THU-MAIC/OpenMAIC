@@ -100,7 +100,7 @@ export function FloatingInsertToolbar({ items }: Props) {
           }}
           onKeyDown={handleDragKeyDown}
           onBlur={() => setKeyboardDragging(false)}
-          className="flex h-3 w-9 touch-none cursor-grab items-center justify-center rounded-md text-zinc-300 hover:bg-zinc-100 hover:text-zinc-500 focus-visible:outline-2 focus-visible:outline-violet-500 active:cursor-grabbing dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
+          className="flex h-6 w-9 touch-none cursor-grab items-center justify-center rounded-md text-zinc-300 hover:bg-zinc-100 hover:text-zinc-500 focus-visible:outline-2 focus-visible:outline-violet-500 active:cursor-grabbing dark:text-zinc-600 dark:hover:bg-zinc-800 dark:hover:text-zinc-400"
         >
           <GripHorizontal className="h-3 w-3" strokeWidth={2} />
         </button>

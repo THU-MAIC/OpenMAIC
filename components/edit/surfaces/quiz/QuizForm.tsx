@@ -57,7 +57,12 @@ export function QuizForm() {
         backgroundSize: '22px 22px',
       }}
     >
-      <div className="mx-auto flex max-w-2xl flex-col gap-2.5 px-5 pb-20 pt-16">
+      <div
+        className="mx-auto flex max-w-2xl flex-col gap-2.5 px-5 pt-16"
+        // HintRail measures its rendered stack into this inherited variable.
+        // The normal 5rem breathing room remains when there are no hints.
+        style={{ paddingBottom: 'calc(var(--editor-hint-rail-height, 0px) + 5rem)' }}
+      >
         {questions.length === 0 ? (
           <EmptyState />
         ) : (
