@@ -204,8 +204,7 @@
     },
     "insert": {
       "textBox": "Text box",
-      "expandToolbar": "Show insert tools",
-      "collapseToolbar": "Hide insert tools",
+      "dragToolbar": "Move insert tools",
       "image": "Image",
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",

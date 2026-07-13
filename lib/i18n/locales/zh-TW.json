@@ -204,8 +204,7 @@
     },
     "insert": {
       "textBox": "文字方塊",
-      "expandToolbar": "展開插入工具",
-      "collapseToolbar": "收起插入工具",
+      "dragToolbar": "拖動工具列",
       "image": "圖片",
       "imageDrop": "拖曳圖片或點按選擇檔案",
       "imageOr": "或貼上圖片網址",

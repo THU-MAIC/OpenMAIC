@@ -204,8 +204,7 @@
     },
     "insert": {
       "textBox": "テキストボックス",
-      "expandToolbar": "挿入ツールを表示",
-      "collapseToolbar": "挿入ツールを隠す",
+      "dragToolbar": "挿入ツールを移動",
       "image": "画像",
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",
