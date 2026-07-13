@@ -166,15 +166,27 @@ export function planAssets(
     // Video media (play_video targets).
     const videos = scene.videos.map((seg) => {
       const meta = sourceScene ? assetSource.media(seg.elementId, sourceScene) : null;
-      if (!meta || !meta.present) {
+      if (!meta) {
+        // No media asset is associated with the element at all (distinct from a
+        // referenced asset whose bytes are missing, below).
         diagnostics.push({
           severity: 'warn',
           code: 'skipped-media',
           sceneId: scene.id,
           actionId: seg.actionId,
-          message: `Video media for element "${seg.elementId}" is unavailable.`,
+          message: `No media asset is associated with play_video element "${seg.elementId}".`,
         });
-        return meta ? { ...seg } : seg;
+        return seg;
+      }
+      if (!meta.present) {
+        diagnostics.push({
+          severity: 'warn',
+          code: 'skipped-media',
+          sceneId: scene.id,
+          actionId: seg.actionId,
+          message: `Video media "${meta.id}" for element "${seg.elementId}" is referenced but its bytes are unavailable.`,
+        });
+        return { ...seg };
       }
       const path = planner.plan(
         meta.id,

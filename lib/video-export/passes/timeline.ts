@@ -19,6 +19,7 @@ import {
   resolveActionTimeline,
   EMPTY_SCENE_DWELL,
   IMPLICIT_WB_OPEN,
+  MAX_VIDEO_WAIT_MS,
   type ResolveTimelineOptions,
   type TimelineSegment,
 } from '../../choreography';
@@ -198,8 +199,17 @@ function dispatchSegment(
       return;
     case 'play_video': {
       const resolved = opts.getVideoDurationMs?.(action as PlayVideoAction);
+      // A resolved value above the safety cap is clamped by resolveActionTimeline,
+      // so `durationMs` is the cap, not the clip's true length — label it 'capped'
+      // (not 'stored') so a consumer doesn't read the cap as the real duration.
       const durationSource: VideoSegment['durationSource'] =
-        resolved != null ? 'stored' : opts.onUnresolvedVideoDuration === 'zero' ? 'zero' : 'capped';
+        resolved != null
+          ? resolved > MAX_VIDEO_WAIT_MS
+            ? 'capped'
+            : 'stored'
+          : opts.onUnresolvedVideoDuration === 'zero'
+            ? 'zero'
+            : 'capped';
       bucket.videos.push({
         ...base,
         startMs: seg.startMs,

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { estimateSpeechDurationMs, EFFECT_AUTO_CLEAR_MS } from '@/lib/choreography';
+import {
+  estimateSpeechDurationMs,
+  EFFECT_AUTO_CLEAR_MS,
+  MAX_VIDEO_WAIT_MS,
+} from '@/lib/choreography';
 import { buildTimeline, buildTimelineOptions } from '@/lib/video-export';
-import { NO_PROBE, slide, speech, spotlight, stubProbe, wbDrawText } from './helpers';
+import { NO_PROBE, playVideo, slide, speech, spotlight, stubProbe, wbDrawText } from './helpers';
 
 describe('buildTimeline — narration + subtitles', () => {
   it('uses stored audio durations and derives one subtitle cue per non-empty speech', () => {
@@ -75,6 +79,39 @@ describe('buildTimeline — effects', () => {
     const tl = buildTimeline([slide('s', [spotlight('sp', 'e1')])], buildTimelineOptions(NO_PROBE));
     expect(tl.scenes[0].effects[0].durationMs).toBe(0);
     expect(EFFECT_AUTO_CLEAR_MS).toBe(5000); // sanity: shared constant is in play
+  });
+});
+
+describe('buildTimeline — play_video durationSource', () => {
+  const vid = [slide('s', [playVideo('v', 'clip')])];
+
+  it("labels a resolved-within-cap duration 'stored'", () => {
+    const tl = buildTimeline(vid, buildTimelineOptions(stubProbe({}, { v: 8000 })));
+    expect(tl.scenes[0].videos[0]).toMatchObject({ durationSource: 'stored', durationMs: 8000 });
+  });
+
+  it("labels a resolved-over-cap duration 'capped' and clamps to MAX_VIDEO_WAIT_MS", () => {
+    const tl = buildTimeline(vid, buildTimelineOptions(stubProbe({}, { v: 99_999_999 })));
+    expect(tl.scenes[0].videos[0]).toMatchObject({
+      durationSource: 'capped',
+      durationMs: MAX_VIDEO_WAIT_MS,
+    });
+  });
+
+  it("defaults an unresolved duration to the cap ('capped')", () => {
+    const tl = buildTimeline(vid, buildTimelineOptions(NO_PROBE));
+    expect(tl.scenes[0].videos[0]).toMatchObject({
+      durationSource: 'capped',
+      durationMs: MAX_VIDEO_WAIT_MS,
+    });
+  });
+
+  it("honors the 'zero' unresolved-video policy", () => {
+    const tl = buildTimeline(
+      vid,
+      buildTimelineOptions(NO_PROBE, { onUnresolvedVideoDuration: 'zero' }),
+    );
+    expect(tl.scenes[0].videos[0]).toMatchObject({ durationSource: 'zero', durationMs: 0 });
   });
 });
 

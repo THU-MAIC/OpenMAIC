@@ -103,4 +103,31 @@ describe('planAssets — base frame & video', () => {
       expect.objectContaining({ code: 'skipped-media', message: expect.stringContaining('clip2') }),
     );
   });
+
+  it('suffixes a colliding path when two element ids sanitize to the same name', () => {
+    const res = plan(
+      [slide('s', [playVideo('a', 'v!'), playVideo('b', 'v?')])],
+      {},
+      {
+        'v!': { id: 'm1', present: true, format: 'mp4' },
+        'v?': { id: 'm2', present: true, format: 'mp4' },
+      },
+    );
+    expect(res.scenes[0].videos.map((v) => v.assetRef)).toEqual(['media/v.mp4', 'media/v-2.mp4']);
+  });
+
+  it('dedups two distinct elements that share one media asset id', () => {
+    const res = plan(
+      [slide('s', [playVideo('a', 'e1'), playVideo('b', 'e2')])],
+      {},
+      {
+        e1: { id: 'shared', present: true, format: 'mp4' },
+        e2: { id: 'shared', present: true, format: 'mp4' },
+      },
+    );
+    const videoEntries = res.plan.entries.filter((e) => e.kind === 'video');
+    expect(videoEntries).toHaveLength(2);
+    expect(videoEntries[1]).toMatchObject({ dedupOf: 'shared', path: videoEntries[0].path });
+    expect(res.scenes[0].videos.map((v) => v.assetRef)).toEqual(['media/e1.mp4', 'media/e1.mp4']);
+  });
 });

@@ -231,19 +231,19 @@ const eslintConfig = defineConfig([
           selector:
             'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
           message:
-            'lib/video-export may import only from @openmaic/dsl, zod, ../choreography, or in-folder relatives (./…). No other parent-escape into the app and no other packages — keep it pure so the compiler runs in plain Node.',
+            'lib/video-export may import only from @openmaic/dsl, zod, ../choreography, or relative paths within the module. Other bare packages are blocked; host-app code (imported via @/…) and render backends are caught by the separate @/ and no-restricted-imports guards.',
         },
         {
           selector:
             'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
           message:
-            'lib/video-export may re-export only from @openmaic/dsl, zod, ../choreography, or in-folder relatives (./…).',
+            'lib/video-export may re-export only from @openmaic/dsl, zod, ../choreography, or relative paths within the module.',
         },
         {
           selector:
             'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.).+/]',
           message:
-            'lib/video-export may re-export only from @openmaic/dsl, zod, ../choreography, or in-folder relatives (./…).',
+            'lib/video-export may re-export only from @openmaic/dsl, zod, ../choreography, or relative paths within the module.',
         },
         {
           selector: 'ImportExpression',
