@@ -142,13 +142,19 @@ export async function parseWithAliDocMindClient(
       new $Docmind.QueryDocParserStatusRequest({ id: jobId }),
     );
     // A body-level error (NoPermission, throttling, expired job, …) carries a
-    // non-200 code and often no status — surface it now instead of polling for
-    // the full timeout waiting for a status that will never arrive.
+    // non-benign code and often no status — surface it now instead of polling
+    // for the full timeout waiting for a status that will never arrive. Treat
+    // success-shaped codes as benign (matches verifyAliDocMindCredentials) so a
+    // `code: "success"`/"200" response isn't misread as a fatal error.
     const code = statusRes.body?.code;
-    if (code !== undefined && code !== null && String(code) !== '200') {
-      throw new Error(
-        `AliDocMind status query failed (code ${code}): ${statusRes.body?.message ?? 'unknown'}`,
-      );
+    if (code !== undefined && code !== null) {
+      const lower = String(code).toLowerCase();
+      const benign = lower === '200' || lower === 'success';
+      if (!benign) {
+        throw new Error(
+          `AliDocMind status query failed (code ${code}): ${statusRes.body?.message ?? 'unknown'}`,
+        );
+      }
     }
     const data = statusRes.body?.data;
     const status = (data?.status ?? '').toLowerCase();

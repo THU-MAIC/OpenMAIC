@@ -293,7 +293,15 @@ function applyAliDocMindFallback(
   const yamlEntry = yamlPdfSection?.[ALIDOCMIND_PROVIDER_ID];
   const accessKeyId = process.env.ALIDOCMIND_ACCESS_KEY_ID || yamlEntry?.accessKeyId;
   const accessKeySecret = process.env.ALIDOCMIND_ACCESS_KEY_SECRET || yamlEntry?.accessKeySecret;
-  if (!accessKeyId || !accessKeySecret) return pdfConfig;
+  if (!accessKeyId || !accessKeySecret) {
+    // AliDocMind can only be server-managed with an AK/SK pair. The generic
+    // loader may have created a bare entry from a YAML `baseUrl` alone — drop
+    // it so the provider stays UNMANAGED (clients supply their own creds)
+    // rather than "managed" with no usable credentials, which would both lock
+    // the provider out and silently discard client-entered AK/SK.
+    delete pdfConfig[ALIDOCMIND_PROVIDER_ID];
+    return pdfConfig;
+  }
 
   // Merge the AK/SK into any entry the generic env/YAML loader already created.
   // That loader copies only apiKey/baseUrl/models/proxy — never AK/SK — and a

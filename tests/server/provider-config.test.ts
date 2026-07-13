@@ -588,5 +588,19 @@ pdf:
       expect(resolveManagedAliDocMindCredentials()).toBeUndefined();
       expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(false);
     });
+
+    it('stays UNMANAGED when YAML sets baseUrl but no AK/SK (no lockout)', async () => {
+      // Regression: a baseUrl-only YAML entry made the generic loader create a
+      // pdf.alidocmind entry → isServerConfigured=true (managed) → but with no
+      // AK/SK the provider was locked out AND client-entered creds were dropped.
+      // With no usable server creds it must stay unmanaged so clients can supply
+      // their own.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n    baseUrl: https://docmind-api.cn-beijing.aliyuncs.com\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(false);
+      expect(resolveManagedAliDocMindCredentials()).toBeUndefined();
+    });
   });
 });
