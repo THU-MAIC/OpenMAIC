@@ -74,6 +74,53 @@ describe('OpenAI provider defaults', () => {
     });
   });
 
+  it.each([
+    ['gpt-5.6', 'GPT-5.6 Sol'],
+    ['gpt-5.6-terra', 'GPT-5.6 Terra'],
+    ['gpt-5.6-luna', 'GPT-5.6 Luna'],
+  ])('includes %s as a built-in OpenAI model', (modelId, name) => {
+    expect(getModelInfo('openai', modelId)).toMatchObject({
+      id: modelId,
+      name,
+      contextWindow: 1050000,
+      outputWindow: 128000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+        thinking: {
+          control: 'effort',
+          requestAdapter: 'openai',
+          effortValues: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          defaultEffort: 'medium',
+          toggleable: true,
+          budgetAdjustable: true,
+          defaultEnabled: true,
+        },
+      },
+    });
+  });
+
+  it.each(['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])(
+    'routes %s through the OpenAI Responses API',
+    (modelId) => {
+      const { model, modelInfo } = getModel({
+        providerId: 'openai',
+        modelId,
+        apiKey: 'sk-test',
+      });
+
+      expect(openAiMock.responses).toHaveBeenCalledWith(modelId);
+      expect(openAiMock.chat).not.toHaveBeenCalled();
+      expect(model).toEqual({ endpoint: 'responses', modelId });
+      expect(modelInfo).toBe(getModelInfo('openai', modelId));
+    },
+  );
+
+  it('resolves GPT-5.6 Sol model info through the canonical built-in entry', () => {
+    expect(getModelInfo('openai', 'gpt-5.6-sol')).toBe(getModelInfo('openai', 'gpt-5.6'));
+  });
+
   it('includes GPT-5.5 as a built-in OpenAI model', () => {
     expect(getModelInfo('openai', 'gpt-5.5')).toMatchObject({
       id: 'gpt-5.5',

@@ -37,6 +37,7 @@ import {
 import type { SettingsSection } from '@/lib/types/settings';
 import { MediaPopover } from '@/components/generation/media-popover';
 import { getAcceptStringForProviders, isMimeSupportedByProviders } from '@/lib/document/mime';
+import { findModelById, modelIdsMatch } from '@/lib/ai/model-aliases';
 
 // ─── Constants ───────────────────────────────────────────────
 const MAX_COURSE_MATERIAL_SIZE_MB = 50;
@@ -103,13 +104,21 @@ export function GenerationToolbar({
           isServerConfigured: config.isServerConfigured,
           models:
             config.isServerConfigured && !config.apiKey && config.serverModels?.length
-              ? config.models.filter((m) => new Set(config.serverModels).has(m.id))
+              ? config.models.filter((model) =>
+                  config.serverModels?.some((serverModelId) =>
+                    modelIdsMatch(id, model.id, serverModelId),
+                  ),
+                )
               : config.models,
         }))
     : [];
 
   const currentProviderConfig = providersConfig?.[currentProviderId];
-  const currentModel = currentProviderConfig?.models.find((model) => model.id === currentModelId);
+  const currentModel = findModelById(
+    currentProviderId,
+    currentProviderConfig?.models,
+    currentModelId,
+  );
   const currentThinkingConfig =
     thinkingConfigs[getThinkingConfigKey(currentProviderId, currentModelId)];
 
