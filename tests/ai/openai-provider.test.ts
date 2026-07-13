@@ -104,7 +104,7 @@ describe('OpenAI provider defaults', () => {
   it.each(['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])(
     'routes %s through the OpenAI Responses API',
     (modelId) => {
-      const { model } = getModel({
+      const { model, modelInfo } = getModel({
         providerId: 'openai',
         modelId,
         apiKey: 'sk-test',
@@ -113,8 +113,13 @@ describe('OpenAI provider defaults', () => {
       expect(openAiMock.responses).toHaveBeenCalledWith(modelId);
       expect(openAiMock.chat).not.toHaveBeenCalled();
       expect(model).toEqual({ endpoint: 'responses', modelId });
+      expect(modelInfo).toBe(getModelInfo('openai', modelId));
     },
   );
+
+  it('resolves GPT-5.6 Sol model info through the canonical built-in entry', () => {
+    expect(getModelInfo('openai', 'gpt-5.6-sol')).toBe(getModelInfo('openai', 'gpt-5.6'));
+  });
 
   it('includes GPT-5.5 as a built-in OpenAI model', () => {
     expect(getModelInfo('openai', 'gpt-5.5')).toMatchObject({

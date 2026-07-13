@@ -6,6 +6,7 @@ import type {
   ThinkingLevel,
   ThinkingRequestAdapter,
 } from '@/lib/types/provider';
+import { getCanonicalModelId } from './model-aliases';
 
 export function getModelMetadataKey(providerId: string, modelId: string): string {
   return `${providerId}:${modelId}`;
@@ -417,7 +418,8 @@ export function getCatalogThinkingCapability(
   providerId: string,
   modelId: string,
 ): ThinkingCapability | undefined {
-  const exact = THINKING_CAPABILITIES[getModelMetadataKey(providerId, modelId)];
+  const canonicalModelId = getCanonicalModelId(providerId, modelId);
+  const exact = THINKING_CAPABILITIES[getModelMetadataKey(providerId, canonicalModelId)];
   if (exact) return exact;
 
   if (providerId === 'lemonade') {
