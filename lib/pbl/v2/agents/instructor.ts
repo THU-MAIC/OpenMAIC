@@ -616,6 +616,8 @@ function syntheticPlatformOpener(phase: 'greeting' | 'setup', language: string):
         '[Платформа] Учащийся только что открыл проект. Поприветствуйте его в роли наставника и плавно введите в первую микрозадачу.',
       'ar-SA':
         '[المنصة] دخل المتعلم المشروع للتو. رحب به بدور المعلم وقدم له المهمة الصغيرة الأولى بطريقة طبيعية.',
+      'es-ES':
+        '[Plataforma] El estudiante acaba de entrar al proyecto. Dale la bienvenida con tu voz de tutor e introduce de forma natural la primera microtarea.',
       'en-US': '[platform] Learner just opened the project for the first time. Greet them now.',
     };
     return m[lang] ?? m['en-US'];
@@ -631,6 +633,8 @@ function syntheticPlatformOpener(phase: 'greeting' | 'setup', language: string):
       '[Платформа] Учащийся активировал эту микрозадачу. Откройте только новую активную микрозадачу: если это первая задача нового этапа, сначала в 1-2 коротких предложениях объясните цель и смысл всего нового этапа; не подводите итог предыдущей задаче, затем назовите конкретное следующее действие.',
     'ar-SA':
       '[المنصة] قام المتعلم بتفعيل هذه المهمة الصغيرة. افتح المهمة النشطة الجديدة فقط: إذا كانت هذه أول مهمة في مرحلة جديدة، فعرّف هدف المرحلة الجديدة ومعناها في جملة أو جملتين؛ لا تلخص المهمة السابقة مرة أخرى، ثم اذكر الإجراء المحدد الآن.',
+    'es-ES':
+      '[Plataforma] El estudiante acaba de activar esta microtarea. Abre solo la nueva microtarea activa: si es la primera tarea de una nueva etapa, presenta primero en 1-2 frases cortas el objetivo de toda la nueva etapa y por qué importa; no resumas la tarea anterior y luego indica la acción concreta a realizar ahora.',
     'en-US':
       '[platform] Learner just activated this microtask. Open only the new active microtask: if this is the first task of a new milestone, first introduce the whole new milestone goal and why it matters in 1-2 short sentences; do not recap the previous task, then state the concrete next action.',
   };
@@ -1268,6 +1272,8 @@ function difficultyAdjustAck(language: string | undefined): string {
       return 'Хорошо, я скорректирую подачу материала.';
     case 'pt-BR':
       return 'Certo, vou ajustar a forma de explicar.';
+    case 'es-ES':
+      return 'Entendido, ajustaré la forma de explicar.';
     case 'ar-SA':
       return 'حسنًا، سأعدّل طريقة الشرح.';
     default:
