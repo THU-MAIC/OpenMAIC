@@ -76,6 +76,7 @@ function deferred<T>() {
 function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {}) {
   let current = true;
   let stage: Stage | null = null;
+  let localDeck = { sceneCount: 0, outlineCount: 0, generationComplete: false };
   const settings = {
     agentMode: 'auto' as const,
     selectedAgentIds: [] as string[],
@@ -90,6 +91,7 @@ function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {
     isCurrent: () => current,
     loadFromStorage: vi.fn().mockResolvedValue(undefined),
     getCurrentStage: () => stage,
+    getLocalDeck: () => localDeck,
     fetchClassroom: vi.fn().mockResolvedValue(null),
     applyFallbackScenes: vi.fn().mockResolvedValue(false),
     saveGeneratedAgents: vi.fn().mockResolvedValue([]),
@@ -121,6 +123,9 @@ function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {
     },
     setStage(next: Stage | null) {
       stage = next;
+    },
+    setLocalDeck(next: typeof localDeck) {
+      localDeck = next;
     },
   };
 }
@@ -296,6 +301,61 @@ describe('runClassroomLoad', () => {
     expect(deps.applyGeneratedAgentRecords).toHaveBeenCalledWith([{ id: 'agent-a' }]);
     expect(settings.setSelectedAgentIds).toHaveBeenCalledWith(['agent-a']);
     expect(deps.setLoading).toHaveBeenCalledWith(false);
+  });
+
+  // #53: a viewer browser that cached a mid-generation deck must pick up the
+  // finished deck from the server on the next load instead of staying stale
+  it('re-checks the server for a cached viewer snapshot and adopts a fuller deck', async () => {
+    const stage = makeStage('stage-a');
+    const scenes = [makeScene('scene-a', 'stage-a'), makeScene('scene-b', 'stage-a')];
+    const { deps, setStage, setLocalDeck } = makeDeps({
+      fetchClassroom: vi.fn().mockResolvedValue({ stage, scenes }),
+      applyFallbackScenes: vi.fn().mockResolvedValue(true),
+    });
+    setStage(stage);
+    setLocalDeck({ sceneCount: 1, outlineCount: 0, generationComplete: false });
+
+    await runClassroomLoad(deps);
+
+    expect(deps.fetchClassroom).toHaveBeenCalledWith('stage-a');
+    expect(deps.applyFallbackScenes).toHaveBeenCalledWith({ loadToken: 1, stage, scenes });
+  });
+
+  it('keeps the cached deck when the server copy has no more scenes', async () => {
+    const stage = makeStage('stage-a');
+    const { deps, setStage, setLocalDeck } = makeDeps({
+      fetchClassroom: vi.fn().mockResolvedValue({
+        stage,
+        scenes: [makeScene('scene-a', 'stage-a')],
+      }),
+    });
+    setStage(stage);
+    setLocalDeck({ sceneCount: 1, outlineCount: 0, generationComplete: false });
+
+    await runClassroomLoad(deps);
+
+    expect(deps.fetchClassroom).toHaveBeenCalled();
+    expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
+  });
+
+  it('does not consult the server in the generating browser (outlines pending)', async () => {
+    const { deps, setStage, setLocalDeck } = makeDeps();
+    setStage(makeStage('stage-a'));
+    setLocalDeck({ sceneCount: 1, outlineCount: 4, generationComplete: false });
+
+    await runClassroomLoad(deps);
+
+    expect(deps.fetchClassroom).not.toHaveBeenCalled();
+  });
+
+  it('does not consult the server for a deck already marked complete', async () => {
+    const { deps, setStage, setLocalDeck } = makeDeps();
+    setStage(makeStage('stage-a'));
+    setLocalDeck({ sceneCount: 4, outlineCount: 0, generationComplete: true });
+
+    await runClassroomLoad(deps);
+
+    expect(deps.fetchClassroom).not.toHaveBeenCalled();
   });
 
   it('stops side effects when the component unmounts while loading', async () => {

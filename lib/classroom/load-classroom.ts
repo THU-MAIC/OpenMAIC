@@ -39,6 +39,11 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown, TGeneratedAgentReco
   isCurrent: () => boolean;
   loadFromStorage: (classroomId: string, loadToken: StageSceneLoadToken) => Promise<void>;
   getCurrentStage: () => Stage | null;
+  getLocalDeck: () => {
+    sceneCount: number;
+    outlineCount: number;
+    generationComplete: boolean;
+  };
   fetchClassroom: (classroomId: string) => Promise<ClassroomPayload | null>;
   applyFallbackScenes: (args: {
     loadToken: StageSceneLoadToken;
@@ -68,6 +73,7 @@ export async function runClassroomLoad<TMediaTasks = unknown, TGeneratedAgentRec
   isCurrent,
   loadFromStorage,
   getCurrentStage,
+  getLocalDeck,
   fetchClassroom,
   applyFallbackScenes,
   saveGeneratedAgents,
@@ -87,12 +93,28 @@ export async function runClassroomLoad<TMediaTasks = unknown, TGeneratedAgentRec
     await loadFromStorage(classroomId, loadToken);
     if (!isCurrent()) return;
 
-    if (!getCurrentStage()) {
-      log.info('No IndexedDB data, trying server-side storage for:', classroomId);
+    // a browser that loads a classroom mid-generation caches the partial deck
+    // in IndexedDB (debounced store saves) and would otherwise keep re-reading
+    // its own stale copy forever — so re-check server-side storage for cached
+    // viewer copies (no outlines to resume, never marked complete) too, not
+    // just when IndexedDB was empty (#53)
+    const cachedStage = getCurrentStage();
+    const localDeck = getLocalDeck();
+    const staleViewerCopy =
+      !!cachedStage && !localDeck.generationComplete && localDeck.outlineCount === 0;
+
+    if (!cachedStage || staleViewerCopy) {
+      log.info(
+        cachedStage
+          ? 'Cached deck is a viewer snapshot, re-checking server-side storage for:'
+          : 'No IndexedDB data, trying server-side storage for:',
+        classroomId,
+      );
       const classroom = await fetchClassroom(classroomId);
       if (!isCurrent()) return;
 
-      if (classroom) {
+      // never downgrade — adopt the server deck only when it is fuller than the cache
+      if (classroom && (!cachedStage || classroom.scenes.length > localDeck.sceneCount)) {
         const { stage, scenes } = classroom;
         const applied = await applyFallbackScenes({ loadToken, stage, scenes });
         if (!isCurrent()) return;

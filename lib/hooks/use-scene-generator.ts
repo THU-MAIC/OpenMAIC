@@ -13,7 +13,7 @@ import type {
   UserRequirements,
 } from '@/lib/types/generation';
 import type { AgentInfo } from '@/lib/generation/generation-pipeline';
-import type { Scene } from '@/lib/types/stage';
+import type { Scene, Stage } from '@/lib/types/stage';
 import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { measureAudioDuration } from '@/lib/audio/audio-duration';
@@ -28,8 +28,25 @@ import {
   withGenerationRetry,
   type GenerationRetryOptions,
 } from '@/lib/generation/generation-retry';
+import { persistClassroomToServer } from '@/lib/hooks/classroom-persistence';
 
 const log = createLogger('SceneGenerator');
+
+// Mirror browser-generated classrooms to the server disk so they load
+// cross-browser (#53). Non-fatal: on failure we log and generation continues.
+async function persistClassroomIfReady(
+  stage: Stage | null,
+  scenes: Scene[],
+  phase: string,
+): Promise<void> {
+  if (!stage || scenes.length === 0) return;
+  const result = await persistClassroomToServer(stage, scenes);
+  if (result.success) {
+    log.info(`Classroom persisted to server disk (${phase}):`, stage.id);
+  } else {
+    log.warn(`Failed to persist classroom to server disk (${phase}):`, result.error);
+  }
+}
 
 interface SceneContentResult {
   success: boolean;
@@ -658,6 +675,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             store.getState().addScene(scene);
             options.onSceneGenerated?.(scene, outline.order);
             previousSpeeches = actionsResult.previousSpeeches || [];
+
+            // Persist as soon as the first scene lands so the classroom URL
+            // resolves cross-browser early; a full re-persist runs on completion.
+            const afterAdd = store.getState();
+            if (afterAdd.scenes.length === 1) {
+              void persistClassroomIfReady(afterAdd.stage, afterAdd.scenes, 'first scene');
+            }
           } else {
             if (abortRef.current || store.getState().generationEpoch !== startEpoch) {
               pausedByFailureOrAbort = true;
@@ -680,6 +704,10 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
             store.getState().setGenerationStatus('completed');
             store.getState().setGeneratingOutlines([]);
             store.getState().setGenerationComplete(true);
+
+            const finalState = store.getState();
+            await persistClassroomIfReady(finalState.stage, finalState.scenes, 'completion');
+
             options.onComplete?.();
           }
         }
@@ -834,6 +862,13 @@ export function useSceneGenerator(options: UseSceneGeneratorOptions = {}) {
           // so mark completion here too — otherwise a later delete would treat
           // the orphaned outline as pending and regenerate it.
           store.getState().markGenerationCompleteIfDone();
+
+          // If that retry actually finished the deck, mirror it to disk too —
+          // otherwise a deck completed via retry would never reach the server.
+          if (store.getState().generationComplete) {
+            const finalState = store.getState();
+            void persistClassroomIfReady(finalState.stage, finalState.scenes, 'retry completion');
+          }
         }
       } catch (err) {
         if (!isAbortError(err)) {

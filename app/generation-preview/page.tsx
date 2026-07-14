@@ -47,6 +47,7 @@ import type {
   SessionDocumentSource,
 } from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
+import { persistClassroomToServer } from '@/lib/hooks/classroom-persistence';
 import { createLogger } from '@/lib/logger';
 import {
   type GenerationSessionState,
@@ -1076,6 +1077,23 @@ function GenerationPreviewContent() {
 
       sessionStorage.removeItem('generationSession');
       await store.saveToStorage();
+
+      // Persist to server disk so the URL resolves cross-browser during generation (#53).
+      // Fresh snapshot: `store` predates addScene, its scenes are stale.
+      const fresh = useStageStore.getState();
+      if (fresh.stage) {
+        void persistClassroomToServer(fresh.stage, fresh.scenes).then((result) => {
+          if (result.success) {
+            log.info('[GenerationPreview] First scene persisted to server disk:', fresh.stage?.id);
+          } else {
+            log.warn(
+              '[GenerationPreview] Failed to persist first scene to server disk:',
+              result.error,
+            );
+          }
+        });
+      }
+
       router.push(`/classroom/${stage.id}`);
     } catch (err) {
       setIsOutlineStreaming(false);

@@ -52,6 +52,14 @@ export default function ClassroomDetailPage() {
         isCurrent,
         loadFromStorage,
         getCurrentStage: () => useStageStore.getState().stage,
+        getLocalDeck: () => {
+          const state = useStageStore.getState();
+          return {
+            sceneCount: state.scenes.length,
+            outlineCount: state.outlines.length,
+            generationComplete: state.generationComplete,
+          };
+        },
         fetchClassroom: defaultClassroomLoadDeps.fetchClassroom,
         applyFallbackScenes: (args) =>
           defaultClassroomLoadDeps.applyFallbackScenes({
