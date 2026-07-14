@@ -470,6 +470,7 @@ describe('non-matching connectivity probe sentinels', () => {
       successMessage: 'Connected to Veo (veo-test)',
       failureMessage:
         'Invalid API key or unauthorized (400). Check your API Key and Base URL match the same provider.',
+      redirectFailureMessage: 'Veo connectivity failed (302): redirect blocked',
     },
     {
       name: 'Nano Banana',
@@ -483,6 +484,7 @@ describe('non-matching connectivity probe sentinels', () => {
       successMessage: 'Connected to Nano Banana (nano-test)',
       failureMessage:
         'Invalid API key or unauthorized (400). Check your API Key and Base URL match the same provider.',
+      redirectFailureMessage: 'Nano Banana connectivity failed (302): redirect blocked',
     },
   ];
 
@@ -498,10 +500,38 @@ describe('non-matching connectivity probe sentinels', () => {
       expect(fetchMock).toHaveBeenNthCalledWith(
         1,
         'https://google.example.com/v1beta/models?key=google-key',
-        { method: 'GET' },
+        { method: 'GET', redirect: 'manual' },
       );
       expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://google.example.com/v1beta/models', {
         method: 'GET',
+        redirect: 'manual',
+        headers: { 'x-goog-api-key': 'google-key' },
+      });
+    },
+  );
+
+  it.each(googleCases)(
+    '$name retries a manual 302 with header auth and accepts the 200 fallback',
+    async ({ probe, successMessage }) => {
+      fetchMock
+        .mockResolvedValueOnce(
+          new Response('redirect blocked', {
+            status: 302,
+            headers: { Location: PRIVATE_REDIRECT_LOCATION },
+          }),
+        )
+        .mockResolvedValueOnce(new Response(null, { status: 200 }));
+
+      await expect(probe()).resolves.toEqual({ success: true, message: successMessage });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        'https://google.example.com/v1beta/models?key=google-key',
+        { method: 'GET', redirect: 'manual' },
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://google.example.com/v1beta/models', {
+        method: 'GET',
+        redirect: 'manual',
         headers: { 'x-goog-api-key': 'google-key' },
       });
     },
@@ -516,6 +546,36 @@ describe('non-matching connectivity probe sentinels', () => {
 
       await expect(probe()).resolves.toEqual({ success: false, message: failureMessage });
       expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it.each(googleCases)(
+    '$name stops after a final manual 302 and preserves its connectivity failure',
+    async ({ probe, redirectFailureMessage }) => {
+      fetchMock
+        .mockResolvedValueOnce(new Response('query auth failed', { status: 401 }))
+        .mockResolvedValueOnce(
+          new Response('redirect blocked', {
+            status: 302,
+            headers: { Location: PRIVATE_REDIRECT_LOCATION },
+          }),
+        );
+
+      await expect(probe()).resolves.toEqual({
+        success: false,
+        message: redirectFailureMessage,
+      });
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        'https://google.example.com/v1beta/models?key=google-key',
+        { method: 'GET', redirect: 'manual' },
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(2, 'https://google.example.com/v1beta/models', {
+        method: 'GET',
+        redirect: 'manual',
+        headers: { 'x-goog-api-key': 'google-key' },
+      });
     },
   );
 });
