@@ -1,0 +1,77 @@
+import { describe, expect, it } from 'vitest';
+
+import { normalizeDocumentTransform } from '@/lib/document';
+import type { DocumentArtifact } from '@/lib/document';
+
+const context = {
+  purpose: 'course-generation' as const,
+  budget: { maxTextChars: 1000, maxVisionImages: 5 },
+};
+
+describe('document normalization transform', () => {
+  it('sanitizes text, removes empty text blocks, and merges adjacent compatible blocks', async () => {
+    const input: DocumentArtifact = {
+      metadata: { fileName: 'notes.txt' },
+      blocks: [
+        { id: 'a', type: 'text', text: '  First\r\nline\u0000  ' },
+        { id: 'empty', type: 'text', text: ' \n ' },
+        { id: 'b', type: 'text', text: 'Second   line' },
+        { id: 'formula', type: 'formula', text: '' },
+      ],
+      assets: [],
+      citations: [{ id: 'citation-b', blockId: 'b' }],
+      outline: [
+        {
+          id: 'outline',
+          title: 'Notes',
+          level: 1,
+          order: 1,
+          blockIds: ['a', 'b'],
+          confidence: 1,
+          source: 'provider',
+        },
+      ],
+    };
+
+    const output = await normalizeDocumentTransform.apply(input, context);
+
+    expect(input.blocks).toHaveLength(4);
+    expect(output.artifact.blocks).toEqual([
+      {
+        id: 'a',
+        type: 'text',
+        text: 'First\nline\n\nSecond line',
+        html: undefined,
+        metadata: { sourceBlockIds: ['a', 'b'] },
+      },
+      { id: 'formula', type: 'formula', text: '', html: undefined },
+    ]);
+    expect(output.artifact.citations?.[0].blockId).toBe('a');
+    expect(output.artifact.outline?.[0].blockIds).toEqual(['a']);
+    expect(output.diagnostics?.[0].metadata).toEqual({
+      removedEmptyBlocks: 1,
+      mergedBlockCount: 1,
+    });
+  });
+
+  it('does not merge blocks across pages or structured headings', async () => {
+    const input: DocumentArtifact = {
+      metadata: {},
+      blocks: [
+        { id: 'p1', type: 'text', text: 'Page one', pageNumber: 1 },
+        { id: 'p2', type: 'text', text: 'Page two', pageNumber: 2 },
+        {
+          id: 'heading',
+          type: 'text',
+          text: 'Heading',
+          pageNumber: 2,
+          metadata: { headingLevel: 1 },
+        },
+      ],
+      assets: [],
+    };
+
+    const output = await normalizeDocumentTransform.apply(input, context);
+    expect(output.artifact.blocks.map((block) => block.id)).toEqual(['p1', 'p2', 'heading']);
+  });
+});
