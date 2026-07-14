@@ -85,7 +85,7 @@ Related to #52, #335, #43
 - [x] Formatting passes (`pnpm check`)
 - [x] i18n key alignment passes (`pnpm check:i18n-keys`)
 - [x] Lint completes with no errors and no warnings in changed files (`pnpm lint`)
-- [ ] CI passes (`pnpm check && pnpm lint && npx tsc --noEmit`)
+- [x] CI passes (`pnpm check && pnpm lint && npx tsc --noEmit`)
 - [ ] Manually tested locally
 - [ ] Screenshots / recordings attached (not applicable: no UI changes)
 
