@@ -14,6 +14,12 @@ export async function probeAuth({
 }: ProbeAuthOptions): Promise<ConnectivityResult> {
   try {
     const response = await request();
+    if (response.status >= 300 && response.status < 400) {
+      return {
+        success: false,
+        message: `${providerName} connectivity error: Redirects are not allowed`,
+      };
+    }
     if (response.status === 401 || response.status === 403) {
       const text = await response.text();
       return {

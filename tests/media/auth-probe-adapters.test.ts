@@ -40,6 +40,7 @@ const authOnlyCases: AuthOnlyCase[] = [
         'https://seedream.example.com/api/plan/v3/images/generations',
         {
           method: 'POST',
+          redirect: 'manual',
           headers: {
             'Content-Type': 'application/json',
             Authorization: 'Bearer seedream-key',
@@ -64,6 +65,7 @@ const authOnlyCases: AuthOnlyCase[] = [
         'https://qwen.example.com/api/v1/services/aigc/multimodal-generation/generation',
         {
           method: 'POST',
+          redirect: 'manual',
           headers: {
             'Content-Type': 'application/json',
             Authorization: 'Bearer qwen-key',
@@ -92,6 +94,7 @@ const authOnlyCases: AuthOnlyCase[] = [
         'https://grok-image.example.com/v1/images/generations',
         {
           method: 'POST',
+          redirect: 'manual',
           headers: {
             'Content-Type': 'application/json',
             Authorization: 'Bearer grok-image-key',
@@ -116,6 +119,7 @@ const authOnlyCases: AuthOnlyCase[] = [
         'https://grok-video.example.com/v1/videos/generations',
         {
           method: 'POST',
+          redirect: 'manual',
           headers: {
             'Content-Type': 'application/json',
             Authorization: 'Bearer grok-video-key',
@@ -139,6 +143,7 @@ const authOnlyCases: AuthOnlyCase[] = [
         'https://seedance.example.com/api/plan/v3/contents/generations/tasks/connectivity-test-nonexistent',
         {
           method: 'GET',
+          redirect: 'manual',
           headers: { Authorization: 'Bearer seedance-key' },
         },
       );
@@ -158,6 +163,7 @@ const authOnlyCases: AuthOnlyCase[] = [
         'https://kling.example.com/v1/videos/text2video/connectivity-test',
         {
           method: 'GET',
+          redirect: 'manual',
           headers: {
             Authorization: expect.stringMatching(/^Bearer [^.]+\.[^.]+\.[^.]+$/),
           },
@@ -179,6 +185,7 @@ const authOnlyCases: AuthOnlyCase[] = [
         'https://happyhorse.example.com/api/v1/tasks/connectivity-test-nonexistent',
         {
           method: 'GET',
+          redirect: 'manual',
           headers: { Authorization: 'Bearer happyhorse-key' },
         },
       );

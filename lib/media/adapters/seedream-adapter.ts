@@ -69,6 +69,7 @@ export async function testSeedreamConnectivity(
     request: () =>
       fetch(`${resolveArkRoot(baseUrl)}/images/generations`, {
         method: 'POST',
+        redirect: 'manual',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey}`,
