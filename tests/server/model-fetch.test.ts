@@ -1,5 +1,9 @@
-import { describe, expect, it } from 'vitest';
-import { buildModelsUrlCandidates } from '@/lib/server/model-fetch';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { buildModelsUrlCandidates, fetchModels, ModelFetchError } from '@/lib/server/model-fetch';
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 describe('buildModelsUrlCandidates', () => {
   it('plain root → /v1/models', () => {
@@ -65,5 +69,113 @@ describe('buildModelsUrlCandidates', () => {
   it('dedupes candidates preserving order', () => {
     const c = buildModelsUrlCandidates('https://api.example.com');
     expect(new Set(c).size).toBe(c.length);
+  });
+});
+
+describe('fetchModels', () => {
+  it('returns a sorted model list from a successful response without following redirects', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: vi.fn().mockResolvedValue({
+        data: [{ id: 'z-model', owned_by: 'provider' }, { id: 'a-model' }],
+      }),
+    } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchModels('https://api.example.com', 'test-key')).resolves.toEqual([
+      { id: 'a-model', ownedBy: undefined },
+      { id: 'z-model', ownedBy: 'provider' },
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://api.example.com/v1/models',
+      expect.objectContaining({
+        method: 'GET',
+        headers: { Authorization: 'Bearer test-key' },
+        redirect: 'manual',
+      }),
+    );
+  });
+
+  it.each([301, 302, 307, 308])(
+    'rejects upstream %i without reading its body or trying another candidate',
+    async (status) => {
+      const text = vi.fn().mockResolvedValue('redirect response body');
+      const json = vi.fn().mockResolvedValue({ data: [{ id: 'should-not-be-read' }] });
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: false,
+        status,
+        text,
+        json,
+      } as unknown as Response);
+      vi.stubGlobal('fetch', fetchMock);
+
+      const error = await fetchModels(
+        'https://gateway.example.com/api/anthropic',
+        'test-key',
+      ).catch((caught: unknown) => caught);
+
+      expect(error).toBeInstanceOf(ModelFetchError);
+      expect(error).toMatchObject({ status });
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(text).not.toHaveBeenCalled();
+      expect(json).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://gateway.example.com/api/anthropic/v1/models',
+        expect.objectContaining({ redirect: 'manual' }),
+      );
+    },
+  );
+
+  it.each([404, 405])(
+    'falls back after %i and keeps redirect handling manual for every candidate',
+    async (status) => {
+      const firstText = vi.fn();
+      const fetchMock = vi
+        .fn()
+        .mockResolvedValueOnce({ ok: false, status, text: firstText } as unknown as Response)
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: vi.fn().mockResolvedValue({ data: [{ id: 'fallback-model' }] }),
+        } as unknown as Response);
+      vi.stubGlobal('fetch', fetchMock);
+
+      await expect(
+        fetchModels('https://gateway.example.com/api/anthropic', 'test-key'),
+      ).resolves.toEqual([{ id: 'fallback-model', ownedBy: undefined }]);
+
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(firstText).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        1,
+        'https://gateway.example.com/api/anthropic/v1/models',
+        expect.objectContaining({ redirect: 'manual' }),
+      );
+      expect(fetchMock).toHaveBeenNthCalledWith(
+        2,
+        'https://gateway.example.com/v1/models',
+        expect.objectContaining({ redirect: 'manual' }),
+      );
+    },
+  );
+
+  it.each([401, 403])('keeps upstream %i terminal and preserves its status', async (status) => {
+    const text = vi.fn().mockResolvedValue('invalid key');
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status,
+      text,
+    } as unknown as Response);
+    vi.stubGlobal('fetch', fetchMock);
+
+    const error = await fetchModels('https://api.example.com', 'bad-key').catch(
+      (caught: unknown) => caught,
+    );
+
+    expect(error).toBeInstanceOf(ModelFetchError);
+    expect(error).toMatchObject({ status });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(text).toHaveBeenCalledTimes(1);
   });
 });
