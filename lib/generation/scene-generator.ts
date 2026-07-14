@@ -1088,16 +1088,22 @@ export async function generateWidgetContent(
       };
       break;
 
-    case 'diagram':
+    case 'diagram': {
+      const prescribedNodes = widgetOutline.nodes ?? [];
       promptId = PROMPT_IDS.DIAGRAM_CONTENT;
       variables = {
         title: outline.title,
         diagramType: widgetOutline.diagramType || 'flowchart',
         description: outline.description,
         keyPoints: (outline.keyPoints || []).join('\n'),
+        nodeCount: widgetOutline.nodeCount ?? prescribedNodes.length,
+        prescribedNodes,
+        hasNodeCount: typeof widgetOutline.nodeCount === 'number' && widgetOutline.nodeCount > 0,
+        hasPrescribedNodes: prescribedNodes.length > 0,
         languageDirective: languageDirective || '',
       };
       break;
+    }
 
     case 'code':
       promptId = PROMPT_IDS.CODE_CONTENT;
