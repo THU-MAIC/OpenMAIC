@@ -10,6 +10,7 @@ import { nanoid } from 'nanoid';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('ImageStorage');
+const SESSION_ID_LENGTH = 10;
 
 /**
  * Convert base64 data URL to Blob
@@ -49,7 +50,7 @@ async function blobToBase64(blob: Blob): Promise<string> {
 export async function storeImages(
   images: Array<{ id: string; src: string; pageNumber?: number }>,
 ): Promise<string[]> {
-  const sessionId = nanoid(10);
+  const sessionId = nanoid(SESSION_ID_LENGTH);
   const storedIds: string[] = [];
   let currentImageId: string | undefined;
 
@@ -100,8 +101,11 @@ export async function loadImageMapping(imageIds: string[]): Promise<Record<strin
       const record = await db.imageFiles.get(storageId);
       if (record) {
         const base64 = await blobToBase64(record.blob);
-        // Extract original ID (img_1) from storage ID (session_xxx_img_1)
-        const originalId = storageId.replace(/^session_[^_]+_/, '');
+        const originalId = extractOriginalImageId(storageId);
+        if (!originalId) {
+          log.warn(`Skipping image with malformed storage ID: ${storageId}`);
+          continue;
+        }
         mapping[originalId] = base64;
       }
     } catch (error) {
@@ -110,6 +114,15 @@ export async function loadImageMapping(imageIds: string[]): Promise<Record<strin
   }
 
   return mapping;
+}
+
+/** Extract the original image ID from `session_<10-character nanoid>_<image ID>`. */
+export function extractOriginalImageId(storageId: string): string | undefined {
+  const prefixLength = 'session_'.length + SESSION_ID_LENGTH;
+  if (!storageId.startsWith('session_') || storageId[prefixLength] !== '_') return undefined;
+
+  const originalId = storageId.slice(prefixLength + 1);
+  return originalId || undefined;
 }
 
 /**
