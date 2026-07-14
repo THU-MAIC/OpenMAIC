@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+import { testComfyuiImageConnectivity } from '@/lib/media/adapters/comfyui-image-adapter';
 import { testGrokImageConnectivity } from '@/lib/media/adapters/grok-image-adapter';
 import { testGrokVideoConnectivity } from '@/lib/media/adapters/grok-video-adapter';
 import { testHappyHorseConnectivity } from '@/lib/media/adapters/happyhorse-adapter';
 import { testKlingConnectivity } from '@/lib/media/adapters/kling-adapter';
+import { testLemonadeImageConnectivity } from '@/lib/media/adapters/lemonade-image-adapter';
 import { testMiniMaxImageConnectivity } from '@/lib/media/adapters/minimax-image-adapter';
 import { testMiniMaxVideoConnectivity } from '@/lib/media/adapters/minimax-video-adapter';
 import { testNanoBananaConnectivity } from '@/lib/media/adapters/nano-banana-adapter';
+import { testOpenAIImageConnectivity } from '@/lib/media/adapters/openai-image-adapter';
 import { testQwenImageConnectivity } from '@/lib/media/adapters/qwen-image-adapter';
 import { testSeedanceConnectivity } from '@/lib/media/adapters/seedance-adapter';
 import { testSeedreamConnectivity } from '@/lib/media/adapters/seedream-adapter';
@@ -23,6 +26,16 @@ interface AuthOnlyCase {
   probe: () => Promise<ConnectivityResult>;
   assertRequest: () => void;
 }
+
+interface StrictProbeCase {
+  name: string;
+  probe: () => Promise<ConnectivityResult>;
+  redirectResponse: () => Response;
+  expectedResult: ConnectivityResult;
+  assertRequest: () => void;
+}
+
+const PRIVATE_REDIRECT_LOCATION = 'http://127.0.0.1/internal';
 
 const authOnlyCases: AuthOnlyCase[] = [
   {
@@ -193,6 +206,156 @@ const authOnlyCases: AuthOnlyCase[] = [
   },
 ];
 
+const strictProbeCases: StrictProbeCase[] = [
+  {
+    name: 'OpenAI Image',
+    probe: () =>
+      testOpenAIImageConnectivity({
+        providerId: 'openai-image',
+        apiKey: 'openai-key',
+        baseUrl: 'https://openai.example.com/v1/',
+        model: 'gpt-image-test',
+      }),
+    redirectResponse: () =>
+      new Response('redirect blocked', {
+        status: 302,
+        headers: { Location: PRIVATE_REDIRECT_LOCATION },
+      }),
+    expectedResult: {
+      success: false,
+      message: 'OpenAI Image API error (302): redirect blocked',
+    },
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://openai.example.com/v1/models/gpt-image-test',
+        {
+          redirect: 'manual',
+          headers: { Authorization: 'Bearer openai-key' },
+        },
+      );
+    },
+  },
+  {
+    name: 'Lemonade',
+    probe: () =>
+      testLemonadeImageConnectivity({
+        providerId: 'lemonade',
+        apiKey: 'lemonade-key',
+        baseUrl: 'https://lemonade.example.com/v1/',
+        model: 'lemonade-test',
+      }),
+    redirectResponse: () =>
+      new Response('redirect blocked', {
+        status: 302,
+        headers: { Location: PRIVATE_REDIRECT_LOCATION },
+      }),
+    expectedResult: {
+      success: false,
+      message: 'Lemonade API error (302): redirect blocked',
+    },
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith('https://lemonade.example.com/v1/models', {
+        redirect: 'manual',
+        headers: { Authorization: 'Bearer lemonade-key' },
+      });
+    },
+  },
+  {
+    name: 'MiniMax Image',
+    probe: () =>
+      testMiniMaxImageConnectivity({
+        providerId: 'minimax-image',
+        apiKey: 'minimax-image-key',
+        baseUrl: 'https://minimax-image.example.com/',
+        model: 'custom-image-model',
+      }),
+    redirectResponse: () =>
+      new Response(JSON.stringify({ base_resp: { status_msg: 'redirect blocked' } }), {
+        status: 302,
+        headers: { Location: PRIVATE_REDIRECT_LOCATION },
+      }),
+    expectedResult: { success: false, message: 'API error: redirect blocked' },
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://minimax-image.example.com/v1/image_generation',
+        {
+          method: 'POST',
+          redirect: 'manual',
+          headers: {
+            Authorization: 'Bearer minimax-image-key',
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+          body: JSON.stringify({
+            model: 'image-01',
+            prompt: 'test',
+            aspect_ratio: '1:1',
+            n: 1,
+          }),
+        },
+      );
+    },
+  },
+  {
+    name: 'MiniMax Video',
+    probe: () =>
+      testMiniMaxVideoConnectivity({
+        providerId: 'minimax-video',
+        apiKey: 'minimax-video-key',
+        baseUrl: 'https://minimax-video.example.com/',
+        model: 'custom-video-model',
+      }),
+    redirectResponse: () =>
+      new Response(JSON.stringify({ base_resp: { status_msg: 'redirect blocked' } }), {
+        status: 302,
+        headers: { Location: PRIVATE_REDIRECT_LOCATION },
+      }),
+    expectedResult: { success: false, message: 'API error: redirect blocked' },
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://minimax-video.example.com/v1/video_generation',
+        {
+          method: 'POST',
+          redirect: 'manual',
+          headers: {
+            Authorization: 'Bearer minimax-video-key',
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+          body: JSON.stringify({
+            model: 'MiniMax-Hailuo-2.3',
+            prompt: 'test connectivity',
+            duration: 6,
+            resolution: '768P',
+          }),
+        },
+      );
+    },
+  },
+  {
+    name: 'ComfyUI',
+    probe: () =>
+      testComfyuiImageConnectivity({
+        providerId: 'comfyui-image',
+        apiKey: '',
+        baseUrl: 'https://comfyui.example.com/',
+      }),
+    redirectResponse: () =>
+      new Response(null, {
+        status: 302,
+        headers: { Location: PRIVATE_REDIRECT_LOCATION },
+      }),
+    expectedResult: {
+      success: false,
+      message: 'ComfyUI returned HTTP 302. Is it running at https://comfyui.example.com?',
+    },
+    assertRequest: () => {
+      expect(fetchMock).toHaveBeenCalledWith('https://comfyui.example.com/system_stats', {
+        redirect: 'manual',
+        signal: expect.any(AbortSignal),
+      });
+    },
+  },
+];
+
 afterEach(() => {
   fetchMock.mockReset();
 });
@@ -252,6 +415,19 @@ describe('auth-only connectivity probe characterization', () => {
     });
     expect(fetchMock).not.toHaveBeenCalled();
   });
+});
+
+describe('strict connectivity probe redirect handling', () => {
+  it.each(strictProbeCases)(
+    '$name stops a private redirect after one request and preserves its failure',
+    async ({ probe, redirectResponse, expectedResult, assertRequest }) => {
+      fetchMock.mockResolvedValueOnce(redirectResponse());
+
+      await expect(probe()).resolves.toEqual(expectedResult);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      assertRequest();
+    },
+  );
 });
 
 describe('non-matching connectivity probe sentinels', () => {

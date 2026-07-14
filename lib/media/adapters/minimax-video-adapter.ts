@@ -210,6 +210,7 @@ export async function testMiniMaxVideoConnectivity(
     // Submit a minimal task and immediately check if it returns a task_id
     const response = await fetch(`${baseUrl}/v1/video_generation`, {
       method: 'POST',
+      redirect: 'manual',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json; charset=utf-8',

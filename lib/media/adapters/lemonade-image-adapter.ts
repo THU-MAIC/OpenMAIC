@@ -33,6 +33,7 @@ export async function testLemonadeImageConnectivity(
 
   try {
     const response = await fetch(`${baseUrl}/models`, {
+      redirect: 'manual',
       headers: authHeaders(config.apiKey),
     });
 
