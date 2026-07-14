@@ -21,7 +21,7 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import { WEB_SEARCH_PROVIDERS, buildWebSearchFallbackOrder } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { createLogger } from '@/lib/logger';
 import {
@@ -545,6 +545,12 @@ const getDefaultWebSearchConfig = () => ({
       baseUrl: WEB_SEARCH_PROVIDERS.doubao.defaultBaseUrl || '',
       enabled: true,
       requiresApiKey: true,
+    },
+    searxng: {
+      apiKey: '',
+      baseUrl: '',
+      enabled: true,
+      requiresApiKey: false,
     },
   } as Record<
     WebSearchProviderId,
@@ -1574,7 +1580,7 @@ export const useSettingsStore = create<SettingsState>()(
               const pdfFallback = buildFallback<PDFProviderId>(newPDFConfig);
               const imageFallback = buildFallback<ImageProviderId>(newImageConfig);
               const videoFallback = buildFallback<VideoProviderId>(newVideoConfig);
-              const webSearchFallback = buildFallback<WebSearchProviderId>(newWebSearchConfig);
+              const webSearchFallback = buildWebSearchFallbackOrder(newWebSearchConfig);
 
               let validLLMProvider = validateProvider(
                 state.providerId,
@@ -2002,6 +2008,18 @@ export const useSettingsStore = create<SettingsState>()(
               baseUrl: WEB_SEARCH_PROVIDERS.minimax.defaultBaseUrl || '',
               enabled: true,
               requiresApiKey: true,
+            },
+            doubao: {
+              apiKey: '',
+              baseUrl: WEB_SEARCH_PROVIDERS.doubao.defaultBaseUrl || '',
+              enabled: true,
+              requiresApiKey: true,
+            },
+            searxng: {
+              apiKey: '',
+              baseUrl: '',
+              enabled: true,
+              requiresApiKey: false,
             },
           } as SettingsState['webSearchProvidersConfig'];
           delete stateRecord.webSearchApiKey;

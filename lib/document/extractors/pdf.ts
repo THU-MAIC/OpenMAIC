@@ -50,12 +50,17 @@ function createPdfBackedDocumentExtractor(id: PDFProviderId): DocumentExtractorP
       const parsed =
         id === 'mineru-cloud'
           ? await parseWithMinerUCloud(config, input.buffer, input.fileName)
-          : input.mimeType === DOCUMENT_MIME_TYPES.pdf
-            ? await parsePDF(config, input.buffer)
-            : await parseWithMinerUDocument(config, input.buffer, {
-                fileName: input.fileName || 'document',
+          : id === 'mineru'
+            ? await parseWithMinerUDocument(config, input.buffer, {
+                fileName: input.fileName || 'document.pdf',
                 mimeType: input.mimeType,
-              });
+              })
+            : input.mimeType === DOCUMENT_MIME_TYPES.pdf
+              ? await parsePDF(config, input.buffer)
+              : await parseWithMinerUDocument(config, input.buffer, {
+                  fileName: input.fileName || 'document',
+                  mimeType: input.mimeType,
+                });
 
       return parsedPdfToDocumentArtifact(parsed, input);
     },

@@ -15,6 +15,8 @@
     "removePdf": "Remover arquivo",
     "documentExtractor": "Extrator",
     "courseMaterialUpload": "Enviar material do curso",
+    "courseMaterialsSelected": "{{n}} materiais selecionados",
+    "courseMaterialMergeOrder": "Os materiais serão mesclados na ordem mostrada abaixo.",
     "removeCourseMaterial": "Remover arquivo",
     "webSearchOn": "Ativada",
     "webSearchOff": "Clique para ativar",
@@ -825,12 +827,14 @@
     "requirementPlaceholder": "Conte-me o que você quer aprender, por exemplo:\n\"Me ensine Python do zero em 30 minutos\"\n\"Explique a Transformada de Fourier no quadro\"\n\"Como jogar o jogo de tabuleiro Avalon\"",
     "requirementRequired": "Por favor, descreva os objetivos do curso",
     "fileTooLarge": "Arquivo muito grande. Selecione um arquivo com menos de 50 MB",
+    "courseMaterialCountLimit": "Você pode enviar até 5 arquivos de material do curso",
+    "courseMaterialTotalSizeLimit": "O tamanho total dos materiais deve ser menor que 150 MB",
     "unsupportedCourseMaterial": "O extrator atual não suporta este formato. Troque o extrator ou escolha outro arquivo."
   },
   "generation": {
     "pdfLoadFailed": "Falha ao carregar o PDF, tente novamente",
     "pdfParseFailed": "Falha ao analisar o PDF",
-    "analyzingCourseMaterial": "Analisando arquivo {{type}}",
+    "analyzingCourseMaterial": "Analisando documentos",
     "analyzingCourseMaterialDesc": "Extraindo estrutura e conteúdo do documento...",
     "courseMaterialLoadFailed": "Falha ao carregar o material do curso, tente novamente",
     "courseMaterialParseFailed": "Falha ao analisar o material do curso",
@@ -1016,6 +1020,7 @@
     "addProviderDescription": "Adicione provedores de modelo personalizados para ampliar os modelos de IA disponíveis",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1034,10 +1039,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Protocolo OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Protocolo Claude",
       "google": "Protocolo Gemini"
     },
@@ -1056,6 +1063,7 @@
     "importFromClipboard": "Importar da Área de Transferência",
     "apiSecret": "Chave de API",
     "apiHost": "URL Base",
+    "azureDeploymentHint": "Informe o endpoint do Azure OpenAI acima e adicione cada nome de implantação do Azure como um modelo.",
     "baseUrlRegion": {
       "china": "China",
       "international": "Internacional",
@@ -1563,6 +1571,7 @@
     "webSearchApiKeyPlaceholderServer": "Chave configurada no servidor, opcionalmente sobreponha",
     "webSearchApiKeyHint": "Obtenha uma chave de API com o provedor de busca selecionado",
     "webSearchApiKeyOptional": "A chave de API é opcional. Sem ela, será usada extração pública de páginas como alternativa.",
+    "searxngServerOnlyNotice": "O SearXNG deve ser configurado no servidor. Defina a variável de ambiente SEARXNG_BASE_URL (ou a seção web-search em server-providers.yml). URLs de instância fornecidas pelo cliente não são aceitas.",
     "baiduSubSources": "Fontes do Baidu",
     "baiduSubSourcesDescription": "Escolha pelo menos uma fonte do Baidu para consultar.",
     "baiduSubSourceWeb": "Busca Web",

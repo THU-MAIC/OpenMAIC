@@ -105,6 +105,9 @@ Fill in at least one LLM provider key:
 
 ```env
 OPENAI_API_KEY=sk-...
+AZURE_OPENAI_API_KEY=...
+AZURE_OPENAI_BASE_URL=https://YOUR-RESOURCE.openai.azure.com/openai
+AZURE_OPENAI_MODELS=YOUR-DEPLOYMENT-NAME
 ANTHROPIC_API_KEY=sk-ant-...
 GOOGLE_API_KEY=...
 GROK_API_KEY=xai-...
@@ -119,11 +122,16 @@ You can also configure providers via `server-providers.yml`:
 providers:
   openai:
     apiKey: sk-...
+  azure:
+    apiKey: ...
+    baseUrl: https://YOUR-RESOURCE.openai.azure.com/openai
+    models:
+      - YOUR-DEPLOYMENT-NAME
   anthropic:
     apiKey: sk-ant-...
 ```
 
-Supported providers: **OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), and any OpenAI-compatible API.
 
 <a id="lemonade-local-ai"></a>
 

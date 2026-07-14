@@ -84,6 +84,25 @@ describe('POST /api/extract-document', () => {
     });
   });
 
+  it('returns 413 before extraction when the file exceeds the per-file size limit', async () => {
+    const res = await postExtractDocument({
+      file: new File([new Uint8Array(51 * 1024 * 1024)], 'large.pdf', {
+        type: 'application/pdf',
+      }),
+      providerId: 'mineru-cloud',
+      apiKey: 'cloud-key',
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(413);
+    expect(json).toMatchObject({
+      success: false,
+      errorCode: 'INVALID_REQUEST',
+    });
+    expect(json.error).toContain('Maximum size is 50MB');
+    expect(mocks.parseWithMinerUCloud).not.toHaveBeenCalled();
+  });
+
   it('returns 400 for an unknown requested provider', async () => {
     const res = await postExtractDocument({
       file: new File(['hello'], 'notes.txt', { type: 'text/plain' }),

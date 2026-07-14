@@ -15,6 +15,8 @@
     "removePdf": "ファイルを削除",
     "documentExtractor": "抽出器",
     "courseMaterialUpload": "教材をアップロード",
+    "courseMaterialsSelected": "{{n}}件の教材を選択済み",
+    "courseMaterialMergeOrder": "教材は下に表示された順序で結合されます。",
     "removeCourseMaterial": "ファイルを削除",
     "webSearchOn": "有効",
     "webSearchOff": "クリックして有効化",
@@ -825,12 +827,14 @@
     "requirementPlaceholder": "学びたいことを自由に入力してください。例えば：\n「Pythonをゼロから30分で教えて」\n「フーリエ変換をホワイトボードで解説して」\n「ボードゲーム『アバロン』の遊び方」",
     "requirementRequired": "コースの要件を入力してください",
     "fileTooLarge": "ファイルが大きすぎます。50MB以下のファイルを選択してください",
+    "courseMaterialCountLimit": "教材ファイルは最大5件までアップロードできます",
+    "courseMaterialTotalSizeLimit": "教材の合計サイズは150MB未満にしてください",
     "unsupportedCourseMaterial": "現在の解析器はこの形式に対応していません。解析器を切り替えるか、別のファイルを選択してください。"
   },
   "generation": {
     "pdfLoadFailed": "PDFファイルの読み込みに失敗しました。もう一度お試しください",
     "pdfParseFailed": "PDFの解析に失敗しました",
-    "analyzingCourseMaterial": "{{type}}ファイルを分析中",
+    "analyzingCourseMaterial": "ドキュメントを分析中",
     "analyzingCourseMaterialDesc": "ドキュメントの構造と内容を抽出しています...",
     "courseMaterialLoadFailed": "教材の読み込みに失敗しました。もう一度お試しください",
     "courseMaterialParseFailed": "教材の解析に失敗しました",
@@ -1016,6 +1020,7 @@
     "addProviderDescription": "カスタムモデルプロバイダーを追加して利用可能なAIモデルを拡張",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1034,10 +1039,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAIプロトコル",
+      "azure": "Azure OpenAI",
       "anthropic": "Claudeプロトコル",
       "google": "Geminiプロトコル"
     },
@@ -1056,6 +1063,7 @@
     "importFromClipboard": "クリップボードからインポート",
     "apiSecret": "APIキー",
     "apiHost": "ベースURL",
+    "azureDeploymentHint": "上に Azure OpenAI エンドポイントを入力し、各 Azure デプロイ名をモデルとして追加してください。",
     "baseUrlRegion": {
       "china": "中国",
       "international": "国際",
@@ -1563,6 +1571,7 @@
     "webSearchApiKeyPlaceholderServer": "サーバーキー設定済み、任意で上書き",
     "webSearchApiKeyHint": "選択した検索プロバイダーからAPIキーを取得してください",
     "webSearchApiKeyOptional": "APIキーは任意です。未設定の場合、公開ページのスクレイピングが使用されます。",
+    "searxngServerOnlyNotice": "SearXNG はサーバー側で設定する必要があります。SEARXNG_BASE_URL 環境変数（または server-providers.yml の web-search セクション）を設定してください。クライアントからのインスタンス URL は受け付けません。",
     "baiduSubSources": "Baidu検索ソース",
     "baiduSubSourcesDescription": "少なくとも1つのBaiduソースを選択してください。",
     "baiduSubSourceWeb": "Web検索",

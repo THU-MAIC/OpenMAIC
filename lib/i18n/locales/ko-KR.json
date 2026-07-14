@@ -15,6 +15,8 @@
     "removePdf": "파일 제거",
     "documentExtractor": "추출기",
     "courseMaterialUpload": "강의 자료 업로드",
+    "courseMaterialsSelected": "강의 자료 {{n}}개 선택됨",
+    "courseMaterialMergeOrder": "강의 자료는 아래 표시된 순서대로 병합됩니다.",
     "removeCourseMaterial": "파일 제거",
     "webSearchOn": "사용 중",
     "webSearchOff": "클릭하여 사용",
@@ -825,12 +827,14 @@
     "requirementPlaceholder": "학습하고 싶은 내용을 자유롭게 입력하세요, 예:\n\"파이썬을 30분 만에 처음부터 가르쳐주세요\"\n\"칠판에 푸리에 변환을 설명해주세요\"\n\"보드게임 Avalon 하는 방법\"",
     "requirementRequired": "강좌 요구사항을 입력해주세요",
     "fileTooLarge": "파일이 너무 큽니다. 50MB 미만의 파일을 선택해주세요",
+    "courseMaterialCountLimit": "강의 자료 파일은 최대 5개까지 업로드할 수 있습니다",
+    "courseMaterialTotalSizeLimit": "강의 자료 전체 크기는 150MB 미만이어야 합니다",
     "unsupportedCourseMaterial": "현재 파서가 이 형식을 지원하지 않습니다. 파서를 변경하거나 다른 파일을 선택하세요."
   },
   "generation": {
     "pdfLoadFailed": "PDF 파일 불러오기에 실패했습니다. 다시 시도해주세요",
     "pdfParseFailed": "PDF 파싱에 실패했습니다",
-    "analyzingCourseMaterial": "{{type}} 파일 분석 중",
+    "analyzingCourseMaterial": "문서 분석 중",
     "analyzingCourseMaterialDesc": "문서 구조와 내용을 추출하고 있어요...",
     "courseMaterialLoadFailed": "강의 자료를 불러오지 못했습니다. 다시 시도해주세요",
     "courseMaterialParseFailed": "강의 자료 파싱에 실패했습니다",
@@ -1016,6 +1020,7 @@
     "addProviderDescription": "사용 가능한 AI 모델을 확장하기 위해 사용자 지정 모델 제공업체를 추가하세요",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1034,10 +1039,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 프로토콜",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude 프로토콜",
       "google": "Gemini 프로토콜"
     },
@@ -1056,6 +1063,7 @@
     "importFromClipboard": "클립보드에서 가져오기",
     "apiSecret": "API 키",
     "apiHost": "기본 URL",
+    "azureDeploymentHint": "위에 Azure OpenAI 엔드포인트를 입력한 다음 각 Azure 배포 이름을 모델로 추가하세요.",
     "baseUrlRegion": {
       "china": "중국",
       "international": "국제",
@@ -1563,6 +1571,7 @@
     "webSearchApiKeyPlaceholderServer": "서버 키가 설정되어 있습니다. 선택적으로 재정의할 수 있습니다",
     "webSearchApiKeyHint": "선택한 검색 제공업체에서 API 키를 발급받으세요",
     "webSearchApiKeyOptional": "API 키는 선택 사항입니다. 키가 없으면 공개 페이지 스크래핑이 대체 수단으로 사용됩니다.",
+    "searxngServerOnlyNotice": "SearXNG는 서버에서 구성해야 합니다. SEARXNG_BASE_URL 환경 변수(또는 server-providers.yml의 web-search 섹션)를 설정하세요. 클라이언트가 제공한 인스턴스 URL은 허용되지 않습니다.",
     "baiduSubSources": "바이두 검색 소스",
     "baiduSubSourcesDescription": "쿼리할 바이두 소스를 하나 이상 선택하세요.",
     "baiduSubSourceWeb": "웹 검색",

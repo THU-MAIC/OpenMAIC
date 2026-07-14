@@ -47,6 +47,7 @@ interface ServerConfig {
 
 const LLM_ENV_MAP: Record<string, string> = {
   OPENAI: 'openai',
+  AZURE_OPENAI: 'azure',
   ANTHROPIC: 'anthropic',
   GOOGLE: 'google',
   DEEPSEEK: 'deepseek',
@@ -127,6 +128,7 @@ const WEB_SEARCH_ENV_MAP: Record<string, string> = {
   BRAVE: 'brave',
   BAIDU: 'baidu',
   WEB_SEARCH_MINIMAX: 'minimax',
+  SEARXNG: 'searxng',
 };
 
 // ---------------------------------------------------------------------------
@@ -318,7 +320,9 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     }),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
-    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search']),
+    webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {
+      keylessProviders: new Set(['brave', 'searxng']),
+    }),
     ttsDisabled: collectDisabledTTS(yamlData.tts),
   };
 }

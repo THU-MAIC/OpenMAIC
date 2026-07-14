@@ -21,12 +21,38 @@ export interface PdfImage {
   storageId?: string; // Reference to IndexedDB (session_xxx_img_1)
   width?: number; // Image width (px or normalized)
   height?: number; // Image height (px or normalized)
+  originalId?: string; // ID assigned by the extractor before bundle-level normalization
+  sourceDocumentId?: string; // DocumentBundle source ID
+  sourceDocumentName?: string; // Original source filename for citation back to material
+  sourceDocumentOrder?: number; // Upload order in the bundle
+  visionPriority?: number; // Higher values are attached first when vision budget is limited
 }
 
 /**
  * Image mapping for post-processing: image_id → base64 URL
  */
 export type ImageMapping = Record<string, string>;
+
+export interface SelectedCourseMaterial {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  lastModified: number;
+  type: string;
+  order: number;
+}
+
+export interface SessionDocumentSource {
+  id: string;
+  name: string;
+  size: number;
+  lastModified?: number;
+  mimeType?: string;
+  order: number;
+  storageKey: string;
+  providerId?: string;
+}
 
 // ==================== Stage 1 Input ====================
 
@@ -82,6 +108,13 @@ export interface WidgetOutline {
   challenge?: string; // game - description of what player does
   playerControls?: string[]; // game - what player controls
   nodeCount?: number; // diagram - approximate node count
+  nodes?: Array<{
+    id: string;
+    label: string;
+    parentId?: string;
+    icon?: string;
+    details?: string;
+  }>; // diagram - prescribed nodes and optional hierarchy
   challengeType?: string; // code - type of coding challenge
 }
 

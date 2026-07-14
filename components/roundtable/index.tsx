@@ -93,6 +93,9 @@ interface RoundtableProps {
   readonly fullscreenContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
+// This must stay in sync with the non-presentation textarea's max-h-[100px] class.
+const NON_PRESENTATION_INPUT_MAX_HEIGHT_PX = 100;
+
 const VOICE_WAVE_BARS = [
   { peak: 18, duration: 0.55 },
   { peak: 24, duration: 0.72 },
@@ -191,11 +194,24 @@ export function Roundtable({
   const [isVoiceOpen, setIsVoiceOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [userMessage, setUserMessage] = useState<string | null>(null);
+  const nonPresentationInputRef = useRef<HTMLTextAreaElement>(null);
   const agentScrollRef = useRef<HTMLDivElement>(null);
   const bubbleScrollRef = useRef<HTMLDivElement>(null);
   const teacherAvatarRef = useRef<HTMLDivElement>(null);
   const studentAvatarRefs = useRef<Map<string, HTMLDivElement>>(new Map());
   const userMessageClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (isPresenting) return;
+    const textarea = nonPresentationInputRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(
+      textarea.scrollHeight,
+      NON_PRESENTATION_INPUT_MAX_HEIGHT_PX,
+    )}px`;
+  }, [inputValue, isInputOpen, isPresenting]);
 
   // End flash visible state (Issue 3)
   const [endFlashVisible, setEndFlashVisible] = useState(false);
@@ -1225,6 +1241,7 @@ export function Roundtable({
           </AnimatePresence>
 
           <div
+            data-testid="roundtable-non-presentation-card"
             onClick={() => {
               if (isInputOpen || isVoiceOpen) {
                 setIsInputOpen(false);
@@ -1239,6 +1256,7 @@ export function Roundtable({
               {isInputOpen && (
                 <motion.div
                   key="input-stage"
+                  data-testid="roundtable-non-presentation-input-stage"
                   initial={{
                     opacity: 0,
                     scale: 0.95,
@@ -1250,9 +1268,13 @@ export function Roundtable({
                   onClick={(e) => e.stopPropagation()}
                   className="absolute inset-x-6 bottom-4 z-20 flex items-center justify-end"
                 >
-                  <div className="relative w-fit max-w-[85%] sm:max-w-[65%] min-w-[200px] sm:min-w-[300px] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-2 pr-2 rounded-2xl rounded-br-none shadow-2xl border border-purple-200 dark:border-purple-700 flex items-end gap-2 ring-1 ring-purple-100/50 dark:ring-purple-800/50">
+                  <div
+                    data-testid="roundtable-non-presentation-input-panel"
+                    className="relative w-fit max-w-[85%] sm:max-w-[65%] min-w-[200px] sm:min-w-[300px] bg-white/90 dark:bg-gray-800/90 backdrop-blur-md p-2 pr-2 rounded-2xl rounded-br-none shadow-2xl border border-purple-200 dark:border-purple-700 flex items-end gap-2 ring-1 ring-purple-100/50 dark:ring-purple-800/50"
+                  >
                     <div className="pl-4 flex-1 py-1 min-w-0">
                       <textarea
+                        ref={nonPresentationInputRef}
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
                         onKeyDown={(e) => {
@@ -1264,8 +1286,7 @@ export function Roundtable({
                         placeholder={t('roundtable.inputPlaceholder')}
                         autoFocus
                         rows={1}
-                        className="w-full resize-none bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-gray-700 dark:text-gray-200 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 min-h-[40px] max-h-[120px]"
-                        style={{ fieldSizing: 'content' } as Record<string, string>}
+                        className="w-full resize-none overflow-y-auto bg-transparent border-none focus:ring-0 focus:outline-none outline-none shadow-none ring-0 text-gray-700 dark:text-gray-200 text-sm placeholder:text-gray-400 dark:placeholder:text-gray-500 min-h-[40px] max-h-[100px]"
                       />
                     </div>
                     <button
