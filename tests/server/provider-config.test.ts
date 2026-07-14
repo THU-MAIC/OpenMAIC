@@ -7,6 +7,7 @@ let yamlOverride: string | null = null;
 
 const ENV_PREFIXES_TO_CLEAR = [
   'OPENAI',
+  'AZURE_OPENAI',
   'ANTHROPIC',
   'GOOGLE',
   'DEEPSEEK',
@@ -124,6 +125,12 @@ describe('provider-config', () => {
       vi.stubEnv('ANTHROPIC_API_KEY', 'sk-anthropic');
       const { resolveApiKey } = await import('@/lib/server/provider-config');
       expect(resolveApiKey('anthropic')).toBe('sk-anthropic');
+    });
+
+    it('resolves Azure OpenAI via its dedicated env prefix', async () => {
+      vi.stubEnv('AZURE_OPENAI_API_KEY', 'azure-key');
+      const { resolveApiKey } = await import('@/lib/server/provider-config');
+      expect(resolveApiKey('azure')).toBe('azure-key');
     });
 
     it('returns empty string for unknown provider with no env var', async () => {
@@ -251,6 +258,16 @@ providers:
         'deepseek/deepseek-v4-pro',
         'deepseek/deepseek-v4-flash',
       ]);
+    });
+
+    it('maps Azure deployment names to the built-in provider', async () => {
+      vi.stubEnv('AZURE_OPENAI_API_KEY', 'azure-key');
+      vi.stubEnv('AZURE_OPENAI_BASE_URL', 'https://test-resource.openai.azure.com/openai');
+      vi.stubEnv('AZURE_OPENAI_MODELS', 'course-gpt-4o,course-gpt-5');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.azure.models).toEqual(['course-gpt-4o', 'course-gpt-5']);
     });
 
     it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {

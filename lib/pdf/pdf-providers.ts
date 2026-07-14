@@ -147,6 +147,11 @@ import { extractMinerUResult } from './mineru-parser';
 import { parseWithMinerUCloud } from './mineru-cloud';
 
 const log = createLogger('PDFProviders');
+const DEFAULT_MINERU_BACKEND = 'pipeline';
+
+function getMinerUBackend(): string {
+  return process.env.PDF_MINERU_BACKEND?.trim() || DEFAULT_MINERU_BACKEND;
+}
 
 /**
  * Turn a self-hosted MinerU error body into an actionable message.
@@ -355,9 +360,10 @@ export async function parseWithMinerUDocument(
   // MinerU API form fields
   // Defaults already: return_md=true, formula_enable=true, table_enable=true
   formData.append('parse_method', 'auto');
-  // hybrid-auto-engine: best accuracy, uses VLM for layout understanding (requires GPU)
-  // pipeline: basic mode, no VLM, faster but lower quality image extraction
-  formData.append('backend', 'hybrid-auto-engine');
+  // `hybrid-auto-engine` may require a GPU/device configuration in the MinerU
+  // service. Default to the broadly compatible pipeline backend; operators can
+  // opt into hybrid/VLM mode with PDF_MINERU_BACKEND when their service is ready.
+  formData.append('backend', getMinerUBackend());
   formData.append('return_content_list', 'true');
   formData.append('return_images', 'true');
 

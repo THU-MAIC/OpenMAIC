@@ -319,6 +319,23 @@ describe('settings rehydrate — built-in provider models', () => {
     // ...while the managed flag itself is preserved.
     expect(openai.isServerConfigured).toBe(true);
   });
+
+  it('removes the retired insert-toolbar collapse preference on rehydrate', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        state: { editInsertToolbarCollapsed: true },
+        version: 4,
+      }),
+    );
+
+    const store = await getStore();
+    expect('editInsertToolbarCollapsed' in store.getState()).toBe(false);
+
+    store.getState().setSidebarCollapsed(false);
+    const persisted = JSON.parse(storage.get('settings-storage')!).state;
+    expect('editInsertToolbarCollapsed' in persisted).toBe(false);
+  });
 });
 
 describe('fetchServerProviders — provider availability sync', () => {
@@ -366,6 +383,69 @@ describe('fetchServerProviders — provider availability sync', () => {
     expect(models.map((m) => m.id)).toEqual(['gpt-5.5', 'gpt-4o']);
     expect(models[0].name).toBe('gpt-5.5');
     expect(models[1].name).toBe('GPT-4o');
+  });
+
+  it('enriches a managed GPT-5.6 Sol alias with canonical catalog metadata', async () => {
+    const store = await getStore();
+    store.setState({
+      providersConfig: {
+        ...store.getState().providersConfig,
+        openai: {
+          ...store.getState().providersConfig.openai,
+          models: [
+            {
+              id: 'gpt-5.6',
+              name: 'GPT-5.6 Sol',
+              contextWindow: 1050000,
+              outputWindow: 128000,
+              capabilities: {
+                vision: true,
+                thinking: {
+                  requestAdapter: 'openai',
+                  defaultEffort: 'medium',
+                },
+              },
+            },
+          ],
+        },
+      },
+    });
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-5.6-sol'] },
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    const model = store.getState().providersConfig.openai.models[0];
+    expect(model).toMatchObject({
+      id: 'gpt-5.6-sol',
+      name: 'GPT-5.6 Sol',
+      contextWindow: 1050000,
+      outputWindow: 128000,
+      capabilities: {
+        vision: true,
+        thinking: {
+          requestAdapter: 'openai',
+          defaultEffort: 'medium',
+        },
+      },
+    });
+  });
+
+  it('switches a canonical selection to the alias when the managed allowlist only permits it', async () => {
+    const store = await getStore();
+    store.setState({ providerId: 'openai', modelId: 'gpt-5.6' });
+    mockServerResponse({
+      providers: {
+        openai: { models: ['gpt-5.6-sol'] },
+      },
+    });
+
+    await store.getState().fetchServerProviders();
+
+    expect(store.getState().modelId).toBe('gpt-5.6-sol');
   });
 
   it('keeps all models when server provides no model restriction', async () => {
@@ -1172,6 +1252,26 @@ describe('usable provider ⇒ concrete model invariant (#580)', () => {
 
     expect(store.getState().providerId).toBe('openai');
     expect(store.getState().modelId).toBe('gpt-4o');
+  });
+
+  it('preserves an alias wire ID when provider config contains its canonical model', async () => {
+    const store = await getStore();
+    store.setState({
+      providerId: 'openai',
+      modelId: 'gpt-5.6-sol',
+      providersConfig: {
+        ...store.getState().providersConfig,
+        openai: {
+          ...store.getState().providersConfig.openai,
+          apiKey: 'sk-client',
+          models: [{ id: 'gpt-5.6', name: 'GPT-5.6 Sol' }],
+        },
+      },
+    });
+
+    store.getState().setProviderConfig('openai', { baseUrl: 'https://api.openai.com/v1' });
+
+    expect(store.getState().modelId).toBe('gpt-5.6-sol');
   });
 
   it('configuring a non-active provider does not hijack the current selection', async () => {

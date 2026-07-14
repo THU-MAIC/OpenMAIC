@@ -10,6 +10,7 @@ import type {
 import { MODALITY_ORDER } from './token-plan-presets';
 import { getCatalogThinkingCapability } from '@/lib/ai/model-metadata';
 import { PROVIDERS } from '@/lib/ai/providers';
+import { findModelById } from '@/lib/ai/model-aliases';
 import type { ModelInfo } from '@/lib/types/provider';
 
 /**
@@ -104,7 +105,11 @@ export function applyTokenPlan(
 }
 
 function catalogModelFor(target: TokenPlanModalityTarget, id: string): ModelInfo | undefined {
-  const direct = PROVIDERS[target.providerId as ProviderId]?.models.find((m) => m.id === id);
+  const direct = findModelById(
+    target.providerId,
+    PROVIDERS[target.providerId as ProviderId]?.models,
+    id,
+  );
   if (direct) return direct;
 
   const allModels = Object.values(PROVIDERS).flatMap((provider) => provider.models);

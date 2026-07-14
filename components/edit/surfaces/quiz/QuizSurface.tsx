@@ -8,8 +8,8 @@ import { useQuizSurfaceState, type QuizSelection } from './use-quiz-surface';
  * that the contract carries a non-canvas, structured/form editor. EditShell
  * resolves this by `scene.type` and renders `SurfaceComponent` (a form, not a
  * canvas) + reads `useSurfaceState()` into the chrome. The surface contributes
- * only the "Add question" insert item + undo/redo; all per-question editing is
- * inline in the form (no floating bar, no selection model).
+ * undo/redo; adding and editing questions both stay inline in the form (no
+ * floating bar, no selection model).
  */
 export const quizSurface: SceneEditorSurface<QuizContent, QuizSelection> = {
   sceneType: 'quiz',

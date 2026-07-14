@@ -6,6 +6,7 @@ import type {
   ThinkingLevel,
   ThinkingRequestAdapter,
 } from '@/lib/types/provider';
+import { getCanonicalModelId } from './model-aliases';
 
 export function getModelMetadataKey(providerId: string, modelId: string): string {
   return `${providerId}:${modelId}`;
@@ -227,7 +228,21 @@ const doubaoSeed20Effort: ThinkingCapability = {
 
 const minimaxM3Thinking = toggleCapability('anthropic', false);
 
+const openaiGpt56Effort: ThinkingCapability = {
+  control: 'effort',
+  requestAdapter: 'openai',
+  effortValues: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  defaultEffort: 'medium',
+  defaultMode: 'enabled',
+  toggleable: true,
+  budgetAdjustable: true,
+  defaultEnabled: true,
+};
+
 const THINKING_CAPABILITIES: Record<string, ThinkingCapability> = {
+  [getModelMetadataKey('openai', 'gpt-5.6')]: openaiGpt56Effort,
+  [getModelMetadataKey('openai', 'gpt-5.6-terra')]: openaiGpt56Effort,
+  [getModelMetadataKey('openai', 'gpt-5.6-luna')]: openaiGpt56Effort,
   [getModelMetadataKey('openai', 'gpt-5.5')]: effortCapability(
     'openai',
     ['low', 'medium', 'high', 'xhigh'],
@@ -403,7 +418,8 @@ export function getCatalogThinkingCapability(
   providerId: string,
   modelId: string,
 ): ThinkingCapability | undefined {
-  const exact = THINKING_CAPABILITIES[getModelMetadataKey(providerId, modelId)];
+  const canonicalModelId = getCanonicalModelId(providerId, modelId);
+  const exact = THINKING_CAPABILITIES[getModelMetadataKey(providerId, canonicalModelId)];
   if (exact) return exact;
 
   if (providerId === 'lemonade') {

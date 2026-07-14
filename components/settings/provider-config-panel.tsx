@@ -309,7 +309,11 @@ export function ProviderConfigPanel({
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              placeholder={provider.defaultBaseUrl || 'https://api.example.com/v1'}
+              placeholder={
+                provider.baseUrlPlaceholder ||
+                provider.defaultBaseUrl ||
+                'https://api.example.com/v1'
+              }
               value={baseUrl}
               onChange={(e) => handleBaseUrlChange(e.target.value)}
               onBlur={onSave}
@@ -350,6 +354,9 @@ export function ProviderConfigPanel({
                 case 'openai':
                   endpointPath = '/chat/completions';
                   break;
+                case 'azure':
+                  endpointPath = '/v1/responses?api-version=v1';
+                  break;
                 case 'anthropic':
                   endpointPath = '/messages';
                   break;
@@ -374,6 +381,11 @@ export function ProviderConfigPanel({
 
       {/* Models - No selection state, just list for management */}
       <div className="space-y-3">
+        {provider.id === 'azure' && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-300">
+            {t('settings.azureDeploymentHint')}
+          </div>
+        )}
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div className="flex items-center gap-2">
             <Label className="text-base">{t('settings.models')}</Label>
@@ -396,20 +408,22 @@ export function ProviderConfigPanel({
                   {t('settings.reset')}
                 </Button>
               )}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleFetchModels}
-                disabled={fetchStatus === 'fetching' || (requiresApiKey && !apiKey)}
-                className="gap-1.5"
-              >
-                {fetchStatus === 'fetching' ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Download className="h-3.5 w-3.5" />
-                )}
-                {t('settings.fetchModels')}
-              </Button>
+              {provider.supportsModelDiscovery !== false && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleFetchModels}
+                  disabled={fetchStatus === 'fetching' || (requiresApiKey && !apiKey)}
+                  className="gap-1.5"
+                >
+                  {fetchStatus === 'fetching' ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Download className="h-3.5 w-3.5" />
+                  )}
+                  {t('settings.fetchModels')}
+                </Button>
+              )}
               <Button variant="outline" size="sm" onClick={onAddModel} className="gap-1.5">
                 <Plus className="h-3.5 w-3.5" />
                 {t('settings.addNewModel')}

@@ -6,6 +6,7 @@ const searchWithBaiduMock = vi.hoisted(() => vi.fn());
 const searchWithTavilyMock = vi.hoisted(() => vi.fn());
 const searchWithMiniMaxMock = vi.hoisted(() => vi.fn());
 const searchWithDoubaoMock = vi.hoisted(() => vi.fn());
+const searchWithSearxngMock = vi.hoisted(() => vi.fn());
 
 vi.mock('@/lib/web-search/bocha', () => ({
   searchWithBocha: searchWithBochaMock,
@@ -31,6 +32,10 @@ vi.mock('@/lib/web-search/doubao', () => ({
   searchWithDoubao: searchWithDoubaoMock,
 }));
 
+vi.mock('@/lib/web-search/searxng', () => ({
+  searchWithSearxng: searchWithSearxngMock,
+}));
+
 import { searchWeb } from '@/lib/web-search';
 
 describe('searchWeb', () => {
@@ -41,6 +46,7 @@ describe('searchWeb', () => {
     searchWithTavilyMock.mockReset();
     searchWithMiniMaxMock.mockReset();
     searchWithDoubaoMock.mockReset();
+    searchWithSearxngMock.mockReset();
   });
 
   it('dispatches Tavily provider requests', async () => {
@@ -207,5 +213,33 @@ describe('searchWeb', () => {
       baseUrl: 'https://open.feedcoopapi.com',
     });
     expect(searchWithMiniMaxMock).not.toHaveBeenCalled();
+  });
+
+  it('dispatches SearXNG provider requests with base URL only', async () => {
+    searchWithSearxngMock.mockResolvedValueOnce({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.6,
+    });
+
+    await expect(
+      searchWeb({
+        providerId: 'searxng',
+        query: 'q',
+        maxResults: 8,
+        baseUrl: 'http://192.168.161.100:6060',
+      }),
+    ).resolves.toEqual({
+      answer: '',
+      sources: [],
+      query: 'q',
+      responseTime: 0.6,
+    });
+    expect(searchWithSearxngMock).toHaveBeenCalledWith({
+      query: 'q',
+      maxResults: 8,
+      baseUrl: 'http://192.168.161.100:6060',
+    });
   });
 });

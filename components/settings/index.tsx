@@ -373,6 +373,8 @@ export function SettingsDialog({ open, onOpenChange, initialSection }: SettingsD
         name: providersConfig[selectedProviderId].name,
         type: providersConfig[selectedProviderId].type,
         defaultBaseUrl: providersConfig[selectedProviderId].defaultBaseUrl,
+        baseUrlPlaceholder: PROVIDERS[selectedProviderId]?.baseUrlPlaceholder,
+        supportsModelDiscovery: PROVIDERS[selectedProviderId]?.supportsModelDiscovery,
         alternateBaseUrls: PROVIDERS[selectedProviderId]?.alternateBaseUrls,
         icon: providersConfig[selectedProviderId].icon,
         requiresApiKey: providersConfig[selectedProviderId].requiresApiKey,

@@ -6,11 +6,21 @@ const openAiMock = vi.hoisted(() => ({
   createOpenAI: vi.fn(),
 }));
 
+const azureMock = vi.hoisted(() => ({
+  model: vi.fn((deploymentId: string) => ({ endpoint: 'azure-responses', deploymentId })),
+  createAzure: vi.fn(),
+}));
+
 vi.mock('@ai-sdk/openai', () => ({
   createOpenAI: openAiMock.createOpenAI,
 }));
 
-import { getModel, getModelInfo } from '@/lib/ai/providers';
+vi.mock('@ai-sdk/azure', () => ({
+  createAzure: azureMock.createAzure,
+}));
+
+import { getModel, getModelInfo, getProvider } from '@/lib/ai/providers';
+import { normalizeAzureBaseUrl } from '@/lib/ai/azure';
 import type { ProviderId } from '@/lib/types/provider';
 
 async function captureInjectedRequestBody(
@@ -72,6 +82,56 @@ describe('OpenAI provider defaults', () => {
       chat: openAiMock.chat,
       responses: openAiMock.responses,
     });
+    azureMock.model.mockClear();
+    azureMock.createAzure.mockReset();
+    azureMock.createAzure.mockReturnValue(azureMock.model);
+  });
+
+  it.each([
+    ['gpt-5.6', 'GPT-5.6 Sol'],
+    ['gpt-5.6-terra', 'GPT-5.6 Terra'],
+    ['gpt-5.6-luna', 'GPT-5.6 Luna'],
+  ])('includes %s as a built-in OpenAI model', (modelId, name) => {
+    expect(getModelInfo('openai', modelId)).toMatchObject({
+      id: modelId,
+      name,
+      contextWindow: 1050000,
+      outputWindow: 128000,
+      capabilities: {
+        streaming: true,
+        tools: true,
+        vision: true,
+        thinking: {
+          control: 'effort',
+          requestAdapter: 'openai',
+          effortValues: ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+          defaultEffort: 'medium',
+          toggleable: true,
+          budgetAdjustable: true,
+          defaultEnabled: true,
+        },
+      },
+    });
+  });
+
+  it.each(['gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'])(
+    'routes %s through the OpenAI Responses API',
+    (modelId) => {
+      const { model, modelInfo } = getModel({
+        providerId: 'openai',
+        modelId,
+        apiKey: 'sk-test',
+      });
+
+      expect(openAiMock.responses).toHaveBeenCalledWith(modelId);
+      expect(openAiMock.chat).not.toHaveBeenCalled();
+      expect(model).toEqual({ endpoint: 'responses', modelId });
+      expect(modelInfo).toBe(getModelInfo('openai', modelId));
+    },
+  );
+
+  it('resolves GPT-5.6 Sol model info through the canonical built-in entry', () => {
+    expect(getModelInfo('openai', 'gpt-5.6-sol')).toBe(getModelInfo('openai', 'gpt-5.6'));
   });
 
   it('includes GPT-5.5 as a built-in OpenAI model', () => {
@@ -103,6 +163,59 @@ describe('OpenAI provider defaults', () => {
     expect(openAiMock.responses).toHaveBeenCalledWith('gpt-5.5');
     expect(openAiMock.chat).not.toHaveBeenCalled();
     expect(model).toEqual({ endpoint: 'responses', modelId: 'gpt-5.5' });
+  });
+
+  it('creates an Azure OpenAI model using the deployment name', () => {
+    const { model } = getModel({
+      providerId: 'azure',
+      modelId: 'course-generation',
+      apiKey: 'azure-key',
+      baseUrl: 'https://test-resource.openai.azure.com/openai',
+    });
+
+    expect(getProvider('azure')).toMatchObject({
+      type: 'azure',
+      supportsModelDiscovery: false,
+    });
+    expect(azureMock.createAzure).toHaveBeenCalledWith({
+      apiKey: 'azure-key',
+      baseURL: 'https://test-resource.openai.azure.com/openai',
+    });
+    expect(azureMock.model).toHaveBeenCalledWith('course-generation');
+    expect(model).toEqual({
+      endpoint: 'azure-responses',
+      deploymentId: 'course-generation',
+    });
+  });
+
+  it('normalizes full Azure inference endpoints before creating the provider', () => {
+    getModel({
+      providerId: 'azure',
+      modelId: 'course-generation',
+      apiKey: 'azure-key',
+      baseUrl: 'https://fast-ai-resource.services.ai.azure.com/openai/v1/chat/completions',
+    });
+
+    expect(azureMock.createAzure).toHaveBeenCalledWith({
+      apiKey: 'azure-key',
+      baseURL: 'https://fast-ai-resource.services.ai.azure.com/openai/v1',
+    });
+  });
+
+  it('normalizes classic Azure OpenAI resource endpoints', () => {
+    expect(normalizeAzureBaseUrl('https://example.openai.azure.com')).toBe(
+      'https://example.openai.azure.com/openai',
+    );
+    expect(
+      normalizeAzureBaseUrl(
+        'https://example.openai.azure.com/openai/v1/chat/completions?api-version=v1',
+      ),
+    ).toBe('https://example.openai.azure.com/openai');
+    expect(
+      normalizeAzureBaseUrl(
+        'https://example.openai.azure.com/openai/deployments/course-generation/chat/completions?api-version=2024-10-21',
+      ),
+    ).toBe('https://example.openai.azure.com/openai');
   });
 
   it('includes latest official GLM and Kimi coding models', () => {

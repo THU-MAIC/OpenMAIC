@@ -8,6 +8,7 @@
 import { nanoid } from 'nanoid';
 import katex from 'katex';
 import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import type {
   SceneOutline,
   GeneratedSlideContent,
@@ -575,12 +576,13 @@ async function generateSlideContent(
   let visionImages: Array<{ id: string; src: string }> | undefined;
 
   if (assignedImages && assignedImages.length > 0) {
+    const sortedAssignedImages = sortDocumentImagesForVision(assignedImages);
     if (visionEnabled && imageMapping) {
       // Vision mode: split into vision images and text-only
-      const withSrc = assignedImages.filter((img) => imageMapping[img.id]);
+      const withSrc = sortedAssignedImages.filter((img) => imageMapping[img.id]);
       const visionSlice = withSrc.slice(0, MAX_VISION_IMAGES);
       const textOnlySlice = withSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = assignedImages.filter((img) => !imageMapping[img.id]);
+      const noSrcImages = sortedAssignedImages.filter((img) => !imageMapping[img.id]);
 
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
@@ -595,7 +597,9 @@ async function generateSlideContent(
         height: img.height,
       }));
     } else {
-      assignedImagesText = assignedImages.map((img) => formatImageDescription(img)).join('\n');
+      assignedImagesText = sortedAssignedImages
+        .map((img) => formatImageDescription(img))
+        .join('\n');
     }
   }
 
@@ -1084,16 +1088,22 @@ export async function generateWidgetContent(
       };
       break;
 
-    case 'diagram':
+    case 'diagram': {
+      const prescribedNodes = widgetOutline.nodes ?? [];
       promptId = PROMPT_IDS.DIAGRAM_CONTENT;
       variables = {
         title: outline.title,
         diagramType: widgetOutline.diagramType || 'flowchart',
         description: outline.description,
         keyPoints: (outline.keyPoints || []).join('\n'),
+        nodeCount: widgetOutline.nodeCount ?? prescribedNodes.length,
+        prescribedNodes,
+        hasNodeCount: typeof widgetOutline.nodeCount === 'number' && widgetOutline.nodeCount > 0,
+        hasPrescribedNodes: prescribedNodes.length > 0,
         languageDirective: languageDirective || '',
       };
       break;
+    }
 
     case 'code':
       promptId = PROMPT_IDS.CODE_CONTENT;

@@ -6,6 +6,8 @@ import {
   isSubmitLockedDuringStream,
   taskEvaluationCanAdvance,
 } from '@/components/scene-renderers/pbl/v2/submission';
+import { findModelById } from '@/lib/ai/model-aliases';
+import { PROVIDERS } from '@/lib/ai/providers';
 import { isToleratedReactionStreamError } from '@/components/scene-renderers/pbl/v2/use-instructor-stream';
 import type { PBLEvaluation } from '@/lib/pbl/v2/types';
 import type { PBLSSEEvent } from '@/lib/pbl/v2/api/sse';
@@ -63,6 +65,19 @@ describe('PBL v2 — post-submission flow', () => {
     expect(imageRequiresCaption({ hasImage: false, hasVision: false, hasCaption: false })).toBe(
       false,
     );
+  });
+
+  it('recognizes the explicit GPT-5.6 Sol ID as vision-capable', () => {
+    const model = findModelById('openai', PROVIDERS.openai.models, 'gpt-5.6-sol');
+
+    expect(model?.capabilities?.vision).toBe(true);
+    expect(
+      imageRequiresCaption({
+        hasImage: true,
+        hasVision: !!model?.capabilities?.vision,
+        hasCaption: false,
+      }),
+    ).toBe(false);
   });
 
   it('tolerates a soft EMPTY_LLM_OUTPUT from the post-eval reaction turn, not other errors (#593)', () => {

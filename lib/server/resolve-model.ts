@@ -101,7 +101,7 @@ export async function resolveModel(params: {
     apiKey,
     baseUrl,
     proxy,
-    providerType: clientProviderType as 'openai' | 'anthropic' | 'google' | undefined,
+    providerType: clientProviderType as 'openai' | 'azure' | 'anthropic' | 'google' | undefined,
   });
 
   // Thinking arbitration mirrors model routing — the route carries a full
