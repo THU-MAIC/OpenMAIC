@@ -15,6 +15,8 @@
     "removePdf": "Удалить файл",
     "documentExtractor": "Экстрактор",
     "courseMaterialUpload": "Загрузить материал курса",
+    "courseMaterialsSelected": "Выбрано материалов: {{n}}",
+    "courseMaterialMergeOrder": "Материалы объединяются в порядке, показанном ниже.",
     "removeCourseMaterial": "Удалить файл",
     "webSearchOn": "Включено",
     "webSearchOff": "Нажмите для включения",
@@ -825,12 +827,14 @@
     "requirementPlaceholder": "Расскажите, что вы хотите изучить, например:\n\"Научи меня Python с нуля за 30 минут\"\n\"Объясни преобразование Фурье на доске\"\n\"Как играть в настольную игру Авалон\"",
     "requirementRequired": "Пожалуйста, укажите требования к курсу",
     "fileTooLarge": "Файл слишком большой. Выберите файл до 50 МБ",
+    "courseMaterialCountLimit": "Можно загрузить до 5 файлов материалов курса",
+    "courseMaterialTotalSizeLimit": "Общий размер материалов курса должен быть меньше 150 МБ",
     "unsupportedCourseMaterial": "Текущий парсер не поддерживает этот формат. Смените парсер или выберите другой файл."
   },
   "generation": {
     "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",
     "pdfParseFailed": "Ошибка обработки PDF",
-    "analyzingCourseMaterial": "Анализ файла {{type}}",
+    "analyzingCourseMaterial": "Анализ документов",
     "analyzingCourseMaterialDesc": "Извлечение структуры и содержимого документа...",
     "courseMaterialLoadFailed": "Не удалось загрузить материал курса, попробуйте снова",
     "courseMaterialParseFailed": "Ошибка обработки материала курса",
@@ -1016,6 +1020,7 @@
     "addProviderDescription": "Добавьте провайдеров моделей для расширения доступных AI-моделей",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1034,10 +1039,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Протокол OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Протокол Claude",
       "google": "Протокол Gemini"
     },
@@ -1056,6 +1063,7 @@
     "importFromClipboard": "Импорт из буфера",
     "apiSecret": "API-ключ",
     "apiHost": "Base URL",
+    "azureDeploymentHint": "Укажите конечную точку Azure OpenAI выше, затем добавьте имя каждого развертывания Azure как модель.",
     "baseUrlRegion": {
       "china": "Китай",
       "international": "Международный",
@@ -1563,6 +1571,7 @@
     "webSearchApiKeyPlaceholderServer": "Серверный ключ настроен, можно ввести свой",
     "webSearchApiKeyHint": "Получите API-ключ у выбранного поискового провайдера",
     "webSearchApiKeyOptional": "API-ключ необязателен. Без него будет использоваться парсинг публичной страницы.",
+    "searxngServerOnlyNotice": "SearXNG должен быть настроен на сервере. Установите переменную окружения SEARXNG_BASE_URL (или раздел web-search в server-providers.yml). URL экземпляра от клиента не принимаются.",
     "baiduSubSources": "Источники поиска Baidu",
     "baiduSubSourcesDescription": "Выберите хотя бы один источник Baidu.",
     "baiduSubSourceWeb": "Веб-поиск",

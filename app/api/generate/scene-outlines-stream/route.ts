@@ -36,6 +36,7 @@ import type {
 import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 const log = createLogger('Outlines Stream');
 
@@ -326,10 +327,11 @@ export async function POST(req: NextRequest) {
     if (pdfImages && pdfImages.length > 0) {
       if (hasVision && imageMapping) {
         // Vision mode: split into vision images (first N) and text-only (rest)
-        const allWithSrc = pdfImages.filter((img) => imageMapping[img.id]);
+        const sortedImages = sortDocumentImagesForVision(pdfImages);
+        const allWithSrc = sortedImages.filter((img) => imageMapping[img.id]);
         const visionSlice = allWithSrc.slice(0, MAX_VISION_IMAGES);
         const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
-        const noSrcImages = pdfImages.filter((img) => !imageMapping[img.id]);
+        const noSrcImages = sortedImages.filter((img) => !imageMapping[img.id]);
 
         const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
         const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>

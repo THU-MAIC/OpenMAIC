@@ -25,16 +25,27 @@ import { isAbortError } from '@/lib/generation/generation-retry';
 import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
-  loadPdfBlob,
+  loadDocumentBlob,
   cleanupOldImages,
   storeImages,
 } from '@/lib/utils/image-storage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import { MAX_PDF_CONTENT_CHARS, MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import { MAX_VISION_IMAGES } from '@/lib/constants/generation';
+import {
+  MAX_DOCUMENT_BUNDLE_FILES,
+  MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES,
+  buildDocumentBundle,
+  type ParsedDocumentPart,
+} from '@/lib/document/bundle';
 import { buildVideoManifestFromOutlines } from '@/lib/media/video-manifest';
 import { nanoid } from 'nanoid';
 import type { Stage } from '@/lib/types/stage';
-import type { SceneOutline, PdfImage, ImageMapping } from '@/lib/types/generation';
+import type {
+  SceneOutline,
+  PdfImage,
+  ImageMapping,
+  SessionDocumentSource,
+} from '@/lib/types/generation';
 import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
 import {
@@ -48,6 +59,49 @@ import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
+
+type ParsedDocumentResponseImage = {
+  id: string;
+  src?: string;
+  pageNumber?: number;
+  description?: string;
+  width?: number;
+  height?: number;
+};
+
+function legacySourceFromSession(session: GenerationSessionState): SessionDocumentSource[] {
+  if (session.documentSources?.length) return session.documentSources;
+  if (!session.pdfStorageKey) return [];
+  return [
+    {
+      id: 'source_1',
+      name: session.pdfFileName || 'document.pdf',
+      size: 0,
+      mimeType: session.documentMimeType || 'application/pdf',
+      order: 1,
+      storageKey: session.pdfStorageKey,
+      providerId: session.pdfProviderId,
+    },
+  ];
+}
+
+function validateDocumentSources(
+  sources: SessionDocumentSource[],
+  t: (key: string, values?: Record<string, unknown>) => string,
+) {
+  if (sources.length > MAX_DOCUMENT_BUNDLE_FILES) {
+    throw new Error(t('upload.courseMaterialCountLimit', { n: MAX_DOCUMENT_BUNDLE_FILES }));
+  }
+
+  const totalSize = sources.reduce((sum, source) => sum + source.size, 0);
+  if (totalSize > MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES) {
+    throw new Error(
+      t('upload.courseMaterialTotalSizeLimit', {
+        n: Math.floor(MAX_DOCUMENT_BUNDLE_TOTAL_SIZE_BYTES / 1024 / 1024),
+      }),
+    );
+  }
+}
 
 type SceneGenerationFailure = {
   error?: string;
@@ -281,7 +335,8 @@ function GenerationPreviewContent() {
       let activeSteps = getActiveSteps(currentSession);
 
       // Determine if we need the document analysis step
-      const hasPdfToAnalyze = !!currentSession.pdfStorageKey && !currentSession.pdfText;
+      const documentSources = legacySourceFromSession(currentSession);
+      const hasPdfToAnalyze = documentSources.length > 0 && !currentSession.pdfText;
       // If no document to analyze, skip to the next available step
       if (!hasPdfToAnalyze) {
         const firstNonPdfIdx = activeSteps.findIndex((s) => s.id !== 'pdf-analysis');
@@ -290,117 +345,120 @@ function GenerationPreviewContent() {
 
       // Step 0: Extract uploaded course material if needed
       if (hasPdfToAnalyze) {
-        log.debug('=== Generation Preview: Extracting course material ===');
-        const pdfBlob = await loadPdfBlob(currentSession.pdfStorageKey!);
-        if (!pdfBlob) {
-          throw new Error(t('generation.courseMaterialLoadFailed'));
-        }
+        log.debug('=== Generation Preview: Extracting course material bundle ===');
+        validateDocumentSources(documentSources, t);
+        const sortedDocumentSources = [...documentSources].sort((a, b) => a.order - b.order);
+        const parsedParts = await Promise.all(
+          sortedDocumentSources.map(async (source): Promise<ParsedDocumentPart> => {
+            const documentBlob = await loadDocumentBlob(source.storageKey);
+            if (!documentBlob) {
+              throw new Error(t('generation.courseMaterialLoadFailed'));
+            }
 
-        // Ensure pdfBlob is a valid Blob with content
-        if (!(pdfBlob instanceof Blob) || pdfBlob.size === 0) {
-          log.error('Invalid course material blob:', {
-            type: typeof pdfBlob,
-            size: pdfBlob instanceof Blob ? pdfBlob.size : 'N/A',
-          });
-          throw new Error(t('generation.courseMaterialLoadFailed'));
-        }
+            if (!(documentBlob instanceof Blob) || documentBlob.size === 0) {
+              log.error('Invalid course material blob:', {
+                source: source.name,
+                type: typeof documentBlob,
+                size: documentBlob instanceof Blob ? documentBlob.size : 'N/A',
+              });
+              throw new Error(t('generation.courseMaterialLoadFailed'));
+            }
 
-        // Wrap as a File to guarantee multipart/form-data with correct content-type
-        const pdfFile = new File([pdfBlob], currentSession.pdfFileName || 'document.pdf', {
-          type: currentSession.documentMimeType || pdfBlob.type || 'application/pdf',
-        });
+            const documentFile = new File([documentBlob], source.name || 'document.pdf', {
+              type: source.mimeType || documentBlob.type || 'application/pdf',
+            });
 
-        const parseFormData = new FormData();
-        parseFormData.append('file', pdfFile);
+            const parseFormData = new FormData();
+            parseFormData.append('file', documentFile);
 
-        if (currentSession.pdfProviderId) {
-          parseFormData.append('providerId', currentSession.pdfProviderId);
-        }
-        if (currentSession.pdfProviderConfig?.apiKey?.trim()) {
-          parseFormData.append('apiKey', currentSession.pdfProviderConfig.apiKey);
-        }
-        if (currentSession.pdfProviderConfig?.baseUrl?.trim()) {
-          parseFormData.append('baseUrl', currentSession.pdfProviderConfig.baseUrl);
-        }
+            const providerId = source.providerId || currentSession.pdfProviderId;
+            const legacySourceConfig = (
+              source as SessionDocumentSource & {
+                providerConfig?: { apiKey?: string; baseUrl?: string };
+              }
+            ).providerConfig;
+            const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
+            if (providerId) parseFormData.append('providerId', providerId);
+            if (providerConfig?.apiKey?.trim()) {
+              parseFormData.append('apiKey', providerConfig.apiKey);
+            }
+            if (providerConfig?.baseUrl?.trim()) {
+              parseFormData.append('baseUrl', providerConfig.baseUrl);
+            }
 
-        const parseResponse = await fetch('/api/extract-document', {
-          method: 'POST',
-          body: parseFormData,
-          signal,
-        });
+            const parseResponse = await fetch('/api/extract-document', {
+              method: 'POST',
+              body: parseFormData,
+              signal,
+            });
 
-        if (!parseResponse.ok) {
-          const errorData = await parseResponse.json();
-          throw new Error(errorData.error || t('generation.courseMaterialParseFailed'));
-        }
+            if (!parseResponse.ok) {
+              const errorData = await parseResponse.json();
+              throw new Error(errorData.error || t('generation.courseMaterialParseFailed'));
+            }
 
-        const parseResult = await parseResponse.json();
-        if (!parseResult.success || !parseResult.data) {
-          throw new Error(t('generation.courseMaterialParseFailed'));
-        }
+            const parseResult = await parseResponse.json();
+            if (!parseResult.success || !parseResult.data) {
+              throw new Error(t('generation.courseMaterialParseFailed'));
+            }
 
-        let pdfText = parseResult.data.text as string;
+            const rawImages = parseResult.data.metadata?.pdfImages;
+            const images = rawImages
+              ? rawImages.map((img: ParsedDocumentResponseImage) => ({
+                  id: img.id,
+                  src: img.src || '',
+                  pageNumber: img.pageNumber ?? 1,
+                  description: img.description,
+                  width: img.width,
+                  height: img.height,
+                }))
+              : ((parseResult.data.images as string[] | undefined) ?? []).map((src, i) => ({
+                  id: `img_${i + 1}`,
+                  src,
+                  pageNumber: 1,
+                }));
 
-        // Truncate if needed
-        if (pdfText.length > MAX_PDF_CONTENT_CHARS) {
-          pdfText = pdfText.substring(0, MAX_PDF_CONTENT_CHARS);
-        }
-
-        // Create image metadata and store images
-        // Prefer metadata.pdfImages (both parsers now return this)
-        const rawPdfImages = parseResult.data.metadata?.pdfImages;
-        const images = rawPdfImages
-          ? rawPdfImages.map(
-              (img: {
-                id: string;
-                src?: string;
-                pageNumber?: number;
-                description?: string;
-                width?: number;
-                height?: number;
-              }) => ({
-                id: img.id,
-                src: img.src || '',
-                pageNumber: img.pageNumber || 1,
-                description: img.description,
-                width: img.width,
-                height: img.height,
-              }),
-            )
-          : (parseResult.data.images as string[]).map((src: string, i: number) => ({
-              id: `img_${i + 1}`,
-              src,
-              pageNumber: 1,
-            }));
-
-        const imageStorageIds = await storeImages(images);
-
-        const pdfImages: PdfImage[] = images.map(
-          (
-            img: {
-              id: string;
-              src: string;
-              pageNumber: number;
-              description?: string;
-              width?: number;
-              height?: number;
-            },
-            i: number,
-          ) => ({
-            id: img.id,
-            src: '',
-            pageNumber: img.pageNumber,
-            description: img.description,
-            width: img.width,
-            height: img.height,
-            storageId: imageStorageIds[i],
+            return {
+              source: {
+                id: source.id,
+                name: source.name,
+                size: source.size,
+                lastModified: source.lastModified,
+                mimeType: source.mimeType,
+                order: source.order,
+                providerId,
+              },
+              text: parseResult.data.text as string,
+              rawTextLength: (parseResult.data.text as string).length,
+              pageCount: parseResult.data.metadata?.pageCount,
+              images,
+            };
           }),
         );
+
+        const bundle = buildDocumentBundle(parsedParts);
+        const imageStorageIds = await storeImages(bundle.images);
+
+        const pdfImages: PdfImage[] = bundle.images.map((img, i) => ({
+          id: img.id,
+          src: '',
+          pageNumber: img.pageNumber,
+          description: img.description,
+          width: img.width,
+          height: img.height,
+          originalId: img.originalId,
+          sourceDocumentId: img.sourceDocumentId,
+          sourceDocumentName: img.sourceDocumentName,
+          sourceDocumentOrder: img.sourceDocumentOrder,
+          visionPriority: img.visionPriority,
+          storageId: imageStorageIds[i],
+        }));
 
         // Update session with extracted document data
         const updatedSession = {
           ...currentSession,
-          pdfText,
+          documentSources,
+          pdfText: bundle.text,
           pdfImages,
           imageStorageIds,
           pdfStorageKey: undefined, // Clear so we don't re-parse
@@ -410,12 +468,15 @@ function GenerationPreviewContent() {
 
         // Truncation warnings
         const warnings: string[] = [];
-        if ((parseResult.data.text as string).length > MAX_PDF_CONTENT_CHARS) {
-          warnings.push(t('generation.textTruncated', { n: MAX_PDF_CONTENT_CHARS }));
+        if (bundle.totalRawTextLength > bundle.textContentBudget) {
+          warnings.push(t('generation.textTruncated', { n: bundle.textContentBudget }));
         }
-        if (images.length > MAX_VISION_IMAGES) {
+        if (bundle.totalImageCount > MAX_VISION_IMAGES) {
           warnings.push(
-            t('generation.imageTruncated', { total: images.length, max: MAX_VISION_IMAGES }),
+            t('generation.imageTruncated', {
+              total: bundle.totalImageCount,
+              max: MAX_VISION_IMAGES,
+            }),
           );
         }
         if (warnings.length > 0) {
@@ -445,7 +506,7 @@ function GenerationPreviewContent() {
               pdfText: currentSession.pdfText || undefined,
               providerId: wsProviderId,
               apiKey: wsConfig?.apiKey || undefined,
-              baseUrl: wsConfig?.baseUrl || undefined,
+              baseUrl: wsProviderId === 'searxng' ? undefined : wsConfig?.baseUrl || undefined,
               baiduSubSources: wsProviderId === 'baidu' ? wsSettings.baiduSubSources : undefined,
             }),
           ),

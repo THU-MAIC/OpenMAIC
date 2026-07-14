@@ -15,6 +15,8 @@
     "removePdf": "移除文件",
     "documentExtractor": "文档解析器",
     "courseMaterialUpload": "上传课程材料",
+    "courseMaterialsSelected": "已选择 {{n}} 个材料",
+    "courseMaterialMergeOrder": "材料会按下方显示顺序合并。",
     "removeCourseMaterial": "移除文件",
     "webSearchOn": "已开启",
     "webSearchOff": "点击开启",
@@ -825,12 +827,14 @@
     "requirementPlaceholder": "输入你想学的任何内容，例如：\n「从零学 Python，30 分钟写出第一个程序」\n「用白板给我讲解傅里叶变换」\n「阿瓦隆桌游怎么玩」",
     "requirementRequired": "请输入课程需求",
     "fileTooLarge": "文件过大，请选择小于 50MB 的文件",
+    "courseMaterialCountLimit": "最多可上传 5 个课程材料文件",
+    "courseMaterialTotalSizeLimit": "课程材料总大小需小于 150MB",
     "unsupportedCourseMaterial": "当前解析器不支持该格式，请切换解析器或选择其他文件"
   },
   "generation": {
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
     "pdfParseFailed": "PDF 解析失败",
-    "analyzingCourseMaterial": "解析 {{type}} 文件",
+    "analyzingCourseMaterial": "解析文档",
     "analyzingCourseMaterialDesc": "正在提取文档结构和内容...",
     "courseMaterialLoadFailed": "无法加载课程材料，请重试",
     "courseMaterialParseFailed": "课程材料解析失败",
@@ -1016,6 +1020,7 @@
     "addProviderDescription": "添加自定义模型提供方以扩展可用的AI模型",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1034,10 +1039,12 @@
       "tavily": "Tavily",
       "bocha": "博查",
       "brave": "Brave Search",
-      "baidu": "百度"
+      "baidu": "百度",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 协议",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude 协议",
       "google": "Gemini 协议"
     },
@@ -1056,6 +1063,7 @@
     "importFromClipboard": "从剪贴板导入",
     "apiSecret": "API 密钥",
     "apiHost": "Base URL",
+    "azureDeploymentHint": "请在上方填写 Azure OpenAI Endpoint，并将每个 Azure Deployment 名称添加为模型。",
     "baseUrlRegion": {
       "china": "国内站",
       "international": "国际站",
@@ -1563,6 +1571,7 @@
     "webSearchApiKeyPlaceholderServer": "已配置服务端密钥，可选填覆盖",
     "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
     "webSearchApiKeyOptional": "API Key 为可选项。未填写时将通过公开页面抓取获取结果。",
+    "searxngServerOnlyNotice": "SearXNG 须由服务端配置。请设置 SEARXNG_BASE_URL 环境变量（或在 server-providers.yml 的 web-search 段中配置）。不接受客户端自行填写实例地址。",
     "baiduSubSources": "百度搜索源",
     "baiduSubSourcesDescription": "选择至少一个百度数据源参与搜索。",
     "baiduSubSourceWeb": "网页搜索",

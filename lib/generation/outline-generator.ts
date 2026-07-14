@@ -13,6 +13,7 @@ import type {
 } from '@/lib/types/generation';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
 import type { AICallFn, GenerationResult } from './pipeline-types';
@@ -55,10 +56,11 @@ export async function generateSceneOutlinesFromRequirements(
   if (pdfImages && pdfImages.length > 0) {
     if (options?.visionEnabled && options?.imageMapping) {
       // Vision mode: split into vision images (first N) and text-only (rest)
-      const allWithSrc = pdfImages.filter((img) => options.imageMapping![img.id]);
+      const sortedImages = sortDocumentImagesForVision(pdfImages);
+      const allWithSrc = sortedImages.filter((img) => options.imageMapping![img.id]);
       const visionSlice = allWithSrc.slice(0, MAX_VISION_IMAGES);
       const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = pdfImages.filter((img) => !options.imageMapping![img.id]);
+      const noSrcImages = sortedImages.filter((img) => !options.imageMapping![img.id]);
 
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getProvider } from '@/lib/ai/providers';
 import {
+  getThinkingConfigKey,
   getDefaultThinkingConfig,
   getThinkingDisplayValue,
   normalizeThinkingConfig,
@@ -94,6 +95,11 @@ describe('thinking config metadata', () => {
 });
 
 describe('thinking config normalization', () => {
+  it('shares one settings key between GPT-5.6 Sol and its alias', () => {
+    expect(getThinkingConfigKey('openai', 'gpt-5.6-sol')).toBe('openai:gpt-5.6');
+    expect(getThinkingConfigKey('openai', 'gpt-5.6')).toBe('openai:gpt-5.6');
+  });
+
   it('normalizes OpenAI effort defaults and selected effort values', () => {
     const thinking = getThinking('openai', 'gpt-5.4');
 
@@ -106,6 +112,27 @@ describe('thinking config normalization', () => {
       effort: 'high',
     });
   });
+
+  it.each(['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna'])(
+    'normalizes %s with medium default and max effort',
+    (modelId) => {
+      const thinking = getThinking('openai', modelId);
+
+      expect(getDefaultThinkingConfig(thinking)).toEqual({
+        mode: 'enabled',
+        effort: 'medium',
+      });
+      expect(normalizeThinkingConfig(thinking, { mode: 'disabled' })).toEqual({
+        mode: 'disabled',
+        effort: 'none',
+      });
+      expect(normalizeThinkingConfig(thinking, { effort: 'max' })).toEqual({
+        mode: 'enabled',
+        effort: 'max',
+      });
+      expect(thinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+    },
+  );
 
   it('normalizes GPT-5.5 as non-toggleable effort levels', () => {
     const thinking = getThinking('openai', 'gpt-5.5');

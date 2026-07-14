@@ -60,4 +60,10 @@ describe('model metadata thinking capabilities', () => {
     expect(getCatalogThinkingCapability('siliconflow', 'deepseek-ai/DeepSeek-V3.2')).toBeDefined();
     expect(getCatalogThinkingCapability('lemonade', 'Gemma-4-26B-A4B-it-GGUF')).toBeDefined();
   });
+
+  it('resolves GPT-5.6 Sol alias metadata through the canonical model ID', () => {
+    expect(getCatalogThinkingCapability('openai', 'gpt-5.6-sol')).toEqual(
+      getCatalogThinkingCapability('openai', 'gpt-5.6'),
+    );
+  });
 });

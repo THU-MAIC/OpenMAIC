@@ -18,6 +18,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 
 const log = createLogger('Extract Document');
+const MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES = 50 * 1024 * 1024;
 
 function isPdfProviderId(providerId: string): providerId is PDFProviderId {
   return providerId in PDF_PROVIDERS;
@@ -80,6 +81,15 @@ export async function POST(req: NextRequest) {
         'INVALID_REQUEST',
         400,
         `Unsupported course material type for "${documentFile.name}"`,
+      );
+    }
+    if (documentFile.size > MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES) {
+      return apiError(
+        'INVALID_REQUEST',
+        413,
+        `Course material file is too large. Maximum size is ${Math.floor(
+          MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES / 1024 / 1024,
+        )}MB.`,
       );
     }
 

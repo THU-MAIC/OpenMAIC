@@ -51,9 +51,11 @@ export async function storeImages(
 ): Promise<string[]> {
   const sessionId = nanoid(10);
   const storedIds: string[] = [];
+  let currentImageId: string | undefined;
 
-  for (const img of images) {
-    try {
+  try {
+    for (const img of images) {
+      currentImageId = img.id;
       const blob = base64ToBlob(img.src);
       const mimeMatch = img.src.match(/data:(.*?);/);
       const mimeType = mimeMatch ? mimeMatch[1] : 'image/png';
@@ -72,9 +74,14 @@ export async function storeImages(
 
       await db.imageFiles.put(record);
       storedIds.push(storageId);
-    } catch (error) {
-      log.error(`Failed to store image ${img.id}:`, error);
     }
+  } catch (error) {
+    await Promise.allSettled(storedIds.map((id) => db.imageFiles.delete(id)));
+    const message = `Failed to store image bundle${
+      currentImageId ? ` at image ${currentImageId}` : ''
+    }`;
+    log.error(`${message}:`, error);
+    throw new Error(message, { cause: error });
   }
 
   return storedIds;
@@ -175,3 +182,14 @@ export async function loadPdfBlob(key: string): Promise<Blob | null> {
   const record = await db.imageFiles.get(key);
   return record?.blob ?? null;
 }
+
+/**
+ * Delete a stored PDF Blob from IndexedDB by its storage key.
+ */
+export async function deletePdfBlob(key: string): Promise<void> {
+  await db.imageFiles.delete(key);
+}
+
+export const storeDocumentBlob = storePdfBlob;
+export const loadDocumentBlob = loadPdfBlob;
+export const deleteDocumentBlob = deletePdfBlob;

@@ -15,6 +15,8 @@
     "removePdf": "Remove file",
     "documentExtractor": "Extractor",
     "courseMaterialUpload": "Upload course material",
+    "courseMaterialsSelected": "{{n}} materials selected",
+    "courseMaterialMergeOrder": "Materials are merged in the order shown below.",
     "removeCourseMaterial": "Remove file",
     "webSearchOn": "Enabled",
     "webSearchOff": "Click to enable",
@@ -825,12 +827,14 @@
     "requirementPlaceholder": "Tell me anything you want to learn, e.g.\n\"Teach me Python from scratch in 30 minutes\"\n\"Explain Fourier Transform on the whiteboard\"\n\"How to play the board game Avalon\"",
     "requirementRequired": "Please enter course requirements",
     "fileTooLarge": "File too large. Please select a file smaller than 50MB",
+    "courseMaterialCountLimit": "You can upload up to 5 course material files",
+    "courseMaterialTotalSizeLimit": "Total course material size must be under 150MB",
     "unsupportedCourseMaterial": "This format isn't supported by the current extractor. Switch the extractor or pick a different file."
   },
   "generation": {
     "pdfLoadFailed": "Failed to load PDF file, please try again",
     "pdfParseFailed": "PDF parsing failed",
-    "analyzingCourseMaterial": "Analyzing {{type}} file",
+    "analyzingCourseMaterial": "Analyzing documents",
     "analyzingCourseMaterialDesc": "Extracting document structure and content...",
     "courseMaterialLoadFailed": "Failed to load course material, please try again",
     "courseMaterialParseFailed": "Course material parsing failed",
@@ -1016,6 +1020,7 @@
     "addProviderDescription": "Add custom model providers to extend available AI models",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1034,10 +1039,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI Protocol",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude Protocol",
       "google": "Gemini Protocol"
     },
@@ -1056,6 +1063,7 @@
     "importFromClipboard": "Import from Clipboard",
     "apiSecret": "API Key",
     "apiHost": "Base URL",
+    "azureDeploymentHint": "Enter your Azure OpenAI endpoint above, then add each Azure deployment name as a model.",
     "baseUrlRegion": {
       "china": "China",
       "international": "International",
@@ -1563,6 +1571,7 @@
     "webSearchApiKeyPlaceholderServer": "Server key configured, optionally override",
     "webSearchApiKeyHint": "Get an API key from the selected search provider",
     "webSearchApiKeyOptional": "API key is optional. Without one, public page scraping will be used as a fallback.",
+    "searxngServerOnlyNotice": "SearXNG must be configured on the server. Set the SEARXNG_BASE_URL environment variable (or the web-search section in server-providers.yml). Client-supplied instance URLs are not accepted.",
     "baiduSubSources": "Baidu Search Sources",
     "baiduSubSourcesDescription": "Choose at least one Baidu source to query.",
     "baiduSubSourceWeb": "Web Search",

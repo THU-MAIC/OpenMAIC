@@ -15,6 +15,8 @@
     "removePdf": "移除檔案",
     "documentExtractor": "文件解析器",
     "courseMaterialUpload": "上傳課程材料",
+    "courseMaterialsSelected": "已選擇 {{n}} 個材料",
+    "courseMaterialMergeOrder": "材料會依下方顯示順序合併。",
     "removeCourseMaterial": "移除檔案",
     "webSearchOn": "已開啟",
     "webSearchOff": "點擊開啟",
@@ -810,12 +812,14 @@
     "requirementPlaceholder": "輸入你想學的任何內容，例如：\n「從零學 Python，30 分鐘寫出第一個程式」\n「用白板為我講解傅立葉轉換」\n「阿瓦隆桌遊怎麼玩」",
     "requirementRequired": "請輸入課程需求",
     "fileTooLarge": "檔案過大，請選擇小於 50MB 的檔案",
+    "courseMaterialCountLimit": "最多可上傳 5 個課程材料檔案",
+    "courseMaterialTotalSizeLimit": "課程材料總大小需小於 150MB",
     "unsupportedCourseMaterial": "目前的解析器不支援此格式，請切換解析器或選擇其他檔案"
   },
   "generation": {
     "pdfLoadFailed": "無法載入 PDF 檔案，請重試",
     "pdfParseFailed": "PDF 解析失敗",
-    "analyzingCourseMaterial": "解析 {{type}} 檔案",
+    "analyzingCourseMaterial": "解析文件",
     "analyzingCourseMaterialDesc": "正在擷取文件結構和內容...",
     "courseMaterialLoadFailed": "無法載入課程材料，請重試",
     "courseMaterialParseFailed": "課程材料解析失敗",
@@ -1001,6 +1005,7 @@
     "addProviderDescription": "新增自訂模型供應商以擴充可用的AI模型",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1019,10 +1024,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 協定",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude 協定",
       "google": "Gemini 協定"
     },
@@ -1041,6 +1048,7 @@
     "importFromClipboard": "從剪貼簿匯入",
     "apiSecret": "API 密鑰",
     "apiHost": "Base URL",
+    "azureDeploymentHint": "請在上方填寫 Azure OpenAI Endpoint，並將每個 Azure Deployment 名稱新增為模型。",
     "requestUrl": "請求位址",
     "models": "模型",
     "comfyuiWorkflows": "工作流程",
@@ -1474,6 +1482,7 @@
     "webSearchApiKeyPlaceholderServer": "已設定服務端密鑰，選填覆蓋",
     "webSearchApiKeyHint": "從所選搜尋服務商取得 API Key，用於網路搜尋",
     "webSearchApiKeyOptional": "API Key 為可選項。未填寫時將透過公開頁面抓取獲取結果。",
+    "searxngServerOnlyNotice": "SearXNG 須由伺服器端設定。請設定 SEARXNG_BASE_URL 環境變數（或在 server-providers.yml 的 web-search 區段中設定）。不接受用戶端自行填寫實例位址。",
     "baiduSubSources": "百度搜尋來源",
     "baiduSubSourcesDescription": "請至少選擇一個百度資料來源。",
     "baiduSubSourceWeb": "網頁搜尋",
