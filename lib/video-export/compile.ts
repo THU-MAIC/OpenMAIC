@@ -18,7 +18,7 @@
  *
  * Pure: no IO beyond the injected dependencies.
  */
-import type { SceneType, PlayVideoAction } from '@openmaic/dsl';
+import type { SceneType, PlayVideoAction, Action } from '@openmaic/dsl';
 import type { AssetSource, CompileConfig, CompilerScene, TimingProbe } from './deps';
 import {
   CANVAS,
@@ -97,23 +97,32 @@ function markUnsupported(
 }
 
 /**
- * Pre-resolve which `play_video` actions have available media, keyed by action
- * id. An action is "available" only when the {@link AssetSource} returns a meta
- * with `present: true`. The timeline pass uses this to give an unavailable clip
- * a 0ms dwell (skip), instead of letting a silent safety-cap shift later actions.
- * Availability must be decided here — before `resolveActionTimeline` fixes
- * dwell — because asset planning runs after the timeline is laid out.
+ * Pre-resolve which `play_video` actions have available media, keyed by the
+ * action **object identity**. An action is "available" only when the
+ * {@link AssetSource} returns a meta with `present: true`. The timeline pass uses
+ * this to give an unavailable clip a 0ms dwell (skip), instead of letting a
+ * silent safety-cap shift later actions.
+ *
+ * Keyed by object reference, not `action.id`: the DSL does not enforce
+ * stage-wide action-id uniqueness, so two scenes could share an id (e.g.
+ * `duplicate`) — an id-keyed set would then conflate their availability and
+ * leave a contradictory IR (a 5-minute dwell on a segment later stamped
+ * `skipped`). `resolveActionTimeline` receives these same normalized scene
+ * objects and passes each action back to `getVideoDurationMs` by reference, so
+ * identity lookup is exact. Availability must be decided here — before
+ * `resolveActionTimeline` fixes dwell — because asset planning runs after the
+ * timeline is laid out.
  */
 function resolveAvailableVideos(
   scenes: readonly CompilerScene[],
   assets: AssetSource,
-): Set<string> {
-  const available = new Set<string>();
+): Set<Action> {
+  const available = new Set<Action>();
   for (const scene of scenes) {
     for (const action of scene.actions ?? []) {
       if (action.type !== 'play_video') continue;
       const meta = assets.media((action as PlayVideoAction).elementId, scene);
-      if (meta?.present) available.add(action.id);
+      if (meta?.present) available.add(action);
     }
   }
   return available;
@@ -129,10 +138,8 @@ export function compileVideoTimeline(input: CompileInput, deps: CompileDeps): Vi
   //    availability is resolved up front (via the AssetSource) so an unavailable
   //    play_video gets a 0ms dwell in the timeline pass — it is skipped, not
   //    blocked for up to MAX_VIDEO_WAIT_MS, so later actions are not shifted.
-  const availableVideoActionIds = resolveAvailableVideos(normalized.scenes, deps.assets);
-  const opts = buildTimelineOptions(deps.timing, config, (action) =>
-    availableVideoActionIds.has(action.id),
-  );
+  const availableVideos = resolveAvailableVideos(normalized.scenes, deps.assets);
+  const opts = buildTimelineOptions(deps.timing, config, (action) => availableVideos.has(action));
 
   // 3. timeline — index→time expansion folded into per-scene buckets + subtitles.
   const timeline = buildTimeline(normalized.scenes, opts);

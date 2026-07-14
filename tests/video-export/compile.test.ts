@@ -174,6 +174,37 @@ describe('compileVideoTimeline — play_video placement & availability', () => {
     expect(ir.totalDurationMs).toBeLessThan(MAX_VIDEO_WAIT_MS);
   });
 
+  it('does not conflate availability across scenes that share a play_video action id', () => {
+    // The DSL does not enforce stage-wide action-id uniqueness. Two scenes both
+    // use id `dup`: the first video's media is absent (and its duration unknown),
+    // the second's is present. An id-keyed availability set would let the second
+    // mark `dup` available and leave the first with a 300000ms cap dwell while
+    // assets stamp it `skipped` — a contradictory IR that shifts scene 2 by 5min.
+    const ir = compileVideoTimeline(
+      {
+        stage: { id: 'stg', name: 'x' },
+        scenes: [
+          slide('s0', [playVideo('dup', 'missing')], { elements: [] }),
+          slide('s1', [playVideo('dup', 'good')], { order: 1, elements: [] }),
+        ],
+      },
+      {
+        timing: stubProbe({}, { dup: 4000 }),
+        assets: stubAssets({}, { good: { id: 'm', present: true, format: 'mp4' } }),
+      },
+    );
+    const first = ir.scenes[0].videos[0];
+    // The absent-media clip is skipped (0ms), not held for the safety cap — even
+    // though a stored 4000ms duration exists for the shared id `dup`.
+    expect(first.durationMs).toBe(0);
+    expect(first.durationSource).toBe('skipped');
+    expect(first.present).toBe(false);
+    // Scene 2 (whose video IS available) starts at 0, not 300000, and plays 4000ms.
+    expect(ir.scenes[1].startMs).toBe(0);
+    expect(ir.scenes[1].videos[0].durationMs).toBe(4000);
+    expect(ir.totalDurationMs).toBe(4000);
+  });
+
   it('degrades placement (geometry null, rotate 0) when the target element is missing', () => {
     const ir = compileVideoTimeline(
       {
