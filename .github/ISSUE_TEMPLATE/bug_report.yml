@@ -8,7 +8,7 @@ body:
       value: |
         Thanks for taking the time to report a bug! Please fill out the information below to help us investigate.
 
-        Before submitting, please search existing issues for duplicates and remove API keys, access tokens, and other secrets from logs or screenshots.
+        Before submitting, please search existing issues for duplicates and remove API keys, access tokens, personal data, and other secrets from logs, screenshots, or recordings.
 
   - type: textarea
     id: description
@@ -99,7 +99,8 @@ body:
     id: os
     attributes:
       label: Operating System
-      placeholder: e.g. macOS 14.2, Windows 11, Ubuntu 22.04
+      description: Which operating system are you using? Enter "Not applicable" for non-runtime issues.
+      placeholder: e.g. macOS 14.2, Windows 11, Ubuntu 22.04, or Not applicable
     validations:
       required: true
 
@@ -114,7 +115,7 @@ body:
     id: screenshots
     attributes:
       label: Screenshots or Recordings
-      description: Attach any screenshots or recordings that make the problem easier to reproduce.
+      description: Attach screenshots or recordings after removing secrets and personal data.
 
   - type: textarea
     id: additional
