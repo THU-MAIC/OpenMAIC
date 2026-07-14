@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
 import type {
   RuntimePayload,
@@ -23,6 +23,11 @@ import {
 import { advanceMicrotask, startMicrotask } from '@/lib/pbl/v2/operations/progress';
 import { addSubmission } from '@/lib/pbl/v2/operations/submission';
 import { clearStageDrainWatermarks, drainProjectRuntime } from '@/lib/pbl/v2/runtime/drain';
+import {
+  enrichPBLRuntimeEvent,
+  PBL_RUNTIME_PAYLOAD_VERSION,
+  type PBLRuntimeStorePayload,
+} from '@/lib/pbl/v2/runtime/record-payloads';
 import type { PBLEngagementEvent, PBLProjectV2, PBLRuntimeEvent } from '@/lib/pbl/v2/types';
 
 if (!('IDBKeyRange' in globalThis)) {
@@ -164,6 +169,35 @@ class AlreadyExistsRaceStore extends MemoryRuntimeStore {
   }
 }
 
+class SlowFirstAppendStore extends MemoryRuntimeStore {
+  readonly appendLog: string[] = [];
+  private blocked = false;
+  private resolveBlockedAppend: (() => void) | undefined;
+
+  constructor(private readonly slowId: string) {
+    super();
+  }
+
+  resolveSlowAppend(): void {
+    this.resolveBlockedAppend?.();
+  }
+
+  async appendRecord<TPayload extends RuntimePayload>(
+    init: RuntimeRecordInit<TPayload>,
+  ): Promise<RuntimeRecord<TPayload>> {
+    this.appendLog.push(`start:${init.id}`);
+    if (init.id === this.slowId && !this.blocked) {
+      this.blocked = true;
+      await new Promise<void>((resolve) => {
+        this.resolveBlockedAppend = resolve;
+      });
+    }
+    const record = await super.appendRecord(init);
+    this.appendLog.push(`finish:${init.id}`);
+    return record;
+  }
+}
+
 function runtimeEvent(id: string, overrides: Partial<PBLRuntimeEvent> = {}): PBLRuntimeEvent {
   return {
     id,
@@ -189,6 +223,16 @@ function engagementEvent(
     payload: { chars: 12 },
     ...overrides,
   };
+}
+
+function recordPayloadEvent(
+  payload: RuntimeRecord['payload'],
+): PBLRuntimeEvent | PBLEngagementEvent {
+  const pblPayload = payload as PBLRuntimeStorePayload;
+  if (pblPayload.kind === 'pbl_runtime_event' || pblPayload.kind === 'pbl_engagement_event') {
+    return pblPayload.event;
+  }
+  throw new Error(`unexpected PBL runtime payload ${JSON.stringify(payload)}`);
 }
 
 function makeProject(runtimeEvents: PBLRuntimeEvent[]): PBLProjectV2 {
@@ -253,7 +297,30 @@ async function drain(project: PBLProjectV2, store: RuntimeStore, kv: KVStore): P
   });
 }
 
+afterEach(() => {
+  if (vi.isFakeTimers()) {
+    vi.useRealTimers();
+  }
+});
+
 describe('drainProjectRuntime', () => {
+  it('wraps unknown runtime event kinds in a valid runtime payload', () => {
+    const futureEvent = {
+      id: 'future-1',
+      kind: 'future_event_kind',
+      actorType: 'system',
+      ts: '2026-05-29T00:00:01.000Z',
+    } as unknown as PBLRuntimeEvent;
+
+    expect(enrichPBLRuntimeEvent(makeProject([]), futureEvent)).toEqual({
+      kind: 'pbl_runtime_event',
+      payloadVersion: PBL_RUNTIME_PAYLOAD_VERSION,
+      event: futureEvent,
+      attachment: null,
+      attachmentMissingReason: 'unhandled_event_kind',
+    });
+  });
+
   it('creates a pbl runtime session, appends project runtime events, and advances the watermark', async () => {
     const store = new MemoryRuntimeStore();
     const kv = new MemoryKVStore();
@@ -301,8 +368,147 @@ describe('drainProjectRuntime', () => {
     expect(store.records.map((record) => record.createdAt)).toEqual(
       events.map((event) => event.ts),
     );
-    expect(store.records.map((record) => record.payload)).toEqual(events);
+    expect(store.records.map((record) => recordPayloadEvent(record.payload))).toEqual(events);
     await expect(readWatermark(kv)).resolves.toEqual({ lastRuntimeEventId: 'evt-3' });
+  });
+
+  it('enriches id-only runtime events with document content while leaving the outbox unchanged', async () => {
+    const store = new MemoryRuntimeStore();
+    const kv = new MemoryKVStore();
+    const project = makeProject([
+      runtimeEvent('evt-msg-1', {
+        kind: 'message_created',
+        actorType: 'user',
+        messageId: 'msg-1',
+        threadId: 'role-i',
+        microtaskId: 'mt-1',
+        milestoneId: 'ms-1',
+      }),
+      runtimeEvent('evt-sub-1', {
+        kind: 'submission_created',
+        actorType: 'user',
+        submissionId: 'sub-1',
+        microtaskId: 'mt-1',
+        milestoneId: 'ms-1',
+      }),
+      runtimeEvent('evt-eval-1', {
+        kind: 'evaluation_created',
+        actorType: 'system',
+        evaluationId: 'eval-1',
+        microtaskId: 'mt-1',
+        milestoneId: 'ms-1',
+      }),
+    ]);
+    project.threads[0]!.messages.push({
+      id: 'msg-1',
+      roleType: 'user',
+      content: 'Learner message content',
+      ts: '2026-05-29T00:00:01.000Z',
+      microtaskId: 'mt-1',
+    });
+    project.submissions.push({
+      id: 'sub-1',
+      microtaskId: 'mt-1',
+      milestoneId: 'ms-1',
+      kind: 'text',
+      content: 'Submission body',
+      createdAt: '2026-05-29T00:00:02.000Z',
+    });
+    project.evaluations.push({
+      id: 'eval-1',
+      kind: 'task',
+      microtaskId: 'mt-1',
+      milestoneId: 'ms-1',
+      feedback: 'Evaluation feedback',
+      strengths: ['Specific'],
+      improvements: [],
+      score: 88,
+      createdAt: '2026-05-29T00:00:03.000Z',
+    });
+
+    const outboxBefore = structuredClone(project.runtimeEvents);
+    await drain(project, store, kv);
+
+    expect(project.runtimeEvents).toEqual(outboxBefore);
+    expect(store.records.map((record) => (record.payload as PBLRuntimeStorePayload).kind)).toEqual([
+      'pbl_runtime_event',
+      'pbl_runtime_event',
+      'pbl_runtime_event',
+    ]);
+    expect(store.records[0]!.payload).toEqual({
+      kind: 'pbl_runtime_event',
+      payloadVersion: 1,
+      event: {
+        id: 'evt-msg-1',
+        kind: 'message_created',
+        actorType: 'user',
+        messageId: 'msg-1',
+        threadId: 'role-i',
+        ts: '2026-05-29T00:00:01.000Z',
+        microtaskId: 'mt-1',
+        milestoneId: 'ms-1',
+      },
+      attachment: {
+        kind: 'message',
+        message: {
+          id: 'msg-1',
+          roleType: 'user',
+          content: 'Learner message content',
+          ts: '2026-05-29T00:00:01.000Z',
+          microtaskId: 'mt-1',
+        },
+      },
+      attachmentMissingReason: undefined,
+    });
+    expect(store.records[0]!.payload as PBLRuntimeStorePayload).toMatchObject({
+      kind: 'pbl_runtime_event',
+      event: { id: 'evt-msg-1', messageId: 'msg-1' },
+      attachment: {
+        kind: 'message',
+        message: { id: 'msg-1', content: 'Learner message content' },
+      },
+    });
+    expect(store.records[1]!.payload as PBLRuntimeStorePayload).toMatchObject({
+      kind: 'pbl_runtime_event',
+      event: { id: 'evt-sub-1', submissionId: 'sub-1' },
+      attachment: {
+        kind: 'submission',
+        submission: { id: 'sub-1', content: 'Submission body' },
+      },
+    });
+    expect(store.records[2]!.payload as PBLRuntimeStorePayload).toMatchObject({
+      kind: 'pbl_runtime_event',
+      event: { id: 'evt-eval-1', evaluationId: 'eval-1' },
+      attachment: {
+        kind: 'evaluation',
+        evaluation: { id: 'eval-1', feedback: 'Evaluation feedback' },
+      },
+    });
+    expect(JSON.stringify(project.runtimeEvents)).not.toContain('Learner message content');
+    expect(JSON.stringify(project.runtimeEvents)).not.toContain('Submission body');
+    expect(JSON.stringify(project.runtimeEvents)).not.toContain('Evaluation feedback');
+  });
+
+  it('records a null attachment with a reason when referenced content is missing', async () => {
+    const store = new MemoryRuntimeStore();
+    const kv = new MemoryKVStore();
+    const project = makeProject([
+      runtimeEvent('evt-missing-message', {
+        kind: 'message_created',
+        actorType: 'user',
+        messageId: 'missing-message',
+        threadId: 'role-i',
+      }),
+    ]);
+
+    await drain(project, store, kv);
+
+    expect(store.records[0]!.payload).toMatchObject({
+      kind: 'pbl_runtime_event',
+      event: { id: 'evt-missing-message', messageId: 'missing-message' },
+      attachment: null,
+      attachmentMissingReason: 'message_not_found',
+    });
   });
 
   it('keeps independent watermarks for two PBL scenes on the same stage', async () => {
@@ -399,6 +605,7 @@ describe('drainProjectRuntime', () => {
     expect(new Set(store.records.map((record) => record.sessionId))).toEqual(
       new Set([deterministicPBLSessionId()]),
     );
+    expect(store.records.map((record) => record.id)).toEqual(['evt-1']);
   });
 
   it('uses the listed pbl session when deterministic create loses an already-exists race', async () => {
@@ -526,6 +733,152 @@ describe('drainProjectRuntime', () => {
     await expect(drain(project, store, kv)).resolves.toBeUndefined();
     expect(store.records.map((record) => record.id)).toEqual(['evt-1', 'evt-2', 'evt-3']);
     await expect(readWatermark(kv)).resolves.toEqual({ lastRuntimeEventId: 'evt-3' });
+    warn.mockRestore();
+  });
+
+  it('keeps same-key drain work serialized after the caller timeout wins', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new SlowFirstAppendStore('evt-slow-1');
+    const kv = new MemoryKVStore();
+    const stageId = 'stage-timeout';
+    const sceneId = 'scene-timeout';
+
+    const first = drainProjectRuntime({
+      stageId,
+      sceneId,
+      project: makeProject([
+        runtimeEvent('evt-slow-1'),
+        runtimeEvent('evt-slow-2'),
+        runtimeEvent('evt-slow-3'),
+      ]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await vi.waitFor(() => expect(store.appendLog).toEqual(['start:evt-slow-1']));
+    await vi.advanceTimersByTimeAsync(10_001);
+    await expect(first).resolves.toBeUndefined();
+
+    const second = drainProjectRuntime({
+      stageId,
+      sceneId,
+      project: makeProject([runtimeEvent('evt-recovers')]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(store.appendLog).toEqual(['start:evt-slow-1']);
+
+    store.resolveSlowAppend();
+    await vi.waitFor(() => expect(store.appendLog).toContain('start:evt-recovers'));
+    await expect(second).resolves.toBeUndefined();
+
+    expect(store.appendLog.filter((entry) => entry.startsWith('start:'))).toEqual([
+      'start:evt-slow-1',
+      'start:evt-recovers',
+    ]);
+    expect(store.records.map((record) => record.id)).toEqual(['evt-slow-1', 'evt-recovers']);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('does not permanently block later drains after a queued append times out', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new SlowFirstAppendStore('evt-hangs');
+    const kv = new MemoryKVStore();
+    const stageId = 'stage-timeout-recovery';
+    const sceneId = 'scene-timeout-recovery';
+
+    const first = drainProjectRuntime({
+      stageId,
+      sceneId,
+      project: makeProject([runtimeEvent('evt-hangs')]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await vi.waitFor(() => expect(store.appendLog).toEqual(['start:evt-hangs']));
+    await vi.advanceTimersByTimeAsync(10_001);
+    await expect(first).resolves.toBeUndefined();
+    store.resolveSlowAppend();
+
+    const second = drainProjectRuntime({
+      stageId,
+      sceneId,
+      project: makeProject([runtimeEvent('evt-recovers')]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await vi.waitFor(() =>
+      expect(store.appendAttempts.map((attempt) => attempt.id)).toContain('evt-recovers'),
+    );
+    await expect(second).resolves.toBeUndefined();
+
+    expect(store.records.map((record) => record.id)).toEqual(['evt-hangs', 'evt-recovers']);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
+  it('releases same-key drains after a hung append and keeps late duplicate state consistent', async () => {
+    vi.useFakeTimers();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const store = new SlowFirstAppendStore('evt-1');
+    const kv = new MemoryKVStore();
+    const stageId = 'stage-hard-cap';
+    const sceneId = 'scene-hard-cap';
+
+    const first = drainProjectRuntime({
+      stageId,
+      sceneId,
+      project: makeProject([runtimeEvent('evt-1')]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await vi.waitFor(() => expect(store.appendLog).toEqual(['start:evt-1']));
+    await vi.advanceTimersByTimeAsync(10_001);
+    await expect(first).resolves.toBeUndefined();
+
+    await vi.advanceTimersByTimeAsync(4_000);
+    const second = drainProjectRuntime({
+      stageId,
+      sceneId,
+      project: makeProject([runtimeEvent('evt-1'), runtimeEvent('evt-2')]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await vi.advanceTimersByTimeAsync(4_000);
+    expect(store.appendLog).toEqual(['start:evt-1']);
+
+    await vi.advanceTimersByTimeAsync(2_001);
+    await vi.waitFor(() =>
+      expect(store.appendLog.filter((entry) => entry === 'start:evt-1')).toHaveLength(2),
+    );
+    await expect(second).resolves.toBeUndefined();
+
+    expect(store.records.map((record) => record.id)).toEqual(['evt-1', 'evt-2']);
+    await expect(
+      kv.get<PBLDrainWatermark>(watermarkKey(stageId, sceneId, LEARNER_KEY), 'device'),
+    ).resolves.toEqual({ lastRuntimeEventId: 'evt-2' });
+
+    store.resolveSlowAppend();
+    await vi.waitFor(() =>
+      expect(store.appendLog.filter((entry) => entry === 'finish:evt-1')).toHaveLength(2),
+    );
+    await vi.advanceTimersByTimeAsync(20_000);
+
+    expect(store.records.map((record) => record.id)).toEqual(['evt-1', 'evt-2', 'evt-1']);
+    await expect(
+      kv.get<PBLDrainWatermark>(watermarkKey(stageId, sceneId, LEARNER_KEY), 'device'),
+    ).resolves.toEqual({ lastRuntimeEventId: 'evt-2' });
+    expect(warn).toHaveBeenCalled();
     warn.mockRestore();
   });
 
@@ -702,11 +1055,11 @@ describe('drainProjectRuntime', () => {
     const records = await store.listRecords(sessions[0]!.id);
     expect(records.map((record) => record.seq)).toEqual(expectedEvents.map((_, index) => index));
     expect(records.map((record) => record.id)).toEqual(expectedEvents.map((event) => event.id));
-    expect(records.map((record) => record.payload)).toEqual(expectedEvents);
+    expect(records.map((record) => recordPayloadEvent(record.payload))).toEqual(expectedEvents);
     expect(
       records.map((record) => ({
-        kind: (record.payload as PBLRuntimeEvent | PBLEngagementEvent).kind,
-        id: (record.payload as PBLRuntimeEvent | PBLEngagementEvent).id,
+        kind: recordPayloadEvent(record.payload).kind,
+        id: recordPayloadEvent(record.payload).id,
       })),
     ).toEqual(expectedEvents.map((event) => ({ kind: event.kind, id: event.id })));
     expect(records.map((record) => record.sceneId)).toEqual(expectedEvents.map(() => SCENE_ID));

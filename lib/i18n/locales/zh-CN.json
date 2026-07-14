@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "文本框",
-      "expandToolbar": "展开插入工具",
-      "collapseToolbar": "收起插入工具",
+      "dragToolbar": "拖动工具栏",
+      "dragToolbarKeyboard": "移动工具栏：按回车或空格开始，再使用方向键移动",
       "image": "图片",
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "评分指引",
       "commentPromptPlaceholder": "应如何评判这道主观题？",
       "empty": "暂无题目",
-      "emptyHint": "点击上方“添加题目”创建第一道题。",
+      "emptyHint": "点击“添加题目”创建第一道题。",
       "type": {
         "single": "单选",
         "multiple": "多选",

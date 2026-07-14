@@ -319,6 +319,23 @@ describe('settings rehydrate — built-in provider models', () => {
     // ...while the managed flag itself is preserved.
     expect(openai.isServerConfigured).toBe(true);
   });
+
+  it('removes the retired insert-toolbar collapse preference on rehydrate', async () => {
+    storage.set(
+      'settings-storage',
+      JSON.stringify({
+        state: { editInsertToolbarCollapsed: true },
+        version: 4,
+      }),
+    );
+
+    const store = await getStore();
+    expect('editInsertToolbarCollapsed' in store.getState()).toBe(false);
+
+    store.getState().setSidebarCollapsed(false);
+    const persisted = JSON.parse(storage.get('settings-storage')!).state;
+    expect('editInsertToolbarCollapsed' in persisted).toBe(false);
+  });
 });
 
 describe('fetchServerProviders — provider availability sync', () => {

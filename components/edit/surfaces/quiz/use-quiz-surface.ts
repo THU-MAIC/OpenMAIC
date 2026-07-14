@@ -1,8 +1,7 @@
 'use client';
 
-import { Plus } from 'lucide-react';
-import React, { useEffect } from 'react';
-import type { EditorHint, InsertPaletteItem, SurfaceState } from '@/lib/edit/scene-editor-surface';
+import { useEffect } from 'react';
+import type { EditorHint, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useStageStore } from '@/lib/store/stage';
 import type { QuizContent, QuizQuestionType } from '@/lib/types/stage';
@@ -20,7 +19,6 @@ import {
   updateQuestion,
 } from './quiz-edit-ops';
 import { useQuizEditSession } from './quiz-edit-session';
-import { AddQuestionMenu } from './AddQuestionMenu';
 
 /**
  * The quiz form is a self-contained structured editor: it owns its own
@@ -91,19 +89,6 @@ export function toggleQuizCorrect(id: string, index: number): void {
   useQuizEditSession.getState().commit(toggleCorrect(resolvePresent(), id, index));
 }
 
-export function buildQuizInsertItems(t: (k: string) => string): InsertPaletteItem[] {
-  return [
-    {
-      id: 'add-question',
-      label: t('edit.quiz.addQuestion'),
-      tooltip: t('edit.quiz.addQuestion'),
-      icon: React.createElement(Plus, { className: 'h-4 w-4' }),
-      onInvoke: () => {}, // popover-only: InsertButton ignores onInvoke when popoverContent is set
-      popoverContent: () => React.createElement(AddQuestionMenu),
-    },
-  ];
-}
-
 /** Max validation hints shown at once so the HintRail stays readable. */
 const MAX_HINTS = 5;
 
@@ -168,8 +153,7 @@ export function useResolvedQuizContent(): QuizContent {
 /**
  * The quiz surface's `useSurfaceState`. Pure read over the shared session
  * store. No selection model, no floating actions — the structured form owns
- * all of its editing affordances inline; the chrome only contributes the
- * "Add question" insert item and undo/redo.
+ * all of its editing affordances inline; the chrome only contributes undo/redo.
  */
 export function useQuizSurfaceState(): SurfaceState<QuizContent, QuizSelection> {
   const { t } = useI18n();
@@ -186,7 +170,7 @@ export function useQuizSurfaceState(): SurfaceState<QuizContent, QuizSelection> 
       undo: () => useQuizEditSession.getState().undo(),
       redo: () => useQuizEditSession.getState().redo(),
     },
-    insertItems: buildQuizInsertItems(t),
+    insertItems: [],
     floatingActions: [],
     commands: [],
     hints: buildQuizHints(content, t),

@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "テキストボックス",
-      "expandToolbar": "挿入ツールを表示",
-      "collapseToolbar": "挿入ツールを隠す",
+      "dragToolbar": "挿入ツールを移動",
+      "dragToolbarKeyboard": "挿入ツールを移動：Enter または Space を押してから矢印キーで移動",
       "image": "画像",
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "採点ガイド",
       "commentPromptPlaceholder": "この記述式をどう採点しますか？",
       "empty": "問題がありません",
-      "emptyHint": "上の「問題を追加」から最初の問題を作成します。",
+      "emptyHint": "「問題を追加」から最初の問題を作成します。",
       "type": {
         "single": "単一選択",
         "multiple": "複数選択",

@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "文字方塊",
-      "expandToolbar": "展開插入工具",
-      "collapseToolbar": "收起插入工具",
+      "dragToolbar": "拖動工具列",
+      "dragToolbarKeyboard": "移動工具列：按 Enter 或空白鍵開始，再使用方向鍵移動",
       "image": "圖片",
       "imageDrop": "拖曳圖片或點按選擇檔案",
       "imageOr": "或貼上圖片網址",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "評分指引",
       "commentPromptPlaceholder": "應如何評判這道主觀題？",
       "empty": "尚無題目",
-      "emptyHint": "點選上方「新增題目」建立第一題。",
+      "emptyHint": "點選「新增題目」建立第一題。",
       "type": {
         "single": "單選",
         "multiple": "多選",

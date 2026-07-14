@@ -191,8 +191,8 @@
     },
     "insert": {
       "textBox": "Caixa de texto",
-      "expandToolbar": "Mostrar ferramentas de inserção",
-      "collapseToolbar": "Ocultar ferramentas de inserção",
+      "dragToolbar": "Mover ferramentas de inserção",
+      "dragToolbarKeyboard": "Mover ferramentas: pressione Enter ou Espaço e use as setas",
       "image": "Imagem",
       "imageDrop": "Arraste uma imagem ou clique para escolher um arquivo",
       "imageOr": "ou cole a URL de uma imagem",
@@ -250,7 +250,7 @@
       "commentPromptLabel": "Orientação de correção",
       "commentPromptPlaceholder": "Como esta resposta aberta deve ser avaliada?",
       "empty": "Nenhuma pergunta ainda",
-      "emptyHint": "Use “Adicionar pergunta” acima para criar a primeira.",
+      "emptyHint": "Use “Adicionar pergunta” para criar a primeira.",
       "type": {
         "single": "Escolha única",
         "multiple": "Múltipla escolha",

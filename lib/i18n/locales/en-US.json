@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "Text box",
-      "expandToolbar": "Show insert tools",
-      "collapseToolbar": "Hide insert tools",
+      "dragToolbar": "Move insert tools",
+      "dragToolbarKeyboard": "Move insert tools: press Enter or Space, then use the arrow keys",
       "image": "Image",
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "Grading guidance",
       "commentPromptPlaceholder": "How should this open response be graded?",
       "empty": "No questions yet",
-      "emptyHint": "Use the “Add question” button above to create the first one.",
+      "emptyHint": "Use “Add question” to create the first one.",
       "type": {
         "single": "Single choice",
         "multiple": "Multiple choice",
