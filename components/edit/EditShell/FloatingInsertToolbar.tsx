@@ -1,6 +1,6 @@
 'use client';
 
-import { motion, useDragControls, useMotionValue } from 'motion/react';
+import { motion, useDragControls, type MotionValue } from 'motion/react';
 import { GripHorizontal } from 'lucide-react';
 import { useRef, useState, type KeyboardEvent } from 'react';
 import { useI18n } from '@/lib/hooks/use-i18n';
@@ -10,6 +10,8 @@ import { InsertButton } from './InsertButton';
 
 interface Props {
   readonly items: readonly InsertPaletteItem[];
+  readonly x: MotionValue<number>;
+  readonly y: MotionValue<number>;
 }
 
 /**
@@ -24,13 +26,11 @@ interface Props {
  * grip lets authors move the strip anywhere inside the studio without shifting
  * the centered slide viewport or dedicating permanent layout space to it.
  */
-export function FloatingInsertToolbar({ items }: Props) {
+export function FloatingInsertToolbar({ items, x, y }: Props) {
   const { t } = useI18n();
   const constraintsRef = useRef<HTMLDivElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
   const dragControls = useDragControls();
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
   const [keyboardDragging, setKeyboardDragging] = useState(false);
 
   const handleDragKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
@@ -91,6 +91,7 @@ export function FloatingInsertToolbar({ items }: Props) {
       >
         <button
           type="button"
+          data-testid="insert-toolbar-drag-handle"
           aria-label={t('edit.insert.dragToolbarKeyboard')}
           aria-pressed={keyboardDragging}
           title={t('edit.insert.dragToolbar')}
