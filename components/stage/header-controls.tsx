@@ -21,6 +21,7 @@ import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
 import { useExportVideo, VIDEO_RESOLUTIONS } from '@/lib/video-export-app/use-export-video';
+import { isVideoExportEnabled } from '@/lib/config/feature-flags';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
 import {
@@ -80,6 +81,7 @@ export function HeaderControls({
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
   const { exporting: isExportingVideo, exportVideo } = useExportVideo();
+  const videoExportEnabled = isVideoExportEnabled();
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
 
@@ -312,31 +314,37 @@ export function HeaderControls({
                 </div>
               </div>
             </button>
-            <div className="border-t border-gray-200 dark:border-gray-700" />
-            <div className="px-4 pt-2.5 pb-1 flex items-center gap-2.5 text-sm">
-              <Film className="w-4 h-4 text-gray-400 shrink-0" />
-              <div>
-                <div>{t('export.video')}</div>
-                <div className="text-[11px] text-gray-400 dark:text-gray-500">
-                  {t('export.videoDesc')}
+            {videoExportEnabled && (
+              <>
+                <div className="border-t border-gray-200 dark:border-gray-700" />
+                <div className="px-4 pt-2.5 pb-1 flex items-center gap-2.5 text-sm">
+                  <Film className="w-4 h-4 text-gray-400 shrink-0" />
+                  <div>
+                    <div>{t('export.video')}</div>
+                    <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                      {t('export.videoDesc')}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
-            <div className="px-4 pb-2.5 flex gap-1.5">
-              {(Object.keys(VIDEO_RESOLUTIONS) as (keyof typeof VIDEO_RESOLUTIONS)[]).map((res) => (
-                <button
-                  key={res}
-                  onClick={() => {
-                    setExportMenuOpen(false);
-                    exportVideo(res);
-                  }}
-                  disabled={isExportingVideo}
-                  className="flex-1 px-2 py-1.5 text-xs rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
-                >
-                  {res === '4k' ? '4K' : res}
-                </button>
-              ))}
-            </div>
+                <div className="px-4 pb-2.5 flex gap-1.5">
+                  {(Object.keys(VIDEO_RESOLUTIONS) as (keyof typeof VIDEO_RESOLUTIONS)[]).map(
+                    (res) => (
+                      <button
+                        key={res}
+                        onClick={() => {
+                          setExportMenuOpen(false);
+                          exportVideo(res);
+                        }}
+                        disabled={isExportingVideo}
+                        className="flex-1 px-2 py-1.5 text-xs rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+                      >
+                        {res === '4k' ? '4K' : res}
+                      </button>
+                    ),
+                  )}
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>

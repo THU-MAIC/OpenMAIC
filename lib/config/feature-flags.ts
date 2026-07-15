@@ -43,3 +43,13 @@ export function resolveVocationalActive(
 export function shouldShowVocationalTestUi(): boolean {
   return readBoolean(process.env.NEXT_PUBLIC_SHOW_VOCATIONAL_TEST_UI);
 }
+
+/**
+ * Experimental classroom video export (Hyperframes composition ZIP, #865).
+ * Default OFF — gates only the "Export Video" affordance in the export menu.
+ * The emitter/compiler code paths are unaffected; this hides the UI entry
+ * point until the render pipeline (#866) lands.
+ */
+export function isVideoExportEnabled(): boolean {
+  return readBoolean(process.env.NEXT_PUBLIC_ENABLE_VIDEO_EXPORT);
+}
