@@ -135,6 +135,19 @@ function applyIntentsToContent(content: SlideContent, intents: EditIntent[]): Sl
           if (!el) continue;
           applyPropsToElement(el, u.props as Partial<PPTElement>);
         }
+      } else if (intent.type === 'element.removeProps') {
+        const el = draft.canvas.elements.find((e) => e.id === intent.id);
+        if (!el) continue;
+        const target = el as unknown as Record<string, unknown>;
+        for (const prop of intent.props) delete target[prop];
+      } else if (intent.type === 'text.updateContent') {
+        const el = draft.canvas.elements.find((element) => element.id === intent.id);
+        if (!el) continue;
+        if (intent.target === 'text' && el.type === 'text') {
+          el.content = intent.content;
+        } else if (intent.target === 'shape' && el.type === 'shape' && el.text) {
+          el.text.content = intent.content;
+        }
       }
       // Other EditIntent kinds are out of scope for this vertical.
     }
@@ -154,6 +167,52 @@ export function applyEditElementsIntents(
   inventoryFingerprint?: string,
 ): ApplyEditElementsResult {
   if (!intents.length) return { ok: false, reason: 'no element updates proposed' };
+
+  const pendingReplacementProps = new Map<string, Set<string>>();
+  for (const intent of intents) {
+    if (intent.type === 'element.removeProps') {
+      if (
+        intent.props.length === 0 ||
+        new Set(intent.props).size !== intent.props.length ||
+        intent.props.some((prop) => !MERGED_STYLE_PROPS.has(prop))
+      ) {
+        return { ok: false, reason: 'invalid structured-property replace marker' };
+      }
+      let pending = pendingReplacementProps.get(intent.id);
+      if (!pending) {
+        pending = new Set();
+        pendingReplacementProps.set(intent.id, pending);
+      }
+      if (intent.props.some((prop) => pending.has(prop))) {
+        return { ok: false, reason: 'invalid structured-property replace marker' };
+      }
+      for (const prop of intent.props) pending.add(prop);
+      continue;
+    }
+
+    const updates =
+      intent.type === 'element.update'
+        ? [{ id: intent.id, props: intent.props }]
+        : intent.type === 'element.updateMany'
+          ? intent.updates
+          : [];
+    for (const update of updates) {
+      const pending = pendingReplacementProps.get(update.id);
+      if (!pending) continue;
+      for (const prop of Object.keys(update.props)) {
+        if (!pending.has(prop)) continue;
+        const value = (update.props as Record<string, unknown>)[prop];
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          return { ok: false, reason: 'invalid structured-property replace marker' };
+        }
+        pending.delete(prop);
+      }
+      if (pending.size === 0) pendingReplacementProps.delete(update.id);
+    }
+  }
+  if (pendingReplacementProps.size > 0) {
+    return { ok: false, reason: 'invalid structured-property replace marker' };
+  }
 
   const session = useSlideEditSession.getState();
   if (session.sceneId !== sceneId || !session.history) {
@@ -187,8 +246,19 @@ export function applyEditElementsIntents(
   );
   if (!recheck.ok) return { ok: false, reason: recheck.reason };
 
-  // Refuse fabricating shape.text when the shape has no label (no content authoring).
   const byId = new Map((present.canvas.elements as PPTElement[]).map((el) => [el.id, el] as const));
+  for (const intent of intents) {
+    if (intent.type !== 'text.updateContent') continue;
+    const element = byId.get(intent.id);
+    if (intent.target === 'text' && element?.type !== 'text') {
+      return { ok: false, reason: `element ${JSON.stringify(intent.id)} is not a text element` };
+    }
+    if (intent.target === 'shape' && (element?.type !== 'shape' || !element.text)) {
+      return { ok: false, reason: `shape ${JSON.stringify(intent.id)} has no text label to edit` };
+    }
+  }
+
+  // Refuse fabricating shape.text when the shape has no label (no content authoring).
   for (const intent of intents) {
     const updates =
       intent.type === 'element.update'
