@@ -34,7 +34,13 @@ describe('Settings TTS voice selection', () => {
       ttsProviderId: 'browser-native-tts',
       ttsVoice: 'default',
       ttsProvidersConfig: {
-        'openai-tts': { apiKey: 'test-key', modelId: 'tts-1' },
+        ...store.getState().ttsProvidersConfig,
+        'openai-tts': {
+          ...store.getState().ttsProvidersConfig['openai-tts'],
+          apiKey: 'test-key',
+          enabled: true,
+          modelId: 'tts-1',
+        },
       },
     });
 
