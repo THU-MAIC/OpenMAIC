@@ -8,7 +8,11 @@ import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { useSettingsStore } from '@/lib/store/settings';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import { resolveAgentVoice, getSelectableProvidersWithVoices } from '@/lib/audio/voice-resolver';
+import {
+  applySelectableVoiceChoice,
+  getSelectableProvidersWithVoices,
+  resolveAgentVoice,
+} from '@/lib/audio/voice-resolver';
 import { playBrowserTTSPreview } from '@/lib/audio/browser-tts-preview';
 import { useVoxCPMVoiceProfiles } from '@/lib/audio/voxcpm-voices';
 import { resolveAgentVoiceOptions } from '@/lib/audio/agent-voice';
@@ -562,11 +566,14 @@ function TeacherVoicePill({
                       <button
                         type="button"
                         onClick={() => {
-                          setTTSProvider(provider.providerId);
-                          setTTSVoice(voice.id);
-                          if (group.modelId) {
-                            setTTSProviderConfig(provider.providerId, { modelId: group.modelId });
-                          }
+                          applySelectableVoiceChoice(
+                            {
+                              providerId: provider.providerId,
+                              voiceId: voice.id,
+                              ...(group.modelId && { modelId: group.modelId }),
+                            },
+                            { setTTSProvider, setTTSVoice, setTTSProviderConfig },
+                          );
                           setPopoverOpen(false);
                         }}
                         className={cn(

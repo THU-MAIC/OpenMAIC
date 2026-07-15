@@ -125,6 +125,55 @@ export interface ProviderWithVoices {
   modelGroups: ModelVoiceGroup[]; // voices grouped by model
 }
 
+export interface SelectableVoiceChoice {
+  providerId: TTSProviderId;
+  voiceId: string;
+  modelId?: string;
+}
+
+/**
+ * Resolve a picker selection from the shared selectable provider list. Keeping
+ * this lookup here prevents Settings and AgentBar from inventing separate
+ * provider/model compatibility rules.
+ */
+export function resolveSelectableVoiceChoice(
+  providers: ProviderWithVoices[],
+  providerId: TTSProviderId,
+  voiceId: string,
+  currentModelId = '',
+): SelectableVoiceChoice | null {
+  const provider = providers.find((candidate) => candidate.providerId === providerId);
+  if (!provider?.voices.some((voice) => voice.id === voiceId)) return null;
+
+  const modelGroup =
+    provider.modelGroups.find(
+      (group) =>
+        group.modelId === currentModelId && group.voices.some((voice) => voice.id === voiceId),
+    ) || provider.modelGroups.find((group) => group.voices.some((voice) => voice.id === voiceId));
+
+  return {
+    providerId,
+    voiceId,
+    ...(modelGroup?.modelId && { modelId: modelGroup.modelId }),
+  };
+}
+
+/** Shared global TTS selection write used by Settings and AgentBar. */
+export function applySelectableVoiceChoice(
+  choice: SelectableVoiceChoice,
+  actions: {
+    setTTSProvider: (providerId: TTSProviderId) => void;
+    setTTSVoice: (voiceId: string) => void;
+    setTTSProviderConfig: (providerId: TTSProviderId, config: { modelId: string }) => void;
+  },
+) {
+  actions.setTTSProvider(choice.providerId);
+  if (choice.modelId) {
+    actions.setTTSProviderConfig(choice.providerId, { modelId: choice.modelId });
+  }
+  actions.setTTSVoice(choice.voiceId);
+}
+
 /**
  * Get all ENABLED providers and their voices for the voice picker UI and for
  * deterministic auto-assignment.

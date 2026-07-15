@@ -50,6 +50,11 @@ import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { useTTSPreview } from '@/lib/audio/use-tts-preview';
 import { isTTSProviderConfigured, isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
+import {
+  applySelectableVoiceChoice,
+  getSelectableProvidersWithVoices,
+  resolveSelectableVoiceChoice,
+} from '@/lib/audio/voice-resolver';
 import { isCustomTTSProvider } from '@/lib/audio/types';
 import {
   getVoxCPMProviderOptions,
@@ -81,6 +86,7 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
   const ttsVoice = useSettingsStore((state) => state.ttsVoice);
   const ttsSpeed = useSettingsStore((state) => state.ttsSpeed);
   const ttsProvidersConfig = useSettingsStore((state) => state.ttsProvidersConfig);
+  const setTTSProvider = useSettingsStore((state) => state.setTTSProvider);
   const setTTSProviderConfig = useSettingsStore((state) => state.setTTSProviderConfig);
   const activeProviderId = useSettingsStore((state) => state.ttsProviderId);
   const setTTSVoice = useSettingsStore((state) => state.setTTSVoice);
@@ -114,6 +120,28 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
         ? ((providerConfig?.customVoices as Array<{ id: string }> | undefined) || [])[0]?.id ||
           'default'
         : DEFAULT_TTS_VOICES[selectedProviderId as keyof typeof DEFAULT_TTS_VOICES] || 'default';
+
+  // Keep this control on the same enabled-provider and compatible-voice source
+  // as AgentBar and generation. Custom providers and VoxCPM retain their
+  // dedicated voice-management flows below.
+  const selectableProvider = getSelectableProvidersWithVoices(ttsProvidersConfig).find(
+    (provider) => provider.providerId === selectedProviderId,
+  );
+  const selectedSelectableVoiceId = (() => {
+    if (!selectableProvider) return '';
+    if (
+      selectedProviderId === activeProviderId &&
+      selectableProvider.voices.some((voice) => voice.id === ttsVoice)
+    ) {
+      return ttsVoice;
+    }
+    const defaultVoice = DEFAULT_TTS_VOICES[selectedProviderId as keyof typeof DEFAULT_TTS_VOICES];
+    return (
+      selectableProvider.voices.find((voice) => voice.id === defaultVoice)?.id ||
+      selectableProvider.voices[0]?.id ||
+      ''
+    );
+  })();
 
   const [showApiKey, setShowApiKey] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -481,6 +509,40 @@ export function TTSSettings({ selectedProviderId }: TTSSettingsProps) {
             )}
           </>
         ))}
+
+      {!isCustom && !isVoxCPM && selectableProvider && selectedSelectableVoiceId && (
+        <div className="space-y-2">
+          <Label className="text-sm">{t('settings.ttsVoice')}</Label>
+          <Select
+            value={selectedSelectableVoiceId}
+            onValueChange={(voiceId) => {
+              const choice = resolveSelectableVoiceChoice(
+                [selectableProvider],
+                selectedProviderId,
+                voiceId,
+                ttsProvidersConfig[selectedProviderId]?.modelId || '',
+              );
+              if (!choice) return;
+              applySelectableVoiceChoice(choice, {
+                setTTSProvider,
+                setTTSVoice,
+                setTTSProviderConfig,
+              });
+            }}
+          >
+            <SelectTrigger className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {selectableProvider.voices.map((voice) => (
+                <SelectItem key={voice.id} value={voice.id}>
+                  {voice.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      )}
 
       {/* Test TTS */}
       <div className="space-y-2">
