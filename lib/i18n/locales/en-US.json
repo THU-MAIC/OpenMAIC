@@ -62,7 +62,20 @@
     "learnworldsPartial": "Course published with {{failed}} failed sections",
     "learnworldsFailed": "Failed to publish to LearnWorlds",
     "learnworldsUploadHint": "The SCORM package was downloaded. Upload it as a SCORM unit in your LearnWorlds course to import the full content.",
-    "learnworldsOpenAdmin": "Open course in LearnWorlds"
+    "learnworldsOpenAdmin": "Open course in LearnWorlds",
+    "learnworldsBundling": "Building per-activity SCORM packages...",
+    "learnworldsBundleHint": "Downloaded a ZIP with {{count}} SCORM packages (one per activity). Upload each NN_*.scorm.zip to its section in LearnWorlds; see the included LEEME.md.",
+    "learnworldsSectionDesc": "Activity: {{type}} — upload the file {{file}} as a SCORM unit.",
+    "learnworldsReadmeTitle": "LearnWorlds import",
+    "learnworldsReadmeIntro": "This bundle contains one SCORM file per course activity, numbered to match the sections created in your LearnWorlds school. For each table row: open the section in the course editor, add a \"SCORM / HTML5\" activity and upload the listed file.",
+    "learnworldsReadmeSection": "Section (activity)",
+    "learnworldsReadmeType": "Type",
+    "learnworldsReadmeFile": "File to upload",
+    "learnworldsReadmeFullCourse": "Alternative: if you prefer a single unit with the whole course, upload only",
+    "activityKindSlide": "Page (slide + narration)",
+    "activityKindQuiz": "Quiz",
+    "activityKindInteractive": "Interactive activity",
+    "activityKindPbl": "Project (PBL)"
   },
   "import": {
     "classroom": "Import Classroom",

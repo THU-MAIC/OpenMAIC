@@ -62,7 +62,20 @@
     "learnworldsPartial": "Curso publicado con {{failed}} secciones fallidas",
     "learnworldsFailed": "Error al publicar en LearnWorlds",
     "learnworldsUploadHint": "El paquete SCORM se descargó. Súbelo como unidad SCORM en tu curso de LearnWorlds para importar el contenido completo.",
-    "learnworldsOpenAdmin": "Abrir curso en LearnWorlds"
+    "learnworldsOpenAdmin": "Abrir curso en LearnWorlds",
+    "learnworldsBundling": "Generando paquetes SCORM por actividad...",
+    "learnworldsBundleHint": "Se descargó un ZIP con {{count}} paquetes SCORM (uno por actividad). Sube cada NN_*.scorm.zip a su sección en LearnWorlds; consulta el LEEME.md incluido.",
+    "learnworldsSectionDesc": "Actividad: {{type}} — subir el archivo {{file}} como unidad SCORM.",
+    "learnworldsReadmeTitle": "Importación a LearnWorlds",
+    "learnworldsReadmeIntro": "Este paquete contiene un archivo SCORM por cada actividad del curso, numerado igual que las secciones creadas en tu escuela LearnWorlds. Para cada fila de la tabla: abre la sección en el editor del curso, añade una actividad de tipo \"SCORM / HTML5\" y sube el archivo indicado.",
+    "learnworldsReadmeSection": "Sección (actividad)",
+    "learnworldsReadmeType": "Tipo",
+    "learnworldsReadmeFile": "Archivo a subir",
+    "learnworldsReadmeFullCourse": "Alternativa: si prefieres una sola unidad con el curso completo, sube únicamente",
+    "activityKindSlide": "Página (diapositiva + narración)",
+    "activityKindQuiz": "Cuestionario",
+    "activityKindInteractive": "Actividad interactiva",
+    "activityKindPbl": "Proyecto (PBL)"
   },
   "import": {
     "classroom": "Importar aula",

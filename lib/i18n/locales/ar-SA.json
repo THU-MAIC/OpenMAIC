@@ -62,7 +62,20 @@
     "learnworldsPartial": "تم نشر الدورة مع فشل {{failed}} من الأقسام",
     "learnworldsFailed": "فشل النشر في LearnWorlds",
     "learnworldsUploadHint": "تم تنزيل حزمة SCORM. قم برفعها كوحدة SCORM في دورتك على LearnWorlds لاستيراد المحتوى الكامل.",
-    "learnworldsOpenAdmin": "فتح الدورة في LearnWorlds"
+    "learnworldsOpenAdmin": "فتح الدورة في LearnWorlds",
+    "learnworldsBundling": "جارٍ إنشاء حزم SCORM لكل نشاط...",
+    "learnworldsBundleHint": "تم تنزيل ملف ZIP يحتوي على {{count}} حزمة SCORM (واحدة لكل نشاط). ارفع كل ملف NN_*.scorm.zip إلى قسمه في LearnWorlds؛ راجع ملف LEEME.md المرفق.",
+    "learnworldsSectionDesc": "النشاط: {{type}} — ارفع الملف {{file}} كوحدة SCORM.",
+    "learnworldsReadmeTitle": "الاستيراد إلى LearnWorlds",
+    "learnworldsReadmeIntro": "تحتوي هذه الحزمة على ملف SCORM واحد لكل نشاط في الدورة، مرقّم بنفس ترقيم الأقسام المنشأة في مدرستك على LearnWorlds. لكل صف في الجدول: افتح القسم في محرر الدورة، وأضف نشاط «SCORM / HTML5» وارفع الملف المذكور.",
+    "learnworldsReadmeSection": "القسم (النشاط)",
+    "learnworldsReadmeType": "النوع",
+    "learnworldsReadmeFile": "الملف المطلوب رفعه",
+    "learnworldsReadmeFullCourse": "بديل: إذا كنت تفضّل وحدة واحدة تضم الدورة كاملة، فارفع فقط",
+    "activityKindSlide": "صفحة (شريحة + سرد صوتي)",
+    "activityKindQuiz": "اختبار",
+    "activityKindInteractive": "نشاط تفاعلي",
+    "activityKindPbl": "مشروع (PBL)"
   },
   "import": {
     "classroom": "استيراد فصل",

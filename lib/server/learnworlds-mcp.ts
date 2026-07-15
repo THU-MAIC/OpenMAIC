@@ -217,7 +217,11 @@ export async function publishCourseToLearnWorlds(
                 name: TOOL_CREATE_SECTION,
                 arguments: {
                   id: effectiveCourseId,
-                  body: { title: section.title, access: 'draft' },
+                  body: {
+                    title: section.title,
+                    access: 'draft',
+                    ...(section.description ? { description: section.description } : {}),
+                  },
                 },
               },
               undefined,

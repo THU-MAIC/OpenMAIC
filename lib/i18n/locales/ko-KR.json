@@ -62,7 +62,20 @@
     "learnworldsPartial": "코스가 게시되었지만 {{failed}}개 섹션이 실패했습니다",
     "learnworldsFailed": "LearnWorlds 게시에 실패했습니다",
     "learnworldsUploadHint": "SCORM 패키지가 다운로드되었습니다. LearnWorlds 코스에 SCORM 유닛으로 업로드하면 전체 콘텐츠를 가져올 수 있습니다.",
-    "learnworldsOpenAdmin": "LearnWorlds에서 코스 열기"
+    "learnworldsOpenAdmin": "LearnWorlds에서 코스 열기",
+    "learnworldsBundling": "활동별 SCORM 패키지 생성 중...",
+    "learnworldsBundleHint": "{{count}}개의 SCORM 패키지(활동당 1개)가 포함된 ZIP을 다운로드했습니다. 각 NN_*.scorm.zip을 LearnWorlds의 해당 섹션에 업로드하세요. 포함된 LEEME.md를 참조하세요.",
+    "learnworldsSectionDesc": "활동: {{type}} — 파일 {{file}}을(를) SCORM 단위로 업로드하세요.",
+    "learnworldsReadmeTitle": "LearnWorlds 가져오기",
+    "learnworldsReadmeIntro": "이 번들에는 코스의 각 활동마다 하나의 SCORM 파일이 포함되어 있으며, LearnWorlds 스쿨에 생성된 섹션과 동일한 번호가 매겨져 있습니다. 표의 각 행에 대해 코스 편집기에서 해당 섹션을 열고 \"SCORM / HTML5\" 활동을 추가한 후 나열된 파일을 업로드하세요.",
+    "learnworldsReadmeSection": "섹션(활동)",
+    "learnworldsReadmeType": "유형",
+    "learnworldsReadmeFile": "업로드할 파일",
+    "learnworldsReadmeFullCourse": "대안: 전체 코스를 하나의 단위로 원하시면 다음 파일만 업로드하세요:",
+    "activityKindSlide": "페이지(슬라이드 + 내레이션)",
+    "activityKindQuiz": "퀴즈",
+    "activityKindInteractive": "인터랙티브 활동",
+    "activityKindPbl": "프로젝트(PBL)"
   },
   "import": {
     "classroom": "교실 가져오기",

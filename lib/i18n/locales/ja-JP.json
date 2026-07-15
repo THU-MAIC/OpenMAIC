@@ -62,7 +62,20 @@
     "learnworldsPartial": "コースを公開しましたが、{{failed}} 件のセクションが失敗しました",
     "learnworldsFailed": "LearnWorlds への公開に失敗しました",
     "learnworldsUploadHint": "SCORM パッケージをダウンロードしました。LearnWorlds コースの SCORM ユニットとしてアップロードすると、全コンテンツをインポートできます。",
-    "learnworldsOpenAdmin": "LearnWorlds でコースを開く"
+    "learnworldsOpenAdmin": "LearnWorlds でコースを開く",
+    "learnworldsBundling": "アクティビティごとの SCORM パッケージを生成中...",
+    "learnworldsBundleHint": "{{count}} 個の SCORM パッケージ（アクティビティごとに1つ）を含む ZIP をダウンロードしました。各 NN_*.scorm.zip を LearnWorlds の対応するセクションにアップロードしてください。同梱の LEEME.md をご覧ください。",
+    "learnworldsSectionDesc": "アクティビティ: {{type}} — ファイル {{file}} を SCORM ユニットとしてアップロードしてください。",
+    "learnworldsReadmeTitle": "LearnWorlds へのインポート",
+    "learnworldsReadmeIntro": "このバンドルには、コースの各アクティビティごとに1つの SCORM ファイルが含まれており、LearnWorlds スクールに作成されたセクションと同じ番号が付いています。表の各行について、コースエディタで該当セクションを開き、「SCORM / HTML5」アクティビティを追加して記載のファイルをアップロードしてください。",
+    "learnworldsReadmeSection": "セクション（アクティビティ）",
+    "learnworldsReadmeType": "種類",
+    "learnworldsReadmeFile": "アップロードするファイル",
+    "learnworldsReadmeFullCourse": "代替案: コース全体を1つのユニットにしたい場合は、次のファイルのみをアップロードしてください:",
+    "activityKindSlide": "ページ（スライド + ナレーション）",
+    "activityKindQuiz": "クイズ",
+    "activityKindInteractive": "インタラクティブ活動",
+    "activityKindPbl": "プロジェクト（PBL）"
   },
   "import": {
     "classroom": "教室をインポート",

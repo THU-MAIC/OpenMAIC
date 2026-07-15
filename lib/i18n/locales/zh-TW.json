@@ -62,7 +62,20 @@
     "learnworldsPartial": "課程已發佈，{{failed}} 個章節失敗",
     "learnworldsFailed": "發佈到 LearnWorlds 失敗",
     "learnworldsUploadHint": "SCORM 套件已下載。請將其作為 SCORM 單元上傳到您的 LearnWorlds 課程以匯入全部內容。",
-    "learnworldsOpenAdmin": "在 LearnWorlds 中開啟課程"
+    "learnworldsOpenAdmin": "在 LearnWorlds 中開啟課程",
+    "learnworldsBundling": "正在依活動產生 SCORM 套件...",
+    "learnworldsBundleHint": "已下載包含 {{count}} 個 SCORM 套件的 ZIP（每個活動一個）。請將每個 NN_*.scorm.zip 上傳到 LearnWorlds 中對應的章節；詳見隨附的 LEEME.md。",
+    "learnworldsSectionDesc": "活動：{{type}} — 請將檔案 {{file}} 作為 SCORM 單元上傳。",
+    "learnworldsReadmeTitle": "LearnWorlds 匯入指南",
+    "learnworldsReadmeIntro": "此壓縮檔為課程的每個活動提供一個 SCORM 檔案，編號與您 LearnWorlds 學校中建立的章節一致。對於表中的每一列：在課程編輯器中開啟對應章節，新增「SCORM / HTML5」活動並上傳所列檔案。",
+    "learnworldsReadmeSection": "章節（活動）",
+    "learnworldsReadmeType": "類型",
+    "learnworldsReadmeFile": "要上傳的檔案",
+    "learnworldsReadmeFullCourse": "替代方案：如果您希望將整個課程作為單一單元，請只上傳",
+    "activityKindSlide": "頁面（投影片 + 旁白）",
+    "activityKindQuiz": "測驗",
+    "activityKindInteractive": "互動活動",
+    "activityKindPbl": "專案（PBL）"
   },
   "import": {
     "classroom": "匯入課堂",

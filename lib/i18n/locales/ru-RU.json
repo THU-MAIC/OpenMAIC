@@ -62,7 +62,20 @@
     "learnworldsPartial": "Курс опубликован, {{failed}} разделов с ошибками",
     "learnworldsFailed": "Не удалось опубликовать в LearnWorlds",
     "learnworldsUploadHint": "Пакет SCORM загружен. Загрузите его как SCORM-модуль в ваш курс LearnWorlds, чтобы импортировать весь контент.",
-    "learnworldsOpenAdmin": "Открыть курс в LearnWorlds"
+    "learnworldsOpenAdmin": "Открыть курс в LearnWorlds",
+    "learnworldsBundling": "Создание SCORM-пакетов по активностям...",
+    "learnworldsBundleHint": "Загружен ZIP с {{count}} SCORM-пакетами (по одному на активность). Загрузите каждый NN_*.scorm.zip в соответствующий раздел LearnWorlds; см. прилагаемый LEEME.md.",
+    "learnworldsSectionDesc": "Активность: {{type}} — загрузите файл {{file}} как SCORM-модуль.",
+    "learnworldsReadmeTitle": "Импорт в LearnWorlds",
+    "learnworldsReadmeIntro": "Этот пакет содержит по одному SCORM-файлу на каждую активность курса, пронумерованных так же, как разделы, созданные в вашей школе LearnWorlds. Для каждой строки таблицы: откройте раздел в редакторе курса, добавьте активность «SCORM / HTML5» и загрузите указанный файл.",
+    "learnworldsReadmeSection": "Раздел (активность)",
+    "learnworldsReadmeType": "Тип",
+    "learnworldsReadmeFile": "Файл для загрузки",
+    "learnworldsReadmeFullCourse": "Альтернатива: если вы предпочитаете один модуль со всем курсом, загрузите только",
+    "activityKindSlide": "Страница (слайд + озвучка)",
+    "activityKindQuiz": "Тест",
+    "activityKindInteractive": "Интерактивная активность",
+    "activityKindPbl": "Проект (PBL)"
   },
   "import": {
     "classroom": "Импорт класса",

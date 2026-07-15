@@ -62,6 +62,8 @@ export interface LearnWorldsPublishPayload {
     title: string;
     /** Scene kind for context (slide | quiz | interactive | pbl). */
     kind: string;
+    /** Section description shown in LearnWorlds; references the SCORM file to upload. */
+    description?: string;
   }>;
 }
 
