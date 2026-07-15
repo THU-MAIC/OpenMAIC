@@ -18,6 +18,7 @@
  * Pure: string generation only; depends on the IR types.
  */
 import type { EffectSegment, PercentageGeometry } from '../ir';
+import { escapeHtml, sec } from './format';
 
 /** One emitted effect: the DOM to place in the stage and the tweens to add to `tl`. */
 export interface EmittedEffect {
@@ -75,16 +76,6 @@ var EASE_OUT = cubicBezier(0, 0, 0.58, 1);
 /** Format a number for HTML/JS output: trimmed to 4 decimals, no exponent. */
 function n(value: number): string {
   return Number(value.toFixed(4)).toString();
-}
-
-/** Millisecond offset → seconds on the composition clock. */
-function sec(ms: number): number {
-  return ms / 1000;
-}
-
-/** Escape a value used inside a double-quoted HTML attribute (colors from params). */
-function attr(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
 }
 
 /**
@@ -164,7 +155,7 @@ function emitLaser(
   // count that fills the lifetime (never `repeat: -1`, which breaks the capturer).
   const ringCycle = 1.8;
   const ringRepeat = Math.max(0, Math.ceil(sec(seg.durationMs) / ringCycle) - 1);
-  const safeColor = attr(color);
+  const safeColor = escapeHtml(color);
 
   const html = [
     `<div id="${id}" class="fx fx-laser" style="position:absolute;z-index:101;pointer-events:none;left:${n(g.centerX)}%;top:${n(g.centerY)}%;visibility:hidden;opacity:0">`,

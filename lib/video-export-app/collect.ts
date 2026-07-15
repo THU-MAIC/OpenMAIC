@@ -53,6 +53,29 @@ function blobWithType(blob: Blob, mimeType: string): Blob {
   return blob.type ? blob : new Blob([blob], { type: mimeType });
 }
 
+/**
+ * Resolve the bytes for one asset, preferring the local Dexie blob and falling
+ * back to the record's CDN URL (`ossKey`) so a live-mode classroom whose local
+ * blobs were LRU-evicted under storage pressure still exports a self-contained
+ * ZIP (issue #865: "live-mode ossKey audio fetched at compile time"). Returns
+ * `null` when neither a local blob nor a fetchable URL yields bytes.
+ */
+async function resolveBytes(
+  blob: Blob | undefined,
+  ossKey: string | undefined,
+): Promise<Blob | null> {
+  if (blob && blob.size > 0) return blob;
+  if (!ossKey) return null;
+  try {
+    const res = await fetch(ossKey);
+    if (!res.ok) return null;
+    const fetched = await res.blob();
+    return fetched.size > 0 ? fetched : null;
+  } catch {
+    return null;
+  }
+}
+
 /** The generated-media ref an element points at, when it is an unresolved placeholder. */
 function snapshotMediaRef(element: SnapshotMediaElement): string | undefined {
   if (element.type === 'image' && element.src && isMediaPlaceholder(element.src))
@@ -166,15 +189,18 @@ export async function collectVideoAssets(
         }
       } else if (entry.kind === 'audio') {
         const record = records.audioById.get(entry.assetId);
-        if (record?.blob?.size) blobs.set(entry.path, record.blob);
+        const bytes = await resolveBytes(record?.blob, record?.ossKey);
+        if (bytes) blobs.set(entry.path, bytes);
         else missing.push(entry.path);
       } else if (entry.kind === 'video' || entry.kind === 'image') {
         const record = mediaById.get(entry.assetId);
-        if (record?.blob?.size) blobs.set(entry.path, record.blob);
+        const bytes = await resolveBytes(record?.blob, record?.ossKey);
+        if (bytes) blobs.set(entry.path, bytes);
         else missing.push(entry.path);
       } else if (entry.kind === 'poster') {
         const record = mediaById.get(entry.assetId);
-        if (record?.poster) blobs.set(entry.path, record.poster);
+        const bytes = await resolveBytes(record?.poster, record?.posterOssKey);
+        if (bytes) blobs.set(entry.path, bytes);
         else missing.push(entry.path);
       }
     } catch {

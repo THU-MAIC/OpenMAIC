@@ -38,9 +38,13 @@ export interface VideoTimelineDeps {
   records: VideoTimelineRecords;
 }
 
-/** A media record is "present" only when it holds real bytes and is not a failed task. */
+/**
+ * A media record is "present" when its bytes are recoverable at collect time:
+ * either a real local blob, or a CDN `ossKey` to fetch from (live-mode records
+ * whose local blob was LRU-evicted). Failed tasks (`error`) are never present.
+ */
 function mediaPresent(record: MediaFileRecord | undefined): record is MediaFileRecord {
-  return !!record && !record.error && record.blob.size > 0;
+  return !!record && !record.error && (record.blob.size > 0 || !!record.ossKey);
 }
 
 /** File-extension hint from a mime type (`video/mp4` → `mp4`), for the asset-plan naming. */
@@ -105,9 +109,12 @@ export async function createVideoTimelineDeps(input: {
   }
 
   // Probe video durations up front so `videoDurationMs` can be synchronous.
+  // Only local blobs are probed; ossKey-only (evicted) records have no bytes to
+  // probe here, so the compiler caps their dwell — the bytes are still fetched at
+  // collect time for the render.
   const videoDurationMsByElementId = new Map<string, number>();
   for (const [elementId, record] of mediaByElementId) {
-    if (record.type !== 'video' || !mediaPresent(record)) continue;
+    if (record.type !== 'video' || record.error || record.blob.size === 0) continue;
     const ms = await probeVideoDurationMs(record.blob);
     if (ms !== null) videoDurationMsByElementId.set(elementId, ms);
   }
@@ -133,7 +140,8 @@ export async function createVideoTimelineDeps(input: {
         mimeType: record.blob.type || undefined,
         format: record.format || 'mp3',
         durationMs: typeof record.duration === 'number' ? record.duration * 1000 : undefined,
-        present: record.blob.size > 0,
+        // Present when locally held or fetchable from its CDN ossKey at collect time.
+        present: record.blob.size > 0 || !!record.ossKey,
       };
     },
     media(elementId: string, _scene: SceneCore): AssetMeta | null {

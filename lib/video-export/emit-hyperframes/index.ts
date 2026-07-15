@@ -25,6 +25,7 @@ import type { VideoTimeline, VideoTimelineScene } from '../ir';
 import { emitManifestJson } from '../passes/emit';
 import { toSrt, toVtt } from '../subtitles';
 import { EASE_DEFS, emitEffect } from './effects';
+import { escapeHtml, sec } from './format';
 
 /** A file in the emitted project: a relative path and its text content. */
 export interface EmittedFile {
@@ -73,23 +74,6 @@ export function assetUrl(planPath: string): string {
   return `${ASSETS_DIR}/${planPath}`;
 }
 
-function sec(ms: number): number {
-  return Number((ms / 1000).toFixed(4));
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
-/** Escape a value for embedding inside a double-quoted HTML attribute. */
-function escapeAttr(value: string): string {
-  return escapeHtml(value);
-}
-
 /** The base layer for one scene: a slide-snapshot `<img>` clip, or a placeholder card. */
 function renderBase(scene: VideoTimelineScene): string {
   const start = sec(scene.startMs);
@@ -97,7 +81,7 @@ function renderBase(scene: VideoTimelineScene): string {
   const id = `scene-${scene.index + 1}-base`;
   const clip = `id="${id}" class="clip" data-start="${start}" data-duration="${duration}" data-track-index="0"`;
   if (scene.base.kind === 'slide-snapshot' && scene.base.assetRef) {
-    return `<img ${clip} src="${escapeAttr(assetUrl(scene.base.assetRef))}" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain" />`;
+    return `<img ${clip} src="${escapeHtml(assetUrl(scene.base.assetRef))}" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain" />`;
   }
   const reason = scene.base.reason ? escapeHtml(scene.base.reason) : '';
   return [
@@ -124,7 +108,7 @@ function renderVideo(scene: VideoTimelineScene): string[] {
         ? `position:absolute;left:${g.x}%;top:${g.y}%;width:${g.w}%;height:${g.h}%;transform:rotate(${v.rotate}deg);object-fit:contain`
         : `position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain`;
       // data-has-audio: the clip contributes its own soundtrack, mixed at encode.
-      return `<video ${clip} src="${escapeAttr(assetUrl(v.assetRef!))}" data-has-audio="true" style="${style}" playsinline></video>`;
+      return `<video ${clip} src="${escapeHtml(assetUrl(v.assetRef!))}" data-has-audio="true" style="${style}" playsinline></video>`;
     });
 }
 
@@ -136,7 +120,7 @@ function renderNarration(scene: VideoTimelineScene): string[] {
       const start = sec(seg.startMs);
       const duration = sec(seg.durationMs);
       const id = `scene-${scene.index + 1}-audio-${i + 1}`;
-      return `<audio id="${id}" class="clip" data-start="${start}" data-duration="${duration}" data-track-index="2" src="${escapeAttr(assetUrl(seg.audio.assetRef!))}" data-volume="1"></audio>`;
+      return `<audio id="${id}" class="clip" data-start="${start}" data-duration="${duration}" data-track-index="2" src="${escapeHtml(assetUrl(seg.audio.assetRef!))}" data-volume="1"></audio>`;
     });
 }
 
@@ -235,7 +219,7 @@ export function emitHyperframes(
 ${sceneHtml.filter(Boolean).join('\n')}
 ${effectHtml.join('\n')}
 </div>
-<script src="${escapeAttr(gsapVendorPath)}"></script>
+<script src="${escapeHtml(gsapVendorPath)}"></script>
 <script>
 ${EASE_DEFS}
 var tl = gsap.timeline({ paused: true });
