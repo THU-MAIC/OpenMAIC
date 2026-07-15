@@ -89,13 +89,19 @@ function snapshotMediaRef(element: SnapshotMediaElement): string | undefined {
 
 /**
  * Clone a slide and swap each generated-media placeholder for an objectURL over
- * the collected bytes, returning a `revoke` that releases them. Adapted from
+ * the resolved bytes, returning a `revoke` that releases them. Adapted from
  * PR #849's `resolveGeneratedMediaForSnapshot`.
+ *
+ * Bytes are resolved via {@link resolveBytes} (local blob first, then the CDN
+ * `ossKey` / `posterOssKey`), so a live-mode record whose local blob was
+ * LRU-evicted is still restored into the base-frame snapshot — otherwise the
+ * frame PNG would be missing the generated image/video even though the
+ * standalone asset entry was fetched.
  */
-function resolveGeneratedMedia(
+async function resolveGeneratedMedia(
   source: Slide,
   mediaByElementId: Map<string, MediaFileRecord>,
-): { slide: Slide; revoke: () => void } {
+): Promise<{ slide: Slide; revoke: () => void }> {
   const slide = structuredClone(source);
   const objectUrls: string[] = [];
 
@@ -103,20 +109,22 @@ function resolveGeneratedMedia(
     const ref = snapshotMediaRef(element);
     if (!ref) continue;
     const record = mediaByElementId.get(ref);
-    if (!record || record.error || record.blob.size === 0) {
+    const bytes = record && !record.error ? await resolveBytes(record.blob, record.ossKey) : null;
+    if (!record || !bytes) {
       if (element.type === 'image') element.src = '';
       continue;
     }
     if (element.type === 'image' && record.type === 'image') {
-      const url = URL.createObjectURL(blobWithType(record.blob, record.mimeType));
+      const url = URL.createObjectURL(blobWithType(bytes, record.mimeType));
       objectUrls.push(url);
       element.src = url;
     } else if (element.type === 'video' && record.type === 'video') {
-      const url = URL.createObjectURL(blobWithType(record.blob, record.mimeType));
+      const url = URL.createObjectURL(blobWithType(bytes, record.mimeType));
       objectUrls.push(url);
       element.src = url;
-      if (record.poster) {
-        const poster = URL.createObjectURL(blobWithType(record.poster, 'image/jpeg'));
+      const posterBytes = await resolveBytes(record.poster, record.posterOssKey);
+      if (posterBytes) {
+        const poster = URL.createObjectURL(blobWithType(posterBytes, 'image/jpeg'));
         objectUrls.push(poster);
         element.poster = poster;
       }
@@ -134,7 +142,7 @@ async function renderFrame(
   mediaByElementId: Map<string, MediaFileRecord>,
   width: number,
 ): Promise<Blob> {
-  const { slide: resolved, revoke } = resolveGeneratedMedia(slide, mediaByElementId);
+  const { slide: resolved, revoke } = await resolveGeneratedMedia(slide, mediaByElementId);
   try {
     const output = await slideToPng(resolved, {
       width,
