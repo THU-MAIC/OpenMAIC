@@ -51,7 +51,16 @@
     "exportFailed": "내보내기 실패",
     "classroomZip": "교실 ZIP 내보내기",
     "classroomZipDesc": "강좌 구조 + 미디어 파일",
-    "inlinePartial": "{{count}}개의 외부 에셋을 번들에 포함할 수 없어 오프라인에서 강좌가 올바르게 표시되지 않을 수 있습니다."
+    "inlinePartial": "{{count}}개의 외부 에셋을 번들에 포함할 수 없어 오프라인에서 강좌가 올바르게 표시되지 않을 수 있습니다.",
+    "video": "동영상 내보내기",
+    "videoDesc": "독립형 Hyperframes 프로젝트(MP4로 렌더링 가능)",
+    "videoNoScenes": "내보낼 장면이 없습니다.",
+    "videoCompiling": "동영상 타임라인 컴파일 중...",
+    "videoRendering": "슬라이드 렌더링 및 에셋 수집 중...",
+    "videoPackaging": "동영상 프로젝트 패키징 중...",
+    "videoSuccess": "동영상 프로젝트를 내보냈습니다",
+    "videoFailed": "동영상 내보내기 실패",
+    "videoWarnings": "{{assets}}개의 에셋이 누락되었고 내보내기 보고서에 {{diagnostics}}개의 문제가 있습니다."
   },
   "import": {
     "classroom": "교실 가져오기",

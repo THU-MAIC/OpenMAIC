@@ -381,6 +381,9 @@ importers:
       fake-indexeddb:
         specifier: ^6.2.5
         version: 6.2.5
+      gsap:
+        specifier: ^3.15.0
+        version: 3.15.0
       prettier:
         specifier: 3.8.1
         version: 3.8.1
@@ -8254,6 +8257,9 @@ packages:
   graphql@16.13.1:
     resolution: {integrity: sha512-gGgrVCoDKlIZ8fIqXBBb0pPKqDgki0Z/FSKNiQzSGj2uEYHr1tq5wmBegGwJx6QB5S5cM0khSBpi/JFHMCvsmQ==}
     engines: {node: ^12.22.0 || ^14.16.0 || ^16.0.0 || >=17.0.0}
+
+  gsap@3.15.0:
+    resolution: {integrity: sha512-dMW4CWBTUK1AEEDeZc1g4xpPGIrSf9fJF960qbTZmN/QwZIWY5wgliS6JWl9/25fpTGJrMRtSjGtOmPnfjZB+A==}
 
   gulp-cli@3.1.0:
     resolution: {integrity: sha512-zZzwlmEsTfXcxRKiCHsdyjZZnFvXWM4v1NqBJSYbuApkvVKivjcmOS2qruAJ+PkEHLFavcDKH40DPc1+t12a9Q==}
@@ -21610,6 +21616,8 @@ snapshots:
       tslib: 2.8.1
 
   graphql@16.13.1: {}
+
+  gsap@3.15.0: {}
 
   gulp-cli@3.1.0:
     dependencies:

@@ -51,7 +51,16 @@
     "exportFailed": "导出失败",
     "classroomZip": "导出课堂 ZIP",
     "classroomZipDesc": "课程结构 + 媒体文件",
-    "inlinePartial": "{{count}} 个外部资源未能打包，离线时课程可能无法正常显示。"
+    "inlinePartial": "{{count}} 个外部资源未能打包，离线时课程可能无法正常显示。",
+    "video": "导出视频",
+    "videoDesc": "自包含 Hyperframes 工程（可渲染为 MP4）",
+    "videoNoScenes": "没有可导出的场景。",
+    "videoCompiling": "正在编译视频时间线...",
+    "videoRendering": "正在渲染幻灯片并收集素材...",
+    "videoPackaging": "正在打包视频工程...",
+    "videoSuccess": "视频工程已导出",
+    "videoFailed": "视频导出失败",
+    "videoWarnings": "有 {{assets}} 个素材缺失，导出报告中有 {{diagnostics}} 个问题。"
   },
   "import": {
     "classroom": "导入课堂",

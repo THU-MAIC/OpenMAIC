@@ -51,7 +51,16 @@
     "exportFailed": "匯出失敗",
     "classroomZip": "匯出課堂 ZIP",
     "classroomZipDesc": "課程結構 + 媒體檔案",
-    "inlinePartial": "{{count}} 個外部資源未能打包，離線時課程可能無法正常顯示。"
+    "inlinePartial": "{{count}} 個外部資源未能打包，離線時課程可能無法正常顯示。",
+    "video": "匯出影片",
+    "videoDesc": "自包含 Hyperframes 專案（可算圖為 MP4）",
+    "videoNoScenes": "沒有可匯出的場景。",
+    "videoCompiling": "正在編譯影片時間軸...",
+    "videoRendering": "正在算圖投影片並收集素材...",
+    "videoPackaging": "正在打包影片專案...",
+    "videoSuccess": "影片專案已匯出",
+    "videoFailed": "影片匯出失敗",
+    "videoWarnings": "有 {{assets}} 個素材缺失，匯出報告中有 {{diagnostics}} 個問題。"
   },
   "import": {
     "classroom": "匯入課堂",

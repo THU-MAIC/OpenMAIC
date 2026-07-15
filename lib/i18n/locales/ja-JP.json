@@ -51,7 +51,16 @@
     "exportFailed": "エクスポートに失敗しました",
     "classroomZip": "教室ZIPをエクスポート",
     "classroomZipDesc": "コース構造 + メディアファイル",
-    "inlinePartial": "{{count}} 個の外部リソースをバンドルできませんでした。オフラインでは正しく表示されない可能性があります。"
+    "inlinePartial": "{{count}} 個の外部リソースをバンドルできませんでした。オフラインでは正しく表示されない可能性があります。",
+    "video": "動画をエクスポート",
+    "videoDesc": "自己完結型 Hyperframes プロジェクト（MP4 にレンダリング可能）",
+    "videoNoScenes": "エクスポートできるシーンがありません。",
+    "videoCompiling": "動画タイムラインをコンパイル中...",
+    "videoRendering": "スライドをレンダリングし素材を収集中...",
+    "videoPackaging": "動画プロジェクトをパッケージ中...",
+    "videoSuccess": "動画プロジェクトをエクスポートしました",
+    "videoFailed": "動画のエクスポートに失敗しました",
+    "videoWarnings": "{{assets}} 個の素材が不足しており、エクスポートレポートに {{diagnostics}} 件の問題があります。"
   },
   "import": {
     "classroom": "教室をインポート",

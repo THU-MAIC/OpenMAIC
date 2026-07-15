@@ -51,7 +51,16 @@
     "exportFailed": "Export failed",
     "classroomZip": "Export Classroom ZIP",
     "classroomZipDesc": "Course structure + media files",
-    "inlinePartial": "{{count}} external asset(s) couldn't be bundled; the course may not display correctly offline."
+    "inlinePartial": "{{count}} external asset(s) couldn't be bundled; the course may not display correctly offline.",
+    "video": "Export Video",
+    "videoDesc": "Self-contained Hyperframes project (render to MP4)",
+    "videoNoScenes": "No scenes available to export.",
+    "videoCompiling": "Compiling video timeline...",
+    "videoRendering": "Rendering slides and collecting assets...",
+    "videoPackaging": "Packaging video project...",
+    "videoSuccess": "Video project exported",
+    "videoFailed": "Video export failed",
+    "videoWarnings": "{{assets}} asset(s) missing and {{diagnostics}} issue(s) in the export report."
   },
   "import": {
     "classroom": "Import Classroom",

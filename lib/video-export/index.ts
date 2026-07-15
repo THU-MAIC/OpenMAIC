@@ -29,3 +29,12 @@ export { buildTimeline, type TimelineResult } from './passes/timeline';
 export { applyGeometry, resolveEffectGeometry, type GeometryResult } from './passes/geometry';
 export { planAssets, sanitizeFilenamePart, type AssetsResult } from './passes/assets';
 export { emitManifest, emitManifestJson } from './passes/emit';
+export { toSrt, toVtt, usableCues } from './subtitles';
+export {
+  emitHyperframes,
+  assetUrl,
+  ASSETS_DIR,
+  type EmitHyperframesOptions,
+  type EmittedProject,
+  type EmittedFile,
+} from './emit-hyperframes';
