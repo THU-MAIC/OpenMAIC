@@ -60,7 +60,10 @@
     "videoPackaging": "Empacotando o projeto de vídeo...",
     "videoSuccess": "Projeto de vídeo exportado",
     "videoFailed": "Falha na exportação do vídeo",
-    "videoWarnings": "{{assets}} recurso(s) ausente(s) e {{diagnostics}} problema(s) no relatório de exportação."
+    "videoWarnings": "{{assets}} recurso(s) ausente(s) e {{diagnostics}} problema(s) no relatório de exportação.",
+    "noSlides": "Não há slides para exportar",
+    "noSlidesSkipped": "Este curso não tem slides — PPTX ignorado",
+    "nothingToExport": "Nada para exportar"
   },
   "import": {
     "classroom": "Importar Sala de Aula",

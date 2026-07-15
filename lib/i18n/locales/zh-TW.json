@@ -60,7 +60,10 @@
     "videoPackaging": "正在打包影片專案...",
     "videoSuccess": "影片專案已匯出",
     "videoFailed": "影片匯出失敗",
-    "videoWarnings": "有 {{assets}} 個素材缺失，匯出報告中有 {{diagnostics}} 個問題。"
+    "videoWarnings": "有 {{assets}} 個素材缺失，匯出報告中有 {{diagnostics}} 個問題。",
+    "noSlides": "無可匯出的幻燈片",
+    "noSlidesSkipped": "本課程無幻燈片，已跳過 PPTX",
+    "nothingToExport": "沒有可匯出的內容"
   },
   "import": {
     "classroom": "匯入課堂",

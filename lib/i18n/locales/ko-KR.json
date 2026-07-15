@@ -60,7 +60,10 @@
     "videoPackaging": "동영상 프로젝트 패키징 중...",
     "videoSuccess": "동영상 프로젝트를 내보냈습니다",
     "videoFailed": "동영상 내보내기 실패",
-    "videoWarnings": "{{assets}}개의 에셋이 누락되었고 내보내기 보고서에 {{diagnostics}}개의 문제가 있습니다."
+    "videoWarnings": "{{assets}}개의 에셋이 누락되었고 내보내기 보고서에 {{diagnostics}}개의 문제가 있습니다.",
+    "noSlides": "내보낼 슬라이드가 없습니다",
+    "noSlidesSkipped": "이 코스에 슬라이드가 없어 PPTX를 건너뛰었습니다",
+    "nothingToExport": "내보낼 항목이 없습니다"
   },
   "import": {
     "classroom": "교실 가져오기",

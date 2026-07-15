@@ -60,7 +60,10 @@
     "videoPackaging": "جارٍ تحزيم مشروع الفيديو...",
     "videoSuccess": "تم تصدير مشروع الفيديو",
     "videoFailed": "فشل تصدير الفيديو",
-    "videoWarnings": "{{assets}} من الموارد مفقودة و {{diagnostics}} من المشكلات في تقرير التصدير."
+    "videoWarnings": "{{assets}} من الموارد مفقودة و {{diagnostics}} من المشكلات في تقرير التصدير.",
+    "noSlides": "لا توجد شرائح للتصدير",
+    "noSlidesSkipped": "لا توجد شرائح في هذه الدورة — تم تخطي PPTX",
+    "nothingToExport": "لا يوجد محتوى للتصدير"
   },
   "import": {
     "classroom": "استيراد فصل",

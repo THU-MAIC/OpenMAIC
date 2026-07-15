@@ -60,7 +60,10 @@
     "videoPackaging": "動画プロジェクトをパッケージ中...",
     "videoSuccess": "動画プロジェクトをエクスポートしました",
     "videoFailed": "動画のエクスポートに失敗しました",
-    "videoWarnings": "{{assets}} 個の素材が不足しており、エクスポートレポートに {{diagnostics}} 件の問題があります。"
+    "videoWarnings": "{{assets}} 個の素材が不足しており、エクスポートレポートに {{diagnostics}} 件の問題があります。",
+    "noSlides": "エクスポート可能なスライドがありません",
+    "noSlidesSkipped": "このコースにスライドがないため、PPTX をスキップしました",
+    "nothingToExport": "エクスポートできるものがありません"
   },
   "import": {
     "classroom": "教室をインポート",

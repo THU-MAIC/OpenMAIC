@@ -60,7 +60,10 @@
     "videoPackaging": "Packaging video project...",
     "videoSuccess": "Video project exported",
     "videoFailed": "Video export failed",
-    "videoWarnings": "{{assets}} asset(s) missing and {{diagnostics}} issue(s) in the export report."
+    "videoWarnings": "{{assets}} asset(s) missing and {{diagnostics}} issue(s) in the export report.",
+    "noSlides": "No slides to export",
+    "noSlidesSkipped": "No slides in this course — PPTX skipped",
+    "nothingToExport": "Nothing to export"
   },
   "import": {
     "classroom": "Import Classroom",

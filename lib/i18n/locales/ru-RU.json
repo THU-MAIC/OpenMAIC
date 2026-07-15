@@ -60,7 +60,10 @@
     "videoPackaging": "Упаковка видеопроекта...",
     "videoSuccess": "Видеопроект экспортирован",
     "videoFailed": "Ошибка экспорта видео",
-    "videoWarnings": "Отсутствует ресурсов: {{assets}}; проблем в отчёте об экспорте: {{diagnostics}}."
+    "videoWarnings": "Отсутствует ресурсов: {{assets}}; проблем в отчёте об экспорте: {{diagnostics}}.",
+    "noSlides": "Нет слайдов для экспорта",
+    "noSlidesSkipped": "В этом курсе нет слайдов — PPTX пропущен",
+    "nothingToExport": "Нет данных для экспорта"
   },
   "import": {
     "classroom": "Импорт класса",
