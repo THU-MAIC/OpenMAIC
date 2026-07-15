@@ -23,6 +23,8 @@ import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
 import { WEB_SEARCH_PROVIDERS, buildWebSearchFallbackOrder } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
+import type { LearnWorldsMcpConfig } from '@/lib/lms/types';
+import { DEFAULT_LEARNWORLDS_CONFIG } from '@/lib/lms/types';
 import { createLogger } from '@/lib/logger';
 import {
   validateProvider,
@@ -167,6 +169,9 @@ export interface SettingsState {
   imageGenerationEnabled: boolean;
   videoGenerationEnabled: boolean;
   reviewOutlineEnabled: boolean;
+
+  // LMS integration (LearnWorlds via MCP)
+  learnWorldsConfig: LearnWorldsMcpConfig;
 
   // Web Search settings
   webSearchProviderId: WebSearchProviderId;
@@ -345,6 +350,9 @@ export interface SettingsState {
   setImageGenerationEnabled: (enabled: boolean) => void;
   setVideoGenerationEnabled: (enabled: boolean) => void;
   setReviewOutlineEnabled: (enabled: boolean) => void;
+
+  // LMS integration actions
+  setLearnWorldsConfig: (config: Partial<LearnWorldsMcpConfig>) => void;
 
   // Web Search actions
   setWebSearchProvider: (providerId: WebSearchProviderId) => void;
@@ -951,6 +959,8 @@ export const useSettingsStore = create<SettingsState>()(
         imageGenerationEnabled: false,
         videoGenerationEnabled: false,
         reviewOutlineEnabled: false,
+        // LMS integration (disabled until configured by the user)
+        learnWorldsConfig: { ...DEFAULT_LEARNWORLDS_CONFIG },
 
         // TTS is OFF by default; auto-enabled on first server-sync when a TTS
         // provider is configured (mirrors image/video). Fresh installs with no
@@ -1290,6 +1300,10 @@ export const useSettingsStore = create<SettingsState>()(
           set({ videoGenerationEnabled: enabled });
         },
         setReviewOutlineEnabled: (enabled) => set({ reviewOutlineEnabled: enabled }),
+        setLearnWorldsConfig: (config) =>
+          set((state) => ({
+            learnWorldsConfig: { ...state.learnWorldsConfig, ...config },
+          })),
         setTTSEnabled: (enabled) => set({ ttsEnabled: enabled }),
         setASREnabled: (enabled) => set({ asrEnabled: enabled }),
 
@@ -1981,6 +1995,16 @@ export const useSettingsStore = create<SettingsState>()(
         }
         if (state.reviewOutlineEnabled === undefined) {
           state.reviewOutlineEnabled = false;
+        }
+        // Add default LMS integration config if missing
+        if (state.learnWorldsConfig === undefined) {
+          state.learnWorldsConfig = { ...DEFAULT_LEARNWORLDS_CONFIG };
+        } else {
+          // Backfill any newly added fields on older persisted configs
+          state.learnWorldsConfig = {
+            ...DEFAULT_LEARNWORLDS_CONFIG,
+            ...state.learnWorldsConfig,
+          };
         }
 
         // Add default audio toggles if missing. TTS defaults OFF (opt-in / CTA);
