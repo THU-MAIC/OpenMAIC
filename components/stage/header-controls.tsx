@@ -5,7 +5,9 @@ import {
   Archive,
   Download,
   FileDown,
+  GraduationCap,
   Loader2,
+  CloudUpload,
   Monitor,
   Moon,
   Package,
@@ -19,6 +21,9 @@ import { useStageStore } from '@/lib/store';
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useExportPPTX } from '@/lib/export/use-export-pptx';
 import { useExportClassroom } from '@/lib/export/use-export-classroom';
+import { useExportScorm } from '@/lib/export/scorm/use-export-scorm';
+import { useExportLearnWorlds } from '@/lib/lms/use-export-learnworlds';
+import { useSettingsStore } from '@/lib/store/settings';
 import { LanguageSwitcher } from '../language-switcher';
 import { SettingsDialog } from '../settings';
 import {
@@ -77,8 +82,13 @@ export function HeaderControls({
   const mediaTasks = useMediaGenerationStore((s) => s.tasks);
   const { exporting: isExporting, exportPPTX, exportResourcePack } = useExportPPTX();
   const { exporting: isExportingZip, exportClassroomZip } = useExportClassroom();
+  const { exporting: isExportingScorm, exportScorm } = useExportScorm();
+  const { publishing: isPublishingLms, exportToLearnWorlds } = useExportLearnWorlds();
+  const lmsEnabled = useSettingsStore((s) => s.learnWorldsConfig.enabled);
   const [exportMenuOpen, setExportMenuOpen] = useState(false);
   const exportRef = useRef<HTMLDivElement>(null);
+
+  const isExportBusy = isExporting || isExportingZip || isExportingScorm || isPublishingLms;
 
   const canExport =
     scenes.length > 0 &&
@@ -240,27 +250,27 @@ export function HeaderControls({
       <div className="relative" ref={exportRef}>
         <button
           onClick={() => {
-            if (canExport && !isExporting && !isExportingZip) {
+            if (canExport && !isExportBusy) {
               setExportMenuOpen(!exportMenuOpen);
             }
           }}
-          disabled={!canExport || isExporting || isExportingZip}
+          disabled={!canExport || isExportBusy}
           title={
             canExport
-              ? isExporting || isExportingZip
+              ? isExportBusy
                 ? t('export.exporting')
                 : t('export.pptx')
               : t('share.notReady')
           }
           className={cn(
             'shrink-0 p-2 rounded-full transition-all',
-            canExport && !isExporting && !isExportingZip
+            canExport && !isExportBusy
               ? 'text-gray-400 dark:text-gray-500 hover:bg-white dark:hover:bg-gray-700 hover:text-gray-800 dark:hover:text-gray-200 hover:shadow-sm'
               : 'text-gray-300 dark:text-gray-600 cursor-not-allowed opacity-50',
           )}
           aria-label={t('export.pptx')}
         >
-          {isExporting || isExportingZip ? (
+          {isExportBusy ? (
             <Loader2 className="w-4 h-4 animate-spin" />
           ) : (
             <Download className="w-4 h-4" />
@@ -309,6 +319,40 @@ export function HeaderControls({
                 </div>
               </div>
             </button>
+            <button
+              onClick={() => {
+                setExportMenuOpen(false);
+                exportScorm();
+              }}
+              disabled={isExportingScorm}
+              className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
+            >
+              <GraduationCap className="w-4 h-4 text-gray-400 shrink-0" />
+              <div>
+                <div>{t('export.scorm')}</div>
+                <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                  {t('export.scormDesc')}
+                </div>
+              </div>
+            </button>
+            {lmsEnabled && (
+              <button
+                onClick={() => {
+                  setExportMenuOpen(false);
+                  exportToLearnWorlds();
+                }}
+                disabled={isPublishingLms || isExportingScorm}
+                className="w-full px-4 py-2.5 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2.5"
+              >
+                <CloudUpload className="w-4 h-4 text-gray-400 shrink-0" />
+                <div>
+                  <div>{t('export.learnworlds')}</div>
+                  <div className="text-[11px] text-gray-400 dark:text-gray-500">
+                    {t('export.learnworldsDesc')}
+                  </div>
+                </div>
+              </button>
+            )}
           </div>
         )}
       </div>

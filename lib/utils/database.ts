@@ -369,6 +369,7 @@ class MAICDatabase extends Dexie {
       'en-US': 'Deliver the entire course in English (en-US).',
       'ja-JP': 'Deliver the entire course in Japanese (ja-JP).',
       'ru-RU': 'Deliver the entire course in Russian (ru-RU).',
+      'es-ES': 'Deliver the entire course in Spanish (es-ES).',
     };
     this.version(9)
       .stores({
