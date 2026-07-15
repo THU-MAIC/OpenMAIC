@@ -23,12 +23,19 @@ import {
 } from '@assistant-ui/react';
 import type { AgentEvent } from '@earendil-works/pi-agent-core';
 import { useStageStore } from '@/lib/store/stage';
+import { useCanvasStore } from '@/lib/store/canvas';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import type { SceneContextMap } from '@/app/api/agent/edit/route';
 import { mergeAssistantParts, type PiPart } from './merge-assistant-parts';
 import { resolveSceneOutline } from './resolve-scene-outline';
 import { planRegenerateApply, type RegenerateDetails } from './apply-regenerate';
 import { applyScenePatchInSync } from './apply-slide-content';
+import {
+  applyEditElementsIntents,
+  hasEditElementsIntents,
+  type EditElementsApplyDetails,
+} from './apply-edit-elements';
+import { toAgentHistory } from './agent-history';
 import { useRegenSnapshots } from './regen-snapshots';
 import {
   createSession,
@@ -46,6 +53,8 @@ export type { AssistantPart, PiPart } from './merge-assistant-parts';
 import { toPiParts, type PiAssistantContent } from './to-pi-parts';
 import { useThinkingTimers } from './thinking-timers';
 import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
+import { useI18n } from '@/lib/hooks/use-i18n';
+import { editElementsApplyCorrectionKey } from './edit-elements-result';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
@@ -66,26 +75,9 @@ function extractText(message: AppendMessage): string {
     .join('\n');
 }
 
-/** Plain text of a thread message's content (tool-call parts have no text). */
-function messageText(content: ThreadMessageLike['content']): string {
-  if (typeof content === 'string') return content.trim();
-  if (!Array.isArray(content)) return '';
-  return content
-    .map((p) => (p && p.type === 'text' && typeof p.text === 'string' ? p.text : ''))
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-}
-
 /** Project the rendered thread into text-only turns for server-side memory. */
 function toHistory(messages: ThreadMessageLike[]): HistoryTurn[] {
-  const out: HistoryTurn[] = [];
-  for (const m of messages) {
-    const text = messageText(m.content);
-    if (!text) continue;
-    out.push({ role: m.role === 'user' ? 'user' : 'assistant', text });
-  }
-  return out;
+  return toAgentHistory(messages);
 }
 
 /**
@@ -108,6 +100,7 @@ function reseedReasoningTimers(saved: SerializedMessage[] | undefined): void {
 }
 
 export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
+  const { t } = useI18n();
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -261,6 +254,8 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   // Per-run accumulated state: chronological turns + tool results.
   const turnsRef = useRef<PiPart[][]>([]);
   const toolResultsRef = useRef<Map<string, { result: unknown; isError: boolean }>>(new Map());
+  /** Apply-time refusals for edit_elements within the current run (client-side). */
+  const editApplyOutcomeRef = useRef({ applied: false, failed: false });
   const errorRef = useRef<string>('');
   const phaseRef = useRef<'running' | 'complete' | 'error' | 'cancelled'>('complete');
   // Aborts the in-flight run; closing the fetch body cancels the server stream
@@ -416,6 +411,50 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
           isError?: boolean;
         };
         toolResultsRef.current.set(e.toolCallId, { result: e.result, isError: !!e.isError });
+
+        // Per-element edits: apply validated EditIntents through the slide
+        // session (one undo). Separate from wholesale regenerate / html patch.
+        // Apply-time revalidation may still refuse (stale ids / lock / no session);
+        // rewrite the stored tool result so the card shows Not applied, not Applied.
+        if (e.toolName === 'edit_elements' && !e.isError) {
+          const editDetails = (e.result?.details ?? {}) as EditElementsApplyDetails;
+          if (hasEditElementsIntents(editDetails)) {
+            const applied = applyEditElementsIntents(
+              editDetails.sceneId,
+              editDetails.intents,
+              editDetails.targetElementTypes,
+              editDetails.targetElementFingerprints,
+              editDetails.inventoryFingerprint,
+            );
+            if (!applied.ok) {
+              toolResultsRef.current.set(e.toolCallId, {
+                result: {
+                  content: [
+                    {
+                      type: 'text',
+                      text: `Could not apply the edit: ${applied.reason}. Nothing was changed.`,
+                    },
+                  ],
+                  details: {
+                    sceneId: editDetails.sceneId,
+                    intents: null,
+                    updateCount: 0,
+                    refuseReason: applied.reason,
+                  },
+                },
+                isError: true,
+              });
+              // Visible correction after wrap-up may still claim success (server
+              // only saw "proposed"); also feeds next-turn history via toHistory.
+              editApplyOutcomeRef.current.failed = true;
+            } else {
+              editApplyOutcomeRef.current.applied = true;
+            }
+          }
+          refresh();
+          break;
+        }
+
         const details = (e.result?.details ?? {}) as RegenerateDetails;
         // Decide what to apply: regenerate_scene applies content (+actions) and
         // snapshots the pre-state for restore; regenerate_scene_actions applies
@@ -457,6 +496,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
       const assistantId = `a-${turnId}`;
       turnsRef.current = [];
       toolResultsRef.current = new Map();
+      editApplyOutcomeRef.current = { applied: false, failed: false };
       errorRef.current = '';
       phaseRef.current = 'running';
       const abort = new AbortController();
@@ -530,6 +570,9 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             scene: opts.scene,
             history,
             sceneContextMap,
+            // Selection-aware edit_elements: prefer "this title" against the
+            // current canvas selection (trusted client state, not model-authored).
+            selection: useCanvasStore.getState().activeElementIdList,
             // The route reads per-request thinking config from the body (not
             // headers), same as generation — forward it so the agent honors the
             // user's active thinking budget/level too.
@@ -594,6 +637,18 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         if (!superseded) {
           abortRef.current = null;
           if (phaseRef.current === 'running') phaseRef.current = 'complete';
+          // If the client refused an edit_elements apply, append a correction so
+          // the user (and next-turn history) see it even when wrap-up claimed success.
+          const correctionKey = editElementsApplyCorrectionKey(editApplyOutcomeRef.current);
+          if (correctionKey) {
+            turnsRef.current.push([
+              {
+                type: 'text',
+                text: t(correctionKey),
+              },
+            ]);
+            editApplyOutcomeRef.current = { applied: false, failed: false };
+          }
           // Close any reasoning block still open (e.g. the run ended with the
           // last block as its final phase) so its duration is final.
           useThinkingTimers.getState().endAll(`${assistantId}:`, Date.now());
@@ -608,7 +663,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         }
       }
     },
-    [buildAssistant, handleEvent, opts.scene],
+    [buildAssistant, handleEvent, opts.scene, t],
   );
 
   // Stop the current response: abort the fetch (cancels the server stream) and

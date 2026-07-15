@@ -48,6 +48,11 @@ interface AgentEditBody {
    * relying on model-fabricated arguments.
    */
   sceneContextMap?: SceneContextMap;
+  /**
+   * Current canvas selection (element ids) for selection-aware `edit_elements`.
+   * Client-sourced from `useCanvasStore.activeElementIdList`.
+   */
+  selection?: string[];
 }
 
 /** Max prior turns carried into context (keeps the prompt bounded). */
@@ -134,10 +139,14 @@ export async function POST(req: NextRequest) {
   };
 
   const sceneContextMap: SceneContextMap = body.sceneContextMap ?? {};
+  const selectionIds: readonly string[] = Array.isArray(body.selection)
+    ? body.selection.filter((id): id is string => typeof id === 'string')
+    : [];
   const tools = buildToolset({
     aiCall,
     getSceneContext: (sceneId) => sceneContextMap[sceneId],
     activeSceneId: body.scene?.id,
+    getSelection: () => selectionIds,
   });
 
   const abortController = new AbortController();

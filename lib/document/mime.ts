@@ -77,6 +77,31 @@ const DOCUMENT_FORMATS: readonly DocumentFormat[] = [
     aliasMimes: ['image/jpeg2000'],
     label: 'JP2',
   },
+  // ─── Media formats (audio/video) ───
+  // Handled by the media extraction path (MediaArtifact), not the document
+  // extractors. Listed here so the upload picker's accept string, extension
+  // map, and format badges resolve for them.
+  { id: 'mp4', mime: 'video/mp4', extensions: ['.mp4'], label: 'MP4' },
+  { id: 'mov', mime: 'video/quicktime', extensions: ['.mov'], label: 'MOV' },
+  { id: 'avi', mime: 'video/x-msvideo', extensions: ['.avi'], label: 'AVI' },
+  { id: 'mkv', mime: 'video/x-matroska', extensions: ['.mkv'], label: 'MKV' },
+  { id: 'wmv', mime: 'video/x-ms-wmv', extensions: ['.wmv'], label: 'WMV' },
+  {
+    id: 'mp3',
+    mime: 'audio/mpeg',
+    extensions: ['.mp3'],
+    aliasMimes: ['audio/mp3'],
+    label: 'MP3',
+  },
+  { id: 'm4a', mime: 'audio/mp4', extensions: ['.m4a'], label: 'M4A' },
+  {
+    id: 'wav',
+    mime: 'audio/wav',
+    extensions: ['.wav'],
+    aliasMimes: ['audio/x-wav'],
+    label: 'WAV',
+  },
+  { id: 'aac', mime: 'audio/aac', extensions: ['.aac'], label: 'AAC' },
 ] as const;
 
 export const DOCUMENT_MIME_TYPES: Record<(typeof DOCUMENT_FORMATS)[number]['id'], string> =
@@ -132,12 +157,60 @@ export const MINERU_CLOUD_MIMES: readonly string[] = [
 /** Local text extractor — no external dependency. */
 export const PLAIN_TEXT_MIMES: readonly string[] = [M.txt, M.markdown, 'text/x-markdown'];
 
+/**
+ * AliDocMind (LLM version) image formats per the official contract:
+ * JPG/JPEG/PNG/BMP/GIF. Note: no WebP or JP2 (unlike MinerU).
+ * https://help.aliyun.com/zh/document-mind/developer-reference/document-parsing-large-model-version
+ */
+export const ALIDOCMIND_IMAGE_MIMES: readonly string[] = [M.png, M.jpeg, M.bmp, M.gif];
+
+/**
+ * AliDocMind (LLM version): pdf + modern Office + its supported image set.
+ */
+export const ALIDOCMIND_MIMES: readonly string[] = [
+  M.pdf,
+  M.docx,
+  M.pptx,
+  M.xlsx,
+  ...ALIDOCMIND_IMAGE_MIMES,
+];
+
 export const PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = {
   unpdf: [M.pdf],
   mineru: MINERU_SELFHOST_MIMES,
   'mineru-cloud': MINERU_CLOUD_MIMES,
+  alidocmind: ALIDOCMIND_MIMES,
   'plain-text': PLAIN_TEXT_MIMES,
 };
+
+// ─── Media (audio/video) provider capability matrix ──────────────────────────
+// Kept separate from PROVIDER_SUPPORTED_MIME_TYPES (which the drift-guard pins
+// to the document extractor registry). Media flows through extractMedia() and
+// yields a MediaArtifact rather than a DocumentArtifact.
+
+/**
+ * AliDocMind audio/video support per the official contract:
+ * MP4/MKV/AVI/MOV/WMV (video) and MP3/WAV/AAC (audio). Note: no M4A.
+ */
+export const ALIDOCMIND_MEDIA_MIMES: readonly string[] = [
+  M.mp4,
+  M.mov,
+  M.avi,
+  M.mkv,
+  M.wmv,
+  M.mp3,
+  M.wav,
+  M.aac,
+];
+
+export const MEDIA_PROVIDER_SUPPORTED_MIME_TYPES: Record<string, readonly string[]> = {
+  alidocmind: ALIDOCMIND_MEDIA_MIMES,
+};
+
+/** All audio/video MIME types any media provider accepts. */
+export const SUPPORTED_MEDIA_MIME_TYPES: readonly string[] = Array.from(
+  new Set(Object.values(MEDIA_PROVIDER_SUPPORTED_MIME_TYPES).flat()),
+);
 
 // ─── Global course-material whitelist (derived) ──────────────────────────────
 // Union of every provider's supported set — the widest possible list. Used by
@@ -221,6 +294,11 @@ function mimesForProviders(providerIds: readonly string[]): string[] {
   const seen = new Set<string>();
   for (const id of providerIds) {
     for (const mime of PROVIDER_SUPPORTED_MIME_TYPES[id] ?? []) {
+      seen.add(mime);
+    }
+    // A provider may also handle audio/video through the media extraction path;
+    // fold those in so the upload picker / badges / validation cover them too.
+    for (const mime of MEDIA_PROVIDER_SUPPORTED_MIME_TYPES[id] ?? []) {
       seen.add(mime);
     }
   }

@@ -33,6 +33,8 @@ import type { SlideContent } from '@/lib/types/stage';
 interface SlideEditSessionState {
   sceneId: string | null;
   history: SlideEditHistory | null;
+  /** True while the legacy canvas holds an uncommitted pointer gesture locally. */
+  gestureActive: boolean;
 
   /** Establish a fresh in-memory baseline for a scene. */
   seed: (sceneId: string, content: SlideContent) => void;
@@ -51,6 +53,7 @@ interface SlideEditSessionState {
    * longer valid continuations.
    */
   commitContent: (next: SlideContent, isUserEdit: boolean) => void;
+  setGestureActive: (active: boolean) => void;
   undo: () => void;
   redo: () => void;
   /** Tear the session down on exit from edit mode. */
@@ -82,6 +85,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
   return {
     sceneId: null,
     history: null,
+    gestureActive: false,
 
     seed: (sceneId, content) => {
       // Adopt the live scene content as the in-memory baseline. We do NOT
@@ -92,6 +96,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       set({
         sceneId,
         history: createSlideEditHistory(migrateSlideContent(content)),
+        gestureActive: false,
       });
     },
 
@@ -120,6 +125,8 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
       replace(commitSlideEdit(history, next));
     },
 
+    setGestureActive: (gestureActive) => set({ gestureActive }),
+
     undo: () => {
       const { history } = get();
       if (!history) return;
@@ -133,7 +140,7 @@ export const useSlideEditSession = create<SlideEditSessionState>((set, get) => {
     },
 
     end: () => {
-      set({ sceneId: null, history: null });
+      set({ sceneId: null, history: null, gestureActive: false });
     },
   };
 });

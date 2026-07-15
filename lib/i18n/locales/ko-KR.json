@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "텍스트 상자",
-      "expandToolbar": "삽입 도구 표시",
-      "collapseToolbar": "삽입 도구 숨기기",
+      "dragToolbar": "삽입 도구 이동",
+      "dragToolbarKeyboard": "삽입 도구 이동: Enter 또는 Space를 누른 다음 방향키로 이동",
       "image": "이미지",
       "imageDrop": "이미지를 끌어다 놓거나 클릭하여 파일을 선택하세요",
       "imageOr": "또는 이미지 URL 붙여넣기",
@@ -279,6 +279,10 @@
         "fixHtml": {
           "examples": "\"시작 버튼을 눌러도 반응이 없음\", \"모바일에서 패널이 겹침\"",
           "label": "페이지 버그 수정"
+        },
+        "elements": {
+          "label": "요소 미세 조정",
+          "examples": "“제목을 파란색으로 바꾸고 위로”, “이 그림을 작게”"
         }
       },
       "newConversation": "새 대화",
@@ -387,7 +391,7 @@
       "deleteOption": "선택지 삭제",
       "deleteQuestion": "문항 삭제",
       "empty": "아직 문항이 없습니다",
-      "emptyHint": "위의 “문항 추가” 버튼으로 첫 문항을 만드세요.",
+      "emptyHint": "“문항 추가” 버튼으로 첫 문항을 만드세요.",
       "markCorrect": "정답으로 표시",
       "moveDown": "아래로 이동",
       "moveUp": "위로 이동",
@@ -428,6 +432,14 @@
       "fixing": "수정 중",
       "notFixed": "수정 안 됨",
       "title": "인터랙티브 페이지 수정"
+    },
+    "editElements": {
+      "title": "요소 편집",
+      "editing": "편집 중",
+      "applied": "적용됨",
+      "notApplied": "미적용",
+      "applyFailed": "편집기에서 요소 편집을 적용하지 못했습니다. 변경된 내용이 없습니다.",
+      "applyPartiallyFailed": "하나 이상의 요소 편집을 적용하지 못했습니다. 다른 편집은 적용되었을 수 있습니다."
     }
   },
   "classroomComplete": {
@@ -939,7 +951,8 @@
     "webSearchingDesc": "최신 정보를 웹에서 검색하고 있어요",
     "webSearchFailed": "웹 검색에 실패했습니다",
     "outlinesReadyCount": "{{ready}} / {{total}}개 섹션 준비됨",
-    "jumpToBlankTitle": "제목이 필요한 섹션으로 이동"
+    "jumpToBlankTitle": "제목이 필요한 섹션으로 이동",
+    "analyzingMediaMaterial": "오디오/비디오 분석 중"
   },
   "settings": {
     "title": "설정",
@@ -1634,7 +1647,9 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
-    "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다."
+    "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다.",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "프로필",

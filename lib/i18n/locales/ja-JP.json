@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "テキストボックス",
-      "expandToolbar": "挿入ツールを表示",
-      "collapseToolbar": "挿入ツールを隠す",
+      "dragToolbar": "挿入ツールを移動",
+      "dragToolbarKeyboard": "挿入ツールを移動：Enter または Space を押してから矢印キーで移動",
       "image": "画像",
       "imageDrop": "画像をドロップまたはクリックして選択",
       "imageOr": "または画像 URL を貼り付け",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "採点ガイド",
       "commentPromptPlaceholder": "この記述式をどう採点しますか？",
       "empty": "問題がありません",
-      "emptyHint": "上の「問題を追加」から最初の問題を作成します。",
+      "emptyHint": "「問題を追加」から最初の問題を作成します。",
       "type": {
         "single": "単一選択",
         "multiple": "複数選択",
@@ -328,6 +328,10 @@
         "fixHtml": {
           "examples": "「スタートボタンを押しても何も起きない」「スマホでパネルが重なる」",
           "label": "ページの不具合を修正"
+        },
+        "elements": {
+          "label": "要素を微調整",
+          "examples": "「タイトルを青くして上に」「この図を小さく」"
         }
       },
       "newConversation": "新しい会話",
@@ -428,6 +432,14 @@
       "fixing": "修正中",
       "notFixed": "未修正",
       "title": "インタラクティブページを修正"
+    },
+    "editElements": {
+      "title": "要素を編集",
+      "editing": "編集中",
+      "applied": "適用済み",
+      "notApplied": "未適用",
+      "applyFailed": "エディターで要素の編集を適用できませんでした。変更はありません。",
+      "applyPartiallyFailed": "一部の要素編集を適用できませんでした。ほかの編集は適用されている可能性があります。"
     }
   },
   "classroomComplete": {
@@ -939,7 +951,8 @@
     "webSearchingDesc": "ウェブで最新情報を検索しています",
     "webSearchFailed": "ウェブ検索に失敗しました",
     "outlinesReadyCount": "{{ready}} / {{total}} セクション準備完了",
-    "jumpToBlankTitle": "タイトルが未入力のセクションへ移動"
+    "jumpToBlankTitle": "タイトルが未入力のセクションへ移動",
+    "analyzingMediaMaterial": "音声・動画を解析中"
   },
   "settings": {
     "title": "設定",
@@ -1634,7 +1647,9 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
-    "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。"
+    "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "プロフィール",

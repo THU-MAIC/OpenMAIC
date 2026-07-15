@@ -66,6 +66,7 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
       className="slide-renderer-prose"
       style={{
         width: '100%',
+        height: '100%',
         borderCollapse: 'collapse',
         tableLayout: 'fixed',
       }}

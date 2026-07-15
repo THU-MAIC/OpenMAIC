@@ -47,6 +47,7 @@ import { ReasoningPart } from './reasoning-part';
 import { RegenerateSceneActionsUI } from './regenerate-tool-ui';
 import { RegenerateSceneUI } from './regenerate-scene-tool-ui';
 import { EditInteractiveHtmlUI } from './edit-interactive-html-tool-ui';
+import { EditElementsUI } from './edit-elements-tool-ui';
 import { ReadSceneContentUI } from './read-tool-ui';
 
 const MIN_WIDTH = 320;
@@ -55,11 +56,12 @@ const DEFAULT_WIDTH = 384;
 
 /** Capability rows shown in the empty state — read-only tips (not clickable),
  *  each a label + example phrasings. One unified list describing what the agent
- *  can do across scenes (slide content + narration + interactive-page fixing),
- *  shown regardless of the active scene type. */
+ *  can do across scenes (slide content + narration + interactive-page fixing +
+ *  per-element edits), shown regardless of the active scene type. */
 const CAPABILITY_KEYS = [
   { label: 'edit.agent.cap.content.label', examples: 'edit.agent.cap.content.examples' },
   { label: 'edit.agent.cap.narration.label', examples: 'edit.agent.cap.narration.examples' },
+  { label: 'edit.agent.cap.elements.label', examples: 'edit.agent.cap.elements.examples' },
   { label: 'edit.agent.cap.fixHtml.label', examples: 'edit.agent.cap.fixHtml.examples' },
 ];
 
@@ -261,6 +263,7 @@ export function AgentPanel({
         <RegenerateSceneActionsUI />
         <RegenerateSceneUI />
         <EditInteractiveHtmlUI />
+        <EditElementsUI />
 
         <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport className="flex-1 space-y-6 overflow-y-auto px-4 py-5 scroll-smooth">
@@ -476,6 +479,7 @@ export function AgentPanel({
         <RegenerateSceneActionsUI />
         <RegenerateSceneUI />
         <EditInteractiveHtmlUI />
+        <EditElementsUI />
 
         <ThreadPrimitive.Root className="relative flex min-h-0 flex-1 flex-col">
           <ThreadPrimitive.Viewport className="flex-1 space-y-6 overflow-y-auto px-4 py-5 scroll-smooth">

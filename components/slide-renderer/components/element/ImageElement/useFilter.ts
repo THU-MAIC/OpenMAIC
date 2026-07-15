@@ -1,18 +1,36 @@
 import { useMemo } from 'react';
-import type { ImageElementFilters } from '@openmaic/dsl';
+import type { ImageElementFilterKeys, ImageElementFilters } from '@openmaic/dsl';
+
+const FILTER_UNITS: Record<ImageElementFilterKeys, string> = {
+  blur: 'px',
+  brightness: '%',
+  contrast: '%',
+  grayscale: '%',
+  saturate: '%',
+  'hue-rotate': 'deg',
+  sepia: '%',
+  invert: '%',
+  opacity: '%',
+};
+
+export function imageFiltersToCss(filters?: ImageElementFilters): string {
+  if (!filters) return '';
+  const parts: string[] = [];
+  for (const [name, value] of Object.entries(filters) as [ImageElementFilterKeys, string][]) {
+    if (value === undefined || value === null || value === '') continue;
+    const unit = FILTER_UNITS[name] ?? '';
+    const rendered = unit && !value.endsWith(unit) ? `${value}${unit}` : value;
+    parts.push(`${name}(${rendered})`);
+  }
+  return parts.join(' ');
+}
 
 /**
- * Calculate CSS filter string from image filters array
- * @param filters Array of image filters
+ * Calculate a CSS filter string from the current DSL filter map.
  */
 export function useFilter(filters?: ImageElementFilters) {
   const filter = useMemo(() => {
-    if (!filters) return '';
-    let filterStr = '';
-    for (const f of Object.values(filters)) {
-      filterStr += `${f.type}(${f.value}) `;
-    }
-    return filterStr.trim();
+    return imageFiltersToCss(filters);
   }, [filters]);
 
   return {

@@ -2,8 +2,10 @@
 
 import { Reorder } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
-import { ListChecks } from 'lucide-react';
+import { ListChecks, Plus } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { AddQuestionMenu } from './AddQuestionMenu';
 import { QuestionCard } from './QuestionCard';
 import {
   reorderQuizQuestions,
@@ -18,9 +20,8 @@ import {
  * mutations in `use-quiz-surface`. Renders inside the EditShell's studio-frame
  * card (full height, own scroll) and contributes no canvas-style selection.
  *
- * "Add question" lives in the chrome's FloatingInsertToolbar (the
- * `add-question` insert item), mirroring how the slide surface surfaces its
- * Text / Image inserts — so it isn't duplicated here.
+ * "Add question" sits after the question list, keeping this structured
+ * editor's primary action in the content flow instead of the slide toolbar.
  */
 export function QuizForm() {
   useQuizSurfaceLifecycle();
@@ -56,7 +57,12 @@ export function QuizForm() {
         backgroundSize: '22px 22px',
       }}
     >
-      <div className="mx-auto flex max-w-2xl flex-col gap-2.5 px-5 pb-20 pt-16">
+      <div
+        className="mx-auto flex max-w-2xl flex-col gap-2.5 px-5 pt-16"
+        // HintRail measures its rendered stack into this inherited variable.
+        // The normal 5rem breathing room remains when there are no hints.
+        style={{ paddingBottom: 'calc(var(--editor-hint-rail-height, 0px) + 5rem)' }}
+      >
         {questions.length === 0 ? (
           <EmptyState />
         ) : (
@@ -78,8 +84,30 @@ export function QuizForm() {
             ))}
           </Reorder.Group>
         )}
+        <AddQuestionButton />
       </div>
     </div>
+  );
+}
+
+function AddQuestionButton() {
+  const { t } = useI18n();
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          data-testid="quiz-add-question"
+          className="mt-1 flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-zinc-300 bg-white/70 py-3 text-sm font-medium text-zinc-500 transition-colors hover:border-violet-300 hover:bg-violet-50/70 hover:text-violet-600 dark:border-zinc-700 dark:bg-zinc-900/60 dark:text-zinc-400 dark:hover:border-violet-500/50 dark:hover:bg-violet-500/10 dark:hover:text-violet-300"
+        >
+          <Plus className="h-4 w-4" strokeWidth={2} />
+          {t('edit.quiz.addQuestion')}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="bottom" align="center" className="w-72 p-3">
+        <AddQuestionMenu />
+      </PopoverContent>
+    </Popover>
   );
 }
 

@@ -374,7 +374,12 @@ function GenerationPreviewContent() {
             const providerId = source.providerId || currentSession.pdfProviderId;
             const legacySourceConfig = (
               source as SessionDocumentSource & {
-                providerConfig?: { apiKey?: string; baseUrl?: string };
+                providerConfig?: {
+                  apiKey?: string;
+                  baseUrl?: string;
+                  accessKeyId?: string;
+                  accessKeySecret?: string;
+                };
               }
             ).providerConfig;
             const providerConfig = currentSession.pdfProviderConfig || legacySourceConfig;
@@ -384,6 +389,13 @@ function GenerationPreviewContent() {
             }
             if (providerConfig?.baseUrl?.trim()) {
               parseFormData.append('baseUrl', providerConfig.baseUrl);
+            }
+            // AliDocMind uses AK/SK instead of a single apiKey.
+            if (providerConfig?.accessKeyId?.trim()) {
+              parseFormData.append('accessKeyId', providerConfig.accessKeyId);
+            }
+            if (providerConfig?.accessKeySecret?.trim()) {
+              parseFormData.append('accessKeySecret', providerConfig.accessKeySecret);
             }
 
             const parseResponse = await fetch('/api/extract-document', {

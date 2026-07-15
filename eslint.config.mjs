@@ -198,6 +198,166 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Module boundary (machine-enforced): lib/video-export is the classroom-video
+  // compiler (issue #864). It produces the VideoTimeline IR with pure passes and
+  // must stay interpretable in pure Node (no FFmpeg / Chrome / DOM), so runtime
+  // app state enters only through the injected TimingProbe / AssetSource. Guards,
+  // mirroring lib/choreography: no `@/…` host path, no React/DOM/render backend,
+  // no dynamic import()/require(), and an import-source allowlist.
+  //
+  // The relative-path allowance is DEPTH-SPECIFIC, because a single `../…` means
+  // different things at different depths: from a module-root file it escapes the
+  // module (`lib/video-export/../action` = `lib/action`), but from `passes/` it
+  // stays inside (`lib/video-export/passes/../ir` = `lib/video-export/ir`). So
+  // the boundary is split into two disjoint file scopes (root `*` does not match
+  // `passes/`), each with its own source allowlist; everything else is shared and
+  // duplicated verbatim.
+  //
+  // Root files — lib/video-export/*.ts: relative imports may only be `./…`
+  // (children) or the declared cross-module dep `../choreography`. Any other
+  // `../…` (e.g. `../action/engine`) escapes the module and is rejected.
+  {
+    files: ['lib/video-export/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/^@\\//]',
+          message:
+            'lib/video-export must not reference a host-app path (@/…). Live app state enters only through the injected TimingProbe / AssetSource — depend only on @openmaic/dsl, zod, ../choreography, and relative siblings, so the compiler runs in pure Node.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/^@\\//]',
+          message:
+            'lib/video-export must not reference a host-app path (@/…) in a template literal. Depend only on @openmaic/dsl, zod, ../choreography, and relative siblings.',
+        },
+        {
+          selector:
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/choreography(\\/|$)).+/]',
+          message:
+            'lib/video-export root files may import only from @openmaic/dsl, zod, ../choreography, or in-module children (./…). A ../… into anything but ../choreography escapes the module and is rejected.',
+        },
+        {
+          selector:
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/choreography(\\/|$)).+/]',
+          message:
+            'lib/video-export root files may re-export only from @openmaic/dsl, zod, ../choreography, or in-module children (./…).',
+        },
+        {
+          selector:
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/choreography(\\/|$)).+/]',
+          message:
+            'lib/video-export root files may re-export only from @openmaic/dsl, zod, ../choreography, or in-module children (./…).',
+        },
+        {
+          selector: 'ImportExpression',
+          message:
+            'lib/video-export must not use dynamic import() — it bypasses the static import allowlist. Use a top-level import from @openmaic/dsl, zod, ../choreography, or a relative sibling.',
+        },
+        {
+          selector: "CallExpression[callee.name='require']",
+          message:
+            'lib/video-export must not use require() — it bypasses the static import allowlist.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'react',
+                'react-dom',
+                'react/*',
+                'react-dom/*',
+                'gsap',
+                'gsap/*',
+                'framer-motion',
+                'motion',
+                'motion/*',
+              ],
+              message:
+                'lib/video-export must stay render-backend-agnostic (pure Node): no React / DOM / GSAP / framer-motion. The compiler emits the IR as data; the downstream Hyperframes emitter renders it.',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  // Pass files — lib/video-export/passes/**: one level deeper, so a single `../…`
+  // reaches a module-root file and STAYS inside the module; only a two-level
+  // `../../…` escapes, and that is allowed solely for `../../choreography`.
+  {
+    files: ['lib/video-export/passes/**/*.{ts,tsx,js,jsx,mjs,cjs}'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/^@\\//]',
+          message:
+            'lib/video-export must not reference a host-app path (@/…). Live app state enters only through the injected TimingProbe / AssetSource — depend only on @openmaic/dsl, zod, ../../choreography, and relative siblings, so the compiler runs in pure Node.',
+        },
+        {
+          selector: 'TemplateElement[value.cooked=/^@\\//]',
+          message:
+            'lib/video-export must not reference a host-app path (@/…) in a template literal. Depend only on @openmaic/dsl, zod, ../../choreography, and relative siblings.',
+        },
+        // `./…` (children) and a single `../…` (a pass reaching a module-root
+        // file, which stays inside lib/video-export) are allowed; a two-level
+        // `../../…` escape is rejected UNLESS it is exactly `../../choreography`.
+        {
+          selector:
+            'ImportDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/\\.\\.\\/choreography(\\/|$)|\\.\\.\\/(?!\\.\\.\\/)).+/]',
+          message:
+            'lib/video-export passes may import only from @openmaic/dsl, zod, ../../choreography, or in-module relatives (./… or a single ../… that stays inside the module). A ../../ escape into the rest of the app is rejected.',
+        },
+        {
+          selector:
+            'ExportNamedDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/\\.\\.\\/choreography(\\/|$)|\\.\\.\\/(?!\\.\\.\\/)).+/]',
+          message:
+            'lib/video-export passes may re-export only from @openmaic/dsl, zod, ../../choreography, or in-module relatives.',
+        },
+        {
+          selector:
+            'ExportAllDeclaration > Literal.source[value=/^(?!@openmaic\\/dsl(\\/|$)|zod(\\/|$)|\\.\\/|\\.\\.\\/\\.\\.\\/choreography(\\/|$)|\\.\\.\\/(?!\\.\\.\\/)).+/]',
+          message:
+            'lib/video-export passes may re-export only from @openmaic/dsl, zod, ../../choreography, or in-module relatives.',
+        },
+        {
+          selector: 'ImportExpression',
+          message:
+            'lib/video-export must not use dynamic import() — it bypasses the static import allowlist. Use a top-level import from @openmaic/dsl, zod, ../../choreography, or a relative sibling.',
+        },
+        {
+          selector: "CallExpression[callee.name='require']",
+          message:
+            'lib/video-export must not use require() — it bypasses the static import allowlist.',
+        },
+      ],
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                'react',
+                'react-dom',
+                'react/*',
+                'react-dom/*',
+                'gsap',
+                'gsap/*',
+                'framer-motion',
+                'motion',
+                'motion/*',
+              ],
+              message:
+                'lib/video-export must stay render-backend-agnostic (pure Node): no React / DOM / GSAP / framer-motion. The compiler emits the IR as data; the downstream Hyperframes emitter renders it.',
+            },
+          ],
+        },
+      ],
+    },
+  },
 ]);
 
 export default eslintConfig;

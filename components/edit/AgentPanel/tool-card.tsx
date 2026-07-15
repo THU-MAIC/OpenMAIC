@@ -6,9 +6,9 @@
  * optional `@scene` pill, an optional inline bar-action (always visible on the
  * row — e.g. a Restore button), an icon-only status mark (running = violet
  * spinner, done = emerald check ✓, failed = amber cross ✗; the text label is a
- * hover tooltip). Tool cards are intentionally NOT expandable — they show a
- * single status row with no detail disclosure. Every tool card (regenerate /
- * read / future) renders through this shell so they stay visually uniform.
+ * hover tooltip). Tool cards are intentionally NOT expandable. Every tool card
+ * (regenerate / read / future) renders through this
+ * shell so they stay visually uniform.
  */
 import type { ReactNode } from 'react';
 import { AtSign, Check, CircleStop, Loader2, X, type LucideIcon } from 'lucide-react';
@@ -81,14 +81,10 @@ export function ToolCard({
   statusLabel: string;
   /** Inline action rendered on the always-visible row (e.g. Restore). */
   barAction?: ReactNode;
-  /** Accepted for source compatibility but IGNORED — cards are non-expandable. */
-  children?: ReactNode;
 }) {
   const running = status === 'running';
   const StatusIcon = STATUS_ICON[status];
 
-  // Non-expandable by design: a single status row, no detail disclosure. Failure
-  // surfaces only through the status mark (icon + tooltip) — never an inline body.
   return (
     <div
       className={cn(

@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   DOCUMENT_MIME_TYPES,
+  getAcceptStringForProviders,
+  getFormatLabelsForProviders,
   isMimeSupportedByProviders,
   normalizeDocumentMimeType,
+  SUPPORTED_MEDIA_MIME_TYPES,
 } from '@/lib/document/mime';
 
 describe('document MIME normalization', () => {
@@ -81,5 +84,56 @@ describe('document MIME normalization', () => {
         'mineru-cloud',
       ]),
     ).toBe(true);
+  });
+
+  describe('media (audio/video) support', () => {
+    it('accepts audio/video for a provider that handles media (AliDocMind)', () => {
+      expect(
+        isMimeSupportedByProviders({ mimeType: 'video/mp4', fileName: 'lesson.mp4' }, [
+          'alidocmind',
+        ]),
+      ).toBe(true);
+      expect(
+        isMimeSupportedByProviders({ mimeType: 'audio/mpeg', fileName: 'lecture.mp3' }, [
+          'alidocmind',
+        ]),
+      ).toBe(true);
+    });
+
+    it('rejects audio/video for document-only providers', () => {
+      expect(
+        isMimeSupportedByProviders({ mimeType: 'video/mp4', fileName: 'lesson.mp4' }, ['mineru']),
+      ).toBe(false);
+      expect(
+        isMimeSupportedByProviders({ mimeType: 'video/mp4', fileName: 'lesson.mp4' }, ['unpdf']),
+      ).toBe(false);
+    });
+
+    it('includes media extensions in the accept string when the provider supports media', () => {
+      const accept = getAcceptStringForProviders(['alidocmind']);
+      expect(accept).toContain('.mp4');
+      expect(accept).toContain('.mp3');
+      expect(accept).toContain('video/mp4');
+      // still includes documents
+      expect(accept).toContain('.pdf');
+    });
+
+    it('surfaces media format badges for media-capable providers', () => {
+      const labels = getFormatLabelsForProviders(['alidocmind']);
+      expect(labels).toContain('MP4');
+      expect(labels).toContain('MP3');
+    });
+
+    it('exposes the union of media MIME types', () => {
+      expect(SUPPORTED_MEDIA_MIME_TYPES).toContain('video/mp4');
+      expect(SUPPORTED_MEDIA_MIME_TYPES).toContain('audio/wav');
+      expect(SUPPORTED_MEDIA_MIME_TYPES).not.toContain('application/pdf');
+    });
+
+    it('normalizes a browser-reported audio/mp3 alias to canonical audio/mpeg', () => {
+      expect(normalizeDocumentMimeType({ mimeType: 'audio/mp3', fileName: 'lecture.mp3' })).toBe(
+        'audio/mpeg',
+      );
+    });
   });
 });

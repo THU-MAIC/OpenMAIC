@@ -15,6 +15,10 @@ describe('buildSystemPrompt capability boundary', () => {
     expect(prompt).toContain('interactive');
   });
 
+  it('grants per-element slide edits', () => {
+    expect(prompt).toContain('edit_elements');
+  });
+
   it('still forbids structural and non-slide edits', () => {
     expect(prompt).toContain('cannot');
     // Structural ops remain out of scope.

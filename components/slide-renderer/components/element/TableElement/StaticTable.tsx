@@ -14,9 +14,13 @@ interface StaticTableProps {
  * Renders table data with theme colors, outline borders, and merged cells.
  */
 export function StaticTable({ elementInfo }: StaticTableProps) {
-  const { width, data, colWidths, cellMinHeight, outline, theme } = elementInfo;
+  const { width, data, colWidths, rowHeights, cellMinHeight, outline, theme } = elementInfo;
   const tableData = useMemo(() => (Array.isArray(data) ? data : []), [data]);
   const tableColWidths = useMemo(() => (Array.isArray(colWidths) ? colWidths : []), [colWidths]);
+  const tableRowHeights = useMemo(
+    () => (Array.isArray(rowHeights) ? rowHeights : []),
+    [rowHeights],
+  );
   const safeWidth = Number.isFinite(width) && width > 0 ? width : 1;
   const safeCellMinHeight =
     Number.isFinite(cellMinHeight) && cellMinHeight >= 0 ? cellMinHeight : 40;
@@ -92,7 +96,12 @@ export function StaticTable({ elementInfo }: StaticTableProps) {
       </colgroup>
       <tbody>
         {tableData.map((row, rowIdx) => (
-          <tr key={rowIdx} style={{ height: `${safeCellMinHeight}px` }}>
+          <tr
+            key={rowIdx}
+            style={{
+              height: `${Number.isFinite(tableRowHeights[rowIdx]) ? tableRowHeights[rowIdx] : safeCellMinHeight}px`,
+            }}
+          >
             {(Array.isArray(row) ? row : []).map((cell, colIdx) => {
               if (hiddenCells.has(`${rowIdx}_${colIdx}`)) return null;
               if (!cell) return null;

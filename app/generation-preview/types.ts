@@ -25,7 +25,12 @@ export interface GenerationSessionState {
   pdfFileName?: string;
   documentMimeType?: string;
   pdfProviderId?: string;
-  pdfProviderConfig?: { apiKey?: string; baseUrl?: string };
+  pdfProviderConfig?: {
+    apiKey?: string;
+    baseUrl?: string;
+    accessKeyId?: string;
+    accessKeySecret?: string;
+  };
   // Web search context
   researchContext?: string;
   researchSources?: Array<{ title: string; url: string }>;
@@ -45,11 +50,30 @@ export type GenerationStep = {
   type: 'analysis' | 'writing' | 'visual';
 };
 
+const MEDIA_EXTENSIONS = new Set(['mp4', 'mkv', 'avi', 'mov', 'wmv', 'mp3', 'wav', 'aac', 'm4a']);
+
+/** True when the uploaded material is audio/video (extraction is transcription). */
+function isMediaMaterial(session: GenerationSessionState | null): boolean {
+  const mimeType = session?.documentMimeType;
+  if (mimeType && (mimeType.startsWith('video/') || mimeType.startsWith('audio/'))) return true;
+  const extension = session?.pdfFileName?.split('.').pop()?.trim().toLowerCase();
+  return !!extension && MEDIA_EXTENSIONS.has(extension);
+}
+
 export function getGenerationStepText(
   step: GenerationStep,
-  _session: GenerationSessionState | null,
+  session: GenerationSessionState | null,
 ) {
   if (step.id === 'pdf-analysis') {
+    // Audio/video use a dedicated string ("Analyzing audio/video") — the
+    // generic document copy ("Analyzing documents") would misdescribe them.
+    if (isMediaMaterial(session)) {
+      return {
+        title: 'generation.analyzingMediaMaterial',
+        titleValues: undefined,
+        description: 'generation.analyzingCourseMaterialDesc',
+      };
+    }
     return {
       title: 'generation.analyzingCourseMaterial',
       titleValues: undefined,

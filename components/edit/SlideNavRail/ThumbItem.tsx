@@ -103,6 +103,7 @@ function ThumbItemComponent({
       <div
         role="button"
         tabIndex={0}
+        data-testid="scene-item"
         data-active={active}
         onClick={renaming ? undefined : onActivate}
         onKeyDown={(e) => {
@@ -178,6 +179,7 @@ function ThumbItemComponent({
               />
             ) : (
               <span
+                data-testid="scene-title"
                 onDoubleClick={(e) => {
                   e.stopPropagation();
                   startRename();

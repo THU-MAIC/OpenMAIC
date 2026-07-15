@@ -154,6 +154,59 @@ describe('serializeThread / deserializeThread', () => {
     expect(part.result?.details?.html).toBeNull();
   });
 
+  it('preserves edit_elements success markers (intents applied + updateCount)', () => {
+    const messages: ThreadMessageLike[] = [
+      {
+        role: 'assistant',
+        id: 'a1',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'tc1',
+            toolName: 'edit_elements',
+            args: { sceneId: 's1', instruction: 'make title blue' },
+            result: {
+              details: {
+                sceneId: 's1',
+                intents: [{ type: 'element.update', id: 't1', props: { defaultColor: '#00f' } }],
+                updateCount: 1,
+              },
+            },
+          },
+        ] as ThreadMessageLike['content'],
+      },
+    ];
+    const slim = serializeThread(messages);
+    const part = slim[0].content[0];
+    if (part.type !== 'tool-call') throw new Error('expected tool-call');
+    expect(Array.isArray(part.result?.details?.intents)).toBe(true);
+    expect(part.result?.details?.intents).toHaveLength(1);
+    expect(part.result?.details?.updateCount).toBe(1);
+    // props payload dropped
+    expect(JSON.stringify(part.result?.details?.intents)).not.toContain('defaultColor');
+  });
+
+  it('preserves edit_elements refusal (intents === null)', () => {
+    const messages: ThreadMessageLike[] = [
+      {
+        role: 'assistant',
+        id: 'a1',
+        content: [
+          {
+            type: 'tool-call',
+            toolCallId: 'tc1',
+            toolName: 'edit_elements',
+            args: { sceneId: 's1' },
+            result: { details: { sceneId: 's1', intents: null, updateCount: 0 } },
+          },
+        ] as ThreadMessageLike['content'],
+      },
+    ];
+    const part = serializeThread(messages)[0].content[0];
+    if (part.type !== 'tool-call') throw new Error('expected tool-call');
+    expect(part.result?.details?.intents).toBeNull();
+  });
+
   it('drops messages with no renderable content', () => {
     const messages: ThreadMessageLike[] = [
       { role: 'assistant', id: 'a1', content: [] },

@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "Text box",
-      "expandToolbar": "Show insert tools",
-      "collapseToolbar": "Hide insert tools",
+      "dragToolbar": "Move insert tools",
+      "dragToolbarKeyboard": "Move insert tools: press Enter or Space, then use the arrow keys",
       "image": "Image",
       "imageDrop": "Drop an image or click to choose a file",
       "imageOr": "or paste an image URL",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "Grading guidance",
       "commentPromptPlaceholder": "How should this open response be graded?",
       "empty": "No questions yet",
-      "emptyHint": "Use the “Add question” button above to create the first one.",
+      "emptyHint": "Use “Add question” to create the first one.",
       "type": {
         "single": "Single choice",
         "multiple": "Multiple choice",
@@ -334,6 +334,10 @@
         "fixHtml": {
           "label": "Fix a bug on the page",
           "examples": "“The start button does nothing”, “Panels overlap on mobile”"
+        },
+        "elements": {
+          "label": "Tweak selected elements",
+          "examples": "“Make the title blue and move it up”, “Make this figure smaller”"
         }
       },
       "newConversation": "New conversation",
@@ -428,6 +432,14 @@
       "reading": "Reading",
       "done": "Read",
       "failed": "Not read"
+    },
+    "editElements": {
+      "title": "Edit elements",
+      "editing": "Editing",
+      "applied": "Applied",
+      "notApplied": "Not applied",
+      "applyFailed": "The editor could not apply the element edit. Nothing was changed.",
+      "applyPartiallyFailed": "The editor could not apply one or more element edits. Other edits may have been applied."
     }
   },
   "classroomComplete": {
@@ -939,7 +951,8 @@
     "webSearchingDesc": "Searching the web for up-to-date information",
     "webSearchFailed": "Web search failed",
     "outlinesReadyCount": "{{ready}} / {{total}} sections ready",
-    "jumpToBlankTitle": "Jump to a section that still needs a title"
+    "jumpToBlankTitle": "Jump to a section that still needs a title",
+    "analyzingMediaMaterial": "Analyzing audio/video"
   },
   "settings": {
     "title": "Settings",
@@ -1634,7 +1647,9 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
-    "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio."
+    "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio.",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "Profile",

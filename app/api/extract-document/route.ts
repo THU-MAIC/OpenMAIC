@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import {
   isServerConfiguredProvider,
+  resolveManagedAliDocMindCredentials,
   resolvePDFApiKey,
   resolvePDFBaseUrl,
 } from '@/lib/server/provider-config';
@@ -9,10 +10,13 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import {
   documentArtifactToParsedPdfContent,
+  extractMedia,
   getDocumentExtractorProvider,
+  getMediaExtractorProvider,
   selectDocumentExtractorProvider,
 } from '@/lib/document';
-import { normalizeDocumentMimeType } from '@/lib/document/mime';
+import type { MediaArtifact } from '@/lib/document';
+import { normalizeDocumentMimeType, SUPPORTED_MEDIA_MIME_TYPES } from '@/lib/document/mime';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
@@ -47,6 +51,59 @@ function requestedTypeLabel(mimeType: string): string {
   return mimeType;
 }
 
+/**
+ * Flatten a MediaArtifact (transcript + keyframes + synopsis) into the
+ * text-shaped ParsedPdfContent the generation pipeline consumes. Media takes
+ * the same route + downstream path as documents; only the extraction differs.
+ */
+function mediaArtifactToText(artifact: MediaArtifact): string {
+  const parts: string[] = [];
+
+  const synopsis =
+    artifact.providerRaw &&
+    typeof artifact.providerRaw === 'object' &&
+    'synopsis' in artifact.providerRaw
+      ? String((artifact.providerRaw as { synopsis?: unknown }).synopsis ?? '')
+      : '';
+  if (synopsis.trim()) {
+    parts.push(`## Synopsis\n\n${synopsis.trim()}`);
+  }
+
+  if (artifact.transcript?.length) {
+    const lines = artifact.transcript
+      .filter((seg) => seg.text?.trim())
+      .map((seg) => {
+        const ts = formatTimestamp(seg.startMs);
+        const speaker = seg.speaker ? `${seg.speaker}: ` : '';
+        return `[${ts}] ${speaker}${seg.text.trim()}`;
+      });
+    if (lines.length) parts.push(`## Transcript\n\n${lines.join('\n')}`);
+  }
+
+  if (artifact.keyframes?.length) {
+    const lines = artifact.keyframes
+      .filter((kf) => (kf.description || kf.ocrText)?.trim())
+      .map((kf) => {
+        const ts = formatTimestamp(kf.timeMs);
+        return `[${ts}] ${(kf.description || kf.ocrText || '').trim()}`;
+      });
+    if (lines.length) parts.push(`## Keyframes\n\n${lines.join('\n')}`);
+  }
+
+  return parts.join('\n\n');
+}
+
+function formatTimestamp(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000);
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  const mm = String(m).padStart(2, '0');
+  const ss = String(s).padStart(2, '0');
+  // Use HH:MM:SS once past an hour so a 75-minute video reads 01:15:03, not 75:03.
+  return h > 0 ? `${String(h).padStart(2, '0')}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
 export async function POST(req: NextRequest) {
   let fileName: string | undefined;
   let resolvedProviderId: string | undefined;
@@ -66,6 +123,8 @@ export async function POST(req: NextRequest) {
     const preferredProviderId = formData.get('providerId') as string | null;
     const apiKey = formData.get('apiKey') as string | null;
     const baseUrl = formData.get('baseUrl') as string | null;
+    const accessKeyId = formData.get('accessKeyId') as string | null;
+    const accessKeySecret = formData.get('accessKeySecret') as string | null;
 
     if (!documentFile) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'No course material file provided');
@@ -91,6 +150,82 @@ export async function POST(req: NextRequest) {
           MAX_EXTRACT_DOCUMENT_FILE_SIZE_BYTES / 1024 / 1024,
         )}MB.`,
       );
+    }
+
+    // Media (audio/video) takes the media extraction path → MediaArtifact,
+    // flattened to the same text shape documents produce. Same route, same
+    // downstream generation path.
+    if (SUPPORTED_MEDIA_MIME_TYPES.includes(mimeType)) {
+      resolvedProviderId = preferredProviderId || 'alidocmind';
+      // Reject a document-only provider (e.g. unpdf/mineru) for a media upload
+      // with a clear 4xx instead of forwarding it into the media registry and
+      // surfacing an opaque 500.
+      const mediaProvider = getMediaExtractorProvider(resolvedProviderId);
+      if (!mediaProvider || !mediaProvider.supportedMimeTypes.includes(mimeType)) {
+        return apiError(
+          'INVALID_REQUEST',
+          400,
+          `Provider "${resolvedProviderId}" cannot extract ${mimeType}. Choose a media-capable provider (e.g. AliDocMind).`,
+        );
+      }
+      const mediaManaged = isServerConfiguredProvider('pdf', resolvedProviderId);
+      // When managed, resolve the server-owned AK/SK (env OR YAML) explicitly so
+      // a YAML-only deployment works — the client-level env fallback reads env
+      // vars only. Client-entered creds are used only when unmanaged.
+      const mediaManagedCreds = mediaManaged ? resolveManagedAliDocMindCredentials() : undefined;
+      const mediaClientBaseUrl = mediaManaged ? undefined : baseUrl || undefined;
+      // Same SSRF guard the document path applies: a client-supplied endpoint
+      // must not let the server connect to internal/metadata hosts.
+      if (mediaClientBaseUrl && process.env.NODE_ENV === 'production') {
+        const ssrfError = await validateUrlForSSRF(mediaClientBaseUrl);
+        if (ssrfError) {
+          return apiError('INVALID_URL', 403, ssrfError);
+        }
+      }
+      const arrayBuffer = await documentFile.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      const mediaArtifact = await extractMedia({
+        buffer,
+        fileName: documentFile.name,
+        fileSize: documentFile.size,
+        mimeType,
+        config: {
+          providerId: resolvedProviderId,
+          apiKey: mediaManaged ? undefined : apiKey || undefined,
+          baseUrl: mediaManaged ? mediaManagedCreds?.baseUrl : mediaClientBaseUrl,
+          accessKeyId: mediaManaged ? mediaManagedCreds?.accessKeyId : accessKeyId || undefined,
+          accessKeySecret: mediaManaged
+            ? mediaManagedCreds?.accessKeySecret
+            : accessKeySecret || undefined,
+          // Env fallback is a last resort for a managed provider whose creds
+          // weren't resolved above (defensive; resolver already covers env+YAML).
+          allowEnvFallback: mediaManaged,
+        },
+      });
+
+      const mediaText = mediaArtifactToText(mediaArtifact);
+      // An artifact with no transcript, keyframes, or synopsis carries no usable
+      // content. Returning empty text as 200 would silently generate from
+      // nothing — surface a parse error instead.
+      if (!mediaText.trim()) {
+        return apiError(
+          'PARSE_FAILED',
+          422,
+          `No transcript, keyframes, or synopsis could be extracted from "${documentFile.name}".`,
+        );
+      }
+      const mediaResult: ParsedPdfContent = {
+        text: mediaText,
+        images: [],
+        metadata: {
+          pageCount: 0,
+          fileName: documentFile.name,
+          fileSize: documentFile.size,
+          mimeType,
+          parser: mediaArtifact.metadata.providerId ?? resolvedProviderId,
+        },
+      };
+      return apiSuccess({ data: mediaResult });
     }
 
     let provider = preferredProviderId
@@ -152,14 +287,25 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // For a managed AliDocMind provider, resolve server-owned AK/SK (env OR
+    // YAML) explicitly so a YAML-only deployment extracts successfully — the
+    // client-level env fallback reads env vars only.
+    const managedAliCreds =
+      managed && provider.id === 'alidocmind' ? resolveManagedAliDocMindCredentials() : undefined;
     const config = {
       providerId: provider.id,
       apiKey: isPdfProviderId(provider.id)
         ? resolvePDFApiKey(provider.id, managed ? undefined : apiKey || undefined)
         : apiKey || undefined,
       baseUrl: isPdfProviderId(provider.id)
-        ? resolvePDFBaseUrl(provider.id, clientBaseUrl)
+        ? (managedAliCreds?.baseUrl ?? resolvePDFBaseUrl(provider.id, clientBaseUrl))
         : clientBaseUrl,
+      // AliDocMind uses AK/SK: managed → server-owned creds; else client values.
+      accessKeyId: managed ? managedAliCreds?.accessKeyId : accessKeyId || undefined,
+      accessKeySecret: managed ? managedAliCreds?.accessKeySecret : accessKeySecret || undefined,
+      // Env fallback is a last resort for a managed provider (defensive; the
+      // resolver already covers env+YAML).
+      allowEnvFallback: managed,
     };
 
     const arrayBuffer = await documentFile.arrayBuffer();

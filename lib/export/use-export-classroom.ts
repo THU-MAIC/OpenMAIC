@@ -26,6 +26,7 @@ import {
 } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
 import type { SceneContent } from '@/lib/types/stage';
+import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 
 export async function inlineSceneContent(
   content: SceneContent,
@@ -54,6 +55,7 @@ export function useExportClassroom() {
     try {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
+      const documentScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
 
       // 1. Read latest stage name from IndexedDB (may have been renamed on home page)
       const freshStage = await db.stages.get(stage.id);
@@ -117,7 +119,7 @@ export function useExportClassroom() {
       const aggregateReport: InlineReport = { inlined: [], failed: [] };
       const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
       const manifestScenes: ManifestScene[] = await Promise.all(
-        scenes.map(async (scene) => {
+        documentScenes.map(async (scene) => {
           const { content, report } = await inlineSceneContent(scene.content, {
             fetcher: sharedFetcher,
           });

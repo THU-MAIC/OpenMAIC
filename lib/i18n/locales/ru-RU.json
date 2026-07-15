@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "Текстовое поле",
-      "expandToolbar": "Показать инструменты вставки",
-      "collapseToolbar": "Скрыть инструменты вставки",
+      "dragToolbar": "Переместить инструменты вставки",
+      "dragToolbarKeyboard": "Переместить инструменты: нажмите Enter или пробел, затем используйте стрелки",
       "image": "Изображение",
       "imageDrop": "Перетащите изображение или нажмите, чтобы выбрать файл",
       "imageOr": "или вставьте URL изображения",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "Указания по оценке",
       "commentPromptPlaceholder": "Как оценивать этот развёрнутый ответ?",
       "empty": "Пока нет вопросов",
-      "emptyHint": "Нажмите «Добавить вопрос» выше, чтобы создать первый.",
+      "emptyHint": "Нажмите «Добавить вопрос», чтобы создать первый.",
       "type": {
         "single": "Один выбор",
         "multiple": "Несколько вариантов",
@@ -328,6 +328,10 @@
         "fixHtml": {
           "examples": "«Кнопка запуска не работает», «Панели накладываются на мобильном»",
           "label": "Исправить ошибку на странице"
+        },
+        "elements": {
+          "label": "Подправить элементы",
+          "examples": "«Сделай заголовок синим и подними», «Уменьши эту фигуру»"
         }
       },
       "newConversation": "New conversation",
@@ -428,6 +432,14 @@
       "fixing": "Исправляю",
       "notFixed": "Не исправлено",
       "title": "Исправить интерактивную страницу"
+    },
+    "editElements": {
+      "title": "Правка элементов",
+      "editing": "Редактирование",
+      "applied": "Применено",
+      "notApplied": "Не применено",
+      "applyFailed": "Редактору не удалось применить изменение элемента. Ничего не изменено.",
+      "applyPartiallyFailed": "Редактору не удалось применить одно или несколько изменений. Другие изменения могли быть применены."
     }
   },
   "classroomComplete": {
@@ -939,7 +951,8 @@
     "webSearchingDesc": "Поиск актуальной информации в сети",
     "webSearchFailed": "Ошибка веб-поиска",
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
-    "jumpToBlankTitle": "Перейти к разделу без заголовка"
+    "jumpToBlankTitle": "Перейти к разделу без заголовка",
+    "analyzingMediaMaterial": "Анализ аудио/видео"
   },
   "settings": {
     "title": "Настройки",
@@ -1634,7 +1647,9 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
-    "ttsBrowserNativeTimelineNotice": "Встроенный в браузер TTS не поддерживает функции аудио на таймлайне редактора (прослушивание, повторная генерация и массовая озвучка). Переключитесь на управляемый TTS-провайдер, чтобы генерировать и управлять аудио для каждой строки."
+    "ttsBrowserNativeTimelineNotice": "Встроенный в браузер TTS не поддерживает функции аудио на таймлайне редактора (прослушивание, повторная генерация и массовая озвучка). Переключитесь на управляемый TTS-провайдер, чтобы генерировать и управлять аудио для каждой строки.",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "Профиль",

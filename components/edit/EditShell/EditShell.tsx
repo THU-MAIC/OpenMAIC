@@ -1,6 +1,6 @@
 'use client';
 
-import { motion, useReducedMotion } from 'motion/react';
+import { motion, useMotionValue, useReducedMotion } from 'motion/react';
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import type { SceneEditorSurface, SurfaceState } from '@/lib/edit/scene-editor-surface';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
@@ -84,6 +84,11 @@ export function EditShell({
   // rules-of-hooks naturally allows a different hook signature). The chrome
   // around it stays mounted and consumes state via these props.
   const [state, setState] = useState<SurfaceState | null>(null);
+  // The insert palette disappears on surfaces that do not expose insert
+  // items (Quiz, GenUI, etc.). Keep its offset in the persistent shell so a
+  // temporary unmount does not discard the author's chosen position.
+  const insertToolbarX = useMotionValue(0);
+  const insertToolbarY = useMotionValue(0);
   const SurfaceComponent = surface.SurfaceComponent;
 
   return (
@@ -108,10 +113,10 @@ export function EditShell({
       >
         <SurfaceComponent />
         {state?.insertItems && state.insertItems.length > 0 && (
-          <FloatingInsertToolbar items={state.insertItems} />
+          <FloatingInsertToolbar items={state.insertItems} x={insertToolbarX} y={insertToolbarY} />
         )}
         {state?.hasSelection && <FloatingToolbar actions={state.floatingActions} />}
-        <HintRail hints={state?.hints} />
+        <HintRail hints={state?.hints} reserveSpace={scene.type === 'quiz'} />
       </Frame>
     </>
   );

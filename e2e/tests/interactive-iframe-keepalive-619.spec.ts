@@ -139,6 +139,42 @@ const resetMutations = (page: import('@playwright/test').Page) =>
   });
 
 test.describe('#619 interactive iframe keep-alive', () => {
+  test('insert toolbar keeps its position across unsupported surfaces', async ({ page }) => {
+    await seedDatabase(page);
+
+    const classroom = new ClassroomPage(page);
+    await classroom.goto(TEST_STAGE_ID);
+    await classroom.waitForLoaded();
+    await page.getByRole('switch').first().click();
+
+    // SlideNav thumbnails cover most of each scene item's hit area. Dispatch
+    // directly to the resolved item so this regression only exercises toolbar
+    // state across scene transitions, not thumbnail pointer routing.
+    await classroom.sidebarScenes.nth(1).click({ force: true }); // slide
+    const handle = page.getByTestId('insert-toolbar-drag-handle');
+    await expect(handle).toBeVisible();
+    const initial = await handle.boundingBox();
+    expect(initial).not.toBeNull();
+
+    await handle.press('Enter');
+    await handle.press('Shift+ArrowRight');
+    await handle.press('Shift+ArrowDown');
+    await handle.press('Escape');
+    const moved = await handle.boundingBox();
+    expect(moved).not.toBeNull();
+    expect(moved!.x).toBeCloseTo(initial!.x + 24, 0);
+    expect(moved!.y).toBeCloseTo(initial!.y + 24, 0);
+
+    await classroom.sidebarScenes.nth(0).click({ force: true });
+    await expect(handle).toBeHidden();
+    await classroom.sidebarScenes.nth(1).click({ force: true });
+    await expect(handle).toBeVisible();
+    const restored = await handle.boundingBox();
+    expect(restored).not.toBeNull();
+    expect(restored!.x).toBeCloseTo(moved!.x, 0);
+    expect(restored!.y).toBeCloseTo(moved!.y, 0);
+  });
+
   test('iframe survives Pro-mode toggle and scene switch without reloading', async ({ page }) => {
     // Record add/remove of the keep-alive iframe (by title) in the top document.
     await page.addInitScript((title) => {

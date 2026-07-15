@@ -21,6 +21,10 @@ interface ServerProviderEntry {
   baseUrl?: string;
   models?: string[];
   proxy?: string;
+  /** Aliyun AccessKey ID (AliDocMind — uses AK/SK instead of a single apiKey). */
+  accessKeyId?: string;
+  /** Aliyun AccessKey Secret (AliDocMind). */
+  accessKeySecret?: string;
   /**
    * Admin/operator force-off switch. `false` disables the provider for ALL
    * clients regardless of the user's per-provider toggle (server precedence).
@@ -272,9 +276,68 @@ function collectDisabledTTS(
 
 const DEFAULT_FILENAME = 'server-providers.yml';
 const OPENAI_IMAGE_PROVIDER_ID = 'openai-image';
+const ALIDOCMIND_PROVIDER_ID = 'alidocmind';
 
 /** Cache keyed by YAML filename (empty string = default file). */
 const _configs: Map<string, ServerConfig> = new Map();
+
+/**
+ * AliDocMind is server-configured when AK/SK are provided via env
+ * (ALIDOCMIND_ACCESS_KEY_ID/SECRET) or YAML. It uses AK/SK rather than a single
+ * apiKey, so it needs its own fallback rather than PDF_ENV_MAP's apiKey shape.
+ */
+function applyAliDocMindFallback(
+  pdfConfig: Record<string, ServerProviderEntry>,
+  yamlPdfSection: Record<string, Partial<ServerProviderEntry>> | undefined,
+): Record<string, ServerProviderEntry> {
+  const yamlEntry = yamlPdfSection?.[ALIDOCMIND_PROVIDER_ID];
+  const accessKeyId = process.env.ALIDOCMIND_ACCESS_KEY_ID || yamlEntry?.accessKeyId;
+  const accessKeySecret = process.env.ALIDOCMIND_ACCESS_KEY_SECRET || yamlEntry?.accessKeySecret;
+  if (!accessKeyId || !accessKeySecret) {
+    // AliDocMind can only be server-managed with an AK/SK pair. The generic
+    // loader may have created a bare entry from a YAML `baseUrl` alone — drop
+    // it so the provider stays UNMANAGED (clients supply their own creds)
+    // rather than "managed" with no usable credentials, which would both lock
+    // the provider out and silently discard client-entered AK/SK.
+    delete pdfConfig[ALIDOCMIND_PROVIDER_ID];
+    return pdfConfig;
+  }
+
+  // Merge the AK/SK into any entry the generic env/YAML loader already created.
+  // That loader copies only apiKey/baseUrl/models/proxy — never AK/SK — and a
+  // YAML entry with a `baseUrl` makes it create the entry, so returning early
+  // here would leave a "managed" provider with no usable credentials.
+  const existing = pdfConfig[ALIDOCMIND_PROVIDER_ID];
+  pdfConfig[ALIDOCMIND_PROVIDER_ID] = {
+    apiKey: existing?.apiKey ?? '',
+    accessKeyId,
+    accessKeySecret,
+    baseUrl:
+      existing?.baseUrl || yamlEntry?.baseUrl || process.env.ALIDOCMIND_BASE_URL || undefined,
+    models: existing?.models,
+    proxy: existing?.proxy,
+  };
+  return pdfConfig;
+}
+
+/**
+ * Server-owned AliDocMind AK/SK, if this deployment manages the provider.
+ * Returns undefined when AliDocMind is not server-configured (client must
+ * supply its own credentials).
+ */
+export function resolveManagedAliDocMindCredentials():
+  | { accessKeyId: string; accessKeySecret: string; baseUrl?: string }
+  | undefined {
+  const entry = getConfig().pdf[ALIDOCMIND_PROVIDER_ID];
+  if (entry?.accessKeyId && entry?.accessKeySecret) {
+    return {
+      accessKeyId: entry.accessKeyId,
+      accessKeySecret: entry.accessKeySecret,
+      baseUrl: entry.baseUrl,
+    };
+  }
+  return undefined;
+}
 
 function applyOpenAIImageFallback(
   imageConfig: Record<string, ServerProviderEntry>,
@@ -314,10 +377,13 @@ function buildConfig(yamlData: YamlData): ServerConfig {
     asr: loadEnvSection(ASR_ENV_MAP, yamlData.asr, {
       keylessProviders: new Set(['lemonade-asr']),
     }),
-    pdf: loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
-      requiresBaseUrl: true,
-      baseUrlOptionalProviders: new Set(['mineru-cloud']),
-    }),
+    pdf: applyAliDocMindFallback(
+      loadEnvSection(PDF_ENV_MAP, yamlData.pdf, {
+        requiresBaseUrl: true,
+        baseUrlOptionalProviders: new Set(['mineru-cloud']),
+      }),
+      yamlData.pdf,
+    ),
     image,
     video: loadEnvSection(VIDEO_ENV_MAP, yamlData.video),
     webSearch: loadEnvSection(WEB_SEARCH_ENV_MAP, yamlData['web-search'], {

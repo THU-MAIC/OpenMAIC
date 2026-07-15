@@ -99,7 +99,7 @@ test.describe('Quiz content surface (#657)', () => {
     const cards = page.getByTestId('quiz-question');
     await expect(cards).toHaveCount(1);
 
-    // Add one of every type via the chrome's "Add question" insert item.
+    // Add one of every type via the inline "Add question" action.
     const addType = async (name: string) => {
       await page.getByRole('button', { name: 'Add question' }).click();
       await page.getByRole('button', { name, exact: true }).click();

@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "文本框",
-      "expandToolbar": "展开插入工具",
-      "collapseToolbar": "收起插入工具",
+      "dragToolbar": "拖动工具栏",
+      "dragToolbarKeyboard": "移动工具栏：按回车或空格开始，再使用方向键移动",
       "image": "图片",
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "评分指引",
       "commentPromptPlaceholder": "应如何评判这道主观题？",
       "empty": "暂无题目",
-      "emptyHint": "点击上方“添加题目”创建第一道题。",
+      "emptyHint": "点击“添加题目”创建第一道题。",
       "type": {
         "single": "单选",
         "multiple": "多选",
@@ -334,6 +334,10 @@
         "fixHtml": {
           "label": "修复互动页的 bug",
           "examples": "“开始按钮点了没反应”、“手机上排版重叠”"
+        },
+        "elements": {
+          "label": "微调页面元素",
+          "examples": "“把标题改成蓝色并上移一点”、“把这个图缩小”"
         }
       },
       "newConversation": "新对话",
@@ -428,6 +432,14 @@
       "reading": "读取中",
       "done": "已读取",
       "failed": "未读取"
+    },
+    "editElements": {
+      "title": "编辑元素",
+      "editing": "编辑中",
+      "applied": "已应用",
+      "notApplied": "未应用",
+      "applyFailed": "编辑器无法应用元素修改，未更改任何内容。",
+      "applyPartiallyFailed": "编辑器未能应用一项或多项元素修改，其他修改可能已应用。"
     }
   },
   "classroomComplete": {
@@ -939,7 +951,8 @@
     "webSearchingDesc": "正在搜索网络获取最新资料",
     "webSearchFailed": "网络搜索失败",
     "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
-    "jumpToBlankTitle": "跳到待补充标题的章节"
+    "jumpToBlankTitle": "跳到待补充标题的章节",
+    "analyzingMediaMaterial": "解析音视频内容"
   },
   "settings": {
     "title": "设置",
@@ -1634,7 +1647,9 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清单。请在生成界面选择需要使用的模型——是否可用取决于你的套餐档位，不支持的模型会在生成时报错。"
     },
-    "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。"
+    "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "个人资料",

@@ -99,7 +99,7 @@ export interface AudioFileRecord {
  */
 export interface ImageFileRecord {
   id: string; // Primary key
-  blob: Blob; // Image binary data
+  blob: Blob | ArrayBuffer; // Image binary data
   filename: string; // Original filename
   mimeType: string; // image/png, image/jpeg, etc.
   size: number; // File size (bytes)

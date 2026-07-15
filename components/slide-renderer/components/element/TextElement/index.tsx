@@ -176,7 +176,11 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     >
       <div
         className="rotate-wrapper w-full h-full"
-        style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
+        style={{
+          transform: `rotate(${elementInfo.rotate}deg)`,
+          backgroundColor: elementInfo.fill,
+          opacity: elementInfo.opacity,
+        }}
       >
         <div
           ref={elementRef}
@@ -184,8 +188,6 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
           style={{
             width: elementInfo.vertical ? 'auto' : `${elementInfo.width}px`,
             height: elementInfo.vertical ? `${elementInfo.height}px` : 'auto',
-            backgroundColor: elementInfo.fill,
-            opacity: elementInfo.opacity,
             textShadow: shadowStyle,
             lineHeight: elementInfo.lineHeight,
             letterSpacing: `${elementInfo.wordSpace || 0}px`,

@@ -206,8 +206,8 @@
     },
     "insert": {
       "textBox": "文字方塊",
-      "expandToolbar": "展開插入工具",
-      "collapseToolbar": "收起插入工具",
+      "dragToolbar": "拖動工具列",
+      "dragToolbarKeyboard": "移動工具列：按 Enter 或空白鍵開始，再使用方向鍵移動",
       "image": "圖片",
       "imageDrop": "拖曳圖片或點按選擇檔案",
       "imageOr": "或貼上圖片網址",
@@ -265,7 +265,7 @@
       "commentPromptLabel": "評分指引",
       "commentPromptPlaceholder": "應如何評判這道主觀題？",
       "empty": "尚無題目",
-      "emptyHint": "點選上方「新增題目」建立第一題。",
+      "emptyHint": "點選「新增題目」建立第一題。",
       "type": {
         "single": "單選",
         "multiple": "多選",
@@ -334,6 +334,10 @@
         "fixHtml": {
           "label": "修復互動頁的 bug",
           "examples": "「開始按鈕點了沒反應」、「手機上排版重疊」"
+        },
+        "elements": {
+          "label": "微調頁面元素",
+          "examples": "「把標題改成藍色並上移一點」、「把這個圖縮小」"
         }
       },
       "newConversation": "新對話",
@@ -428,6 +432,14 @@
       "reading": "讀取中",
       "done": "已讀取",
       "failed": "未讀取"
+    },
+    "editElements": {
+      "title": "編輯元素",
+      "editing": "編輯中",
+      "applied": "已套用",
+      "notApplied": "未套用",
+      "applyFailed": "編輯器無法套用元素修改，未變更任何內容。",
+      "applyPartiallyFailed": "編輯器未能套用一項或多項元素修改，其他修改可能已套用。"
     }
   },
   "whiteboard": {
@@ -924,7 +936,8 @@
     "webSearchingDesc": "正在搜尋網路取得最新資料",
     "webSearchFailed": "網路搜尋失敗",
     "outlinesReadyCount": "{{ready}} / {{total}} 章節就緒",
-    "jumpToBlankTitle": "跳到待補充標題的章節"
+    "jumpToBlankTitle": "跳到待補充標題的章節",
+    "analyzingMediaMaterial": "解析音視訊內容"
   },
   "settings": {
     "title": "設定",
@@ -1619,7 +1632,9 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清單。請在生成介面選擇需要使用的模型——是否可用取決於你的套餐等級，不支援的模型會在生成時報錯。"
     },
-    "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。"
+    "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "個人資料",

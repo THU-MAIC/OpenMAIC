@@ -6,6 +6,9 @@
  */
 if (typeof globalThis.ResizeObserver === 'undefined') {
   class ResizeObserverStub {
+    constructor(callback: ResizeObserverCallback) {
+      void callback;
+    }
     observe(): void {}
     unobserve(): void {}
     disconnect(): void {}
