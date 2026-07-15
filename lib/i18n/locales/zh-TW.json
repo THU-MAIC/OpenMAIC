@@ -51,7 +51,9 @@
     "exportFailed": "匯出失敗",
     "classroomZip": "匯出課堂 ZIP",
     "classroomZipDesc": "課程結構 + 媒體檔案",
-    "inlinePartial": "{{count}} 個外部資源未能打包，離線時課程可能無法正常顯示。"
+    "inlinePartial": "{{count}} 個外部資源未能打包，離線時課程可能無法正常顯示。",
+    "scorm": "匯出 SCORM",
+    "scormDesc": "相容 LMS 的課程包（SCORM 1.2）"
   },
   "import": {
     "classroom": "匯入課堂",

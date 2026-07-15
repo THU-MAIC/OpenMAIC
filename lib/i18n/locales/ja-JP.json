@@ -51,7 +51,9 @@
     "exportFailed": "エクスポートに失敗しました",
     "classroomZip": "教室ZIPをエクスポート",
     "classroomZipDesc": "コース構造 + メディアファイル",
-    "inlinePartial": "{{count}} 個の外部リソースをバンドルできませんでした。オフラインでは正しく表示されない可能性があります。"
+    "inlinePartial": "{{count}} 個の外部リソースをバンドルできませんでした。オフラインでは正しく表示されない可能性があります。",
+    "scorm": "SCORM をエクスポート",
+    "scormDesc": "LMS 互換パッケージ（SCORM 1.2）"
   },
   "import": {
     "classroom": "教室をインポート",

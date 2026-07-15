@@ -51,7 +51,9 @@
     "exportFailed": "Exportación fallida",
     "classroomZip": "Exportar ZIP del aula",
     "classroomZipDesc": "Estructura del curso + archivos multimedia",
-    "inlinePartial": "{{count}} recurso(s) externo(s) no pudieron incluirse; el curso puede no mostrarse correctamente sin conexión."
+    "inlinePartial": "{{count}} recurso(s) externo(s) no pudieron incluirse; el curso puede no mostrarse correctamente sin conexión.",
+    "scorm": "Exportar SCORM",
+    "scormDesc": "Paquete compatible con LMS (SCORM 1.2)"
   },
   "import": {
     "classroom": "Importar aula",
