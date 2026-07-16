@@ -13,7 +13,7 @@ import { makeEditElementsTool } from './edit-elements';
  * - `aiCall`: request-scoped LLM text call (resolved model injected by route)
  * - `getSceneContext`: returns trusted scene/stage context from the client POST body;
  *   the model supplies only a sceneId, and the route fulfils the heavy data.
- * - `getSelection`: optional canvas selection ids (for edit_elements).
+ * - `getSelection`: optional canvas selection ids (shown by read_scene_content).
  *
  * Tools share the regenerate deps shape; the read tool only uses `getSceneContext`.
  */
@@ -28,7 +28,7 @@ export type ToolsetDeps = RegenerateActionsDeps & {
  * - `regenerate_scene` — instruction-driven whole-slide regeneration (content + actions)
  * - `regenerate_scene_actions` — narration/actions only
  * - `edit_interactive_html` — surgical str_replace edits for an interactive scene's HTML
- * - `edit_elements` — natural-language per-element edits → EditIntent
+ * - `edit_elements` — guarded JSON Patch per-element edits → EditIntent
  */
 export function buildToolset(deps: ToolsetDeps): AgentTool<never, never>[] {
   return [

@@ -20,6 +20,7 @@ import { svg2Base64 } from '@/lib/export/svg2base64';
 import { latexToOmml } from '@/lib/export/latex-to-omml';
 import { createLogger } from '@/lib/logger';
 import { inlineHtmlAssets, createAssetFetcher } from './inline-assets';
+import type { FetchAsset } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
 
 const log = createLogger('ExportPPTX');
@@ -1091,6 +1092,81 @@ export async function buildPptxBlob(
   return (await pptx.write({ outputType: 'blob' })) as Blob;
 }
 
+// ── Resource Pack assembly (PPTX + interactive HTML pages as ZIP) ──
+// Pure/async builder extracted from the hook so the assembly logic — which
+// scenes make it into the ZIP, whether the PPTX builder runs — is unit-testable
+// without a React/jsdom harness. The hook stays the only runtime caller.
+//
+// `getPptxBlob` is invoked only when slide scenes exist, so an interactive-only
+// deck never touches the PPTX builder. Returns `empty: true` (and a null blob)
+// when there is nothing to ship.
+
+export interface ResourcePackResult {
+  /** Generated ZIP blob, or null when there is nothing to ship. */
+  blob: Blob | null;
+  /** True when the deck has interactive pages but no slides (PPTX skipped). */
+  skippedPptx: boolean;
+  /** True when neither slides nor interactive pages could be exported. */
+  empty: boolean;
+  /** External asset URLs that could not be inlined into the HTML pages. */
+  failedAssetUrls: string[];
+}
+
+export async function buildResourcePackZip(
+  scenes: Scene[],
+  slides: Slide[],
+  slideScenes: Scene[],
+  opts: {
+    viewportRatio: number;
+    viewportSize: number;
+    ratioPx2Inch: number;
+    ratioPx2Pt: number;
+    fileName: string;
+    /** Called only when `slides.length > 0`; produces the PPTX blob. */
+    getPptxBlob: () => Promise<Blob>;
+    /** Passed through to `inlineHtmlAssets`; tests inject a no-op fetcher. */
+    fetcher?: FetchAsset;
+  },
+): Promise<ResourcePackResult> {
+  const JSZip = (await import('jszip')).default;
+  const zip = new JSZip();
+  const failedAssetUrls: string[] = [];
+
+  // 1. Add interactive HTML pages (independent of slides)
+  let interactiveIndex = 0;
+  for (const scene of scenes) {
+    if (scene.content.type === 'interactive' && scene.content.html) {
+      interactiveIndex++;
+      const safeName = scene.title.replace(/[\\/:*?"<>|]/g, '_');
+      const htmlFileName = `interactive/${String(interactiveIndex).padStart(2, '0')}_${safeName}.html`;
+      const { html: inlinedHtml, report } = await inlineHtmlAssets(scene.content.html, {
+        fetcher: opts.fetcher,
+      });
+      for (const f of report.failed) {
+        if (!failedAssetUrls.includes(f.url)) failedAssetUrls.push(f.url);
+      }
+      zip.file(htmlFileName, inlinedHtml);
+    }
+  }
+
+  // Nothing to ship: no slides and no interactive pages.
+  if (interactiveIndex === 0 && slides.length === 0) {
+    return { blob: null, skippedPptx: false, empty: true, failedAssetUrls };
+  }
+
+  // 2. Generate PPTX only when slide scenes exist.
+  const skippedPptx = slides.length === 0;
+  if (!skippedPptx) {
+    const pptxBlob = await opts.getPptxBlob();
+    // Convert to ArrayBuffer so jszip stores a plain byte buffer rather than a
+    // Blob (which it can't reliably round-trip outside the browser).
+    zip.file(`${opts.fileName}.pptx`, await pptxBlob.arrayBuffer());
+  }
+
+  const blob = await zip.generateAsync({ type: 'blob' });
+  return { blob, skippedPptx, empty: false, failedAssetUrls };
+}
+
 // ── Hook ──
 
 export function useExportPPTX() {
@@ -1109,10 +1185,17 @@ export function useExportPPTX() {
   const slideScenes = scenes.filter((s) => s.content.type === 'slide');
   const slides = slideScenes.map((s) => (s.content as SlideContent).canvas);
 
-  // Shared guard + state wrapper for export actions
+  // Shared guard + state wrapper for export actions.
+  // `requireSlides` controls whether the guard rejects a deck with no slide
+  // scenes (PPTX export needs them; the resource pack can ship interactive
+  // pages alone). When it rejects, callers get a toast instead of silence.
   const withExportGuard = useCallback(
-    (action: () => Promise<void>) => {
-      if (exportingRef.current || slides.length === 0) return;
+    (action: () => Promise<void>, requireSlides = true) => {
+      if (exportingRef.current) return;
+      if (requireSlides && slides.length === 0) {
+        toast.warning(t('export.noSlides'));
+        return;
+      }
       exportingRef.current = true;
       setExporting(true);
       setTimeout(async () => {
@@ -1158,54 +1241,41 @@ export function useExportPPTX() {
   ]);
 
   // ── Export Resource Pack (PPTX + interactive HTML pages as ZIP) ──
+  // `requireSlides` is false: a deck with only interactive scenes still ships
+  // its interactive pages as the resource pack (PPTX is skipped with a toast).
   const exportResourcePack = useCallback(() => {
     withExportGuard(async () => {
-      const JSZip = (await import('jszip')).default;
-      const zip = new JSZip();
       const fileName = stage?.name || 'slides';
+      const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
 
-      // 1. Generate PPTX
-      const pptxBlob = await buildPptxBlob(
-        slides,
-        slideScenes,
+      const result = await buildResourcePackZip(scenes, slides, slideScenes, {
         viewportRatio,
         viewportSize,
         ratioPx2Inch,
         ratioPx2Pt,
-      );
-      zip.file(`${fileName}.pptx`, pptxBlob);
+        fileName,
+        fetcher: sharedFetcher,
+        getPptxBlob: () =>
+          buildPptxBlob(slides, slideScenes, viewportRatio, viewportSize, ratioPx2Inch, ratioPx2Pt),
+      });
 
-      // 2. Add interactive HTML pages
-      const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
-      let interactiveIndex = 0;
-      const failedAssetUrls = new Set<string>();
-      for (const scene of scenes) {
-        if (scene.content.type === 'interactive' && scene.content.html) {
-          interactiveIndex++;
-          const safeName = scene.title.replace(/[\\/:*?"<>|]/g, '_');
-          const htmlFileName = `interactive/${String(interactiveIndex).padStart(2, '0')}_${safeName}.html`;
-          const { html: inlinedHtml, report } = await inlineHtmlAssets(scene.content.html, {
-            fetcher: sharedFetcher,
-          });
-          if (report.failed.length > 0) {
-            log.warn(
-              'Resource Pack: some interactive-scene assets could not be inlined:',
-              report.failed,
-            );
-            for (const f of report.failed) failedAssetUrls.add(f.url);
-          }
-          zip.file(htmlFileName, inlinedHtml);
-        }
+      if (result.empty) {
+        toast.warning(t('export.nothingToExport'));
+        return;
       }
-
-      // 3. Download ZIP
-      const zipBlob = await zip.generateAsync({ type: 'blob' });
-      saveAs(zipBlob, `${fileName}.zip`);
+      if (result.skippedPptx) {
+        toast.info(t('export.noSlidesSkipped'));
+      }
+      saveAs(result.blob!, `${fileName}.zip`);
       toast.success(t('export.exportSuccess'));
-      if (failedAssetUrls.size > 0) {
+      if (result.failedAssetUrls.length > 0) {
+        log.warn(
+          'Resource Pack: some interactive-scene assets could not be inlined:',
+          result.failedAssetUrls,
+        );
         const hosts = [
           ...new Set(
-            [...failedAssetUrls].map((u) => {
+            result.failedAssetUrls.map((u) => {
               try {
                 return new URL(u).host;
               } catch {
@@ -1214,11 +1284,11 @@ export function useExportPPTX() {
             }),
           ),
         ];
-        toast.warning(t('export.inlinePartial', { count: failedAssetUrls.size }), {
+        toast.warning(t('export.inlinePartial', { count: result.failedAssetUrls.length }), {
           description: hosts.join(', '),
         });
       }
-    });
+    }, false);
   }, [
     withExportGuard,
     slides,
