@@ -17,6 +17,19 @@ function hasOwn(record: object, property: string): boolean {
   return Object.prototype.hasOwnProperty.call(record, property);
 }
 
+function setOwn<T extends Record<string, unknown>>(
+  record: T,
+  property: string,
+  value: T[string],
+): void {
+  Object.defineProperty(record, property, {
+    configurable: true,
+    enumerable: true,
+    value,
+    writable: true,
+  });
+}
+
 function requireGeometry(ref: GeometryRef, geometry: Partial<Record<GeometryRef, number>>): number {
   const value = geometry[ref];
   if (value === undefined) {
@@ -108,9 +121,12 @@ export function resolveMotionLayer(
     throw new Error(`Layer "${layerId}" was not found in descriptor "${descriptor.id}"`);
   }
 
-  const params: Params = { ...(descriptor.params ?? {}) };
+  const params: Params = {};
+  for (const [name, value] of Object.entries(descriptor.params ?? {})) {
+    setOwn(params, name, value);
+  }
   for (const [name, value] of Object.entries(options?.params ?? {})) {
-    if (value !== undefined) params[name] = value;
+    if (value !== undefined) setOwn(params, name, value);
   }
 
   const geometry = options?.geometry ?? {};
@@ -130,25 +146,23 @@ export function resolveMotionLayer(
 
     if ((track.phase ?? 'enter') === 'exit') {
       hasExit = true;
-      exitTarget[track.property] = to;
-      exitTransition[track.property] = propertyTransition;
+      setOwn(exitTarget, track.property, to);
+      setOwn(exitTransition, track.property, propertyTransition);
     } else {
       if (track.repeat !== undefined) {
-        animate[track.property] = [from, to];
+        setOwn(animate, track.property, [from, to]);
       } else {
-        initial[track.property] = from;
-        animate[track.property] = to;
+        setOwn(initial, track.property, from);
+        setOwn(animate, track.property, to);
       }
-      transition[track.property] = propertyTransition;
+      setOwn(transition, track.property, propertyTransition);
     }
   }
 
-  const staticProps = Object.fromEntries(
-    Object.entries(layer.staticProps ?? {}).map(([property, value]) => [
-      property,
-      resolveStaticValue(value, params, descriptor.id),
-    ]),
-  );
+  const staticProps: Record<string, string | number> = {};
+  for (const [property, value] of Object.entries(layer.staticProps ?? {})) {
+    setOwn(staticProps, property, resolveStaticValue(value, params, descriptor.id));
+  }
 
   return {
     initial: initial as Target,

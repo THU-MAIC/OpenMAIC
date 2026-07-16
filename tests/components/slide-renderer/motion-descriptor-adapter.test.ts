@@ -219,6 +219,56 @@ describe('resolveMotionLayer', () => {
     expect(animate.constructor).toBe(2);
   });
 
+  it('preserves a defined own __proto__ parameter override', () => {
+    const descriptor: AnimationDescriptor = {
+      id: 'special-param.v1',
+      version: 1,
+      effect: 'laser',
+      zIndex: 1,
+      layers: [{ id: 'static', tracks: [], staticProps: { value: '{__proto__}' } }],
+    };
+    const params = JSON.parse('{"__proto__":"violet"}') as Record<
+      string,
+      string | number | undefined
+    >;
+
+    expect(Object.prototype.hasOwnProperty.call(params, '__proto__')).toBe(true);
+    expect(resolveMotionLayer(descriptor, 'static', { params }).staticProps.value).toBe('violet');
+  });
+
+  it('preserves __proto__ as own enumerable output keys', () => {
+    const descriptor: AnimationDescriptor = {
+      id: 'special-output-key.v1',
+      version: 1,
+      effect: 'laser',
+      zIndex: 1,
+      layers: [
+        {
+          id: 'motion',
+          staticProps: JSON.parse('{"__proto__":"static-value"}') as Record<
+            string,
+            string | number
+          >,
+          tracks: [
+            { property: '__proto__', from: 1, to: 2, durationMs: 100 },
+            { property: '__proto__', from: 2, to: 3, durationMs: 50, phase: 'exit' },
+          ],
+        },
+      ],
+    };
+
+    const layer = resolveMotionLayer(descriptor, 'motion');
+    const exit = layer.exit as Record<string, unknown>;
+    const exitTransition = layer.exit?.transition as Record<string, unknown>;
+
+    expect(Object.entries(layer.initial)).toContainEqual(['__proto__', 1]);
+    expect(Object.entries(layer.animate)).toContainEqual(['__proto__', 2]);
+    expect(Object.entries(layer.transition)).toContainEqual(['__proto__', { duration: 0.1 }]);
+    expect(Object.entries(exit)).toContainEqual(['__proto__', 3]);
+    expect(Object.entries(exitTransition)).toContainEqual(['__proto__', { duration: 0.05 }]);
+    expect(Object.entries(layer.staticProps)).toContainEqual(['__proto__', 'static-value']);
+  });
+
   it('throws errors that name missing layers, geometry, and parameters', () => {
     expect(() => resolveMotionLayer(spotlightV1, 'missing')).toThrow(/missing.*spotlight\.v1/i);
     expect(() =>
