@@ -100,6 +100,7 @@ describe('openai-image-adapter', () => {
     });
 
     expect(mockFetch).toHaveBeenCalledWith('https://api.openai.com/v1/models/gpt-image-unknown', {
+      redirect: 'manual',
       headers: { Authorization: 'Bearer sk-test' },
     });
     expect(result.success).toBe(false);

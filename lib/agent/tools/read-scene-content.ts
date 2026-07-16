@@ -14,7 +14,10 @@
 
 import { Type, type Static } from 'typebox';
 import type { AgentTool } from '@earendil-works/pi-agent-core';
+import type { PPTElement } from '@openmaic/dsl';
 import type { SceneContext } from './regenerate-scene-actions';
+import { ALLOWED_EDIT_PROPS } from './edit-elements-gate';
+import { EXACT_CONTENT_RAW_CAP, isExactContentEditable } from './edit-elements-content-contract';
 
 // ── Deps ─────────────────────────────────────────────────────────────────────
 
@@ -23,6 +26,8 @@ export interface ReadSceneContentDeps {
   getSceneContext: (sceneId: string) => SceneContext | undefined;
   /** The active scene id, used when the model omits sceneId. */
   activeSceneId?: string;
+  /** Active canvas selection ids, used to resolve "this" and "these". */
+  getSelection?: () => readonly string[];
 }
 
 // ── Content projection (model-visible text) ──────────────────────────────────
@@ -32,6 +37,8 @@ export interface ReadSceneContentDeps {
 
 const PROJECTION_CAP = 2000;
 const ELEMENT_TEXT_CAP = 80;
+const SLIDE_PATCH_PROJECTION_CAP = 30000;
+const MANIFEST_PAGE_CAP = 10000;
 
 function stripHtml(html: string): string {
   return html
@@ -115,7 +122,76 @@ function elideDataUris(html: string): string {
   );
 }
 
-function projectContent(content: SceneContext['content']): string {
+function projectElementManifest(element: PPTElement, index: number): Record<string, unknown> {
+  const manifest: Record<string, unknown> = {
+    _index: index,
+    _path: `/elements/${index}`,
+    id: element.id,
+    type: element.type,
+  };
+  if (element.name !== undefined) manifest.name = element.name;
+  if (element.type === 'text' && element.textType !== undefined) {
+    manifest.textType = element.textType;
+  } else if (element.type === 'image' && element.imageType !== undefined) {
+    manifest.imageType = element.imageType;
+  } else if (element.type === 'chart') {
+    manifest.chartType = element.chartType;
+  }
+  if (element.lock !== undefined) manifest.lock = element.lock;
+  if (element.groupId !== undefined) manifest.groupId = element.groupId;
+  const summary = truncate(extractElementText(element), ELEMENT_TEXT_CAP);
+  if (summary) manifest._textSummary = summary;
+  return manifest;
+}
+
+function projectElementForPatch(element: PPTElement, index: number): Record<string, unknown> {
+  const source = element as unknown as Record<string, unknown>;
+  const projected: Record<string, unknown> = {
+    _index: index,
+    _path: `/elements/${index}`,
+    id: element.id,
+    type: element.type,
+  };
+  if (element.name !== undefined) projected.name = element.name;
+  for (const key of ['lock', 'groupId', 'left', 'top', 'width', 'height', 'rotate']) {
+    if (source[key] !== undefined) projected[key] = source[key];
+  }
+  for (const key of ALLOWED_EDIT_PROPS) {
+    if (source[key] !== undefined) projected[key] = source[key];
+  }
+  if (element.type === 'text') {
+    if (isExactContentEditable(element.content)) {
+      projected.content = element.content;
+    } else {
+      projected._contentEdit = `content editing unavailable: HTML exceeds the exact ${EXACT_CONTENT_RAW_CAP}-character/serialized-record limit`;
+    }
+  } else if (element.type === 'shape' && element.text) {
+    projected.text = {
+      ...(isExactContentEditable(element.text.content)
+        ? { content: element.text.content }
+        : {
+            _contentEdit: `content editing unavailable: HTML exceeds the exact ${EXACT_CONTENT_RAW_CAP}-character/serialized-record limit`,
+          }),
+      defaultFontName: element.text.defaultFontName,
+      defaultColor: element.text.defaultColor,
+      lineHeight: element.text.lineHeight,
+      wordSpace: element.text.wordSpace,
+      paragraphSpace: element.text.paragraphSpace,
+      align: element.text.align,
+    };
+  } else {
+    const summary = truncate(extractElementText(element), ELEMENT_TEXT_CAP);
+    if (summary) projected._textSummary = summary;
+  }
+  return projected;
+}
+
+function projectContent(
+  content: SceneContext['content'],
+  selectionIds: readonly string[] = [],
+  requestedElementIds: readonly string[] = [],
+  manifestOffset = 0,
+): string {
   const c = content as
     | { type?: string; canvas?: { elements?: unknown[] }; html?: unknown }
     | undefined;
@@ -135,15 +211,82 @@ function projectContent(content: SceneContext['content']): string {
 
   let projection: string;
   if (c?.type === 'slide') {
-    const elements = Array.isArray(c.canvas?.elements) ? c.canvas!.elements : [];
-    projection = elements
-      .map((el) => {
-        const e = el as { type?: string };
-        const type = e.type ?? 'element';
-        const text = truncate(extractElementText(el), ELEMENT_TEXT_CAP);
-        return text ? `- ${type}: ${text}` : `- ${type}`;
-      })
-      .join('\n');
+    const elements = Array.isArray(c.canvas?.elements) ? (c.canvas!.elements as PPTElement[]) : [];
+    const indexById = new Map<string, number>();
+    const duplicateIds = new Set<string>();
+    elements.forEach((element, index) => {
+      if (indexById.has(element.id)) duplicateIds.add(element.id);
+      else indexById.set(element.id, index);
+    });
+    const selected = selectionIds.filter((id) => indexById.has(id));
+    const requested = [...new Set(requestedElementIds)].filter((id) => indexById.has(id));
+    const allManifestEntries = elements.map((element, index) =>
+      projectElementManifest(element, index),
+    );
+    const manifestEntries: Record<string, unknown>[] = [];
+    let nextManifestOffset: number | null = null;
+    if (requested.length > 0) {
+      for (const id of requested) manifestEntries.push(allManifestEntries[indexById.get(id)!]);
+    } else {
+      let manifestSize = 2;
+      for (let index = Math.max(0, manifestOffset); index < allManifestEntries.length; index++) {
+        const entry = allManifestEntries[index];
+        const serialized = JSON.stringify(entry);
+        if (manifestEntries.length > 0 && manifestSize + serialized.length > MANIFEST_PAGE_CAP) {
+          nextManifestOffset = index;
+          break;
+        }
+        manifestEntries.push(entry);
+        manifestSize += serialized.length + 1;
+      }
+    }
+    const manifest = JSON.stringify(manifestEntries, null, 2);
+    const allDetails = elements.map((element, index) => projectElementForPatch(element, index));
+    const allDetailsJson = JSON.stringify(allDetails, null, 2);
+    const detailIds = requested.length > 0 ? requested : selected;
+    const candidateDetails =
+      allDetailsJson.length <= SLIDE_PATCH_PROJECTION_CAP && requested.length === 0
+        ? allDetails
+        : detailIds.length > 0
+          ? detailIds.map((id) => {
+              const index = indexById.get(id)!;
+              return projectElementForPatch(elements[index], index);
+            })
+          : [];
+    const details: Record<string, unknown>[] = [];
+    const omittedDetailIds: string[] = [];
+    let detailSize = 2;
+    const detailBudget =
+      requested.length === 1 ? Number.POSITIVE_INFINITY : SLIDE_PATCH_PROJECTION_CAP;
+    for (const detail of candidateDetails) {
+      const serialized = JSON.stringify(detail, null, 2);
+      if (detailSize + serialized.length <= detailBudget) {
+        details.push(detail);
+        detailSize += serialized.length + 2;
+      } else if (typeof detail.id === 'string') {
+        omittedDetailIds.push(detail.id);
+      }
+    }
+    const detailsText =
+      details.length > 0
+        ? JSON.stringify(details, null, 2)
+        : '(omitted because the exact records are large; call read_scene_content again with elementIds for the elements you intend to patch)';
+    projection =
+      'Slide element manifest page. Identity fields (`id`, `type`, `name`) and underscore-prefixed projection metadata are read-only; patch editable real paths under `/elements` and guard every index with an id test.\n' +
+      manifest +
+      (nextManifestOffset !== null
+        ? `\nManifest continues. Next manifestOffset: ${nextManifestOffset}.`
+        : '') +
+      '\nExact editable element records:\n' +
+      detailsText +
+      (omittedDetailIds.length > 0
+        ? `\nExact records omitted to stay within the read budget: ${omittedDetailIds.join(', ')}. Request fewer elementIds.`
+        : '') +
+      (duplicateIds.size > 0
+        ? `\nWarning: duplicate element ids make JSON Patch editing unavailable: ${[...duplicateIds].join(', ')}.`
+        : '') +
+      `\nSelected element ids on this slide: ${selected.length > 0 ? selected.join(', ') : '(none)'}`;
+    return projection;
   } else {
     projection = JSON.stringify(content ?? {});
   }
@@ -160,6 +303,20 @@ export const ReadSceneContentParams = Type.Object({
     Type.String({
       description:
         'The id of the scene to read. Defaults to the current scene shown in the system prompt.',
+    }),
+  ),
+  elementIds: Type.Optional(
+    Type.Array(Type.String(), {
+      maxItems: 50,
+      uniqueItems: true,
+      description:
+        'Existing slide element ids whose exact editable records should be returned. Use this after reading a large slide manifest.',
+    }),
+  ),
+  manifestOffset: Type.Optional(
+    Type.Integer({
+      minimum: 0,
+      description: 'Offset returned by a previous manifest page for very large slides.',
     }),
   ),
 });
@@ -192,7 +349,8 @@ export function makeReadSceneContentTool(
       'description, key points) and its content (slide elements / quiz questions / etc). ' +
       'Use this BEFORE answering questions about the slide or regenerating it, so your ' +
       'reply and any regeneration instruction reflect what is actually on the slide. ' +
-      'Only supply the sceneId — the scene data is loaded automatically.',
+      'For large slides, follow manifestOffset pages, then pass elementIds from the manifest ' +
+      'to retrieve exact target records.',
     parameters: ReadSceneContentParams,
 
     execute: async (_toolCallId, params) => {
@@ -218,7 +376,12 @@ export function makeReadSceneContentTool(
 
       const { outline, content, runtimeErrors } = ctx;
       const keyPoints = (outline.keyPoints ?? []).join('; ');
-      const projection = projectContent(content);
+      const projection = projectContent(
+        content,
+        deps.getSelection?.() ?? [],
+        params.elementIds ?? [],
+        params.manifestOffset ?? 0,
+      );
       // Surface any runtime errors the page threw when it rendered — for an
       // interactive scene these are usually the real reason it's blank/broken, so
       // the agent fixes the root cause instead of guessing from the static HTML.

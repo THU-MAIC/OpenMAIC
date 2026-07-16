@@ -103,10 +103,15 @@ export async function POST(req: NextRequest) {
           Accept: 'application/json',
         },
         signal: AbortSignal.timeout(10000),
+        redirect: 'manual',
       });
 
-      // Any response (including 4xx for "batch not found") means auth + connectivity works
-      // Only network errors or 401/403 indicate a problem
+      if (response.status >= 300 && response.status < 400) {
+        return apiError('REDIRECT_NOT_ALLOWED', 403, 'Redirects are not allowed');
+      }
+
+      // Other responses (including 4xx for "batch not found") mean auth + connectivity works.
+      // Only network errors, redirects, or 401/403 indicate a problem.
       if (response.status === 401 || response.status === 403) {
         const text = await response.text().catch(() => '');
         return apiError(

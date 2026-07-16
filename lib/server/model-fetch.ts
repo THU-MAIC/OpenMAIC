@@ -124,9 +124,14 @@ export async function fetchModels(
       {
         method: 'GET',
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+        redirect: 'manual',
       },
       FETCH_TIMEOUT_MS,
     );
+
+    if (res.status >= 300 && res.status < 400) {
+      throw new ModelFetchError(res.status, 'Redirects are not allowed');
+    }
 
     if (res.ok) {
       const body = (await res.json()) as ModelsApiResponse;

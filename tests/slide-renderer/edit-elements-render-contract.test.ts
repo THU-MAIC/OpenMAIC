@@ -8,11 +8,13 @@ import type {
   PPTTextElement,
 } from '@openmaic/dsl';
 import { useClipImage as useAppClipImage } from '@/components/slide-renderer/components/element/ImageElement/useClipImage';
+import { imageFiltersToCss as appImageFiltersToCss } from '@/components/slide-renderer/components/element/ImageElement/useFilter';
 import { BaseLatexElement } from '@/components/slide-renderer/components/element/LatexElement/BaseLatexElement';
 import { LatexElement } from '@/components/slide-renderer/components/element/LatexElement';
 import { BaseTextElement } from '@/components/slide-renderer/components/element/TextElement/BaseTextElement';
 import { StaticTable } from '@/components/slide-renderer/components/element/TableElement/StaticTable';
 import { useClipImage as usePackageClipImage } from '../../packages/@openmaic/renderer/src/elements/image/useClipImage';
+import { imageFiltersToCss as packageImageFiltersToCss } from '../../packages/@openmaic/renderer/src/elements/image/useFilter';
 import { BaseTextElement as PackageBaseTextElement } from '../../packages/@openmaic/renderer/src/elements/text/BaseTextElement';
 import { StaticTable as PackageStaticTable } from '../../packages/@openmaic/renderer/src/elements/table/StaticTable';
 
@@ -60,6 +62,18 @@ const htmlLatex = {
 } as PPTLatexElement;
 
 describe('edit_elements renderer contracts', () => {
+  it('renders canonical and legacy filter units identically in both renderers', () => {
+    for (const filters of [
+      { blur: '2', contrast: '90', brightness: '120', 'hue-rotate': '15' },
+      { blur: '2px', contrast: '90%', brightness: '120%', 'hue-rotate': '15deg' },
+    ]) {
+      expect(packageImageFiltersToCss(filters)).toBe(appImageFiltersToCss(filters));
+      expect(packageImageFiltersToCss(filters)).toBe(
+        'blur(2px) contrast(90%) brightness(120%) hue-rotate(15deg)',
+      );
+    }
+  });
+
   it('renders an explicit zero radius for roundRect images in both renderers', () => {
     expect(clipMarkup(useAppClipImage)).toContain('inset(0 round 0px)');
     expect(clipMarkup(usePackageClipImage)).toContain('inset(0 round 0px)');

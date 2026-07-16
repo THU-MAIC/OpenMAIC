@@ -538,6 +538,7 @@ export async function testComfyuiImageConnectivity(
   log.info(`Testing connectivity to ${baseUrl}`);
   try {
     const response = await fetch(`${baseUrl}/system_stats`, {
+      redirect: 'manual',
       signal: AbortSignal.timeout(CONNECTIVITY_TIMEOUT_MS),
     });
     if (response.ok) {

@@ -137,6 +137,7 @@ export async function testKlingConnectivity(
       const token = generateJWT(accessKey, secretKey);
       return fetch(`${baseUrl}/v1/videos/text2video/connectivity-test`, {
         method: 'GET',
+        redirect: 'manual',
         headers: { Authorization: `Bearer ${token}` },
       });
     },

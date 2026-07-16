@@ -45,6 +45,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     if (error instanceof ModelFetchError) {
+      if (error.status >= 300 && error.status < 400) {
+        return apiError('REDIRECT_NOT_ALLOWED', 403, 'Redirects are not allowed');
+      }
       if (error.status === 401 || error.status === 403) {
         return apiError('INVALID_REQUEST', 401, 'API key is invalid or expired');
       }

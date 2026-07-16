@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { probeAuth } from '@/lib/media/probe-auth';
 
 describe('probeAuth', () => {
-  it.each([200, 400, 404, 429, 500])(
+  it.each([200, 299, 400, 404, 429, 500])(
     'treats HTTP %i as authenticated without reading the response body',
     async (status) => {
       const response = new Response('unused', { status });
@@ -13,6 +13,22 @@ describe('probeAuth', () => {
       await expect(probeAuth({ providerName: 'Example', request })).resolves.toEqual({
         success: true,
         message: 'Connected to Example',
+      });
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(textSpy).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([300, 301, 302, 303, 304, 307, 308, 399])(
+    'rejects HTTP %i redirects without reading the response body',
+    async (status) => {
+      const response = new Response(status === 304 ? null : 'unused', { status });
+      const textSpy = vi.spyOn(response, 'text');
+      const request = vi.fn().mockResolvedValue(response);
+
+      await expect(probeAuth({ providerName: 'Example', request })).resolves.toEqual({
+        success: false,
+        message: 'Example connectivity error: Redirects are not allowed',
       });
       expect(request).toHaveBeenCalledTimes(1);
       expect(textSpy).not.toHaveBeenCalled();
