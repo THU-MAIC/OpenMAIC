@@ -13,6 +13,13 @@ export function normalizeDocumentText(value: string): string {
     .trim();
 }
 
+function normalizeMarkdownText(value: string): string {
+  return value
+    .replace(/\u0000/g, '')
+    .replace(/[\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, ' ')
+    .replace(/\r\n?/g, '\n');
+}
+
 function isEmptyTextBlock(block: DocumentBlock): boolean {
   return (
     (block.type === 'text' || block.type === 'markdown') &&
@@ -30,6 +37,8 @@ function canMergeTextBlocks(previous: DocumentBlock, current: DocumentBlock): bo
     !current.bbox &&
     typeof previous.text === 'string' &&
     typeof current.text === 'string' &&
+    typeof previous.html !== 'string' &&
+    typeof current.html !== 'string' &&
     typeof previous.metadata?.headingLevel !== 'number' &&
     typeof current.metadata?.headingLevel !== 'number'
   );
@@ -48,6 +57,12 @@ function remapArtifactReferences(
     blockIds: Array.from(
       new Set(node.blockIds.map((blockId) => blockIdMap.get(blockId) ?? blockId)),
     ),
+    startOffset: node.blockIds.some((blockId) => blockIdMap.has(blockId))
+      ? undefined
+      : node.startOffset,
+    endOffset: node.blockIds.some((blockId) => blockIdMap.has(blockId))
+      ? undefined
+      : node.endOffset,
   }));
 }
 
@@ -62,7 +77,12 @@ export const normalizeDocumentTransform: DocumentTransform = {
     const normalized = artifact.blocks
       .map((block) => ({
         ...block,
-        text: typeof block.text === 'string' ? normalizeDocumentText(block.text) : undefined,
+        text:
+          typeof block.text === 'string'
+            ? block.type === 'markdown'
+              ? normalizeMarkdownText(block.text)
+              : normalizeDocumentText(block.text)
+            : undefined,
         html: typeof block.html === 'string' ? normalizeDocumentText(block.html) : undefined,
       }))
       .filter((block) => !isEmptyTextBlock(block));

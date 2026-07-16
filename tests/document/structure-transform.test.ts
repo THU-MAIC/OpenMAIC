@@ -55,12 +55,57 @@ describe('document structure transform', () => {
       startOffset: 0,
       source: 'heading',
     });
-    expect(output.artifact.outline?.[0].endOffset).toBeGreaterThan(0);
+    expect(output.artifact.outline?.[0].endOffset).toBe(
+      input.blocks[0].text?.indexOf('## Inspection'),
+    );
     expect(output.artifact.outline?.[1]).toMatchObject({
       title: 'Inspection',
       level: 2,
       parentId: 'outline_1',
       blockIds: ['markdown'],
+    });
+    expect(output.artifact.outline?.[1].endOffset).toBe(input.blocks[0].text?.length);
+  });
+
+  it('stops a parent heading at the next child heading in the same block', async () => {
+    const text = '# Intro\n\nOverview\n\n## Details\n\nSpecifics';
+    const input: DocumentArtifact = {
+      metadata: {},
+      blocks: [{ id: 'markdown', type: 'markdown', text }],
+      assets: [],
+    };
+
+    const output = await detectDocumentStructureTransform.apply(input, context);
+
+    expect(output.artifact.outline?.[0]).toMatchObject({
+      startOffset: 0,
+      endOffset: text.indexOf('## Details'),
+    });
+    expect(output.artifact.outline?.[1]).toMatchObject({
+      startOffset: text.indexOf('## Details'),
+      endOffset: text.length,
+    });
+  });
+
+  it('assigns a level-skipping heading to the nearest shallower ancestor', async () => {
+    const input: DocumentArtifact = {
+      metadata: {},
+      blocks: [
+        {
+          id: 'markdown',
+          type: 'markdown',
+          text: '# Root\n\nIntro\n\n### Deep section\n\nDetails',
+        },
+      ],
+      assets: [],
+    };
+
+    const output = await detectDocumentStructureTransform.apply(input, context);
+
+    expect(output.artifact.outline?.[1]).toMatchObject({
+      title: 'Deep section',
+      level: 3,
+      parentId: 'outline_1',
     });
   });
 

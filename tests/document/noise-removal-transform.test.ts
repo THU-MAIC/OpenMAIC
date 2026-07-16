@@ -75,4 +75,44 @@ describe('document noise-removal transform', () => {
     expect(output.status).toBe('skipped');
     expect(output.artifact.blocks).toHaveLength(3);
   });
+
+  it('preserves a body block whose text matches a removable repeated header', async () => {
+    const input: DocumentArtifact = {
+      metadata: { pageCount: 3 },
+      blocks: [
+        {
+          id: 'body-title',
+          type: 'text',
+          text: 'Course Overview',
+          pageNumber: 1,
+        },
+        ...[1, 2, 3].map(
+          (page): DocumentBlock => ({
+            id: `header_${page}`,
+            type: 'layout',
+            text: 'Course Overview',
+            pageNumber: page,
+            metadata: { role: 'header' },
+          }),
+        ),
+      ],
+      assets: [],
+    };
+
+    const output = await removeDocumentNoiseTransform.apply(input, context);
+
+    expect(output.artifact.blocks).toEqual([
+      {
+        id: 'body-title',
+        type: 'text',
+        text: 'Course Overview',
+        pageNumber: 1,
+      },
+    ]);
+    expect(output.diagnostics?.[0].metadata?.removedBlockIds).toEqual([
+      'header_1',
+      'header_2',
+      'header_3',
+    ]);
+  });
 });

@@ -84,6 +84,7 @@ function candidatesToOutline(
   const parentAtLevel = new Map<number, string>();
 
   for (const [index, candidate] of candidates.entries()) {
+    const nextHeading = candidates[index + 1];
     const nextPeer = candidates.slice(index + 1).find((item) => item.level <= candidate.level);
     const endBlockIndex = nextPeer?.blockIndex ?? blocks.length;
     const sectionBlocks = blocks.slice(
@@ -91,7 +92,10 @@ function candidatesToOutline(
       Math.max(candidate.blockIndex + 1, endBlockIndex),
     );
     const lastSectionBlock = sectionBlocks.at(-1) ?? candidate.block;
-    const parentId = parentAtLevel.get(candidate.level - 1);
+    const parentLevel = Array.from(parentAtLevel.keys())
+      .filter((level) => level < candidate.level)
+      .sort((a, b) => b - a)[0];
+    const parentId = parentLevel ? parentAtLevel.get(parentLevel) : undefined;
     const node: DocumentOutlineNode = {
       id: `outline_${index + 1}`,
       title: candidate.title,
@@ -103,8 +107,8 @@ function candidatesToOutline(
       pageEnd: lastSectionBlock.pageNumber ?? candidate.block.pageNumber,
       startOffset: candidate.startOffset,
       endOffset:
-        nextPeer?.block.id === candidate.block.id && typeof nextPeer.startOffset === 'number'
-          ? nextPeer.startOffset
+        nextHeading?.block.id === candidate.block.id && typeof nextHeading.startOffset === 'number'
+          ? nextHeading.startOffset
           : typeof candidate.startOffset === 'number' && sectionBlocks.length === 1
             ? (candidate.block.text ?? candidate.block.html ?? '').length
             : undefined,

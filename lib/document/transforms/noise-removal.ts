@@ -96,7 +96,8 @@ export const removeDocumentNoiseTransform: DocumentTransform = {
         Boolean(text) &&
         PAGE_NUMBER.test(text) &&
         (isExplicitHeaderOrFooter(block) || block.metadata?.role === 'page-number');
-      const repeatedHeaderOrFooter = Boolean(text) && repeatedTexts.has(text);
+      const repeatedHeaderOrFooter =
+        Boolean(text) && isExplicitHeaderOrFooter(block) && repeatedTexts.has(text);
       if (standalonePageNumber || repeatedHeaderOrFooter) removedBlockIds.add(block.id);
       return !standalonePageNumber && !repeatedHeaderOrFooter;
     });

@@ -74,4 +74,77 @@ describe('document normalization transform', () => {
     const output = await normalizeDocumentTransform.apply(input, context);
     expect(output.artifact.blocks.map((block) => block.id)).toEqual(['p1', 'p2', 'heading']);
   });
+
+  it('preserves indentation and whitespace-significant Markdown', async () => {
+    const markdown = [
+      '    def f():',
+      '        return 1',
+      '',
+      '```text',
+      'column A    column B',
+      '```',
+      'hard break  ',
+      'next line',
+    ].join('\r\n');
+    const input: DocumentArtifact = {
+      metadata: { mimeType: 'text/markdown' },
+      blocks: [{ id: 'markdown', type: 'markdown', text: markdown }],
+      assets: [],
+    };
+
+    const output = await normalizeDocumentTransform.apply(input, context);
+
+    expect(output.artifact.blocks[0].text).toBe(markdown.replace(/\r\n/g, '\n'));
+  });
+
+  it('does not merge text blocks that carry HTML payloads', async () => {
+    const input: DocumentArtifact = {
+      metadata: {},
+      blocks: [
+        { id: 'a', type: 'text', text: 'First', html: '<p>First</p>' },
+        { id: 'b', type: 'text', text: 'Second', html: '<p>Second</p>' },
+      ],
+      assets: [],
+    };
+
+    const output = await normalizeDocumentTransform.apply(input, context);
+
+    expect(output.artifact.blocks).toHaveLength(2);
+    expect(output.artifact.blocks.map((block) => block.html)).toEqual([
+      '<p>First</p>',
+      '<p>Second</p>',
+    ]);
+  });
+
+  it('drops stale outline offsets when their source block is merged into a survivor', async () => {
+    const input: DocumentArtifact = {
+      metadata: {},
+      blocks: [
+        { id: 'a', type: 'text', text: 'Prefix' },
+        { id: 'b', type: 'text', text: 'Target section' },
+      ],
+      assets: [],
+      outline: [
+        {
+          id: 'target',
+          title: 'Target',
+          level: 1,
+          order: 1,
+          blockIds: ['b'],
+          startOffset: 0,
+          endOffset: 6,
+          confidence: 1,
+          source: 'provider',
+        },
+      ],
+    };
+
+    const output = await normalizeDocumentTransform.apply(input, context);
+
+    expect(output.artifact.outline?.[0]).toMatchObject({
+      blockIds: ['a'],
+      startOffset: undefined,
+      endOffset: undefined,
+    });
+  });
 });
