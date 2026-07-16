@@ -184,6 +184,41 @@ describe('resolveMotionLayer', () => {
     expect(layer.staticProps.boxShadow).toBe('0 0 8px 2px 60');
   });
 
+  it('rejects inherited Object prototype values as unresolved parameters', () => {
+    const descriptor: AnimationDescriptor = {
+      id: 'prototype-param.v1',
+      version: 1,
+      effect: 'laser',
+      zIndex: 1,
+      layers: [{ id: 'static', tracks: [], staticProps: { value: '{constructor}' } }],
+    };
+
+    expect(() => resolveMotionLayer(descriptor, 'static')).toThrow(/constructor/);
+  });
+
+  it('does not treat an inherited Object prototype key as a configured unit', () => {
+    const descriptor: AnimationDescriptor = {
+      id: 'prototype-unit.v1',
+      version: 1,
+      effect: 'laser',
+      zIndex: 1,
+      layers: [
+        {
+          id: 'motion',
+          tracks: [{ property: 'constructor', from: 1, to: 2 }],
+        },
+      ],
+    };
+
+    const layer = resolveMotionLayer(descriptor, 'motion', { units: {} });
+    const initial = layer.initial as Record<string, unknown>;
+    const animate = layer.animate as Record<string, unknown>;
+
+    expect(Object.prototype.hasOwnProperty.call(initial, 'constructor')).toBe(true);
+    expect(initial.constructor).toBe(1);
+    expect(animate.constructor).toBe(2);
+  });
+
   it('throws errors that name missing layers, geometry, and parameters', () => {
     expect(() => resolveMotionLayer(spotlightV1, 'missing')).toThrow(/missing.*spotlight\.v1/i);
     expect(() =>

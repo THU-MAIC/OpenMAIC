@@ -13,6 +13,10 @@ type MotionValue = string | number;
 type MotionTarget = Record<string, MotionValue | MotionValue[]>;
 type Params = Record<string, string | number>;
 
+function hasOwn(record: object, property: string): boolean {
+  return Object.prototype.hasOwnProperty.call(record, property);
+}
+
 function requireGeometry(ref: GeometryRef, geometry: Partial<Record<GeometryRef, number>>): number {
   const value = geometry[ref];
   if (value === undefined) {
@@ -84,7 +88,7 @@ function resolveStaticValue(value: string | number, params: Params, descriptorId
 
 function requireParameter(name: string, params: Params, descriptorId: string): string | number {
   const value = params[name];
-  if (value === undefined) {
+  if (!hasOwn(params, name) || value === undefined) {
     throw new Error(`Unresolved parameter "${name}" in descriptor "${descriptorId}"`);
   }
   return value;
@@ -118,7 +122,8 @@ export function resolveMotionLayer(
   let hasExit = false;
 
   for (const track of layer.tracks) {
-    const unit = options?.units?.[track.property];
+    const units = options?.units;
+    const unit = units && hasOwn(units, track.property) ? units[track.property] : undefined;
     const from = applyUnit(resolveValue(track.from, geometry), unit);
     const to = applyUnit(resolveValue(track.to, geometry), unit);
     const propertyTransition = resolveTransition(track);
