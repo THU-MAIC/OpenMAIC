@@ -58,7 +58,10 @@ export async function testNanoBananaConnectivity(
   // Try ?key= query param first (direct Google API), fall back to x-goog-api-key header (proxy)
   let response: Response | null = null;
   try {
-    response = await fetch(`${url}?key=${config.apiKey}`, { method: 'GET' });
+    response = await fetch(`${url}?key=${config.apiKey}`, {
+      method: 'GET',
+      redirect: 'manual',
+    });
   } catch {
     // Direct API unreachable, try header auth
   }
@@ -66,6 +69,7 @@ export async function testNanoBananaConnectivity(
     try {
       response = await fetch(url, {
         method: 'GET',
+        redirect: 'manual',
         headers: { 'x-goog-api-key': config.apiKey },
       });
     } catch (_err) {

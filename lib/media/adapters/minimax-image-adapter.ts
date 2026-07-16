@@ -90,6 +90,7 @@ export async function testMiniMaxImageConnectivity(
     const baseUrl = (config.baseUrl || BASE_URL).replace(/\/$/, '');
     const response = await fetch(`${baseUrl}/v1/image_generation`, {
       method: 'POST',
+      redirect: 'manual',
       headers: {
         Authorization: `Bearer ${config.apiKey}`,
         'Content-Type': 'application/json; charset=utf-8',

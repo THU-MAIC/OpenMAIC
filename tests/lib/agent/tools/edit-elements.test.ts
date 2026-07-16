@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { makeEditElementsTool, parseProposedUpdates } from '@/lib/agent/tools/edit-elements';
+import { makeEditElementsTool } from '@/lib/agent/tools/edit-elements';
 import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
 import type { SceneContent } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
@@ -41,95 +41,67 @@ const title = {
   defaultColor: '#333333',
 } as unknown as PPTElement;
 
-describe('parseProposedUpdates', () => {
-  it('parses fenced JSON updates', () => {
-    const raw = '```json\n{"updates":[{"id":"title-1","props":{"top":40}}]}\n```';
-    expect(parseProposedUpdates(raw)).toEqual([{ id: 'title-1', props: { top: 40 } }]);
-  });
-
-  it('throws on model refuse', () => {
-    expect(() => parseProposedUpdates('{"refuse":"cannot change text content"}')).toThrow(
-      /cannot change text content/,
-    );
-  });
-});
-
 describe('edit_elements tool', () => {
-  it('returns validated intents for a color+position instruction', async () => {
-    const aiCall = vi.fn(async () =>
-      JSON.stringify({
-        updates: [{ id: 'title-1', props: { defaultColor: '#0000ff', top: 40 } }],
-      }),
-    );
+  it('maps direct JSON Patch to validated style and content intents without a nested LLM call', async () => {
+    const aiCall = vi.fn(async () => 'must not be called');
     const tool = makeEditElementsTool({
       aiCall,
       getSceneContext: (id) => (id === 's1' ? slideCtx('s1', [title]) : undefined),
-      getSelection: () => ['title-1'],
     });
     const res = await tool.execute('call-1', {
       sceneId: 's1',
-      instruction: 'make the title blue and move it up',
+      reason: 'Update the title wording and color',
+      patches: [
+        { op: 'test', path: '/elements/0/id', value: 'title-1' },
+        { op: 'replace', path: '/elements/0/content', value: '<p>New title</p>' },
+        { op: 'replace', path: '/elements/0/defaultColor', value: '#0000ff' },
+      ],
     });
+
     expect((res as { isError?: boolean }).isError).toBeFalsy();
-    expect(res.details.sceneId).toBe('s1');
-    expect(res.details.updateCount).toBe(1);
-    expect(res.details.targetElementTypes).toEqual({ 'title-1': 'text' });
-    expect(res.details.targetElementFingerprints?.['title-1']).toEqual(expect.any(String));
-    expect(res.details.inventoryFingerprint).toEqual(expect.any(String));
+    expect(res.details).toMatchObject({
+      sceneId: 's1',
+      updateCount: 1,
+      targetElementTypes: { 'title-1': 'text' },
+      targetElementFingerprints: { 'title-1': expect.any(String) },
+      inventoryFingerprint: expect.any(String),
+    });
     expect(res.details.intents).toEqual([
       {
         type: 'element.update',
         id: 'title-1',
-        props: { defaultColor: '#0000ff', top: 40 },
+        props: { defaultColor: '#0000ff' },
+      },
+      {
+        type: 'text.updateContent',
+        id: 'title-1',
+        content: '<p>New title</p>',
+        target: 'text',
       },
     ]);
-    expect(aiCall).toHaveBeenCalledOnce();
-    const [, system] = aiCall.mock.calls[0] as unknown as [unknown, string, string];
-    expect(system).toContain('Use defaultColor for text color');
-    expect(system).toContain('Use fill for shape body color');
-    expect(system).toContain('Use defaultColor for shape labels');
+    expect(aiCall).not.toHaveBeenCalled();
   });
 
-  it('filters selection ids to the target slide inventory before prompting', async () => {
-    const aiCall = vi.fn(async () =>
-      JSON.stringify({
-        updates: [{ id: 'title-1', props: { top: 40 } }],
-      }),
-    );
+  it('refuses an unguarded element patch', async () => {
     const tool = makeEditElementsTool({
-      aiCall,
-      getSceneContext: (id) => (id === 's1' ? slideCtx('s1', [title]) : undefined),
-      getSelection: () => ['title-1', 'other-scene-id'],
-    });
-    await tool.execute('call-1', {
-      sceneId: 's1',
-      instruction: 'move this up',
-    });
-
-    const [, , user] = aiCall.mock.calls[0] as unknown as [unknown, string, string];
-    expect(user).toContain('Current selection');
-    expect(user).toContain('title-1');
-    expect(user).not.toContain('other-scene-id');
-  });
-
-  it('refuses unknown ids from the model (no intents)', async () => {
-    const tool = makeEditElementsTool({
-      aiCall: async () => JSON.stringify({ updates: [{ id: 'ghost', props: { top: 1 } }] }),
+      aiCall: vi.fn(),
       getSceneContext: (id) => (id === 's1' ? slideCtx('s1', [title]) : undefined),
     });
     const res = await tool.execute('call-1', {
       sceneId: 's1',
-      instruction: 'move the ghost',
+      reason: 'Move the title',
+      patches: [{ op: 'replace', path: '/elements/0/top', value: 40 }],
     });
+
     expect((res as { isError?: boolean }).isError).toBe(true);
     expect(res.details.intents).toBeNull();
     expect(res.details.updateCount).toBe(0);
-    expect((res.content[0] as { text?: string }).text).toMatch(/unknown element id/i);
+    expect((res.content[0] as { text?: string }).text).toMatch(/guarded/i);
   });
 
   it('refuses non-slide scenes', async () => {
     const tool = makeEditElementsTool({
-      aiCall: async () => '',
+      aiCall: vi.fn(),
       getSceneContext: () => ({
         outline: outline('i1', 'interactive'),
         allOutlines: [outline('i1', 'interactive')],
@@ -139,18 +111,23 @@ describe('edit_elements tool', () => {
     });
     const res = await tool.execute('call-1', {
       sceneId: 'i1',
-      instruction: 'make it blue',
+      reason: 'Make it blue',
+      patches: [{ op: 'test', path: '/elements/0/id', value: 'x' }],
     });
     expect((res as { isError?: boolean }).isError).toBe(true);
     expect(res.details.intents).toBeNull();
   });
 
-  it('refuses empty instruction', async () => {
+  it('refuses an empty patch array', async () => {
     const tool = makeEditElementsTool({
-      aiCall: async () => '',
+      aiCall: vi.fn(),
       getSceneContext: (id) => (id === 's1' ? slideCtx('s1', [title]) : undefined),
     });
-    const res = await tool.execute('call-1', { sceneId: 's1', instruction: '  ' });
+    const res = await tool.execute('call-1', {
+      sceneId: 's1',
+      reason: 'No changes',
+      patches: [],
+    });
     expect((res as { isError?: boolean }).isError).toBe(true);
   });
 });

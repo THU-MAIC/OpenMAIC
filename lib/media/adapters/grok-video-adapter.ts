@@ -89,6 +89,7 @@ export async function testGrokVideoConnectivity(
     request: () =>
       fetch(`${baseUrl}/videos/generations`, {
         method: 'POST',
+        redirect: 'manual',
         headers: apiHeaders(config.apiKey),
         body: JSON.stringify({
           model: config.model || DEFAULT_MODEL,

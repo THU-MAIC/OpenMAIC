@@ -278,6 +278,14 @@ export function getEditablePropSchema(type: string, key: string): JsonSchema | n
   return EDITABLE_PROP_SCHEMAS_BY_TYPE.get(type)?.get(key) ?? null;
 }
 
+/** Validate one complete element against the generated DSL schema. */
+export function validateElementAgainstDslSchema(element: PPTElement): string | null {
+  const definitionName = ELEMENT_SCHEMA_DEFINITION_BY_TYPE.get(element.type);
+  const schema = definitionName ? schemaDefinitions[definitionName] : undefined;
+  if (!schema) return `element type ${JSON.stringify(element.type)} is out of contract`;
+  return validateJsonSchemaSubset(element, schema, 'element');
+}
+
 export interface ElementInventoryItem {
   id: string;
   type: string;
@@ -818,6 +826,7 @@ function contextualProposalError(
   element: ElementInventoryItem,
   props: Record<string, unknown>,
   composedTextVisible?: boolean,
+  replacedProps?: ReadonlySet<string>,
 ): string | null {
   if (!PRO_EDITOR_SUPPORTED_TYPES.has(element.type)) {
     return `${element.type} elements are not editable in the active Pro editor`;
@@ -838,7 +847,7 @@ function contextualProposalError(
     }
   }
   const hasIndividuallyEffectiveProp = Object.entries(props).some(([key, value]) =>
-    propChangesEffectiveState(element, key, value),
+    propChangesEffectiveState(element, key, value, replacedProps?.has(key)),
   );
   if (element.type === 'text' && element.hasTextGlyphs === false && hasIndividuallyEffectiveProp) {
     const currentVisible = textBoxPaintVisible(element.style, {});
@@ -907,7 +916,7 @@ function contextualProposalError(
       ? (element.style.outline as Record<string, unknown>)
       : {};
     const patch = props.outline as Record<string, unknown>;
-    const next = { ...current, ...patch };
+    const next = replacedProps?.has('outline') ? patch : { ...current, ...patch };
     const currentWidth = isFiniteNumber(current.width)
       ? current.width
       : element.type === 'table' && hasCurrentOutline
@@ -1138,6 +1147,7 @@ function propChangesEffectiveState(
   element: ElementInventoryItem,
   key: string,
   value: unknown,
+  replace = false,
 ): boolean {
   if (element.type === 'shape' && (key === 'fill' || key === 'gradient') && element.hasPattern) {
     return true;
@@ -1168,7 +1178,7 @@ function propChangesEffectiveState(
     }
   }
   const current = currentInventoryValue(element, key);
-  if (MERGED_STYLE_PROPS.has(key) && isRecord(value)) {
+  if (MERGED_STYLE_PROPS.has(key) && isRecord(value) && !replace) {
     const currentRecord = isRecord(current) ? current : {};
     const next = { ...currentRecord, ...value };
     return !deepEqual(
@@ -1189,6 +1199,10 @@ function propChangesEffectiveState(
 export function mapProposalsToEditIntents(
   proposals: ProposedElementUpdate[],
   inventory: ElementInventoryItem[],
+  options: {
+    replacedPropsById?: ReadonlyMap<string, ReadonlySet<string>>;
+    additionalGroupTargetIds?: ReadonlySet<string>;
+  } = {},
 ): EditElementsGateResult {
   if (!Array.isArray(proposals) || proposals.length === 0) {
     return { ok: false, reason: 'no element updates proposed' };
@@ -1221,6 +1235,7 @@ export function mapProposalsToEditIntents(
     if (!props || typeof props !== 'object' || Array.isArray(props)) {
       return { ok: false, reason: `malformed props for element ${JSON.stringify(id)}` };
     }
+    const replacedProps = options.replacedPropsById?.get(id);
 
     const keyErr = validatePropsKeys(props);
     if (keyErr) return { ok: false, reason: keyErr };
@@ -1290,7 +1305,7 @@ export function mapProposalsToEditIntents(
       };
     }
 
-    const contextErr = contextualProposalError(el, props, composedTextVisible);
+    const contextErr = contextualProposalError(el, props, composedTextVisible, replacedProps);
     if (contextErr) return { ok: false, reason: contextErr };
 
     if (el.type === 'text') {
@@ -1320,7 +1335,9 @@ export function mapProposalsToEditIntents(
     }
 
     if (
-      !Object.entries(clamped).some(([key, value]) => propChangesEffectiveState(el, key, value))
+      !Object.entries(clamped).some(([key, value]) =>
+        propChangesEffectiveState(el, key, value, replacedProps?.has(key)),
+      )
     ) {
       return { ok: false, reason: `element ${JSON.stringify(id)} update has no effective change` };
     }
@@ -1328,7 +1345,11 @@ export function mapProposalsToEditIntents(
     updates.push({ id, props: clamped as Partial<PPTElement> });
   }
 
-  const groupErr = enforceGroupCohesion(updates, inventory);
+  const groupUpdates = [...updates];
+  for (const id of options.additionalGroupTargetIds ?? []) {
+    if (!groupUpdates.some((update) => update.id === id)) groupUpdates.push({ id, props: {} });
+  }
+  const groupErr = enforceGroupCohesion(groupUpdates, inventory);
   if (groupErr) return { ok: false, reason: groupErr };
 
   if (updates.length === 1) {
@@ -2225,6 +2246,10 @@ export function collectIntentTargetIds(intents: EditIntent[]): string[] {
     if (intent.type === 'element.update') ids.push(intent.id);
     else if (intent.type === 'element.updateMany') {
       for (const u of intent.updates) ids.push(u.id);
+    } else if (intent.type === 'element.removeProps') {
+      ids.push(intent.id);
+    } else if (intent.type === 'text.updateContent') {
+      ids.push(intent.id);
     }
   }
   return ids;
@@ -2269,14 +2294,23 @@ export function revalidateIntentsAgainstElements(
       };
     }
   }
+  const groupUpdatesById = new Map<string, Record<string, unknown>>();
+  const includeGroupTarget = (id: string, props: Record<string, unknown> = {}) => {
+    groupUpdatesById.set(id, { ...groupUpdatesById.get(id), ...props });
+  };
+  for (const intent of intents) {
+    if (intent.type === 'element.update') {
+      includeGroupTarget(intent.id, intent.props as Record<string, unknown>);
+    } else if (intent.type === 'element.updateMany') {
+      for (const update of intent.updates) {
+        includeGroupTarget(update.id, update.props as Record<string, unknown>);
+      }
+    } else if (intent.type === 'element.removeProps' || intent.type === 'text.updateContent') {
+      includeGroupTarget(intent.id);
+    }
+  }
   const groupErr = enforceGroupCohesion(
-    intents.flatMap((intent) =>
-      intent.type === 'element.update'
-        ? [{ id: intent.id, props: intent.props }]
-        : intent.type === 'element.updateMany'
-          ? intent.updates
-          : [],
-    ),
+    [...groupUpdatesById].map(([id, props]) => ({ id, props: props as Partial<PPTElement> })),
     inventory,
   );
   if (groupErr) return { ok: false, reason: groupErr };

@@ -129,6 +129,7 @@ export async function testSeedanceConnectivity(
     request: () =>
       fetch(`${resolveArkRoot(baseUrl)}/contents/generations/tasks/connectivity-test-nonexistent`, {
         method: 'GET',
+        redirect: 'manual',
         headers: { Authorization: `Bearer ${config.apiKey}` },
       }),
   });
