@@ -33,9 +33,13 @@ describe('resolveMotionLayer', () => {
       animate: { opacity: 1 },
       exit: {
         opacity: 0,
-        transition: { opacity: { duration: 0.3 } },
+        transition: {
+          opacity: { duration: 0.3, ease: [0.25, 0.1, 0.35, 1] },
+        },
       },
-      transition: { opacity: { duration: 0.3 } },
+      transition: {
+        opacity: { duration: 0.3, ease: [0.25, 0.1, 0.35, 1] },
+      },
       staticProps: { x: 0, y: 0, width: 100, height: 100, fill: 'rgba(0,0,0,0)' },
     });
   });
