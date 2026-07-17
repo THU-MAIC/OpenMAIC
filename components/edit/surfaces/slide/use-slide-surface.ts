@@ -245,19 +245,36 @@ export function useSlideCanvasController(): SlideCanvasController {
   // no gesture. Cleared on a macrotask after pointerup so the synchronous
   // commit still observes `true`.
   const gestureRef = useRef(false);
+  useEffect(() => {
+    const finishGesture = () => {
+      setTimeout(() => {
+        gestureRef.current = false;
+        useSlideEditSession.getState().setGestureActive(false);
+      }, 0);
+    };
+    window.addEventListener('pointerup', finishGesture);
+    window.addEventListener('pointercancel', finishGesture);
+    return () => {
+      window.removeEventListener('pointerup', finishGesture);
+      window.removeEventListener('pointercancel', finishGesture);
+    };
+  }, []);
   const gestureProps = useMemo(
     () => ({
       onPointerDownCapture: () => {
         gestureRef.current = true;
+        useSlideEditSession.getState().setGestureActive(true);
       },
       onPointerUpCapture: () => {
         setTimeout(() => {
           gestureRef.current = false;
+          useSlideEditSession.getState().setGestureActive(false);
         }, 0);
       },
       onPointerCancelCapture: () => {
         setTimeout(() => {
           gestureRef.current = false;
+          useSlideEditSession.getState().setGestureActive(false);
         }, 0);
       },
     }),

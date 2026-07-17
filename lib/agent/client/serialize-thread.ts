@@ -9,6 +9,7 @@
  * unit-tested without React.
  */
 import type { ThreadMessageLike } from '@assistant-ui/react';
+import { editElementsOutcome } from '@/lib/agent/client/edit-elements-result';
 
 export interface SlimToolResult {
   content?: { type: 'text'; text: string }[];
@@ -25,6 +26,15 @@ export interface SlimToolResult {
      */
     html?: string | null;
     editCount?: number;
+    /**
+     * edit_elements success marker: a non-empty placeholder array when intents
+     * applied; `null` on refusal. Drop the heavy props payload — the card only
+     * needs applied vs refused.
+     */
+    intents?: unknown[] | null;
+    updateCount?: number;
+    /** Gate/host refusal reason retained for agent history and diagnostics. */
+    refuseReason?: string;
   };
 }
 
@@ -79,6 +89,17 @@ function slimResult(result: unknown): SlimToolResult | undefined {
     else if (typeof dh === 'string') details.html = dh.length > 0 ? '…' : '';
     const ec = (d as { editCount?: unknown }).editCount;
     if (typeof ec === 'number') details.editCount = ec;
+    // edit_elements: keep applied/refused signal, drop intent prop payloads.
+    const di = (d as { intents?: unknown }).intents;
+    const editOutcome = editElementsOutcome({
+      intents: Array.isArray(di) || di === null ? di : undefined,
+    });
+    if (editOutcome === 'refused') details.intents = null;
+    else if (editOutcome === 'applied') details.intents = (di as unknown[]).map(() => ({}));
+    const uc = (d as { updateCount?: unknown }).updateCount;
+    if (typeof uc === 'number') details.updateCount = uc;
+    const rr = (d as { refuseReason?: unknown }).refuseReason;
+    if (typeof rr === 'string' && rr.trim()) details.refuseReason = rr.trim();
     if (Array.isArray(d.actions)) {
       details.actions = d.actions.map((a) => ({
         type: (a as AnyPart)?.type as string | undefined,

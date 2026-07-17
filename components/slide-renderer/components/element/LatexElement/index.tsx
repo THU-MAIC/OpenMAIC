@@ -39,6 +39,7 @@ export function LatexElement({ elementInfo, selectElement }: LatexElementProps) 
           className={`element-content relative w-full h-full ${
             elementInfo.lock ? 'cursor-default' : 'cursor-move'
           }`}
+          style={{ color: elementInfo.color }}
           onMouseDown={handleSelectElement}
           onTouchStart={handleSelectElement}
         >

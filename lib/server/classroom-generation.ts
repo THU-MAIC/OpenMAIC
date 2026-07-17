@@ -335,7 +335,6 @@ export async function generateClassroom(
     pdfText,
     undefined,
     aiCall,
-    undefined,
     {
       imageGenerationEnabled: input.enableImageGeneration,
       videoGenerationEnabled: input.enableVideoGeneration,

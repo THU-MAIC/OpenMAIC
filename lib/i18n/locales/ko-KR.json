@@ -13,6 +13,11 @@
     "pdfParser": "파서",
     "pdfUpload": "PDF 업로드",
     "removePdf": "파일 제거",
+    "documentExtractor": "추출기",
+    "courseMaterialUpload": "강의 자료 업로드",
+    "courseMaterialsSelected": "강의 자료 {{n}}개 선택됨",
+    "courseMaterialMergeOrder": "강의 자료는 아래 표시된 순서대로 병합됩니다.",
+    "removeCourseMaterial": "파일 제거",
     "webSearchOn": "사용 중",
     "webSearchOff": "클릭하여 사용",
     "webSearchDesc": "생성 전 최신 정보를 웹에서 검색합니다",
@@ -46,7 +51,19 @@
     "exportFailed": "내보내기 실패",
     "classroomZip": "교실 ZIP 내보내기",
     "classroomZipDesc": "강좌 구조 + 미디어 파일",
-    "inlinePartial": "{{count}}개의 외부 에셋을 번들에 포함할 수 없어 오프라인에서 강좌가 올바르게 표시되지 않을 수 있습니다."
+    "inlinePartial": "{{count}}개의 외부 에셋을 번들에 포함할 수 없어 오프라인에서 강좌가 올바르게 표시되지 않을 수 있습니다.",
+    "video": "동영상 내보내기",
+    "videoDesc": "독립형 Hyperframes 프로젝트(MP4로 렌더링 가능)",
+    "videoNoScenes": "내보낼 장면이 없습니다.",
+    "videoCompiling": "동영상 타임라인 컴파일 중...",
+    "videoRendering": "슬라이드 렌더링 및 에셋 수집 중...",
+    "videoPackaging": "동영상 프로젝트 패키징 중...",
+    "videoSuccess": "동영상 프로젝트를 내보냈습니다",
+    "videoFailed": "동영상 내보내기 실패",
+    "videoWarnings": "{{assets}}개의 에셋이 누락되었고 내보내기 보고서에 {{diagnostics}}개의 문제가 있습니다.",
+    "noSlides": "내보낼 슬라이드가 없습니다",
+    "noSlidesSkipped": "이 코스에 슬라이드가 없어 PPTX를 건너뛰었습니다",
+    "nothingToExport": "내보낼 항목이 없습니다"
   },
   "import": {
     "classroom": "교실 가져오기",
@@ -76,6 +93,7 @@
     "unknown": "알 수 없음",
     "stopDiscussion": "토론 중단",
     "endQA": "Q&A 종료",
+    "softClosing": "토론 계속하기",
     "error": {
       "emptyAgentResponses": "에이전트가 빈 응답을 반환하여 토론이 중단되었습니다. 다시 시도하거나 모델 설정을 확인하세요.",
       "streamInterrupted": "스트림이 예기치 않게 종료되어 토론이 완료되지 않았습니다. 다시 시도해 주세요."
@@ -88,7 +106,9 @@
       "empty": "강의 재생 후 여기에 노트가 표시됩니다",
       "emptyHint": "재생 버튼을 눌러 강의를 시작하세요",
       "pageLabel": "{{n}}페이지",
-      "currentPage": "현재"
+      "currentPage": "현재",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "Q&A",
@@ -199,8 +219,8 @@
     },
     "insert": {
       "textBox": "텍스트 상자",
-      "expandToolbar": "삽입 도구 표시",
-      "collapseToolbar": "삽입 도구 숨기기",
+      "dragToolbar": "삽입 도구 이동",
+      "dragToolbarKeyboard": "삽입 도구 이동: Enter 또는 Space를 누른 다음 방향키로 이동",
       "image": "이미지",
       "imageDrop": "이미지를 끌어다 놓거나 클릭하여 파일을 선택하세요",
       "imageOr": "또는 이미지 URL 붙여넣기",
@@ -220,7 +240,8 @@
       "dragHandle": "드래그하여 순서 변경",
       "deckLabel": "장면",
       "moreActions": "더 보기",
-      "rename": "이름 바꾸기"
+      "rename": "이름 바꾸기",
+      "sceneIncomplete": "이 페이지의 내용이 미완성입니다"
     },
     "cue": {
       "speech": "내레이션",
@@ -271,9 +292,17 @@
         "fixHtml": {
           "examples": "\"시작 버튼을 눌러도 반응이 없음\", \"모바일에서 패널이 겹침\"",
           "label": "페이지 버그 수정"
+        },
+        "elements": {
+          "label": "요소 미세 조정",
+          "examples": "“제목을 파란색으로 바꾸고 위로”, “이 그림을 작게”"
         }
       },
       "newConversation": "새 대화",
+      "sessionHistory": "기록",
+      "sessionUntitled": "제목 없는 대화",
+      "sessionDelete": "삭제",
+      "sessionEmpty": "대화 기록 없음",
       "reasoning": "추론 과정",
       "thought": "생각한 시간",
       "interactive": {
@@ -286,7 +315,6 @@
     },
     "timeline": {
       "title": "내레이션 스크립트",
-      "dragToAdd": "끌어서 추가",
       "regenAllTts": "전체 음성 다시 생성",
       "voiceAll": "전체 음성",
       "counts": "내레이션 {{speech}}개 · 동작 {{cue}}개",
@@ -304,14 +332,21 @@
       "fieldAction": "동작",
       "fieldElement": "요소",
       "fieldContent": "내용",
-      "addDiscussion": "토론 추가",
       "addDiscussionExists": "장면당 토론은 하나만 가능합니다",
       "discussionTerminal": "끝",
       "discussionTerminalHint": "토론은 장면의 끝에 고정되며 장면당 하나만 허용됩니다",
       "discussionTopicPlaceholder": "토론 주제(필수)",
       "discussionPromptPlaceholder": "안내 프롬프트(선택)",
       "discussionAgent": "시작자",
-      "discussionAgentUnset": "지정 안 함"
+      "discussionAgentUnset": "지정 안 함",
+      "addAction": "동작 추가"
+    },
+    "picker": {
+      "title": "동작 삽입",
+      "speechDesc": "내레이션 말하기 (자동 음성 지원)",
+      "spotlightDesc": "캔버스의 요소를 강조",
+      "laserDesc": "레이저로 요소를 가리키기",
+      "discussionDesc": "질문을 던지고 발표자를 지정"
     },
     "tts": {
       "preview": "미리듣기",
@@ -369,7 +404,7 @@
       "deleteOption": "선택지 삭제",
       "deleteQuestion": "문항 삭제",
       "empty": "아직 문항이 없습니다",
-      "emptyHint": "위의 “문항 추가” 버튼으로 첫 문항을 만드세요.",
+      "emptyHint": "“문항 추가” 버튼으로 첫 문항을 만드세요.",
       "markCorrect": "정답으로 표시",
       "moveDown": "아래로 이동",
       "moveUp": "위로 이동",
@@ -410,6 +445,14 @@
       "fixing": "수정 중",
       "notFixed": "수정 안 됨",
       "title": "인터랙티브 페이지 수정"
+    },
+    "editElements": {
+      "title": "요소 편집",
+      "editing": "편집 중",
+      "applied": "적용됨",
+      "notApplied": "미적용",
+      "applyFailed": "편집기에서 요소 편집을 적용하지 못했습니다. 변경된 내용이 없습니다.",
+      "applyPartiallyFailed": "하나 이상의 요소 편집을 적용하지 못했습니다. 다른 편집은 적용되었을 수 있습니다."
     }
   },
   "classroomComplete": {
@@ -482,12 +525,16 @@
     "noSpeechDetected": "음성이 감지되지 않았습니다. 다시 시도해주세요",
     "discussionEnded": "토론이 종료되었습니다",
     "qaEnded": "Q&A가 종료되었습니다",
+    "softClosing": "토론 계속하기",
     "thinking": "생각 중",
     "yourTurn": "내 차례",
     "stopDiscussion": "토론 중단",
     "autoPlay": "자동 재생",
     "autoPlayOff": "자동 재생 끄기",
     "speed": "속도",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "음성 입력",
     "voiceInputDisabled": "음성 입력 비활성화됨",
     "textInput": "텍스트 입력",
@@ -801,16 +848,22 @@
   },
   "upload": {
     "pdfSizeLimit": "최대 50MB PDF 파일을 지원합니다",
+    "courseMaterialSizeLimit": "문서, 슬라이드, 스프레드시트, 이미지, 텍스트 — 최대 50MB (지원 형식은 선택한 파서에 따라 다름)",
     "generateFailed": "교실 생성에 실패했습니다. 다시 시도해주세요",
     "requirementPlaceholder": "학습하고 싶은 내용을 자유롭게 입력하세요, 예:\n\"파이썬을 30분 만에 처음부터 가르쳐주세요\"\n\"칠판에 푸리에 변환을 설명해주세요\"\n\"보드게임 Avalon 하는 방법\"",
     "requirementRequired": "강좌 요구사항을 입력해주세요",
-    "fileTooLarge": "파일이 너무 큽니다. 50MB 미만의 PDF 파일을 선택해주세요"
+    "fileTooLarge": "파일이 너무 큽니다. 50MB 미만의 파일을 선택해주세요",
+    "courseMaterialCountLimit": "강의 자료 파일은 최대 5개까지 업로드할 수 있습니다",
+    "courseMaterialTotalSizeLimit": "강의 자료 전체 크기는 150MB 미만이어야 합니다",
+    "unsupportedCourseMaterial": "현재 파서가 이 형식을 지원하지 않습니다. 파서를 변경하거나 다른 파일을 선택하세요."
   },
   "generation": {
-    "analyzingPdf": "PDF 문서 분석 중",
-    "analyzingPdfDesc": "문서 구조와 내용을 추출하고 있어요...",
     "pdfLoadFailed": "PDF 파일 불러오기에 실패했습니다. 다시 시도해주세요",
     "pdfParseFailed": "PDF 파싱에 실패했습니다",
+    "analyzingCourseMaterial": "문서 분석 중",
+    "analyzingCourseMaterialDesc": "문서 구조와 내용을 추출하고 있어요...",
+    "courseMaterialLoadFailed": "강의 자료를 불러오지 못했습니다. 다시 시도해주세요",
+    "courseMaterialParseFailed": "강의 자료 파싱에 실패했습니다",
     "streamNotReadable": "생성 스트림을 읽을 수 없습니다",
     "generatingOutlines": "강좌 개요 작성 중",
     "generatingOutlinesDesc": "학습 경로를 구성하고 있어요...",
@@ -820,11 +873,6 @@
     "generatingActionsDesc": "내레이션, 하이라이트, 인터랙션을 구성하고 있어요...",
     "generationComplete": "생성 완료!",
     "generationFailed": "생성에 실패했습니다",
-    "generatingCourse": "강좌 생성 중",
-    "openingClassroom": "교실을 여는 중...",
-    "outlineReady": "강좌 개요가 생성되었습니다",
-    "generatingFirstPage": "첫 페이지를 생성하는 중...",
-    "firstPageReady": "첫 페이지 준비 완료! 교실을 여는 중...",
     "speechFailed": "음성 생성에 실패했습니다",
     "retryScene": "다시 시도",
     "retryingScene": "재생성 중...",
@@ -845,6 +893,10 @@
     "outlineEmptyResponse": "모델이 유효한 개요를 반환하지 않았습니다. 모델 설정을 확인하고 다시 시도해주세요",
     "outlineGenerateFailed": "개요 생성에 실패했습니다. 잠시 후 다시 시도해주세요",
     "sceneGenerateFailed": "장면 생성에 실패했습니다. 잠시 후 다시 시도해주세요",
+    "sceneGenerateAuthFailed": "모델 제공자가 현재 인증 정보를 거부해 장면 생성에 실패했습니다. 모델 설정을 확인해주세요.",
+    "sceneGenerateRateLimited": "장면 생성 요청이 속도 제한에 걸렸습니다. 잠시 후 다시 시도해주세요.",
+    "sceneGenerateProviderUnavailable": "모델 제공자를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해주세요.",
+    "sceneGenerateInvalidResponse": "모델이 유효한 장면 콘텐츠를 반환하지 않았습니다. 다른 모델을 사용하거나 강좌 요구사항을 조정해주세요.",
     "reviewOutlineTitle": "개요 검토",
     "reviewOutlineDesc": "내용 생성 전에 장면을 편집, 순서 변경, 삭제 또는 추가할 수 있습니다.",
     "reviewOutlineAutoContinue": "개요를 검토하지 않으면 생성이 자동으로 계속됩니다.",
@@ -911,7 +963,10 @@
     "generatingInProgress": "생성 중...",
     "webSearching": "웹 검색",
     "webSearchingDesc": "최신 정보를 웹에서 검색하고 있어요",
-    "webSearchFailed": "웹 검색에 실패했습니다"
+    "webSearchFailed": "웹 검색에 실패했습니다",
+    "outlinesReadyCount": "{{ready}} / {{total}}개 섹션 준비됨",
+    "jumpToBlankTitle": "제목이 필요한 섹션으로 이동",
+    "analyzingMediaMaterial": "오디오/비디오 분석 중"
   },
   "settings": {
     "title": "설정",
@@ -992,6 +1047,7 @@
     "addProviderDescription": "사용 가능한 AI 모델을 확장하기 위해 사용자 지정 모델 제공업체를 추가하세요",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1010,10 +1066,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 프로토콜",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude 프로토콜",
       "google": "Gemini 프로토콜"
     },
@@ -1032,6 +1090,7 @@
     "importFromClipboard": "클립보드에서 가져오기",
     "apiSecret": "API 키",
     "apiHost": "기본 URL",
+    "azureDeploymentHint": "위에 Azure OpenAI 엔드포인트를 입력한 다음 각 Azure 배포 이름을 모델로 추가하세요.",
     "baseUrlRegion": {
       "china": "중국",
       "international": "국제",
@@ -1042,6 +1101,14 @@
     },
     "requestUrl": "요청 URL",
     "models": "모델",
+    "comfyuiWorkflows": "워크플로",
+    "comfyuiRefresh": "새로고침",
+    "comfyuiNoWorkflowsFoundPrefix": "다음 위치에서 워크플로 JSON 파일을 찾을 수 없습니다:",
+    "comfyuiAddWorkflowPrefix": "다음 파일을 추가하여 시작하세요:",
+    "comfyuiAddWorkflowSuffix": "",
+    "comfyuiFolderHintPrefix": "워크플로 JSON 파일을",
+    "comfyuiFolderHintMiddle": "폴더에 넣으세요. 파일 이름이 표시 이름이 됩니다. 예:",
+    "comfyuiLoadError": "워크플로를 불러오지 못했습니다: {error}",
     "addModel": "추가",
     "reset": "초기화",
     "fetch": "불러오기",
@@ -1426,6 +1493,9 @@
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
     "pdfSettings": "PDF 파싱",
+    "documentParsingSettings": "문서 파싱",
+    "supportedFormats": "지원 형식",
+    "mineruSelfHostFormatsNote": "PDF 및 이미지 파싱에는 MinerU 서버에 mineru[pipeline] 또는 mineru[core] 추가 종속성이 필요합니다. 경량 mineru-api 설치에서는 Office 문서만 처리할 수 있습니다.",
     "pdfParsingSettings": "PDF 파싱 설정",
     "pdfDescription": "텍스트 추출, 이미지 처리, 표 인식을 지원하는 PDF 파싱 엔진을 선택하세요",
     "pdfProvider": "PDF 파서",
@@ -1460,6 +1530,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerComfyUIImage": "ComfyUI Image",
     "providerLemonadeImage": "Lemonade Image (로컬)",
     "testImageGeneration": "이미지 생성 테스트",
     "testImageConnectivity": "연결 테스트",
@@ -1527,6 +1598,7 @@
     "webSearchApiKeyPlaceholderServer": "서버 키가 설정되어 있습니다. 선택적으로 재정의할 수 있습니다",
     "webSearchApiKeyHint": "선택한 검색 제공업체에서 API 키를 발급받으세요",
     "webSearchApiKeyOptional": "API 키는 선택 사항입니다. 키가 없으면 공개 페이지 스크래핑이 대체 수단으로 사용됩니다.",
+    "searxngServerOnlyNotice": "SearXNG는 서버에서 구성해야 합니다. SEARXNG_BASE_URL 환경 변수(또는 server-providers.yml의 web-search 섹션)를 설정하세요. 클라이언트가 제공한 인스턴스 URL은 허용되지 않습니다.",
     "baiduSubSources": "바이두 검색 소스",
     "baiduSubSourcesDescription": "쿼리할 바이두 소스를 하나 이상 선택하세요.",
     "baiduSubSourceWeb": "웹 검색",
@@ -1539,7 +1611,59 @@
     "webSearchBaseUrl": "기본 URL",
     "webSearchServerConfigured": "서버 측 검색 API 키가 설정되어 있습니다",
     "optional": "선택 사항",
-    "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다."
+    "selectProvider": "Select Provider",
+    "customProvider": "Custom",
+    "presetPickHint": "Picking a provider auto-fills its base URL and protocol; enter your key then click \"Fetch Models\". Not listed? Use \"Custom\".",
+    "presetCategory": {
+      "tokenPlan": "Token Plans",
+      "aggregator": "Aggregators",
+      "thirdParty": "Vendors",
+      "official": "Official"
+    },
+    "fetchModels": "Fetch Models",
+    "fetchModelsResult": "Fetched {total} models, added {added}",
+    "fetchModelsNoEndpoint": "This provider has no model list endpoint — add models manually",
+    "fetchModelsAuthError": "API key is invalid or expired",
+    "fetchModelsFailed": "Failed to fetch models",
+    "usage": {
+      "title": "Usage",
+      "refresh": "Refresh",
+      "disclaimer": "Usage is system-tracked; only server-side calls are counted.",
+      "totalRequests": "Requests",
+      "totalTokens": "LLM Tokens",
+      "dailyTrend": "Daily Token Trend",
+      "tokens": "Tokens",
+      "byModel": "By Model",
+      "model": "Model",
+      "type": "Type",
+      "reqs": "Reqs",
+      "usage": "Usage",
+      "empty": "No usage data yet",
+      "kindLlm": "LLM",
+      "kindImage": "Image",
+      "kindVideo": "Video",
+      "kindTts": "Speech",
+      "kindAsr": "ASR",
+      "unitToken": "tokens",
+      "unitImage": "images",
+      "unitSecond": "sec",
+      "unitCharacter": "chars"
+    },
+    "tokenPlan": {
+      "nav": "Token Plan",
+      "title": "Token Plan Setup",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "selectPlan": "Select Provider",
+      "apiKey": "API Key",
+      "enable": "Enable",
+      "updateKey": "Update key",
+      "modelsCount": "{{n}} models",
+      "capabilities": "Capabilities offered",
+      "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
+    },
+    "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다.",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "프로필",

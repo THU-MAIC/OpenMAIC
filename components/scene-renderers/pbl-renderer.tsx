@@ -13,6 +13,7 @@ import {
   upgradeLegacyPBLConfigToProjectV2,
 } from '@/lib/pbl/v2/compat';
 import { normalizeProjectRuntime } from '@/lib/pbl/v2/operations/progress';
+import { transitionProjectUiPhase } from '@/lib/pbl/v2/operations/runtime-events';
 import { useStageStore } from '@/lib/store/stage';
 import { cn } from '@/lib/utils/cn';
 import { PBLRoleSelection } from './pbl/role-selection';
@@ -276,7 +277,7 @@ function PBLV2Container({
   const handleReturnToHero = useCallback(() => {
     setExpanded(false);
     setAutoExpand(false);
-    onProjectV2Change({ ...runtimeProject, uiPhase: 'hero' });
+    onProjectV2Change(transitionProjectUiPhase(runtimeProject, 'hero'));
   }, [runtimeProject, onProjectV2Change]);
 
   // Project writes coming FROM the workspace subtree (Instructor / evaluator /
@@ -616,7 +617,7 @@ function PBLV2WorkspaceLayer({
           {isCompleted ? (
             <PBLV2Completion
               project={project}
-              onBack={() => onProjectChange({ ...project, uiPhase: 'workspace' })}
+              onBack={() => onProjectChange(transitionProjectUiPhase(project, 'workspace'))}
             />
           ) : (
             <PBLV2Workspace

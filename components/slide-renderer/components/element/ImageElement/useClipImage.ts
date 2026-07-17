@@ -14,7 +14,7 @@ export function useClipImage(element: PPTImageElement) {
       const shape = element.clip.shape || ClipPathTypes.RECT;
       _clipShape = CLIPPATHS[shape];
     }
-    if (_clipShape.radius !== undefined && element.radius) {
+    if (_clipShape.radius !== undefined && element.radius !== undefined) {
       _clipShape = {
         ..._clipShape,
         radius: `${element.radius}px`,

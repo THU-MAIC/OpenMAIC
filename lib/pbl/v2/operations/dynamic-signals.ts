@@ -40,6 +40,7 @@ import {
   updateProjectAssessment,
   type ProficiencyDirective,
 } from './proficiency';
+import { appendProficiencyUpdatedRuntimeEvent } from './runtime-events';
 import type { PBLProjectV2, ProficiencyTransition } from '../types';
 import type { PBLSSEEvent } from '../api/sse';
 
@@ -204,6 +205,7 @@ export function applyProficiencyDirective(
     // sync. No transition → no proficiency_changed event.
     project.proficiencyAssessment = { ...next, transitions: current.transitions };
     project.proficiency = target;
+    appendProficiencyUpdatedRuntimeEvent(project);
     project.updatedAt = next.lastUpdatedAt;
     return emit(project);
   }
@@ -216,6 +218,7 @@ export function applyProficiencyDirective(
   };
   project.proficiencyAssessment = { ...next, transitions: [...current.transitions, transition] };
   project.proficiency = target;
+  appendProficiencyUpdatedRuntimeEvent(project);
   project.updatedAt = next.lastUpdatedAt;
   return emit(project, transition);
 }

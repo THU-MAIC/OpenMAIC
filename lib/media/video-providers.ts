@@ -26,6 +26,15 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com',
     models: [
+      { id: 'doubao-seedance-2-0-260128', name: 'Seedance 2.0' },
+      {
+        id: 'doubao-seedance-2-0-fast-260128',
+        name: 'Seedance 2.0 Fast',
+      },
+      {
+        id: 'doubao-seedance-2-0-mini-260615',
+        name: 'Seedance 2.0 Mini',
+      },
       { id: 'doubao-seedance-1-5-pro-251215', name: 'Seedance 1.5 Pro' },
       { id: 'doubao-seedance-1-0-pro-250528', name: 'Seedance 1.0 Pro' },
       {

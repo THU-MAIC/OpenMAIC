@@ -7,6 +7,7 @@ let yamlOverride: string | null = null;
 
 const ENV_PREFIXES_TO_CLEAR = [
   'OPENAI',
+  'AZURE_OPENAI',
   'ANTHROPIC',
   'GOOGLE',
   'DEEPSEEK',
@@ -61,6 +62,9 @@ function clearProviderEnv() {
   delete process.env.TAVILY_API_KEY;
   delete process.env.BOCHA_API_KEY;
   delete process.env.BOCHA_BASE_URL;
+  delete process.env.ALIDOCMIND_ACCESS_KEY_ID;
+  delete process.env.ALIDOCMIND_ACCESS_KEY_SECRET;
+  delete process.env.ALIDOCMIND_BASE_URL;
 }
 
 vi.mock('fs', async (importOriginal) => {
@@ -124,6 +128,12 @@ describe('provider-config', () => {
       vi.stubEnv('ANTHROPIC_API_KEY', 'sk-anthropic');
       const { resolveApiKey } = await import('@/lib/server/provider-config');
       expect(resolveApiKey('anthropic')).toBe('sk-anthropic');
+    });
+
+    it('resolves Azure OpenAI via its dedicated env prefix', async () => {
+      vi.stubEnv('AZURE_OPENAI_API_KEY', 'azure-key');
+      const { resolveApiKey } = await import('@/lib/server/provider-config');
+      expect(resolveApiKey('azure')).toBe('azure-key');
     });
 
     it('returns empty string for unknown provider with no env var', async () => {
@@ -251,6 +261,16 @@ providers:
         'deepseek/deepseek-v4-pro',
         'deepseek/deepseek-v4-flash',
       ]);
+    });
+
+    it('maps Azure deployment names to the built-in provider', async () => {
+      vi.stubEnv('AZURE_OPENAI_API_KEY', 'azure-key');
+      vi.stubEnv('AZURE_OPENAI_BASE_URL', 'https://test-resource.openai.azure.com/openai');
+      vi.stubEnv('AZURE_OPENAI_MODELS', 'course-gpt-4o,course-gpt-5');
+      const { getServerProviders } = await import('@/lib/server/provider-config');
+      const providers = getServerProviders();
+
+      expect(providers.azure.models).toEqual(['course-gpt-4o', 'course-gpt-5']);
     });
 
     it('maps Tencent Hunyuan and Xiaomi MiMo env prefixes to provider IDs', async () => {
@@ -383,6 +403,32 @@ pdf:
 
       expect(providers.mineru).toBeUndefined();
     });
+
+    it('includes MinerU Cloud from env when only API key is configured', async () => {
+      vi.stubEnv('PDF_MINERU_CLOUD_API_KEY', 'mineru-cloud-key');
+      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers['mineru-cloud']).toBeDefined();
+      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-key');
+      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
+    });
+
+    it('includes MinerU Cloud from YAML when only API key is configured', async () => {
+      yamlOverride = `
+pdf:
+  mineru-cloud:
+    apiKey: mineru-cloud-yaml-key
+`;
+      const { getServerPDFProviders, resolvePDFApiKey, resolvePDFBaseUrl } =
+        await import('@/lib/server/provider-config');
+      const providers = getServerPDFProviders();
+
+      expect(providers['mineru-cloud']).toBeDefined();
+      expect(resolvePDFApiKey('mineru-cloud')).toBe('mineru-cloud-yaml-key');
+      expect(resolvePDFBaseUrl('mineru-cloud')).toBeUndefined();
+    });
   });
 
   describe('image and video provider metadata', () => {
@@ -488,6 +534,73 @@ pdf:
       const { isServerTTSProviderDisabled } = await import('@/lib/server/provider-config');
       expect(isServerTTSProviderDisabled('openai-tts')).toBe(true);
       expect(isServerTTSProviderDisabled('qwen-tts')).toBe(false);
+    });
+  });
+
+  describe('resolveManagedAliDocMindCredentials (AK/SK)', () => {
+    it('resolves YAML-managed AK/SK with NO ALIDOCMIND_* env vars', async () => {
+      // Regression: verification resolved YAML creds but extraction only had an
+      // env fallback, so a YAML-only deployment verified then failed to extract.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n    accessKeyId: yaml-ak\n    accessKeySecret: yaml-sk\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(true);
+      expect(resolveManagedAliDocMindCredentials()).toEqual({
+        accessKeyId: 'yaml-ak',
+        accessKeySecret: 'yaml-sk',
+        baseUrl: undefined,
+      });
+    });
+
+    it('resolves YAML AK/SK even when the entry also has baseUrl', async () => {
+      // Regression: a YAML entry WITH baseUrl makes the generic loader create a
+      // pdf.alidocmind entry (copying only apiKey/baseUrl/models/proxy, never
+      // AK/SK). The fallback must merge AK/SK into that entry, not skip it.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n' +
+        '    accessKeyId: review-ak\n' +
+        '    accessKeySecret: review-sk\n' +
+        '    baseUrl: https://docmind-api.cn-hangzhou.aliyuncs.com\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(true);
+      expect(resolveManagedAliDocMindCredentials()).toEqual({
+        accessKeyId: 'review-ak',
+        accessKeySecret: 'review-sk',
+        baseUrl: 'https://docmind-api.cn-hangzhou.aliyuncs.com',
+      });
+    });
+
+    it('resolves AK/SK from env vars', async () => {
+      vi.stubEnv('ALIDOCMIND_ACCESS_KEY_ID', 'env-ak');
+      vi.stubEnv('ALIDOCMIND_ACCESS_KEY_SECRET', 'env-sk');
+      const { resolveManagedAliDocMindCredentials } = await import('@/lib/server/provider-config');
+      expect(resolveManagedAliDocMindCredentials()).toMatchObject({
+        accessKeyId: 'env-ak',
+        accessKeySecret: 'env-sk',
+      });
+    });
+
+    it('returns undefined when neither env nor YAML configures AliDocMind', async () => {
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(resolveManagedAliDocMindCredentials()).toBeUndefined();
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(false);
+    });
+
+    it('stays UNMANAGED when YAML sets baseUrl but no AK/SK (no lockout)', async () => {
+      // Regression: a baseUrl-only YAML entry made the generic loader create a
+      // pdf.alidocmind entry → isServerConfigured=true (managed) → but with no
+      // AK/SK the provider was locked out AND client-entered creds were dropped.
+      // With no usable server creds it must stay unmanaged so clients can supply
+      // their own.
+      yamlOverride =
+        'pdf:\n  alidocmind:\n    baseUrl: https://docmind-api.cn-beijing.aliyuncs.com\n';
+      const { resolveManagedAliDocMindCredentials, isServerConfiguredProvider } =
+        await import('@/lib/server/provider-config');
+      expect(isServerConfiguredProvider('pdf', 'alidocmind')).toBe(false);
+      expect(resolveManagedAliDocMindCredentials()).toBeUndefined();
     });
   });
 });

@@ -23,21 +23,42 @@ import {
 } from '@assistant-ui/react';
 import type { AgentEvent } from '@earendil-works/pi-agent-core';
 import { useStageStore } from '@/lib/store/stage';
+import { useCanvasStore } from '@/lib/store/canvas';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
 import type { SceneContextMap } from '@/app/api/agent/edit/route';
 import { mergeAssistantParts, type PiPart } from './merge-assistant-parts';
+import { resolveSceneOutline } from './resolve-scene-outline';
 import { planRegenerateApply, type RegenerateDetails } from './apply-regenerate';
 import { applyScenePatchInSync } from './apply-slide-content';
+import {
+  applyEditElementsIntents,
+  hasEditElementsIntents,
+  type EditElementsApplyDetails,
+} from './apply-edit-elements';
+import { toAgentHistory } from './agent-history';
 import { useRegenSnapshots } from './regen-snapshots';
-import { useAgentThreadStore } from './agent-thread-store';
-import { serializeThread, deserializeThread } from './serialize-thread';
+import {
+  createSession,
+  saveSession,
+  loadSession,
+  listSessions,
+  deleteSession,
+  migrateLegacyThread,
+  rememberActiveSession,
+  recallActiveSession,
+} from './agent-thread-store';
+import { deriveSessionTitle, type AgentEditSessionRecord } from './agent-edit-session-types';
+import { serializeThread, deserializeThread, type SerializedMessage } from './serialize-thread';
 export type { AssistantPart, PiPart } from './merge-assistant-parts';
 import { toPiParts, type PiAssistantContent } from './to-pi-parts';
 import { useThinkingTimers } from './thinking-timers';
 import { useSceneRuntimeErrors } from '@/lib/store/scene-runtime-errors';
+import { useI18n } from '@/lib/hooks/use-i18n';
+import { editElementsApplyCorrectionKey } from './edit-elements-result';
 
 export interface UseAgentRuntimeOptions {
   scene?: { id: string; title: string };
+  isSendDisabled?: boolean;
 }
 
 /** A prior conversation turn sent to the server so the agent has memory. */
@@ -54,29 +75,32 @@ function extractText(message: AppendMessage): string {
     .join('\n');
 }
 
-/** Plain text of a thread message's content (tool-call parts have no text). */
-function messageText(content: ThreadMessageLike['content']): string {
-  if (typeof content === 'string') return content.trim();
-  if (!Array.isArray(content)) return '';
-  return content
-    .map((p) => (p && p.type === 'text' && typeof p.text === 'string' ? p.text : ''))
-    .filter(Boolean)
-    .join('\n')
-    .trim();
-}
-
 /** Project the rendered thread into text-only turns for server-side memory. */
 function toHistory(messages: ThreadMessageLike[]): HistoryTurn[] {
-  const out: HistoryTurn[] = [];
-  for (const m of messages) {
-    const text = messageText(m.content);
-    if (!text) continue;
-    out.push({ role: m.role === 'user' ? 'user' : 'assistant', text });
+  return toAgentHistory(messages);
+}
+
+/**
+ * Re-seed reasoning durations into the (in-memory, lost-on-refresh) timer store
+ * from a restored session so panels show "已思考 N s" instead of a blank label.
+ */
+function reseedReasoningTimers(saved: SerializedMessage[] | undefined): void {
+  if (!Array.isArray(saved)) return;
+  for (const m of saved) {
+    if (m.role !== 'assistant' || !Array.isArray(m.content)) continue;
+    let ord = 0;
+    for (const p of m.content) {
+      if (p.type === 'reasoning') {
+        if (typeof p.durationMs === 'number')
+          useThinkingTimers.getState().seed(`${m.id}:${ord}`, p.durationMs);
+        ord++;
+      }
+    }
   }
-  return out;
 }
 
 export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
+  const { t } = useI18n();
   const [messages, setMessages] = useState<ThreadMessageLike[]>([]);
   const [isRunning, setIsRunning] = useState(false);
 
@@ -87,35 +111,106 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
     messagesRef.current = messages;
   }, [messages]);
 
-  // Lightweight per-course persistence: one thread per stage, restored on mount
-  // and when the course changes, so a refresh no longer drops the conversation.
+  // Multi-session persistence per stage (history list, IndexedDB-backed). The
+  // active session is tracked in memory; on mount/course-switch we load the most
+  // recent session (or start a fresh one) so a refresh no longer drops the chat.
   const stageId = useStageStore((s) => s.stage?.id);
-  const loadedStageRef = useRef<string | undefined>(undefined);
+  // The stage this effect last STARTED loading for (set synchronously). Used both
+  // to dedup re-runs for the same stage and to detect a switch. We deliberately
+  // do NOT gate on a "load committed" ref: the async pass bails via a stage-match
+  // check, so under React StrictMode the first (uncancelled) pass hydrates while
+  // the second is deduped, and a quick switch-away-and-back still reloads.
+  const startedStageRef = useRef<string | undefined>(undefined);
+  const activeSessionIdRef = useRef<string | undefined>(undefined);
+  const [sessions, setSessions] = useState<AgentEditSessionRecord[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | undefined>(undefined);
+
+  const refreshSessions = useCallback(async () => {
+    const sid = useStageStore.getState().stage?.id;
+    if (!sid) return;
+    const list = await listSessions(sid);
+    // The stage may have switched during the await — don't overwrite the new
+    // panel's history with the previous stage's rows.
+    if (useStageStore.getState().stage?.id !== sid) return;
+    setSessions(list);
+  }, []);
+
   useEffect(() => {
-    if (!stageId || loadedStageRef.current === stageId) return;
-    const firstResolve = loadedStageRef.current === undefined;
-    loadedStageRef.current = stageId;
-    // First resolve while a conversation is already underway (user sent before
-    // the stage id was known): keep the live thread, don't clobber it with the
-    // saved (likely empty) one. A genuine course SWITCH still loads its thread.
-    if (firstResolve && messagesRef.current.length > 0) return;
-    const saved = useAgentThreadStore.getState().load(stageId)?.messages;
-    setMessages(deserializeThread(saved));
-    // Re-seed reasoning durations (the live timer store is in-memory, lost on
-    // refresh) so restored panels show "已思考 N s" instead of a blank label.
-    if (Array.isArray(saved)) {
-      for (const m of saved) {
-        if (m.role !== 'assistant' || !Array.isArray(m.content)) continue;
-        let ord = 0;
-        for (const p of m.content) {
-          if (p.type === 'reasoning') {
-            if (typeof p.durationMs === 'number')
-              useThinkingTimers.getState().seed(`${m.id}:${ord}`, p.durationMs);
-            ord++;
-          }
+    if (!stageId || startedStageRef.current === stageId) return;
+    // Switch = this effect previously started for a DIFFERENT stage, so any live
+    // thread on screen belongs to that old stage and must be dropped — even if its
+    // load never committed (e.g. a quick A→B→A before B settled).
+    const isSwitch = startedStageRef.current !== undefined;
+    startedStageRef.current = stageId;
+    if (isSwitch) {
+      // Drop the previous stage's thread synchronously BEFORE the async load, so
+      // the old conversation can't be POSTed as history or archived under the new
+      // stage, and the popover can't act on a foreign-stage session.
+      abortRef.current?.abort();
+      abortRef.current = null;
+      phaseRef.current = 'complete';
+      setIsRunning(false);
+      messagesRef.current = [];
+      setMessages([]);
+      activeSessionIdRef.current = undefined;
+      setActiveSessionId(undefined);
+      setSessions([]);
+      useRegenSnapshots.getState().clearAll();
+      useThinkingTimers.getState().clear();
+    }
+    void (async () => {
+      // One-time import of the old single-thread localStorage entry.
+      await migrateLegacyThread(stageId);
+      const list = await listSessions(stageId);
+      // The user may have switched stages during the awaits — only commit if this
+      // stage is still current (replaces a cancelled-flag, which left StrictMode
+      // unable to hydrate).
+      if (useStageStore.getState().stage?.id !== stageId) return;
+      setSessions(list);
+      // A conversation is already underway for THIS stage — either the user sent
+      // before the stage id resolved (first resolve), or they started typing
+      // during this async load window (after the synchronous switch-clear). Adopt
+      // it as a new active session instead of clobbering the in-flight thread with
+      // a stored one.
+      if (messagesRef.current.length > 0) {
+        // Reuse an id the settle-save effect may already have created/saved during
+        // this load window; only mint a new one if none exists. Otherwise we'd
+        // remember an unsaved id and strand the actually-saved conversation.
+        const sid = activeSessionIdRef.current ?? createSession(stageId).id;
+        activeSessionIdRef.current = sid;
+        setActiveSessionId(sid);
+        rememberActiveSession(stageId, sid);
+        return;
+      }
+      // Prefer the session the user last had open (survives refresh), including a
+      // freshly-created empty one after "new conversation" that has no row yet.
+      const remembered = recallActiveSession(stageId);
+      const rememberedRec = remembered ? list.find((s) => s.id === remembered) : undefined;
+      if (rememberedRec) {
+        activeSessionIdRef.current = rememberedRec.id;
+        setActiveSessionId(rememberedRec.id);
+        setMessages(deserializeThread(rememberedRec.messages));
+        reseedReasoningTimers(rememberedRec.messages);
+      } else if (remembered) {
+        // Remembered an empty/unsaved (or pruned) session → keep the clean slate.
+        activeSessionIdRef.current = remembered;
+        setActiveSessionId(remembered);
+        setMessages([]);
+      } else {
+        const recent = list[0];
+        if (recent) {
+          activeSessionIdRef.current = recent.id;
+          setActiveSessionId(recent.id);
+          setMessages(deserializeThread(recent.messages));
+          reseedReasoningTimers(recent.messages);
+        } else {
+          const s = createSession(stageId);
+          activeSessionIdRef.current = s.id;
+          setActiveSessionId(s.id);
+          setMessages([]);
         }
       }
-    }
+    })();
   }, [stageId]);
 
   // Persist the thread whenever it settles (after a turn completes, not mid-run),
@@ -125,23 +220,42 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   useEffect(() => {
     if (isRunning || messages.length === 0) return;
     const sid = useStageStore.getState().stage?.id;
-    if (sid) {
-      // Supply each reasoning block's final duration (keyed messageId:ordinal) so
-      // "已思考 N s" survives a refresh.
-      const timers = useThinkingTimers.getState().timers;
-      const getDuration = (messageId: string | undefined, ordinal: number): number | undefined => {
-        const tmr = timers[`${messageId}:${ordinal}`];
-        return tmr && tmr.endedAt != null ? tmr.endedAt - tmr.startedAt : undefined;
-      };
-      useAgentThreadStore
-        .getState()
-        .save(sid, { messages: serializeThread(messages, getDuration), updatedAt: Date.now() });
+    if (!sid) return;
+    let sessionId = activeSessionIdRef.current;
+    if (!sessionId) {
+      const s = createSession(sid);
+      sessionId = s.id;
+      activeSessionIdRef.current = s.id;
+      setActiveSessionId(s.id);
     }
-  }, [messages, isRunning]);
+    rememberActiveSession(sid, sessionId);
+    // Supply each reasoning block's final duration (keyed messageId:ordinal) so
+    // "已思考 N s" survives a refresh.
+    const timers = useThinkingTimers.getState().timers;
+    const getDuration = (messageId: string | undefined, ordinal: number): number | undefined => {
+      const tmr = timers[`${messageId}:${ordinal}`];
+      return tmr && tmr.endedAt != null ? tmr.endedAt - tmr.startedAt : undefined;
+    };
+    const serialized = serializeThread(messages, getDuration);
+    const now = Date.now();
+    // saveSession preserves the persisted createdAt for an existing row, so a
+    // fresh `now` here is only used when this session is first written.
+    void saveSession({
+      id: sessionId,
+      stageId: sid,
+      // Empty title → UI renders the localized "untitled" label.
+      title: deriveSessionTitle(serialized, ''),
+      messages: serialized,
+      createdAt: now,
+      updatedAt: now,
+    }).then(() => refreshSessions());
+  }, [messages, isRunning, refreshSessions]);
 
   // Per-run accumulated state: chronological turns + tool results.
   const turnsRef = useRef<PiPart[][]>([]);
   const toolResultsRef = useRef<Map<string, { result: unknown; isError: boolean }>>(new Map());
+  /** Apply-time refusals for edit_elements within the current run (client-side). */
+  const editApplyOutcomeRef = useRef({ applied: false, failed: false });
   const errorRef = useRef<string>('');
   const phaseRef = useRef<'running' | 'complete' | 'error' | 'cancelled'>('complete');
   // Aborts the in-flight run; closing the fetch body cancels the server stream
@@ -156,12 +270,74 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
     abortRef.current = null;
     phaseRef.current = 'complete';
     setIsRunning(false);
+    messagesRef.current = [];
     setMessages([]);
     useRegenSnapshots.getState().clearAll();
     useThinkingTimers.getState().clear();
     const sid = useStageStore.getState().stage?.id;
-    if (sid) useAgentThreadStore.getState().clear(sid);
+    if (sid) {
+      // Archive-then-new: the prior session stays in Dexie; just start a fresh,
+      // empty active session (persisted lazily once it has messages). Remember it
+      // so a refresh keeps the clean slate instead of reloading the old chat.
+      const s = createSession(sid);
+      activeSessionIdRef.current = s.id;
+      setActiveSessionId(s.id);
+      rememberActiveSession(sid, s.id);
+    }
   }, []);
+
+  // Switch the panel to a stored session from the history list.
+  const switchSession = useCallback(
+    async (id: string) => {
+      // Clicking the already-active session is a no-op: don't abort an in-flight
+      // run and reload the last-persisted row, which would drop the current
+      // prompt / a just-finished turn whose save hasn't settled yet.
+      if (id === activeSessionIdRef.current) return;
+      // Load and VALIDATE the target before doing anything destructive. A stale
+      // row (deleted/pruned in another tab, or foreign-stage and left open across
+      // a switch) must just refresh the list — without aborting the current run.
+      const rec = await loadSession(id);
+      if (!rec || rec.stageId !== useStageStore.getState().stage?.id) {
+        await refreshSessions();
+        return;
+      }
+      // Target is valid — now abort the current run and switch to it.
+      abortRef.current?.abort();
+      abortRef.current = null;
+      phaseRef.current = 'complete';
+      setIsRunning(false);
+      useRegenSnapshots.getState().clearAll();
+      useThinkingTimers.getState().clear();
+      activeSessionIdRef.current = rec.id;
+      setActiveSessionId(rec.id);
+      rememberActiveSession(rec.stageId, rec.id);
+      const restored = deserializeThread(rec.messages);
+      // Keep messagesRef in sync synchronously: onNew reads it to build the next
+      // request's history, and it otherwise lags setMessages by a render — a prompt
+      // sent right after switching would carry the OLD conversation as context.
+      messagesRef.current = restored;
+      setMessages(restored);
+      reseedReasoningTimers(rec.messages);
+    },
+    [refreshSessions],
+  );
+
+  // Delete a session; if it was active, reset to a fresh empty session.
+  const deleteSessionAndRefresh = useCallback(
+    async (id: string) => {
+      // Guard the same way as switchSession: a stale popover row from before a
+      // stage switch must not delete a different stage's conversation.
+      const rec = await loadSession(id);
+      if (!rec || rec.stageId !== useStageStore.getState().stage?.id) {
+        await refreshSessions();
+        return;
+      }
+      await deleteSession(id);
+      await refreshSessions();
+      if (activeSessionIdRef.current === id) clearThread();
+    },
+    [refreshSessions, clearThread],
+  );
 
   const buildAssistant = useCallback((id: string): ThreadMessageLike => {
     const parts = mergeAssistantParts({
@@ -235,6 +411,50 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
           isError?: boolean;
         };
         toolResultsRef.current.set(e.toolCallId, { result: e.result, isError: !!e.isError });
+
+        // Per-element edits: apply validated EditIntents through the slide
+        // session (one undo). Separate from wholesale regenerate / html patch.
+        // Apply-time revalidation may still refuse (stale ids / lock / no session);
+        // rewrite the stored tool result so the card shows Not applied, not Applied.
+        if (e.toolName === 'edit_elements' && !e.isError) {
+          const editDetails = (e.result?.details ?? {}) as EditElementsApplyDetails;
+          if (hasEditElementsIntents(editDetails)) {
+            const applied = applyEditElementsIntents(
+              editDetails.sceneId,
+              editDetails.intents,
+              editDetails.targetElementTypes,
+              editDetails.targetElementFingerprints,
+              editDetails.inventoryFingerprint,
+            );
+            if (!applied.ok) {
+              toolResultsRef.current.set(e.toolCallId, {
+                result: {
+                  content: [
+                    {
+                      type: 'text',
+                      text: `Could not apply the edit: ${applied.reason}. Nothing was changed.`,
+                    },
+                  ],
+                  details: {
+                    sceneId: editDetails.sceneId,
+                    intents: null,
+                    updateCount: 0,
+                    refuseReason: applied.reason,
+                  },
+                },
+                isError: true,
+              });
+              // Visible correction after wrap-up may still claim success (server
+              // only saw "proposed"); also feeds next-turn history via toHistory.
+              editApplyOutcomeRef.current.failed = true;
+            } else {
+              editApplyOutcomeRef.current.applied = true;
+            }
+          }
+          refresh();
+          break;
+        }
+
         const details = (e.result?.details ?? {}) as RegenerateDetails;
         // Decide what to apply: regenerate_scene applies content (+actions) and
         // snapshots the pre-state for restore; regenerate_scene_actions applies
@@ -276,6 +496,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
       const assistantId = `a-${turnId}`;
       turnsRef.current = [];
       toolResultsRef.current = new Map();
+      editApplyOutcomeRef.current = { applied: false, failed: false };
       errorRef.current = '';
       phaseRef.current = 'running';
       const abort = new AbortController();
@@ -308,29 +529,19 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         // into the tool deps so the model never fabricates outline/content.
         const storeState = useStageStore.getState();
         const { scenes, outlines, stage } = storeState;
+        // The full outline list in CURRENT scene order — each scene resolved by
+        // its stable `outlineId` (reorder/insert/delete rebalances `order`, and
+        // inserted/duplicated scenes have no persisted outline). The persisted
+        // `outlines` array is the original generation plan, so handing it over
+        // raw would give regenerate-scene/-actions a stale page index / order /
+        // title list. See resolveSceneOutline.
+        const allOutlines = scenes.map((s) => resolveSceneOutline(s, outlines));
         const sceneContextMap: SceneContextMap = {};
         for (const scene of scenes) {
-          const outline = outlines.find((o) => o.order === scene.order) ?? {
-            id: scene.id,
-            type: scene.type,
-            title: scene.title,
-            description: '',
-            keyPoints: [],
-            order: scene.order,
-          };
+          const outline = resolveSceneOutline(scene, outlines);
           sceneContextMap[scene.id] = {
             outline,
-            allOutlines:
-              outlines.length > 0
-                ? outlines
-                : scenes.map((s) => ({
-                    id: s.id,
-                    type: s.type,
-                    title: s.title,
-                    description: '',
-                    keyPoints: [],
-                    order: s.order,
-                  })),
+            allOutlines,
             content: scene.content,
             stageId: scene.stageId,
             languageDirective: stage?.languageDirective,
@@ -359,6 +570,9 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
             scene: opts.scene,
             history,
             sceneContextMap,
+            // Selection-aware edit_elements: prefer "this title" against the
+            // current canvas selection (trusted client state, not model-authored).
+            selection: useCanvasStore.getState().activeElementIdList,
             // The route reads per-request thinking config from the body (not
             // headers), same as generation — forward it so the agent honors the
             // user's active thinking budget/level too.
@@ -423,6 +637,18 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         if (!superseded) {
           abortRef.current = null;
           if (phaseRef.current === 'running') phaseRef.current = 'complete';
+          // If the client refused an edit_elements apply, append a correction so
+          // the user (and next-turn history) see it even when wrap-up claimed success.
+          const correctionKey = editElementsApplyCorrectionKey(editApplyOutcomeRef.current);
+          if (correctionKey) {
+            turnsRef.current.push([
+              {
+                type: 'text',
+                text: t(correctionKey),
+              },
+            ]);
+            editApplyOutcomeRef.current = { applied: false, failed: false };
+          }
           // Close any reasoning block still open (e.g. the run ended with the
           // last block as its final phase) so its duration is final.
           useThinkingTimers.getState().endAll(`${assistantId}:`, Date.now());
@@ -437,7 +663,7 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
         }
       }
     },
-    [buildAssistant, handleEvent, opts.scene],
+    [buildAssistant, handleEvent, opts.scene, t],
   );
 
   // Stop the current response: abort the fetch (cancels the server stream) and
@@ -451,10 +677,21 @@ export function useAgentRuntime(opts: UseAgentRuntimeOptions) {
   const runtime = useExternalStoreRuntime({
     messages,
     isRunning,
+    isSendDisabled: opts.isSendDisabled,
     onNew,
     onCancel,
     convertMessage: (m) => m,
   });
 
-  return { runtime, clearThread, hasMessages: messages.length > 0 };
+  return {
+    runtime,
+    clearThread,
+    hasMessages: messages.length > 0,
+    isRunning,
+    sessions,
+    activeSessionId,
+    switchSession,
+    deleteSessionAndRefresh,
+    refreshSessions,
+  };
 }

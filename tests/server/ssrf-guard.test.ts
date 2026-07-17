@@ -118,6 +118,59 @@ describe('validateUrlForSSRF', () => {
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
+  it('detects private IPv4 embedded in expanded and compressed ISATAP addresses', async () => {
+    const { isPrivateIP } = await import('@/lib/server/ssrf-guard');
+
+    const addresses = [
+      '2001:db8:0:1:0:5efe:7f00:1',
+      '2001:db8:0:1:200:5efe:a00:1',
+      '2001:db8:0:1::5efe:c0a8:101',
+      '2001:db8::200:5efe:ac10:1',
+    ];
+
+    for (const address of addresses) {
+      expect(isPrivateIP(address)).toBe(true);
+    }
+  });
+
+  it('classifies direct dotted-tail ISATAP addresses by their embedded IPv4', async () => {
+    const { isPrivateIP } = await import('@/lib/server/ssrf-guard');
+
+    expect(isPrivateIP('2001:db8:0:1::5efe:192.168.1.1')).toBe(true);
+    expect(isPrivateIP('2001:db8::200:5efe:10.0.0.1')).toBe(true);
+    expect(isPrivateIP('2001:db8:0:1::5efe:8.8.8.8')).toBe(false);
+  });
+
+  it('does not match ISATAP lookalikes with invalid flags, markers, or positions', async () => {
+    const { isPrivateIP } = await import('@/lib/server/ssrf-guard');
+
+    const addresses = [
+      '2001:db8::100:5efe:127.0.0.1',
+      '2001:db8::300:5efe:127.0.0.1',
+      '2001:db8::beef:127.0.0.1',
+      '2001:db8::5efe:0:127.0.0.1',
+    ];
+
+    for (const address of addresses) {
+      expect(isPrivateIP(address)).toBe(false);
+    }
+  });
+
+  it('does not classify zero-width IPv6 compression as ISATAP', async () => {
+    const { isPrivateIP } = await import('@/lib/server/ssrf-guard');
+
+    expect(isPrivateIP('2001:db8:0:1:0:5efe::127.0.0.1')).toBe(false);
+  });
+
+  it('preserves 6to4 and Teredo classification for mixed dotted-tail notation', async () => {
+    const { isPrivateIP } = await import('@/lib/server/ssrf-guard');
+
+    expect(isPrivateIP('2002:7f00:0001::192.0.2.1')).toBe(true);
+    expect(isPrivateIP('2002:0808:0808::127.0.0.1')).toBe(false);
+    expect(isPrivateIP('2001:0000:4136:e378:8000:63bf:128.255.255.254')).toBe(true);
+    expect(isPrivateIP('2001:0000:4136:e378:8000:63bf:247.247.247.247')).toBe(false);
+  });
+
   it('rejects 6to4 tunnel addresses embedding private IPv4', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
@@ -179,6 +232,16 @@ describe('validateUrlForSSRF', () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
     await expect(validateUrlForSSRF('https://mixed.example')).resolves.toBe(
+      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    );
+  });
+
+  it('rejects a hostname that resolves to an ISATAP address embedding private IPv4', async () => {
+    lookupMock.mockResolvedValue([{ address: '2001:db8::200:5efe:192.168.1.10', family: 6 }]);
+
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('https://isatap.example')).resolves.toBe(
       PRIVATE_NETWORK_BLOCK_MESSAGE,
     );
   });

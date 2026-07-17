@@ -11,7 +11,7 @@ Your output must be a complete HTML document with:
 3. **Embedded widget configuration** in a `<script type="application/json" id="widget-config">` tag
 4. **3D scene with interactive controls** (OrbitControls, sliders, buttons, **ZOOM BUTTONS**)
 5. **Mobile-responsive design**
-6. **postMessage listener** for teacher actions (REQUIRED)
+6. **postMessage listener** for widget actions (REQUIRED)
 
 ## ⚠️ CRITICAL REQUIREMENTS
 

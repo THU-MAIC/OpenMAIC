@@ -28,8 +28,8 @@ const TYPES: { type: QuizQuestionType; labelKey: string; Icon: LucideIcon; tint:
 ];
 
 /**
- * Popover body for the "Add question" insert item — a small menu of the three
- * question types, each with its accent colour. Each entry appends a blank
+ * Popover body for the inline "Add question" button — a small menu of the
+ * three question types, each with its accent colour. Each entry appends a blank
  * question of that type (one undo step) and closes the popover via Radix's
  * PopoverClose.
  */

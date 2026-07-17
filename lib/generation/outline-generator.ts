@@ -13,9 +13,10 @@ import type {
 } from '@/lib/types/generation';
 import { buildPrompt, PROMPT_IDS } from '@/lib/prompts';
 import { formatImageDescription, formatImagePlaceholder } from './prompt-formatters';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 import { parseJsonResponse } from './json-repair';
 import { uniquifyMediaElementIds } from './scene-builder';
-import type { AICallFn, GenerationResult, GenerationCallbacks } from './pipeline-types';
+import type { AICallFn, GenerationResult } from './pipeline-types';
 import { createLogger } from '@/lib/logger';
 const log = createLogger('Generation');
 
@@ -37,7 +38,6 @@ export async function generateSceneOutlinesFromRequirements(
   pdfText: string | undefined,
   pdfImages: PdfImage[] | undefined,
   aiCall: AICallFn,
-  callbacks?: GenerationCallbacks,
   options?: {
     visionEnabled?: boolean;
     imageMapping?: ImageMapping;
@@ -56,10 +56,11 @@ export async function generateSceneOutlinesFromRequirements(
   if (pdfImages && pdfImages.length > 0) {
     if (options?.visionEnabled && options?.imageMapping) {
       // Vision mode: split into vision images (first N) and text-only (rest)
-      const allWithSrc = pdfImages.filter((img) => options.imageMapping![img.id]);
+      const sortedImages = sortDocumentImagesForVision(pdfImages);
+      const allWithSrc = sortedImages.filter((img) => options.imageMapping![img.id]);
       const visionSlice = allWithSrc.slice(0, MAX_VISION_IMAGES);
       const textOnlySlice = allWithSrc.slice(MAX_VISION_IMAGES);
-      const noSrcImages = pdfImages.filter((img) => !options.imageMapping![img.id]);
+      const noSrcImages = sortedImages.filter((img) => !options.imageMapping![img.id]);
 
       const visionDescriptions = visionSlice.map((img) => formatImagePlaceholder(img));
       const textDescriptions = [...textOnlySlice, ...noSrcImages].map((img) =>
@@ -112,15 +113,6 @@ export async function generateSceneOutlinesFromRequirements(
   }
 
   try {
-    callbacks?.onProgress?.({
-      currentStage: 1,
-      overallProgress: 20,
-      stageProgress: 50,
-      statusMessage: '正在分析需求，生成场景大纲...',
-      scenesGenerated: 0,
-      totalScenes: 0,
-    });
-
     const response = await aiCall(prompts.system, prompts.user, visionImages);
     const parsed = parseJsonResponse<
       { languageDirective: string; courseTitle?: string; outlines: SceneOutline[] } | SceneOutline[]
@@ -160,15 +152,6 @@ export async function generateSceneOutlinesFromRequirements(
 
     // Replace sequential gen_img_N/gen_vid_N with globally unique IDs
     const result = uniquifyMediaElementIds(enriched);
-
-    callbacks?.onProgress?.({
-      currentStage: 1,
-      overallProgress: 50,
-      stageProgress: 100,
-      statusMessage: `已生成 ${result.length} 个场景大纲`,
-      scenesGenerated: 0,
-      totalScenes: result.length,
-    });
 
     return { success: true, data: { languageDirective, courseTitle, outlines: result } };
   } catch (error) {

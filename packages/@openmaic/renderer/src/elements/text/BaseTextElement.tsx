@@ -26,16 +26,6 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
         left: `${elementInfo.left}px`,
         width: `${elementInfo.width}px`,
         height: `${elementInfo.height}px`,
-        // PowerPoint fills the entire shape rectangle with its solid/gradient
-        // fill, regardless of how much vertical room the text actually
-        // occupies. The inner .element-content div has height: auto so flex
-        // alignment can park the text at top/middle/bottom — but if the
-        // background lived there, a tall shape with short text (e.g. the 22
-        // empty paragraphs that author full-bleed black slide backgrounds in
-        // some decks) would only fill the content height and the slide's own
-        // background would bleed through below.
-        backgroundColor: elementInfo.fill,
-        opacity: elementInfo.opacity,
       }}
     >
       <div
@@ -44,6 +34,9 @@ export function BaseTextElement({ elementInfo, target }: BaseTextElementProps) {
           width: '100%',
           height: '100%',
           transform: `rotate(${elementInfo.rotate}deg)`,
+          // Fill the full text box and rotate it with the glyphs/outline.
+          backgroundColor: elementInfo.fill,
+          opacity: elementInfo.opacity,
           display: 'flex',
           flexDirection: 'column',
           justifyContent,

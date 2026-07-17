@@ -5,16 +5,9 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('AudioRecorder');
 
-// TypeScript declarations for Web Speech API
-declare global {
-  interface Window {
-    // optional `?` to match @assistant-ui/core's global Window augmentation (identical modifiers)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed in lib.dom
-    SpeechRecognition?: any;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API not typed in lib.dom
-    webkitSpeechRecognition?: any;
-  }
-}
+// Window.SpeechRecognition / webkitSpeechRecognition are declared globally by
+// @assistant-ui/core's speech adapter; re-augmenting them here as `any` conflicts
+// with that typing, so we rely on the global declaration and cast the instance.
 
 export interface UseAudioRecorderOptions {
   onTranscription?: (text: string) => void;
@@ -119,8 +112,10 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}) {
             return;
           }
 
-          const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-          const recognition = new SpeechRecognition();
+          const SpeechRecognitionCtor = (window.SpeechRecognition ||
+            window.webkitSpeechRecognition)!;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Web Speech API instance shape isn't in lib.dom
+          const recognition: any = new SpeechRecognitionCtor();
 
           recognition.lang = asrLanguage || 'zh-CN';
           recognition.continuous = continuous;

@@ -15,10 +15,19 @@ describe('buildSystemPrompt capability boundary', () => {
     expect(prompt).toContain('interactive');
   });
 
+  it('grants per-element slide edits', () => {
+    expect(prompt).toContain('edit_elements');
+    expect(prompt).toContain('json patch');
+    expect(prompt).toContain('/elements/n/id');
+    expect(prompt).toContain('read_scene_content');
+    expect(prompt).toContain('test`, `add`, and `replace');
+  });
+
   it('still forbids structural and non-slide edits', () => {
     expect(prompt).toContain('cannot');
     // Structural ops remain out of scope.
     expect(prompt).toMatch(/add|delete|reorder|duplicate/);
+    expect(prompt).not.toContain('cannot rewrite slide text content');
   });
 
   it('embeds the active scene id/title', () => {

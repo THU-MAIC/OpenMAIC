@@ -93,6 +93,7 @@ func()
 |------|------|------|
 | `importPptx(input, options?)` | `(File \| Blob \| ArrayBuffer, ImportPptxOptions?) => Promise<Slide[]>` | 一站式：`.pptx` → `Slide[]`，等所有上传 settle 后再 resolve |
 | `parsedToSlides(json, options?)` | `(Output, ImportPptxOptions?) => Promise<Slide[]>` | 只做「中间 JSON → `Slide[]`」，给已经用 `parse()` 拿到 JSON 的场景 |
+| `normalizeImportedSlides(slides)` | `(Slide[]) => Slide[]` | DSL 合同边界：补默认值、丢弃无法修复的元素（`console.warn` 上报）。`parsedToSlides` / `importPptx` 已自动应用；直接调用 `transformParsedToSlides` 的消费方需要自己跑一遍以获得相同的输出契约 |
 | `OssUpload` | `(blob: Blob, filename: string, dir?: string) => Promise<string>` | 上传回调签名 |
 | `ImportPptxOptions` | `{ upload?: OssUpload }` | 选项对象 |
 | `CanvasSlide` | OpenMAIC `Slide` 类型 | 用于消费方做类型注解 |
@@ -105,6 +106,7 @@ func()
 import {
   importPptx,
   parsedToSlides,
+  normalizeImportedSlides,
   type OssUpload,
   type ImportPptxOptions,
   type CanvasSlide,
@@ -134,6 +136,8 @@ export function parsedToSlides(
   json: Output,
   options?: ImportPptxOptions,
 ): Promise<CanvasSlide[]>;
+
+export function normalizeImportedSlides(slides: CanvasSlide[]): CanvasSlide[];
 ```
 
 ## 📦 用法

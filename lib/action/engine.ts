@@ -14,7 +14,6 @@ import { createStageAPI } from '@/lib/api/stage-api';
 import { useCanvasStore } from '@/lib/store/canvas';
 import { useWhiteboardHistoryStore } from '@/lib/store/whiteboard-history';
 import { useMediaGenerationStore, isMediaPlaceholder } from '@/lib/store/media-generation';
-import { getClientTranslation } from '@/lib/i18n';
 import type { AudioPlayer } from '@/lib/utils/audio-player';
 import type {
   Action,
@@ -37,6 +36,18 @@ import type {
   WidgetRevealAction,
 } from '@/lib/types/action';
 import type { CodeLine } from '@openmaic/dsl';
+import {
+  EFFECT_AUTO_CLEAR_MS,
+  MAX_VIDEO_WAIT_MS,
+  WB_OPEN_MS,
+  WB_DRAW_MS,
+  WB_EDIT_MS,
+  WB_DELETE_MS,
+  WB_CLOSE_MS,
+  WIDGET_MS,
+  wbDrawCodeMs,
+  wbClearMs,
+} from '@/lib/choreography';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
 
@@ -109,11 +120,13 @@ function generateLineIds(count: number): string[] {
 
 // ==================== ActionEngine ====================
 
-/** Default duration (ms) before fire-and-forget effects auto-clear */
-const EFFECT_AUTO_CLEAR_MS = 5000;
-
 /** Callback for sending messages to widget iframe */
 export type WidgetMessageCallback = (type: string, payload: Record<string, unknown>) => void;
+
+export interface ActionExecutionOptions {
+  silent?: boolean;
+  signal?: AbortSignal;
+}
 
 export class ActionEngine {
   private stageStore: StageStore;
@@ -151,10 +164,22 @@ export class ActionEngine {
    * Fire-and-forget actions return immediately.
    * Synchronous actions return a Promise that resolves when the action is complete.
    */
-  async execute(action: Action): Promise<void> {
+  async execute(action: Action, options: ActionExecutionOptions = {}): Promise<void> {
+    if (options.silent) {
+      if (action.type === 'speech' || action.type === 'spotlight' || action.type === 'laser') {
+        return;
+      }
+      if (action.type === 'discussion' || action.type === 'play_video') {
+        return;
+      }
+      if (action.type.startsWith('widget_')) {
+        return;
+      }
+    }
+
     // Auto-open whiteboard if a draw/clear/delete action is attempted while it's closed
     if (action.type.startsWith('wb_') && action.type !== 'wb_open' && action.type !== 'wb_close') {
-      await this.ensureWhiteboardOpen();
+      await this.ensureWhiteboardOpen(options);
     }
 
     switch (action.type) {
@@ -167,35 +192,35 @@ export class ActionEngine {
         return;
       // Synchronous — Video
       case 'play_video':
-        return this.executePlayVideo(action as PlayVideoAction);
+        return this.executePlayVideo(action as PlayVideoAction, options);
 
       // Synchronous
       case 'speech':
         return this.executeSpeech(action);
       case 'wb_open':
-        return this.executeWbOpen();
+        return this.executeWbOpen(options);
       case 'wb_draw_text':
-        return this.executeWbDrawText(action);
+        return this.executeWbDrawText(action, options);
       case 'wb_draw_shape':
-        return this.executeWbDrawShape(action);
+        return this.executeWbDrawShape(action, options);
       case 'wb_draw_chart':
-        return this.executeWbDrawChart(action);
+        return this.executeWbDrawChart(action, options);
       case 'wb_draw_latex':
-        return this.executeWbDrawLatex(action);
+        return this.executeWbDrawLatex(action, options);
       case 'wb_draw_table':
-        return this.executeWbDrawTable(action);
+        return this.executeWbDrawTable(action, options);
       case 'wb_draw_line':
-        return this.executeWbDrawLine(action as WbDrawLineAction);
+        return this.executeWbDrawLine(action as WbDrawLineAction, options);
       case 'wb_draw_code':
-        return this.executeWbDrawCode(action as WbDrawCodeAction);
+        return this.executeWbDrawCode(action as WbDrawCodeAction, options);
       case 'wb_edit_code':
-        return this.executeWbEditCode(action as WbEditCodeAction);
+        return this.executeWbEditCode(action as WbEditCodeAction, options);
       case 'wb_clear':
-        return this.executeWbClear();
+        return this.executeWbClear(options);
       case 'wb_delete':
-        return this.executeWbDelete(action as WbDeleteAction);
+        return this.executeWbDelete(action as WbDeleteAction, options);
       case 'wb_close':
-        return this.executeWbClose();
+        return this.executeWbClose(options);
       case 'discussion':
         // Discussion lifecycle is managed externally via engine callbacks
         return;
@@ -219,6 +244,17 @@ export class ActionEngine {
       this.effectTimer = null;
     }
     useCanvasStore.getState().clearAllEffects();
+  }
+
+  resetPlaybackVisualState(): void {
+    this.clearEffects();
+    useCanvasStore.getState().pauseVideo();
+    useCanvasStore.getState().setWhiteboardOpen(false);
+    useCanvasStore.getState().setWhiteboardClearing(false);
+    const wb = this.stageAPI.whiteboard.get();
+    if (wb.success && wb.data) {
+      this.stageAPI.whiteboard.update({ elements: [] }, wb.data.id);
+    }
   }
 
   /** Schedule auto-clear for fire-and-forget effects */
@@ -265,7 +301,11 @@ export class ActionEngine {
 
   // ==================== Synchronous — Video ====================
 
-  private async executePlayVideo(action: PlayVideoAction): Promise<void> {
+  private async executePlayVideo(
+    action: PlayVideoAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
+    if (options.signal?.aborted) return;
     // Resolve the video element to a generated media reference.
     // action.elementId is the slide element ID (e.g. video_abc123), but the media
     // store is keyed by generated media refs, so we need to bridge the two.
@@ -276,20 +316,27 @@ export class ActionEngine {
       if (task && task.status !== 'done') {
         // Wait for media to be ready (or fail)
         await new Promise<void>((resolve) => {
-          const unsubscribe = useMediaGenerationStore.subscribe((state) => {
+          let unsubscribe = () => {};
+          const finish = () => {
+            unsubscribe();
+            options.signal?.removeEventListener('abort', finish);
+            resolve();
+          };
+          unsubscribe = useMediaGenerationStore.subscribe((state) => {
             const t = state.tasks[placeholderId];
             if (!t || t.status === 'done' || t.status === 'failed') {
-              unsubscribe();
-              resolve();
+              finish();
             }
           });
+          options.signal?.addEventListener('abort', finish, { once: true });
           // Check again in case it resolved between getState and subscribe
           const current = useMediaGenerationStore.getState().tasks[placeholderId];
           if (!current || current.status === 'done' || current.status === 'failed') {
-            unsubscribe();
-            resolve();
+            finish();
           }
         });
+
+        if (options.signal?.aborted) return;
 
         // If failed, skip playback
         if (useMediaGenerationStore.getState().tasks[placeholderId]?.status === 'failed') {
@@ -298,29 +345,41 @@ export class ActionEngine {
       }
     }
 
+    if (options.signal?.aborted) return;
     useCanvasStore.getState().playVideo(action.elementId);
 
     // Wait until the video finishes playing, with a safety timeout to prevent
     // the playback engine from hanging indefinitely if the video element is
     // invalid or the state change is missed.
     return new Promise<void>((resolve) => {
-      const MAX_VIDEO_WAIT_MS = 5 * 60 * 1000; // 5 minutes
-      const timeout = setTimeout(() => {
-        unsubscribe();
-        log.warn(`[playVideo] Timeout waiting for video ${action.elementId} to finish`);
-        resolve();
-      }, MAX_VIDEO_WAIT_MS);
-      const unsubscribe = useCanvasStore.subscribe((state) => {
-        if (state.playingVideoElementId !== action.elementId) {
-          clearTimeout(timeout);
-          unsubscribe();
-          resolve();
-        }
-      });
-      if (useCanvasStore.getState().playingVideoElementId !== action.elementId) {
+      let finished = false;
+      let unsubscribe = () => {};
+      const finish = () => {
+        if (finished) return;
+        finished = true;
         clearTimeout(timeout);
         unsubscribe();
+        options.signal?.removeEventListener('abort', abortPlayback);
         resolve();
+      };
+      const abortPlayback = () => {
+        if (useCanvasStore.getState().playingVideoElementId === action.elementId) {
+          useCanvasStore.getState().pauseVideo();
+        }
+        finish();
+      };
+      const timeout = setTimeout(() => {
+        log.warn(`[playVideo] Timeout waiting for video ${action.elementId} to finish`);
+        finish();
+      }, MAX_VIDEO_WAIT_MS);
+      unsubscribe = useCanvasStore.subscribe((state) => {
+        if (state.playingVideoElementId !== action.elementId) {
+          finish();
+        }
+      });
+      options.signal?.addEventListener('abort', abortPlayback, { once: true });
+      if (useCanvasStore.getState().playingVideoElementId !== action.elementId) {
+        finish();
       }
     });
   }
@@ -364,31 +423,38 @@ export class ActionEngine {
   // ==================== Synchronous — Whiteboard ====================
 
   /** Auto-open the whiteboard if it's not already open */
-  private async ensureWhiteboardOpen(): Promise<void> {
+  private async ensureWhiteboardOpen(options: ActionExecutionOptions = {}): Promise<void> {
     if (!useCanvasStore.getState().whiteboardOpen) {
-      await this.executeWbOpen();
+      await this.executeWbOpen(options);
     }
   }
 
-  private async executeWbOpen(): Promise<void> {
+  private async executeWbOpen(options: ActionExecutionOptions = {}): Promise<void> {
     // Ensure a whiteboard exists
     this.stageAPI.whiteboard.get();
     useCanvasStore.getState().setWhiteboardOpen(true);
+    if (options.silent) return;
     // Wait for open animation to complete (slow spring: stiffness 120, damping 18, mass 1.2)
-    await delay(2000);
+    await delay(WB_OPEN_MS);
   }
 
-  private async executeWbDrawText(action: WbDrawTextAction): Promise<void> {
+  private async executeWbDrawText(
+    action: WbDrawTextAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     let htmlContent = action.content ?? '';
     if (!htmlContent) return; // nothing to draw
 
     const latex = getLikelyLatexMath(htmlContent);
     if (latex !== null) {
-      return this.executeWbDrawLatex({
-        ...action,
-        type: 'wb_draw_latex',
-        latex,
-      });
+      return this.executeWbDrawLatex(
+        {
+          ...action,
+          type: 'wb_draw_latex',
+          latex,
+        },
+        options,
+      );
     }
 
     const wb = this.stageAPI.whiteboard.get();
@@ -416,11 +482,16 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    // Wait for element fade-in animation
-    await delay(800);
+    if (!options.silent) {
+      // Wait for element fade-in animation
+      await delay(WB_DRAW_MS);
+    }
   }
 
-  private async executeWbDrawShape(action: WbDrawShapeAction): Promise<void> {
+  private async executeWbDrawShape(
+    action: WbDrawShapeAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
@@ -442,11 +513,16 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    // Wait for element fade-in animation
-    await delay(800);
+    if (!options.silent) {
+      // Wait for element fade-in animation
+      await delay(WB_DRAW_MS);
+    }
   }
 
-  private async executeWbDrawChart(action: WbDrawChartAction): Promise<void> {
+  private async executeWbDrawChart(
+    action: WbDrawChartAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
@@ -467,10 +543,13 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
-  private async executeWbDrawLatex(action: WbDrawLatexAction): Promise<void> {
+  private async executeWbDrawLatex(
+    action: WbDrawLatexAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
@@ -503,10 +582,13 @@ export class ActionEngine {
       return;
     }
 
-    await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
-  private async executeWbDrawTable(action: WbDrawTableAction): Promise<void> {
+  private async executeWbDrawTable(
+    action: WbDrawTableAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
@@ -559,10 +641,13 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
-  private async executeWbDrawLine(action: WbDrawLineAction): Promise<void> {
+  private async executeWbDrawLine(
+    action: WbDrawLineAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
@@ -591,15 +676,26 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    // Wait for element fade-in animation
-    await delay(800);
+    if (!options.silent) {
+      // Wait for element fade-in animation
+      await delay(WB_DRAW_MS);
+    }
   }
 
-  private async executeWbDrawCode(action: WbDrawCodeAction): Promise<void> {
+  private async executeWbDrawCode(
+    action: WbDrawCodeAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
     const lines = codeToLines(action.code);
+    const suppliedLineIds = (action as WbDrawCodeAction & { lineIds?: string[] }).lineIds;
+    if (suppliedLineIds?.length === lines.length) {
+      lines.forEach((line, index) => {
+        line.id = suppliedLineIds[index];
+      });
+    }
 
     this.stageAPI.whiteboard.addElement(
       {
@@ -620,12 +716,17 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    // Wait for typing animation: base 800ms + 50ms per line, capped at 3s
-    const animMs = Math.min(800 + lines.length * 50, 3000);
-    await delay(animMs);
+    if (!options.silent) {
+      // Wait for typing animation (base 800ms + 50ms/line, capped at 3s)
+      const animMs = wbDrawCodeMs(lines.length);
+      await delay(animMs);
+    }
   }
 
-  private async executeWbEditCode(action: WbEditCodeAction): Promise<void> {
+  private async executeWbEditCode(
+    action: WbEditCodeAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
@@ -638,7 +739,11 @@ export class ActionEngine {
 
     let lines: CodeLine[] = [...element.lines];
     const newContentLines = action.content ? action.content.split('\n') : [];
-    const newLineIds = generateLineIds(newContentLines.length);
+    const suppliedLineIds = (action as WbEditCodeAction & { newLineIds?: string[] }).newLineIds;
+    const newLineIds =
+      suppliedLineIds?.length === newContentLines.length
+        ? suppliedLineIds
+        : generateLineIds(newContentLines.length);
 
     switch (action.operation) {
       case 'insert_after': {
@@ -683,24 +788,35 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    // Wait for edit animation
-    await delay(600);
+    if (!options.silent) {
+      // Wait for edit animation
+      await delay(WB_EDIT_MS);
+    }
   }
 
-  private async executeWbDelete(action: WbDeleteAction): Promise<void> {
+  private async executeWbDelete(
+    action: WbDeleteAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
     this.stageAPI.whiteboard.deleteElement(action.elementId, wb.data.id);
-    await delay(300);
+    if (!options.silent) await delay(WB_DELETE_MS);
   }
 
-  private async executeWbClear(): Promise<void> {
+  private async executeWbClear(options: ActionExecutionOptions = {}): Promise<void> {
     const wb = this.stageAPI.whiteboard.get();
     if (!wb.success || !wb.data) return;
 
     const elementCount = wb.data.elements?.length || 0;
     if (elementCount === 0) return;
+
+    if (options.silent) {
+      this.stageAPI.whiteboard.update({ elements: [] }, wb.data.id);
+      useCanvasStore.getState().setWhiteboardClearing(false);
+      return;
+    }
 
     // Save snapshot before AI clear (mirrors UI handleClear in index.tsx)
     useWhiteboardHistoryStore.getState().pushSnapshot(wb.data.elements!);
@@ -708,8 +824,8 @@ export class ActionEngine {
     // Trigger cascade exit animation
     useCanvasStore.getState().setWhiteboardClearing(true);
 
-    // Wait for cascade: base 380ms + 55ms per element, capped at 1400ms
-    const animMs = Math.min(380 + elementCount * 55, 1400);
+    // Wait for cascade (base 380ms + 55ms/element, capped at 1400ms)
+    const animMs = wbClearMs(elementCount);
     await delay(animMs);
 
     // Actually remove elements
@@ -717,10 +833,11 @@ export class ActionEngine {
     useCanvasStore.getState().setWhiteboardClearing(false);
   }
 
-  private async executeWbClose(): Promise<void> {
+  private async executeWbClose(options: ActionExecutionOptions = {}): Promise<void> {
     useCanvasStore.getState().setWhiteboardOpen(false);
+    if (options.silent) return;
     // Wait for close animation (500ms ease-out tween)
-    await delay(700);
+    await delay(WB_CLOSE_MS);
   }
 
   // ==================== Widget Actions ====================
@@ -738,29 +855,31 @@ export class ActionEngine {
   private async executeWidgetHighlight(action: WidgetHighlightAction): Promise<void> {
     this.sendWidgetMessage('HIGHLIGHT_ELEMENT', {
       target: action.target,
+      content: action.content,
     });
     // Quick delay for visual effect
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget setState action */
   private async executeWidgetSetState(action: WidgetSetStateAction): Promise<void> {
-    this.sendWidgetMessage('SET_WIDGET_STATE', { state: action.state });
+    this.sendWidgetMessage('SET_WIDGET_STATE', { state: action.state, content: action.content });
     // Quick delay for state change to propagate
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget annotation action */
   private async executeWidgetAnnotation(action: WidgetAnnotationAction): Promise<void> {
     this.sendWidgetMessage('ANNOTATE_ELEMENT', {
       target: action.target,
+      content: action.content,
     });
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget reveal action */
   private async executeWidgetReveal(action: WidgetRevealAction): Promise<void> {
-    this.sendWidgetMessage('REVEAL_ELEMENT', { target: action.target });
-    await delay(300);
+    this.sendWidgetMessage('REVEAL_ELEMENT', { target: action.target, content: action.content });
+    await delay(WIDGET_MS);
   }
 }

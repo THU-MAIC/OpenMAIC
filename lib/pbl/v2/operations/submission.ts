@@ -12,6 +12,7 @@
  */
 
 import type { PBLProjectV2, PBLSubmission, PBLSubmissionKind } from '../types';
+import { appendRuntimeEvent, mintRuntimeEventId } from './runtime-events';
 
 function newId(prefix: string): string {
   return (
@@ -45,6 +46,15 @@ export function addSubmission(
     createdAt: new Date().toISOString(),
   };
   project.submissions.push(sub);
+  appendRuntimeEvent(project, {
+    id: mintRuntimeEventId(),
+    kind: 'submission_created',
+    actorType: 'user',
+    submissionId: sub.id,
+    ts: sub.createdAt,
+    microtaskId: sub.microtaskId,
+    milestoneId: sub.milestoneId,
+  });
   project.updatedAt = sub.createdAt;
   return sub;
 }

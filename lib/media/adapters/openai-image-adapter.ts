@@ -31,6 +31,7 @@ export async function testOpenAIImageConnectivity(
     const response = await fetch(
       `${baseUrl}/models/${encodeURIComponent(config.model || DEFAULT_MODEL)}`,
       {
+        redirect: 'manual',
         headers: {
           Authorization: `Bearer ${config.apiKey}`,
         },

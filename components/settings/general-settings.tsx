@@ -4,6 +4,7 @@ import { useState, useCallback } from 'react';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { UsageDashboard } from './usage-dashboard';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -63,6 +64,9 @@ export function GeneralSettings() {
 
   return (
     <div className="flex flex-col gap-8">
+      {/* Usage statistics dashboard */}
+      <UsageDashboard />
+
       {/* Danger Zone - Clear Cache */}
       <div className="relative rounded-xl border border-destructive/30 bg-destructive/[0.03] dark:bg-destructive/[0.06] overflow-hidden">
         {/* Subtle diagonal stripe pattern for danger emphasis */}

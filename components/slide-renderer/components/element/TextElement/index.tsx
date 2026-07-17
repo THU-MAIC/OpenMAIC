@@ -147,7 +147,8 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
   const checkEmptyText = useCallback(() => {
     const debouncedCheck = debounce(
       () => {
-        const pureText = elementInfo.content.replace(/<[^>]+>/g, '');
+        const content = typeof elementInfo.content === 'string' ? elementInfo.content : '';
+        const pureText = content.replace(/<[^>]+>/g, '');
         if (!pureText) deleteElement(elementInfo.id);
       },
       300,
@@ -175,7 +176,11 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
     >
       <div
         className="rotate-wrapper w-full h-full"
-        style={{ transform: `rotate(${elementInfo.rotate}deg)` }}
+        style={{
+          transform: `rotate(${elementInfo.rotate}deg)`,
+          backgroundColor: elementInfo.fill,
+          opacity: elementInfo.opacity,
+        }}
       >
         <div
           ref={elementRef}
@@ -183,8 +188,6 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
           style={{
             width: elementInfo.vertical ? 'auto' : `${elementInfo.width}px`,
             height: elementInfo.vertical ? `${elementInfo.height}px` : 'auto',
-            backgroundColor: elementInfo.fill,
-            opacity: elementInfo.opacity,
             textShadow: shadowStyle,
             lineHeight: elementInfo.lineHeight,
             letterSpacing: `${elementInfo.wordSpace || 0}px`,
@@ -209,7 +212,7 @@ export function TextElement({ elementInfo, selectElement }: TextElementProps) {
               defaultColor={elementInfo.defaultColor}
               defaultFontName={elementInfo.defaultFontName}
               editable={!elementInfo.lock}
-              value={elementInfo.content}
+              value={typeof elementInfo.content === 'string' ? elementInfo.content : ''}
               onUpdate={({ value, ignore }) => updateContent(value, ignore)}
               onMouseDown={(e) => handleSelectElement(e as React.MouseEvent, false)}
             />

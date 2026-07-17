@@ -4,14 +4,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // store's save/load actions. Mock them so we can drive load inputs and
 // observe persistence without a real IndexedDB. Spies go through vi.hoisted
 // so they exist before the hoisted vi.mock factories run.
-const { loadStageDataMock, saveStageDataMock, stageOutlinesGet, stageOutlinesPut } = vi.hoisted(
-  () => ({
-    loadStageDataMock: vi.fn(),
-    saveStageDataMock: vi.fn().mockResolvedValue(undefined),
-    stageOutlinesGet: vi.fn(),
-    stageOutlinesPut: vi.fn(),
-  }),
-);
+const {
+  hydratePBLScenesFromRuntimeMock,
+  loadStageDataMock,
+  saveStageDataMock,
+  stageOutlinesGet,
+  stageOutlinesPut,
+} = vi.hoisted(() => ({
+  hydratePBLScenesFromRuntimeMock: vi.fn(),
+  loadStageDataMock: vi.fn(),
+  saveStageDataMock: vi.fn().mockResolvedValue(undefined),
+  stageOutlinesGet: vi.fn(),
+  stageOutlinesPut: vi.fn(),
+}));
+vi.mock('@/lib/pbl/v2/runtime/hydration', () => ({
+  hydratePBLScenesFromRuntime: (...args: unknown[]) => hydratePBLScenesFromRuntimeMock(...args),
+}));
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: (...args: unknown[]) => saveStageDataMock(...args),
   loadStageData: (...args: unknown[]) => loadStageDataMock(...args),
@@ -20,12 +28,17 @@ vi.mock('@/lib/utils/database', () => ({
   db: { stageOutlines: { put: stageOutlinesPut, get: stageOutlinesGet } },
 }));
 
-import { useStageStore } from '@/lib/store/stage';
+import {
+  claimStageSceneLoadToken,
+  useStageStore,
+  type StageSceneLoadToken,
+} from '@/lib/store/stage';
+import { applyHydratedClassroomFallbackScenes } from '@/lib/classroom/pbl-fallback-hydration';
 import type { Scene, Stage } from '@/lib/types/stage';
 import type { SceneOutline } from '@/lib/types/generation';
 
-function makeStage(): Stage {
-  return { id: 'stage-1', name: 'Test stage', createdAt: 1, updatedAt: 1 };
+function makeStage(id = 'stage-1'): Stage {
+  return { id, name: 'Test stage', createdAt: 1, updatedAt: 1 };
 }
 
 function makeSlideScene(id: string, order: number, stageId = 'stage-1'): Scene {
@@ -64,15 +77,55 @@ function makeOutline(order: number): SceneOutline {
   };
 }
 
+function makeStoredLoad(stageId: string, sceneId: string) {
+  return {
+    stage: makeStage(stageId),
+    scenes: [makeSlideScene(sceneId, 1, stageId)],
+    currentSceneId: sceneId,
+    chats: [],
+  };
+}
+
+function applyFallbackToStageStore(stageId: string, token: StageSceneLoadToken, scenes: Scene[]) {
+  return applyHydratedClassroomFallbackScenes({
+    loadToken: token,
+    stage: makeStage(stageId),
+    scenes,
+    hydrateScenes: async () => scenes,
+    applyStageAndScenes: (stage, hydrated) => {
+      useStageStore.getState().setStage(stage);
+      useStageStore.setState({
+        scenes: hydrated,
+        currentSceneId: hydrated[0]?.id ?? null,
+        mode: 'playback',
+      });
+    },
+  });
+}
+
 beforeEach(() => {
   useStageStore.getState().clearStore();
+  hydratePBLScenesFromRuntimeMock.mockReset();
+  hydratePBLScenesFromRuntimeMock.mockImplementation(
+    async (_stageId: string, scenes: Scene[]) => scenes,
+  );
   stageOutlinesGet.mockReset();
   stageOutlinesPut.mockReset();
   loadStageDataMock.mockReset();
 });
 
-afterEach(() => {
-  useStageStore.getState().clearStore();
+afterEach(async () => {
+  try {
+    if (vi.isFakeTimers()) {
+      await vi.runOnlyPendingTimersAsync();
+      expect(vi.getTimerCount()).toBe(0);
+    }
+  } finally {
+    if (vi.isFakeTimers()) {
+      vi.useRealTimers();
+    }
+    useStageStore.getState().clearStore();
+  }
 });
 
 describe('generationComplete', () => {
@@ -126,6 +179,7 @@ describe('generationComplete', () => {
   });
 
   it('starting a new stage resets generationComplete to false', () => {
+    vi.useFakeTimers();
     useStageStore.setState({ generationComplete: true });
     useStageStore.getState().setStage(makeStage());
     expect(useStageStore.getState().generationComplete).toBe(false);
@@ -136,6 +190,10 @@ describe('generationComplete', () => {
     // flag existed, or edited without a reload so self-heal never ran) must
     // record completion when a slide is deleted — otherwise the count breaks
     // and the "Course complete" end page disappears.
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
     it('marks complete when deleting from a fully-materialized deck whose flag was unset', () => {
       useStageStore.setState({
         stage: makeStage(),
@@ -262,6 +320,48 @@ describe('generationComplete', () => {
     expect(healed.generationComplete).toBe(true);
   });
 
+  it('does not infer completion for a legacy deck while an outline is failed', async () => {
+    useStageStore.setState({ stage: makeStage(), failedOutlines: [makeOutline(2)] });
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
+      currentSceneId: 'a',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-1',
+      outlines: [makeOutline(1), makeOutline(2)],
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().generationComplete).toBe(false);
+    expect(stageOutlinesPut).not.toHaveBeenCalled();
+  });
+
+  it('does not let failed outlines from another stage block legacy completion inference', async () => {
+    useStageStore.setState({
+      stage: { ...makeStage(), id: 'other-stage' },
+      failedOutlines: [makeOutline(2)],
+    });
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
+      currentSceneId: 'a',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-1',
+      outlines: [makeOutline(1), makeOutline(2)],
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-1');
+
+    expect(useStageStore.getState().generationComplete).toBe(true);
+    const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
+    expect(healed.generationComplete).toBe(true);
+  });
+
   // Resume-on-refresh for a genuinely interrupted generation is preserved:
   // when not complete, the missing outline still drives a placeholder.
   it('keeps generating placeholders on load when generation is not complete', async () => {
@@ -281,5 +381,360 @@ describe('generationComplete', () => {
 
     expect(useStageStore.getState().generationComplete).toBe(false);
     expect(useStageStore.getState().generatingOutlines.map((o) => o.order)).toEqual([3]);
+  });
+
+  it('does not overwrite in-memory scenes that appear while runtime hydration is pending', async () => {
+    const diskScene = makeSlideScene('disk', 1);
+    const freshScene = makeSlideScene('fresh', 1);
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage(),
+      scenes: [diskScene],
+      currentSceneId: 'disk',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-1',
+      outlines: [makeOutline(1)],
+      generationComplete: true,
+    });
+    let resolveHydration!: (scenes: Scene[]) => void;
+    hydratePBLScenesFromRuntimeMock.mockImplementation(
+      async () =>
+        new Promise<Scene[]>((resolve) => {
+          resolveHydration = resolve;
+        }),
+    );
+
+    const load = useStageStore.getState().loadFromStorage('stage-1');
+    await vi.waitFor(() => expect(hydratePBLScenesFromRuntimeMock).toHaveBeenCalled());
+    useStageStore.setState({
+      stage: makeStage(),
+      scenes: [freshScene],
+      currentSceneId: 'fresh',
+    });
+    resolveHydration([diskScene]);
+    await load;
+
+    expect(useStageStore.getState().scenes).toEqual([freshScene]);
+    expect(useStageStore.getState().currentSceneId).toBe('fresh');
+  });
+
+  it('does not overwrite a different stage that appears while runtime hydration is pending', async () => {
+    const diskScene = makeSlideScene('disk-a', 1, 'stage-a');
+    const freshScene = makeSlideScene('fresh-b', 1, 'stage-b');
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage('stage-a'),
+      scenes: [diskScene],
+      currentSceneId: 'disk-a',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-a',
+      outlines: [makeOutline(1)],
+      generationComplete: true,
+    });
+    let resolveHydration!: (scenes: Scene[]) => void;
+    hydratePBLScenesFromRuntimeMock.mockImplementation(
+      async () =>
+        new Promise<Scene[]>((resolve) => {
+          resolveHydration = resolve;
+        }),
+    );
+
+    const load = useStageStore.getState().loadFromStorage('stage-a');
+    await vi.waitFor(() => expect(hydratePBLScenesFromRuntimeMock).toHaveBeenCalled());
+    useStageStore.getState().setStage(makeStage('stage-b'));
+    useStageStore.setState({ scenes: [freshScene], currentSceneId: 'fresh-b' });
+    resolveHydration([diskScene]);
+    await load;
+
+    expect(useStageStore.getState().stage?.id).toBe('stage-b');
+    expect(useStageStore.getState().scenes).toEqual([freshScene]);
+    expect(useStageStore.getState().currentSceneId).toBe('fresh-b');
+  });
+
+  it('keeps the later overlapping storage load when the older hydration resolves first', async () => {
+    useStageStore.setState({
+      stage: makeStage('stage-b'),
+      scenes: [makeSlideScene('resident-b', 1, 'stage-b')],
+      currentSceneId: 'resident-b',
+    });
+    loadStageDataMock.mockImplementation(async (stageId: string) =>
+      makeStoredLoad(stageId, `disk-${stageId}`),
+    );
+    stageOutlinesGet.mockImplementation(async (stageId: string) => ({
+      stageId,
+      outlines: [makeOutline(1)],
+      generationComplete: true,
+    }));
+    const resolvers = new Map<string, (scenes: Scene[]) => void>();
+    hydratePBLScenesFromRuntimeMock.mockImplementation(
+      async (stageId: string) =>
+        new Promise<Scene[]>((resolve) => {
+          resolvers.set(stageId, resolve);
+        }),
+    );
+
+    const loadC = useStageStore.getState().loadFromStorage('stage-c');
+    await vi.waitFor(() => expect(resolvers.has('stage-c')).toBe(true));
+    const loadD = useStageStore.getState().loadFromStorage('stage-d');
+    await vi.waitFor(() => expect(resolvers.has('stage-d')).toBe(true));
+
+    resolvers.get('stage-c')!([makeSlideScene('disk-stage-c', 1, 'stage-c')]);
+    await loadC;
+    resolvers.get('stage-d')!([makeSlideScene('disk-stage-d', 1, 'stage-d')]);
+    await loadD;
+
+    expect(useStageStore.getState().stage?.id).toBe('stage-d');
+    expect(useStageStore.getState().currentSceneId).toBe('disk-stage-d');
+    expect(useStageStore.getState().scenes[0]).toMatchObject({
+      id: 'disk-stage-d',
+      stageId: 'stage-d',
+    });
+  });
+
+  it('keeps the later overlapping storage load when the newer hydration resolves first', async () => {
+    useStageStore.setState({
+      stage: makeStage('stage-b'),
+      scenes: [makeSlideScene('resident-b', 1, 'stage-b')],
+      currentSceneId: 'resident-b',
+    });
+    loadStageDataMock.mockImplementation(async (stageId: string) =>
+      makeStoredLoad(stageId, `disk-${stageId}`),
+    );
+    stageOutlinesGet.mockImplementation(async (stageId: string) => ({
+      stageId,
+      outlines: [makeOutline(1)],
+      generationComplete: true,
+    }));
+    const resolvers = new Map<string, (scenes: Scene[]) => void>();
+    hydratePBLScenesFromRuntimeMock.mockImplementation(
+      async (stageId: string) =>
+        new Promise<Scene[]>((resolve) => {
+          resolvers.set(stageId, resolve);
+        }),
+    );
+
+    const loadC = useStageStore.getState().loadFromStorage('stage-c');
+    await vi.waitFor(() => expect(resolvers.has('stage-c')).toBe(true));
+    const loadD = useStageStore.getState().loadFromStorage('stage-d');
+    await vi.waitFor(() => expect(resolvers.has('stage-d')).toBe(true));
+
+    resolvers.get('stage-d')!([makeSlideScene('disk-stage-d', 1, 'stage-d')]);
+    await loadD;
+    resolvers.get('stage-c')!([makeSlideScene('disk-stage-c', 1, 'stage-c')]);
+    await loadC;
+
+    expect(useStageStore.getState().stage?.id).toBe('stage-d');
+    expect(useStageStore.getState().currentSceneId).toBe('disk-stage-d');
+    expect(useStageStore.getState().scenes[0]).toMatchObject({
+      id: 'disk-stage-d',
+      stageId: 'stage-d',
+    });
+  });
+
+  it('lets a later classroom fallback apply beat an earlier storage load', async () => {
+    useStageStore.setState({
+      stage: makeStage('stage-b'),
+      scenes: [makeSlideScene('resident-b', 1, 'stage-b')],
+      currentSceneId: 'resident-b',
+    });
+    loadStageDataMock.mockResolvedValue(makeStoredLoad('stage-c', 'disk-stage-c'));
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-c',
+      outlines: [makeOutline(1)],
+      generationComplete: true,
+    });
+    let resolveStorageHydration!: (scenes: Scene[]) => void;
+    hydratePBLScenesFromRuntimeMock.mockImplementation(
+      async () =>
+        new Promise<Scene[]>((resolve) => {
+          resolveStorageHydration = resolve;
+        }),
+    );
+    const fallbackScene = makeSlideScene('fallback-stage-d', 1, 'stage-d');
+    let resolveFallbackHydration!: (scenes: Scene[]) => void;
+
+    const loadC = useStageStore.getState().loadFromStorage('stage-c');
+    await vi.waitFor(() => expect(resolveStorageHydration).toBeDefined());
+    const fallbackDToken = claimStageSceneLoadToken();
+    const fallbackD = applyHydratedClassroomFallbackScenes({
+      loadToken: fallbackDToken,
+      stage: makeStage('stage-d'),
+      scenes: [fallbackScene],
+      hydrateScenes: async () =>
+        new Promise<Scene[]>((resolve) => {
+          resolveFallbackHydration = resolve;
+        }),
+      applyStageAndScenes: (stage, scenes) => {
+        useStageStore.getState().setStage(stage);
+        useStageStore.setState({
+          scenes,
+          currentSceneId: scenes[0]?.id ?? null,
+          mode: 'playback',
+        });
+      },
+    });
+    await vi.waitFor(() => expect(resolveFallbackHydration).toBeDefined());
+
+    resolveStorageHydration([makeSlideScene('disk-stage-c', 1, 'stage-c')]);
+    await loadC;
+    resolveFallbackHydration([fallbackScene]);
+    await expect(fallbackD).resolves.toBe(true);
+
+    expect(useStageStore.getState().stage?.id).toBe('stage-d');
+    expect(useStageStore.getState().currentSceneId).toBe('fallback-stage-d');
+    expect(useStageStore.getState().scenes).toEqual([fallbackScene]);
+  });
+
+  it('does not let an older classroom fallback override a newer storage navigation', async () => {
+    loadStageDataMock.mockImplementation(async (stageId: string) => {
+      if (stageId === 'stage-b') {
+        return makeStoredLoad('stage-b', 'disk-stage-b');
+      }
+      return null;
+    });
+    stageOutlinesGet.mockImplementation(async (stageId: string) => ({
+      stageId,
+      outlines: [makeOutline(1)],
+      generationComplete: true,
+    }));
+    let resolveStorageHydration!: (scenes: Scene[]) => void;
+    hydratePBLScenesFromRuntimeMock.mockImplementation(async (stageId: string, scenes: Scene[]) => {
+      if (stageId !== 'stage-b') {
+        return scenes;
+      }
+      return new Promise<Scene[]>((resolve) => {
+        resolveStorageHydration = resolve;
+      });
+    });
+    const fallbackA = makeSlideScene('fallback-stage-a', 1, 'stage-a');
+    const diskB = makeSlideScene('disk-stage-b', 1, 'stage-b');
+
+    const stageAToken = claimStageSceneLoadToken();
+    await useStageStore.getState().loadFromStorage('stage-a', stageAToken);
+    const stageBToken = claimStageSceneLoadToken();
+    const loadB = useStageStore.getState().loadFromStorage('stage-b', stageBToken);
+    await vi.waitFor(() => expect(resolveStorageHydration).toBeDefined());
+
+    await expect(applyFallbackToStageStore('stage-a', stageAToken, [fallbackA])).resolves.toBe(
+      false,
+    );
+    resolveStorageHydration([diskB]);
+    await loadB;
+
+    expect(useStageStore.getState().stage?.id).toBe('stage-b');
+    expect(useStageStore.getState().currentSceneId).toBe('disk-stage-b');
+    expect(useStageStore.getState().scenes).toEqual([diskB]);
+  });
+
+  it('does not let an older classroom fallback apply before the newer fallback resolves', async () => {
+    loadStageDataMock.mockResolvedValue(null);
+    stageOutlinesGet.mockImplementation(async (stageId: string) => ({
+      stageId,
+      outlines: [],
+      generationComplete: false,
+    }));
+    const fallbackA = makeSlideScene('fallback-stage-a', 1, 'stage-a');
+    const fallbackB = makeSlideScene('fallback-stage-b', 1, 'stage-b');
+
+    const stageAToken = claimStageSceneLoadToken();
+    await useStageStore.getState().loadFromStorage('stage-a', stageAToken);
+    const stageBToken = claimStageSceneLoadToken();
+    await useStageStore.getState().loadFromStorage('stage-b', stageBToken);
+
+    await expect(applyFallbackToStageStore('stage-a', stageAToken, [fallbackA])).resolves.toBe(
+      false,
+    );
+    expect(useStageStore.getState().stage).toBeNull();
+
+    await expect(applyFallbackToStageStore('stage-b', stageBToken, [fallbackB])).resolves.toBe(
+      true,
+    );
+
+    expect(useStageStore.getState().stage?.id).toBe('stage-b');
+    expect(useStageStore.getState().currentSceneId).toBe('fallback-stage-b');
+    expect(useStageStore.getState().scenes).toEqual([fallbackB]);
+  });
+
+  it('does not let an older classroom fallback override a newer fallback navigation', async () => {
+    loadStageDataMock.mockResolvedValue(null);
+    stageOutlinesGet.mockImplementation(async (stageId: string) => ({
+      stageId,
+      outlines: [],
+      generationComplete: false,
+    }));
+    const fallbackA = makeSlideScene('fallback-stage-a', 1, 'stage-a');
+    const fallbackB = makeSlideScene('fallback-stage-b', 1, 'stage-b');
+
+    const stageAToken = claimStageSceneLoadToken();
+    await useStageStore.getState().loadFromStorage('stage-a', stageAToken);
+    const stageBToken = claimStageSceneLoadToken();
+    await useStageStore.getState().loadFromStorage('stage-b', stageBToken);
+
+    await expect(applyFallbackToStageStore('stage-b', stageBToken, [fallbackB])).resolves.toBe(
+      true,
+    );
+    await expect(applyFallbackToStageStore('stage-a', stageAToken, [fallbackA])).resolves.toBe(
+      false,
+    );
+
+    expect(useStageStore.getState().stage?.id).toBe('stage-b');
+    expect(useStageStore.getState().currentSceneId).toBe('fallback-stage-b');
+    expect(useStageStore.getState().scenes).toEqual([fallbackB]);
+  });
+
+  it('applies same-navigation classroom fallback after storage has no local data', async () => {
+    loadStageDataMock.mockResolvedValue(null);
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-a',
+      outlines: [],
+      generationComplete: false,
+    });
+    const fallbackA = makeSlideScene('fallback-stage-a', 1, 'stage-a');
+
+    const stageAToken = claimStageSceneLoadToken();
+    await useStageStore.getState().loadFromStorage('stage-a', stageAToken);
+    await expect(applyFallbackToStageStore('stage-a', stageAToken, [fallbackA])).resolves.toBe(
+      true,
+    );
+
+    expect(useStageStore.getState().stage?.id).toBe('stage-a');
+    expect(useStageStore.getState().currentSceneId).toBe('fallback-stage-a');
+    expect(useStageStore.getState().scenes).toEqual([fallbackA]);
+  });
+
+  it('does not let failed outlines from another stage block legacy completion inference', async () => {
+    const diskScene = makeSlideScene('disk-a', 1, 'stage-a');
+    const residentScene = makeSlideScene('resident-b', 1, 'stage-b');
+    useStageStore.setState({
+      stage: makeStage('stage-b'),
+      scenes: [residentScene],
+      failedOutlines: [makeOutline(99)],
+      currentSceneId: 'resident-b',
+    });
+    loadStageDataMock.mockResolvedValue({
+      stage: makeStage('stage-a'),
+      scenes: [diskScene],
+      currentSceneId: 'disk-a',
+      chats: [],
+    });
+    stageOutlinesGet.mockResolvedValue({
+      stageId: 'stage-a',
+      outlines: [makeOutline(1)],
+    });
+
+    await useStageStore.getState().loadFromStorage('stage-a');
+
+    expect(useStageStore.getState().generationComplete).toBe(true);
+    expect(useStageStore.getState().stage?.id).toBe('stage-a');
+    expect(useStageStore.getState().scenes).toHaveLength(1);
+    expect(useStageStore.getState().scenes[0]).toMatchObject({
+      id: 'disk-a',
+      stageId: 'stage-a',
+    });
+    expect(useStageStore.getState().currentSceneId).toBe('disk-a');
+    const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
+    expect(healed.generationComplete).toBe(true);
   });
 });

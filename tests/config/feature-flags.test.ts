@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   isMaicEditorEnabled,
+  isPiChatEnabled,
+  isVideoExportEnabled,
   isVocationalTaskEngineEnabled,
   resolveVocationalActive,
   shouldShowVocationalTestUi,
@@ -46,6 +48,44 @@ describe('isMaicEditorEnabled', () => {
   it('returns false for an unrecognized string', () => {
     process.env[FLAG] = 'yes';
     expect(isMaicEditorEnabled()).toBe(false);
+  });
+});
+
+describe('isPiChatEnabled', () => {
+  const flag = 'NEXT_PUBLIC_PI_CHAT_ENABLED';
+  let original: string | undefined;
+
+  beforeEach(() => {
+    original = process.env[flag];
+  });
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env[flag];
+    } else {
+      process.env[flag] = original;
+    }
+  });
+
+  it('defaults off when unset', () => {
+    delete process.env[flag];
+    expect(isPiChatEnabled()).toBe(false);
+  });
+
+  it("returns true for 'true' and '1'", () => {
+    process.env[flag] = 'true';
+    expect(isPiChatEnabled()).toBe(true);
+
+    process.env[flag] = '1';
+    expect(isPiChatEnabled()).toBe(true);
+  });
+
+  it('returns false for other values', () => {
+    process.env[flag] = 'false';
+    expect(isPiChatEnabled()).toBe(false);
+
+    process.env[flag] = 'yes';
+    expect(isPiChatEnabled()).toBe(false);
   });
 });
 
@@ -121,5 +161,43 @@ describe('shouldShowVocationalTestUi', () => {
 
     process.env[flag] = '1';
     expect(shouldShowVocationalTestUi()).toBe(true);
+  });
+});
+
+describe('isVideoExportEnabled', () => {
+  const flag = 'NEXT_PUBLIC_ENABLE_VIDEO_EXPORT';
+  let original: string | undefined;
+
+  beforeEach(() => {
+    original = process.env[flag];
+  });
+
+  afterEach(() => {
+    if (original === undefined) {
+      delete process.env[flag];
+    } else {
+      process.env[flag] = original;
+    }
+  });
+
+  it('defaults off when unset', () => {
+    delete process.env[flag];
+    expect(isVideoExportEnabled()).toBe(false);
+  });
+
+  it("returns true for 'true' and '1'", () => {
+    process.env[flag] = 'true';
+    expect(isVideoExportEnabled()).toBe(true);
+
+    process.env[flag] = '1';
+    expect(isVideoExportEnabled()).toBe(true);
+  });
+
+  it("returns false for 'false' and unrecognized strings", () => {
+    process.env[flag] = 'false';
+    expect(isVideoExportEnabled()).toBe(false);
+
+    process.env[flag] = 'yes';
+    expect(isVideoExportEnabled()).toBe(false);
   });
 });

@@ -1,0 +1,96 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`emitHyperframes > matches the HTML snapshot 1`] = `
+"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sample Lesson — OpenMAIC video</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #000; }
+  #openmaic { font-family: system-ui, sans-serif; }
+</style>
+</head>
+<body>
+<div id="openmaic" data-composition-id="openmaic" data-start="0" data-duration="7" data-width="1920" data-height="1080" style="position:relative;width:1920px;height:1080px;overflow:hidden;background:#000">
+<!-- scene 1: Intro -->
+<img id="scene-1-base" class="clip" data-start="0" data-duration="5" data-track-index="0" src="assets/frames/001-intro.png" alt="" style="position:absolute;left:0;top:0;width:100%;height:100%;object-fit:contain" />
+<video id="scene-1-video-1" class="clip" data-start="2" data-duration="3" data-track-index="1" src="assets/media/e1.mp4" data-has-audio="true" style="position:absolute;left:25%;top:24.88888888888889%;width:50%;height:49.77777777777778%;transform:rotate(0deg);object-fit:contain" playsinline></video>
+<audio id="scene-1-audio-1" class="clip" data-start="0" data-duration="2" data-track-index="2" src="assets/audio/001-intro/speech-001.mp3" data-volume="1"></audio>
+<!-- scene 2: checkpoint -->
+<div id="scene-2-base" class="clip" data-start="5" data-duration="2" data-track-index="0" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#0f172a;color:#e2e8f0;font-family:system-ui,sans-serif;text-align:center;padding:8%">
+  <div style="font-size:2.2vw;font-weight:700">checkpoint</div>
+  <div style="font-size:1.2vw;color:#94a3b8;max-width:70%">Quiz scenes are represented by markers; video rendering is deferred to the Hyperframes renderer.</div>
+</div>
+<div id="fx-0-1" class="fx fx-spotlight" style="position:absolute;inset:0;z-index:100;pointer-events:none;overflow:hidden;visibility:hidden;opacity:0">
+  <svg width="100%" height="100%" viewBox="0 0 100 100" preserveAspectRatio="none" style="position:absolute;inset:0">
+    <defs><mask id="fx-0-1-mask">
+      <rect x="0" y="0" width="100" height="100" fill="white"/>
+      <rect id="fx-0-1-cut" fill="black" x="17" y="16.8889" width="66" height="65.7778" rx="4"/>
+    </mask></defs>
+    <rect x="0" y="0" width="100" height="100" fill="rgba(0,0,0,0.5)" mask="url(#fx-0-1-mask)"/>
+    <rect id="fx-0-1-border" fill="none" stroke="rgba(255,255,255,0.7)" stroke-width="1.2" vector-effect="non-scaling-stroke" x="21" y="20.8889" width="58" height="57.7778" rx="2" opacity="0"/>
+  </svg>
+</div>
+<div id="fx-0-2" class="fx fx-laser" style="position:absolute;z-index:101;pointer-events:none;left:50%;top:49.7778%;visibility:hidden;opacity:0">
+  <div style="position:relative;transform:translate(-50%,-50%)">
+    <div id="fx-0-2-ring" style="position:absolute;inset:0;border-radius:9999px;border:1.5px solid #00ff88;opacity:0.6"></div>
+    <div style="width:10px;height:10px;border-radius:9999px;background-color:#00ff88;box-shadow:0 0 8px 2px #00ff8860"></div>
+  </div>
+</div>
+</div>
+<script src="assets/vendor/gsap.min.js"></script>
+<script>
+function cubicBezier(x1, y1, x2, y2) {
+  // Deterministic cubic-bezier easing as a GSAP ease function (progress → eased).
+  var cx = 3 * x1, bx = 3 * (x2 - x1) - cx, ax = 1 - cx - bx;
+  var cy = 3 * y1, by = 3 * (y2 - y1) - cy, ay = 1 - cy - by;
+  function sampleX(t) { return ((ax * t + bx) * t + cx) * t; }
+  function sampleY(t) { return ((ay * t + by) * t + cy) * t; }
+  function solveX(x) {
+    var t = x;
+    for (var i = 0; i < 8; i++) {
+      var xEst = sampleX(t) - x;
+      if (Math.abs(xEst) < 1e-6) return t;
+      var d = (3 * ax * t + 2 * bx) * t + cx;
+      if (Math.abs(d) < 1e-6) break;
+      t -= xEst / d;
+    }
+    var lo = 0, hi = 1;
+    t = x;
+    while (lo < hi) {
+      var xEst2 = sampleX(t);
+      if (Math.abs(xEst2 - x) < 1e-6) return t;
+      if (x > xEst2) lo = t; else hi = t;
+      t = (hi - lo) / 2 + lo;
+    }
+    return t;
+  }
+  return function (p) { return p <= 0 ? 0 : p >= 1 ? 1 : sampleY(solveX(p)); };
+}
+var EASE_OUT_EXPO = cubicBezier(0.16, 1, 0.3, 1);
+var EASE_LASER = cubicBezier(0.22, 1, 0.36, 1);
+var EASE_IN = cubicBezier(0.4, 0, 1, 1);
+var EASE_OUT = cubicBezier(0, 0, 0.58, 1);
+var tl = gsap.timeline({ paused: true });
+tl.fromTo('#fx-0-1',{autoAlpha:0},{autoAlpha:1,duration:0.3,ease:'none'},2);
+tl.fromTo('#fx-0-1-cut',{attr:{x:17,y:16.8889,width:66,height:65.7778,rx:4}},{attr:{x:24.6,y:24.2889,width:50.8,height:50.9778,rx:1},duration:0.6,ease:EASE_OUT_EXPO},2);
+tl.fromTo('#fx-0-1-border',{attr:{x:21,y:20.8889,width:58,height:57.7778,rx:2},opacity:0},{attr:{x:24.6,y:24.2889,width:50.8,height:50.9778,rx:1},opacity:1,duration:0.5,ease:EASE_OUT_EXPO},2.05);
+tl.to('#fx-0-1',{autoAlpha:0,duration:0.3,ease:'none'},4.7);
+tl.set('#fx-0-1',{autoAlpha:0},5);
+tl.fromTo('#fx-0-2',{autoAlpha:0},{autoAlpha:1,duration:0.15,ease:'none'},2);
+tl.fromTo('#fx-0-2',{x:-1056,y:-591.6},{x:0,y:0,duration:0.5,ease:EASE_LASER},2);
+tl.fromTo('#fx-0-2-ring',{scale:1,opacity:0.6},{scale:2.8,opacity:0,duration:1.5,ease:EASE_OUT,repeat:1,repeatDelay:0.3},2);
+tl.to('#fx-0-2',{autoAlpha:0,x:-1056,y:-591.6,duration:0.25,ease:EASE_IN},4.75);
+tl.set('#fx-0-2',{autoAlpha:0},5);
+tl.set('#fx-0-2-ring',{opacity:0},5);
+tl.set({}, {}, 7);
+window.__timelines = window.__timelines || {};
+window.__timelines["openmaic"] = tl;
+</script>
+</body>
+</html>
+"
+`;

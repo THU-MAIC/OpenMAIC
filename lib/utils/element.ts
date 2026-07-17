@@ -155,20 +155,28 @@ export interface AlignLine {
  * @param lines 一组对齐吸附线信息
  */
 export const uniqAlignLines = (lines: AlignLine[]) => {
-  const uniqLines: AlignLine[] = [];
-  lines.forEach((line) => {
-    const index = uniqLines.findIndex((_line) => _line.value === line.value);
-    if (index === -1) uniqLines.push(line);
-    else {
-      const uniqLine = uniqLines[index];
-      const rangeMin = Math.min(uniqLine.range[0], line.range[0]);
-      const rangeMax = Math.max(uniqLine.range[1], line.range[1]);
-      const range: [number, number] = [rangeMin, rangeMax];
-      const _line = { value: line.value, range };
-      uniqLines[index] = _line;
+  // Dedupe by `value` in O(n) via a Map keyed on value, instead of an
+  // O(n²) `findIndex` over the accumulating result. This runs on every
+  // drag/scale mousemove with one snap line per nearby element edge, so the
+  // quadratic version janks on element-dense canvases. A Map preserves
+  // first-occurrence insertion order (re-`set`-ting an existing key keeps its
+  // position), so the output order and merge semantics are unchanged.
+  const byValue = new Map<number, AlignLine>();
+  for (const line of lines) {
+    const existing = byValue.get(line.value);
+    if (!existing) {
+      byValue.set(line.value, line);
+    } else {
+      byValue.set(line.value, {
+        value: line.value,
+        range: [
+          Math.min(existing.range[0], line.range[0]),
+          Math.max(existing.range[1], line.range[1]),
+        ],
+      });
     }
-  });
-  return uniqLines;
+  }
+  return Array.from(byValue.values());
 };
 
 /**

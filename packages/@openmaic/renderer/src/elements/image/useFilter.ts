@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
-import type { ImageElementFilters } from '@openmaic/dsl';
+import type { ImageElementFilterKeys, ImageElementFilters } from '@openmaic/dsl';
 
-const FILTER_UNITS: Record<keyof ImageElementFilters, string> = {
+const FILTER_UNITS: Record<ImageElementFilterKeys, string> = {
   blur: 'px',
   brightness: '%',
   contrast: '%',
@@ -15,15 +15,20 @@ const FILTER_UNITS: Record<keyof ImageElementFilters, string> = {
 
 export function useFilter(filters?: ImageElementFilters) {
   const filter = useMemo(() => {
-    if (!filters) return '';
-    const parts: string[] = [];
-    for (const [name, value] of Object.entries(filters) as [keyof ImageElementFilters, string][]) {
-      if (value === undefined || value === null || value === '') continue;
-      const unit = FILTER_UNITS[name] ?? '';
-      parts.push(`${name}(${value}${unit})`);
-    }
-    return parts.join(' ');
+    return imageFiltersToCss(filters);
   }, [filters]);
 
   return { filter };
+}
+
+export function imageFiltersToCss(filters?: ImageElementFilters): string {
+  if (!filters) return '';
+  const parts: string[] = [];
+  for (const [name, value] of Object.entries(filters) as [ImageElementFilterKeys, string][]) {
+    if (value === undefined || value === null || value === '') continue;
+    const unit = FILTER_UNITS[name] ?? '';
+    const rendered = unit && !value.endsWith(unit) ? `${value}${unit}` : value;
+    parts.push(`${name}(${rendered})`);
+  }
+  return parts.join(' ');
 }

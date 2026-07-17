@@ -31,6 +31,7 @@ function slideContent(): SceneContent {
         },
         {
           id: 'shape_1',
+          name: 'Company logo',
           type: 'shape',
           left: 0,
           top: 50,
@@ -121,6 +122,132 @@ describe('read_scene_content tool', () => {
     // The model only sees content[].text, not details — the projection must be there.
     const text = res.content.map((p) => (p as { text?: string }).text ?? '').join('\n');
     expect(text).toContain('READ-CONTENT-SENTINEL');
+  });
+
+  it('exposes indexed patch paths, ids, and editable values for direct JSON Patch calls', async () => {
+    const tool = makeReadSceneContentTool({
+      getSceneContext: (id) => (id === 's1' ? ctxFor('s1') : undefined),
+      getSelection: () => ['shape_1', 'other-scene-id'],
+    });
+    const res = await tool.execute('call-1', { sceneId: 's1' });
+
+    const text = res.content.map((part) => (part as { text?: string }).text ?? '').join('\n');
+    expect(text).toContain('"_index": 0');
+    expect(text).toContain('"_path": "/elements/0"');
+    expect(text).toContain('"id": "text_1"');
+    expect(text).toContain('"content": "<p>READ-CONTENT-SENTINEL</p>"');
+    expect(text).toContain('"name": "Company logo"');
+    expect(text).toContain('Selected element ids on this slide: shape_1');
+    expect(text).not.toContain('other-scene-id');
+  });
+
+  it('keeps a complete manifest and full selected record when the detailed projection is large', async () => {
+    const content = slideContent() as Extract<SceneContent, { type: 'slide' }>;
+    content.canvas.elements = Array.from({ length: 45 }, (_, index) => ({
+      id: `text_${index}`,
+      type: 'text' as const,
+      left: 0,
+      top: index * 10,
+      width: 100,
+      height: 40,
+      rotate: 0,
+      content: `<p>TAIL-${index}-${'x'.repeat(900)}</p>`,
+      defaultFontName: 'Inter',
+      defaultColor: '#000000',
+    }));
+    const ctx = ctxFor('s1');
+    ctx.content = content;
+    const tool = makeReadSceneContentTool({
+      getSceneContext: () => ctx,
+      getSelection: () => ['text_44'],
+    });
+    const res = await tool.execute('call-1', { sceneId: 's1' });
+    const text = res.content.map((part) => (part as { text?: string }).text ?? '').join('\n');
+
+    expect(text).toContain('"id": "text_0"');
+    expect(text).toContain('"_path": "/elements/44"');
+    expect(text).toContain(`TAIL-44-${'x'.repeat(900)}`);
+    expect(text).not.toContain('…(truncated)');
+  });
+
+  it('can return exact target records by id after a manifest-only read', async () => {
+    const tool = makeReadSceneContentTool({ getSceneContext: () => ctxFor('s1') });
+    const res = await tool.execute('call-1', { sceneId: 's1', elementIds: ['shape_1'] });
+    const text = res.content.map((part) => (part as { text?: string }).text ?? '').join('\n');
+
+    expect(text).toContain('"_path": "/elements/1"');
+    expect(text).toContain('"content": "<p>SHAPE-TEXT-SENTINEL</p>"');
+  });
+
+  it('omits over-limit HTML while retaining an exact target record and edit warning', async () => {
+    const content = slideContent() as Extract<SceneContent, { type: 'slide' }>;
+    content.canvas.elements[0] = {
+      ...content.canvas.elements[0],
+      content: `<p>OVERSIZED-${'x'.repeat(30001)}</p>`,
+    } as (typeof content.canvas.elements)[number];
+    const ctx = ctxFor('s1');
+    ctx.content = content;
+    const tool = makeReadSceneContentTool({
+      getSceneContext: () => ctx,
+      getSelection: () => ['text_1'],
+    });
+    const res = await tool.execute('call-1', { sceneId: 's1' });
+    const text = res.content.map((part) => (part as { text?: string }).text ?? '').join('\n');
+
+    expect(text).toContain('"_path": "/elements/0"');
+    expect(text).toContain(
+      'content editing unavailable: HTML exceeds the exact 30000-character/serialized-record limit',
+    );
+    expect(text).not.toContain(`OVERSIZED-${'x'.repeat(30001)}`);
+  });
+
+  it('pages an extreme manifest without slicing JSON mid-record', async () => {
+    const content = slideContent() as Extract<SceneContent, { type: 'slide' }>;
+    content.canvas.elements = Array.from({ length: 500 }, (_, index) => ({
+      id: `manifest_${index}`,
+      name: `Named element ${index}`,
+      type: 'text' as const,
+      left: 0,
+      top: index,
+      width: 100,
+      height: 40,
+      rotate: 0,
+      content: `<p>Item ${index}</p>`,
+      defaultFontName: 'Inter',
+      defaultColor: '#000000',
+    }));
+    const ctx = ctxFor('s1');
+    ctx.content = content;
+    const tool = makeReadSceneContentTool({ getSceneContext: () => ctx });
+    const first = await tool.execute('call-1', { sceneId: 's1' });
+    const firstText = first.content
+      .map((part) => (part as { text?: string }).text ?? '')
+      .join('\n');
+
+    expect(firstText).toContain('"id": "manifest_0"');
+    expect(firstText).not.toContain('"id": "manifest_499"');
+    expect(firstText).toMatch(/Next manifestOffset: \d+/);
+    expect(firstText).not.toContain('…(truncated)');
+
+    const tail = await tool.execute('call-2', { sceneId: 's1', manifestOffset: 499 });
+    const tailText = tail.content.map((part) => (part as { text?: string }).text ?? '').join('\n');
+    expect(tailText).toContain('"id": "manifest_499"');
+  });
+
+  it('returns one near-limit requested record through the larger exact-record channel', async () => {
+    const content = slideContent() as Extract<SceneContent, { type: 'slide' }>;
+    content.canvas.elements[0] = {
+      ...content.canvas.elements[0],
+      content: `<p>NEAR-LIMIT-${'x'.repeat(29900)}</p>`,
+    } as (typeof content.canvas.elements)[number];
+    const ctx = ctxFor('s1');
+    ctx.content = content;
+    const tool = makeReadSceneContentTool({ getSceneContext: () => ctx });
+    const res = await tool.execute('call-1', { sceneId: 's1', elementIds: ['text_1'] });
+    const text = res.content.map((part) => (part as { text?: string }).text ?? '').join('\n');
+
+    expect(text).toContain(`NEAR-LIMIT-${'x'.repeat(29900)}`);
+    expect(text).not.toContain('Exact records omitted');
   });
 
   it('extracts text from shape / table / code elements (not just bare type)', async () => {

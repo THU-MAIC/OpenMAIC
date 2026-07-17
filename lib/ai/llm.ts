@@ -10,6 +10,7 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { getModelMetadataKey } from './model-metadata';
+import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
 import {
   getThinkingMode,
@@ -140,9 +141,10 @@ function buildThinkingProviderOptions(
   modelId: string,
   config: ThinkingConfig,
 ): ProviderOptions | undefined {
+  const lookupModelId = providerId ? getCanonicalModelId(providerId, modelId) : modelId;
   const info = providerId
-    ? MODEL_THINKING_MAP.get(getModelMetadataKey(providerId, modelId))
-    : UNIQUE_MODEL_THINKING_MAP.get(modelId);
+    ? MODEL_THINKING_MAP.get(getModelMetadataKey(providerId, lookupModelId))
+    : UNIQUE_MODEL_THINKING_MAP.get(lookupModelId);
   if (!info?.thinking) return undefined; // model has no thinking capability
   const thinking = info.thinking;
   if (thinking.control === 'none') return undefined;
@@ -268,6 +270,45 @@ export interface LLMRetryOptions {
 
 const DEFAULT_VALIDATE = (text: string) => text.trim().length > 0;
 
+// ---------------------------------------------------------------------------
+// Usage capture
+//
+// Every server-side LLM call funnels through callLLM/streamLLM, so usage is
+// recorded here in one place. Fire-and-forget: failures never affect generation.
+// The fs-backed storage is imported dynamically so llm.ts stays safe to bundle
+// wherever it's transitively imported.
+// ---------------------------------------------------------------------------
+
+function buildUsageMeta(params: GenerateTextParams | StreamTextParams, source: string) {
+  const rawModelId = getModelId(params);
+  const providerId = getModelProviderId(params) ?? 'unknown';
+  const modelId = getCanonicalModelId(providerId, rawModelId);
+  return { source, providerId, modelId, modelString: `${providerId}:${modelId}` };
+}
+
+/** Record one call's usage. Never throws. */
+function recordUsageSafe(
+  rawUsage: unknown,
+  meta: { source: string; providerId: string; modelId: string; modelString: string },
+): void {
+  void (async () => {
+    try {
+      const { normalizeUsage } = await import('@/lib/usage/normalize');
+      const { recordUsage } = await import('@/lib/server/usage-storage');
+      await recordUsage({
+        kind: 'llm',
+        source: meta.source,
+        providerId: meta.providerId,
+        modelId: meta.modelId,
+        modelString: meta.modelString,
+        usage: normalizeUsage(rawUsage as never),
+      });
+    } catch (err) {
+      log.warn('Usage capture failed (ignored):', err);
+    }
+  })();
+}
+
 /**
  * Unified wrapper around `generateText`.
  *
@@ -312,6 +353,7 @@ export async function callLLM<T extends GenerateTextParams>(
         continue;
       }
 
+      recordUsageSafe(result.usage, buildUsageMeta(params, source));
       return result;
     } catch (error) {
       lastError = error;
@@ -345,7 +387,22 @@ export function streamLLM<T extends StreamTextParams>(
 ): StreamTextResult<any, any> {
   // Resolve effective thinking config and wrap in thinkingContext
   const effectiveThinking = thinking ?? getGlobalThinkingConfig();
-  const injectedParams = injectProviderOptions(params, effectiveThinking);
+
+  // Wrap onFinish to capture usage when the stream completes, preserving any
+  // caller-supplied onFinish. totalUsage aggregates across steps.
+  const usageMeta = buildUsageMeta(params, source);
+  const callerOnFinish = (params as Record<string, unknown>).onFinish as
+    | ((event: { totalUsage?: unknown; usage?: unknown }) => void | Promise<void>)
+    | undefined;
+  const wrappedParams = {
+    ...params,
+    onFinish: async (event: { totalUsage?: unknown; usage?: unknown }) => {
+      recordUsageSafe(event.totalUsage ?? event.usage, usageMeta);
+      if (callerOnFinish) await callerOnFinish(event);
+    },
+  } as T;
+
+  const injectedParams = injectProviderOptions(wrappedParams, effectiveThinking);
   const result = thinkingContext.run(effectiveThinking, () => streamText(injectedParams));
 
   return result;

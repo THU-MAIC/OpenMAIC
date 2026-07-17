@@ -12,15 +12,6 @@ export type WidgetType =
   | 'visualization3d'
   | 'procedural-skill';
 
-export interface TeacherAction {
-  id: string;
-  type: 'speech' | 'highlight' | 'annotation' | 'reveal' | 'setState';
-  target?: string; // Element ID or selector to highlight/annotate
-  content?: string; // Speech text or annotation text
-  state?: Record<string, unknown>; // Widget state to set
-  label?: string; // Short label for UI button (e.g., "Next", "Try This")
-}
-
 // ==================== Simulation Widget ====================
 
 export interface SimulationVariable {
@@ -42,7 +33,6 @@ export interface SimulationConfig {
     name: string;
     variables: Record<string, number>;
   }>;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Diagram Widget ====================
@@ -69,7 +59,6 @@ export interface DiagramConfig {
   nodes: DiagramNode[];
   edges: DiagramEdge[];
   revealOrder?: string[]; // Node IDs in reveal sequence
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Code Widget ====================
@@ -90,7 +79,6 @@ export interface CodeConfig {
   testCases: CodeTestCase[];
   hints: string[];
   solution: string;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Game Widget ====================
@@ -123,7 +111,6 @@ export interface GameConfig {
     icon: string;
     condition: string;
   }>;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== 3D Visualization Widget ====================
@@ -193,7 +180,6 @@ export interface Visualization3DConfig {
     description?: string;
     state: Record<string, unknown>;
   }>;
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Procedural Skill Widget ====================
@@ -213,7 +199,6 @@ export interface ProceduralSkillConfig {
   tools?: string[];
   steps: ProceduralSkillStep[];
   successCriteria?: string[];
-  teacherActions?: TeacherAction[];
 }
 
 // ==================== Union Types ====================

@@ -6,17 +6,21 @@ import {
 import { makeReadSceneContentTool } from './read-scene-content';
 import { makeRegenerateSceneTool } from './regenerate-scene';
 import { makeEditInteractiveHtmlTool } from './edit-interactive-html';
+import { makeEditElementsTool } from './edit-elements';
 
 /**
  * Deps needed to build the v0 toolset.
  * - `aiCall`: request-scoped LLM text call (resolved model injected by route)
  * - `getSceneContext`: returns trusted scene/stage context from the client POST body;
  *   the model supplies only a sceneId, and the route fulfils the heavy data.
+ * - `getSelection`: optional canvas selection ids (shown by read_scene_content).
  *
- * All three tools share the same deps shape (`RegenerateActionsDeps`); the
- * read tool only uses `getSceneContext`.
+ * Tools share the regenerate deps shape; the read tool only uses `getSceneContext`.
  */
-export type ToolsetDeps = RegenerateActionsDeps & { activeSceneId?: string };
+export type ToolsetDeps = RegenerateActionsDeps & {
+  activeSceneId?: string;
+  getSelection?: () => readonly string[];
+};
 
 /**
  * Build the v0 toolset:
@@ -24,6 +28,7 @@ export type ToolsetDeps = RegenerateActionsDeps & { activeSceneId?: string };
  * - `regenerate_scene` — instruction-driven whole-slide regeneration (content + actions)
  * - `regenerate_scene_actions` — narration/actions only
  * - `edit_interactive_html` — surgical str_replace edits for an interactive scene's HTML
+ * - `edit_elements` — guarded JSON Patch per-element edits → EditIntent
  */
 export function buildToolset(deps: ToolsetDeps): AgentTool<never, never>[] {
   return [
@@ -31,6 +36,7 @@ export function buildToolset(deps: ToolsetDeps): AgentTool<never, never>[] {
     makeRegenerateSceneTool(deps) as never,
     makeRegenerateSceneActionsTool(deps) as never,
     makeEditInteractiveHtmlTool(deps) as never,
+    makeEditElementsTool(deps) as never,
   ];
 }
 
@@ -40,4 +46,5 @@ export const V0_ALLOWLIST: ReadonlySet<string> = new Set([
   'regenerate_scene',
   'regenerate_scene_actions',
   'edit_interactive_html',
+  'edit_elements',
 ]);

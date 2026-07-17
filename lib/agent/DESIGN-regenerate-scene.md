@@ -35,7 +35,7 @@ under a natural-language instruction**, with a safe apply/restore story.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Capability class | **Regeneration only** — no add / delete / reorder / insert | Structural ops are one click away on the canvas + NavRail; the agent's differentiated value is generation, not clicking structural buttons. Keeps allowlist + blast radius tight. |
-| Regeneration granularity | **Whole page** (content + actions) in one tool | Simplest mental model — "redo this slide". Reuses `generateFullScenes`. |
+| Regeneration granularity | **Whole page** (content + actions) in one tool | Simplest mental model — "redo this slide". Reuses the standard `generateSceneContent` → `generateSceneActions` steps. |
 | Steerability | **Instruction-driven** (every regeneration accepts an optional NL instruction) | Without an instruction, regeneration is a slot machine, not a tool. This is the usability unlock. |
 | Apply model | **Apply directly + explicit "还原到重生成前" button** on the tool card | Snapshots the pre-regenerate scene; does not rely on the user remembering Ctrl+Z; lighter than a full preview/approve surface. |
 | Scene-type scope | **slide only** | Most pages are slides; lowest risk; matches the restrained v0 posture. Other types: the agent honestly says "not supported yet". |
@@ -57,7 +57,7 @@ The next-release allowlist grows from 1 tool to 3:
 | Tool | Kind | Purpose |
 |---|---|---|
 | `read_scene_content` | read (new) | Return the current slide's content + outline for a `sceneId` so the model can reason, answer questions, and distil a precise regenerate instruction. |
-| `regenerate_scene` | write (new) | Regenerate the whole slide (content + actions) for a `sceneId`, using **trusted injected content as baseline** + the agent's NL instruction → `generateFullScenes`. slide-only. |
+| `regenerate_scene` | write (new) | Regenerate the whole slide (content + actions) for a `sceneId`, using **trusted injected content as baseline** + the agent's NL instruction → `generateSceneContent` + `generateSceneActions`. slide-only. |
 | `regenerate_scene_actions` | write (existing) | Unchanged. Regenerate narration/actions only. |
 
 ### 4.1 Trust boundary (carries v0's "model is not a data source" rule)

@@ -3,9 +3,8 @@
  *
  * Regenerates a whole SLIDE — its content (elements/layout/text) AND its
  * playback actions (narration/cues) — to match a natural-language instruction.
- * Mirrors `generateSingleScene`'s two steps directly:
+ * Runs the standard two-step scene generation directly:
  *   generateSceneContent (EDIT MODE) → generateSceneActions
- * (NOT `generateFullScenes`, which writes into a StageStore).
  *
  * Trust boundary (carries the v0 rule): the model supplies only `sceneId` +
  * `instruction`. The slide's current content/outline come from the trusted

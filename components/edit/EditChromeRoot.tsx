@@ -3,13 +3,15 @@
 import { useEffect } from 'react';
 import { EditShell } from '@/components/edit/EditShell';
 import { SlideNavRail } from '@/components/edit/SlideNavRail';
-import { AgentPanel } from '@/components/edit/AgentPanel/AgentPanel';
 import { ActionsBar } from '@/components/edit/ActionsBar/ActionsBar';
 import { HeaderControls } from '@/components/stage/header-controls';
+import { useAgentRuntime } from '@/lib/agent/client/use-agent-runtime';
 import { isMaicEditorEnabled } from '@/lib/config/feature-flags';
 import { preloadEditor } from '@/lib/edit/preload-editor';
 import { sceneEditorRegistry } from '@/lib/edit/scene-editor-registry';
+import { supportsNarrationTimeline } from './scene-timeline';
 import type { Scene } from '@/lib/types/stage';
+import { RightRailTabs } from '@/components/edit/RightRailTabs';
 
 interface EditChromeRootProps {
   readonly scene: Scene;
@@ -23,8 +25,9 @@ interface EditChromeRootProps {
  * 13-line inline JSX with three children.
  *
  * Owned here: `EditShell` (Frame + CommandBar + canvas + overlays),
- * `SlideNavRail` (leftRail slot), and the `HeaderControls` trailing
- * (settings pill + Pro Switch) that rides in CommandBar's right slot.
+ * `SlideNavRail` (leftRail slot), the `HeaderControls` trailing
+ * (settings pill + Pro Switch) that rides in CommandBar's right slot,
+ * and the tabbed `RightRailTabs` (Edit with AI + 角色 roster).
  *
  * NOT owned here:
  * - `MultiTabEditConflictPrompt` — must mount even in playback mode so
@@ -62,35 +65,57 @@ export function EditChromeRoot({ scene, isEditable, onToggleEditMode }: EditChro
     void preloadEditor();
   }, []);
 
-  // The narration timeline (ActionsBar) is a slide-narration authoring tool — it
-  // only applies to scene types with a registered editor surface (slide/quiz).
-  // Read-only canvas scenes (no surface → NOOP + the "· view-only" badge, e.g.
-  // interactive/PBL) get no timeline.
+  // Whether this scene type has a registered canvas editor surface (slide/quiz).
+  // Authoring surface is separate from narration timeline availability.
   const authoringEnabled = !!sceneEditorRegistry.resolve(scene.type);
+  // The narration timeline (ActionsBar) is decoupled from the canvas editor surface
+  // (like agentEnabled below): it applies to registered surfaces (slide/quiz) AND
+  // view-only canvases that still carry a spoken script (interactive/pbl).
+  const timelineEnabled = supportsNarrationTimeline(scene.type, authoringEnabled);
 
-  // The AI edit panel (AgentPanel) is decoupled from the canvas surface: it
-  // renders wherever the agent has an edit capability — slides (regenerate) AND
-  // interactive scenes (edit_interactive_html), even though the interactive canvas
-  // itself stays view-only. PBL has neither a surface nor an agent edit tool.
+  // The AI edit panel is decoupled from the canvas surface: it renders wherever
+  // the agent has an edit capability — slides (regenerate) AND interactive scenes
+  // (edit_interactive_html), even though the interactive canvas itself stays view-only.
   const agentEnabled = authoringEnabled || scene.type === 'interactive';
+
+  // Keep the runtime owned by Pro mode chrome, not by the scene-capability gated
+  // panel. Unsupported scene switches can hide/disable the composer without
+  // destroying an in-flight run or the messages that still need to settle/save.
+  const agentRuntime = useAgentRuntime({
+    scene: agentEnabled ? { id: scene.id, title: scene.title } : undefined,
+    isSendDisabled: !agentEnabled,
+  });
+
+  const headerControls = (
+    <HeaderControls
+      mode="edit"
+      canEdit={isEditable}
+      onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}
+    />
+  );
 
   return (
     <EditShell
       scene={scene}
       leftRail={<SlideNavRail />}
       rightRail={
-        agentEnabled ? (
-          <AgentPanel scene={{ id: scene.id, title: scene.title, type: scene.type }} />
-        ) : undefined
-      }
-      bottomRail={authoringEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
-      commandTrailing={
-        <HeaderControls
-          mode="edit"
-          canEdit={isEditable}
-          onToggleEditMode={isMaicEditorEnabled() ? onToggleEditMode : undefined}
+        <RightRailTabs
+          scene={{ id: scene.id, title: scene.title, type: scene.type }}
+          runtime={agentRuntime.runtime}
+          clearThread={agentRuntime.clearThread}
+          hasMessages={agentRuntime.hasMessages}
+          canSend={agentEnabled}
+          agentEnabled={agentEnabled}
+          isRunning={agentRuntime.isRunning}
+          sessions={agentRuntime.sessions}
+          activeSessionId={agentRuntime.activeSessionId}
+          switchSession={agentRuntime.switchSession}
+          deleteSessionAndRefresh={agentRuntime.deleteSessionAndRefresh}
+          refreshSessions={agentRuntime.refreshSessions}
         />
       }
+      bottomRail={timelineEnabled ? <ActionsBar sceneId={scene.id} /> : undefined}
+      commandTrailing={headerControls}
     />
   );
 }

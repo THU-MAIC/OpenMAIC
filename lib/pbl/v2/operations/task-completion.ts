@@ -8,6 +8,7 @@ import type {
   PBLProjectV2,
 } from '../types';
 import { recordEvent } from './engagement';
+import { appendRuntimeEvent, milestoneIdForMicrotask, mintRuntimeEventId } from './runtime-events';
 
 export const TASK_EVAL_PASS_SCORE = 60;
 
@@ -64,6 +65,15 @@ export function setPendingTaskCompletion(
     createdAt: existing?.createdAt ?? new Date().toISOString(),
   };
   project.pendingTaskCompletion = pending;
+  appendRuntimeEvent(project, {
+    id: mintRuntimeEventId(),
+    kind: 'task_completion_staged',
+    actorType: 'system',
+    reason: pending.reason,
+    ts: pending.createdAt,
+    microtaskId: pending.microtaskId,
+    milestoneId: pending.milestoneId,
+  });
   project.updatedAt = new Date().toISOString();
   return pending;
 }
@@ -126,6 +136,17 @@ export function appendTaskCompletionReadyMessage(
     microtaskId,
   };
   thread.messages.push(message);
+  appendRuntimeEvent(project, {
+    id: mintRuntimeEventId(),
+    kind: 'message_created',
+    actorType: 'agent',
+    actorRoleId: instructor.id,
+    messageId: message.id,
+    threadId: thread.agentId,
+    ts: message.ts,
+    microtaskId: message.microtaskId,
+    milestoneId: milestoneIdForMicrotask(project, message.microtaskId),
+  });
   project.updatedAt = message.ts;
   return message;
 }
@@ -151,6 +172,15 @@ export function recordPendingTaskCompletionEvidence(
 export function clearPendingTaskCompletion(project: PBLProjectV2, microtaskId?: string): void {
   if (!project.pendingTaskCompletion) return;
   if (microtaskId && project.pendingTaskCompletion.microtaskId !== microtaskId) return;
+  const pending = project.pendingTaskCompletion;
   delete project.pendingTaskCompletion;
+  appendRuntimeEvent(project, {
+    id: mintRuntimeEventId(),
+    kind: 'task_completion_cleared',
+    actorType: 'system',
+    ts: new Date().toISOString(),
+    microtaskId: pending.microtaskId,
+    milestoneId: pending.milestoneId,
+  });
   project.updatedAt = new Date().toISOString();
 }

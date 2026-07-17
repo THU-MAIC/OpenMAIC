@@ -13,6 +13,11 @@
     "pdfParser": "Analisador",
     "pdfUpload": "Enviar PDF",
     "removePdf": "Remover arquivo",
+    "documentExtractor": "Extrator",
+    "courseMaterialUpload": "Enviar material do curso",
+    "courseMaterialsSelected": "{{n}} materiais selecionados",
+    "courseMaterialMergeOrder": "Os materiais serão mesclados na ordem mostrada abaixo.",
+    "removeCourseMaterial": "Remover arquivo",
     "webSearchOn": "Ativada",
     "webSearchOff": "Clique para ativar",
     "webSearchDesc": "Pesquise na web por informações atualizadas antes da geração",
@@ -46,7 +51,19 @@
     "exportFailed": "Falha na exportação",
     "classroomZip": "Exportar ZIP da Sala",
     "classroomZipDesc": "Estrutura do curso + arquivos de mídia",
-    "inlinePartial": "{{count}} recurso(s) externo(s) não puderam ser empacotados; o curso pode não ser exibido corretamente offline."
+    "inlinePartial": "{{count}} recurso(s) externo(s) não puderam ser empacotados; o curso pode não ser exibido corretamente offline.",
+    "video": "Exportar Vídeo",
+    "videoDesc": "Projeto Hyperframes autossuficiente (renderizável em MP4)",
+    "videoNoScenes": "Nenhuma cena disponível para exportar.",
+    "videoCompiling": "Compilando a linha do tempo do vídeo...",
+    "videoRendering": "Renderizando slides e coletando recursos...",
+    "videoPackaging": "Empacotando o projeto de vídeo...",
+    "videoSuccess": "Projeto de vídeo exportado",
+    "videoFailed": "Falha na exportação do vídeo",
+    "videoWarnings": "{{assets}} recurso(s) ausente(s) e {{diagnostics}} problema(s) no relatório de exportação.",
+    "noSlides": "Não há slides para exportar",
+    "noSlidesSkipped": "Este curso não tem slides — PPTX ignorado",
+    "nothingToExport": "Nada para exportar"
   },
   "import": {
     "classroom": "Importar Sala de Aula",
@@ -76,6 +93,7 @@
     "unknown": "Desconhecido",
     "stopDiscussion": "Encerrar Discussão",
     "endQA": "Encerrar Perguntas",
+    "softClosing": "Continuar discussão",
     "error": {
       "emptyAgentResponses": "Os agentes retornaram respostas vazias; a discussão foi interrompida. Tente novamente ou verifique as configurações do modelo.",
       "streamInterrupted": "O fluxo de dados terminou inesperadamente; a discussão não foi concluída. Por favor, tente novamente."
@@ -88,7 +106,9 @@
       "empty": "As anotações aparecerão aqui após a reprodução da aula",
       "emptyHint": "Pressione play para iniciar a aula",
       "pageLabel": "Página {{n}}",
-      "currentPage": "Atual"
+      "currentPage": "Atual",
+      "jumpToLine": "Jump to this line",
+      "jumpUnavailable": "Jump unavailable for this line"
     },
     "badge": {
       "qa": "P&R",
@@ -184,8 +204,8 @@
     },
     "insert": {
       "textBox": "Caixa de texto",
-      "expandToolbar": "Mostrar ferramentas de inserção",
-      "collapseToolbar": "Ocultar ferramentas de inserção",
+      "dragToolbar": "Mover ferramentas de inserção",
+      "dragToolbarKeyboard": "Mover ferramentas: pressione Enter ou Espaço e use as setas",
       "image": "Imagem",
       "imageDrop": "Arraste uma imagem ou clique para escolher um arquivo",
       "imageOr": "ou cole a URL de uma imagem",
@@ -205,7 +225,8 @@
       "dragHandle": "Arraste para reordenar",
       "deckLabel": "Cenas",
       "moreActions": "Mais ações",
-      "rename": "Renomear"
+      "rename": "Renomear",
+      "sceneIncomplete": "Esta página tem conteúdo incompleto"
     },
     "zorder": {
       "toFront": "Trazer para a frente",
@@ -242,7 +263,7 @@
       "commentPromptLabel": "Orientação de correção",
       "commentPromptPlaceholder": "Como esta resposta aberta deve ser avaliada?",
       "empty": "Nenhuma pergunta ainda",
-      "emptyHint": "Use “Adicionar pergunta” acima para criar a primeira.",
+      "emptyHint": "Use “Adicionar pergunta” para criar a primeira.",
       "type": {
         "single": "Escolha única",
         "multiple": "Múltipla escolha",
@@ -305,9 +326,17 @@
         "fixHtml": {
           "examples": "\"O botão de iniciar não faz nada\", \"Os painéis se sobrepõem no celular\"",
           "label": "Corrigir um bug na página"
+        },
+        "elements": {
+          "label": "Ajustar elementos",
+          "examples": "“Deixe o título azul e suba”, “Diminua esta figura”"
         }
       },
       "newConversation": "New conversation",
+      "sessionHistory": "Histórico",
+      "sessionUntitled": "Conversa sem título",
+      "sessionDelete": "Excluir",
+      "sessionEmpty": "Nenhuma conversa",
       "reasoning": "Raciocínio",
       "thought": "Pensou por",
       "interactive": {
@@ -320,7 +349,6 @@
     },
     "timeline": {
       "title": "Roteiro de narração",
-      "dragToAdd": "Arraste para adicionar",
       "regenAllTts": "Regenerar toda a narração",
       "voiceAll": "Narrar tudo",
       "counts": "{{speech}} narração · {{cue}} ações",
@@ -338,14 +366,21 @@
       "fieldAction": "Ação",
       "fieldElement": "Elemento",
       "fieldContent": "Conteúdo",
-      "addDiscussion": "Adicionar discussão",
       "addDiscussionExists": "Apenas uma discussão por cena",
       "discussionTerminal": "FIM",
       "discussionTerminalHint": "A discussão fica no final da cena (uma por cena)",
       "discussionTopicPlaceholder": "Tópico da discussão (obrigatório)",
       "discussionPromptPlaceholder": "Orientação (opcional)",
       "discussionAgent": "Iniciador",
-      "discussionAgentUnset": "Não especificado"
+      "discussionAgentUnset": "Não especificado",
+      "addAction": "Adicionar ação"
+    },
+    "picker": {
+      "title": "Inserir ação",
+      "speechDesc": "Fale uma frase — pode ter narração automática",
+      "spotlightDesc": "Destacar um elemento na tela",
+      "laserDesc": "Apontar um laser para um elemento",
+      "discussionDesc": "Faça uma pergunta e escolha quem inicia"
     },
     "tts": {
       "preview": "Pré-visualizar",
@@ -395,6 +430,14 @@
       "fixing": "Corrigindo",
       "notFixed": "Não corrigido",
       "title": "Corrigir página interativa"
+    },
+    "editElements": {
+      "title": "Editar elementos",
+      "editing": "Editando",
+      "applied": "Aplicado",
+      "notApplied": "Não aplicado",
+      "applyFailed": "O editor não conseguiu aplicar a edição do elemento. Nada foi alterado.",
+      "applyPartiallyFailed": "O editor não conseguiu aplicar uma ou mais edições de elementos. Outras edições podem ter sido aplicadas."
     }
   },
   "stage": {
@@ -482,12 +525,16 @@
     "noSpeechDetected": "Nenhuma fala detectada, tente novamente",
     "discussionEnded": "Discussão encerrada",
     "qaEnded": "Perguntas e respostas encerradas",
+    "softClosing": "Continuar discussão",
     "thinking": "Pensando",
     "yourTurn": "Sua vez",
     "stopDiscussion": "Encerrar Discussão",
     "autoPlay": "Reprodução automática",
     "autoPlayOff": "Parar reprodução automática",
     "speed": "Velocidade",
+    "previousLine": "Previous line",
+    "nextLine": "Next line",
+    "lineProgress": "Line {{current}} / {{total}}",
     "voiceInput": "Entrada por voz",
     "voiceInputDisabled": "Entrada por voz desativada",
     "textInput": "Entrada por texto",
@@ -801,16 +848,22 @@
   },
   "upload": {
     "pdfSizeLimit": "Suporta arquivos PDF de até 50 MB",
+    "courseMaterialSizeLimit": "Documentos, apresentações, planilhas, imagens e texto — até 50 MB (formatos aceitos dependem do extrator selecionado)",
     "generateFailed": "Falha ao gerar a sala, tente novamente",
     "requirementPlaceholder": "Conte-me o que você quer aprender, por exemplo:\n\"Me ensine Python do zero em 30 minutos\"\n\"Explique a Transformada de Fourier no quadro\"\n\"Como jogar o jogo de tabuleiro Avalon\"",
     "requirementRequired": "Por favor, descreva os objetivos do curso",
-    "fileTooLarge": "Arquivo muito grande. Selecione um PDF com menos de 50 MB"
+    "fileTooLarge": "Arquivo muito grande. Selecione um arquivo com menos de 50 MB",
+    "courseMaterialCountLimit": "Você pode enviar até 5 arquivos de material do curso",
+    "courseMaterialTotalSizeLimit": "O tamanho total dos materiais deve ser menor que 150 MB",
+    "unsupportedCourseMaterial": "O extrator atual não suporta este formato. Troque o extrator ou escolha outro arquivo."
   },
   "generation": {
-    "analyzingPdf": "Analisando o Documento PDF",
-    "analyzingPdfDesc": "Extraindo estrutura e conteúdo do documento...",
     "pdfLoadFailed": "Falha ao carregar o PDF, tente novamente",
     "pdfParseFailed": "Falha ao analisar o PDF",
+    "analyzingCourseMaterial": "Analisando documentos",
+    "analyzingCourseMaterialDesc": "Extraindo estrutura e conteúdo do documento...",
+    "courseMaterialLoadFailed": "Falha ao carregar o material do curso, tente novamente",
+    "courseMaterialParseFailed": "Falha ao analisar o material do curso",
     "streamNotReadable": "Não foi possível ler o fluxo de geração",
     "generatingOutlines": "Esboçando o Roteiro do Curso",
     "generatingOutlinesDesc": "Estruturando o caminho de aprendizagem...",
@@ -820,11 +873,6 @@
     "generatingActionsDesc": "Orquestrando narração, destaques e interações...",
     "generationComplete": "Geração concluída!",
     "generationFailed": "Falha na geração",
-    "generatingCourse": "Gerando curso",
-    "openingClassroom": "Abrindo a sala...",
-    "outlineReady": "Roteiro do curso gerado",
-    "generatingFirstPage": "Gerando a primeira página...",
-    "firstPageReady": "Primeira página pronta! Abrindo a sala...",
     "speechFailed": "Falha ao gerar a fala",
     "retryScene": "Tentar novamente",
     "retryingScene": "Regerando...",
@@ -845,6 +893,10 @@
     "outlineEmptyResponse": "O modelo não retornou roteiros válidos. Verifique a configuração do modelo e tente novamente",
     "outlineGenerateFailed": "Falha ao gerar roteiro, tente novamente mais tarde",
     "sceneGenerateFailed": "Falha ao gerar cena, tente novamente mais tarde",
+    "sceneGenerateAuthFailed": "A geração da cena falhou porque o provedor do modelo rejeitou as credenciais. Verifique a configuração do modelo.",
+    "sceneGenerateRateLimited": "A geração da cena atingiu o limite de requisições. Aguarde um momento e tente novamente.",
+    "sceneGenerateProviderUnavailable": "O provedor do modelo está temporariamente indisponível. Tente novamente mais tarde.",
+    "sceneGenerateInvalidResponse": "O modelo não retornou conteúdo de cena válido. Tente outro modelo ou ajuste os requisitos do curso.",
     "reviewOutlineTitle": "Revise seu roteiro",
     "reviewOutlineDesc": "Edite, reordene, remova ou adicione cenas antes do início da geração de conteúdo.",
     "reviewOutlineAutoContinue": "A geração continuará automaticamente, a menos que você revise o roteiro.",
@@ -911,7 +963,10 @@
     "generatingInProgress": "Gerando...",
     "webSearching": "Buscando na Web",
     "webSearchingDesc": "Pesquisando informações atualizadas na web",
-    "webSearchFailed": "Falha na pesquisa na web"
+    "webSearchFailed": "Falha na pesquisa na web",
+    "outlinesReadyCount": "{{ready}} / {{total}} seções prontas",
+    "jumpToBlankTitle": "Ir para uma seção que ainda precisa de título",
+    "analyzingMediaMaterial": "Analisando áudio/vídeo"
   },
   "settings": {
     "title": "Configurações",
@@ -992,6 +1047,7 @@
     "addProviderDescription": "Adicione provedores de modelo personalizados para ampliar os modelos de IA disponíveis",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1010,10 +1066,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Protocolo OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Protocolo Claude",
       "google": "Protocolo Gemini"
     },
@@ -1032,6 +1090,7 @@
     "importFromClipboard": "Importar da Área de Transferência",
     "apiSecret": "Chave de API",
     "apiHost": "URL Base",
+    "azureDeploymentHint": "Informe o endpoint do Azure OpenAI acima e adicione cada nome de implantação do Azure como um modelo.",
     "baseUrlRegion": {
       "china": "China",
       "international": "Internacional",
@@ -1042,6 +1101,14 @@
     },
     "requestUrl": "URL da Requisição",
     "models": "Modelos",
+    "comfyuiWorkflows": "Fluxos de trabalho",
+    "comfyuiRefresh": "Atualizar",
+    "comfyuiNoWorkflowsFoundPrefix": "Nenhum arquivo JSON de fluxo de trabalho encontrado em",
+    "comfyuiAddWorkflowPrefix": "Adicione um arquivo",
+    "comfyuiAddWorkflowSuffix": "para começar.",
+    "comfyuiFolderHintPrefix": "Coloque os arquivos JSON de fluxo de trabalho na sua pasta",
+    "comfyuiFolderHintMiddle": "O nome do arquivo se torna o nome exibido — ex.",
+    "comfyuiLoadError": "Falha ao carregar fluxos de trabalho: {error}",
     "addModel": "Adicionar",
     "reset": "Restaurar",
     "fetch": "Buscar",
@@ -1426,6 +1493,9 @@
     "lang_af-ZA": "Afrikaans (Suid-Afrika)",
     "lang_uk-UA": "Українська (Україна)",
     "pdfSettings": "Análise de PDF",
+    "documentParsingSettings": "Análise de Documentos",
+    "supportedFormats": "Formatos Suportados",
+    "mineruSelfHostFormatsNote": "A análise de PDF e imagens requer os extras mineru[pipeline] ou mineru[core] no seu servidor MinerU. Instalações leves do mineru-api podem processar apenas documentos do Office.",
     "pdfParsingSettings": "Configurações de Análise de PDF",
     "pdfDescription": "Escolha o mecanismo de análise de PDF com suporte a extração de texto, processamento de imagens e reconhecimento de tabelas",
     "pdfProvider": "Analisador de PDF",
@@ -1460,6 +1530,7 @@
     "providerNanoBanana": "Nano Banana (Gemini)",
     "providerMiniMaxImage": "MiniMax Image",
     "providerGrokImage": "Grok Image (xAI)",
+    "providerComfyUIImage": "ComfyUI Image",
     "providerLemonadeImage": "Lemonade Image (Local)",
     "testImageGeneration": "Testar Geração de Imagem",
     "testImageConnectivity": "Testar Conexão",
@@ -1527,6 +1598,7 @@
     "webSearchApiKeyPlaceholderServer": "Chave configurada no servidor, opcionalmente sobreponha",
     "webSearchApiKeyHint": "Obtenha uma chave de API com o provedor de busca selecionado",
     "webSearchApiKeyOptional": "A chave de API é opcional. Sem ela, será usada extração pública de páginas como alternativa.",
+    "searxngServerOnlyNotice": "O SearXNG deve ser configurado no servidor. Defina a variável de ambiente SEARXNG_BASE_URL (ou a seção web-search em server-providers.yml). URLs de instância fornecidas pelo cliente não são aceitas.",
     "baiduSubSources": "Fontes do Baidu",
     "baiduSubSourcesDescription": "Escolha pelo menos uma fonte do Baidu para consultar.",
     "baiduSubSourceWeb": "Busca Web",
@@ -1539,7 +1611,59 @@
     "webSearchBaseUrl": "URL Base",
     "webSearchServerConfigured": "Chave de API de busca configurada no servidor",
     "optional": "Opcional",
-    "ttsBrowserNativeTimelineNotice": "O TTS nativo do navegador não suporta os recursos de áudio da linha do tempo do editor (pré-visualizar, regenerar e narração em lote). Mude para um provedor de TTS gerenciado para gerar e gerenciar o áudio de cada linha."
+    "selectProvider": "Select Provider",
+    "customProvider": "Custom",
+    "presetPickHint": "Picking a provider auto-fills its base URL and protocol; enter your key then click \"Fetch Models\". Not listed? Use \"Custom\".",
+    "presetCategory": {
+      "tokenPlan": "Token Plans",
+      "aggregator": "Aggregators",
+      "thirdParty": "Vendors",
+      "official": "Official"
+    },
+    "fetchModels": "Fetch Models",
+    "fetchModelsResult": "Fetched {total} models, added {added}",
+    "fetchModelsNoEndpoint": "This provider has no model list endpoint — add models manually",
+    "fetchModelsAuthError": "API key is invalid or expired",
+    "fetchModelsFailed": "Failed to fetch models",
+    "usage": {
+      "title": "Usage",
+      "refresh": "Refresh",
+      "disclaimer": "Usage is system-tracked; only server-side calls are counted.",
+      "totalRequests": "Requests",
+      "totalTokens": "LLM Tokens",
+      "dailyTrend": "Daily Token Trend",
+      "tokens": "Tokens",
+      "byModel": "By Model",
+      "model": "Model",
+      "type": "Type",
+      "reqs": "Reqs",
+      "usage": "Usage",
+      "empty": "No usage data yet",
+      "kindLlm": "LLM",
+      "kindImage": "Image",
+      "kindVideo": "Video",
+      "kindTts": "Speech",
+      "kindAsr": "ASR",
+      "unitToken": "tokens",
+      "unitImage": "images",
+      "unitSecond": "sec",
+      "unitCharacter": "chars"
+    },
+    "tokenPlan": {
+      "nav": "Token Plan",
+      "title": "Token Plan Setup",
+      "desc": "Pick your token plan provider and enter the key — it auto-configures every adapted modality (LLM/image/video/speech/web search).",
+      "selectPlan": "Select Provider",
+      "apiKey": "API Key",
+      "enable": "Enable",
+      "updateKey": "Update key",
+      "modelsCount": "{{n}} models",
+      "capabilities": "Capabilities offered",
+      "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
+    },
+    "ttsBrowserNativeTimelineNotice": "O TTS nativo do navegador não suporta os recursos de áudio da linha do tempo do editor (pré-visualizar, regenerar e narração em lote). Mude para um provedor de TTS gerenciado para gerar e gerenciar o áudio de cada linha.",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "Perfil",
