@@ -98,7 +98,11 @@ function getLikelyLatexMath(content: string): string | null {
   if (COMMON_LATEX_COMMAND.test(trimmed) || /[_^]\{/.test(trimmed)) return trimmed;
 
   const commands = trimmed.match(/\\[A-Za-z]+/g) ?? [];
-  if (commands.length < 2 || !/[=+\-*/^_{}]/.test(trimmed)) return null;
+  if (commands.length === 0) return null;
+  if (commands.length === 1) {
+    return /\\[A-Za-z]+\s*\{[^{}]*\}/.test(trimmed) ? trimmed : null;
+  }
+  if (!/[=+\-*/^_{}]/.test(trimmed)) return null;
 
   const commandCharacters = commands.reduce((total, command) => total + command.length, 0);
   return commandCharacters / trimmed.length >= 0.15 ? trimmed : null;

@@ -151,18 +151,37 @@ describe('ActionEngine wb_draw_text LaTeX fallback', () => {
     );
   });
 
-  test('does not treat an ordinary string with one backslash as math', async () => {
-    await drawText(String.raw`Open the folder C:\temp before class`);
+  test.each([String.raw`\vec{v}`, String.raw`\hat{x}`, String.raw`\overline{x}`])(
+    'renders a single less-common LaTeX command with a braced argument: %s',
+    async (latex) => {
+      await drawText(latex);
 
-    expect(mocks.addElement).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'text',
-        content: expect.stringContaining(String.raw`C:\temp`),
-      }),
-      'wb-1',
-    );
-    expect(mocks.renderToString).not.toHaveBeenCalled();
-  });
+      expect(mocks.addElement).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'latex',
+          latex,
+          html: expect.stringContaining('katex-display'),
+        }),
+        'wb-1',
+      );
+    },
+  );
+
+  test.each([String.raw`C:\temp`, String.raw`D:\path\to\file`])(
+    'keeps a Windows path as text: %s',
+    async (path) => {
+      await drawText(path);
+
+      expect(mocks.addElement).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: 'text',
+          content: expect.stringContaining(path),
+        }),
+        'wb-1',
+      );
+      expect(mocks.renderToString).not.toHaveBeenCalled();
+    },
+  );
 
   test('does not throw when fallback LaTeX is malformed', async () => {
     await expect(drawText(String.raw`\frac{1}{`)).resolves.toBeUndefined();
