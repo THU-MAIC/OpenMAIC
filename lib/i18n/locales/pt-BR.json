@@ -93,6 +93,7 @@
     "unknown": "Desconhecido",
     "stopDiscussion": "Encerrar Discussão",
     "endQA": "Encerrar Perguntas",
+    "softClosing": "Continuar discussão",
     "error": {
       "emptyAgentResponses": "Os agentes retornaram respostas vazias; a discussão foi interrompida. Tente novamente ou verifique as configurações do modelo.",
       "streamInterrupted": "O fluxo de dados terminou inesperadamente; a discussão não foi concluída. Por favor, tente novamente."
@@ -524,6 +525,7 @@
     "noSpeechDetected": "Nenhuma fala detectada, tente novamente",
     "discussionEnded": "Discussão encerrada",
     "qaEnded": "Perguntas e respostas encerradas",
+    "softClosing": "Continuar discussão",
     "thinking": "Pensando",
     "yourTurn": "Sua vez",
     "stopDiscussion": "Encerrar Discussão",

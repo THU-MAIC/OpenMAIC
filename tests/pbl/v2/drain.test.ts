@@ -23,6 +23,7 @@ import {
 import { advanceMicrotask, startMicrotask } from '@/lib/pbl/v2/operations/progress';
 import { addSubmission } from '@/lib/pbl/v2/operations/submission';
 import { clearStageDrainWatermarks, drainProjectRuntime } from '@/lib/pbl/v2/runtime/drain';
+import { withRuntimeStorageExclusiveLock } from '@/lib/utils/chat-storage-lock';
 import {
   enrichPBLRuntimeEvent,
   PBL_RUNTIME_PAYLOAD_VERSION,
@@ -63,6 +64,32 @@ function memoryStorage(): Storage {
     removeItem: (key: string) => void values.delete(key),
     setItem: (key: string, value: string) => void values.set(key, String(value)),
   } as Storage;
+}
+
+function serialLockManager(): Pick<LockManager, 'request'> {
+  const tails = new Map<string, Promise<void>>();
+  return {
+    async request<T>(
+      name: string,
+      optionsOrCallback: LockOptions | (() => Promise<T> | T),
+      maybeCallback?: () => Promise<T> | T,
+    ): Promise<T> {
+      const callback = typeof optionsOrCallback === 'function' ? optionsOrCallback : maybeCallback!;
+      const previous = tails.get(name) ?? Promise.resolve();
+      let release!: () => void;
+      const current = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      tails.set(name, current);
+      await previous;
+      try {
+        return await callback();
+      } finally {
+        release();
+        if (tails.get(name) === current) tails.delete(name);
+      }
+    },
+  } as Pick<LockManager, 'request'>;
 }
 
 class MemoryKVStore implements KVStore {
@@ -146,6 +173,7 @@ class MemoryRuntimeStore implements RuntimeStore {
   async deleteLearnerRuntime(): Promise<void> {}
 
   async deleteStageRuntime(): Promise<void> {}
+  async deleteAllRuntime(): Promise<void> {}
 }
 
 class AlreadyExistsRaceStore extends MemoryRuntimeStore {
@@ -298,6 +326,7 @@ async function drain(project: PBLProjectV2, store: RuntimeStore, kv: KVStore): P
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   if (vi.isFakeTimers()) {
     vi.useRealTimers();
   }
@@ -784,6 +813,70 @@ describe('drainProjectRuntime', () => {
     expect(store.records.map((record) => record.id)).toEqual(['evt-slow-1', 'evt-recovers']);
     expect(warn).toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it('keeps runtime-wide maintenance behind an active PBL drain', async () => {
+    vi.stubGlobal('navigator', { locks: serialLockManager() });
+    const store = new SlowFirstAppendStore('evt-maintenance-lock');
+    const kv = new MemoryKVStore();
+    const draining = drainProjectRuntime({
+      stageId: 'stage-maintenance-lock',
+      sceneId: 'scene-maintenance-lock',
+      project: makeProject([runtimeEvent('evt-maintenance-lock')]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await vi.waitFor(() => expect(store.appendLog).toEqual(['start:evt-maintenance-lock']));
+
+    let maintenanceStarted = false;
+    const maintenance = withRuntimeStorageExclusiveLock(async () => {
+      maintenanceStarted = true;
+    });
+    await Promise.resolve();
+    expect(maintenanceStarted).toBe(false);
+
+    store.resolveSlowAppend();
+    await draining;
+    await maintenance;
+    expect(maintenanceStarted).toBe(true);
+  });
+
+  it('enrolls queued PBL drains ahead of later runtime maintenance', async () => {
+    vi.stubGlobal('navigator', { locks: serialLockManager() });
+    const store = new SlowFirstAppendStore('evt-first-enrolled');
+    const kv = new MemoryKVStore();
+    const stageId = 'stage-queued-maintenance';
+    const sceneId = 'scene-queued-maintenance';
+    const first = drainProjectRuntime({
+      stageId,
+      sceneId,
+      project: makeProject([runtimeEvent('evt-first-enrolled')]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await vi.waitFor(() => expect(store.appendLog).toEqual(['start:evt-first-enrolled']));
+
+    const second = drainProjectRuntime({
+      stageId,
+      sceneId,
+      project: makeProject([runtimeEvent('evt-second-enrolled')]),
+      store,
+      kv,
+      learnerKey: LEARNER_KEY,
+    });
+    await Promise.resolve();
+    const maintenance = withRuntimeStorageExclusiveLock(async () => {
+      store.records.splice(0);
+      store.sessions.splice(0);
+    });
+
+    store.resolveSlowAppend();
+    await Promise.all([first, second, maintenance]);
+
+    expect(store.records).toEqual([]);
+    expect(store.sessions).toEqual([]);
   });
 
   it('does not permanently block later drains after a queued append times out', async () => {

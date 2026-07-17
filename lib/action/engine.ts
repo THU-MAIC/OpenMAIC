@@ -88,6 +88,7 @@ export type WidgetMessageCallback = (type: string, payload: Record<string, unkno
 
 export interface ActionExecutionOptions {
   silent?: boolean;
+  signal?: AbortSignal;
 }
 
 export class ActionEngine {
@@ -154,7 +155,7 @@ export class ActionEngine {
         return;
       // Synchronous — Video
       case 'play_video':
-        return this.executePlayVideo(action as PlayVideoAction);
+        return this.executePlayVideo(action as PlayVideoAction, options);
 
       // Synchronous
       case 'speech':
@@ -263,7 +264,11 @@ export class ActionEngine {
 
   // ==================== Synchronous — Video ====================
 
-  private async executePlayVideo(action: PlayVideoAction): Promise<void> {
+  private async executePlayVideo(
+    action: PlayVideoAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
+    if (options.signal?.aborted) return;
     // Resolve the video element to a generated media reference.
     // action.elementId is the slide element ID (e.g. video_abc123), but the media
     // store is keyed by generated media refs, so we need to bridge the two.
@@ -274,20 +279,27 @@ export class ActionEngine {
       if (task && task.status !== 'done') {
         // Wait for media to be ready (or fail)
         await new Promise<void>((resolve) => {
-          const unsubscribe = useMediaGenerationStore.subscribe((state) => {
+          let unsubscribe = () => {};
+          const finish = () => {
+            unsubscribe();
+            options.signal?.removeEventListener('abort', finish);
+            resolve();
+          };
+          unsubscribe = useMediaGenerationStore.subscribe((state) => {
             const t = state.tasks[placeholderId];
             if (!t || t.status === 'done' || t.status === 'failed') {
-              unsubscribe();
-              resolve();
+              finish();
             }
           });
+          options.signal?.addEventListener('abort', finish, { once: true });
           // Check again in case it resolved between getState and subscribe
           const current = useMediaGenerationStore.getState().tasks[placeholderId];
           if (!current || current.status === 'done' || current.status === 'failed') {
-            unsubscribe();
-            resolve();
+            finish();
           }
         });
+
+        if (options.signal?.aborted) return;
 
         // If failed, skip playback
         if (useMediaGenerationStore.getState().tasks[placeholderId]?.status === 'failed') {
@@ -296,28 +308,41 @@ export class ActionEngine {
       }
     }
 
+    if (options.signal?.aborted) return;
     useCanvasStore.getState().playVideo(action.elementId);
 
     // Wait until the video finishes playing, with a safety timeout to prevent
     // the playback engine from hanging indefinitely if the video element is
     // invalid or the state change is missed.
     return new Promise<void>((resolve) => {
-      const timeout = setTimeout(() => {
-        unsubscribe();
-        log.warn(`[playVideo] Timeout waiting for video ${action.elementId} to finish`);
-        resolve();
-      }, MAX_VIDEO_WAIT_MS);
-      const unsubscribe = useCanvasStore.subscribe((state) => {
-        if (state.playingVideoElementId !== action.elementId) {
-          clearTimeout(timeout);
-          unsubscribe();
-          resolve();
-        }
-      });
-      if (useCanvasStore.getState().playingVideoElementId !== action.elementId) {
+      let finished = false;
+      let unsubscribe = () => {};
+      const finish = () => {
+        if (finished) return;
+        finished = true;
         clearTimeout(timeout);
         unsubscribe();
+        options.signal?.removeEventListener('abort', abortPlayback);
         resolve();
+      };
+      const abortPlayback = () => {
+        if (useCanvasStore.getState().playingVideoElementId === action.elementId) {
+          useCanvasStore.getState().pauseVideo();
+        }
+        finish();
+      };
+      const timeout = setTimeout(() => {
+        log.warn(`[playVideo] Timeout waiting for video ${action.elementId} to finish`);
+        finish();
+      }, MAX_VIDEO_WAIT_MS);
+      unsubscribe = useCanvasStore.subscribe((state) => {
+        if (state.playingVideoElementId !== action.elementId) {
+          finish();
+        }
+      });
+      options.signal?.addEventListener('abort', abortPlayback, { once: true });
+      if (useCanvasStore.getState().playingVideoElementId !== action.elementId) {
+        finish();
       }
     });
   }
@@ -615,6 +640,12 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     const lines = codeToLines(action.code);
+    const suppliedLineIds = (action as WbDrawCodeAction & { lineIds?: string[] }).lineIds;
+    if (suppliedLineIds?.length === lines.length) {
+      lines.forEach((line, index) => {
+        line.id = suppliedLineIds[index];
+      });
+    }
 
     this.stageAPI.whiteboard.addElement(
       {
@@ -658,7 +689,11 @@ export class ActionEngine {
 
     let lines: CodeLine[] = [...element.lines];
     const newContentLines = action.content ? action.content.split('\n') : [];
-    const newLineIds = generateLineIds(newContentLines.length);
+    const suppliedLineIds = (action as WbEditCodeAction & { newLineIds?: string[] }).newLineIds;
+    const newLineIds =
+      suppliedLineIds?.length === newContentLines.length
+        ? suppliedLineIds
+        : generateLineIds(newContentLines.length);
 
     switch (action.operation) {
       case 'insert_after': {

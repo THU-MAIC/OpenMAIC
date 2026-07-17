@@ -59,12 +59,19 @@ interface RoundtableProps {
   readonly endFlashSessionType?: 'qa' | 'discussion';
   readonly thinkingState?: { stage: string; agentId?: string } | null;
   readonly isCueUser?: boolean;
+  /** Session entered the soft-closing grace window (client-side, ~15s). */
+  readonly isSoftClosing?: boolean;
+  readonly softCloseDeadline?: number;
   readonly isTopicPending?: boolean;
   readonly onMessageSend?: (message: string) => void;
   readonly onDiscussionStart?: (request: DiscussionAction) => void;
   readonly onDiscussionSkip?: () => void;
   readonly onStopDiscussion?: () => void;
+  readonly onContinueDiscussion?: () => void;
   readonly onInputActivate?: () => void;
+  readonly onUserInputActivity?: (
+    kind: 'text_input' | 'composition_start' | 'recording_start',
+  ) => void;
 
   readonly onResumeTopic?: () => void;
   readonly onPlayPause?: () => void;
@@ -150,12 +157,16 @@ export function Roundtable({
   endFlashSessionType = 'discussion',
   thinkingState,
   isCueUser,
+  isSoftClosing,
+  softCloseDeadline,
   isTopicPending,
   onMessageSend,
   onDiscussionStart,
   onDiscussionSkip,
   onStopDiscussion,
+  onContinueDiscussion,
   onInputActivate,
+  onUserInputActivity,
 
   onResumeTopic,
   onPlayPause,
@@ -404,10 +415,17 @@ export function Roundtable({
     } else {
       if (isSendCooldown || isProcessing) return;
       onInputActivate?.();
+      onUserInputActivity?.('recording_start');
       setIsVoiceOpen(true);
       setIsInputOpen(false);
       startRecording();
     }
+  };
+
+  const handleContinueSoftClosing = () => {
+    onContinueDiscussion?.();
+    setIsVoiceOpen(false);
+    setIsInputOpen(true);
   };
 
   // Keyboard shortcuts for roundtable interaction (#255)
@@ -642,6 +660,8 @@ export function Roundtable({
             : 'idle'
       }
       isLiveSession={isStreaming || isTopicPending || engineMode === 'live'}
+      isSoftClosing={isSoftClosing}
+      softCloseDeadline={softCloseDeadline}
       whiteboardOpen={whiteboardOpen}
       sidebarCollapsed={sidebarCollapsed}
       chatCollapsed={chatCollapsed}
@@ -655,6 +675,7 @@ export function Roundtable({
       onTogglePresentation={onTogglePresentation}
       showStopDiscussion={showStopButton}
       onStopDiscussion={onStopDiscussion}
+      onContinueDiscussion={handleContinueSoftClosing}
       ttsEnabled={ttsEnabled}
       ttsMuted={ttsMuted}
       ttsVolume={ttsVolume}
@@ -756,6 +777,8 @@ export function Roundtable({
                     <textarea
                       value={inputValue}
                       onChange={(e) => setInputValue(e.target.value)}
+                      onBeforeInput={() => onUserInputActivity?.('text_input')}
+                      onCompositionStart={() => onUserInputActivity?.('composition_start')}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                           e.preventDefault();
@@ -1277,6 +1300,8 @@ export function Roundtable({
                         ref={nonPresentationInputRef}
                         value={inputValue}
                         onChange={(e) => setInputValue(e.target.value)}
+                        onBeforeInput={() => onUserInputActivity?.('text_input')}
+                        onCompositionStart={() => onUserInputActivity?.('composition_start')}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                             e.preventDefault();

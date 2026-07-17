@@ -17,6 +17,7 @@ import { useCanvasStore } from '@/lib/store/canvas';
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
+import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 
 const log = createLogger('StageStore');
 
@@ -87,6 +88,7 @@ interface StageState {
 
   // Chats
   chats: ChatSession[];
+  chatSnapshot: ChatStorageSnapshot;
 
   // Mode
   mode: StageMode;
@@ -163,6 +165,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   scenes: [],
   currentSceneId: null,
   chats: [],
+  chatSnapshot: { sessions: [], restoreMarker: null },
   mode: 'playback',
   toolbarState: 'ai',
   generatingOutlines: [],
@@ -181,6 +184,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       scenes: [],
       currentSceneId: null,
       chats: [],
+      chatSnapshot: { sessions: [], restoreMarker: null },
       generationComplete: false,
       generationEpoch: s.generationEpoch + 1,
     }));
@@ -411,7 +415,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   // durability (e.g. setGenerationComplete) can avoid recording state that
   // outruns the scene data.
   saveToStorage: async () => {
-    const { stage, scenes, currentSceneId, chats } = get();
+    const { stage, scenes, currentSceneId, chats, chatSnapshot } = get();
     if (!stage?.id) {
       log.warn('Cannot save: stage.id is required');
       return false;
@@ -425,7 +429,20 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         scenes: persistedScenes,
         currentSceneId,
         chats,
+        chatSnapshot,
       });
+
+      // Bind future saves to the exact chat snapshot this successful write
+      // represented. Keep the restore marker unchanged: a stale no-op after a
+      // restore must remain stale until the editor reloads.
+      if (get().stage?.id === stage.id && get().chats === chats) {
+        set({
+          chatSnapshot: {
+            sessions: structuredClone(chats),
+            restoreMarker: chatSnapshot.restoreMarker,
+          },
+        });
+      }
 
       return true;
     } catch (error) {
@@ -506,6 +523,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           scenes: migrated,
           currentSceneId: data.currentSceneId,
           chats: data.chats,
+          chatSnapshot: data.chatSnapshot ?? { sessions: [], restoreMarker: undefined },
           outlines,
           generationComplete,
           // Compute generatingOutlines from persisted outlines minus completed
@@ -540,6 +558,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       scenes: [],
       currentSceneId: null,
       chats: [],
+      chatSnapshot: { sessions: [], restoreMarker: null },
       outlines: [],
       generationComplete: false,
       generationEpoch: s.generationEpoch + 1,

@@ -1,6 +1,14 @@
 'use client';
 
-import { useImperativeHandle, forwardRef, useRef, useCallback, useState, useMemo } from 'react';
+import {
+  useImperativeHandle,
+  forwardRef,
+  useRef,
+  useCallback,
+  useState,
+  useMemo,
+  useEffect,
+} from 'react';
 import type { SessionType } from '@/lib/types/chat';
 import type { DiscussionRequest } from '@/components/roundtable';
 import type { Action } from '@/lib/types/action';
@@ -10,7 +18,12 @@ import { useStageStore } from '@/lib/store';
 import { buildLectureNotes } from '@/lib/chat/lecture-notes';
 import { PanelRightClose, BookOpen, MessageSquare } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { useChatSessions } from './use-chat-sessions';
+import {
+  useChatSessions,
+  MANUAL_STOP_END_OPTIONS,
+  type EndSessionOptions,
+  type SessionCleanupPayload,
+} from './use-chat-sessions';
 import { SessionList } from './session-list';
 import { LectureNotesView } from './lecture-notes-view';
 
@@ -27,7 +40,9 @@ interface ChatAreaProps {
   onThinking?: (state: { stage: string; agentId?: string } | null) => void;
   onCueUser?: (fromAgentId?: string, prompt?: string) => void;
   onLiveSessionError?: () => void;
-  onStopSession?: () => void;
+  onSoftCloseSession?: (payload: SessionCleanupPayload) => void;
+  onSoftClosingChange?: (softClosing: boolean, deadline?: number) => void;
+  onStopSession?: (payload: SessionCleanupPayload) => void;
   onSegmentSealed?: (
     messageId: string,
     partId: string,
@@ -44,8 +59,10 @@ interface ChatAreaProps {
 
 export interface ChatAreaRef {
   createSession: (type: SessionType, title: string) => Promise<string>;
-  endSession: (sessionId: string) => Promise<void>;
-  endActiveSession: () => Promise<void>;
+  endSession: (sessionId: string, options?: EndSessionOptions) => Promise<void>;
+  endActiveSession: (options?: EndSessionOptions) => Promise<void>;
+  stopActiveSession: () => Promise<void>;
+  continueActiveSoftClosingSession: () => boolean;
   softPauseActiveSession: () => Promise<void>;
   resumeActiveSession: () => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
@@ -81,6 +98,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onThinking,
       onCueUser,
       onLiveSessionError,
+      onSoftCloseSession,
+      onSoftClosingChange,
       onStopSession,
       onSegmentSealed,
       shouldHoldAfterReveal,
@@ -101,6 +120,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       createSession,
       endSession,
       endActiveSession,
+      continueSoftClosingSession,
+      confirmSoftClosingSession,
       softPauseActiveSession,
       resumeActiveSession,
       sendMessage,
@@ -120,6 +141,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       onCueUser,
       onActiveBubble,
       onLiveSessionError,
+      onSoftCloseSession,
       onStopSession,
       onSegmentSealed,
       shouldHoldAfterReveal,
@@ -142,14 +164,44 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       [chatSessions],
     );
 
+    const softClosingChatSession = useMemo(
+      () => chatSessions.find((s) => s.status === 'soft-closing'),
+      [chatSessions],
+    );
+
+    useEffect(() => {
+      onSoftClosingChange?.(
+        Boolean(softClosingChatSession),
+        softClosingChatSession?.softCloseDeadline,
+      );
+    }, [softClosingChatSession, onSoftClosingChange]);
+
     // Wrap endSession for QA/Discussion: also notify parent for engine cleanup
     const handleEndSession = useCallback(
       async (sessionId: string) => {
-        await endSession(sessionId);
-        onStopSession?.();
+        const session = chatSessions.find((candidate) => candidate.id === sessionId);
+        if (session?.status === 'soft-closing') {
+          const payload = await confirmSoftClosingSession(sessionId);
+          if (payload) onStopSession?.(payload);
+          return;
+        }
+        await endSession(sessionId, MANUAL_STOP_END_OPTIONS);
+        onStopSession?.({ sessionId, source: 'manual_stop' });
       },
-      [endSession, onStopSession],
+      [chatSessions, confirmSoftClosingSession, endSession, onStopSession],
     );
+
+    const handleStopActiveSession = useCallback(async () => {
+      const active = chatSessions.find(
+        (session) => session.status === 'active' || session.status === 'soft-closing',
+      );
+      if (active) await handleEndSession(active.id);
+    }, [chatSessions, handleEndSession]);
+
+    const handleContinueActiveSoftClosingSession = useCallback((): boolean => {
+      const softClosing = chatSessions.find((session) => session.status === 'soft-closing');
+      return softClosing ? continueSoftClosingSession(softClosing.id) : false;
+    }, [chatSessions, continueSoftClosingSession]);
 
     const switchToTab = useCallback((tab: 'lecture' | 'chat') => {
       setActiveTab(tab);
@@ -159,6 +211,8 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
       createSession,
       endSession,
       endActiveSession,
+      stopActiveSession: handleStopActiveSession,
+      continueActiveSoftClosingSession: handleContinueActiveSoftClosingSession,
       softPauseActiveSession,
       resumeActiveSession,
       sendMessage,
@@ -301,6 +355,7 @@ export const ChatArea = forwardRef<ChatAreaRef, ChatAreaProps>(
                       activeBubbleId={activeBubbleId}
                       onToggleExpand={toggleSessionExpand}
                       onEndSession={handleEndSession}
+                      onContinueSession={continueSoftClosingSession}
                     />
                     <div ref={bottomRef} />
                   </>

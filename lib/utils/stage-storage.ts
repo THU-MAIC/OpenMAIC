@@ -8,12 +8,21 @@
 import { makeScene, Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { db } from './database';
-import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
+import {
+  saveChatSessions,
+  loadChatSessions,
+  deleteChatSessions,
+  type ChatStorageSnapshot,
+} from './chat-storage';
 import { clearPlaybackState } from './playback-storage';
 import { clearAllForScene } from '@/lib/quiz/persistence';
-import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
+import { beginStageRuntimeDeletionSafely } from '@/lib/runtime/store';
 import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
 import { createLogger } from '@/lib/logger';
+import {
+  withRuntimeStorageExclusiveLockUntilSettled,
+  withRuntimeStorageSharedLock,
+} from './chat-storage-lock';
 
 const log = createLogger('StageStorage');
 
@@ -22,6 +31,7 @@ export interface StageStoreData {
   scenes: Scene[];
   currentSceneId: string | null;
   chats: ChatSession[];
+  chatSnapshot?: ChatStorageSnapshot;
 }
 
 export interface StageListItem {
@@ -39,52 +49,57 @@ export interface StageListItem {
  * Save stage data to IndexedDB
  */
 export async function saveStageData(stageId: string, data: StageStoreData): Promise<void> {
-  try {
-    const now = Date.now();
+  return withRuntimeStorageSharedLock(async () => {
+    try {
+      const now = Date.now();
 
-    // Save to stages table
-    await db.stages.put({
-      id: stageId,
-      name: data.stage.name || 'Untitled Stage',
-      description: data.stage.description,
-      createdAt: data.stage.createdAt || now,
-      updatedAt: now,
-      languageDirective: data.stage.languageDirective,
-      style: data.stage.style,
-      currentSceneId: data.currentSceneId || undefined,
-      agentIds: data.stage.agentIds,
-      videoManifest: data.stage.videoManifest,
-      interactiveMode: data.stage.interactiveMode,
-      taskEngineMode: data.stage.taskEngineMode,
-      generatedAgentConfigs: data.stage.generatedAgentConfigs,
-    });
+      // Save to stages table
+      await db.stages.put({
+        id: stageId,
+        name: data.stage.name || 'Untitled Stage',
+        description: data.stage.description,
+        createdAt: data.stage.createdAt || now,
+        updatedAt: now,
+        languageDirective: data.stage.languageDirective,
+        style: data.stage.style,
+        currentSceneId: data.currentSceneId || undefined,
+        agentIds: data.stage.agentIds,
+        videoManifest: data.stage.videoManifest,
+        interactiveMode: data.stage.interactiveMode,
+        taskEngineMode: data.stage.taskEngineMode,
+        generatedAgentConfigs: data.stage.generatedAgentConfigs,
+      });
 
-    // Delete old scenes first to avoid orphaned data
-    await db.scenes.where('stageId').equals(stageId).delete();
+      // Delete old scenes first to avoid orphaned data
+      await db.scenes.where('stageId').equals(stageId).delete();
 
-    // Save new scenes
-    if (data.scenes && data.scenes.length > 0) {
-      await db.scenes.bulkPut(
-        data.scenes.map((scene, index) => ({
-          ...scene,
-          stageId,
-          order: scene.order ?? index,
-          createdAt: scene.createdAt || now,
-          updatedAt: scene.updatedAt || now,
-        })),
-      );
+      // Save new scenes
+      if (data.scenes && data.scenes.length > 0) {
+        await db.scenes.bulkPut(
+          data.scenes.map((scene, index) => ({
+            ...scene,
+            stageId,
+            order: scene.order ?? index,
+            createdAt: scene.createdAt || now,
+            updatedAt: scene.updatedAt || now,
+          })),
+        );
+      }
+
+      // Chat sessions live in the learner RuntimeStore, outside the document DB.
+      if (data.chats) {
+        await saveChatSessions(stageId, data.chats, {
+          globalLockHeld: true,
+          snapshot: data.chatSnapshot,
+        });
+      }
+
+      log.info(`Saved stage: ${stageId}`);
+    } catch (error) {
+      log.error('Failed to save stage:', error);
+      throw error;
     }
-
-    // Save chat sessions to independent table
-    if (data.chats) {
-      await saveChatSessions(stageId, data.chats);
-    }
-
-    log.info(`Saved stage: ${stageId}`);
-  } catch (error) {
-    log.error('Failed to save stage:', error);
-    throw error;
-  }
+  });
 }
 
 /**
@@ -102,8 +117,21 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
     // Load scenes
     const scenes = await db.scenes.where('stageId').equals(stageId).sortBy('order');
 
-    // Load chat sessions from independent table
-    const chats = await loadChatSessions(stageId);
+    // Chat runtime data lives in a separate IndexedDB database. Keep the
+    // document available when that independent store is temporarily
+    // unavailable; a later chat load/save can recover without treating the
+    // already-loaded stage as missing.
+    let chats: ChatSession[] = [];
+    let chatSnapshot: ChatStorageSnapshot = { sessions: [], restoreMarker: undefined };
+    try {
+      chats = await loadChatSessions(stageId, {
+        onSnapshot: (snapshot) => {
+          chatSnapshot = snapshot;
+        },
+      });
+    } catch (error) {
+      log.warn(`Failed to load chat sessions for stage ${stageId}:`, error);
+    }
 
     log.info(`Loaded stage: ${stageId}, scenes: ${scenes.length}, chats: ${chats.length}`);
 
@@ -115,6 +143,7 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
       scenes: scenes.map((s) => makeScene(s, s.content)),
       currentSceneId: stage.currentSceneId || scenes[0]?.id || null,
       chats,
+      chatSnapshot,
     };
   } catch (error) {
     log.error('Failed to load stage:', error);
@@ -126,42 +155,53 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
  * Delete stage and all related data
  */
 export async function deleteStageData(stageId: string): Promise<void> {
-  try {
-    // Collect scene ids before deletion so we can sweep per-scene localStorage
-    // keys (quiz draft / submitted answers / graded results).
-    const sceneIds = (await db.scenes.where('stageId').equals(stageId).toArray()).map((s) => s.id);
-
-    // Delete stage
-    await db.stages.delete(stageId);
-
-    // Delete scenes
-    await db.scenes.where('stageId').equals(stageId).delete();
-
-    // Delete chat sessions and playback state
-    await deleteChatSessions(stageId);
-    await clearPlaybackState(stageId);
-
-    // Sweep quiz persistence keys for each deleted scene.
-    for (const sceneId of sceneIds) {
-      clearAllForScene(sceneId);
-    }
-
-    // Learner-runtime data lives in a separate IndexedDB database, so it is
-    // cascaded after the Dexie work: it cannot join those transactions, and a
-    // runtime failure must not abort them (the helper warns instead of
-    // throwing).
-    await deleteStageRuntimeSafely(stageId);
+  return withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
     try {
-      await clearStageDrainWatermarks(stageId);
-    } catch (error) {
-      log.warn(`Failed to clear PBL drain watermarks for stage ${stageId}:`, error);
-    }
+      // Collect scene ids before deletion so we can sweep per-scene localStorage
+      // keys (quiz draft / submitted answers / graded results).
+      const sceneIds = (await db.scenes.where('stageId').equals(stageId).toArray()).map(
+        (s) => s.id,
+      );
 
-    log.info(`Deleted stage: ${stageId}`);
-  } catch (error) {
-    log.error('Failed to delete stage:', error);
-    throw error;
-  }
+      // Delete stage
+      await db.stages.delete(stageId);
+
+      // Delete scenes
+      await db.scenes.where('stageId').equals(stageId).delete();
+
+      // Clear legacy chat rows and the still-Dexie playback state. Runtime chat
+      // rows are removed by the all-kind cascade below.
+      await deleteChatSessions(stageId);
+      await clearPlaybackState(stageId);
+
+      // Sweep quiz persistence keys for each deleted scene.
+      for (const sceneId of sceneIds) {
+        clearAllForScene(sceneId);
+      }
+
+      // Learner-runtime data lives in a separate IndexedDB database, so it is
+      // cascaded after the Dexie work: it cannot join those transactions, and a
+      // runtime failure must not abort them (the helper warns instead of
+      // throwing).
+      const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
+      await runtimeDeletion.completion;
+      try {
+        await clearStageDrainWatermarks(stageId);
+      } catch (error) {
+        log.warn(`Failed to clear PBL drain watermarks for stage ${stageId}:`, error);
+      }
+
+      log.info(`Deleted stage: ${stageId}`);
+      releaseCaller(undefined);
+      // The public deletion remains bounded, but this callback deliberately
+      // retains the exclusive lock until a late runtime cascade can no longer
+      // delete data written after the caller was released.
+      await runtimeDeletion.settlement;
+    } catch (error) {
+      log.error('Failed to delete stage:', error);
+      throw error;
+    }
+  });
 }
 
 /**

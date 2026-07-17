@@ -22,6 +22,14 @@ export function isMaicEditorEnabled(): boolean {
 }
 
 /**
+ * Experimental Pi-based classroom chat runtime. Default OFF. The same public
+ * flag selects the client runtime and gates the corresponding server route.
+ */
+export function isPiChatEnabled(): boolean {
+  return readBoolean(process.env.NEXT_PUBLIC_PI_CHAT_ENABLED);
+}
+
+/**
  * Server-authoritative gate for the vocational task-engine generation path.
  * Default OFF. When disabled, requests that include taskEngineMode must
  * silently fall back to the ordinary standard / interactive generation paths.

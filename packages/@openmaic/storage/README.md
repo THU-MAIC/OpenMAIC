@@ -68,6 +68,8 @@ a browser.
   cascades one learner's sessions + records on one stage, and
   `deleteStageRuntime` clears a whole stage — the hook a document deletion
   cascades through.
+- `deleteAllRuntime` clears every runtime session and record for explicit
+  whole-cache reset flows.
 
 ## Backend equivalence
 

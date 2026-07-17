@@ -93,6 +93,7 @@
     "unknown": "不明",
     "stopDiscussion": "ディスカッションを終了",
     "endQA": "Q&Aを終了",
+    "softClosing": "話し合いを続ける",
     "error": {
       "emptyAgentResponses": "エージェントが空の応答を返したため、ディスカッションを停止しました。再試行するかモデル設定をご確認ください。",
       "streamInterrupted": "ストリームが予期せず終了し、ディスカッションが完了しませんでした。再度お試しください。"
@@ -524,6 +525,7 @@
     "noSpeechDetected": "音声が検出されませんでした。もう一度お試しください",
     "discussionEnded": "ディスカッションが終了しました",
     "qaEnded": "Q&Aが終了しました",
+    "softClosing": "話し合いを続ける",
     "thinking": "思考中",
     "yourTurn": "あなたの番です",
     "stopDiscussion": "ディスカッションを終了",

@@ -1,7 +1,13 @@
 import { restoreAgentSelection } from '@/lib/orchestration/registry/agent-selection';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { getActionsForRole } from '@/lib/orchestration/registry/types';
-import { applyHydratedClassroomFallbackScenes } from '@/lib/classroom/pbl-fallback-hydration';
+import {
+  applyHydratedClassroomFallbackScenes,
+  hydrateClassroomFallbackChats,
+  type ApplyHydratedClassroomFallbackScenesArgs,
+} from '@/lib/classroom/pbl-fallback-hydration';
+import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
+import type { ChatSession } from '@/lib/types/chat';
 import type { TTSProviderId } from '@/lib/audio/types';
 import type { VoiceDesign } from '@/lib/audio/voice-design';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
@@ -175,14 +181,19 @@ export async function fetchClassroomFromApi(classroomId: string): Promise<Classr
 export function applyClassroomStageAndScenes(
   stage: Stage,
   scenes: readonly Scene[],
-  options: { persist?: boolean } = {},
+  options: {
+    persist?: boolean;
+    chats?: ChatSession[];
+    chatSnapshot?: ChatStorageSnapshot;
+  } = {},
 ): void {
   const nextScenes = [...scenes];
   useStageStore.setState((state) => ({
     stage,
     scenes: nextScenes,
     currentSceneId: nextScenes[0]?.id ?? null,
-    chats: [],
+    chats: options.chats ?? [],
+    chatSnapshot: options.chatSnapshot ?? { sessions: [], restoreMarker: null },
     generationComplete: false,
     generationEpoch: state.generationEpoch + 1,
     mode: 'playback',
@@ -346,7 +357,11 @@ export function applyGeneratedAgentRecordsToRegistry(
 }
 
 export const defaultClassroomLoadDeps = {
-  applyFallbackScenes: applyHydratedClassroomFallbackScenes,
+  applyFallbackScenes: (args: ApplyHydratedClassroomFallbackScenesArgs) =>
+    applyHydratedClassroomFallbackScenes({
+      ...args,
+      hydrateChats: hydrateClassroomFallbackChats,
+    }),
   fetchClassroom: fetchClassroomFromApi,
   loadRestoredMediaTasks: loadRestoredMediaTasksFromDB,
   applyRestoredMediaTasks,

@@ -93,6 +93,7 @@
     "unknown": "未知",
     "stopDiscussion": "結束討論",
     "endQA": "結束問答",
+    "softClosing": "繼續討論",
     "error": {
       "emptyAgentResponses": "智能體連續無回應,討論已停止。請重新嘗試或檢查模型設定。",
       "streamInterrupted": "資料串流意外中斷,討論未能完成。請重新嘗試。"
@@ -509,6 +510,7 @@
     "noSpeechDetected": "未偵測到語音，請重試",
     "discussionEnded": "討論已結束",
     "qaEnded": "問答已結束",
+    "softClosing": "繼續討論",
     "thinking": "思考中",
     "yourTurn": "輪到你發言了",
     "stopDiscussion": "結束討論",

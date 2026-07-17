@@ -141,6 +141,48 @@ describe('runClassroomLoad', () => {
     useStageStore.getState().clearStore();
   });
 
+  it('resets caller-bound chat authority when fallback replaces the classroom', () => {
+    useStageStore.setState({
+      stage: makeStage('stage-old'),
+      chats: [],
+      chatSnapshot: { sessions: [], restoreMarker: 'chat-restore-marker:stage-old:marker' },
+    });
+
+    applyClassroomStageAndScenes(makeStage('stage-new'), [], { persist: false });
+
+    expect(useStageStore.getState().chatSnapshot).toEqual({
+      sessions: [],
+      restoreMarker: null,
+    });
+    useStageStore.getState().clearStore();
+  });
+
+  it('commits runtime chats hydrated for a server fallback', () => {
+    const hydratedChat = {
+      id: 'runtime-chat',
+      type: 'qa' as const,
+      title: 'Runtime chat',
+      status: 'completed' as const,
+      messages: [],
+      config: { agentIds: [] },
+      toolCalls: [],
+      pendingToolCalls: [],
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    };
+    const chatSnapshot = { sessions: [hydratedChat], restoreMarker: null };
+
+    applyClassroomStageAndScenes(makeStage('stage-runtime-chat'), [], {
+      persist: false,
+      chats: [hydratedChat],
+      chatSnapshot,
+    });
+
+    expect(useStageStore.getState().chats).toEqual([hydratedChat]);
+    expect(useStageStore.getState().chatSnapshot).toEqual(chatSnapshot);
+    useStageStore.getState().clearStore();
+  });
+
   it('does not run stale restore phases after a newer navigation wins', async () => {
     const loadStorage = deferred<void>();
     const { deps, setCurrent, setStage } = makeDeps({

@@ -315,6 +315,22 @@ export function runRuntimeStoreContract(name: string, makeStore: () => RuntimeSt
 
         await expect(store.deleteStageRuntime('stage-1')).resolves.toBeUndefined();
       });
+
+      test('deleteAllRuntime removes every session and record across stages', async () => {
+        const store = makeStore();
+        await store.createSession(makeSession({ id: 's1' }));
+        await store.appendRecord(makeRecordInit('s1'));
+        await store.createSession(makeSession({ id: 's2', stageId: 'stage-2' }));
+        await store.appendRecord(makeRecordInit('s2'));
+
+        await store.deleteAllRuntime();
+        expect(await store.getSession('s1')).toBeUndefined();
+        expect(await store.getSession('s2')).toBeUndefined();
+        expect(await store.listRecords('s1')).toEqual([]);
+        expect(await store.listRecords('s2')).toEqual([]);
+
+        await expect(store.deleteAllRuntime()).resolves.toBeUndefined();
+      });
     });
 
     describe('version line', () => {

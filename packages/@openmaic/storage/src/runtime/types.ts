@@ -155,4 +155,7 @@ export interface RuntimeStore {
    * cascades through. Idempotent, deliberately version-agnostic.
    */
   deleteStageRuntime(stageId: string): Promise<void>;
+
+  /** Delete every runtime session and record. Idempotent and version-agnostic. */
+  deleteAllRuntime(): Promise<void>;
 }

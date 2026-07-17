@@ -18,7 +18,7 @@ import { SceneSidebar } from '@/components/stage/scene-sidebar';
 import { Header } from '@/components/header';
 import { CanvasArea } from '@/components/canvas/canvas-area';
 import { Roundtable } from '@/components/roundtable';
-import { PlaybackEngine, computePlaybackView } from '@/lib/playback';
+import { PlaybackEngine, computePlaybackView, shouldAutoResumeLecture } from '@/lib/playback';
 import type { EngineMode, TriggerEvent, Effect } from '@/lib/playback';
 import {
   canJumpWithinReconstructablePrefix,
@@ -41,6 +41,7 @@ import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action'
 import { cn } from '@/lib/utils';
 // Playback state persistence removed — refresh always starts from the beginning
 import { ChatArea, type ChatAreaRef } from '@/components/chat/chat-area';
+import type { SessionCleanupPayload } from '@/components/chat/use-chat-sessions';
 import { agentsToParticipants, useAgentRegistry } from '@/lib/orchestration/registry/store';
 import type { AgentConfig } from '@/lib/orchestration/registry/types';
 import {
@@ -138,6 +139,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // Streaming state for stop button (Issue 1)
     const [chatIsStreaming, setChatIsStreaming] = useState(false);
+    const [chatIsSoftClosing, setChatIsSoftClosing] = useState(false);
+    const [softCloseDeadline, setSoftCloseDeadline] = useState<number | undefined>();
     const [chatSessionType, setChatSessionType] = useState<string | null>(null);
 
     // Topic pending state: session is soft-paused, bubble stays visible, waiting for user input
@@ -148,6 +151,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // Scene switch confirmation dialog state
     const [pendingSceneId, setPendingSceneId] = useState<string | null>(null);
+    const sceneSwitchRequestRef = useRef(0);
+    const sceneSwitchConfirmingRef = useRef(false);
     const [isPresenting, setIsPresenting] = useState(false);
     const [controlsVisible, setControlsVisible] = useState(true);
     const [isPresentationInteractionActive, setIsPresentationInteractionActive] = useState(false);
@@ -304,6 +309,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       setIsCueUser(false);
       setIsTopicPending(false);
       setChatIsStreaming(false);
+      setChatIsSoftClosing(false);
       setChatSessionType(null);
       setIsDiscussionPaused(false);
     }, []);
@@ -357,9 +363,61 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // Shared stop-discussion handler (used by both Roundtable and Canvas toolbar)
     const handleStopDiscussion = useCallback(async () => {
-      await chatAreaRef.current?.endActiveSession();
-      doSessionCleanup();
-    }, [doSessionCleanup]);
+      await chatAreaRef.current?.stopActiveSession();
+    }, []);
+
+    const handleContinueDiscussion = useCallback(() => {
+      if (chatAreaRef.current?.continueActiveSoftClosingSession()) {
+        setChatIsSoftClosing(false);
+        setSoftCloseDeadline(undefined);
+      }
+    }, []);
+
+    /**
+     * Session-stop callback from the chat layer. Runs the normal cleanup, then —
+     * only when a confirmed or timed-out soft close ended a Q&A that had
+     * interrupted an active lecture — auto-resumes from the saved position.
+     *
+     * hadLectureInterruption MUST be read before doSessionCleanup(), because
+     * handleEndDiscussion() restores and clears the saved lecture position.
+     */
+    const handleSessionStop = useCallback(
+      async (payload: SessionCleanupPayload) => {
+        const engine = engineRef.current;
+        const hadLectureInterruption = engine?.hasLectureInterruption() ?? false;
+
+        doSessionCleanup();
+
+        if (!engine) return;
+        const eligible = shouldAutoResumeLecture({
+          source: payload.source,
+          endReason: payload.endReason,
+          hadLectureInterruption,
+          engineMode: engine.getMode(),
+          isExhausted: engine.isExhausted(),
+          playbackCompleted,
+        });
+        if (!eligible) return;
+
+        // Use the restored engine position, not the stale React currentScene.
+        const sceneId = engine.getCurrentSceneId();
+        if (!sceneId || !chatAreaRef.current) return;
+
+        // startLecture is async — re-check the engine is still idle afterwards so
+        // we never override a live session the user started during the await.
+        const sessionId = await chatAreaRef.current.startLecture(sceneId);
+        if (engine.getMode() !== 'idle') {
+          // The engine left idle during the async startLecture (e.g. a new live
+          // session began) — tear down the lecture session we just
+          // created/reactivated so it doesn't linger without playing.
+          await chatAreaRef.current.endSession(sessionId);
+          return;
+        }
+        lectureSessionIdRef.current = sessionId;
+        engine.continuePlayback();
+      },
+      [doSessionCleanup, playbackCompleted],
+    );
 
     // Imperative teardown so the parent can `await` SSE / engine / TTS
     // shutdown before flipping mode to 'edit'. Mirrors what the old in-
@@ -480,268 +538,279 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
 
     // Initialize playback engine when scene changes
     useEffect(() => {
-      const previousSceneId = activeSceneIdRef.current;
-      if (previousSceneId && previousSceneId !== currentScene?.id) {
-        saveSceneResumePosition(previousSceneId, currentPlaybackActionIndexRef.current);
-      }
-
-      // Bump epoch so any stale SSE callbacks from the previous scene are discarded
-      sceneEpochRef.current++;
-
-      // End any active QA/discussion session — this synchronously aborts the SSE
-      // stream inside use-chat-sessions (abortControllerRef.abort()), preventing
-      // stale onLiveSpeech callbacks from leaking into the new scene.
-      chatAreaRef.current?.endActiveSession();
-
-      // Also abort the engine-level discussion controller
-      if (discussionAbortRef.current) {
-        discussionAbortRef.current.abort();
-        discussionAbortRef.current = null;
-      }
-
-      // Stop any in-flight discussion TTS audio on scene switch
-      discussionTTS.cleanup();
-
-      const savedResumeCursor =
-        currentScene && typeof window !== 'undefined'
-          ? getActionResumeRestoreCursor(
-              readActionResumeState(window.sessionStorage, actionResumeStorageKey),
-              currentScene.id,
-              currentScene.actions ?? [],
-            )
-          : { actionIndex: 0, position: null };
-      const savedResumeAction = currentScene?.actions?.[savedResumeCursor.actionIndex];
-
-      // Reset all roundtable/live state so scenes are fully isolated. Use the
-      // saved action cursor immediately so mount/refresh cannot persist the
-      // default first-speech cursor before the async engine jump finishes.
-      resetSceneState({
-        actionIndex: savedResumeCursor.actionIndex,
-        lectureSpeech:
-          savedResumeAction?.type === 'speech' ? (savedResumeAction as SpeechAction).text : null,
-      });
-
-      // A slide scene with no actions is still playable: the engine dwells on it
-      // (see resolvePlaybackCursor) so a freshly inserted / emptied blank slide
-      // shows for a beat and auto-play advances past it. Non-slide scenes
-      // (quiz / interactive / pbl) without timeline actions get no lecture engine
-      // as before. Don't touch `autoStartRef` here: in the PENDING_SCENE_ID
-      // handoff `currentScene` is null while a pending auto-start legitimately
-      // waits for the next generated scene to materialize.
-      const hasPlayableActions =
-        !!currentScene?.actions &&
-        (currentScene.actions.length > 0 || currentScene.type === 'slide');
-      if (!currentScene || !hasPlayableActions) {
-        engineRef.current = null;
-        setEngineMode('idle');
-        activeSceneIdRef.current = currentSceneId;
-
-        return;
-      }
-
-      // Stop previous engine
-      if (engineRef.current) {
-        engineRef.current.stop();
-      }
-
-      // Widget iframe messaging callback for interactive scenes, resolved lazily
-      // at send time (keyed by sceneId). The interactive iframe now lives in the
-      // keep-alive host (#619), which registers its postMessage callback a commit
-      // after this engine is built — so resolving eagerly here would capture null
-      // on a scene's first visit and silently drop every widget action. Looking it
-      // up per-send always sees the live registration.
-      const sceneIdForWidget = currentScene.id;
-      const widgetSendMessage = (type: string, payload: Record<string, unknown>) =>
-        useWidgetIframeStore.getState().getSendMessage(sceneIdForWidget)?.(type, payload);
-
-      // Create ActionEngine for playback (with audioPlayer for TTS and widget messaging)
-      const actionEngine = new ActionEngine(
-        useStageStore,
-        audioPlayerRef.current,
-        widgetSendMessage,
-      );
-
-      // Create new PlaybackEngine
-      const engine = new PlaybackEngine([currentScene], actionEngine, audioPlayerRef.current, {
-        onModeChange: (mode) => {
-          setEngineMode(mode);
-        },
-        onProgress: (snapshot) => {
-          updateCurrentPlaybackActionIndex(snapshot.actionIndex);
-          saveSceneResumePosition(snapshot.sceneId, snapshot.actionIndex);
-        },
-        onSceneChange: (_sceneId) => {
-          // Scene change handled by engine
-        },
-        onSpeechStart: (text) => {
-          setLectureSpeech(text);
-          // Add to lecture session with incrementing index for dedup
-          // Chat area pacing is handled by the StreamBuffer (onTextReveal)
-          if (lectureSessionIdRef.current) {
-            const idx = lectureActionCounterRef.current++;
-            const speechId = `speech-${Date.now()}`;
-            chatAreaRef.current?.addLectureMessage(
-              lectureSessionIdRef.current,
-              { id: speechId, type: 'speech', text } as Action,
-              idx,
-            );
-            // Track active bubble for highlight (Issue 8)
-            const msgId = chatAreaRef.current?.getLectureMessageId(lectureSessionIdRef.current!);
-            if (msgId) setActiveBubbleId(msgId);
-          }
-        },
-        onSpeechEnd: () => {
-          // Don't clear lectureSpeech — let it persist until the next
-          // onSpeechStart replaces it or the scene transitions.
-          // Clearing here causes fallback to idleText (first sentence).
-          setActiveBubbleId(null);
-        },
-        onEffectFire: (effect: Effect) => {
-          // Add to lecture session with incrementing index
-          if (
-            lectureSessionIdRef.current &&
-            (effect.kind === 'spotlight' || effect.kind === 'laser')
-          ) {
-            const idx = lectureActionCounterRef.current++;
-            chatAreaRef.current?.addLectureMessage(
-              lectureSessionIdRef.current,
-              {
-                id: `${effect.kind}-${Date.now()}`,
-                type: effect.kind,
-                elementId: effect.targetId,
-              } as Action,
-              idx,
-            );
-          }
-        },
-        onProactiveShow: (trigger) => {
-          if (!trigger.agentId) {
-            // Mutate in-place so engine.currentTrigger also gets the agentId
-            // (confirmDiscussion reads agentId from the same object reference)
-            trigger.agentId = pickStudentAgent();
-          }
-          setDiscussionTrigger(trigger);
-        },
-        onProactiveHide: () => {
-          setDiscussionTrigger(null);
-        },
-        onDiscussionConfirmed: (topic, prompt, agentId) => {
-          // Start SSE discussion via ChatArea
-          handleDiscussionSSE(topic, prompt, agentId);
-        },
-        onDiscussionEnd: () => {
-          // Abort any active SSE
-          if (discussionAbortRef.current) {
-            discussionAbortRef.current.abort();
-            discussionAbortRef.current = null;
-          }
-          setDiscussionTrigger(null);
-          // Stop any in-flight discussion TTS audio
-          discussionTTS.cleanup();
-          // Clear roundtable state (idempotent — may already be cleared by doSessionCleanup)
-          resetLiveState();
-          // Only show flash for engine-initiated ends (not manual stop — that's handled by doSessionCleanup)
-          if (!manualStopRef.current) {
-            setEndFlashSessionType('discussion');
-            setShowEndFlash(true);
-            setTimeout(() => setShowEndFlash(false), 1800);
-          }
-          // If all actions are exhausted (discussion was the last action), mark
-          // playback as completed so the bubble shows reset instead of play.
-          if (engineRef.current?.isExhausted()) {
-            setPlaybackCompleted(true);
-          }
-        },
-        onUserInterrupt: (text) => {
-          // User interrupted → start a discussion via chat
-          chatAreaRef.current?.sendMessage(text);
-        },
-        isAgentSelected: (agentId) => {
-          const ids = useSettingsStore.getState().selectedAgentIds;
-          return ids.includes(agentId);
-        },
-        getPlaybackSpeed: () => useSettingsStore.getState().playbackSpeed || 1,
-        onComplete: () => {
-          // lectureSpeech intentionally NOT cleared — last sentence stays visible
-          // until scene transition (auto-play) or user restarts. Scene change
-          // effect handles the reset.
-          updateCurrentPlaybackActionIndex(currentScene.actions?.length ?? 0);
-          clearSceneResumePosition(currentScene.id);
-          setPlaybackCompleted(true);
-
-          // End lecture session on playback complete
-          if (lectureSessionIdRef.current) {
-            chatAreaRef.current?.endSession(lectureSessionIdRef.current);
-            lectureSessionIdRef.current = null;
-          }
-          // Auto-play: advance to next scene after a short pause
-          const { autoPlayLecture } = useSettingsStore.getState();
-          if (autoPlayLecture) {
-            setTimeout(() => {
-              const stageState = useStageStore.getState();
-              if (!useSettingsStore.getState().autoPlayLecture) return;
-              const allScenes = stageState.scenes;
-              const curId = stageState.currentSceneId;
-              const idx = allScenes.findIndex((s) => s.id === curId);
-              if (idx >= 0 && idx < allScenes.length - 1) {
-                const currentScene = allScenes[idx];
-                if (
-                  currentScene.type === 'quiz' ||
-                  currentScene.type === 'interactive' ||
-                  currentScene.type === 'pbl'
-                ) {
-                  return;
-                }
-                autoStartRef.current = true;
-                stageState.setCurrentSceneId(allScenes[idx + 1].id);
-              } else if (idx === allScenes.length - 1 && stageState.generatingOutlines.length > 0) {
-                // Last scene exhausted but next is still generating — go to pending page
-                const currentScene = allScenes[idx];
-                if (
-                  currentScene.type === 'quiz' ||
-                  currentScene.type === 'interactive' ||
-                  currentScene.type === 'pbl'
-                ) {
-                  return;
-                }
-                autoStartRef.current = true;
-                stageState.setCurrentSceneId(PENDING_SCENE_ID);
-              }
-            }, 1500);
-          }
-        },
-      });
-
-      engineRef.current = engine;
-      activeSceneIdRef.current = currentScene.id;
-
-      // Auto-start if triggered by auto-play scene advance
-      if (autoStartRef.current) {
-        autoStartRef.current = false;
-        (async () => {
-          if (currentScene && chatAreaRef.current) {
-            const sessionId = await chatAreaRef.current.startLecture(currentScene.id);
-            lectureSessionIdRef.current = sessionId;
-            lectureActionCounterRef.current = 0;
-          }
-          engine.start();
-        })();
-      } else {
-        // Load saved playback state and restore position (but never auto-play).
-        const savedPosition = savedResumeCursor.position;
-        if (savedPosition && engine.canJumpToAction(savedPosition.actionIndex)) {
-          void engine
-            .jumpToAction(savedPosition.actionIndex, { autoplay: false })
-            .then((restored) => {
-              if (!restored || engineRef.current !== engine) return;
-              updateCurrentPlaybackActionIndex(savedPosition.actionIndex);
-              const action = currentScene.actions?.[savedPosition.actionIndex];
-              if (action?.type === 'speech') {
-                setLectureSpeech(action.text);
-              }
-            });
+      let cancelled = false;
+      const initializeScene = async () => {
+        const previousSceneId = activeSceneIdRef.current;
+        if (previousSceneId && previousSceneId !== currentScene?.id) {
+          saveSceneResumePosition(previousSceneId, currentPlaybackActionIndexRef.current);
         }
-      }
+
+        // Bump epoch so any stale SSE callbacks from the previous scene are discarded
+        sceneEpochRef.current++;
+
+        // Wait for an in-flight presentation action before initializing the next
+        // scene against shared whiteboard state.
+        await chatAreaRef.current?.endActiveSession({ source: 'scene_switch' });
+        if (cancelled) return;
+
+        // Also abort the engine-level discussion controller
+        if (discussionAbortRef.current) {
+          discussionAbortRef.current.abort();
+          discussionAbortRef.current = null;
+        }
+
+        // Stop any in-flight discussion TTS audio on scene switch
+        discussionTTS.cleanup();
+
+        const savedResumeCursor =
+          currentScene && typeof window !== 'undefined'
+            ? getActionResumeRestoreCursor(
+                readActionResumeState(window.sessionStorage, actionResumeStorageKey),
+                currentScene.id,
+                currentScene.actions ?? [],
+              )
+            : { actionIndex: 0, position: null };
+        const savedResumeAction = currentScene?.actions?.[savedResumeCursor.actionIndex];
+
+        // Reset all roundtable/live state so scenes are fully isolated. Use the
+        // saved action cursor immediately so mount/refresh cannot persist the
+        // default first-speech cursor before the async engine jump finishes.
+        resetSceneState({
+          actionIndex: savedResumeCursor.actionIndex,
+          lectureSpeech:
+            savedResumeAction?.type === 'speech' ? (savedResumeAction as SpeechAction).text : null,
+        });
+
+        // A slide scene with no actions is still playable: the engine dwells on it
+        // (see resolvePlaybackCursor) so a freshly inserted / emptied blank slide
+        // shows for a beat and auto-play advances past it. Non-slide scenes
+        // (quiz / interactive / pbl) without timeline actions get no lecture engine
+        // as before. Don't touch `autoStartRef` here: in the PENDING_SCENE_ID
+        // handoff `currentScene` is null while a pending auto-start legitimately
+        // waits for the next generated scene to materialize.
+        const hasPlayableActions =
+          !!currentScene?.actions &&
+          (currentScene.actions.length > 0 || currentScene.type === 'slide');
+        if (!currentScene || !hasPlayableActions) {
+          engineRef.current = null;
+          setEngineMode('idle');
+          activeSceneIdRef.current = currentSceneId;
+
+          return;
+        }
+
+        // Stop previous engine
+        if (engineRef.current) {
+          engineRef.current.stop();
+        }
+
+        // Widget iframe messaging callback for interactive scenes, resolved lazily
+        // at send time (keyed by sceneId). The interactive iframe now lives in the
+        // keep-alive host (#619), which registers its postMessage callback a commit
+        // after this engine is built — so resolving eagerly here would capture null
+        // on a scene's first visit and silently drop every widget action. Looking it
+        // up per-send always sees the live registration.
+        const sceneIdForWidget = currentScene.id;
+        const widgetSendMessage = (type: string, payload: Record<string, unknown>) =>
+          useWidgetIframeStore.getState().getSendMessage(sceneIdForWidget)?.(type, payload);
+
+        // Create ActionEngine for playback (with audioPlayer for TTS and widget messaging)
+        const actionEngine = new ActionEngine(
+          useStageStore,
+          audioPlayerRef.current,
+          widgetSendMessage,
+        );
+
+        // Create new PlaybackEngine
+        const engine = new PlaybackEngine([currentScene], actionEngine, audioPlayerRef.current, {
+          onModeChange: (mode) => {
+            setEngineMode(mode);
+          },
+          onProgress: (snapshot) => {
+            updateCurrentPlaybackActionIndex(snapshot.actionIndex);
+            saveSceneResumePosition(snapshot.sceneId, snapshot.actionIndex);
+          },
+          onSceneChange: (_sceneId) => {
+            // Scene change handled by engine
+          },
+          onSpeechStart: (text) => {
+            setLectureSpeech(text);
+            // Add to lecture session with incrementing index for dedup
+            // Chat area pacing is handled by the StreamBuffer (onTextReveal)
+            if (lectureSessionIdRef.current) {
+              const idx = lectureActionCounterRef.current++;
+              const speechId = `speech-${Date.now()}`;
+              chatAreaRef.current?.addLectureMessage(
+                lectureSessionIdRef.current,
+                { id: speechId, type: 'speech', text } as Action,
+                idx,
+              );
+              // Track active bubble for highlight (Issue 8)
+              const msgId = chatAreaRef.current?.getLectureMessageId(lectureSessionIdRef.current!);
+              if (msgId) setActiveBubbleId(msgId);
+            }
+          },
+          onSpeechEnd: () => {
+            // Don't clear lectureSpeech — let it persist until the next
+            // onSpeechStart replaces it or the scene transitions.
+            // Clearing here causes fallback to idleText (first sentence).
+            setActiveBubbleId(null);
+          },
+          onEffectFire: (effect: Effect) => {
+            // Add to lecture session with incrementing index
+            if (
+              lectureSessionIdRef.current &&
+              (effect.kind === 'spotlight' || effect.kind === 'laser')
+            ) {
+              const idx = lectureActionCounterRef.current++;
+              chatAreaRef.current?.addLectureMessage(
+                lectureSessionIdRef.current,
+                {
+                  id: `${effect.kind}-${Date.now()}`,
+                  type: effect.kind,
+                  elementId: effect.targetId,
+                } as Action,
+                idx,
+              );
+            }
+          },
+          onProactiveShow: (trigger) => {
+            if (!trigger.agentId) {
+              // Mutate in-place so engine.currentTrigger also gets the agentId
+              // (confirmDiscussion reads agentId from the same object reference)
+              trigger.agentId = pickStudentAgent();
+            }
+            setDiscussionTrigger(trigger);
+          },
+          onProactiveHide: () => {
+            setDiscussionTrigger(null);
+          },
+          onDiscussionConfirmed: (topic, prompt, agentId) => {
+            // Start SSE discussion via ChatArea
+            handleDiscussionSSE(topic, prompt, agentId);
+          },
+          onDiscussionEnd: () => {
+            // Abort any active SSE
+            if (discussionAbortRef.current) {
+              discussionAbortRef.current.abort();
+              discussionAbortRef.current = null;
+            }
+            setDiscussionTrigger(null);
+            // Stop any in-flight discussion TTS audio
+            discussionTTS.cleanup();
+            // Clear roundtable state (idempotent — may already be cleared by doSessionCleanup)
+            resetLiveState();
+            // Only show flash for engine-initiated ends (not manual stop — that's handled by doSessionCleanup)
+            if (!manualStopRef.current) {
+              setEndFlashSessionType('discussion');
+              setShowEndFlash(true);
+              setTimeout(() => setShowEndFlash(false), 1800);
+            }
+            // If all actions are exhausted (discussion was the last action), mark
+            // playback as completed so the bubble shows reset instead of play.
+            if (engineRef.current?.isExhausted()) {
+              setPlaybackCompleted(true);
+            }
+          },
+          onUserInterrupt: (text) => {
+            // User interrupted → start a discussion via chat
+            chatAreaRef.current?.sendMessage(text);
+          },
+          isAgentSelected: (agentId) => {
+            const ids = useSettingsStore.getState().selectedAgentIds;
+            return ids.includes(agentId);
+          },
+          getPlaybackSpeed: () => useSettingsStore.getState().playbackSpeed || 1,
+          onComplete: () => {
+            // lectureSpeech intentionally NOT cleared — last sentence stays visible
+            // until scene transition (auto-play) or user restarts. Scene change
+            // effect handles the reset.
+            updateCurrentPlaybackActionIndex(currentScene.actions?.length ?? 0);
+            clearSceneResumePosition(currentScene.id);
+            setPlaybackCompleted(true);
+
+            // End lecture session on playback complete
+            if (lectureSessionIdRef.current) {
+              chatAreaRef.current?.endSession(lectureSessionIdRef.current);
+              lectureSessionIdRef.current = null;
+            }
+            // Auto-play: advance to next scene after a short pause
+            const { autoPlayLecture } = useSettingsStore.getState();
+            if (autoPlayLecture) {
+              setTimeout(() => {
+                const stageState = useStageStore.getState();
+                if (!useSettingsStore.getState().autoPlayLecture) return;
+                const allScenes = stageState.scenes;
+                const curId = stageState.currentSceneId;
+                const idx = allScenes.findIndex((s) => s.id === curId);
+                if (idx >= 0 && idx < allScenes.length - 1) {
+                  const currentScene = allScenes[idx];
+                  if (
+                    currentScene.type === 'quiz' ||
+                    currentScene.type === 'interactive' ||
+                    currentScene.type === 'pbl'
+                  ) {
+                    return;
+                  }
+                  autoStartRef.current = true;
+                  stageState.setCurrentSceneId(allScenes[idx + 1].id);
+                } else if (
+                  idx === allScenes.length - 1 &&
+                  stageState.generatingOutlines.length > 0
+                ) {
+                  // Last scene exhausted but next is still generating — go to pending page
+                  const currentScene = allScenes[idx];
+                  if (
+                    currentScene.type === 'quiz' ||
+                    currentScene.type === 'interactive' ||
+                    currentScene.type === 'pbl'
+                  ) {
+                    return;
+                  }
+                  autoStartRef.current = true;
+                  stageState.setCurrentSceneId(PENDING_SCENE_ID);
+                }
+              }, 1500);
+            }
+          },
+        });
+
+        engineRef.current = engine;
+        activeSceneIdRef.current = currentScene.id;
+
+        // Auto-start if triggered by auto-play scene advance
+        if (autoStartRef.current) {
+          autoStartRef.current = false;
+          (async () => {
+            if (currentScene && chatAreaRef.current) {
+              const sessionId = await chatAreaRef.current.startLecture(currentScene.id);
+              lectureSessionIdRef.current = sessionId;
+              lectureActionCounterRef.current = 0;
+            }
+            engine.start();
+          })();
+        } else {
+          // Load saved playback state and restore position (but never auto-play).
+          const savedPosition = savedResumeCursor.position;
+          if (savedPosition && engine.canJumpToAction(savedPosition.actionIndex)) {
+            void engine
+              .jumpToAction(savedPosition.actionIndex, { autoplay: false })
+              .then((restored) => {
+                if (!restored || engineRef.current !== engine) return;
+                updateCurrentPlaybackActionIndex(savedPosition.actionIndex);
+                const action = currentScene.actions?.[savedPosition.actionIndex];
+                if (action?.type === 'speech') {
+                  setLectureSpeech(action.text);
+                }
+              });
+          }
+        }
+      };
+
+      void initializeScene();
+      return () => {
+        cancelled = true;
+      };
       // eslint-disable-next-line react-hooks/exhaustive-deps -- Only re-run when scene changes, functions are stable refs
     }, [currentScene]);
 
@@ -862,12 +931,18 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
      * Returns true if the switch was immediate, false if gated (dialog shown).
      */
     const gatedSceneSwitch = useCallback(
-      (targetSceneId: string): boolean => {
-        if (targetSceneId === currentSceneId) return false;
+      async (targetSceneId: string): Promise<boolean> => {
+        const requestId = ++sceneSwitchRequestRef.current;
+        if (targetSceneId === currentSceneId) {
+          setPendingSceneId(null);
+          return false;
+        }
         if (isTopicActive) {
           setPendingSceneId(targetSceneId);
           return false;
         }
+        await chatAreaRef.current?.endActiveSession({ source: 'scene_switch' });
+        if (requestId !== sceneSwitchRequestRef.current) return false;
         setCurrentSceneId(targetSceneId);
         return true;
       },
@@ -875,16 +950,25 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     );
 
     /** User confirmed scene switch via AlertDialog */
-    const confirmSceneSwitch = useCallback(() => {
+    const confirmSceneSwitch = useCallback(async () => {
       if (!pendingSceneId) return;
-      chatAreaRef.current?.endActiveSession();
-      doSessionCleanup();
-      setCurrentSceneId(pendingSceneId);
+      const targetSceneId = pendingSceneId;
+      const requestId = ++sceneSwitchRequestRef.current;
+      sceneSwitchConfirmingRef.current = true;
       setPendingSceneId(null);
+      try {
+        await chatAreaRef.current?.endActiveSession({ source: 'scene_switch' });
+        if (requestId !== sceneSwitchRequestRef.current) return;
+        doSessionCleanup();
+        setCurrentSceneId(targetSceneId);
+      } finally {
+        sceneSwitchConfirmingRef.current = false;
+      }
     }, [pendingSceneId, setCurrentSceneId, doSessionCleanup]);
 
     /** User cancelled scene switch via AlertDialog */
     const cancelSceneSwitch = useCallback(() => {
+      sceneSwitchRequestRef.current += 1;
       setPendingSceneId(null);
     }, []);
 
@@ -947,13 +1031,13 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       if (isPendingScene) {
         // From pending page → go to last real scene
         if (scenes.length > 0) {
-          gatedSceneSwitch(scenes[scenes.length - 1].id);
+          void gatedSceneSwitch(scenes[scenes.length - 1].id);
         }
         return;
       }
       const currentIndex = scenes.findIndex((s) => s.id === currentSceneId);
       if (currentIndex > 0) {
-        gatedSceneSwitch(scenes[currentIndex - 1].id);
+        void gatedSceneSwitch(scenes[currentIndex - 1].id);
       }
     }, [currentSceneId, gatedSceneSwitch, isPendingScene, scenes]);
 
@@ -962,19 +1046,12 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
       if (isPendingScene) return; // Already on pending, nowhere to go
       const currentIndex = scenes.findIndex((s) => s.id === currentSceneId);
       if (currentIndex < scenes.length - 1) {
-        gatedSceneSwitch(scenes[currentIndex + 1].id);
+        void gatedSceneSwitch(scenes[currentIndex + 1].id);
       } else if (canAdvanceToPendingSlot) {
         // On last real scene → advance to pending slot (generating or completion page)
-        setCurrentSceneId(PENDING_SCENE_ID);
+        void gatedSceneSwitch(PENDING_SCENE_ID);
       }
-    }, [
-      currentSceneId,
-      gatedSceneSwitch,
-      canAdvanceToPendingSlot,
-      isPendingScene,
-      scenes,
-      setCurrentSceneId,
-    ]);
+    }, [currentSceneId, gatedSceneSwitch, canAdvanceToPendingSlot, isPendingScene, scenes]);
 
     const currentSceneIndex = isPendingScene
       ? scenes.length
@@ -1222,8 +1299,14 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               mode={mode}
               engineState={canvasEngineState}
               isLiveSession={
-                chatIsStreaming || isTopicPending || engineMode === 'live' || !!chatSessionType
+                chatIsStreaming ||
+                chatIsSoftClosing ||
+                isTopicPending ||
+                engineMode === 'live' ||
+                !!chatSessionType
               }
+              isSoftClosing={chatIsSoftClosing}
+              softCloseDeadline={softCloseDeadline}
               whiteboardOpen={whiteboardOpen}
               sidebarCollapsed={sidebarCollapsed}
               chatCollapsed={chatAreaCollapsed}
@@ -1237,9 +1320,11 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               onTogglePresentation={togglePresentation}
               showStopDiscussion={
                 engineMode === 'live' ||
-                (chatIsStreaming && (chatSessionType === 'qa' || chatSessionType === 'discussion'))
+                ((chatIsStreaming || chatIsSoftClosing) &&
+                  (chatSessionType === 'qa' || chatSessionType === 'discussion'))
               }
               onStopDiscussion={handleStopDiscussion}
+              onContinueDiscussion={handleContinueDiscussion}
               hideToolbar={mode === 'playback' || (isPresenting && !controlsVisible)}
               isPendingScene={isPendingScene}
               isCourseComplete={isCourseComplete}
@@ -1289,6 +1374,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 endFlashSessionType={endFlashSessionType}
                 thinkingState={thinkingState}
                 isCueUser={isCueUser}
+                isSoftClosing={chatIsSoftClosing}
+                softCloseDeadline={softCloseDeadline}
                 isTopicPending={isTopicPending}
                 onMessageSend={async (msg) => {
                   // Always clear Level-1 pause state — the closure may hold a stale
@@ -1308,6 +1395,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                     setLiveSpeech(null);
                     setSpeakingAgentId(null);
                   }
+                  setChatIsSoftClosing(false);
                   // User interrupts during playback — handleUserInterrupt triggers
                   // onUserInterrupt callback which already calls sendMessage, so skip
                   // the direct sendMessage below to avoid sending twice.
@@ -1342,6 +1430,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   engineRef.current?.skipDiscussion();
                 }}
                 onStopDiscussion={handleStopDiscussion}
+                onContinueDiscussion={handleContinueDiscussion}
+                onUserInputActivity={() => {
+                  handleContinueDiscussion();
+                }}
                 onInputActivate={() => {
                   // Level-1 pause: freeze buffer tick + TTS audio while SSE keeps buffering.
                   // User resumes manually via Space / pause button after closing the input.
@@ -1454,7 +1546,17 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               setIsCueUser(true);
             }}
             onLiveSessionError={handleLiveSessionError}
-            onStopSession={doSessionCleanup}
+            onSoftCloseSession={() => {
+              setThinkingState(null);
+              setSpeechProgress(null);
+              setIsCueUser(false);
+              setActiveBubbleId(null);
+            }}
+            onSoftClosingChange={(softClosing, deadline) => {
+              setChatIsSoftClosing(softClosing);
+              setSoftCloseDeadline(deadline);
+            }}
+            onStopSession={handleSessionStop}
             onSegmentSealed={discussionTTS.handleSegmentSealed}
             shouldHoldAfterReveal={discussionTTS.shouldHold}
           />
@@ -1464,7 +1566,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         <AlertDialog
           open={!!pendingSceneId}
           onOpenChange={(open) => {
-            if (!open) cancelSceneSwitch();
+            if (!open && !sceneSwitchConfirmingRef.current) cancelSceneSwitch();
           }}
         >
           <AlertDialogContent

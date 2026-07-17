@@ -551,4 +551,27 @@ describe('PlaybackEngine action navigation', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
     expect(engine.getMode()).toBe('idle');
   });
+
+  it('restores an interrupted final speech before notifying discussion end', async () => {
+    const { engine: actionEngine } = createActionEngine();
+    const { player } = createAudioPlayer(async () => true);
+    const exhaustedAtDiscussionEnd: boolean[] = [];
+    const engineRef: { current?: PlaybackEngine } = {};
+    const engine = new PlaybackEngine([scene([speech('final')])], actionEngine, player, {
+      onDiscussionEnd: () => exhaustedAtDiscussionEnd.push(engineRef.current!.isExhausted()),
+    });
+    engineRef.current = engine;
+
+    engine.start();
+    await flushPromises();
+    expect(engine.isExhausted()).toBe(true);
+
+    engine.handleUserInterrupt('One more question');
+    expect(engine.hasLectureInterruption()).toBe(true);
+    engine.handleEndDiscussion();
+
+    expect(exhaustedAtDiscussionEnd).toEqual([false]);
+    expect(engine.getSnapshot().actionIndex).toBe(0);
+    expect(engine.getMode()).toBe('idle');
+  });
 });

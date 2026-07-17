@@ -106,6 +106,7 @@ class MemoryRuntimeStore implements RuntimeStore {
 
   async deleteLearnerRuntime(): Promise<void> {}
   async deleteStageRuntime(): Promise<void> {}
+  async deleteAllRuntime(): Promise<void> {}
 }
 
 function makeProject(overrides: Partial<PBLProjectV2> = {}): PBLProjectV2 {
@@ -194,6 +195,43 @@ afterEach(async () => {
 });
 
 describe('classroom server fallback PBL hydration', () => {
+  it('hydrates runtime chats before committing a server fallback', async () => {
+    const stage = makeStage('stage-chat-fallback');
+    const serverScene = makePBLScene(makeProject());
+    const token = claimStageSceneLoadToken();
+    const chatState = {
+      chats: [
+        {
+          id: 'runtime-chat',
+          type: 'qa' as const,
+          title: 'Runtime chat',
+          status: 'completed' as const,
+          messages: [],
+          config: { agentIds: [] },
+          toolCalls: [],
+          pendingToolCalls: [],
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+      ],
+      chatSnapshot: { sessions: [], restoreMarker: null },
+    };
+    const applyStageAndScenes = vi.fn();
+
+    await expect(
+      applyHydratedClassroomFallbackScenes({
+        loadToken: token,
+        stage,
+        scenes: [serverScene],
+        hydrateScenes: async () => [serverScene],
+        hydrateChats: async () => chatState,
+        applyStageAndScenes,
+      }),
+    ).resolves.toBe(true);
+
+    expect(applyStageAndScenes).toHaveBeenCalledWith(stage, [serverScene], chatState);
+  });
+
   it('applies fallback scenes under the navigation token that started the request', async () => {
     const stage = makeStage('stage-a');
     const serverScene = makePBLScene(makeProject());

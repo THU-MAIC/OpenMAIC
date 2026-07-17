@@ -114,6 +114,20 @@ export class PlaybackEngine {
     return this.mode;
   }
 
+  /**
+   * Whether the current session interrupted an active lecture.
+   * True while a saved lecture position exists (set by handleUserInterrupt,
+   * cleared by restoreSavedLectureState). Must be read BEFORE cleanup runs.
+   */
+  hasLectureInterruption(): boolean {
+    return this.savedSceneIndex !== null;
+  }
+
+  /** Scene id at the current playback position (post-restore engine state) */
+  getCurrentSceneId(): string | null {
+    return this.scenes[this.sceneIndex]?.id ?? null;
+  }
+
   /** Export a serializable playback snapshot */
   getSnapshot(): PlaybackSnapshot {
     return {
@@ -378,10 +392,11 @@ export class PlaybackEngine {
     // Close whiteboard if it was open during the discussion
     useCanvasStore.getState().setWhiteboardOpen(false);
 
-    this.callbacks.onDiscussionEnd?.();
-
-    // Restore lecture state
+    // Restore the interrupted lecture cursor before notifying consumers. The
+    // callback may inspect isExhausted() to decide whether playback completed.
     this.restoreSavedLectureState();
+
+    this.callbacks.onDiscussionEnd?.();
 
     this.setMode('idle');
   }

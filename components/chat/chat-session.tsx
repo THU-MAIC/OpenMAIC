@@ -7,9 +7,10 @@ import type { UIMessage } from 'ai';
 import { cn } from '@/lib/utils';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { AvatarDisplay } from '@/components/ui/avatar-display';
-import { CircleStop } from 'lucide-react';
+import { CircleStop, MessageCircleMore } from 'lucide-react';
 import { InlineActionTag } from './inline-action-tag';
 import { useUserProfileStore } from '@/lib/store/user-profile';
+import { useSoftCloseCountdown } from './use-soft-close-countdown';
 
 /** Extended message part type covering standard + custom action parts */
 interface MessagePart {
@@ -26,6 +27,7 @@ interface ChatSessionProps {
   readonly isStreaming?: boolean;
   readonly activeBubbleId?: string | null;
   readonly onEndSession?: (sessionId: string) => void;
+  readonly onContinueSession?: (sessionId: string) => void;
 }
 
 const AVATARS = {
@@ -160,6 +162,7 @@ export function ChatSessionComponent({
   isStreaming,
   activeBubbleId,
   onEndSession,
+  onContinueSession,
 }: ChatSessionProps) {
   const { t } = useI18n();
   const userProfileAvatar = useUserProfileStore((s) => s.avatar);
@@ -168,8 +171,11 @@ export function ChatSessionComponent({
   const activeBubbleRef = useRef<HTMLDivElement>(null);
   const isDiscussion = session.type === 'discussion';
   const isQA = session.type === 'qa';
-  const canEnd = (isDiscussion || isQA) && session.status === 'active';
+  const canEnd =
+    (isDiscussion || isQA) && (session.status === 'active' || session.status === 'soft-closing');
   const isEnded = session.status === 'completed' && (isDiscussion || isQA);
+  const isSoftClosing = session.status === 'soft-closing' && (isDiscussion || isQA);
+  const remainingSoftCloseSeconds = useSoftCloseCountdown(session.softCloseDeadline);
 
   // Track whether user is at the bottom of the scroll container.
   // When user scrolls up to read history, auto-scroll is suppressed.
@@ -343,23 +349,37 @@ export function ChatSessionComponent({
         <div ref={bottomRef} />
       </div>
 
-      {/* End Session Button (for Q&A and Discussion) */}
+      {/* Session controls for Q&A and Discussion */}
       <AnimatePresence>
         {canEnd && onEndSession && (
-          <motion.button
+          <motion.div
             initial={{ opacity: 0, y: 5 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 5 }}
-            whileHover={{ scale: 1.02 }}
-            onClick={() => onEndSession(session.id)}
-            className="mt-2 mx-2 bg-red-50/80 dark:bg-red-900/20 backdrop-blur-md text-red-600 dark:text-red-400 border border-red-200/50 dark:border-red-800/50 px-3 py-1.5 rounded-full text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-all shadow-sm hover:shadow-md"
+            className="mt-2 mx-2 flex flex-wrap items-center justify-center gap-1.5"
           >
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 dark:bg-red-500 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500 dark:bg-red-400"></span>
-            </span>
-            {endButtonText}
-          </motion.button>
+            <button
+              onClick={() => onEndSession(session.id)}
+              className="h-7 bg-red-50/80 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-200/60 dark:border-red-800/50 px-2.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-colors hover:bg-red-100 dark:hover:bg-red-900/35"
+            >
+              <CircleStop className="size-3" />
+              {endButtonText}
+            </button>
+            {isSoftClosing && onContinueSession && (
+              <button
+                onClick={() => onContinueSession(session.id)}
+                className="h-7 bg-white dark:bg-gray-800 text-purple-600 dark:text-purple-300 border border-purple-200 dark:border-purple-700 px-2.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-colors hover:bg-purple-50 dark:hover:bg-purple-900/25"
+              >
+                <MessageCircleMore className="size-3" />
+                {t('chat.softClosing')}
+                {remainingSoftCloseSeconds !== undefined && (
+                  <span className="text-[9px] font-medium tabular-nums text-gray-400 dark:text-gray-500">
+                    {remainingSoftCloseSeconds}s
+                  </span>
+                )}
+              </button>
+            )}
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

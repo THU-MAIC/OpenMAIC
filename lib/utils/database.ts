@@ -1,4 +1,4 @@
-import Dexie, { type EntityTable } from 'dexie';
+import Dexie, { type EntityTable, type Table } from 'dexie';
 import type {
   Scene,
   SceneType,
@@ -14,13 +14,21 @@ import type {
   SessionConfig,
   ToolCallRecord,
   ToolCallRequest,
+  ChatSession,
 } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { VoiceDesign } from '@/lib/audio/voice-design';
 import type { UIMessage } from 'ai';
 import type { AgentEditSessionRecord } from '@/lib/agent/client/agent-edit-session-types';
 import { createLogger } from '@/lib/logger';
-import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
+import { beginStageRuntimeDeletionSafely, getRuntimeStore } from '@/lib/runtime/store';
+import type { RuntimeStore } from '@openmaic/storage';
+import {
+  withRuntimeStorageExclusiveLock,
+  withRuntimeStorageExclusiveLockUntilSettled,
+  withRuntimeStorageSharedLock,
+} from './chat-storage-lock';
+import type { ChatStorageOptions } from './chat-storage';
 
 const log = createLogger('Database');
 
@@ -223,7 +231,7 @@ export function mediaFileKey(stageId: string, elementId: string): string {
 // ==================== Database Definition ====================
 
 const DATABASE_NAME = 'MAIC-Database';
-const _DATABASE_VERSION = 12;
+const _DATABASE_VERSION = 15;
 
 /**
  * MAIC Database Instance
@@ -236,6 +244,7 @@ class MAICDatabase extends Dexie {
   imageFiles!: EntityTable<ImageFileRecord, 'id'>;
   snapshots!: EntityTable<Snapshot, 'id'>; // Undo/redo snapshots (legacy)
   chatSessions!: EntityTable<ChatSessionRecord, 'id'>;
+  chatRestoreStaging!: Table<ChatSessionRecord, [string, string]>;
   playbackState!: EntityTable<PlaybackStateRecord, 'stageId'>;
   stageOutlines!: EntityTable<StageOutlinesRecord, 'stageId'>;
   mediaFiles!: EntityTable<MediaFileRecord, 'id'>;
@@ -443,6 +452,32 @@ class MAICDatabase extends Dexie {
       autoVoiceCache: 'voiceId, updatedAt',
       agentEditSessions: 'id, stageId, [stageId+updatedAt]',
     });
+
+    // Version 13 briefly added chatStorageLocks on the draft chat cutover
+    // branch. Advance past it and remove the abandoned lease table so database
+    // versions stay monotonic for anyone who opened that intermediate build.
+    this.version(14).stores({
+      stages: 'id, updatedAt',
+      scenes: 'id, stageId, order, [stageId+order]',
+      audioFiles: 'id, createdAt',
+      imageFiles: 'id, createdAt',
+      snapshots: '++id',
+      chatSessions: 'id, stageId, [stageId+createdAt]',
+      playbackState: 'stageId',
+      stageOutlines: 'stageId',
+      mediaFiles: 'id, stageId, [stageId+type]',
+      generatedAgents: 'id, stageId',
+      voiceProfiles: 'id, providerId, kind, updatedAt',
+      autoVoiceCache: 'voiceId, updatedAt',
+      agentEditSessions: 'id, stageId, [stageId+updatedAt]',
+      chatStorageLocks: null,
+    });
+
+    // Version 15: backup restore staging must preserve chat IDs that are reused
+    // in different stage partitions; the legacy chat table is keyed by id only.
+    this.version(15).stores({
+      chatRestoreStaging: '[stageId+id], stageId, [stageId+createdAt]',
+    });
   }
 }
 
@@ -472,24 +507,80 @@ export async function initDatabase(): Promise<void> {
  * Clear database (optional)
  * Use with caution: deletes all data
  */
-export async function clearDatabase(): Promise<void> {
-  await db.delete();
+export async function clearDatabase(runtimeStore?: RuntimeStore): Promise<void> {
+  // Clear the whole runtime database first, including rows orphaned by an
+  // earlier best-effort stage deletion. This user-requested destructive action
+  // must fail loud: reporting success while runtime data remains is misleading.
+  await withRuntimeStorageExclusiveLock(async () => {
+    await (runtimeStore ?? getRuntimeStore()).deleteAllRuntime();
+    await db.delete();
+  });
   log.info('Database cleared');
+}
+
+function toChatSessionRecord(stageId: string, session: ChatSession): ChatSessionRecord {
+  return {
+    id: session.id,
+    stageId,
+    type: session.type,
+    title: session.title,
+    status: session.status,
+    messages: session.messages,
+    config: session.config,
+    toolCalls: session.toolCalls,
+    pendingToolCalls: session.pendingToolCalls,
+    createdAt: session.createdAt,
+    updatedAt: session.updatedAt,
+    sceneId: session.sceneId,
+    lastActionIndex: session.lastActionIndex,
+  };
 }
 
 /**
  * Export database contents (for backup)
  */
-export async function exportDatabase(): Promise<{
+export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Promise<{
   stages: StageRecord[];
   scenes: SceneRecord[];
   chatSessions: ChatSessionRecord[];
   playbackState: PlaybackStateRecord[];
 }> {
+  const stages = await db.stages.toArray();
+  const legacyChatMap = new Map<string, ChatSessionRecord>();
+  for (const session of [
+    ...(await db.chatSessions.toArray()),
+    ...(await db.chatRestoreStaging.toArray()),
+  ]) {
+    legacyChatMap.set(JSON.stringify([session.stageId, session.id]), session);
+  }
+  const legacyChats = [...legacyChatMap.values()];
+  const { loadChatSessions } = await import('./chat-storage');
+  const runtimeChats = (
+    await Promise.all(
+      stages.map(async (stage) =>
+        (
+          await loadChatSessions(stage.id, {
+            ...chatOptions,
+            fallbackToLegacyOnError: false,
+            observe: false,
+          })
+        ).map((session) => toChatSessionRecord(stage.id, session)),
+      ),
+    )
+  ).flat();
+  const runtimeChatKeys = new Set(
+    runtimeChats.map((session) => JSON.stringify([session.stageId, session.id])),
+  );
+
   return {
-    stages: await db.stages.toArray(),
+    stages,
     scenes: await db.scenes.toArray(),
-    chatSessions: await db.chatSessions.toArray(),
+    chatSessions: [
+      ...runtimeChats,
+      ...legacyChats.filter(
+        (session) => !runtimeChatKeys.has(JSON.stringify([session.stageId, session.id])),
+      ),
+    ],
     playbackState: await db.playbackState.toArray(),
   };
 }
@@ -497,23 +588,110 @@ export async function exportDatabase(): Promise<{
 /**
  * Import database contents (for restoring backups)
  */
-export async function importDatabase(data: {
-  stages?: StageRecord[];
-  scenes?: SceneRecord[];
-  chatSessions?: ChatSessionRecord[];
-  playbackState?: PlaybackStateRecord[];
-}): Promise<void> {
-  await db.transaction(
-    'rw',
-    [db.stages, db.scenes, db.chatSessions, db.playbackState],
-    async () => {
-      if (data.stages) await db.stages.bulkPut(data.stages);
-      if (data.scenes) await db.scenes.bulkPut(data.scenes);
-      if (data.chatSessions) await db.chatSessions.bulkPut(data.chatSessions);
-      if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
-    },
-  );
-  log.info('Database imported successfully');
+export async function importDatabase(
+  data: {
+    stages?: StageRecord[];
+    scenes?: SceneRecord[];
+    chatSessions?: ChatSessionRecord[];
+    playbackState?: PlaybackStateRecord[];
+  },
+  chatOptions: ChatStorageOptions = {},
+): Promise<void> {
+  return withRuntimeStorageSharedLock(async () => {
+    const restoredChatStageIds =
+      data.chatSessions === undefined
+        ? []
+        : [
+            ...new Set([
+              ...(data.stages ?? []).map((stage) => stage.id),
+              ...data.chatSessions.map((session) => session.stageId),
+            ]),
+          ];
+    const restoreRows = () =>
+      db.transaction(
+        'rw',
+        [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
+        async () => {
+          if (data.stages) await db.stages.bulkPut(data.stages);
+          if (data.scenes) await db.scenes.bulkPut(data.scenes);
+          if (data.chatSessions) {
+            for (const stageId of restoredChatStageIds) {
+              await db.chatSessions.where('stageId').equals(stageId).delete();
+              await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+            }
+            await db.chatRestoreStaging.bulkPut(data.chatSessions);
+          }
+          if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
+        },
+      );
+    if (data.chatSessions !== undefined) {
+      // RuntimeStore cannot join Dexie's transaction. Keep a rollback image
+      // until durable restore markers have been created for every affected
+      // runtime partition; marker creation failure must not commit half an
+      // imported backup.
+      const rollbackImage = await db.transaction(
+        'r',
+        [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
+        async () => ({
+          stages: (await db.stages.bulkGet((data.stages ?? []).map((stage) => stage.id))).filter(
+            (stage): stage is StageRecord => stage !== undefined,
+          ),
+          scenes: (await db.scenes.bulkGet((data.scenes ?? []).map((scene) => scene.id))).filter(
+            (scene): scene is SceneRecord => scene !== undefined,
+          ),
+          chatSessions: (
+            await Promise.all(
+              restoredChatStageIds.map((stageId) =>
+                db.chatSessions.where('stageId').equals(stageId).toArray(),
+              ),
+            )
+          ).flat(),
+          chatRestoreStaging: (
+            await Promise.all(
+              restoredChatStageIds.map((stageId) =>
+                db.chatRestoreStaging.where('stageId').equals(stageId).toArray(),
+              ),
+            )
+          ).flat(),
+          playbackState: (
+            await db.playbackState.bulkGet(
+              (data.playbackState ?? []).map((playback) => playback.stageId),
+            )
+          ).filter((playback): playback is PlaybackStateRecord => playback !== undefined),
+        }),
+      );
+      const rollbackRows = () =>
+        db.transaction(
+          'rw',
+          [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
+          async () => {
+            await db.stages.bulkDelete((data.stages ?? []).map((stage) => stage.id));
+            await db.scenes.bulkDelete((data.scenes ?? []).map((scene) => scene.id));
+            for (const stageId of restoredChatStageIds) {
+              await db.chatSessions.where('stageId').equals(stageId).delete();
+              await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+            }
+            await db.playbackState.bulkDelete(
+              (data.playbackState ?? []).map((playback) => playback.stageId),
+            );
+            await db.stages.bulkPut(rollbackImage.stages);
+            await db.scenes.bulkPut(rollbackImage.scenes);
+            await db.chatSessions.bulkPut(rollbackImage.chatSessions);
+            await db.chatRestoreStaging.bulkPut(rollbackImage.chatRestoreStaging);
+            await db.playbackState.bulkPut(rollbackImage.playbackState);
+          },
+        );
+      const { restoreChatSessionsFromBackup } = await import('./chat-storage');
+      await restoreChatSessionsFromBackup(restoredChatStageIds, restoreRows, {
+        ...chatOptions,
+        globalLockHeld: true,
+        rollbackLegacyRows: rollbackRows,
+      });
+    } else {
+      await restoreRows();
+    }
+    log.info('Database imported successfully');
+  });
 }
 
 // ==================== Convenience Query Functions ====================
@@ -529,33 +707,40 @@ export async function getScenesByStageId(stageId: string): Promise<SceneRecord[]
  * Delete a course and all its related data
  */
 export async function deleteStageWithRelatedData(stageId: string): Promise<void> {
-  await db.transaction(
-    'rw',
-    [
-      db.stages,
-      db.scenes,
-      db.chatSessions,
-      db.playbackState,
-      db.stageOutlines,
-      db.mediaFiles,
-      db.generatedAgents,
-      db.agentEditSessions,
-    ],
-    async () => {
-      await db.stages.delete(stageId);
-      await db.scenes.where('stageId').equals(stageId).delete();
-      await db.chatSessions.where('stageId').equals(stageId).delete();
-      await db.playbackState.delete(stageId);
-      await db.stageOutlines.delete(stageId);
-      await db.mediaFiles.where('stageId').equals(stageId).delete();
-      await db.generatedAgents.where('stageId').equals(stageId).delete();
-      await db.agentEditSessions.where('stageId').equals(stageId).delete();
-    },
-  );
-  // Learner-runtime data lives in a separate IndexedDB database, so it is
-  // cascaded after the Dexie transaction: it cannot join it, and a runtime
-  // failure must not abort it (the helper warns instead of throwing).
-  await deleteStageRuntimeSafely(stageId);
+  await withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
+    await db.transaction(
+      'rw',
+      [
+        db.stages,
+        db.scenes,
+        db.chatSessions,
+        db.chatRestoreStaging,
+        db.playbackState,
+        db.stageOutlines,
+        db.mediaFiles,
+        db.generatedAgents,
+        db.agentEditSessions,
+      ],
+      async () => {
+        await db.stages.delete(stageId);
+        await db.scenes.where('stageId').equals(stageId).delete();
+        await db.chatSessions.where('stageId').equals(stageId).delete();
+        await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+        await db.playbackState.delete(stageId);
+        await db.stageOutlines.delete(stageId);
+        await db.mediaFiles.where('stageId').equals(stageId).delete();
+        await db.generatedAgents.where('stageId').equals(stageId).delete();
+        await db.agentEditSessions.where('stageId').equals(stageId).delete();
+      },
+    );
+    // Learner-runtime data lives in a separate IndexedDB database, so it is
+    // cascaded after the Dexie transaction: it cannot join it, and a runtime
+    // failure must not abort it (the helper warns instead of throwing).
+    const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
+    await runtimeDeletion.completion;
+    releaseCaller(undefined);
+    await runtimeDeletion.settlement;
+  });
 }
 
 /**

@@ -444,6 +444,13 @@ export class BrowserRuntimeStore implements RuntimeStore {
     await this.deleteSessionsByIndex(SESSIONS_BY_STAGE, stageId);
   }
 
+  async deleteAllRuntime(): Promise<void> {
+    await this.txRun([SESSIONS, RECORDS], 'readwrite', (tx) => {
+      tx.objectStore(SESSIONS).clear();
+      tx.objectStore(RECORDS).clear();
+    });
+  }
+
   /**
    * Cascade-delete every session matched by an index query, plus each
    * session's record range. Idempotent (nothing matched, nothing deleted) and

@@ -1,8 +1,8 @@
 /**
  * Lazy app-wide RuntimeStore singleton (#869). One `maic-runtime` IndexedDB
  * per origin, shared by every runtime kind (pbl, chat, quizAttempt, playback)
- * as they migrate onto the runtime layer. Nothing reads or writes it yet
- * except the stage-deletion cascade; Part C2 adds the first real writer.
+ * as they migrate onto the runtime layer. PBL events and chat sessions use it
+ * today; the stage-deletion cascade clears every kind together.
  *
  * Client-only: the store lazily opens IndexedDB. Server code must not import
  * this module without injecting its own `RuntimeStore`.
@@ -58,29 +58,41 @@ async function withTimeout(work: Promise<void>, ms: number): Promise<void> {
  * (`maic-runtime`), so a broken or hung runtime DB must not brick stage
  * deletion in the main app DB — the cascade is bounded by a timeout, and any
  * failure warns and moves on. A failed or timed-out cascade leaves orphaned
- * runtime rows, which are inert today (nothing reads them yet); a startup
- * sweep is deliberately deferred to Part C2, when the store gains real
- * readers.
+ * runtime rows; they are not reachable through normal navigation once the
+ * stage is gone, and a future startup sweep can reclaim them.
  */
 export async function deleteStageRuntimeSafely(
   stageId: string,
   runtimeStore?: RuntimeStore,
 ): Promise<void> {
-  try {
-    // Probe + cascade share the try/catch and the timeout envelope: a hanging
-    // `databases()` must not brick deletion any more than a hanging store.
-    const work = (async () => {
-      if (!(await runtimeDbExists())) return; // nothing to clean
-      const cascade = (runtimeStore ?? getRuntimeStore()).deleteStageRuntime(stageId);
-      // A rejection landing after the timeout already won the race would have
-      // no listener left — swallow that branch so it cannot surface as an
-      // unhandled rejection (the await below still reports it if it lands in
-      // time).
-      cascade.catch(() => {});
-      await cascade;
-    })();
-    await withTimeout(work, STAGE_RUNTIME_DELETE_TIMEOUT_MS);
-  } catch (error) {
+  await beginStageRuntimeDeletionSafely(stageId, runtimeStore).completion;
+}
+
+export interface StageRuntimeDeletion {
+  /** Bounded, fail-soft caller-visible completion. */
+  completion: Promise<void>;
+  /** Fail-soft actual settlement, used to retain destructive maintenance locks. */
+  settlement: Promise<void>;
+}
+
+/** Start one bounded deletion while keeping a handle to its real settlement. */
+export function beginStageRuntimeDeletionSafely(
+  stageId: string,
+  runtimeStore?: RuntimeStore,
+): StageRuntimeDeletion {
+  // Probe + cascade share the same underlying work: a hanging databases()
+  // probe is just as important to retain behind maintenance as a hanging delete.
+  const work = (async () => {
+    if (!(await runtimeDbExists())) return;
+    await (runtimeStore ?? getRuntimeStore()).deleteStageRuntime(stageId);
+  })();
+  let reported = false;
+  const report = (error: unknown): void => {
+    if (reported) return;
+    reported = true;
     console.warn(`Failed to delete runtime data for stage ${stageId}:`, error);
-  }
+  };
+  const settlement = work.catch(report);
+  const completion = withTimeout(work, STAGE_RUNTIME_DELETE_TIMEOUT_MS).catch(report);
+  return { completion, settlement };
 }

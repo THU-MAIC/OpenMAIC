@@ -93,6 +93,7 @@
     "unknown": "알 수 없음",
     "stopDiscussion": "토론 중단",
     "endQA": "Q&A 종료",
+    "softClosing": "토론 계속하기",
     "error": {
       "emptyAgentResponses": "에이전트가 빈 응답을 반환하여 토론이 중단되었습니다. 다시 시도하거나 모델 설정을 확인하세요.",
       "streamInterrupted": "스트림이 예기치 않게 종료되어 토론이 완료되지 않았습니다. 다시 시도해 주세요."
@@ -524,6 +525,7 @@
     "noSpeechDetected": "음성이 감지되지 않았습니다. 다시 시도해주세요",
     "discussionEnded": "토론이 종료되었습니다",
     "qaEnded": "Q&A가 종료되었습니다",
+    "softClosing": "토론 계속하기",
     "thinking": "생각 중",
     "yourTurn": "내 차례",
     "stopDiscussion": "토론 중단",

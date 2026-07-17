@@ -93,6 +93,7 @@
     "unknown": "未知",
     "stopDiscussion": "结束讨论",
     "endQA": "结束问答",
+    "softClosing": "继续讨论",
     "error": {
       "emptyAgentResponses": "智能体连续无响应,讨论已停止。请重新尝试或检查模型配置。",
       "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
@@ -527,6 +528,7 @@
     "thinking": "思考中",
     "yourTurn": "轮到你发言了",
     "stopDiscussion": "结束讨论",
+    "softClosing": "继续讨论",
     "autoPlay": "自动播放",
     "autoPlayOff": "关闭自动播放",
     "speed": "倍速",
