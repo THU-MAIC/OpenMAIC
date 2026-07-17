@@ -47,22 +47,40 @@ function canMergeTextBlocks(previous: DocumentBlock, current: DocumentBlock): bo
 function remapArtifactReferences(
   artifact: DocumentArtifact,
   blockIdMap: ReadonlyMap<string, string>,
+  removedBlockIds: ReadonlySet<string>,
 ): void {
-  artifact.citations = artifact.citations?.map((citation) => ({
-    ...citation,
-    blockId: citation.blockId ? (blockIdMap.get(citation.blockId) ?? citation.blockId) : undefined,
-  }));
+  artifact.citations = artifact.citations
+    ?.filter((citation) => !citation.blockId || !removedBlockIds.has(citation.blockId))
+    .map((citation) => ({
+      ...citation,
+      blockId: citation.blockId
+        ? (blockIdMap.get(citation.blockId) ?? citation.blockId)
+        : undefined,
+    }));
+  artifact.outline = artifact.outline
+    ?.map((node) => {
+      const referencesChanged = node.blockIds.some(
+        (blockId) => blockIdMap.has(blockId) || removedBlockIds.has(blockId),
+      );
+      return {
+        ...node,
+        blockIds: Array.from(
+          new Set(
+            node.blockIds
+              .filter((blockId) => !removedBlockIds.has(blockId))
+              .map((blockId) => blockIdMap.get(blockId) ?? blockId),
+          ),
+        ),
+        startOffset: referencesChanged ? undefined : node.startOffset,
+        endOffset: referencesChanged ? undefined : node.endOffset,
+      };
+    })
+    .filter((node) => node.blockIds.length > 0);
+
+  const survivingOutlineIds = new Set(artifact.outline?.map((node) => node.id));
   artifact.outline = artifact.outline?.map((node) => ({
     ...node,
-    blockIds: Array.from(
-      new Set(node.blockIds.map((blockId) => blockIdMap.get(blockId) ?? blockId)),
-    ),
-    startOffset: node.blockIds.some((blockId) => blockIdMap.has(blockId))
-      ? undefined
-      : node.startOffset,
-    endOffset: node.blockIds.some((blockId) => blockIdMap.has(blockId))
-      ? undefined
-      : node.endOffset,
+    parentId: node.parentId && survivingOutlineIds.has(node.parentId) ? node.parentId : undefined,
   }));
 }
 
@@ -74,20 +92,22 @@ export const normalizeDocumentTransform: DocumentTransform = {
   apply(input) {
     const artifact = cloneDocumentArtifact(input);
     const diagnostics: DocumentDiagnostic[] = [];
-    const normalized = artifact.blocks
-      .map((block) => ({
-        ...block,
-        text:
-          typeof block.text === 'string'
-            ? block.type === 'markdown'
-              ? normalizeMarkdownText(block.text)
-              : normalizeDocumentText(block.text)
-            : undefined,
-        html: typeof block.html === 'string' ? normalizeDocumentText(block.html) : undefined,
-      }))
-      .filter((block) => !isEmptyTextBlock(block));
+    const normalizedBlocks = artifact.blocks.map((block) => ({
+      ...block,
+      text:
+        typeof block.text === 'string'
+          ? block.type === 'markdown'
+            ? normalizeMarkdownText(block.text)
+            : normalizeDocumentText(block.text)
+          : undefined,
+      html: typeof block.html === 'string' ? normalizeDocumentText(block.html) : undefined,
+    }));
+    const removedEmptyBlockIds = new Set(
+      normalizedBlocks.filter(isEmptyTextBlock).map((block) => block.id),
+    );
+    const normalized = normalizedBlocks.filter((block) => !removedEmptyBlockIds.has(block.id));
 
-    const removedEmptyBlocks = artifact.blocks.length - normalized.length;
+    const removedEmptyBlocks = removedEmptyBlockIds.size;
     const blockIdMap = new Map<string, string>();
     const merged: DocumentBlock[] = [];
     let mergedBlockCount = 0;
@@ -110,7 +130,7 @@ export const normalizeDocumentTransform: DocumentTransform = {
     }
 
     artifact.blocks = merged;
-    remapArtifactReferences(artifact, blockIdMap);
+    remapArtifactReferences(artifact, blockIdMap, removedEmptyBlockIds);
 
     if (removedEmptyBlocks > 0 || mergedBlockCount > 0) {
       diagnostics.push({

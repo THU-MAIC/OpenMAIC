@@ -30,7 +30,9 @@ export async function transformDocument(
     const stepStartedAt = new Date();
     const inputBlockCount = current.blocks.length;
     const inputAssetCount = current.assets.length;
-    const recordId = `${transform.id}:${(current.transforms?.length ?? 0) + 1}`;
+    const priorTransforms = current.transforms ?? [];
+    const priorDiagnostics = current.diagnostics ?? [];
+    const recordId = `${transform.id}:${priorTransforms.length + 1}`;
 
     try {
       const output = await transform.apply(cloneDocumentArtifact(current), context);
@@ -55,8 +57,8 @@ export async function transformDocument(
       };
 
       current = cloneDocumentArtifact(output.artifact);
-      current.transforms = [...(current.transforms ?? []), record];
-      current.diagnostics = [...(current.diagnostics ?? []), ...diagnostics];
+      current.transforms = [...priorTransforms, record];
+      current.diagnostics = [...priorDiagnostics, ...diagnostics];
       pipelineDiagnostics.push(...diagnostics);
     } catch (error) {
       if (isAbortError(error)) throw error;

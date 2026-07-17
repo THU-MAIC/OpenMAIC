@@ -10,7 +10,7 @@ import { cloneDocumentArtifact } from './utils';
 const LOGICAL_SECTION_CHARS = 12_000;
 const MARKDOWN_HEADING = /^(#{1,6})[ \t]+(.+?)\s*$/gm;
 const NUMBERED_HEADING =
-  /^(?:chapter\s+\d+|第[一二三四五六七八九十百零〇0-9]+[章节篇部]|\d+(?:\.\d+){0,3})[\s、.:：-]+(.+)$/i;
+  /^(?:chapter\s+\d+|第[一二三四五六七八九十百零〇0-9]+[章节篇部]|\d+(?:\.\d+){0,3})[\s、.:：-]+(.+)$/gim;
 
 interface HeadingCandidate {
   title: string;
@@ -40,7 +40,7 @@ function headingFromMetadata(
     level: typeof headingLevel === 'number' ? Math.min(6, Math.max(1, headingLevel)) : 1,
     block,
     blockIndex,
-    source: 'heading',
+    source: typeof headingLevel === 'number' ? 'provider' : 'heading',
     confidence: typeof headingLevel === 'number' ? 1 : 0.9,
   };
 }
@@ -61,19 +61,48 @@ function headingsFromText(block: DocumentBlock, blockIndex: number): HeadingCand
   }
   if (candidates.length > 0) return candidates;
 
-  const firstLine = text.split('\n')[0]?.trim();
-  if (firstLine && firstLine.length <= 160 && NUMBERED_HEADING.test(firstLine)) {
-    const numberedPrefix = firstLine.match(/^\d+(?:\.\d+)*/)?.[0];
+  for (const match of text.matchAll(NUMBERED_HEADING)) {
+    const heading = match[0].trim();
+    if (heading.length > 160) continue;
+    const numberedPrefix = heading.match(/^\d+(?:\.\d+)*/)?.[0];
+    const chineseSection = /^第.+节/.test(heading);
     candidates.push({
-      title: firstLine,
-      level: numberedPrefix ? Math.min(6, numberedPrefix.split('.').length) : 1,
+      title: heading,
+      level: numberedPrefix
+        ? Math.min(6, numberedPrefix.split('.').length)
+        : chineseSection
+          ? 2
+          : 1,
       block,
       blockIndex,
+      startOffset: match.index,
       source: 'heuristic',
       confidence: 0.75,
     });
   }
   return candidates;
+}
+
+function normalizedHeadingTitle(value: string): string {
+  return value
+    .replace(/^#+\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLocaleLowerCase();
+}
+
+function deduplicateProviderHeadings(candidates: HeadingCandidate[]): HeadingCandidate[] {
+  const seen = new Set<string>();
+  return candidates.filter((candidate) => {
+    const key = [
+      candidate.block.pageNumber ?? 'unknown-page',
+      candidate.level,
+      normalizedHeadingTitle(candidate.title),
+    ].join(':');
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 function candidatesToOutline(
@@ -124,6 +153,23 @@ function candidatesToOutline(
   return nodes;
 }
 
+function findLogicalSectionEnd(text: string, startOffset: number): number {
+  const hardEnd = Math.min(text.length, startOffset + LOGICAL_SECTION_CHARS);
+  if (hardEnd === text.length) return hardEnd;
+
+  const minimumUsefulEnd = startOffset + Math.floor(LOGICAL_SECTION_CHARS * 0.6);
+  const paragraphEnd = text.lastIndexOf('\n\n', hardEnd);
+  if (paragraphEnd >= minimumUsefulEnd) return paragraphEnd + 2;
+
+  const lineEnd = text.lastIndexOf('\n', hardEnd);
+  if (lineEnd >= minimumUsefulEnd) return lineEnd + 1;
+
+  for (let index = hardEnd - 1; index >= minimumUsefulEnd; index -= 1) {
+    if ('.!?。！？'.includes(text[index])) return index + 1;
+  }
+  return hardEnd;
+}
+
 function logicalOutline(artifact: DocumentArtifact): DocumentOutlineNode[] {
   const nodes: DocumentOutlineNode[] = [];
   for (const block of artifact.blocks) {
@@ -143,7 +189,9 @@ function logicalOutline(artifact: DocumentArtifact): DocumentOutlineNode[] {
       });
       continue;
     }
-    for (let startOffset = 0; startOffset < text.length; startOffset += LOGICAL_SECTION_CHARS) {
+    let startOffset = 0;
+    while (startOffset < text.length) {
+      const endOffset = findLogicalSectionEnd(text, startOffset);
       nodes.push({
         id: `logical_${nodes.length + 1}`,
         title: `Section ${nodes.length + 1}`,
@@ -153,10 +201,11 @@ function logicalOutline(artifact: DocumentArtifact): DocumentOutlineNode[] {
         pageStart: block.pageNumber,
         pageEnd: block.pageNumber,
         startOffset,
-        endOffset: Math.min(text.length, startOffset + LOGICAL_SECTION_CHARS),
+        endOffset,
         confidence: 0.3,
         source: 'logical',
       });
+      startOffset = endOffset;
     }
   }
   return nodes;
@@ -173,10 +222,21 @@ export const detectDocumentStructureTransform: DocumentTransform = {
       return { artifact, status: 'skipped' };
     }
 
-    const candidates = artifact.blocks.flatMap((block, blockIndex) => {
+    const metadataHeadings = artifact.blocks.flatMap((block, blockIndex) => {
       const metadataHeading = headingFromMetadata(block, blockIndex);
-      return metadataHeading ? [metadataHeading] : headingsFromText(block, blockIndex);
+      return metadataHeading ? [metadataHeading] : [];
     });
+    const providerHeadings = metadataHeadings.filter((heading) => heading.source === 'provider');
+    const textHeadings = artifact.blocks.flatMap((block, blockIndex) =>
+      headingsFromText(block, blockIndex),
+    );
+    const prefersProviderHeadings = providerHeadings.length > 0;
+    const selectedMetadataHeadings = deduplicateProviderHeadings(metadataHeadings);
+    const candidates = prefersProviderHeadings
+      ? selectedMetadataHeadings
+      : textHeadings.length > 0
+        ? textHeadings
+        : selectedMetadataHeadings;
     artifact.outline =
       candidates.length > 0
         ? candidatesToOutline(candidates, artifact.blocks)
@@ -185,13 +245,21 @@ export const detectDocumentStructureTransform: DocumentTransform = {
     const diagnostics: DocumentDiagnostic[] = [
       {
         severity: 'info',
-        message:
-          candidates.length > 0
+        message: prefersProviderHeadings
+          ? `Reused ${artifact.outline.length} provider heading(s).`
+          : candidates.length > 0
             ? `Detected ${artifact.outline.length} document heading(s).`
             : `No headings detected; created ${artifact.outline.length} logical section(s).`,
         metadata: {
           outlineNodeCount: artifact.outline.length,
-          strategy: candidates.length > 0 ? 'heading' : 'logical',
+          strategy: prefersProviderHeadings
+            ? 'provider'
+            : candidates.length > 0
+              ? 'heading'
+              : 'logical',
+          providerHeadingCount: metadataHeadings.length,
+          duplicateProviderHeadingsRemoved:
+            metadataHeadings.length - selectedMetadataHeadings.length,
         },
       },
     ];

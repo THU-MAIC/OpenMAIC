@@ -500,7 +500,7 @@ async function mapWithConcurrency<T, R>(
  * (markdown `![](url)`), NOT a dedicated field. We download+inline them to
  * base64 and strip the remote URLs from the emitted text (they expire).
  */
-async function aliDocMindLayoutsToParsedPdf(
+export async function aliDocMindLayoutsToParsedPdf(
   result: { data: Record<string, unknown>; pageCountEstimate?: number; jobId?: string },
   fileName: string,
 ): Promise<ParsedPdfContent> {
@@ -510,6 +510,7 @@ async function aliDocMindLayoutsToParsedPdf(
     type?: string;
     subType?: string;
     pageNum?: number;
+    level?: number;
     llmResult?: string;
     layoutConf?: number;
   }>;
@@ -555,6 +556,9 @@ async function aliDocMindLayoutsToParsedPdf(
           page: pageNum,
           type: mappedType,
           content: isTable ? (l.llmResult ?? '') : (l.text ?? l.markdownContent ?? ''),
+          ...(mappedType === 'title' && Number.isFinite(l.level)
+            ? { level: l.level as number }
+            : {}),
         });
       }
     }

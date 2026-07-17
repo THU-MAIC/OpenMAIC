@@ -147,4 +147,60 @@ describe('document normalization transform', () => {
       endOffset: undefined,
     });
   });
+
+  it('removes citations and outline references to discarded empty blocks', async () => {
+    const input: DocumentArtifact = {
+      metadata: {},
+      blocks: [
+        { id: 'empty', type: 'text', text: '   ' },
+        { id: 'keep', type: 'text', text: 'Keep this content', metadata: { headingLevel: 1 } },
+      ],
+      assets: [],
+      citations: [
+        { id: 'empty-citation', blockId: 'empty' },
+        { id: 'keep-citation', blockId: 'keep' },
+      ],
+      outline: [
+        {
+          id: 'mixed',
+          title: 'Mixed',
+          level: 1,
+          order: 1,
+          blockIds: ['empty', 'keep'],
+          startOffset: 0,
+          endOffset: 10,
+          confidence: 1,
+          source: 'provider',
+        },
+        {
+          id: 'empty-only',
+          title: 'Empty',
+          level: 2,
+          order: 2,
+          parentId: 'mixed',
+          blockIds: ['empty'],
+          confidence: 1,
+          source: 'provider',
+        },
+      ],
+    };
+
+    const output = await normalizeDocumentTransform.apply(input, context);
+
+    expect(output.artifact.citations).toEqual([{ id: 'keep-citation', blockId: 'keep' }]);
+    expect(output.artifact.outline).toEqual([
+      {
+        id: 'mixed',
+        title: 'Mixed',
+        level: 1,
+        order: 1,
+        blockIds: ['keep'],
+        startOffset: undefined,
+        endOffset: undefined,
+        confidence: 1,
+        source: 'provider',
+        parentId: undefined,
+      },
+    ]);
+  });
 });

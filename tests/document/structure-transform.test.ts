@@ -133,8 +133,37 @@ describe('document structure transform', () => {
       pageEnd: 3,
       blockIds: ['title', 'body'],
       confidence: 1,
-      source: 'heading',
+      source: 'provider',
     });
+  });
+
+  it('does not let unlevelled layout titles flatten richer Markdown headings', async () => {
+    const input: DocumentArtifact = {
+      metadata: {},
+      blocks: [
+        {
+          id: 'markdown',
+          type: 'markdown',
+          text: '# Root\n\nOverview\n\n## Child\n\nDetails',
+        },
+        {
+          id: 'layout-title',
+          type: 'layout',
+          text: 'Root',
+          metadata: { layoutType: 'title' },
+        },
+      ],
+      assets: [],
+    };
+
+    const output = await detectDocumentStructureTransform.apply(input, context);
+
+    expect(
+      output.artifact.outline?.map(({ title, level, source }) => ({ title, level, source })),
+    ).toEqual([
+      { title: 'Root', level: 1, source: 'heading' },
+      { title: 'Child', level: 2, source: 'heading' },
+    ]);
   });
 
   it('creates bounded logical sections when no headings are available', async () => {
@@ -156,6 +185,24 @@ describe('document structure transform', () => {
       [0, 12_000],
       [12_000, 24_000],
       [24_000, 25_000],
+    ]);
+  });
+
+  it('prefers a paragraph boundary over cutting a logical section mid-paragraph', async () => {
+    const firstParagraph = 'a'.repeat(10_000);
+    const secondParagraph = 'b'.repeat(4_000);
+    const text = `${firstParagraph}\n\n${secondParagraph}`;
+    const input: DocumentArtifact = {
+      metadata: {},
+      blocks: [{ id: 'plain', type: 'text', text }],
+      assets: [],
+    };
+
+    const output = await detectDocumentStructureTransform.apply(input, context);
+
+    expect(output.artifact.outline?.map((node) => [node.startOffset, node.endOffset])).toEqual([
+      [0, firstParagraph.length + 2],
+      [firstParagraph.length + 2, text.length],
     ]);
   });
 });

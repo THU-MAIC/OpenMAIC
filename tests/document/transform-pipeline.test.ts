@@ -120,4 +120,38 @@ describe('document transform pipeline', () => {
       transformDocument(artifact(), [], { ...context, signal: controller.signal }),
     ).rejects.toMatchObject({ name: 'AbortError' });
   });
+
+  it('preserves pipeline-owned history when a transform rebuilds the artifact', async () => {
+    const rebuild: DocumentTransform = {
+      id: 'rebuild',
+      displayName: 'Rebuild',
+      version: '1.0.0',
+      capabilities: {},
+      apply(current) {
+        return {
+          artifact: {
+            metadata: { ...current.metadata },
+            blocks: current.blocks.map((block) => ({ ...block, text: `${block.text} rebuilt` })),
+            assets: [],
+          },
+        };
+      },
+    };
+    const first: DocumentTransform = {
+      id: 'first',
+      displayName: 'First',
+      version: '1.0.0',
+      capabilities: {},
+      apply(current) {
+        return { artifact: current };
+      },
+    };
+
+    const result = await transformDocument(artifact(), [first, rebuild], context);
+
+    expect(result.artifact.transforms?.map((record) => record.transformId)).toEqual([
+      'first',
+      'rebuild',
+    ]);
+  });
 });
