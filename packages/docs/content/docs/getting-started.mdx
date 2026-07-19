@@ -9,7 +9,7 @@ OpenMAIC is a Next.js application you can run on your own machine. You need Node
 
 - **Node.js** 20 or later
 - **pnpm** 10 or later (install with `npm install -g pnpm` if needed)
-- An API key from at least one LLM provider — OpenAI, Anthropic, Google, DeepSeek, Zhipu, MiniMax, Qwen, Doubao, Groq, SiliconFlow, or Ollama (local)
+- An API key from at least one LLM provider — OpenAI, Anthropic, Google, DeepSeek, Zhipu, MiniMax, Qwen, Doubao, Groq, SiliconFlow, or a local server like Ollama or LM Studio
 
 ## Install
 
@@ -39,6 +39,8 @@ OPENAI_API_KEY=sk-...
 ANTHROPIC_API_KEY=sk-ant-...
 # or local Ollama (no key needed)
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# or local LM Studio (no key needed)
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 See [Configuration](./configuration.mdx) for the full list of providers, TTS, ASR, and feature flags.

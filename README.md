@@ -131,7 +131,7 @@ providers:
     apiKey: sk-ant-...
 ```
 
-Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **Lemonade** (local LLM / image / TTS / ASR), and any OpenAI-compatible API.
+Supported providers: **OpenAI**, **Azure OpenAI**, **Anthropic**, **Google Gemini**, **DeepSeek**, **Qwen**, **Kimi**, **MiniMax**, **Grok (xAI)**, **OpenRouter**, **Doubao**, **Tencent Hunyuan/TokenHub**, **Xiaomi MiMo**, **GLM (Zhipu)**, **Ollama** (local), **LM Studio** (local), **Lemonade** (local LLM / image / TTS / ASR), and any OpenAI-compatible API.
 
 <a id="lemonade-local-ai"></a>
 

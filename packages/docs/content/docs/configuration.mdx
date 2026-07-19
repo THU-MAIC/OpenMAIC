@@ -37,6 +37,7 @@ Supported provider prefixes:
 | `MIMO_`            | Xiaomi MiMo                                        |
 | `OLLAMA_`          | Ollama (local)                                     |
 | `LEMONADE_`        | Lemonade (local)                                   |
+| `LMSTUDIO_`        | LM Studio (local)                                  |
 
 ## Local models via Ollama
 
@@ -44,6 +45,8 @@ No API key is needed. Set the base URL so OpenMAIC bypasses its SSRF check:
 
 ```bash
 OLLAMA_BASE_URL=http://localhost:11434/v1
+# or LM Studio
+LMSTUDIO_BASE_URL=http://localhost:1234/v1
 ```
 
 Client-supplied localhost URLs are blocked in production, so this must be configured on the server.

@@ -55,7 +55,12 @@ const log = createLogger('AIProviders');
 export type { ProviderId, ProviderConfig, ModelInfo, ModelConfig };
 
 /** Provider IDs whose logos are monochrome-dark and need `dark:invert` in dark mode */
-export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set(['openai', 'openrouter', 'ollama']);
+export const MONO_LOGO_PROVIDERS: ReadonlySet<string> = new Set([
+  'openai',
+  'openrouter',
+  'ollama',
+  'lmstudio',
+]);
 
 /**
  * Provider registry
@@ -1274,6 +1279,16 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
         capabilities: { streaming: true, tools: true, vision: false },
       },
     ],
+  },
+
+  lmstudio: {
+    id: 'lmstudio',
+    name: 'LM Studio',
+    type: 'openai',
+    defaultBaseUrl: 'http://localhost:1234/v1',
+    requiresApiKey: false,
+    icon: '/logos/lmstudio.svg',
+    models: [],
   },
 };
 

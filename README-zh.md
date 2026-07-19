@@ -131,7 +131,7 @@ providers:
     apiKey: sk-ant-...
 ```
 
-支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）以及任何兼容 OpenAI API 的服务。
+支持的服务商：**OpenAI**、**Azure OpenAI**、**Anthropic**、**Google Gemini**、**DeepSeek**、**通义千问 Qwen**、**Kimi**、**MiniMax**、**Grok (xAI)**、**OpenRouter**、**豆包**、**腾讯混元 / TokenHub**、**小米 MiMo**、**智谱 GLM**、**Ollama**（本地）、**LM Studio**（本地）、**Lemonade**（本地 LLM / 图像 / TTS / ASR）以及任何兼容 OpenAI API 的服务。
 
 <a id="lemonade-local-ai"></a>
 
