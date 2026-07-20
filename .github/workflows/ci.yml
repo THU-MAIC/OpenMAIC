@@ -50,6 +50,38 @@ jobs:
       - name: Unit Tests (storage)
         run: pnpm --filter @openmaic/storage test
 
+  render-service:
+    name: Render Service (typecheck + tests)
+    runs-on: ubuntu-latest
+    # The producer dep bundles puppeteer; skip its Chromium download — the unit
+    # tests exercise the service's boundaries (unzip, admission, body caps) and
+    # never launch a browser.
+    env:
+      PUPPETEER_SKIP_DOWNLOAD: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          # render-service is its own npm package (own lockfile, Node-only deps),
+          # excluded from the root eslint/tsc/pnpm workspace — so it gets its own
+          # install + quality gate here rather than riding on the `check` job.
+          cache: npm
+          cache-dependency-path: render-service/package-lock.json
+
+      - name: Install
+        working-directory: render-service
+        run: npm ci
+
+      - name: TypeScript
+        working-directory: render-service
+        run: npm run typecheck
+
+      - name: Unit Tests
+        working-directory: render-service
+        run: npm test
+
   e2e:
     name: E2E Tests
     runs-on: ubuntu-latest

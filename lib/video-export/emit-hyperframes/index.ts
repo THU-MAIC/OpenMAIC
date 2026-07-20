@@ -124,6 +124,66 @@ function renderNarration(scene: VideoTimelineScene): string[] {
     });
 }
 
+/**
+ * Subtitle overlay: one absolutely-positioned caption band at the bottom of the
+ * stage, plus one `<div>` per cue stacked in the *same* absolute slot within it.
+ * The captions are *burned in* — the paused GSAP timeline reveals each cue at
+ * its `startMs` and hides it at its `endMs`, so Chromium's frame capture bakes
+ * them into the video (the producer has no subtitle track of its own). Cue
+ * timings are the IR's, which now derive from real audio durations, so they
+ * stay aligned with the narration.
+ *
+ * Every cue is stacked in one grid cell of the band and toggled with
+ * `display:none`/`inline-block`. Two things matter here, both regressions from
+ * the first cut:
+ *  - Inactive cues must be **removed from layout** (`display:none`), not merely
+ *    hidden (`visibility:hidden`): a hidden-but-laid-out cue still occupies a
+ *    row, so with many cues the band grows several rows tall and the active cue
+ *    drifts upward into the slide/title area.
+ *  - All cues share **one grid cell** (`grid-area:1/1`), so the active cue
+ *    always sits in the same spot regardless of which cue it is.
+ *
+ * Returns the overlay HTML and the `tl.set` statements that toggle display.
+ */
+function renderSubtitles(
+  ir: VideoTimeline,
+  height: number,
+): { html: string; statements: string[] } {
+  const cues = ir.subtitles.filter((c) => c.text.trim());
+  if (cues.length === 0) return { html: '', statements: [] };
+
+  // Scale caption type to the render height so it reads at any resolution.
+  const fontPx = Math.max(16, Math.round(height * 0.033));
+  const padV = Math.round(fontPx * 0.35);
+  const padH = Math.round(fontPx * 0.7);
+  const bottom = Math.round(height * 0.055);
+
+  // Each cue occupies the same grid cell and is hidden (display:none) until its
+  // window, so inactive cues take no layout space and never shift the active one.
+  const cueDivs = cues
+    .map(
+      (c, i) =>
+        `  <div id="subtitle-cue-${i}" style="grid-area:1/1;display:none;justify-self:center;max-width:80%;padding:${padV}px ${padH}px;background:rgba(0,0,0,0.66);color:#fff;font-size:${fontPx}px;line-height:1.3;border-radius:${padV}px;white-space:pre-wrap;text-shadow:0 1px 2px rgba(0,0,0,0.9)">${escapeHtml(c.text)}</div>`,
+    )
+    .join('\n');
+
+  const html = [
+    `<div id="subtitles" style="position:absolute;left:0;right:0;bottom:${bottom}px;z-index:50;display:grid;justify-items:center;text-align:center;pointer-events:none;font-family:system-ui,sans-serif">`,
+    cueDivs,
+    `</div>`,
+  ].join('\n');
+
+  // Toggle each cue with `display` so hidden cues leave the flow entirely
+  // (visibility:hidden would keep their box and push the active cue out of slot).
+  const statements: string[] = [];
+  for (let i = 0; i < cues.length; i++) {
+    const c = cues[i];
+    statements.push(`tl.set('#subtitle-cue-${i}',{display:'inline-block'},${sec(c.startMs)});`);
+    statements.push(`tl.set('#subtitle-cue-${i}',{display:'none'},${sec(c.endMs)});`);
+  }
+  return { html, statements };
+}
+
 function renderReadme(project: {
   compositionId: string;
   width: number;
@@ -198,6 +258,10 @@ export function emitHyperframes(
     }
   }
 
+  // Burned-in subtitle overlay, driven by the same paused timeline.
+  const subtitles = renderSubtitles(ir, height);
+  statements.push(...subtitles.statements);
+
   // Extend the timeline to the full composition length even if the last tween
   // ends earlier, so clips (esp. video/audio) are not cut short.
   statements.push(`tl.set({}, {}, ${totalSec});`);
@@ -218,6 +282,7 @@ export function emitHyperframes(
 <div id="${compositionId}" data-composition-id="${compositionId}" data-start="0" data-duration="${totalSec}" data-width="${width}" data-height="${height}" style="position:relative;width:${width}px;height:${height}px;overflow:hidden;background:#000">
 ${sceneHtml.filter(Boolean).join('\n')}
 ${effectHtml.join('\n')}
+${subtitles.html}
 </div>
 <script src="${escapeHtml(gsapVendorPath)}"></script>
 <script>

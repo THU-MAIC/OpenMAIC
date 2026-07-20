@@ -86,6 +86,20 @@ describe('emitHyperframes', () => {
     expect(html).toContain('#00ff88'); // authored laser color survives into the DOM
   });
 
+  it('burns in a subtitle overlay driven by the timeline', () => {
+    // A caption container plus one cue div per non-empty speech action.
+    expect(html).toContain('id="subtitles"');
+    expect(html).toContain('id="subtitle-cue-0"');
+    // Cues start hidden (display:none, out of layout) and are toggled by the
+    // paused timeline — see the multi-cue positioning test below for why
+    // display (not visibility) matters.
+    expect(html).toMatch(/id="subtitle-cue-0"[^>]*display:none/);
+    expect(html).toMatch(/tl\.set\('#subtitle-cue-0',\{display:'inline-block'\},[\d.]+\);/);
+    expect(html).toMatch(/tl\.set\('#subtitle-cue-0',\{display:'none'\},[\d.]+\);/);
+    // Narration text is rendered into the caption.
+    expect(html).toContain('Welcome to the lesson');
+  });
+
   it('references vendored GSAP, never a CDN', () => {
     expect(html).toContain('<script src="assets/vendor/gsap.min.js"></script>');
     expect(project.gsapVendorPath).toBe('assets/vendor/gsap.min.js');
@@ -93,6 +107,57 @@ describe('emitHyperframes', () => {
 
   it('matches the HTML snapshot', () => {
     expect(html).toMatchSnapshot();
+  });
+});
+
+describe('emitHyperframes multi-cue subtitle positioning (regression)', () => {
+  // A scene with several narration cues; the earlier cut left inactive cues in
+  // layout (visibility:hidden + inline-block), so the band grew multiple rows
+  // tall and the active cue drifted up into the slide/title area.
+  const ir = compileVideoTimeline(
+    {
+      stage: { id: 'stage', name: 'Multi Cue' },
+      scenes: [
+        slide(
+          'intro',
+          [
+            speech('sp1', 'First caption line', { audioId: 'a1' }),
+            speech('sp2', 'Second caption line', { audioId: 'a2' }),
+            speech('sp3', 'Third caption line', { audioId: 'a3' }),
+          ],
+          { title: 'Intro', elements: [] },
+        ),
+      ],
+    },
+    {
+      timing: stubProbe({ sp1: 2000, sp2: 2000, sp3: 2000 }, {}),
+      assets: stubAssets({ sp1: audioMeta('a1'), sp2: audioMeta('a2'), sp3: audioMeta('a3') }, {}),
+    },
+  );
+  const html = emitHyperframes(ir, { width: 1920, height: 1080 }).files.find(
+    (f) => f.path === 'index.html',
+  )!.content;
+
+  it('stacks every cue in one grid cell so the active cue never shifts', () => {
+    // All cues share grid-area 1/1 — one slot, not one row each.
+    const cueCount = (html.match(/id="subtitle-cue-\d+"/g) ?? []).length;
+    expect(cueCount).toBe(3);
+    expect(html.match(/grid-area:1\/1/g)?.length).toBe(3);
+    expect(html).toContain('id="subtitles" style="position:absolute');
+    // The container is a grid so the single occupied cell owns the whole band.
+    expect(html).toMatch(/id="subtitles"[^>]*display:grid/);
+  });
+
+  it('removes inactive cues from layout (display:none, never visibility:hidden)', () => {
+    // Every cue starts display:none; toggled cues use display, not visibility —
+    // a visibility-hidden cue would keep its box and push the active one out of slot.
+    for (let i = 0; i < 3; i++) {
+      expect(html).toMatch(new RegExp(`id="subtitle-cue-${i}"[^>]*display:none`));
+      expect(html).toContain(`tl.set('#subtitle-cue-${i}',{display:'inline-block'}`);
+      expect(html).toContain(`tl.set('#subtitle-cue-${i}',{display:'none'}`);
+    }
+    expect(html).not.toContain('visibility:hidden');
+    expect(html).not.toContain("visibility:'hidden'");
   });
 });
 
