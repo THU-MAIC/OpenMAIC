@@ -5,7 +5,7 @@
  * Each stage has its own storage key based on stageId
  */
 
-import { makeScene, Stage, Scene } from '../types/stage';
+import { Stage, Scene } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { db } from './database';
 import {
@@ -15,6 +15,17 @@ import {
   type ChatStorageSnapshot,
 } from './chat-storage';
 import { clearCursor } from '@/lib/playback/cursor';
+import {
+  accessDocument,
+  clearCurrentScene,
+  DocumentLockUnavailableError,
+  getDocumentStore,
+  getLegacyDocumentStore,
+  loadCurrentScene,
+  mutateDocument,
+  saveCurrentScene,
+  type AppDocumentOutline,
+} from '@/lib/document';
 import { clearAllForScene } from '@/lib/quiz/persistence';
 import { beginStageRuntimeDeletionSafely } from '@/lib/runtime/store';
 import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
@@ -32,6 +43,8 @@ export interface StageStoreData {
   currentSceneId: string | null;
   chats: ChatSession[];
   chatSnapshot?: ChatStorageSnapshot;
+  /** The aggregate save contract treats omission as deletion; callers should carry this snapshot. */
+  outline?: AppDocumentOutline;
 }
 
 export interface StageListItem {
@@ -52,46 +65,60 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
   return withRuntimeStorageSharedLock(async () => {
     try {
       const now = Date.now();
-
-      // Save to stages table
-      await db.stages.put({
-        id: stageId,
-        name: data.stage.name || 'Untitled Stage',
-        description: data.stage.description,
-        createdAt: data.stage.createdAt || now,
-        updatedAt: now,
-        languageDirective: data.stage.languageDirective,
-        style: data.stage.style,
-        currentSceneId: data.currentSceneId || undefined,
-        agentIds: data.stage.agentIds,
-        videoManifest: data.stage.videoManifest,
-        interactiveMode: data.stage.interactiveMode,
-        taskEngineMode: data.stage.taskEngineMode,
-        generatedAgentConfigs: data.stage.generatedAgentConfigs,
-      });
-
-      // Delete old scenes first to avoid orphaned data
-      await db.scenes.where('stageId').equals(stageId).delete();
-
-      // Save new scenes
-      if (data.scenes && data.scenes.length > 0) {
-        await db.scenes.bulkPut(
-          data.scenes.map((scene, index) => ({
+      const commitDocument = async (
+        existing: Awaited<ReturnType<typeof accessDocument>>['document'],
+        store: ReturnType<typeof getDocumentStore>,
+      ): Promise<void> => {
+        const existingOutline = existing?.outline as AppDocumentOutline | undefined;
+        const outline = data.outline ??
+          existingOutline ?? {
+            outlines: [],
+            createdAt: now,
+            updatedAt: now,
+          };
+        await store.saveDocument({
+          stage: {
+            ...data.stage,
+            id: stageId,
+            name: data.stage.name || 'Untitled Stage',
+            createdAt: data.stage.createdAt || now,
+            updatedAt: now,
+          },
+          scenes: data.scenes.map((scene, index) => ({
             ...scene,
             stageId,
             order: scene.order ?? index,
             createdAt: scene.createdAt || now,
             updatedAt: scene.updatedAt || now,
           })),
-        );
+          outline: {
+            ...outline,
+            createdAt: existingOutline?.createdAt ?? outline.createdAt,
+          },
+        });
+        await saveCurrentScene(stageId, data.currentSceneId);
+      };
+      try {
+        await mutateDocument(stageId, commitDocument);
+      } catch (error) {
+        if (!(error instanceof DocumentLockUnavailableError)) throw error;
+        const access = await accessDocument(stageId);
+        // A full snapshot carrying its outline is a write, not an RMW. It may
+        // proceed without Web Locks only when no legacy migration is pending.
+        if (access.readOnlyLegacy || (access.document && !data.outline)) throw error;
+        await commitDocument(access.document, getDocumentStore());
       }
 
       // Chat sessions live in the learner RuntimeStore, outside the document DB.
       if (data.chats) {
-        await saveChatSessions(stageId, data.chats, {
-          globalLockHeld: true,
-          snapshot: data.chatSnapshot,
-        });
+        try {
+          await saveChatSessions(stageId, data.chats, {
+            globalLockHeld: true,
+            snapshot: data.chatSnapshot,
+          });
+        } catch (error) {
+          log.warn(`Document saved but chat sessions failed for stage ${stageId}:`, error);
+        }
       }
 
       log.info(`Saved stage: ${stageId}`);
@@ -107,15 +134,13 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
  */
 export async function loadStageData(stageId: string): Promise<StageStoreData | null> {
   try {
-    // Load stage
-    const stage = await db.stages.get(stageId);
-    if (!stage) {
+    const access = await accessDocument(stageId);
+    const document = access.document;
+    if (!document) {
       log.info(`Stage not found: ${stageId}`);
       return null;
     }
-
-    // Load scenes
-    const scenes = await db.scenes.where('stageId').equals(stageId).sortBy('order');
+    const currentScene = await loadCurrentScene(stageId);
 
     // Chat runtime data lives in a separate IndexedDB database. Keep the
     // document available when that independent store is temporarily
@@ -133,21 +158,21 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
       log.warn(`Failed to load chat sessions for stage ${stageId}:`, error);
     }
 
-    log.info(`Loaded stage: ${stageId}, scenes: ${scenes.length}, chats: ${chats.length}`);
+    log.info(`Loaded stage: ${stageId}, scenes: ${document.scenes.length}, chats: ${chats.length}`);
 
     return {
-      stage,
-      // `SceneRecord` is the loose persisted shape (independent `type` + `content`);
-      // re-bind each to a discriminated `AppScene`, deriving `type` from the stored
-      // `content.type`. Spreads the full record, so `whiteboard` etc. are preserved.
-      scenes: scenes.map((s) => makeScene(s, s.content)),
-      currentSceneId: stage.currentSceneId || scenes[0]?.id || null,
+      stage: document.stage,
+      scenes: document.scenes,
+      currentSceneId:
+        currentScene?.sceneId ?? access.legacyCurrentSceneId ?? document.scenes[0]?.id ?? null,
       chats,
       chatSnapshot,
+      outline: document.outline as AppDocumentOutline | undefined,
     };
   } catch (error) {
     log.error('Failed to load stage:', error);
-    return null;
+    // Corrupt or future-versioned destinations must never masquerade as missing.
+    throw error;
   }
 }
 
@@ -159,15 +184,18 @@ export async function deleteStageData(stageId: string): Promise<void> {
     try {
       // Collect scene ids before deletion so we can sweep per-scene localStorage
       // keys (quiz draft / submitted answers / graded results).
-      const sceneIds = (await db.scenes.where('stageId').equals(stageId).toArray()).map(
-        (s) => s.id,
-      );
+      const [document, legacyScenes] = await Promise.all([
+        getDocumentStore().loadDocument(stageId),
+        db.scenes.where('stageId').equals(stageId).toArray(),
+      ]);
+      const sceneIds = [
+        ...new Set([
+          ...(document?.scenes.map((s) => s.id) ?? []),
+          ...legacyScenes.map((s) => s.id),
+        ]),
+      ];
 
-      // Delete stage
-      await db.stages.delete(stageId);
-
-      // Delete scenes
-      await db.scenes.where('stageId').equals(stageId).delete();
+      await getDocumentStore().deleteDocument(stageId);
 
       // Clear legacy chat rows and the device-scoped playback cursor. Runtime
       // rows of every kind are removed by the all-kind cascade below.
@@ -179,11 +207,23 @@ export async function deleteStageData(stageId: string): Promise<void> {
       } catch (error) {
         log.warn(`Failed to clear playback cursor for stage ${stageId}:`, error);
       }
+      try {
+        await clearCurrentScene(stageId);
+      } catch (error) {
+        log.warn(`Failed to clear editor current scene for stage ${stageId}:`, error);
+      }
 
       // Sweep quiz persistence keys for each deleted scene.
       for (const sceneId of sceneIds) {
         clearAllForScene(sceneId);
       }
+
+      // Migration retains legacy rows, but an explicit whole-stage deletion does not.
+      await db.transaction('rw', [db.stages, db.scenes, db.stageOutlines], async () => {
+        await db.stages.delete(stageId);
+        await db.scenes.where('stageId').equals(stageId).delete();
+        await db.stageOutlines.delete(stageId);
+      });
 
       // Learner-runtime data lives in a separate IndexedDB database, so it is
       // cascaded after the Dexie work: it cannot join those transactions, and a
@@ -215,26 +255,30 @@ export async function deleteStageData(stageId: string): Promise<void> {
  */
 export async function listStages(): Promise<StageListItem[]> {
   try {
-    const stages = await db.stages.orderBy('updatedAt').reverse().toArray();
-
-    const stageList: StageListItem[] = await Promise.all(
-      stages.map(async (stage) => {
-        const sceneCount = await db.scenes.where('stageId').equals(stage.id).count();
-
-        return {
-          id: stage.id,
-          name: stage.name,
-          description: stage.description,
-          sceneCount,
-          createdAt: stage.createdAt,
-          updatedAt: stage.updatedAt,
-          interactiveMode: stage.interactiveMode,
-          taskEngineMode: stage.taskEngineMode,
-        };
-      }),
+    const summaries = await getDocumentStore().listDocuments();
+    const ids = new Set(summaries.map((summary) => summary.id));
+    const legacy = await getLegacyDocumentStore().listStages();
+    const legacyOnly = await Promise.all(
+      legacy
+        .filter((stage) => !ids.has(stage.id))
+        .map(async (stage) => {
+          const snapshot = await getLegacyDocumentStore().read(stage.id);
+          return { ...stage, sceneCount: snapshot?.scenes.length ?? 0 };
+        }),
     );
-
-    return stageList;
+    return [
+      ...summaries,
+      ...legacyOnly.map((stage) => ({
+        id: stage.id,
+        name: stage.name,
+        description: stage.description,
+        sceneCount: stage.sceneCount,
+        createdAt: stage.createdAt,
+        updatedAt: stage.updatedAt,
+        interactiveMode: stage.interactiveMode,
+        taskEngineMode: stage.taskEngineMode,
+      })),
+    ].sort((a, b) => b.updatedAt - a.updatedAt);
   } catch (error) {
     log.error('Failed to list stages:', error);
     return [];
@@ -308,8 +352,8 @@ export async function getFirstSlideByStages(
   try {
     await Promise.all(
       stageIds.map(async (stageId) => {
-        const scenes = await db.scenes.where('stageId').equals(stageId).sortBy('order');
-        const firstSlide = scenes.find((s) => s.content?.type === 'slide');
+        const document = (await accessDocument(stageId)).document;
+        const firstSlide = document?.scenes.find((s) => s.content?.type === 'slide');
         if (firstSlide && firstSlide.content.type === 'slide') {
           const slide = structuredClone(firstSlide.content.canvas);
 
@@ -375,7 +419,10 @@ export async function getFirstSlideByStages(
  */
 export async function renameStage(stageId: string, newName: string): Promise<void> {
   try {
-    await db.stages.update(stageId, { name: newName, updatedAt: Date.now() });
+    await mutateDocument(stageId, async (document, store) => {
+      if (!document) throw new Error(`Stage not found: ${stageId}`);
+      await store.putStage(stageId, { ...document.stage, name: newName, updatedAt: Date.now() });
+    });
     log.info(`Renamed stage ${stageId} to "${newName}"`);
   } catch (error) {
     log.error('Failed to rename stage:', error);
@@ -388,8 +435,9 @@ export async function renameStage(stageId: string, newName: string): Promise<voi
  */
 export async function stageExists(stageId: string): Promise<boolean> {
   try {
-    const stage = await db.stages.get(stageId);
-    return !!stage;
+    const summaries = await getDocumentStore().listDocuments();
+    if (summaries.some((stage) => stage.id === stageId)) return true;
+    return (await getLegacyDocumentStore().read(stageId)) !== null;
   } catch (error) {
     log.error('Failed to check stage existence:', error);
     return false;

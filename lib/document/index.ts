@@ -56,4 +56,23 @@ export {
   canonicalizeLegacyStage,
 } from './canonicalize';
 export { getDocumentStore, type DocumentStoreDeps } from './store';
+export {
+  accessDocument,
+  documentLockName,
+  getLegacyDocumentStore,
+  mutateDocument,
+  withDocumentLock,
+  DocumentLockUnavailableError,
+  type DocumentAccessResult,
+  type DocumentMigrationDeps,
+  type LegacyDocumentSnapshot,
+  type LegacyDocumentStore,
+} from './migration';
+export {
+  clearCurrentScene,
+  loadCurrentScene,
+  saveCurrentScene,
+  type CurrentSceneDeps,
+  type CurrentSceneValue,
+} from './current-scene';
 export { validateAppScene, validateAppStage } from './validators';
