@@ -5,11 +5,74 @@ services:
       - "3000:3000"
     env_file:
       - .env.local
+    environment:
+      # Point the app at the render service when it's running. This wins over any
+      # RENDER_SERVICE_URL in .env.local; the service only starts under the
+      # "video-export" profile. The app's capability check probes the service's
+      # /health, so if the profile is off (service absent) the app reports the
+      # MP4 export disabled and degrades to the ZIP-download path — this URL
+      # being set does not, by itself, advertise a working render.
+      - RENDER_SERVICE_URL=http://render-service:9000
+    networks:
+      - default # outbound internet (LLM/media provider APIs, etc.)
+      - render # reach the render service over the isolated network
     volumes:
       # Optional: mount server-providers.yml for provider config
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
     restart: unless-stopped
+
+  # Isolated MP4 render service (Node 22 + Chromium + FFmpeg) for classroom video
+  # export (issue #866). Opt-in: only starts with `--profile video-export`, since
+  # the image is heavy (bundles Chromium + FFmpeg) and the capability is optional.
+  #
+  #   docker compose --profile video-export up --build
+  #
+  # Sits on the `render` network (`internal: true`, no host/internet gateway).
+  # It shares that network with `openmaic` only so the app can reach it; to stop
+  # the untrusted Chromium from initiating connections *back* to the app over
+  # that shared network, the container's entrypoint installs an iptables egress
+  # lockdown (needs CAP_NET_ADMIN) that drops all outbound except loopback and
+  # replies on app-initiated connections. The export ZIP is self-contained, so
+  # the render needs no outbound at all.
+  render-service:
+    build: ./render-service
+    profiles:
+      - video-export
+    expose:
+      - "9000"
+    # Required for the entrypoint's iptables egress lockdown. Without it the
+    # service still boots, but logs a warning and does NOT block Chromium egress.
+    cap_add:
+      - NET_ADMIN
+    environment:
+      - PORT=9000
+      # Tune for the host; each concurrent render drives a full Chromium + FFmpeg.
+      - RENDER_MAX_CONCURRENCY=2
+      # In this default topology the app is exposed directly and does NOT set
+      # TRUST_PROXY_HEADERS, so every caller collapses to one identity. A
+      # per-identity limit would then throttle the whole deployment to a single
+      # render, so disable it here and rely on RENDER_MAX_CONCURRENCY + the global
+      # RENDER_MAX_QUEUE cap. Set this >0 only with a trusted proxy supplying
+      # per-user identity (see render-service/README.md).
+      - RENDER_MAX_JOBS_PER_USER=0
+    # Bound RAM: each render (Chromium + FFmpeg + archive expansion) is memory
+    # heavy, and extraction is capped separately (RENDER_MAX_CONCURRENT_EXTRACTIONS).
+    # Raise for higher RENDER_MAX_CONCURRENCY / larger classrooms.
+    mem_limit: 4g
+    networks:
+      - render
+    restart: unless-stopped
+
+networks:
+  default: {}
+  # Isolated network for app <-> render-service traffic. `internal: true` means
+  # no route to the host or internet. Both services share it so the app can
+  # reach the render service; the render container additionally blocks its own
+  # egress (iptables, see the service's entrypoint) so the untrusted Chromium
+  # can't use this shared network to reach the app.
+  render:
+    internal: true
 
 volumes:
   openmaic-data:

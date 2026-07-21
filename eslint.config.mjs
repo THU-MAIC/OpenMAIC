@@ -29,6 +29,9 @@ const eslintConfig = defineConfig([
     '.worktrees/**',
     // Playwright e2e tests (not React code):
     'e2e/**',
+    // Isolated MP4 render service: its own package, tsconfig, and Node-only
+    // deps (@hyperframes/producer). Linted/typechecked under render-service/.
+    'render-service/**',
   ]),
   {
     rules: {

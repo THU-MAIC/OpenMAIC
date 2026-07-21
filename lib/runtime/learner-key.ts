@@ -12,12 +12,21 @@
  */
 import { BrowserKVStore, type KVStore } from '@openmaic/storage';
 
+import { registerRuntimeStorageResetHook, resolveConfiguredLearnerKey } from './config';
+
 export const LEARNER_KEY_KV_KEY = 'runtime.learnerKey';
 
 const LEARNER_KEY_LOCK = 'maic:learner-key';
 
 let defaultKv: KVStore | undefined;
 let defaultInFlight: Promise<string> | undefined;
+let configuredInFlight: Promise<string> | undefined;
+
+registerRuntimeStorageResetHook(() => {
+  configuredInFlight = undefined;
+  defaultInFlight = undefined;
+  defaultKv = undefined;
+});
 
 function mintLearnerKey(): string {
   const uuid =
@@ -56,10 +65,32 @@ async function readOrMint(store: KVStore): Promise<string> {
   return mintPersisted(store);
 }
 
+/**
+ * Resolve the client session's learner partition key.
+ *
+ * An explicit KV store takes priority over app-wide configuration. Without an
+ * explicit store, a configured provider is invoked only on first resolution:
+ * concurrent calls share its in-flight promise and the first resolved value is
+ * retained for the session. Identity changes mid-session belong in the
+ * application layer (reload or a `mergeLearner` flow).
+ *
+ * Client-only: this singleton is not SSR-safe or intended for request-scoped
+ * identity. Partial dev-mode HMR can recreate this cache independently of the
+ * configuration module; reload after changing bootstrap configuration.
+ */
 export function getLearnerKey(kv?: KVStore): Promise<string> {
   // Injected stores (tests, server-side callers) bypass the memo but stay
   // race-safe through the lock / read-after-write above.
   if (kv) return readOrMint(kv);
+
+  const configured = configuredInFlight ?? resolveConfiguredLearnerKey();
+  if (configured) {
+    configuredInFlight ??= configured.catch((error) => {
+      configuredInFlight = undefined;
+      throw error;
+    });
+    return configuredInFlight;
+  }
   // Concurrent same-bundle callers share one in-flight read/mint. A failure
   // is not cached — a transient storage error must not pin every later call.
   defaultInFlight ??= readOrMint((defaultKv ??= new BrowserKVStore())).catch((error) => {

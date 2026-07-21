@@ -40,6 +40,9 @@ exports[`emitHyperframes > matches the HTML snapshot 1`] = `
     <div style="width:10px;height:10px;border-radius:9999px;background-color:#00ff88;box-shadow:0 0 8px 2px #00ff8860"></div>
   </div>
 </div>
+<div id="subtitles" style="position:absolute;left:0;right:0;bottom:59px;z-index:50;display:grid;justify-items:center;text-align:center;pointer-events:none;font-family:system-ui,sans-serif">
+  <div id="subtitle-cue-0" style="grid-area:1/1;display:none;justify-self:center;max-width:80%;padding:13px 25px;background:rgba(0,0,0,0.66);color:#fff;font-size:36px;line-height:1.3;border-radius:13px;white-space:pre-wrap;text-shadow:0 1px 2px rgba(0,0,0,0.9)">Welcome to the lesson</div>
+</div>
 </div>
 <script src="assets/vendor/gsap.min.js"></script>
 <script>
@@ -86,6 +89,8 @@ tl.fromTo('#fx-0-2-ring',{scale:1,opacity:0.6},{scale:2.8,opacity:0,duration:1.5
 tl.to('#fx-0-2',{autoAlpha:0,x:-1056,y:-591.6,duration:0.25,ease:EASE_IN},4.75);
 tl.set('#fx-0-2',{autoAlpha:0},5);
 tl.set('#fx-0-2-ring',{opacity:0},5);
+tl.set('#subtitle-cue-0',{display:'inline-block'},0);
+tl.set('#subtitle-cue-0',{display:'none'},2);
 tl.set({}, {}, 7);
 window.__timelines = window.__timelines || {};
 window.__timelines["openmaic"] = tl;

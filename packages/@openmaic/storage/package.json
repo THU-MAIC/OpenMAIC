@@ -10,6 +10,22 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./runtime/http": {
+      "types": "./dist/runtime/http.d.ts",
+      "import": "./dist/runtime/http.js"
+    },
+    "./runtime/pg": {
+      "types": "./dist/runtime/pg.d.ts",
+      "import": "./dist/runtime/pg.js"
+    },
+    "./server": {
+      "types": "./dist/server/index.d.ts",
+      "import": "./dist/server/index.js"
+    },
+    "./server/reference": {
+      "types": "./dist/server/reference.d.ts",
+      "import": "./dist/server/reference.js"
     }
   },
   "files": [
@@ -48,7 +64,10 @@
     "@openmaic/dsl": "workspace:*"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.3.14",
+    "@types/pg": "^8.15.5",
     "fake-indexeddb": "^6.0.0",
+    "pg": "^8.16.3",
     "typescript": "^5",
     "vitest": "^4.1.8"
   }

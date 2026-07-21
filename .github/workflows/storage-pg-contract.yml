@@ -1,0 +1,46 @@
+name: Storage PostgreSQL Contract
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, runtime-server-backend, feat/maic-editor-v0, feat/maic-editor-v1]
+
+concurrency:
+  group: storage-pg-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  storage-pg-contract:
+    name: Storage Contract (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: openmaic
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d openmaic"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PG_CONTRACT_URL: postgresql://postgres:postgres@localhost:5432/openmaic
+      STORAGE_PG_CONTRACT_REQUIRED: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Storage PostgreSQL contract
+        run: pnpm --filter @openmaic/storage test
