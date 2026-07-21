@@ -5,11 +5,7 @@
  * current-scene position. Distinct from `lib/document/` (server-side content
  * extraction), which must never enter the client bundle.
  */
-export type {
-  AppDocument,
-  AppDocumentOutline,
-  AppStage,
-} from './persistence-types';
+export type { AppDocument, AppDocumentOutline, AppStage } from './persistence-types';
 export {
   canonicalizeLegacyOutline,
   canonicalizeLegacyScene,

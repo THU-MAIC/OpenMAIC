@@ -19,7 +19,8 @@ function key(stageId: string): string {
 
 function resolveKv(kv?: KVStore): KVStore {
   if (kv) return kv;
-  if (typeof localStorage === 'undefined') throw new Error('Current-scene persistence requires localStorage (client-only)');
+  if (typeof localStorage === 'undefined')
+    throw new Error('Current-scene persistence requires localStorage (client-only)');
   return (defaultKv ??= new BrowserKVStore());
 }
 
