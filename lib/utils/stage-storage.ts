@@ -255,21 +255,23 @@ export async function listStages(): Promise<StageListItem[]> {
         .filter((stage) => !ids.has(stage.id))
         .map(async (stage) => {
           const snapshot = await getLegacyDocumentStore().read(stage.id);
-          return { ...stage, sceneCount: snapshot?.scenes.length ?? 0 };
+          return snapshot ? { ...stage, sceneCount: snapshot.scenes.length } : null;
         }),
     );
     return [
       ...summaries,
-      ...legacyOnly.map((stage) => ({
-        id: stage.id,
-        name: stage.name,
-        description: stage.description,
-        sceneCount: stage.sceneCount,
-        createdAt: stage.createdAt,
-        updatedAt: stage.updatedAt,
-        interactiveMode: stage.interactiveMode,
-        taskEngineMode: stage.taskEngineMode,
-      })),
+      ...legacyOnly
+        .filter((stage) => stage !== null)
+        .map((stage) => ({
+          id: stage.id,
+          name: stage.name,
+          description: stage.description,
+          sceneCount: stage.sceneCount,
+          createdAt: stage.createdAt,
+          updatedAt: stage.updatedAt,
+          interactiveMode: stage.interactiveMode,
+          taskEngineMode: stage.taskEngineMode,
+        })),
     ].sort((a, b) => b.updatedAt - a.updatedAt);
   } catch (error) {
     log.error('Failed to list stages:', error);

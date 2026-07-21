@@ -3,6 +3,8 @@ import { BrowserKVStore, type DocumentStore, type KVStore } from '@openmaic/stor
 import isEqual from 'lodash/isEqual';
 
 import type { AppScene } from '@/lib/types/stage';
+import { createLogger } from '@/lib/logger';
+import { withRuntimeStorageSharedLock } from '@/lib/utils/chat-storage-lock';
 import {
   db,
   type SceneRecord,
@@ -58,6 +60,7 @@ export class DocumentLockUnavailableError extends Error {}
 
 const MARKER_PREFIX = 'document-migration:';
 let defaultKv: KVStore | undefined;
+const log = createLogger('DocumentMigration');
 
 function resolveStore(deps: DocumentMigrationDeps): DocumentStore<AppScene, AppStage> {
   return deps.store ?? getDocumentStore();
@@ -99,6 +102,10 @@ export async function withDocumentLock<T>(
 function defaultLegacyStore(): LegacyDocumentStore {
   return {
     async read(stageId) {
+      // Dexie disables auto-open after db.delete(). A migration that was
+      // queued behind clearDatabase must reopen the now-empty legacy database
+      // so it observes a missing source instead of surfacing DatabaseClosedError.
+      if (!db.isOpen()) await db.open();
       return db.transaction('r', [db.stages, db.scenes, db.stageOutlines], async () => {
         const [stage, scenes, outline] = await Promise.all([
           db.stages.get(stageId),
@@ -108,7 +115,10 @@ function defaultLegacyStore(): LegacyDocumentStore {
         return stage ? { stage, scenes, outline } : null;
       });
     },
-    listStages: () => db.stages.toArray(),
+    async listStages() {
+      if (!db.isOpen()) await db.open();
+      return db.stages.toArray();
+    },
   };
 }
 
@@ -204,25 +214,45 @@ async function migrateLocked(
   stageId: string,
   deps: DocumentMigrationDeps,
 ): Promise<DocumentAccessResult> {
-  const store = resolveStore(deps);
-  const existing = await store.loadDocument(stageId);
-  if (existing) {
-    assertValidDestination(stageId, existing);
+  // Lock order: the per-stage document lock is acquired by the caller before
+  // this global shared epoch. This matches the established per-stage -> global
+  // order and prevents clearDatabase from interleaving with migration commit.
+  return withRuntimeStorageSharedLock(async () => {
+    const store = resolveStore(deps);
+    const existing = await store.loadDocument(stageId);
+    if (existing) {
+      assertValidDestination(stageId, existing);
+      const snapshot = await getLegacyDocumentStore(deps).read(stageId);
+      if (snapshot) {
+        const kv = resolveKv(deps);
+        const markerKey = `${MARKER_PREFIX}${stageId}`;
+        if (!(await kv.get<MigrationMarker>(markerKey, 'device'))) {
+          try {
+            assertMigrationVerified(canonicalize(snapshot), existing);
+          } catch (error) {
+            log.warn(
+              `Legacy snapshot diverges from authoritative destination for stage ${stageId}; migration marker was not written`,
+              error,
+            );
+            return { document: existing, readOnlyLegacy: false };
+          }
+        }
+        await finishMigrationMetadata(snapshot, kv);
+      }
+      return { document: existing, readOnlyLegacy: false };
+    }
+
     const snapshot = await getLegacyDocumentStore(deps).read(stageId);
-    if (snapshot) await finishMigrationMetadata(snapshot, resolveKv(deps));
-    return { document: existing, readOnlyLegacy: false };
-  }
+    if (!snapshot) return { document: null, readOnlyLegacy: false };
+    const expected = canonicalize(snapshot);
+    await store.saveDocument(expected);
+    const actual = await store.loadDocument(stageId);
+    if (!actual) throw new Error(`Legacy migration lost document ${JSON.stringify(stageId)}`);
+    assertMigrationVerified(expected, actual);
 
-  const snapshot = await getLegacyDocumentStore(deps).read(stageId);
-  if (!snapshot) return { document: null, readOnlyLegacy: false };
-  const expected = canonicalize(snapshot);
-  await store.saveDocument(expected);
-  const actual = await store.loadDocument(stageId);
-  if (!actual) throw new Error(`Legacy migration lost document ${JSON.stringify(stageId)}`);
-  assertMigrationVerified(expected, actual);
-
-  await finishMigrationMetadata(snapshot, resolveKv(deps));
-  return { document: actual, readOnlyLegacy: false };
+    await finishMigrationMetadata(snapshot, resolveKv(deps));
+    return { document: actual, readOnlyLegacy: false };
+  });
 }
 
 /** Load the authoritative destination, lazily migrating one coherent legacy snapshot. */

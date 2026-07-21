@@ -210,19 +210,28 @@ describe('legacy document migration', () => {
     }
   });
 
-  test('keeps a verified destination authoritative', async () => {
+  test('keeps a divergent destination authoritative without certifying the legacy snapshot', async () => {
     const documentStore = store();
+    const kv = new MemoryKv();
+    const legacyStore = legacy(snapshot('Legacy V2'));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
     await documentStore.saveDocument({
-      stage: { id: 'stage-1', name: 'Destination', createdAt: 1, updatedAt: 2 },
+      stage: { id: 'stage-1', name: 'Destination V1', createdAt: 1, updatedAt: 2 },
       scenes: [],
     });
     const result = await accessDocument('stage-1', {
       store: documentStore,
-      kv: new MemoryKv(),
-      legacyStore: legacy(snapshot('Must not win')),
+      kv,
+      legacyStore,
       lockManager: lockManager(),
     });
-    expect(result.document!.stage.name).toBe('Destination');
+    expect(result.document!.stage.name).toBe('Destination V1');
+    expect(await kv.get('document-migration:stage-1', 'device')).toBeNull();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('stage stage-1'));
+    await expect(legacyStore.read('stage-1')).resolves.toMatchObject({
+      stage: { name: 'Legacy V2' },
+    });
+    warn.mockRestore();
   });
 
   test('fails loud for a future-versioned destination instead of falling back', async () => {
