@@ -27,11 +27,18 @@ import { renderQuizMathText } from '@/lib/quiz/math-text';
 import {
   clearSubmitted,
   draftKey,
+  getOrCreateQuizAttemptId,
   readSubmittedState,
+  rotateQuizAttemptId,
   writeSubmittedAnswers,
   writeSubmittedResults,
   type SubmittedState,
 } from '@/lib/quiz/persistence';
+import {
+  backfillQuizAttempt,
+  createQuizAttemptWriter,
+  type QuizAttemptWriter,
+} from '@/lib/quiz/runtime';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -40,6 +47,7 @@ type Phase = 'not_started' | 'answering' | 'grading' | 'reviewing';
 interface QuizViewProps {
   readonly questions: QuizQuestion[];
   readonly sceneId: string;
+  readonly stageId: string;
 }
 
 const QuizMathText = memo(function QuizMathText({
@@ -686,7 +694,7 @@ function ScoreBanner({
 
 // ─── Main Component ─────────────────────────────────────────────────────────
 
-export function QuizView({ questions, sceneId }: QuizViewProps) {
+export function QuizView({ questions, sceneId, stageId }: QuizViewProps) {
   const { t, locale } = useI18n();
 
   // Rehydrate submitted state from localStorage on first mount. Runs once.
@@ -703,6 +711,32 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
   const [results, setResults] = useState<QuestionResult[]>(() =>
     initialSubmitted?.kind === 'reviewing' ? initialSubmitted.results : [],
   );
+  const [attemptId, setAttemptId] = useState<string | null>(null);
+  const runtimeWriterRef = useRef<QuizAttemptWriter | null>(null);
+  runtimeWriterRef.current ??= createQuizAttemptWriter({
+    onError: (error) => log.warn('Failed to persist quiz runtime:', error),
+  });
+  const runtimeWriter = runtimeWriterRef.current;
+
+  useEffect(() => {
+    return () => {
+      void runtimeWriter.flushDraft();
+    };
+  }, [runtimeWriter]);
+
+  useEffect(() => {
+    // The id must be acquired after hydration. Minting during SSR cannot persist
+    // it, and React would otherwise preserve that orphaned initializer value.
+    let cancelled = false;
+    void getOrCreateQuizAttemptId(sceneId)
+      .then((nextAttemptId) => {
+        if (!cancelled) setAttemptId(nextAttemptId);
+      })
+      .catch((error) => log.warn('Failed to acquire quiz attempt id:', error));
+    return () => {
+      cancelled = true;
+    };
+  }, [sceneId]);
 
   // Draft cache for quiz answers, keyed by sceneId to isolate across classrooms
   const {
@@ -712,6 +746,40 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
   } = useDraftCache<Record<string, string | string[]>>({
     key: draftKey(sceneId),
   });
+
+  // Backfill legacy localStorage once. It remains the read source until the
+  // later read-flip PR, so a runtime failure only warns and never clears data.
+  const didBackfillRef = useRef(false);
+  useEffect(() => {
+    if (didBackfillRef.current || !attemptId) return;
+    const base = { stageId, sceneId, attemptId };
+    // Re-read after mount instead of trusting the SSR initializer, which cannot
+    // see localStorage and is preserved by React through hydration.
+    const legacySubmitted = readSubmittedState(sceneId);
+    if (legacySubmitted?.kind === 'reviewing') {
+      didBackfillRef.current = true;
+      void backfillQuizAttempt({
+        ...base,
+        submittedAnswers: legacySubmitted.answers,
+        results: legacySubmitted.results,
+      }).catch((error) => log.warn('Failed to backfill reviewed quiz attempt:', error));
+      return;
+    }
+    if (legacySubmitted?.kind === 'answering') {
+      didBackfillRef.current = true;
+      void backfillQuizAttempt({
+        ...base,
+        submittedAnswers: legacySubmitted.answers,
+      }).catch((error) => log.warn('Failed to backfill submitted quiz attempt:', error));
+      return;
+    }
+    if (cachedAnswers && Object.keys(cachedAnswers).length > 0) {
+      didBackfillRef.current = true;
+      void backfillQuizAttempt({ ...base, draftAnswers: cachedAnswers }).catch((error) =>
+        log.warn('Failed to backfill draft quiz attempt:', error),
+      );
+    }
+  }, [attemptId, cachedAnswers, sceneId, stageId]);
 
   // Restore cached draft answers (only when there is no submitted state).
   const [prevCachedAnswers, setPrevCachedAnswers] = useState(cachedAnswers);
@@ -747,17 +815,34 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
       setAnswers((prev) => {
         const next = { ...prev, [questionId]: value };
         updateAnswersCache(next);
+        if (attemptId) {
+          runtimeWriter.scheduleDraft({
+            stageId,
+            sceneId,
+            attemptId,
+            answers: next,
+          });
+        }
         return next;
       });
     },
-    [updateAnswersCache],
+    [attemptId, runtimeWriter, sceneId, stageId, updateAnswersCache],
   );
 
   const handleSubmit = useCallback(() => {
     setPhase('grading');
     clearAnswersCache();
     writeSubmittedAnswers(sceneId, answers);
-  }, [clearAnswersCache, answers, sceneId]);
+    if (attemptId) {
+      void runtimeWriter.recordPhase({
+        stageId,
+        sceneId,
+        attemptId,
+        phase: 'submitted',
+        answers,
+      });
+    }
+  }, [attemptId, clearAnswersCache, answers, runtimeWriter, sceneId, stageId]);
 
   // When entering grading phase, grade choice questions locally + call API for short-answer
   useEffect(() => {
@@ -788,12 +873,22 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
       setResults(ordered);
       setPhase('reviewing');
       writeSubmittedResults(sceneId, ordered);
+      if (attemptId) {
+        void runtimeWriter.recordPhase({
+          stageId,
+          sceneId,
+          attemptId,
+          phase: 'reviewed',
+          answers,
+          results: ordered,
+        });
+      }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [phase, questions, answers, locale, sceneId]);
+  }, [phase, questions, answers, locale, sceneId, stageId, attemptId, runtimeWriter]);
 
   const handleRetry = useCallback(() => {
     setPhase('not_started');
@@ -801,7 +896,12 @@ export function QuizView({ questions, sceneId }: QuizViewProps) {
     setResults([]);
     clearAnswersCache();
     clearSubmitted(sceneId);
-  }, [clearAnswersCache, sceneId]);
+    runtimeWriter.cancelDraft();
+    setAttemptId(null);
+    void rotateQuizAttemptId(sceneId)
+      .then(setAttemptId)
+      .catch((error) => log.warn('Failed to rotate quiz attempt id:', error));
+  }, [clearAnswersCache, runtimeWriter, sceneId]);
 
   const earnedScore = useMemo(() => results.reduce((sum, r) => sum + r.earned, 0), [results]);
 

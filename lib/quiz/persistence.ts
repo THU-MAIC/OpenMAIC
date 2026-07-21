@@ -9,6 +9,8 @@ import type { QuestionResult } from '@/lib/quiz/grading';
  *                            cleared at submit time.
  *   quizAnswers:<sceneId>  — answers written once at submit, cleared on retry.
  *   quizResults:<sceneId>  — graded results written once at reviewing, cleared on retry.
+ *   quizAttemptId:<sceneId> — stable id linking those keys to one RuntimeSession,
+ *                             rotated on retry and cleared with the scene.
  *
  * Both quiz-view (to rehydrate its own state) and the classroom-complete page
  * (to compute aggregate scores) read through this module so the storage
@@ -18,6 +20,7 @@ import type { QuestionResult } from '@/lib/quiz/grading';
 export const DRAFT_KEY_PREFIX = 'quizDraft:';
 export const ANSWERS_KEY_PREFIX = 'quizAnswers:';
 export const RESULTS_KEY_PREFIX = 'quizResults:';
+export const ATTEMPT_ID_KEY_PREFIX = 'quizAttemptId:';
 
 /** Build the draft cache key for a scene. Use this everywhere that needs the
  *  in-progress quiz answers (e.g. `useDraftCache`) so the prefix stays in
@@ -58,6 +61,45 @@ function safeRemove(key: string): void {
   }
 }
 
+function mintQuizAttemptId(): string {
+  const suffix =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return `quiz-attempt:${suffix}`;
+}
+
+function withQuizAttemptIdLock<T>(sceneId: string, work: () => T): Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(`maic:quiz-attempt-id:${sceneId}`, work);
+  }
+  return Promise.resolve(work());
+}
+
+function mintAndStoreQuizAttemptId(sceneId: string): string {
+  const attemptId = mintQuizAttemptId();
+  safeSet(ATTEMPT_ID_KEY_PREFIX + sceneId, attemptId);
+  return attemptId;
+}
+
+/** Stable bridge from the legacy per-scene keys to one runtime attempt session. */
+export async function getOrCreateQuizAttemptId(sceneId: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  return withQuizAttemptIdLock(sceneId, () => {
+    const existing = safeGet(ATTEMPT_ID_KEY_PREFIX + sceneId);
+    return existing ?? mintAndStoreQuizAttemptId(sceneId);
+  });
+}
+
+/** Start a distinct attempt after retry without deleting historical runtime data. */
+export async function rotateQuizAttemptId(sceneId: string): Promise<string | null> {
+  if (typeof window === 'undefined') return null;
+  return withQuizAttemptIdLock(sceneId, () => {
+    safeRemove(ATTEMPT_ID_KEY_PREFIX + sceneId);
+    return mintAndStoreQuizAttemptId(sceneId);
+  });
+}
+
 /** Read quiz-view's post-submit state: answers + optional graded results. */
 export function readSubmittedState(sceneId: string): SubmittedState {
   const rawA = safeGet(ANSWERS_KEY_PREFIX + sceneId);
@@ -67,7 +109,7 @@ export function readSubmittedState(sceneId: string): SubmittedState {
     const rawR = safeGet(RESULTS_KEY_PREFIX + sceneId);
     if (rawR) {
       const results = JSON.parse(rawR) as QuestionResult[];
-      if (Array.isArray(results) && results.length > 0) {
+      if (Array.isArray(results)) {
         return { kind: 'reviewing', answers, results };
       }
     }
@@ -123,4 +165,5 @@ export function clearAllForScene(sceneId: string): void {
   safeRemove(DRAFT_KEY_PREFIX + sceneId);
   safeRemove(ANSWERS_KEY_PREFIX + sceneId);
   safeRemove(RESULTS_KEY_PREFIX + sceneId);
+  safeRemove(ATTEMPT_ID_KEY_PREFIX + sceneId);
 }
