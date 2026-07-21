@@ -1,0 +1,117 @@
+/**
+ * Device-scoped playback cursor persistence.
+ *
+ * The cursor is mutable resume state, not a learner-runtime fact. It therefore
+ * lives in the KV `device` scope and remains last-write-wins. Legacy Dexie
+ * migration is delegated lazily so importing this module never opens either
+ * browser store.
+ */
+import { BrowserKVStore, type KVStore, type RuntimeStore } from '@openmaic/storage';
+
+export interface PlaybackCursor {
+  sceneId: string;
+  actionIndex: number;
+  updatedAt: string;
+}
+
+export interface LegacyPlaybackState {
+  stageId: string;
+  sceneIndex: number;
+  actionIndex: number;
+  consumedDiscussions: string[];
+  sceneId?: string;
+  updatedAt: number;
+}
+
+export interface PlaybackLegacyStore {
+  get(stageId: string): Promise<LegacyPlaybackState | undefined>;
+  delete(stageId: string): Promise<void>;
+}
+
+export interface PlaybackCursorDeps {
+  kv?: KVStore;
+  legacyStore?: PlaybackLegacyStore;
+  runtimeStore?: RuntimeStore;
+  learnerKey?: string;
+  now?: () => string;
+  mintRecordId?: () => string;
+}
+
+const CURSOR_KEY_PREFIX = 'playback-cursor:';
+
+let defaultKv: KVStore | undefined;
+
+function cursorKey(stageId: string): string {
+  return `${CURSOR_KEY_PREFIX}${stageId}`;
+}
+
+function resolveKv(kv?: KVStore): KVStore {
+  if (kv) return kv;
+  if (typeof window === 'undefined') {
+    throw new Error('Playback cursor persistence is client-only');
+  }
+  return (defaultKv ??= new BrowserKVStore());
+}
+
+function isPlaybackCursor(value: unknown): value is PlaybackCursor {
+  if (!value || typeof value !== 'object') return false;
+  const cursor = value as Partial<PlaybackCursor>;
+  return (
+    typeof cursor.sceneId === 'string' &&
+    Number.isInteger(cursor.actionIndex) &&
+    typeof cursor.updatedAt === 'string'
+  );
+}
+
+/** Internal raw read used by the all-or-nothing legacy migration. */
+export async function loadCursorValue(
+  stageId: string,
+  kv: KVStore,
+): Promise<PlaybackCursor | null> {
+  const value = await kv.get<unknown>(cursorKey(stageId), 'device');
+  return isPlaybackCursor(value) ? value : null;
+}
+
+/** Internal raw write used by the all-or-nothing legacy migration. */
+export function saveCursorValue(
+  stageId: string,
+  cursor: PlaybackCursor,
+  kv: KVStore,
+): Promise<void> {
+  return kv.set(cursorKey(stageId), cursor, 'device');
+}
+
+/** Load the latest device cursor, migrating the complete legacy row first. */
+export async function loadCursor(
+  stageId: string,
+  deps: PlaybackCursorDeps = {},
+): Promise<PlaybackCursor | null> {
+  const kv = resolveKv(deps.kv);
+  const { migrateLegacyPlaybackState } = await import('./runtime');
+  await migrateLegacyPlaybackState(stageId, {
+    store: deps.runtimeStore,
+    kv,
+    learnerKey: deps.learnerKey,
+    legacyStore: deps.legacyStore,
+    now: deps.now,
+    mintRecordId: deps.mintRecordId,
+  });
+  return loadCursorValue(stageId, kv);
+}
+
+/** Overwrite the device cursor. Callers own any desired debounce. */
+export async function saveCursor(
+  stageId: string,
+  cursor: PlaybackCursor,
+  deps: Pick<PlaybackCursorDeps, 'kv'> = {},
+): Promise<void> {
+  await saveCursorValue(stageId, cursor, resolveKv(deps.kv));
+}
+
+/** Remove the device cursor without touching append-only runtime facts. */
+export async function clearCursor(
+  stageId: string,
+  deps: Pick<PlaybackCursorDeps, 'kv'> = {},
+): Promise<void> {
+  await resolveKv(deps.kv).remove(cursorKey(stageId), 'device');
+}
