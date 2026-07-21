@@ -22,7 +22,48 @@ export function postProcessInteractiveHtml(html: string): string {
     processed = injectKatex(processed);
   }
 
+  // Generated pronunciation widgets use this deterministic helper instead of
+  // inventing a new (usually over-sensitive) string comparison per course.
+  if (!processed.includes('OpenMAICPronunciation')) {
+    processed = injectPronunciationScorer(processed);
+  }
+
   return processed;
+}
+
+function injectPronunciationScorer(html: string): string {
+  const script = `<script>
+window.OpenMAICPronunciation = window.OpenMAICPronunciation || (function () {
+  function words(value) {
+    return String(value || '').toLocaleLowerCase('en-US').replace(/[\u0027\u2019]/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(/\\s+/).filter(Boolean);
+  }
+  function score(expected, transcript, confidence) {
+    var a = words(expected), b = words(transcript);
+    if (!a.length || !b.length) return { score: 0, matchedWords: 0, expectedWords: a.length, recognizedWords: b.length, transcript: String(transcript || '') };
+    var dp = Array.from({ length: a.length + 1 }, function () { return Array(b.length + 1).fill(0); });
+    for (var i = 1; i <= a.length; i++) dp[i][0] = i;
+    for (var j = 1; j <= b.length; j++) dp[0][j] = j;
+    for (var x = 1; x <= a.length; x++) for (var y = 1; y <= b.length; y++) dp[x][y] = Math.min(dp[x-1][y] + 1, dp[x][y-1] + 1, dp[x-1][y-1] + (a[x-1] === b[y-1] ? 0 : 1));
+    var x = a.length, y = b.length, matched = 0;
+    while (x || y) {
+      if (x && y && dp[x][y] === dp[x-1][y-1] && a[x-1] === b[y-1]) { matched++; x--; y--; }
+      else if (x && y && dp[x][y] === dp[x-1][y-1] + 1) { x--; y--; }
+      else if (x && dp[x][y] === dp[x-1][y] + 1) x--;
+      else y--;
+    }
+    var lengthPenalty = Math.min(1, Math.abs(a.length - b.length) / a.length);
+    var value = 100 * (0.85 * matched / a.length + 0.15 * (1 - lengthPenalty));
+    if (typeof confidence === 'number' && isFinite(confidence) && confidence >= 0) value *= 0.8 + 0.2 * Math.max(0, Math.min(1, confidence));
+    return { score: Math.round(Math.max(0, Math.min(100, value))), matchedWords: matched, expectedWords: a.length, recognizedWords: b.length, transcript: String(transcript || '') };
+  }
+  return { normalize: words, score: score };
+})();
+</script>`;
+  const bodyCloseIdx = html.indexOf('</body>');
+  if (bodyCloseIdx !== -1) {
+    return html.substring(0, bodyCloseIdx) + script + '\n</body>' + html.substring(bodyCloseIdx + 7);
+  }
+  return html + script;
 }
 
 /**

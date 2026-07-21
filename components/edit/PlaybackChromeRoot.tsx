@@ -1048,6 +1048,8 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               mode={mode}
               canEdit={!!canEnterProMode}
               onToggleEditMode={onEnterProMode}
+              currentSceneIndex={currentSceneIndex}
+              scenesCount={totalScenesCount}
             />
           )}
 

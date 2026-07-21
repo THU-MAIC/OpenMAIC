@@ -50,6 +50,28 @@ If you MUST include quiz elements:
 - Keep questions SHORT and FEW (max 3-5)
 - Include EXPLANATION as gameplay reward, not punishment
 
+## English Pronunciation Practice Mode (MANDATORY WHEN THE TOPIC IS PRONUNCIATION)
+
+When the game teaches English pronunciation, build a speaking practice loop rather
+than a generic quiz. Each attempt must have a visible target phrase, microphone
+recording, transcript, word-level feedback, and a 0–100 score. Do not score only by
+checking `transcript === target`, and do not use character-level edit distance: one
+omitted word must not shift all later words to the wrong position.
+
+Use the host-provided helper when available:
+
+```js
+const result = window.OpenMAICPronunciation?.score(targetText, transcript, confidence);
+```
+
+The scorer must normalize case and punctuation, align words with dynamic programming,
+count exact word matches, penalize substitutions and omissions, and return 0 for an
+empty transcript. An exact transcript must score at least 95 (100 when confidence is
+missing); clearly different words such as `three` → `free` must not score as correct.
+Show which words matched and which were substituted/omitted. Browser SpeechRecognition
+is only a transcript source; never claim that a high ASR transcript alone proves a
+native accent. If confidence is unavailable, do not apply a confidence penalty.
+
 ## Simulation-Game Integration (CRITICAL)
 
 If your game has a visual simulation, it MUST be:
