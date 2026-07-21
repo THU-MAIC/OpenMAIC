@@ -263,7 +263,6 @@ describe('withPiInclassWhiteboardTools', () => {
   it('enables Pi whiteboard tools on the inclass request config without dropping fields', () => {
     const request = {
       messages: [],
-      storeState: {},
       config: {
         agentIds: ['default-1'],
         sessionType: 'qa',

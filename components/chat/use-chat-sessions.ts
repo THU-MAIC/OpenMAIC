@@ -142,7 +142,6 @@ interface UseChatSessionsOptions {
 
 export type ChatRequestTemplate = {
   messages: UIMessage<ChatMessageMetadata>[];
-  storeState: Record<string, unknown>;
   config: {
     agentIds: string[];
     sessionType?: string;
