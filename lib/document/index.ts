@@ -49,3 +49,11 @@ export type {
   MediaTranscriptSegment,
 } from './types';
 export type { DocumentBundleResult, ParsedDocumentImage, ParsedDocumentPart } from './bundle';
+export type { AppDocument, AppDocumentOutline, AppStage } from './persistence-types';
+export {
+  canonicalizeLegacyOutline,
+  canonicalizeLegacyScene,
+  canonicalizeLegacyStage,
+} from './canonicalize';
+export { getDocumentStore, type DocumentStoreDeps } from './store';
+export { validateAppScene, validateAppStage } from './validators';

@@ -10,19 +10,21 @@
  */
 import {
   DSL_VERSION,
+  DSL_VERSION_KEY,
   dslVersionOf,
   migrate,
   needsMigration,
   validateScene,
   validateStage,
 } from '@openmaic/dsl';
-import type { Scene } from '@openmaic/dsl';
+import type { Scene, Stage } from '@openmaic/dsl';
 import type {
   DocumentStore,
   DocumentSummary,
   MaicDocument,
   SceneLike,
   SceneValidator,
+  StageValidator,
 } from './types.js';
 import { reassembleDocument, splitDocument, type OutlineRow, type StageRow } from './adapter.js';
 
@@ -43,6 +45,8 @@ export interface BrowserDocumentStoreOptions {
    * accepts its own kinds, so the gate stays fail-loud for them.
    */
   validateScene?: SceneValidator;
+  /** Stage validator run at the write boundary. Defaults to the DSL `validateStage`. */
+  validateStage?: StageValidator;
 }
 
 /** Promisify a single IndexedDB request. */
@@ -122,26 +126,29 @@ function isFutureVersioned(versioned: unknown): boolean {
  * untouched. This is the deliberate asymmetry with `outline`, which the DSL owns
  * no contract for at all.
  */
-function migrateDocument<TScene extends SceneLike>(
-  doc: MaicDocument<TScene>,
-): MaicDocument<TScene> {
+function migrateDocument<TScene extends SceneLike, TStage extends Stage>(
+  doc: MaicDocument<TScene, TStage>,
+): MaicDocument<TScene, TStage> {
   const { outline, ...core } = doc;
-  const migrated = migrate(core) as MaicDocument<TScene>;
+  const migrated = migrate(core) as MaicDocument<TScene, TStage>;
   return outline === undefined ? migrated : { ...migrated, outline };
 }
 
 export class BrowserDocumentStore<
   TScene extends SceneLike = Scene,
-> implements DocumentStore<TScene> {
+  TStage extends Stage = Stage,
+> implements DocumentStore<TScene, TStage> {
   private readonly idb: IDBFactory;
   private readonly dbName: string;
   private readonly validateScene: SceneValidator;
+  private readonly validateStage: StageValidator;
   private dbPromise?: Promise<IDBDatabase>;
 
   constructor(options: BrowserDocumentStoreOptions = {}) {
     this.idb = options.indexedDB ?? globalThis.indexedDB;
     this.dbName = options.dbName ?? 'maic-documents';
     this.validateScene = options.validateScene ?? validateScene;
+    this.validateStage = options.validateStage ?? validateStage;
   }
 
   private openDb(): Promise<IDBDatabase> {
@@ -207,7 +214,7 @@ export class BrowserDocumentStore<
     });
   }
 
-  async saveDocument(doc: MaicDocument<TScene>): Promise<void> {
+  async saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
     // Forward-compatibility: refuse to persist (and thereby downgrade) a document
     // written by a newer client. `loadDocument` returns such documents untouched;
     // saving one back would relabel its newer-shaped rows as this older version.
@@ -227,7 +234,7 @@ export class BrowserDocumentStore<
 
     // Validate the (normalized) aggregate BEFORE opening a transaction, so an
     // invalid stage or scene fails loud without any partial write.
-    assertValid(validateStage(normalized.stage), `stage ${normalized.stage.id}`);
+    assertValid(this.validateStage(normalized.stage), `stage ${normalized.stage.id}`);
     const stageId = normalized.stage.id;
     const seen = new Set<string>();
     for (const scene of normalized.scenes) {
@@ -256,7 +263,7 @@ export class BrowserDocumentStore<
       // refuse to overwrite a document written by a newer client — the incoming
       // document may itself be current/unversioned, so the incoming-version
       // guard above does not catch a blind overwrite of newer stored data.
-      const existingStage = await reqP<StageRow | undefined>(stages.get(stageId));
+      const existingStage = await reqP<StageRow<TStage> | undefined>(stages.get(stageId));
       if (existingStage && isFutureVersioned(existingStage)) {
         throw new Error(
           `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
@@ -292,9 +299,11 @@ export class BrowserDocumentStore<
     });
   }
 
-  async loadDocument(stageId: string): Promise<MaicDocument<TScene> | null> {
+  async loadDocument(stageId: string): Promise<MaicDocument<TScene, TStage> | null> {
     const rows = await this.txRun([STAGES, SCENES, OUTLINES], 'readonly', async (tx) => {
-      const stageRow = await reqP<StageRow | undefined>(tx.objectStore(STAGES).get(stageId));
+      const stageRow = await reqP<StageRow<TStage> | undefined>(
+        tx.objectStore(STAGES).get(stageId),
+      );
       if (!stageRow) return null;
       const sceneRows = await reqP<TScene[]>(
         tx.objectStore(SCENES).index(SCENES_BY_STAGE).getAll(stageId),
@@ -316,7 +325,7 @@ export class BrowserDocumentStore<
     // `dslVersion` stamp is not read — one bad row must not break the whole list
     // (it still fails loud when the document itself is loaded).
     return this.txRun([STAGES, SCENES], 'readonly', async (tx) => {
-      const stageRows = await reqP<StageRow[]>(tx.objectStore(STAGES).getAll());
+      const stageRows = await reqP<StageRow<TStage>[]>(tx.objectStore(STAGES).getAll());
       const index = tx.objectStore(SCENES).index(SCENES_BY_STAGE);
       const summaries: DocumentSummary[] = [];
       for (const stage of stageRows) {
@@ -347,12 +356,39 @@ export class BrowserDocumentStore<
     });
   }
 
+  async putStage(stageId: string, stage: TStage): Promise<void> {
+    assertValid(this.validateStage(stage), `stage ${stage.id}`);
+    if (stage.id !== stageId) {
+      throw new Error(
+        `@openmaic/storage: stage ${JSON.stringify(stage.id)} does not belong to document ` +
+          JSON.stringify(stageId),
+      );
+    }
+    await this.txRun([STAGES], 'readwrite', async (tx) => {
+      const stages = tx.objectStore(STAGES);
+      const stageRow = await reqP<StageRow<TStage> | undefined>(stages.get(stageId));
+      if (!stageRow) {
+        throw new Error(
+          `@openmaic/storage: cannot putStage into missing document ${JSON.stringify(stageId)}`,
+        );
+      }
+      if (dslVersionOf(stageRow) !== DSL_VERSION) {
+        throw new Error(
+          `@openmaic/storage: cannot putStage into document ${JSON.stringify(stageId)} at DSL ` +
+            `version ${JSON.stringify(dslVersionOf(stageRow))} — load and save it to bring it ` +
+            `to ${DSL_VERSION} first`,
+        );
+      }
+      stages.put({ ...stage, [DSL_VERSION_KEY]: DSL_VERSION });
+    });
+  }
+
   async putScene(stageId: string, scene: TScene): Promise<void> {
     assertValid(this.validateScene(scene), `scene ${scene.id}`);
     assertStorableScene(scene, stageId);
     await this.txRun([STAGES, SCENES], 'readwrite', async (tx) => {
       const stages = tx.objectStore(STAGES);
-      const stageRow = await reqP<StageRow | undefined>(stages.get(stageId));
+      const stageRow = await reqP<StageRow<TStage> | undefined>(stages.get(stageId));
       if (!stageRow) {
         throw new Error(
           `@openmaic/storage: cannot putScene into missing document ${JSON.stringify(stageId)}`,
@@ -376,7 +412,7 @@ export class BrowserDocumentStore<
 
   async getScene(stageId: string, sceneId: string): Promise<TScene | null> {
     const stageRow = await this.txRun([STAGES], 'readonly', (tx) =>
-      reqP<StageRow | undefined>(tx.objectStore(STAGES).get(stageId)),
+      reqP<StageRow<TStage> | undefined>(tx.objectStore(STAGES).get(stageId)),
     );
     if (!stageRow) return null;
 
@@ -396,7 +432,9 @@ export class BrowserDocumentStore<
 
   async deleteScene(stageId: string, sceneId: string): Promise<void> {
     await this.txRun([STAGES, SCENES], 'readwrite', async (tx) => {
-      const stageRow = await reqP<StageRow | undefined>(tx.objectStore(STAGES).get(stageId));
+      const stageRow = await reqP<StageRow<TStage> | undefined>(
+        tx.objectStore(STAGES).get(stageId),
+      );
       // Idempotent: nothing to delete if the document is already gone.
       if (!stageRow) return;
       // Deleting a scene is an incremental mutation, so it takes the same guard

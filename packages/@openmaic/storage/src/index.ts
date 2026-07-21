@@ -30,6 +30,7 @@ export type {
   DocumentSummary,
   SceneLike,
   SceneValidator,
+  StageValidator,
 } from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
 

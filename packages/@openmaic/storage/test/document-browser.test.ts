@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
-import { DSL_VERSION, DSL_VERSION_KEY, validateScene } from '@openmaic/dsl';
+import { DSL_VERSION, DSL_VERSION_KEY, validateScene, validateStage } from '@openmaic/dsl';
 import { BrowserDocumentStore, type MaicDocument } from '../src/index.js';
 import { runDocumentStoreContract, makeDocument, slideScene } from './document-contract.js';
 
@@ -110,6 +110,25 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     await reStampStage(idb, dbName, 'stage-1', '99.0.0');
     await expect(store.putScene('stage-1', slideScene('stage-1', 'new2', 3))).rejects.toThrow();
     expect(await store.getScene('stage-1', 'new2')).toBeNull();
+  });
+
+  test('putStage rejects when the stored document is not current', async () => {
+    const idb = new IDBFactory();
+    const dbName = 'maic-documents-putstage-noncurrent';
+    const store = new BrowserDocumentStore({ indexedDB: idb, dbName });
+    const doc = makeDocument();
+    await store.saveDocument(doc);
+
+    await reStampStage(idb, dbName, 'stage-1', undefined);
+    await expect(store.putStage('stage-1', { ...doc.stage, name: 'Stale Rename' })).rejects.toThrow(
+      /cannot putStage/,
+    );
+
+    await reStampStage(idb, dbName, 'stage-1', '99.0.0');
+    await expect(
+      store.putStage('stage-1', { ...doc.stage, name: 'Future Rename' }),
+    ).rejects.toThrow(/cannot putStage/);
+    expect((await store.loadDocument('stage-1'))!.stage.name).toBe('Intro Course');
   });
 
   test('refuses to overwrite a stored document written by a newer client', async () => {
@@ -409,5 +428,54 @@ describe('BrowserDocumentStore with an app-widened scene union', () => {
 
     const got = await store.getScene('stage-1', 'p1');
     expect(Object.keys(got!.content.cfg)).toEqual(['b', 'a']);
+  });
+});
+
+describe('BrowserDocumentStore with an app-widened stage', () => {
+  interface AppStage {
+    id: string;
+    name: string;
+    createdAt: number;
+    updatedAt: number;
+    appMetadata: { owner: string };
+  }
+
+  test('preserves extension fields and exposes them to the injected validator', async () => {
+    const seen: unknown[] = [];
+    const store = new BrowserDocumentStore<ReturnType<typeof slideScene>, AppStage>({
+      indexedDB: new IDBFactory(),
+      validateStage: (stage) => {
+        seen.push(stage);
+        const base = validateStage(stage);
+        if (!base.valid) return base;
+        const candidate = stage as Partial<AppStage>;
+        return typeof candidate.appMetadata?.owner === 'string'
+          ? { valid: true }
+          : {
+              valid: false,
+              errors: [{ path: '/appMetadata/owner', message: 'expected string owner' }],
+            };
+      },
+    });
+    const stage: AppStage = {
+      id: 'stage-wide',
+      name: 'Wide',
+      createdAt: 1,
+      updatedAt: 2,
+      appMetadata: { owner: 'app' },
+    };
+    await store.saveDocument({
+      stage,
+      scenes: [slideScene('stage-wide', 'scene-1', 0)],
+    });
+
+    const loaded = await store.loadDocument('stage-wide');
+    expect(loaded!.stage).toEqual(stage);
+    expect(seen).toContainEqual(stage);
+
+    const renamed = { ...stage, name: 'Renamed', appMetadata: { owner: 'editor' } };
+    await store.putStage('stage-wide', renamed);
+    expect((await store.loadDocument('stage-wide'))!.stage).toEqual(renamed);
+    expect(seen).toContainEqual(renamed);
   });
 });
