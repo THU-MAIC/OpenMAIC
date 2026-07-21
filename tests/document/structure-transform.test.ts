@@ -166,6 +166,173 @@ describe('document structure transform', () => {
     ]);
   });
 
+  it('keeps numbered sections that are missing from partial provider headings', async () => {
+    const articles = [
+      '第一条 租赁标的',
+      '第二条 租赁期限',
+      '第三条 租金',
+      '第四条 押金',
+      '第五条 房屋交付',
+      '第六条 使用要求',
+      '第七条 维修责任',
+      '第八条 转租限制',
+      '第九条 费用承担',
+      '第十条 房屋返还',
+      '第十一条 提前解除',
+      '第十二条 违约责任',
+      '第十三条 通知送达',
+      '第十四条 争议解决',
+      '第十五条 合同生效',
+      '第十六条 补充协议',
+      '第十七条 合同份数',
+      '第十八条 其他约定',
+    ];
+    const providerArticleIndexes = new Set([0, 1, 2, 3, 4, 5, 6, 15, 16, 17]);
+    const input: DocumentArtifact = {
+      metadata: { pageCount: 8, providerId: 'alidocmind' },
+      blocks: [
+        {
+          id: 'document-text',
+          type: 'markdown',
+          text: ['# 房屋租赁合同', ...articles].join('\n\n'),
+        },
+        {
+          id: 'provider-title',
+          type: 'layout',
+          text: '房屋租赁合同',
+          pageNumber: 1,
+          metadata: { layoutType: 'title', headingLevel: 1 },
+        },
+        ...articles
+          .map((title, index) => ({ title, index }))
+          .filter(({ index }) => providerArticleIndexes.has(index))
+          .map(({ title, index }) => ({
+            id: `provider-article-${index + 1}`,
+            type: 'layout' as const,
+            text: title,
+            pageNumber: Math.floor(index / 3) + 1,
+            metadata: { layoutType: 'title', headingLevel: 2 },
+          })),
+      ],
+      assets: [],
+    };
+
+    const output = await detectDocumentStructureTransform.apply(input, context);
+
+    expect(output.artifact.outline).toHaveLength(19);
+    expect(output.artifact.outline?.map((node) => node.title)).toEqual([
+      '房屋租赁合同',
+      ...articles,
+    ]);
+    expect(output.artifact.outline?.slice(8, 16).map((node) => node.source)).toEqual(
+      Array(8).fill('heuristic'),
+    );
+    expect(output.artifact.outline?.slice(1).every((node) => node.level === 2)).toBe(true);
+    expect(output.diagnostics?.[0].metadata).toMatchObject({
+      strategy: 'hybrid',
+      providerHeadingCount: 11,
+      textHeadingCount: 19,
+      matchedHeadingCount: 11,
+      unmatchedTextHeadingCount: 8,
+    });
+    expect(output.diagnostics?.[1]).toMatchObject({
+      severity: 'warning',
+      metadata: { retainedTextHeadingCount: 8 },
+    });
+  });
+
+  it('keeps distinct same-name provider sections when page numbers are unavailable', async () => {
+    const input: DocumentArtifact = {
+      metadata: {
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+      blocks: [
+        {
+          id: 'summary-1',
+          type: 'layout',
+          text: 'Summary',
+          metadata: { layoutType: 'title', headingLevel: 1 },
+        },
+        { id: 'body', type: 'layout', text: 'First summary body.' },
+        {
+          id: 'summary-2',
+          type: 'layout',
+          text: 'Summary',
+          metadata: { layoutType: 'title', headingLevel: 1 },
+        },
+      ],
+      assets: [],
+    };
+
+    const output = await detectDocumentStructureTransform.apply(input, context);
+
+    expect(output.artifact.outline?.map((node) => node.title)).toEqual(['Summary', 'Summary']);
+  });
+
+  it('removes a provider running title repeated across most document pages', async () => {
+    const blocks: DocumentArtifact['blocks'] = [];
+    for (let page = 1; page <= 4; page += 1) {
+      blocks.push(
+        {
+          id: `running-${page}`,
+          type: 'layout',
+          text: 'Annual Report',
+          pageNumber: page,
+          metadata: { layoutType: 'title', headingLevel: 1 },
+        },
+        {
+          id: `section-${page}`,
+          type: 'layout',
+          text: `Section ${page}`,
+          pageNumber: page,
+          metadata: { layoutType: 'title', headingLevel: 1 },
+        },
+      );
+    }
+    const input: DocumentArtifact = {
+      metadata: { pageCount: 4 },
+      blocks,
+      assets: [],
+    };
+
+    const output = await detectDocumentStructureTransform.apply(input, context);
+
+    expect(output.artifact.outline?.map((node) => node.title)).toEqual([
+      'Section 1',
+      'Section 2',
+      'Section 3',
+      'Section 4',
+    ]);
+    expect(output.diagnostics?.[0].metadata?.repeatedRunningHeadingsRemoved).toBe(4);
+  });
+
+  it('rejects sentence-like body paragraphs mislabeled as DOCX titles', async () => {
+    const input: DocumentArtifact = {
+      metadata: {
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+      blocks: [
+        {
+          id: 'heading',
+          type: 'layout',
+          text: 'Agreement Terms',
+          metadata: { layoutType: 'title', headingLevel: 1 },
+        },
+        {
+          id: 'body-as-title',
+          type: 'layout',
+          text: 'Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod.',
+          metadata: { layoutType: 'title', headingLevel: 1 },
+        },
+      ],
+      assets: [],
+    };
+
+    const output = await detectDocumentStructureTransform.apply(input, context);
+
+    expect(output.artifact.outline?.map((node) => node.title)).toEqual(['Agreement Terms']);
+  });
+
   it('creates bounded logical sections when no headings are available', async () => {
     const input: DocumentArtifact = {
       metadata: { fileName: 'plain.txt' },

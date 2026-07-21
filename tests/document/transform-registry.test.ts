@@ -12,8 +12,8 @@ describe('document transform registry', () => {
 
     expect(registry.list().map((transform) => transform.id)).toEqual([
       'normalize',
-      'detect-structure',
       'remove-noise',
+      'detect-structure',
     ]);
     expect(DEFAULT_DOCUMENT_TRANSFORMS).toHaveLength(3);
   });

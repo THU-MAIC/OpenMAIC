@@ -8,18 +8,38 @@ import type { DocumentTransform } from './types';
 import { cloneDocumentArtifact } from './utils';
 
 const LOGICAL_SECTION_CHARS = 12_000;
+const MAX_HEADING_CHARS = 160;
+const MIN_REPEATED_RUNNING_PAGES = 3;
+const MIN_REPEATED_RUNNING_PAGE_COVERAGE = 0.6;
 const MARKDOWN_HEADING = /^(#{1,6})[ \t]+(.+?)\s*$/gm;
 const NUMBERED_HEADING =
-  /^(?:chapter\s+\d+|第[一二三四五六七八九十百零〇0-9]+[章节篇部]|\d+(?:\.\d+){0,3})[\s、.:：-]+(.+)$/gim;
+  /^(?:(?:chapter\s+\d+|第[一二三四五六七八九十百零〇0-9]+[章节篇部]|\d+(?:\.\d+){0,3})[\s、.:：-]+.+|第[一二三四五六七八九十百零〇0-9]+条(?:[\s、.:：-]*.*))$/gim;
 
 interface HeadingCandidate {
   title: string;
   level: number;
   block: DocumentBlock;
   blockIndex: number;
+  pageNumber?: number;
   startOffset?: number;
   source: DocumentOutlineNode['source'];
   confidence: number;
+}
+
+interface ReconciledHeadings {
+  candidates: HeadingCandidate[];
+  matchedCount: number;
+  unmatchedProviderCount: number;
+  unmatchedTextCount: number;
+}
+
+function looksLikeBodyParagraph(value: string): boolean {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length > MAX_HEADING_CHARS) return true;
+
+  const wordCount = text.split(/\s+/).filter(Boolean).length;
+  const sentenceMarks = text.match(/[.!?。！？…](?:\s|$)/g)?.length ?? 0;
+  return sentenceMarks >= 2 || (wordCount >= 8 && /[.!?。！？…]$/.test(text));
 }
 
 function headingFromMetadata(
@@ -34,14 +54,19 @@ function headingFromMetadata(
   if (typeof headingLevel !== 'number' && !isHeadingLayout && role !== 'heading') return undefined;
 
   const title = block.text?.trim() || block.html?.trim();
-  if (!title) return undefined;
+  if (!title || looksLikeBodyParagraph(title)) return undefined;
+  const normalizedLevel =
+    typeof headingLevel === 'number' && Number.isFinite(headingLevel)
+      ? Math.max(1, Math.trunc(headingLevel))
+      : undefined;
   return {
     title: title.split('\n')[0],
-    level: typeof headingLevel === 'number' ? Math.min(6, Math.max(1, headingLevel)) : 1,
+    level: normalizedLevel ?? 1,
     block,
     blockIndex,
-    source: typeof headingLevel === 'number' ? 'provider' : 'heading',
-    confidence: typeof headingLevel === 'number' ? 1 : 0.9,
+    pageNumber: block.pageNumber,
+    source: normalizedLevel === undefined ? 'heading' : 'provider',
+    confidence: normalizedLevel === undefined ? 0.9 : 1,
   };
 }
 
@@ -54,33 +79,40 @@ function headingsFromText(block: DocumentBlock, blockIndex: number): HeadingCand
       level: match[1].length,
       block,
       blockIndex,
+      pageNumber: block.pageNumber,
       startOffset: match.index,
       source: 'heading',
       confidence: 0.95,
     });
   }
-  if (candidates.length > 0) return candidates;
-
   for (const match of text.matchAll(NUMBERED_HEADING)) {
     const heading = match[0].trim();
-    if (heading.length > 160) continue;
+    if (heading.length > MAX_HEADING_CHARS) continue;
     const numberedPrefix = heading.match(/^\d+(?:\.\d+)*/)?.[0];
-    const chineseSection = /^第.+节/.test(heading);
+    const chineseSubsection = /^第.+[节条]/.test(heading);
     candidates.push({
       title: heading,
       level: numberedPrefix
         ? Math.min(6, numberedPrefix.split('.').length)
-        : chineseSection
+        : chineseSubsection
           ? 2
           : 1,
       block,
       blockIndex,
+      pageNumber: block.pageNumber,
       startOffset: match.index,
       source: 'heuristic',
       confidence: 0.75,
     });
   }
-  return candidates;
+  return candidates
+    .sort((a, b) => (a.startOffset ?? 0) - (b.startOffset ?? 0))
+    .filter(
+      (candidate, index, all) =>
+        index === 0 ||
+        candidate.startOffset !== all[index - 1].startOffset ||
+        normalizedHeadingTitle(candidate.title) !== normalizedHeadingTitle(all[index - 1].title),
+    );
 }
 
 function normalizedHeadingTitle(value: string): string {
@@ -91,18 +123,145 @@ function normalizedHeadingTitle(value: string): string {
     .toLocaleLowerCase();
 }
 
-function deduplicateProviderHeadings(candidates: HeadingCandidate[]): HeadingCandidate[] {
-  const seen = new Set<string>();
-  return candidates.filter((candidate) => {
-    const key = [
-      candidate.block.pageNumber ?? 'unknown-page',
-      candidate.level,
-      normalizedHeadingTitle(candidate.title),
-    ].join(':');
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
+function deduplicateAdjacentProviderHeadings(candidates: HeadingCandidate[]): HeadingCandidate[] {
+  return candidates.filter((candidate, index) => {
+    const previous = candidates[index - 1];
+    if (!previous) return true;
+    return !(
+      typeof candidate.block.pageNumber === 'number' &&
+      candidate.block.pageNumber === previous.block.pageNumber &&
+      candidate.blockIndex === previous.blockIndex + 1 &&
+      candidate.level === previous.level &&
+      normalizedHeadingTitle(candidate.title) === normalizedHeadingTitle(previous.title)
+    );
   });
+}
+
+function repeatedRunningHeadingTitles(
+  artifact: DocumentArtifact,
+  candidates: HeadingCandidate[],
+): Set<string> {
+  const documentPageCount =
+    artifact.metadata.pageCount ??
+    new Set(
+      artifact.blocks
+        .map((block) => block.pageNumber)
+        .filter((page): page is number => typeof page === 'number'),
+    ).size;
+  if (documentPageCount < MIN_REPEATED_RUNNING_PAGES) return new Set();
+
+  const pagesByTitle = new Map<string, Set<number>>();
+  for (const candidate of candidates) {
+    if (typeof candidate.block.pageNumber !== 'number') continue;
+    const title = normalizedHeadingTitle(candidate.title);
+    const pages = pagesByTitle.get(title) ?? new Set<number>();
+    pages.add(candidate.block.pageNumber);
+    pagesByTitle.set(title, pages);
+  }
+
+  return new Set(
+    Array.from(pagesByTitle.entries())
+      .filter(
+        ([, pages]) =>
+          pages.size >= MIN_REPEATED_RUNNING_PAGES &&
+          pages.size / documentPageCount >= MIN_REPEATED_RUNNING_PAGE_COVERAGE,
+      )
+      .map(([title]) => title),
+  );
+}
+
+function mergeMatchedHeading(
+  textHeading: HeadingCandidate,
+  providerHeading: HeadingCandidate,
+): HeadingCandidate {
+  if (providerHeading.source !== 'provider') return textHeading;
+  return {
+    ...textHeading,
+    title: providerHeading.title,
+    level: providerHeading.level,
+    pageNumber: providerHeading.pageNumber,
+    source: 'provider',
+    confidence: providerHeading.confidence,
+  };
+}
+
+function reconcileHeadings(
+  providerHeadings: HeadingCandidate[],
+  textHeadings: HeadingCandidate[],
+): ReconciledHeadings {
+  if (providerHeadings.length === 0) {
+    return {
+      candidates: textHeadings,
+      matchedCount: 0,
+      unmatchedProviderCount: 0,
+      unmatchedTextCount: textHeadings.length,
+    };
+  }
+  if (textHeadings.length === 0) {
+    return {
+      candidates: providerHeadings,
+      matchedCount: 0,
+      unmatchedProviderCount: providerHeadings.length,
+      unmatchedTextCount: 0,
+    };
+  }
+
+  const matchedTextIndexes = new Set<number>();
+  const textIndexByProviderIndex = new Map<number, number>();
+  let lastMatchedTextIndex = -1;
+
+  for (const [providerIndex, providerHeading] of providerHeadings.entries()) {
+    const providerTitle = normalizedHeadingTitle(providerHeading.title);
+    const textIndex = textHeadings.findIndex(
+      (textHeading, index) =>
+        index > lastMatchedTextIndex &&
+        !matchedTextIndexes.has(index) &&
+        normalizedHeadingTitle(textHeading.title) === providerTitle,
+    );
+    if (textIndex < 0) continue;
+    matchedTextIndexes.add(textIndex);
+    textIndexByProviderIndex.set(providerIndex, textIndex);
+    lastMatchedTextIndex = Math.max(lastMatchedTextIndex, textIndex);
+  }
+
+  const providerByTextIndex = new Map<number, HeadingCandidate>();
+  for (const [providerIndex, textIndex] of textIndexByProviderIndex) {
+    providerByTextIndex.set(textIndex, providerHeadings[providerIndex]);
+  }
+
+  const providersBeforeTextIndex = new Map<number, HeadingCandidate[]>();
+  const providersAfterText = [] as HeadingCandidate[];
+  for (const [providerIndex, providerHeading] of providerHeadings.entries()) {
+    if (textIndexByProviderIndex.has(providerIndex)) continue;
+    const nextMatchedProviderIndex = Array.from(textIndexByProviderIndex.keys()).find(
+      (matchedProviderIndex) => matchedProviderIndex > providerIndex,
+    );
+    if (nextMatchedProviderIndex === undefined) {
+      providersAfterText.push(providerHeading);
+      continue;
+    }
+    const textIndex = textIndexByProviderIndex.get(nextMatchedProviderIndex) as number;
+    const pending = providersBeforeTextIndex.get(textIndex) ?? [];
+    pending.push(providerHeading);
+    providersBeforeTextIndex.set(textIndex, pending);
+  }
+
+  const candidates: HeadingCandidate[] = [];
+  for (const [textIndex, textHeading] of textHeadings.entries()) {
+    candidates.push(...(providersBeforeTextIndex.get(textIndex) ?? []));
+    const providerHeading = providerByTextIndex.get(textIndex);
+    candidates.push(
+      providerHeading ? mergeMatchedHeading(textHeading, providerHeading) : textHeading,
+    );
+  }
+  candidates.push(...providersAfterText);
+
+  return {
+    candidates,
+    matchedCount: matchedTextIndexes.size,
+    unmatchedProviderCount: providerHeadings.length - matchedTextIndexes.size,
+    unmatchedTextCount: textHeadings.length - matchedTextIndexes.size,
+  };
 }
 
 function candidatesToOutline(
@@ -132,8 +291,8 @@ function candidatesToOutline(
       order: index + 1,
       parentId,
       blockIds: Array.from(new Set(sectionBlocks.map((block) => block.id))),
-      pageStart: candidate.block.pageNumber,
-      pageEnd: lastSectionBlock.pageNumber ?? candidate.block.pageNumber,
+      pageStart: candidate.pageNumber ?? candidate.block.pageNumber,
+      pageEnd: lastSectionBlock.pageNumber ?? candidate.pageNumber ?? candidate.block.pageNumber,
       startOffset: candidate.startOffset,
       endOffset:
         nextHeading?.block.id === candidate.block.id && typeof nextHeading.startOffset === 'number'
@@ -226,17 +385,30 @@ export const detectDocumentStructureTransform: DocumentTransform = {
       const metadataHeading = headingFromMetadata(block, blockIndex);
       return metadataHeading ? [metadataHeading] : [];
     });
-    const providerHeadings = metadataHeadings.filter((heading) => heading.source === 'provider');
-    const textHeadings = artifact.blocks.flatMap((block, blockIndex) =>
-      headingsFromText(block, blockIndex),
+    const deduplicatedMetadataHeadings = deduplicateAdjacentProviderHeadings(metadataHeadings);
+    const repeatedRunningTitles = repeatedRunningHeadingTitles(
+      artifact,
+      deduplicatedMetadataHeadings,
     );
-    const prefersProviderHeadings = providerHeadings.length > 0;
-    const selectedMetadataHeadings = deduplicateProviderHeadings(metadataHeadings);
-    const candidates = prefersProviderHeadings
-      ? selectedMetadataHeadings
-      : textHeadings.length > 0
-        ? textHeadings
-        : selectedMetadataHeadings;
+    const selectedMetadataHeadings = deduplicatedMetadataHeadings.filter(
+      (heading) => !repeatedRunningTitles.has(normalizedHeadingTitle(heading.title)),
+    );
+    const providerHeadings = selectedMetadataHeadings.filter(
+      (heading) => heading.source === 'provider',
+    );
+    const textHeadings = artifact.blocks.flatMap((block, blockIndex) =>
+      block.type === 'text' || block.type === 'markdown' ? headingsFromText(block, blockIndex) : [],
+    );
+    const reconciled = reconcileHeadings(selectedMetadataHeadings, textHeadings);
+    const candidates = reconciled.candidates;
+    const strategy =
+      selectedMetadataHeadings.length > 0 && textHeadings.length > 0
+        ? 'hybrid'
+        : providerHeadings.length > 0
+          ? 'provider'
+          : candidates.length > 0
+            ? 'heading'
+            : 'logical';
     artifact.outline =
       candidates.length > 0
         ? candidatesToOutline(candidates, artifact.blocks)
@@ -245,24 +417,40 @@ export const detectDocumentStructureTransform: DocumentTransform = {
     const diagnostics: DocumentDiagnostic[] = [
       {
         severity: 'info',
-        message: prefersProviderHeadings
-          ? `Reused ${artifact.outline.length} provider heading(s).`
-          : candidates.length > 0
-            ? `Detected ${artifact.outline.length} document heading(s).`
-            : `No headings detected; created ${artifact.outline.length} logical section(s).`,
+        message:
+          strategy === 'hybrid'
+            ? `Reconciled provider and text headings into ${artifact.outline.length} section(s).`
+            : strategy === 'provider'
+              ? `Reused ${artifact.outline.length} provider heading(s).`
+              : candidates.length > 0
+                ? `Detected ${artifact.outline.length} document heading(s).`
+                : `No headings detected; created ${artifact.outline.length} logical section(s).`,
         metadata: {
           outlineNodeCount: artifact.outline.length,
-          strategy: prefersProviderHeadings
-            ? 'provider'
-            : candidates.length > 0
-              ? 'heading'
-              : 'logical',
+          strategy,
           providerHeadingCount: metadataHeadings.length,
+          textHeadingCount: textHeadings.length,
+          matchedHeadingCount: reconciled.matchedCount,
+          unmatchedProviderHeadingCount: reconciled.unmatchedProviderCount,
+          unmatchedTextHeadingCount: reconciled.unmatchedTextCount,
           duplicateProviderHeadingsRemoved:
-            metadataHeadings.length - selectedMetadataHeadings.length,
+            metadataHeadings.length - deduplicatedMetadataHeadings.length,
+          repeatedRunningHeadingsRemoved:
+            deduplicatedMetadataHeadings.length - selectedMetadataHeadings.length,
         },
       },
     ];
+    if (providerHeadings.length > 0 && reconciled.unmatchedTextCount > 0) {
+      diagnostics.push({
+        severity: 'warning',
+        message: `Provider structure was partial; retained ${reconciled.unmatchedTextCount} additional text heading(s).`,
+        metadata: {
+          providerHeadingCount: providerHeadings.length,
+          matchedHeadingCount: reconciled.matchedCount,
+          retainedTextHeadingCount: reconciled.unmatchedTextCount,
+        },
+      });
+    }
     return { artifact, diagnostics };
   },
 };

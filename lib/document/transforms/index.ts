@@ -21,8 +21,8 @@ export type {
 
 export const DEFAULT_DOCUMENT_TRANSFORMS = [
   normalizeDocumentTransform,
-  detectDocumentStructureTransform,
   removeDocumentNoiseTransform,
+  detectDocumentStructureTransform,
 ] as const;
 
 export function createDefaultDocumentTransformRegistry(): DocumentTransformRegistry {

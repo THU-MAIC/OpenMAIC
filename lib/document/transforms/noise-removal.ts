@@ -2,7 +2,8 @@ import type { DocumentArtifact, DocumentBlock, DocumentDiagnostic } from '../typ
 import type { DocumentTransform } from './types';
 import { cloneDocumentArtifact } from './utils';
 
-const PAGE_NUMBER = /^(?:page\s*)?[-–—]?\s*\d{1,4}\s*[-–—]?$/i;
+const BARE_PAGE_NUMBER = /^\d{1,4}$/;
+const EXPLICIT_PAGE_NUMBER = /^(?:page\s*\d{1,4}|[-–—]\s*\d{1,4}\s*[-–—])$/i;
 const MAX_REPEATED_NOISE_CHARS = 120;
 const MIN_REPEATED_PAGES = 3;
 const MIN_PAGE_COVERAGE = 0.6;
@@ -94,8 +95,9 @@ export const removeDocumentNoiseTransform: DocumentTransform = {
       const text = normalizedBlockText(block);
       const standalonePageNumber =
         Boolean(text) &&
-        PAGE_NUMBER.test(text) &&
-        (isExplicitHeaderOrFooter(block) || block.metadata?.role === 'page-number');
+        ((block.metadata?.role === 'page-number' &&
+          (BARE_PAGE_NUMBER.test(text) || EXPLICIT_PAGE_NUMBER.test(text))) ||
+          (EXPLICIT_PAGE_NUMBER.test(text) && isExplicitHeaderOrFooter(block)));
       const repeatedHeaderOrFooter =
         Boolean(text) && isExplicitHeaderOrFooter(block) && repeatedTexts.has(text);
       if (standalonePageNumber || repeatedHeaderOrFooter) removedBlockIds.add(block.id);

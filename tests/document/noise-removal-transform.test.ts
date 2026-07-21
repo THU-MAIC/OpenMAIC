@@ -115,4 +115,59 @@ describe('document noise-removal transform', () => {
       'header_3',
     ]);
   });
+
+  it('preserves bare numeric footer content without an explicit page-number role', async () => {
+    const input: DocumentArtifact = {
+      metadata: { pageCount: 2 },
+      blocks: [
+        {
+          id: 'year',
+          type: 'layout',
+          text: '2024',
+          pageNumber: 1,
+          metadata: { role: 'footer' },
+        },
+        {
+          id: 'code',
+          type: 'layout',
+          text: '512',
+          pageNumber: 2,
+          bbox: { x: 0.4, y: 0.92, width: 0.1, height: 0.03 },
+        },
+      ],
+      assets: [],
+    };
+
+    const output = await removeDocumentNoiseTransform.apply(input, context);
+
+    expect(output.status).toBe('skipped');
+    expect(output.artifact.blocks.map((block) => block.id)).toEqual(['year', 'code']);
+  });
+
+  it('removes decorated page numbers with footer evidence', async () => {
+    const input: DocumentArtifact = {
+      metadata: { pageCount: 2 },
+      blocks: [
+        {
+          id: 'page-prefix',
+          type: 'layout',
+          text: 'Page 12',
+          pageNumber: 1,
+          metadata: { role: 'footer' },
+        },
+        {
+          id: 'page-dashes',
+          type: 'layout',
+          text: '— 13 —',
+          pageNumber: 2,
+          bbox: { x: 0.4, y: 0.92, width: 0.1, height: 0.03 },
+        },
+      ],
+      assets: [],
+    };
+
+    const output = await removeDocumentNoiseTransform.apply(input, context);
+
+    expect(output.artifact.blocks).toEqual([]);
+  });
 });

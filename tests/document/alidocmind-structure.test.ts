@@ -60,9 +60,30 @@ describe('AliDocMind structure preservation', () => {
       { title: 'Scope', level: 3, source: 'provider', parentId: 'outline_1' },
     ]);
     expect(output.diagnostics?.[0].metadata).toMatchObject({
-      strategy: 'provider',
+      strategy: 'hybrid',
       providerHeadingCount: 3,
+      textHeadingCount: 2,
+      matchedHeadingCount: 2,
       duplicateProviderHeadingsRemoved: 1,
     });
+  });
+
+  it('normalizes a zero-based AliDocMind heading hierarchy to one-based levels', async () => {
+    const parsed = await aliDocMindLayoutsToParsedPdf(
+      {
+        data: {
+          layouts: [
+            { type: 'title', text: 'Contract', pageNum: 0, level: 0 },
+            { type: 'title', text: 'Terms', pageNum: 0, level: 1 },
+          ],
+        },
+      },
+      'contract.docx',
+    );
+
+    expect(parsed.layout).toMatchObject([
+      { content: 'Contract', level: 1 },
+      { content: 'Terms', level: 2 },
+    ]);
   });
 });
