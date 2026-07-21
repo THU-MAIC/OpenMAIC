@@ -13,6 +13,7 @@ vi.mock('@/lib/runtime/store', () => ({
 vi.mock('@/lib/utils/database', () => ({
   db: {
     stages: { delete: vi.fn().mockResolvedValue(undefined) },
+    playbackState: { delete: vi.fn().mockResolvedValue(undefined) },
     scenes: {
       where: () => ({
         equals: () => ({
