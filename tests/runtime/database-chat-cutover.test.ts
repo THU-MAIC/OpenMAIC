@@ -802,10 +802,11 @@ describe('database runtime chat integration', () => {
 
   it('enrolls a stage save before document writes so maintenance cannot overtake it', async () => {
     stubMemoryLocalStorage();
-    const { db } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
     const { saveStageData } = await import('@/lib/utils/stage-storage');
     const { withRuntimeStorageExclusiveLock } = await import('@/lib/utils/chat-storage-lock');
-    const originalPut = db.stages.put.bind(db.stages);
+    const documentStore = getDocumentStore();
+    const originalSave = documentStore.saveDocument.bind(documentStore);
     let documentWriteStarted!: () => void;
     const didStartDocumentWrite = new Promise<void>((resolve) => {
       documentWriteStarted = resolve;
@@ -814,11 +815,11 @@ describe('database runtime chat integration', () => {
     const documentWriteMayContinue = new Promise<void>((resolve) => {
       releaseDocumentWrite = resolve;
     });
-    vi.spyOn(db.stages, 'put').mockImplementation((async (record, key) => {
+    vi.spyOn(documentStore, 'saveDocument').mockImplementation(async (document) => {
       documentWriteStarted();
       await documentWriteMayContinue;
-      return originalPut(record, key);
-    }) as typeof db.stages.put);
+      return originalSave(document);
+    });
 
     const saving = saveStageData('stage-save-enrollment', {
       stage: {
@@ -846,11 +847,12 @@ describe('database runtime chat integration', () => {
   it('does not wait inside a shared epoch for a partition read queued after maintenance', async () => {
     vi.stubGlobal('navigator', { locks: fairLockManager() });
     stubMemoryLocalStorage();
-    const { db } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
     const { loadChatSessions } = await import('@/lib/utils/chat-storage');
     const { withRuntimeStorageExclusiveLock } = await import('@/lib/utils/chat-storage-lock');
     const { saveStageData } = await import('@/lib/utils/stage-storage');
-    const originalPut = db.stages.put.bind(db.stages);
+    const documentStore = getDocumentStore();
+    const originalSave = documentStore.saveDocument.bind(documentStore);
     let documentWriteStarted!: () => void;
     const didStartDocumentWrite = new Promise<void>((resolve) => {
       documentWriteStarted = resolve;
@@ -859,11 +861,11 @@ describe('database runtime chat integration', () => {
     const documentWriteMayContinue = new Promise<void>((resolve) => {
       releaseDocumentWrite = resolve;
     });
-    vi.spyOn(db.stages, 'put').mockImplementation((async (record, key) => {
+    vi.spyOn(documentStore, 'saveDocument').mockImplementation(async (document) => {
       documentWriteStarted();
       await documentWriteMayContinue;
-      return originalPut(record, key);
-    }) as typeof db.stages.put);
+      return originalSave(document);
+    });
 
     const saving = saveStageData('stage-epoch-order', {
       stage: {
@@ -1245,8 +1247,7 @@ describe('database runtime chat integration', () => {
   it('keeps empty-chat document saves available without Web Locks', async () => {
     vi.stubGlobal('navigator', {});
     stubMemoryLocalStorage();
-    const { db } = await import('@/lib/utils/database');
-    const { saveStageData } = await import('@/lib/utils/stage-storage');
+    const { loadStageData, saveStageData } = await import('@/lib/utils/stage-storage');
 
     await expect(
       saveStageData('stage-no-chat', {
@@ -1261,8 +1262,8 @@ describe('database runtime chat integration', () => {
         chats: [],
       }),
     ).resolves.toBeUndefined();
-    await expect(db.stages.get('stage-no-chat')).resolves.toMatchObject({
-      name: 'No chat stage',
+    await expect(loadStageData('stage-no-chat')).resolves.toMatchObject({
+      stage: { name: 'No chat stage' },
     });
   });
 
@@ -1287,14 +1288,17 @@ describe('database runtime chat integration', () => {
   it('keeps unrelated document saves available for an unchanged read-only legacy snapshot', async () => {
     vi.stubGlobal('navigator', {});
     stubMemoryLocalStorage();
+    const { getDocumentStore } = await import('@/lib/document-store');
     const { db } = await import('@/lib/utils/database');
     const { loadStageData, saveStageData } = await import('@/lib/utils/stage-storage');
-    await db.stages.put({
+    const legacyStage = {
       id: 'stage-legacy-autosave',
       name: 'Existing stage',
       createdAt: 1_000,
       updatedAt: 2_000,
-    });
+    };
+    await db.stages.put(legacyStage);
+    await getDocumentStore().saveDocument({ stage: legacyStage, scenes: [] });
     await db.chatSessions.put({
       ...chatSession(),
       stageId: 'stage-legacy-autosave',
@@ -1307,8 +1311,11 @@ describe('database runtime chat integration', () => {
         stage: { ...loaded!.stage, name: 'Updated stage' },
       }),
     ).resolves.toBeUndefined();
+    await expect(loadStageData('stage-legacy-autosave')).resolves.toMatchObject({
+      stage: { name: 'Updated stage' },
+    });
     await expect(db.stages.get('stage-legacy-autosave')).resolves.toMatchObject({
-      name: 'Updated stage',
+      name: 'Existing stage',
     });
     await expect(
       db.chatSessions.where('stageId').equals('stage-legacy-autosave').count(),

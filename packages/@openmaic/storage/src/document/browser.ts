@@ -333,6 +333,9 @@ export class BrowserDocumentStore<
         summaries.push({
           id: stage.id,
           name: stage.name,
+          description: stage.description,
+          interactiveMode: stage.interactiveMode,
+          taskEngineMode: stage.taskEngineMode,
           createdAt: stage.createdAt,
           updatedAt: stage.updatedAt,
           sceneCount,

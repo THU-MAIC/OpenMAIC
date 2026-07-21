@@ -21,8 +21,27 @@ vi.mock('@/lib/pbl/v2/runtime/hydration', () => ({
   hydratePBLScenesFromRuntime: (...args: unknown[]) => hydratePBLScenesFromRuntimeMock(...args),
 }));
 vi.mock('@/lib/utils/stage-storage', () => ({
-  saveStageData: (...args: unknown[]) => saveStageDataMock(...args),
-  loadStageData: (...args: unknown[]) => loadStageDataMock(...args),
+  saveStageData: async (...args: unknown[]) => {
+    await saveStageDataMock(...args);
+    const data = args[1] as { outline?: unknown };
+    if (data.outline) await stageOutlinesPut(data.outline);
+  },
+  loadStageData: async (...args: unknown[]) => {
+    const data = await loadStageDataMock(...args);
+    if (!data) return data;
+    const legacyOutline = await stageOutlinesGet(args[0]);
+    return legacyOutline
+      ? {
+          ...data,
+          outline: {
+            outlines: legacyOutline.outlines,
+            generationComplete: legacyOutline.generationComplete,
+            createdAt: legacyOutline.createdAt ?? Date.now(),
+            updatedAt: legacyOutline.updatedAt ?? Date.now(),
+          },
+        }
+      : data;
+  },
 }));
 vi.mock('@/lib/utils/database', () => ({
   db: { stageOutlines: { put: stageOutlinesPut, get: stageOutlinesGet } },
@@ -112,6 +131,7 @@ beforeEach(() => {
   stageOutlinesGet.mockReset();
   stageOutlinesPut.mockReset();
   loadStageDataMock.mockReset();
+  saveStageDataMock.mockReset().mockResolvedValue(undefined);
 });
 
 afterEach(async () => {
@@ -134,7 +154,11 @@ describe('generationComplete', () => {
   });
 
   it('setGenerationComplete(true) flips the flag and persists it alongside outlines', async () => {
-    useStageStore.setState({ stage: makeStage(), outlines: [makeOutline(1), makeOutline(2)] });
+    useStageStore.setState({
+      stage: makeStage(),
+      scenes: [makeSlideScene('final', 1)],
+      outlines: [makeOutline(1), makeOutline(2)],
+    });
     useStageStore.getState().setGenerationComplete(true);
     expect(useStageStore.getState().generationComplete).toBe(true);
     // Persisted via an async dynamic import.
@@ -145,6 +169,31 @@ describe('generationComplete', () => {
     };
     expect(record.generationComplete).toBe(true);
     expect(record.outlines.map((o) => o.order)).toEqual([1, 2]);
+    const aggregate = saveStageDataMock.mock.calls.at(-1)![1] as {
+      scenes: Scene[];
+      outline: { generationComplete?: boolean };
+    };
+    expect(aggregate.scenes.map((scene) => scene.id)).toEqual(['final']);
+    expect(aggregate.outline.generationComplete).toBe(true);
+  });
+
+  it('ordinary autosave carries the authoritative outline snapshot', async () => {
+    useStageStore.setState({
+      stage: makeStage(),
+      scenes: [makeSlideScene('scene', 1)],
+      outlines: [makeOutline(1)],
+      generationComplete: false,
+    });
+    await expect(useStageStore.getState().saveToStorage()).resolves.toBe(true);
+    expect(saveStageDataMock).toHaveBeenLastCalledWith(
+      'stage-1',
+      expect.objectContaining({
+        outline: expect.objectContaining({
+          outlines: [expect.objectContaining({ id: 'outline-1' })],
+          generationComplete: false,
+        }),
+      }),
+    );
   });
 
   // Guards a persistence race: the final scene saves through a 500ms debounce,
@@ -316,6 +365,7 @@ describe('generationComplete', () => {
     expect(useStageStore.getState().generationComplete).toBe(true);
     expect(useStageStore.getState().generatingOutlines).toEqual([]);
     // Healed flag is written back so the next load is authoritative.
+    await vi.waitFor(() => expect(stageOutlinesPut).toHaveBeenCalled());
     const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
     expect(healed.generationComplete).toBe(true);
   });
@@ -358,6 +408,7 @@ describe('generationComplete', () => {
     await useStageStore.getState().loadFromStorage('stage-1');
 
     expect(useStageStore.getState().generationComplete).toBe(true);
+    await vi.waitFor(() => expect(stageOutlinesPut).toHaveBeenCalled());
     const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
     expect(healed.generationComplete).toBe(true);
   });
@@ -734,6 +785,7 @@ describe('generationComplete', () => {
       stageId: 'stage-a',
     });
     expect(useStageStore.getState().currentSceneId).toBe('disk-a');
+    await vi.waitFor(() => expect(stageOutlinesPut).toHaveBeenCalled());
     const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
     expect(healed.generationComplete).toBe(true);
   });

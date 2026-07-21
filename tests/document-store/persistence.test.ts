@@ -5,10 +5,10 @@ import {
   canonicalizeLegacyOutline,
   canonicalizeLegacyScene,
   canonicalizeLegacyStage,
-} from '@/lib/document/canonicalize';
-import { getDocumentStore } from '@/lib/document/store';
-import type { AppDocument } from '@/lib/document/persistence-types';
-import { validateAppScene, validateAppStage } from '@/lib/document/validators';
+} from '@/lib/document-store/canonicalize';
+import { getDocumentStore } from '@/lib/document-store/store';
+import type { AppDocument } from '@/lib/document-store/persistence-types';
+import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { AppScene } from '@/lib/types/stage';
 import type { SceneRecord, StageOutlinesRecord, StageRecord } from '@/lib/utils/database';

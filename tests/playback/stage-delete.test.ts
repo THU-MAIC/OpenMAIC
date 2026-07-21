@@ -6,6 +6,16 @@ const { clearCursor, deleteLegacyPlaybackRow } = vi.hoisted(() => ({
 }));
 
 vi.mock('@/lib/playback/cursor', () => ({ clearCursor }));
+vi.mock('@/lib/document-store', () => ({
+  clearCurrentScene: vi.fn().mockResolvedValue(undefined),
+  mutateDocument: vi.fn(async (_stageId, work) =>
+    work(null, { deleteDocument: vi.fn().mockResolvedValue(undefined) }),
+  ),
+  getDocumentStore: vi.fn(() => ({
+    loadDocument: vi.fn().mockResolvedValue(null),
+    deleteDocument: vi.fn().mockResolvedValue(undefined),
+  })),
+}));
 vi.mock('@/lib/runtime/store', () => ({
   beginStageRuntimeDeletionSafely: vi.fn(() => ({
     completion: Promise.resolve(),
@@ -14,7 +24,9 @@ vi.mock('@/lib/runtime/store', () => ({
 }));
 vi.mock('@/lib/utils/database', () => ({
   db: {
+    transaction: vi.fn(async (_mode, _tables, work) => work()),
     stages: { delete: vi.fn().mockResolvedValue(undefined) },
+    stageOutlines: { delete: vi.fn().mockResolvedValue(undefined) },
     playbackState: { delete: deleteLegacyPlaybackRow },
     scenes: {
       where: () => ({
