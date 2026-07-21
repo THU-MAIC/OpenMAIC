@@ -6,7 +6,12 @@ import type {
 } from '@openmaic/dsl';
 import { RuntimeAppendConflictError, type RuntimeStore } from '@openmaic/storage';
 import type { QuestionResult } from '@/lib/quiz/grading';
-import type { QuizAnswers } from '@/lib/quiz/persistence';
+import {
+  clearDraftRecovery,
+  clearLegacyQuizStateSnapshot,
+  readLegacyQuizStateSnapshot,
+  type QuizAnswers,
+} from '@/lib/quiz/persistence';
 import { getLearnerKey } from '@/lib/runtime/learner-key';
 import { getRuntimeStore } from '@/lib/runtime/store';
 
@@ -24,6 +29,8 @@ export interface QuizAttemptRecordInput {
   phase: QuizAttemptPhase;
   answers: QuizAnswers;
   results?: QuestionResult[];
+  /** Begin a distinct retry even when the prior attempt has the same payload. */
+  startNewAttempt?: boolean;
 }
 
 export interface LegacyQuizAttemptInput {
@@ -40,6 +47,32 @@ export interface QuizAttemptRuntimeDeps {
   learnerKey?: string;
   now?: () => string;
   mintRecordId?: () => string;
+}
+
+export class QuizRetryProgressedError extends Error {
+  constructor(sessionId: string) {
+    super(`Quiz retry ${JSON.stringify(sessionId)} already progressed in another tab`);
+    this.name = 'QuizRetryProgressedError';
+  }
+}
+
+export interface QuizAttemptState {
+  sessionId: string;
+  status: RuntimeSession['status'];
+  phase: QuizAttemptPhase;
+  answers: QuizAnswers;
+  results?: QuestionResult[];
+}
+
+export interface LoadedQuizAttemptState {
+  /** Learner-scoped deterministic root id used by every new write/retry. */
+  attemptId: string;
+  state?: QuizAttemptState;
+}
+
+export interface QuizAttemptStateInput {
+  stageId: string;
+  sceneId: string;
 }
 
 export type QuizDraftInput = Omit<QuizAttemptRecordInput, 'phase' | 'results'>;
@@ -64,6 +97,32 @@ const PHASE_ORDER: Record<QuizAttemptPhase, number> = {
 };
 
 const queues = new WeakMap<RuntimeStore, Map<string, Promise<void>>>();
+const writerTails = new Map<string, Set<Promise<void>>>();
+
+async function awaitQueuedWriterLineage(attemptId: string): Promise<void> {
+  let queueKey = attemptId;
+  while (true) {
+    while (true) {
+      const pending = writerTails.get(queueKey);
+      if (!pending?.size) break;
+      await Promise.all(pending);
+    }
+    const parent = queueKey.replace(/:retry:\d+$/, '');
+    if (parent === queueKey) return;
+    queueKey = parent;
+  }
+}
+
+async function awaitQueuedAttemptLineage(store: RuntimeStore, attemptId: string): Promise<void> {
+  let queueKey = attemptId;
+  while (true) {
+    const queued = queues.get(store)?.get(queueKey);
+    if (queued) await queued;
+    const parent = queueKey.replace(/:retry:\d+$/, '');
+    if (parent === queueKey) return;
+    queueKey = parent;
+  }
+}
 
 /**
  * Coalesce draft snapshots and serialize every phase through one local chain.
@@ -73,7 +132,12 @@ const queues = new WeakMap<RuntimeStore, Map<string, Promise<void>>>();
  */
 export function createQuizAttemptWriter(options: QuizAttemptWriterOptions = {}): QuizAttemptWriter {
   const debounceMs = options.debounceMs ?? 500;
-  const write = options.write ?? ((input) => recordQuizAttempt(input));
+  const write =
+    options.write ??
+    (async (input) => {
+      await recordQuizAttempt(input);
+      clearDraftRecovery(input.sceneId, input.attemptId, input.answers);
+    });
   const onError = options.onError ?? (() => {});
   let pendingDraft: QuizDraftInput | undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -87,7 +151,20 @@ export function createQuizAttemptWriter(options: QuizAttemptWriterOptions = {}):
   const run = (input: QuizAttemptRecordInput): Promise<void> => {
     const operation = tail.then(() => write(input));
     void operation.catch(onError);
-    tail = operation.catch(() => {});
+    const settled = operation.catch(() => {});
+    tail = settled;
+    let attemptTails = writerTails.get(input.attemptId);
+    if (!attemptTails) {
+      attemptTails = new Set();
+      writerTails.set(input.attemptId, attemptTails);
+    }
+    attemptTails.add(settled);
+    void settled.finally(() => {
+      attemptTails.delete(settled);
+      if (attemptTails.size === 0 && writerTails.get(input.attemptId) === attemptTails) {
+        writerTails.delete(input.attemptId);
+      }
+    });
     return operation;
   };
 
@@ -168,6 +245,175 @@ function asQuizPayload(record: RuntimeRecord | undefined): QuizAttemptPayload | 
   return payload as QuizAttemptPayload;
 }
 
+function attemptIdSegment(value: string): string {
+  return encodeURIComponent(value);
+}
+
+export function quizAttemptId(stageId: string, sceneId: string, learnerKey: string): string {
+  return [
+    'quiz-attempt',
+    attemptIdSegment(stageId),
+    attemptIdSegment(sceneId),
+    attemptIdSegment(learnerKey),
+  ].join(':');
+}
+
+async function readLatestQuizAttemptState(
+  input: QuizAttemptStateInput,
+  store: RuntimeStore,
+  learnerKey: string,
+): Promise<QuizAttemptState | undefined> {
+  const sessions = await store.listSessions(input.stageId, learnerKey);
+  for (let index = sessions.length - 1; index >= 0; index -= 1) {
+    const session = sessions[index];
+    if (session.kind !== 'quizAttempt') continue;
+    const records = await store.listRecords(session.id, { sceneId: input.sceneId });
+    const payload = asQuizPayload(records.at(-1));
+    if (!payload) continue;
+    return {
+      sessionId: session.id,
+      status: session.status,
+      phase: payload.phase,
+      answers: payload.answers,
+      ...(payload.phase === 'reviewed'
+        ? { results: Array.isArray(payload.results) ? payload.results : [] }
+        : {}),
+    };
+  }
+  return undefined;
+}
+
+async function migrateLegacyQuizState(
+  input: QuizAttemptStateInput,
+  store: RuntimeStore,
+  learnerKey: string,
+  deps: QuizAttemptRuntimeDeps,
+): Promise<void> {
+  const legacySnapshot = readLegacyQuizStateSnapshot(input.sceneId);
+  if (!legacySnapshot.hasState) return;
+
+  const existing = await readLatestQuizAttemptState(input, store, learnerKey);
+  const { submitted, draft, attemptId: legacyAttemptId } = legacySnapshot;
+  const legacyPhase: QuizAttemptPhase | undefined =
+    submitted?.kind === 'reviewing'
+      ? 'reviewed'
+      : submitted?.kind === 'answering'
+        ? 'submitted'
+        : draft
+          ? 'draft'
+          : undefined;
+  const legacyPointsToNewAttempt =
+    legacyAttemptId !== null &&
+    (!existing ||
+      (existing.sessionId !== legacyAttemptId &&
+        !existing.sessionId.startsWith(`${legacyAttemptId}:retry:`)));
+  const legacyPayloadMatchesExisting =
+    existing !== undefined &&
+    legacyPhase === existing.phase &&
+    (legacyPhase === 'reviewed' && submitted?.kind === 'reviewing'
+      ? sameAnswers(submitted.answers, existing.answers) &&
+        JSON.stringify(submitted.results) === JSON.stringify(existing.results ?? [])
+      : legacyPhase === 'submitted' && submitted?.kind === 'answering'
+        ? sameAnswers(submitted.answers, existing.answers)
+        : legacyPhase === 'draft' && draft !== null
+          ? sameAnswers(draft, existing.answers)
+          : false);
+  const shouldMigrate =
+    legacyPointsToNewAttempt ||
+    (legacyPhase !== undefined &&
+      (!existing ||
+        PHASE_ORDER[legacyPhase] > PHASE_ORDER[existing.phase] ||
+        (PHASE_ORDER[legacyPhase] === PHASE_ORDER[existing.phase] &&
+          !legacyPayloadMatchesExisting)));
+
+  if (shouldMigrate) {
+    const attemptId =
+      (legacyPointsToNewAttempt ? legacyAttemptId : existing?.sessionId) ??
+      quizAttemptId(input.stageId, input.sceneId, learnerKey);
+    if (submitted?.kind === 'reviewing') {
+      await backfillQuizAttempt(
+        {
+          ...input,
+          attemptId,
+          submittedAnswers: submitted.answers,
+          results: submitted.results,
+        },
+        { ...deps, store, learnerKey },
+      );
+    } else if (submitted?.kind === 'answering') {
+      await backfillQuizAttempt(
+        { ...input, attemptId, submittedAnswers: submitted.answers },
+        { ...deps, store, learnerKey },
+      );
+    } else if (draft) {
+      await backfillQuizAttempt(
+        { ...input, attemptId, draftAnswers: draft },
+        { ...deps, store, learnerKey },
+      );
+    } else if (legacyPointsToNewAttempt) {
+      await recordQuizAttempt(
+        { ...input, attemptId, phase: 'draft', answers: {} },
+        { ...deps, store, learnerKey },
+      );
+    }
+  }
+
+  // Legacy state is deleted only after every required runtime write succeeds.
+  // Delete only the values this migration read; a newer recovery journal may
+  // have arrived while its RuntimeStore writes were in flight.
+  clearLegacyQuizStateSnapshot(input.sceneId, legacySnapshot);
+}
+
+/** Load the learner's latest quiz state, migrating legacy localStorage once. */
+export async function loadQuizAttemptState(
+  input: QuizAttemptStateInput,
+  deps: QuizAttemptRuntimeDeps = {},
+): Promise<LoadedQuizAttemptState> {
+  const store = deps.store ?? getRuntimeStore();
+  const learnerKey = deps.learnerKey ?? (await getLearnerKey());
+  const attemptId = quizAttemptId(input.stageId, input.sceneId, learnerKey);
+  // A UI transition can expose the next consumer while its fire-and-forget
+  // writer is still queued. Wait for both its private phase tail and the
+  // RuntimeStore queue before opening a read.
+  await awaitQueuedWriterLineage(attemptId);
+  await awaitQueuedAttemptLineage(store, attemptId);
+  await migrateLegacyQuizState(input, store, learnerKey, deps);
+  let state = await withAttemptLock(attemptId, () =>
+    readLatestQuizAttemptState(input, store, learnerKey),
+  );
+  if (state && state.sessionId !== attemptId) {
+    // A shadow-written or rolled-over attempt can queue its next write under
+    // this non-root session id, even after the session itself is completed.
+    // Drain that lineage before choosing the authoritative latest attempt.
+    await awaitQueuedWriterLineage(state.sessionId);
+    await awaitQueuedAttemptLineage(store, state.sessionId);
+    state = await withAttemptLock(rootAttemptId(state.sessionId), () =>
+      readLatestQuizAttemptState(input, store, learnerKey),
+    );
+  }
+
+  // Older shadow writers could append reviewed and crash before completing
+  // the session. Replaying the same fact invokes the atomic tail-CAS repair.
+  if (state?.phase === 'reviewed' && state.status === 'active') {
+    await recordQuizAttempt(
+      {
+        ...input,
+        attemptId: state.sessionId,
+        phase: 'reviewed',
+        answers: state.answers,
+        results: state.results ?? [],
+      },
+      { ...deps, store, learnerKey },
+    );
+    state = await readLatestQuizAttemptState(input, store, learnerKey);
+  }
+
+  return {
+    attemptId: state?.status === 'active' ? state.sessionId : attemptId,
+    state,
+  };
+}
+
 function samePayload(left: QuizAttemptPayload, right: QuizAttemptPayload): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
@@ -178,6 +424,16 @@ function sameAnswers(left: QuizAnswers, right: QuizAnswers): boolean {
 
 function rolloverAttemptId(attemptId: string, index: number): string {
   return `${attemptId}:retry:${index}`;
+}
+
+function rootAttemptId(attemptId: string): string {
+  return attemptId.replace(/(?::retry:\d+)+$/, '');
+}
+
+function compareSessionCreationOrder(left: RuntimeSession, right: RuntimeSession): number {
+  return (
+    Date.parse(left.createdAt) - Date.parse(right.createdAt) || left.id.localeCompare(right.id)
+  );
 }
 
 function isInactiveSessionAppendError(error: unknown, sessionId: string): boolean {
@@ -212,10 +468,18 @@ export async function recordQuizAttempt(
   const learnerKey = deps.learnerKey ?? (await getLearnerKey());
   const now = deps.now ?? (() => new Date().toISOString());
   const mintRecordId = deps.mintRecordId ?? mintId;
+  const rootId = rootAttemptId(input.attemptId);
 
-  return enqueue(store, input.attemptId, () =>
-    withAttemptLock(input.attemptId, async () => {
+  return enqueue(store, rootId, () =>
+    withAttemptLock(rootId, async () => {
       const timestamp = now();
+      const latestState = input.startNewAttempt
+        ? await readLatestQuizAttemptState(input, store, learnerKey)
+        : undefined;
+      const authoritativeCompletedSession =
+        latestState?.status === 'completed'
+          ? await store.getSession(latestState.sessionId)
+          : undefined;
       const payload: QuizAttemptPayload = {
         payloadVersion: 1,
         phase: input.phase,
@@ -224,9 +488,11 @@ export async function recordQuizAttempt(
       };
       let rolloverIndex = 0;
       let sessionId = input.attemptId;
+      let originSession: RuntimeSession | undefined;
 
       while (true) {
         let session = await store.getSession(sessionId);
+        let created = false;
         if (!session) {
           try {
             session = await store.createSession({
@@ -238,6 +504,7 @@ export async function recordQuizAttempt(
               createdAt: timestamp,
               updatedAt: timestamp,
             });
+            created = true;
           } catch (error) {
             // Without Web Locks, another tab may win the deterministic create
             // after our read. Re-read the winner instead of losing this write.
@@ -246,6 +513,7 @@ export async function recordQuizAttempt(
           }
         }
         assertPartition(session, input.stageId, learnerKey);
+        if (sessionId === input.attemptId) originSession = session;
 
         const records = await store.listRecords(sessionId);
         const foreignAnchor = records.find(
@@ -257,8 +525,50 @@ export async function recordQuizAttempt(
               `${JSON.stringify(foreignAnchor.sceneId)}`,
           );
         }
+
+        // Canonical retry ids are scanned from one, but a stale caller may
+        // already point at a later flat retry or a newer nested legacy retry.
+        // Never move that caller backward onto an older active sibling.
+        if (
+          !created &&
+          sessionId !== input.attemptId &&
+          originSession &&
+          compareSessionCreationOrder(session, originSession) <= 0
+        ) {
+          rolloverIndex += 1;
+          sessionId = rolloverAttemptId(rootId, rolloverIndex);
+          continue;
+        }
+
         const lastRecord = records.at(-1);
         const last = asQuizPayload(lastRecord);
+
+        if (input.startNewAttempt && !created) {
+          // A concurrent retry may already have created the first active child.
+          // Reuse it instead of minting a second active branch whose newer
+          // session ordering would hide writes that still resolve to this one.
+          if (sessionId !== input.attemptId && session.status === 'active') {
+            // A child with a durable fact already represents the retry. An
+            // empty child can remain after create succeeds but append fails;
+            // fall through so this call writes the missing draft marker.
+            if (last?.phase === 'draft' && Object.keys(last.answers).length === 0) return;
+            if (
+              last &&
+              authoritativeCompletedSession &&
+              authoritativeCompletedSession.id !== sessionId &&
+              compareSessionCreationOrder(session, authoritativeCompletedSession) < 0
+            ) {
+              rolloverIndex += 1;
+              sessionId = rolloverAttemptId(rootId, rolloverIndex);
+              continue;
+            }
+            if (last) throw new QuizRetryProgressedError(sessionId);
+          } else {
+            rolloverIndex += 1;
+            sessionId = rolloverAttemptId(rootId, rolloverIndex);
+            continue;
+          }
+        }
 
         if (session.status === 'active') {
           if (last && PHASE_ORDER[payload.phase] < PHASE_ORDER[last.phase]) return;
@@ -318,7 +628,7 @@ export async function recordQuizAttempt(
         }
 
         rolloverIndex += 1;
-        sessionId = rolloverAttemptId(input.attemptId, rolloverIndex);
+        sessionId = rolloverAttemptId(rootId, rolloverIndex);
       }
     }),
   );

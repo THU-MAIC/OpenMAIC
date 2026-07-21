@@ -1,5 +1,10 @@
 import type { QuestionResult } from '@/lib/quiz/grading';
-import { readSubmittedState, type QuizAnswers } from '@/lib/quiz/persistence';
+import type { QuizAnswers } from '@/lib/quiz/persistence';
+import { loadQuizAttemptState, type QuizAttemptState } from '@/lib/quiz/runtime';
+import { createLogger } from '@/lib/logger';
+
+const log = createLogger('ChatQuizContext');
+const QUIZ_CONTEXT_TIMEOUT_MS = 1500;
 
 export interface QuizResultsForStoreState {
   sceneId: string;
@@ -7,24 +12,57 @@ export interface QuizResultsForStoreState {
   results: QuestionResult[];
 }
 
+export function didActiveSceneRemainUnchanged(
+  scenesBefore: readonly { id: string }[],
+  currentSceneIdBefore: string | null,
+  scenesAfter: readonly { id: string }[],
+  currentSceneIdAfter: string | null,
+): boolean {
+  if (!currentSceneIdBefore || currentSceneIdAfter !== currentSceneIdBefore) return false;
+  const sceneBefore = scenesBefore.find((scene) => scene.id === currentSceneIdBefore);
+  return (
+    !!sceneBefore && scenesAfter.find((scene) => scene.id === currentSceneIdAfter) === sceneBefore
+  );
+}
+
 /**
  * Hydrate graded quiz context for chat. An empty result list still marks the
  * QuizView as reviewed, but carries no feedback that the agent can use.
  */
-export function buildQuizResultsForStoreState(
-  scenes: { id: string; type?: string }[],
+export async function buildQuizResultsForStoreState(
+  scenes: { id: string; type?: string; stageId?: string }[],
   currentSceneId: string | null,
-): QuizResultsForStoreState | undefined {
+): Promise<QuizResultsForStoreState | undefined> {
   if (!currentSceneId) return undefined;
   const scene = scenes.find((candidate) => candidate.id === currentSceneId);
-  if (!scene || scene.type !== 'quiz') return undefined;
-  const submitted = readSubmittedState(currentSceneId);
-  if (!submitted || submitted.kind !== 'reviewing' || submitted.results.length === 0) {
+  if (!scene || scene.type !== 'quiz' || !scene.stageId) return undefined;
+  let state: QuizAttemptState | undefined;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    ({ state } = await Promise.race([
+      loadQuizAttemptState({
+        stageId: scene.stageId,
+        sceneId: currentSceneId,
+      }),
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Timed out loading quiz context from RuntimeStore')),
+          QUIZ_CONTEXT_TIMEOUT_MS,
+        );
+      }),
+    ]));
+  } catch (error) {
+    log.warn('Failed to load quiz context:', error);
+    return undefined;
+  } finally {
+    clearTimeout(timeout);
+  }
+  if (state?.phase !== 'reviewed' || !state.results || state.results.length === 0) {
     return undefined;
   }
   return {
     sceneId: currentSceneId,
-    answers: submitted.answers,
-    results: submitted.results,
+    answers: state.answers,
+    results: state.results,
   };
 }
