@@ -15,29 +15,17 @@ const STAGE_ID = 'stage-playback-e2e';
 const SCENE_ID = 'scene-playback-e2e';
 
 async function seedStage(page: Page) {
-  // Loading a classroom route forces the app to open (and version) the Dexie
-  // database even when it is empty; only then do the object stores exist.
   await page.goto('/classroom/warmup-nonexistent');
-  await page.waitForFunction(
-    async () => {
-      const dbs = await indexedDB.databases();
-      if (!dbs.some((d) => d.name === 'MAIC-Database')) return false;
-      const open = indexedDB.open('MAIC-Database');
-      const db: IDBDatabase = await new Promise((resolve, reject) => {
-        open.onsuccess = () => resolve(open.result);
-        open.onerror = () => reject(open.error);
-      });
-      const ready =
-        db.objectStoreNames.contains('stages') && db.objectStoreNames.contains('scenes');
-      db.close();
-      return ready;
-    },
-    undefined,
-    { timeout: 30_000 },
-  );
   await page.evaluate(
     async ({ stageId, sceneId }) => {
-      const open = indexedDB.open('MAIC-Database');
+      const open = indexedDB.open('maic-documents', 1);
+      open.onupgradeneeded = () => {
+        const db = open.result;
+        db.createObjectStore('stages', { keyPath: 'id' });
+        const scenes = db.createObjectStore('scenes', { keyPath: ['stageId', 'id'] });
+        scenes.createIndex('by-stage', 'stageId');
+        db.createObjectStore('outlines', { keyPath: 'stageId' });
+      };
       const db: IDBDatabase = await new Promise((resolve, reject) => {
         open.onsuccess = () => resolve(open.result);
         open.onerror = () => reject(open.error);
@@ -49,8 +37,12 @@ async function seedStage(page: Page) {
         name: 'Playback E2E Stage',
         createdAt: now,
         updatedAt: now,
-        currentSceneId: sceneId,
+        dslVersion: '0.1.0',
       });
+      localStorage.setItem(
+        `maic:device:editor-current-scene:${stageId}`,
+        JSON.stringify({ sceneId, updatedAt: new Date(now).toISOString() }),
+      );
       tx.objectStore('scenes').put({
         id: sceneId,
         stageId,

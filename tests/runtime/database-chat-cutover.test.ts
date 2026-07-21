@@ -157,6 +157,7 @@ describe('database runtime chat integration', () => {
     vi.resetModules();
     vi.stubGlobal('indexedDB', new IDBFactory());
     vi.stubGlobal('navigator', { locks: serialLockManager() });
+    stubMemoryLocalStorage();
   });
 
   afterEach(() => {
@@ -498,7 +499,8 @@ describe('database runtime chat integration', () => {
 
   it('finishes an interrupted runtime clear from the durable restore marker', async () => {
     const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
-    const { db, importDatabase } = await import('@/lib/utils/database');
+    const { importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
     const { loadChatSessions, saveChatSessions } = await import('@/lib/utils/chat-storage');
     await saveChatSessions(
       'stage-interrupted-restore',
@@ -543,9 +545,7 @@ describe('database runtime chat integration', () => {
         { store: failingDeleteStore, learnerKey },
       ),
     ).rejects.toThrow('restore delete failed');
-    await expect(db.stages.get('stage-interrupted-restore')).resolves.toMatchObject({
-      name: 'Imported stage',
-    });
+    await expect(getDocumentStore().loadDocument('stage-interrupted-restore')).resolves.toBeNull();
 
     await expect(
       loadChatSessions('stage-interrupted-restore', { store: backing, learnerKey }),
@@ -718,7 +718,7 @@ describe('database runtime chat integration', () => {
     });
     vi.spyOn(db, 'transaction').mockImplementation(((...args: unknown[]) =>
       originalTransaction(...args).then(async (result) => {
-        if (!Array.isArray(args[1])) return result;
+        if (args[0] !== 'rw' || !Array.isArray(args[1])) return result;
         transactionCommitted();
         await importMayContinue;
         return result;
@@ -1404,6 +1404,7 @@ describe('database runtime chat integration', () => {
       dbName: 'clear-without-web-locks',
     });
     const { clearDatabase, db } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
     await db.stages.put({
       id: 'stage-clear-no-lock',
       name: 'Clear without locks',
@@ -1419,11 +1420,103 @@ describe('database runtime chat integration', () => {
       createdAt: new Date(1_000).toISOString(),
       updatedAt: new Date(2_000).toISOString(),
     });
+    await getDocumentStore().saveDocument({
+      stage: {
+        id: 'stage-clear-document',
+        name: 'Document to clear',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      },
+      scenes: [],
+    });
+    localStorage.setItem('maic:device:document-migration:stage-clear-document', '{}');
+    localStorage.setItem('maic:device:editor-current-scene:stage-clear-document', '{}');
 
     await expect(clearDatabase(runtimeStore)).resolves.toBeUndefined();
     await expect(runtimeStore.listSessions('stage-clear-no-lock', learnerKey)).resolves.toEqual([]);
     await db.open();
     await expect(db.stages.count()).resolves.toBe(0);
+    await expect(getDocumentStore().loadDocument('stage-clear-document')).resolves.toBeNull();
+    expect(localStorage.getItem('maic:device:document-migration:stage-clear-document')).toBeNull();
+    expect(
+      localStorage.getItem('maic:device:editor-current-scene:stage-clear-document'),
+    ).toBeNull();
+  });
+
+  it('round-trips versioned document backups including outline envelopes', async () => {
+    const runtimeStore = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
+    const { exportDatabase, importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const documentStore = getDocumentStore();
+    await documentStore.saveDocument({
+      stage: {
+        id: 'stage-document-backup',
+        name: 'Aggregate backup',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      },
+      scenes: [],
+      outline: { outlines: [], generationComplete: true, createdAt: 1_000, updatedAt: 2_000 },
+    });
+
+    const backup = await exportDatabase({ store: runtimeStore, learnerKey });
+    expect(backup).not.toHaveProperty('stages');
+    expect(backup).not.toHaveProperty('scenes');
+    expect(backup.documents).toMatchObject([
+      {
+        stage: { id: 'stage-document-backup', name: 'Aggregate backup' },
+        outline: { generationComplete: true },
+        dslVersion: '0.1.0',
+      },
+    ]);
+
+    await documentStore.deleteDocument('stage-document-backup');
+    await importDatabase(backup, { store: runtimeStore, learnerKey });
+    await expect(documentStore.loadDocument('stage-document-backup')).resolves.toMatchObject({
+      stage: { name: 'Aggregate backup' },
+      outline: { generationComplete: true },
+      dslVersion: '0.1.0',
+    });
+  });
+
+  it('accepts legacy stage/scene backups and canonicalizes whiteboards', async () => {
+    const { importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore, loadCurrentScene } = await import('@/lib/document-store');
+    await importDatabase({
+      stages: [
+        {
+          id: 'stage-legacy-backup',
+          name: 'Legacy backup',
+          currentSceneId: 'scene-legacy-backup',
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+      ],
+      scenes: [
+        {
+          id: 'scene-legacy-backup',
+          stageId: 'stage-legacy-backup',
+          type: 'quiz',
+          title: 'Legacy scene',
+          order: 0,
+          content: {
+            type: 'quiz',
+            questions: [],
+          },
+          whiteboard: [],
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+      ],
+    });
+
+    const restored = await getDocumentStore().loadDocument('stage-legacy-backup');
+    expect(restored?.stage).not.toHaveProperty('currentSceneId');
+    expect(restored?.scenes[0]).toHaveProperty('whiteboards');
+    expect(restored?.scenes[0]).not.toHaveProperty('whiteboard');
+    await expect(loadCurrentScene('stage-legacy-backup')).resolves.toMatchObject({
+      sceneId: 'scene-legacy-backup',
+    });
   });
 
   it('fails loud without deleting documents when the runtime-wide clear fails', async () => {

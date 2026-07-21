@@ -48,10 +48,17 @@ async function seedDatabase(page: import('@playwright/test').Page) {
   await page.evaluate(
     ({ stageId, interactiveId, html, theme }) => {
       return new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('MAIC-Database');
+        const request = indexedDB.open('maic-documents', 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          db.createObjectStore('stages', { keyPath: 'id' });
+          const scenes = db.createObjectStore('scenes', { keyPath: ['stageId', 'id'] });
+          scenes.createIndex('by-stage', 'stageId');
+          db.createObjectStore('outlines', { keyPath: 'stageId' });
+        };
         request.onsuccess = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
-          const tx = db.transaction(['stages', 'scenes', 'stageOutlines'], 'readwrite');
+          const tx = db.transaction(['stages', 'scenes', 'outlines'], 'readwrite');
           const now = Date.now();
 
           tx.objectStore('stages').put({
@@ -60,9 +67,9 @@ async function seedDatabase(page: import('@playwright/test').Page) {
             description: '',
             language: 'en-US',
             style: 'professional',
-            currentSceneId: interactiveId,
             createdAt: now,
             updatedAt: now,
+            dslVersion: '0.1.0',
           });
 
           tx.objectStore('scenes').put({
@@ -105,12 +112,15 @@ async function seedDatabase(page: import('@playwright/test').Page) {
             updatedAt: now,
           });
 
-          tx.objectStore('stageOutlines').put({
+          tx.objectStore('outlines').put({
             stageId,
-            outlines: [],
-            createdAt: now,
-            updatedAt: now,
+            outline: { outlines: [], createdAt: now, updatedAt: now },
           });
+
+          localStorage.setItem(
+            `maic:device:editor-current-scene:${stageId}`,
+            JSON.stringify({ sceneId: interactiveId, updatedAt: new Date(now).toISOString() }),
+          );
 
           tx.oncomplete = () => {
             db.close();
