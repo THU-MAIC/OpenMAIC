@@ -122,6 +122,31 @@ export function runDocumentStoreContract(name: string, makeStore: () => Document
       await expect(store.deleteDocument('stage-1')).resolves.toBeUndefined();
     });
 
+    test('putStage updates only the stage row of an existing document', async () => {
+      const store = makeStore();
+      const doc = makeDocument();
+      await store.saveDocument(doc);
+
+      await store.putStage('stage-1', { ...doc.stage, name: 'Renamed', updatedAt: 3000 });
+
+      const loaded = await store.loadDocument('stage-1');
+      expect(loaded!.stage).toMatchObject({ name: 'Renamed', updatedAt: 3000 });
+      expect(loaded!.scenes).toEqual(doc.scenes);
+      expect(loaded!.outline).toEqual(doc.outline);
+    });
+
+    test('putStage rejects when the document is absent', async () => {
+      const store = makeStore();
+      await expect(
+        store.putStage('ghost-stage', {
+          id: 'ghost-stage',
+          name: 'Missing',
+          createdAt: 1,
+          updatedAt: 2,
+        }),
+      ).rejects.toThrow(/missing document/);
+    });
+
     // --- validation gate ---
 
     test('rejects a document whose stage is missing required fields', async () => {
