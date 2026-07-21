@@ -1,6 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IDBFactory, IDBKeyRange } from 'fake-indexeddb';
-import { BrowserKVStore, BrowserRuntimeStore } from '@openmaic/storage';
+import { describe, expect, it, vi } from 'vitest';
+import { BrowserKVStore } from '@openmaic/storage';
 
 import {
   clearCursor,
@@ -8,7 +7,6 @@ import {
   saveCursor,
   type PlaybackLegacyStore,
 } from '@/lib/playback/cursor';
-import { loadConsumedDiscussions } from '@/lib/playback/runtime';
 
 class MemoryStorage implements Storage {
   private readonly values = new Map<string, string>();
@@ -38,25 +36,15 @@ class MemoryStorage implements Storage {
   }
 }
 
-describe('playback cursor persistence', () => {
-  beforeEach(() => {
-    Object.defineProperty(globalThis, 'IDBKeyRange', {
-      configurable: true,
-      value: IDBKeyRange,
-    });
-  });
+const emptyLegacyStore: PlaybackLegacyStore = {
+  get: vi.fn().mockResolvedValue(undefined),
+  delete: vi.fn().mockResolvedValue(undefined),
+};
 
+describe('playback cursor persistence', () => {
   it('round-trips and overwrites with the last saved cursor', async () => {
     const kv = new BrowserKVStore({ storage: new MemoryStorage(), namespace: 'cursor-test' });
-    const store = new BrowserRuntimeStore({
-      indexedDB: new IDBFactory(),
-      dbName: 'cursor-runtime-test',
-    });
-    const legacyStore: PlaybackLegacyStore = {
-      get: vi.fn().mockResolvedValue(undefined),
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
-    const deps = { kv, runtimeStore: store, learnerKey: 'learner-1', legacyStore };
+    const deps = { kv, legacyStore: emptyLegacyStore };
 
     await saveCursor(
       'stage-1',
@@ -78,17 +66,14 @@ describe('playback cursor persistence', () => {
     await expect(loadCursor('stage-1', deps)).resolves.toBeNull();
   });
 
-  it('migrates one legacy row once, including consumed discussions, then deletes it', async () => {
+  it('migrates the cursor half of one legacy row once, then deletes it', async () => {
     const kv = new BrowserKVStore({ storage: new MemoryStorage(), namespace: 'migration-test' });
-    const store = new BrowserRuntimeStore({
-      indexedDB: new IDBFactory(),
-      dbName: 'migration-runtime-test',
-    });
     const legacy = {
       stageId: 'stage-legacy',
       sceneIndex: 0,
       actionIndex: 4,
-      consumedDiscussions: ['discussion-1', 'discussion-1', 'discussion-2'],
+      // Volatile by decision (#869): consumed discussions do NOT migrate.
+      consumedDiscussions: ['discussion-1', 'discussion-2'],
       sceneId: 'scene-legacy',
       updatedAt: Date.UTC(2026, 6, 21, 12),
     };
@@ -99,29 +84,40 @@ describe('playback cursor persistence', () => {
         row = undefined;
       }),
     };
-    let recordIndex = 0;
-    const runtimeDeps = {
-      store,
-      kv,
-      learnerKey: 'learner-legacy',
-      legacyStore,
-      now: () => '2026-07-21T12:00:00.000Z',
-      mintRecordId: () => `legacy-record-${recordIndex++}`,
-    };
-    const cursorDeps = { ...runtimeDeps, runtimeStore: store };
+    const deps = { kv, legacyStore };
 
-    await expect(loadCursor('stage-legacy', cursorDeps)).resolves.toEqual({
+    await expect(loadCursor('stage-legacy', deps)).resolves.toEqual({
       sceneId: 'scene-legacy',
       actionIndex: 4,
       updatedAt: '2026-07-21T12:00:00.000Z',
     });
-    await expect(loadConsumedDiscussions('stage-legacy', runtimeDeps)).resolves.toEqual(
-      new Set(['discussion-1', 'discussion-2']),
-    );
-    await expect(loadCursor('stage-legacy', cursorDeps)).resolves.toMatchObject({ actionIndex: 4 });
-
+    await expect(loadCursor('stage-legacy', deps)).resolves.toMatchObject({ actionIndex: 4 });
     expect(legacyStore.delete).toHaveBeenCalledOnce();
-    const sessions = await store.listSessions('stage-legacy', 'learner-legacy');
-    expect(await store.listRecords(sessions[0].id)).toHaveLength(2);
+  });
+
+  it('does not overwrite a newer KV cursor with a legacy row', async () => {
+    const kv = new BrowserKVStore({ storage: new MemoryStorage(), namespace: 'no-clobber-test' });
+    await saveCursor(
+      'stage-legacy',
+      { sceneId: 'scene-new', actionIndex: 7, updatedAt: '2026-07-21T13:00:00.000Z' },
+      { kv },
+    );
+    const legacyStore: PlaybackLegacyStore = {
+      get: vi.fn(async () => ({
+        stageId: 'stage-legacy',
+        sceneIndex: 0,
+        actionIndex: 1,
+        consumedDiscussions: [],
+        sceneId: 'scene-old',
+        updatedAt: 1_000,
+      })),
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await expect(loadCursor('stage-legacy', { kv, legacyStore })).resolves.toMatchObject({
+      sceneId: 'scene-new',
+      actionIndex: 7,
+    });
+    expect(legacyStore.delete).toHaveBeenCalledOnce();
   });
 });

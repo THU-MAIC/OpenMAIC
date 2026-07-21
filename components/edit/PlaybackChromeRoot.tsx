@@ -33,7 +33,6 @@ import {
   saveActionResumePosition,
 } from '@/lib/playback/action-resume';
 import { loadCursor, saveCursor, type PlaybackCursor } from '@/lib/playback/cursor';
-import { loadConsumedDiscussions, recordConsumedDiscussion } from '@/lib/playback/runtime';
 import { ActionEngine } from '@/lib/action/engine';
 import { createAudioPlayer } from '@/lib/utils/audio-player';
 import { useDiscussionTTS } from '@/lib/hooks/use-discussion-tts';
@@ -223,7 +222,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
     const presentationIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const cursorSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const pendingCursorRef = useRef<{ stageId: string; cursor: PlaybackCursor } | null>(null);
-    const observedConsumedDiscussionsRef = useRef<Set<string>>(new Set());
     const stageRef = useRef<HTMLDivElement>(null);
     // Guard to prevent double flash when manual stop triggers onDiscussionEnd
     const manualStopRef = useRef(false);
@@ -614,19 +612,7 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
           }
         }
 
-        let consumedDiscussions = new Set<string>();
-        if (playbackStageId) {
-          try {
-            consumedDiscussions = await loadConsumedDiscussions(playbackStageId);
-          } catch (error) {
-            console.warn(
-              `Failed to load consumed playback discussions for stage ${playbackStageId}:`,
-              error,
-            );
-          }
-        }
         if (cancelled) return;
-        observedConsumedDiscussionsRef.current = new Set(consumedDiscussions);
 
         const savedResumeAction = currentScene?.actions?.[savedResumeActionIndex];
 
@@ -693,20 +679,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                 actionIndex: snapshot.actionIndex,
                 updatedAt: new Date().toISOString(),
               });
-              const observed = observedConsumedDiscussionsRef.current;
-              for (const discussionId of snapshot.consumedDiscussions) {
-                if (observed.has(discussionId)) continue;
-                observed.add(discussionId);
-                void recordConsumedDiscussion({
-                  stageId: playbackStageId,
-                  sceneId: snapshot.sceneId,
-                  discussionId,
-                }).then((durable) => {
-                  // A transient failure must not suppress the fact for the rest
-                  // of the mount — drop it so a later progress tick retries.
-                  if (!durable) observed.delete(discussionId);
-                });
-              }
             }
           },
           onSceneChange: (_sceneId) => {
@@ -852,13 +824,6 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
               }, 1500);
             }
           },
-        });
-
-        engine.restoreFromSnapshot({
-          sceneIndex: 0,
-          actionIndex: 0,
-          consumedDiscussions: [...consumedDiscussions],
-          sceneId: currentScene.id,
         });
 
         engineRef.current = engine;

@@ -6,7 +6,7 @@
  * migration is delegated lazily so importing this module never opens either
  * browser store.
  */
-import { BrowserKVStore, type KVStore, type RuntimeStore } from '@openmaic/storage';
+import { BrowserKVStore, type KVStore } from '@openmaic/storage';
 
 export interface PlaybackCursor {
   sceneId: string;
@@ -31,10 +31,6 @@ export interface PlaybackLegacyStore {
 export interface PlaybackCursorDeps {
   kv?: KVStore;
   legacyStore?: PlaybackLegacyStore;
-  runtimeStore?: RuntimeStore;
-  learnerKey?: string;
-  now?: () => string;
-  mintRecordId?: () => string;
 }
 
 const CURSOR_KEY_PREFIX = 'playback-cursor:';
@@ -81,21 +77,57 @@ export function saveCursorValue(
   return kv.set(cursorKey(stageId), cursor, 'device');
 }
 
-/** Load the latest device cursor, migrating the complete legacy row first. */
+async function defaultLegacyStore(): Promise<PlaybackLegacyStore> {
+  if (typeof window === 'undefined') {
+    throw new Error('Legacy playback migration is client-only');
+  }
+  const { db } = await import('@/lib/utils/database');
+  return {
+    async get(stageId) {
+      const row: unknown = await db.playbackState.get(stageId);
+      return row as LegacyPlaybackState | undefined;
+    },
+    async delete(stageId) {
+      await db.playbackState.delete(stageId);
+    },
+  };
+}
+
+/**
+ * One-time lazy migration of a legacy Dexie playback row. Only the cursor
+ * half carries over: consumed-discussion state is volatile by decision
+ * (see #869 — playback learner state is front-end ephemeral UX; a re-shown
+ * discussion card auto-skips, so durability buys nothing).
+ */
+async function migrateLegacyCursor(
+  stageId: string,
+  kv: KVStore,
+  legacyStore?: PlaybackLegacyStore,
+): Promise<void> {
+  const store = legacyStore ?? (await defaultLegacyStore());
+  const legacy = await store.get(stageId);
+  if (!legacy) return;
+  if (!(await loadCursorValue(stageId, kv)) && legacy.sceneId) {
+    await saveCursorValue(
+      stageId,
+      {
+        sceneId: legacy.sceneId,
+        actionIndex: legacy.actionIndex,
+        updatedAt: new Date(legacy.updatedAt).toISOString(),
+      },
+      kv,
+    );
+  }
+  await store.delete(stageId);
+}
+
+/** Load the latest device cursor, migrating the legacy row's cursor half first. */
 export async function loadCursor(
   stageId: string,
   deps: PlaybackCursorDeps = {},
 ): Promise<PlaybackCursor | null> {
   const kv = resolveKv(deps.kv);
-  const { migrateLegacyPlaybackState } = await import('./runtime');
-  await migrateLegacyPlaybackState(stageId, {
-    store: deps.runtimeStore,
-    kv,
-    learnerKey: deps.learnerKey,
-    legacyStore: deps.legacyStore,
-    now: deps.now,
-    mintRecordId: deps.mintRecordId,
-  });
+  await migrateLegacyCursor(stageId, kv, deps.legacyStore);
   return loadCursorValue(stageId, kv);
 }
 
