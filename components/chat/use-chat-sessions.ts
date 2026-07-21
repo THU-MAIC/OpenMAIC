@@ -159,9 +159,37 @@ export type ChatRequestTemplate = {
   piSessionBoundary?: PiSessionBoundaryContext;
 };
 
-export function withPiInclassWhiteboardTools(
-  requestTemplate: ChatRequestTemplate,
-): ChatRequestTemplate {
+/**
+ * One fresh store-state snapshot for an outgoing chat request. Quiz results
+ * come from the async RuntimeStore read; the before/after scene compare drops
+ * them when a scene transition raced the read (a stale scene's results must
+ * not leak into the next scene's request).
+ */
+async function buildFreshAgentLoopStoreState(): Promise<AgentLoopStoreState> {
+  const stateBeforeQuizRead = useStageStore.getState();
+  const quizResults = await buildQuizResultsForStoreState(
+    stateBeforeQuizRead.scenes,
+    stateBeforeQuizRead.currentSceneId,
+  );
+  const freshState = useStageStore.getState();
+  return {
+    stage: freshState.stage,
+    scenes: freshState.scenes,
+    currentSceneId: freshState.currentSceneId,
+    mode: freshState.mode,
+    whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+    quizResults: didActiveSceneRemainUnchanged(
+      stateBeforeQuizRead.scenes,
+      stateBeforeQuizRead.currentSceneId,
+      freshState.scenes,
+      freshState.currentSceneId,
+    )
+      ? quizResults
+      : undefined,
+  };
+}
+
+export function withPiInclassWhiteboardTools<T extends ChatRequestTemplate>(requestTemplate: T): T {
   return {
     ...requestTemplate,
     config: {
@@ -293,7 +321,7 @@ export function getPiSingleRequestOutcome(
 
 export async function runPiSingleRequest(
   sessionId: string,
-  requestTemplate: ChatRequestTemplate,
+  requestTemplate: ChatRequestTemplate & { storeState: AgentLoopStoreState },
   controller: AbortController,
   sessionType: SessionType,
   createConsumer: StatelessStreamConsumerFactory,
@@ -1114,10 +1142,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
 
       if (isPiChatEnabled()) {
+        // Pi bypasses runAgentLoop's per-iteration getStoreState, so its single
+        // request needs the snapshot built here — /api/chat/pi rejects bodies
+        // without storeState.
+        const storeState = await buildFreshAgentLoopStoreState();
         const firstRequestContext = getFirstPiRequestContext(sessionId);
         const piRequestTemplate = firstRequestContext
-          ? { ...requestTemplate, piSessionBoundary: firstRequestContext }
-          : requestTemplate;
+          ? { ...requestTemplate, storeState, piSessionBoundary: firstRequestContext }
+          : { ...requestTemplate, storeState };
         await runPiSingleRequest(
           sessionId,
           withPiInclassWhiteboardTools(piRequestTemplate),
@@ -1156,29 +1188,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           thinkingConfig: requestTemplate.thinkingConfig,
         },
         {
-          getStoreState: async (): Promise<AgentLoopStoreState> => {
-            const stateBeforeQuizRead = useStageStore.getState();
-            const quizResults = await buildQuizResultsForStoreState(
-              stateBeforeQuizRead.scenes,
-              stateBeforeQuizRead.currentSceneId,
-            );
-            const freshState = useStageStore.getState();
-            return {
-              stage: freshState.stage,
-              scenes: freshState.scenes,
-              currentSceneId: freshState.currentSceneId,
-              mode: freshState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-              quizResults: didActiveSceneRemainUnchanged(
-                stateBeforeQuizRead.scenes,
-                stateBeforeQuizRead.currentSceneId,
-                freshState.scenes,
-                freshState.currentSceneId,
-              )
-                ? quizResults
-                : undefined,
-            };
-          },
+          getStoreState: buildFreshAgentLoopStoreState,
 
           getMessages: () => {
             const currentSession = sessionsRef.current.find((s) => s.id === sessionId);
