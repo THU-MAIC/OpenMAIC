@@ -8,6 +8,9 @@ const { deleteDocument, clearCurrentScene, clearAllForScene } = vi.hoisted(() =>
 
 vi.mock('@/lib/document-store', () => ({
   clearCurrentScene,
+  mutateDocument: vi.fn(async (_stageId, work) =>
+    work({ scenes: [{ id: 'new-scene' }] }, { deleteDocument }),
+  ),
   getDocumentStore: vi.fn(() => ({
     loadDocument: vi.fn().mockResolvedValue({ scenes: [{ id: 'new-scene' }] }),
     deleteDocument,

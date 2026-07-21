@@ -65,7 +65,8 @@ function resolveStore(deps: DocumentMigrationDeps): DocumentStore<AppScene, AppS
 
 function resolveKv(deps: DocumentMigrationDeps): KVStore {
   if (deps.kv) return deps.kv;
-  if (typeof localStorage === 'undefined') throw new Error('Document migration KV requires localStorage (client-only)');
+  if (typeof localStorage === 'undefined')
+    throw new Error('Document migration KV requires localStorage (client-only)');
   return (defaultKv ??= new BrowserKVStore());
 }
 
@@ -90,7 +91,6 @@ export async function withDocumentLock<T>(
       work(),
     );
   }
-  if (typeof window === 'undefined') return work();
   throw new DocumentLockUnavailableError(
     `Web Locks are required to mutate document ${JSON.stringify(stageId)}`,
   );
@@ -255,14 +255,26 @@ export function mutateDocument<T>(
   work: (document: AppDocument | null, store: DocumentStore<AppScene, AppStage>) => Promise<T>,
   deps: DocumentMigrationDeps = {},
 ): Promise<T> {
-  return withDocumentLock(
-    stageId,
-    async () => {
-      const access = await migrateLocked(stageId, deps);
-      return work(access.document, resolveStore(deps));
-    },
-    deps,
-  );
+  const mutateLocked = async (): Promise<T> => {
+    const access = await migrateLocked(stageId, deps);
+    return work(access.document, resolveStore(deps));
+  };
+  return withDocumentLock(stageId, mutateLocked, deps).catch(async (error: unknown) => {
+    if (!(error instanceof DocumentLockUnavailableError)) throw error;
+
+    // Migration is never attempted without cross-realm exclusion. A
+    // destination-backed document (or a genuinely new id) can still accept
+    // the product's established lock-free/LWW risk; a legacy-only document
+    // stays read-only so two authorities cannot fork.
+    const store = resolveStore(deps);
+    const destination = await store.loadDocument(stageId);
+    if (destination) {
+      assertValidDestination(stageId, destination);
+      return work(destination, store);
+    }
+    if (await getLegacyDocumentStore(deps).read(stageId)) throw error;
+    return work(null, store);
+  });
 }
 
 export type { AppDocumentOutline };

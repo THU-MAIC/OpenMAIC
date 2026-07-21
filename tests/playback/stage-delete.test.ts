@@ -8,6 +8,9 @@ const { clearCursor, deleteLegacyPlaybackRow } = vi.hoisted(() => ({
 vi.mock('@/lib/playback/cursor', () => ({ clearCursor }));
 vi.mock('@/lib/document-store', () => ({
   clearCurrentScene: vi.fn().mockResolvedValue(undefined),
+  mutateDocument: vi.fn(async (_stageId, work) =>
+    work(null, { deleteDocument: vi.fn().mockResolvedValue(undefined) }),
+  ),
   getDocumentStore: vi.fn(() => ({
     loadDocument: vi.fn().mockResolvedValue(null),
     deleteDocument: vi.fn().mockResolvedValue(undefined),
