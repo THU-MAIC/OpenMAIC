@@ -98,6 +98,31 @@ const ERROR_CAPTURE_SHIM = `<script data-iframe-error-shim>
 })();
 </script>`;
 
+// Provides the same microphone controls to older/imported courseware that was
+// saved before the interactive post-processor started injecting this bridge.
+const MICROPHONE_BRIDGE = `<script data-iframe-microphone-bridge>
+(function () {
+  var selectedDeviceId = '', muted = false, streams = [];
+  function apply(stream) { stream.getAudioTracks().forEach(function (track) { track.enabled = !muted; }); }
+  function remember(stream) { if (streams.indexOf(stream) < 0) streams.push(stream); apply(stream); return stream; }
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    var nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = function (constraints) {
+      var next = constraints || {};
+      if (next.audio && typeof next.audio === 'object' && selectedDeviceId) next = Object.assign({}, next, { audio: Object.assign({}, next.audio, { deviceId: { exact: selectedDeviceId } }) });
+      return nativeGetUserMedia(next).then(remember);
+    };
+  }
+  window.addEventListener('message', function (event) {
+    var data = event.data || {};
+    if (data.type !== 'maic-microphone-control') return;
+    if (typeof data.deviceId === 'string') selectedDeviceId = data.deviceId;
+    if (typeof data.muted === 'boolean') muted = data.muted;
+    streams.forEach(apply);
+  });
+})();
+</script>`;
+
 /**
  * Patch embedded HTML to display correctly inside an iframe.
  *
@@ -122,7 +147,8 @@ export function patchHtmlForIframe(html: string): string {
   body { min-height: 100vh; }
 </style>`;
 
-  const injection = '\n' + ERROR_CAPTURE_SHIM + '\n' + STORAGE_SHIM + '\n' + iframeCss;
+  const microphoneInjection = html.includes('OpenMAICMicrophone') ? '' : '\n' + MICROPHONE_BRIDGE;
+  const injection = '\n' + ERROR_CAPTURE_SHIM + '\n' + STORAGE_SHIM + microphoneInjection + '\n' + iframeCss;
 
   // Insert right after <head> or at the start of the document
   const headIdx = html.indexOf('<head>');

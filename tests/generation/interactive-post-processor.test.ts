@@ -5,6 +5,8 @@ describe('interactive post-processing', () => {
   it('exposes the shared pronunciation scorer to generated widgets', () => {
     const html = postProcessInteractiveHtml('<!doctype html><html><body><main>Practice</main></body></html>');
     expect(html).toContain('window.OpenMAICPronunciation');
+    expect(html).toContain('window.OpenMAICMicrophone');
+    expect(html).toContain('maic-microphone-control');
     expect(html).toContain('matchedWords');
     expect(html.match(/OpenMAICPronunciation/g)?.length).toBe(2);
   });

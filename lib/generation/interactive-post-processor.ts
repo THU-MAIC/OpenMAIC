@@ -27,8 +27,46 @@ export function postProcessInteractiveHtml(html: string): string {
   if (!processed.includes('OpenMAICPronunciation')) {
     processed = injectPronunciationScorer(processed);
   }
+  if (!processed.includes('OpenMAICMicrophone')) {
+    processed = injectMicrophoneBridge(processed);
+  }
 
   return processed;
+}
+
+function injectMicrophoneBridge(html: string): string {
+  const script = `<script>
+window.OpenMAICMicrophone = window.OpenMAICMicrophone || (function () {
+  var selectedDeviceId = '', muted = false, streams = [];
+  function apply(stream) { stream.getAudioTracks().forEach(function (track) { track.enabled = !muted; }); }
+  function remember(stream) { if (streams.indexOf(stream) < 0) streams.push(stream); apply(stream); return stream; }
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    var nativeGetUserMedia = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = function (constraints) {
+      var next = constraints || {};
+      if (next.audio && typeof next.audio === 'object' && selectedDeviceId) next = Object.assign({}, next, { audio: Object.assign({}, next.audio, { deviceId: { exact: selectedDeviceId } }) });
+      return nativeGetUserMedia(next).then(remember);
+    };
+  }
+  window.addEventListener('message', function (event) {
+    var data = event.data || {};
+    if (data.type !== 'maic-microphone-control') return;
+    if (typeof data.deviceId === 'string') selectedDeviceId = data.deviceId;
+    if (typeof data.muted === 'boolean') muted = data.muted;
+    streams.forEach(apply);
+  });
+  return { setMuted: function (value) { muted = !!value; streams.forEach(apply); }, setDeviceId: function (value) { selectedDeviceId = value || ''; } };
+})();
+</script>`;
+  const headCloseIdx = html.indexOf('</head>');
+  if (headCloseIdx !== -1) {
+    return html.substring(0, headCloseIdx) + script + '\n</head>' + html.substring(headCloseIdx + 7);
+  }
+  const bodyCloseIdx = html.indexOf('</body>');
+  if (bodyCloseIdx !== -1) {
+    return html.substring(0, bodyCloseIdx) + script + '\n</body>' + html.substring(bodyCloseIdx + 7);
+  }
+  return html + script;
 }
 
 function injectPronunciationScorer(html: string): string {
