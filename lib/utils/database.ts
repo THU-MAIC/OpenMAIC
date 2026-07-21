@@ -628,7 +628,7 @@ export async function importDatabase(
   },
   chatOptions: ChatStorageOptions = {},
 ): Promise<void> {
-  const { canonicalizeLegacyScene, canonicalizeLegacyStage, mutateDocument, saveCurrentScene } =
+  const { canonicalizeLegacyScene, canonicalizeLegacyStage, mutateDocument } =
     await import('@/lib/document-store');
   const legacyScenesByStage = new Map<string, SceneRecord[]>();
   for (const scene of data.scenes ?? []) {
@@ -647,18 +647,28 @@ export async function importDatabase(
           .sort((a, b) => a.order - b.order),
       };
     });
-  const importedDocumentIds: string[] = [];
+  const importedDocuments: Array<{ id: string; preImage: AppDocument | null }> = [];
+  const importedCurrentScenes: Array<{ key: string; preImage: unknown | null }> = [];
+  const kv = new BrowserKVStore();
 
   try {
     for (const document of documents) {
       await mutateDocument(document.stage.id, async (_existing, store) => {
+        const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
         await store.saveDocument(document);
+        importedDocuments.push({ id: document.stage.id, preImage });
       });
-      importedDocumentIds.push(document.stage.id);
     }
     for (const legacyStage of data.stages ?? []) {
       if (legacyStage.currentSceneId !== undefined) {
-        await saveCurrentScene(legacyStage.id, legacyStage.currentSceneId);
+        const key = `editor-current-scene:${legacyStage.id}`;
+        const preImage = await kv.get<unknown>(key, 'device');
+        await kv.set(
+          key,
+          { sceneId: legacyStage.currentSceneId, updatedAt: new Date().toISOString() },
+          'device',
+        );
+        importedCurrentScenes.push({ key, preImage });
       }
     }
 
@@ -746,11 +756,22 @@ export async function importDatabase(
       log.info('Database imported successfully');
     });
   } catch (error) {
-    for (const stageId of importedDocumentIds.reverse()) {
+    for (const { key, preImage } of importedCurrentScenes.reverse()) {
       try {
-        await mutateDocument(stageId, async (_document, store) => store.deleteDocument(stageId));
+        if (preImage === null) await kv.remove(key, 'device');
+        else await kv.set(key, preImage, 'device');
       } catch (rollbackError) {
-        log.error(`Failed to roll back imported document ${stageId}:`, rollbackError);
+        log.error(`Failed to roll back imported current-scene key ${key}:`, rollbackError);
+      }
+    }
+    for (const { id, preImage } of importedDocuments.reverse()) {
+      try {
+        await mutateDocument(id, async (_document, store) => {
+          if (preImage) await store.saveDocument(preImage);
+          else await store.deleteDocument(id);
+        });
+      } catch (rollbackError) {
+        log.error(`Failed to roll back imported document ${id}:`, rollbackError);
       }
     }
     throw error;

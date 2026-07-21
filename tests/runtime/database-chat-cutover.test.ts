@@ -443,6 +443,8 @@ describe('database runtime chat integration', () => {
   it('rolls back imported Dexie rows when restore-marker creation fails', async () => {
     const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
     const { db, importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore, loadCurrentScene, saveCurrentScene } =
+      await import('@/lib/document-store');
     const { loadChatSessions, saveChatSessions } = await import('@/lib/utils/chat-storage');
     await db.stages.put({
       id: 'stage-marker-failure',
@@ -450,6 +452,18 @@ describe('database runtime chat integration', () => {
       createdAt: 1_000,
       updatedAt: 2_000,
     });
+    const documentStore = getDocumentStore();
+    await documentStore.saveDocument({
+      stage: {
+        id: 'stage-marker-failure',
+        name: 'Original destination document',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      },
+      scenes: [],
+    });
+    await saveCurrentScene('stage-marker-failure', 'original-current-scene');
+    const originalCurrentScene = await loadCurrentScene('stage-marker-failure');
     await saveChatSessions(
       'stage-marker-failure',
       [{ ...chatSession(), title: 'Original runtime chat' }],
@@ -479,6 +493,14 @@ describe('database runtime chat integration', () => {
               name: 'Imported stage',
               createdAt: 1_000,
               updatedAt: 3_000,
+              currentSceneId: 'imported-current-scene',
+            },
+            {
+              id: 'stage-created-by-import',
+              name: 'Created by import',
+              createdAt: 1_000,
+              updatedAt: 3_000,
+              currentSceneId: 'created-current-scene',
             },
           ],
           chatSessions: [
@@ -492,9 +514,99 @@ describe('database runtime chat integration', () => {
     await expect(db.stages.get('stage-marker-failure')).resolves.toMatchObject({
       name: 'Original stage',
     });
+    await expect(documentStore.loadDocument('stage-marker-failure')).resolves.toMatchObject({
+      stage: { name: 'Original destination document' },
+    });
+    await expect(documentStore.loadDocument('stage-created-by-import')).resolves.toBeNull();
+    await expect(loadCurrentScene('stage-marker-failure')).resolves.toEqual(originalCurrentScene);
+    await expect(loadCurrentScene('stage-created-by-import')).resolves.toBeNull();
     await expect(
       loadChatSessions('stage-marker-failure', { store: backing, learnerKey }),
     ).resolves.toMatchObject([{ title: 'Original runtime chat' }]);
+  });
+
+  it('blocks lazy migration behind a runtime-wide clear and observes the deleted source', async () => {
+    vi.stubGlobal('navigator', { locks: fairLockManager() });
+    const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
+    const { clearDatabase, db } = await import('@/lib/utils/database');
+    const { loadStageData } = await import('@/lib/utils/stage-storage');
+    await db.stages.put({
+      id: 'stage-clear-migration-race',
+      name: 'Legacy source',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    });
+
+    let releaseDeleteAll!: () => void;
+    const deleteAllGate = new Promise<void>((resolve) => {
+      releaseDeleteAll = resolve;
+    });
+    let clearAcquired!: () => void;
+    const clearHasLock = new Promise<void>((resolve) => {
+      clearAcquired = resolve;
+    });
+    const gatedStore = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'deleteAllRuntime') {
+          return async () => {
+            clearAcquired();
+            await deleteAllGate;
+            return target.deleteAllRuntime();
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    const clearing = clearDatabase(gatedStore);
+    await clearHasLock;
+    let migrationSettled = false;
+    const migrating = loadStageData('stage-clear-migration-race').finally(() => {
+      migrationSettled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(migrationSettled).toBe(false);
+
+    releaseDeleteAll();
+    await clearing;
+    await expect(migrating).resolves.toBeNull();
+  });
+
+  it('loads a divergent destination without marking or deleting its legacy source', async () => {
+    const { db } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const { loadStageData } = await import('@/lib/utils/stage-storage');
+    const kv = new (await import('@openmaic/storage')).BrowserKVStore();
+    await getDocumentStore().saveDocument({
+      stage: {
+        id: 'stage-divergent-snapshot',
+        name: 'Destination V1',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      },
+      scenes: [],
+    });
+    await db.stages.put({
+      id: 'stage-divergent-snapshot',
+      name: 'Legacy V2',
+      createdAt: 1_000,
+      updatedAt: 3_000,
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(loadStageData('stage-divergent-snapshot')).resolves.toMatchObject({
+      stage: { name: 'Destination V1' },
+    });
+    await expect(
+      kv.get('document-migration:stage-divergent-snapshot', 'device'),
+    ).resolves.toBeNull();
+    await expect(db.stages.get('stage-divergent-snapshot')).resolves.toMatchObject({
+      name: 'Legacy V2',
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('stage stage-divergent-snapshot'));
+    warn.mockRestore();
   });
 
   it('finishes an interrupted runtime clear from the durable restore marker', async () => {
