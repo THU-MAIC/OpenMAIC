@@ -21,8 +21,10 @@ let defaultStore: DocumentStore<AppScene, AppStage> | undefined;
 function createBrowserStore(
   deps: Omit<DocumentStoreDeps, 'store'>,
 ): DocumentStore<AppScene, AppStage> {
-  if (typeof window === 'undefined' && !deps.indexedDB) {
-    throw new Error('Document persistence is client-only');
+  // Capability probe, not an environment probe: node test runners inject a
+  // fake `indexedDB` global; a true server render has neither and must throw.
+  if (!deps.indexedDB && typeof indexedDB === 'undefined') {
+    throw new Error('Document persistence requires IndexedDB (client-only)');
   }
   return new BrowserDocumentStore<AppScene, AppStage>({
     indexedDB: deps.indexedDB,

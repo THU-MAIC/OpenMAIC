@@ -4,7 +4,7 @@ const { loadChatSessions } = vi.hoisted(() => ({
   loadChatSessions: vi.fn().mockRejectedValue(new Error('runtime unavailable')),
 }));
 
-vi.mock('@/lib/document', () => ({
+vi.mock('@/lib/document-store', () => ({
   accessDocument: vi.fn().mockResolvedValue({
     document: {
       stage: { id: 'stage-1', name: 'Persisted stage', createdAt: 1_000, updatedAt: 2_000 },

@@ -25,7 +25,7 @@ import {
   mutateDocument,
   saveCurrentScene,
   type AppDocumentOutline,
-} from '@/lib/document';
+} from '@/lib/document-store';
 import { clearAllForScene } from '@/lib/quiz/persistence';
 import { beginStageRuntimeDeletionSafely } from '@/lib/runtime/store';
 import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';

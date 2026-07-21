@@ -65,7 +65,7 @@ function resolveStore(deps: DocumentMigrationDeps): DocumentStore<AppScene, AppS
 
 function resolveKv(deps: DocumentMigrationDeps): KVStore {
   if (deps.kv) return deps.kv;
-  if (typeof window === 'undefined') throw new Error('Document migration KV is client-only');
+  if (typeof localStorage === 'undefined') throw new Error('Document migration KV requires localStorage (client-only)');
   return (defaultKv ??= new BrowserKVStore());
 }
 

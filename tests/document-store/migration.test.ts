@@ -12,8 +12,8 @@ import {
   accessDocument,
   type LegacyDocumentSnapshot,
   type LegacyDocumentStore,
-} from '@/lib/document/migration';
-import type { AppDocument } from '@/lib/document/persistence-types';
+} from '@/lib/document-store/migration';
+import type { AppDocument } from '@/lib/document-store/persistence-types';
 import type { AppScene } from '@/lib/types/stage';
 
 class MemoryKv implements KVStore {
