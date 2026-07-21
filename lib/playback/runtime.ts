@@ -89,13 +89,47 @@ function assertPlaybackPartition(
   }
 }
 
+/**
+ * Every playback session in the learner's partition, oldest first. A learner
+ * merge (`mergeLearner`) deliberately preserves same-kind sessions from both
+ * keys, so reads must fold ALL of them; the oldest is the canonical target
+ * for future appends.
+ */
+async function listPlaybackSessions(
+  store: RuntimeStore,
+  stageId: string,
+  learnerKey: string,
+): Promise<RuntimeSession[]> {
+  const sessions = await store.listSessions(stageId, learnerKey);
+  return sessions
+    .filter((session) => session.kind === 'playback')
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+}
+
 async function findPlaybackSession(
   store: RuntimeStore,
   stageId: string,
   learnerKey: string,
 ): Promise<RuntimeSession | undefined> {
-  const sessions = await store.listSessions(stageId, learnerKey);
-  return sessions.find((session) => session.kind === 'playback');
+  return (await listPlaybackSessions(store, stageId, learnerKey))[0];
+}
+
+/** Fold every valid discussion fact across ALL playback sessions. */
+async function foldConsumedDiscussions(
+  store: RuntimeStore,
+  stageId: string,
+  learnerKey: string,
+): Promise<Set<string>> {
+  const sessions = await listPlaybackSessions(store, stageId, learnerKey);
+  const consumed = new Set<string>();
+  for (const session of sessions) {
+    const records = await store.listRecords(session.id);
+    for (const record of records) {
+      const payload = asDiscussionConsumed(record);
+      if (payload) consumed.add(payload.discussionId);
+    }
+  }
+  return consumed;
 }
 
 async function ensurePlaybackSession(
@@ -198,10 +232,13 @@ export async function migrateLegacyPlaybackState(
     );
   }
 
-  const session = await findPlaybackSession(store, stageId, learnerKey);
-  const records = session ? await store.listRecords(session.id) : [];
-  if (records.length === 0 && legacy.sceneId) {
+  // Append only the facts not yet durable, so a migration interrupted after a
+  // partial append resumes exactly where it failed instead of dropping the
+  // tail (the legacy row survives until every fact landed).
+  if (legacy.sceneId) {
+    const durable = await foldConsumedDiscussions(store, stageId, learnerKey);
     for (const discussionId of new Set(legacy.consumedDiscussions)) {
+      if (durable.has(discussionId)) continue;
       await appendConsumedDiscussion(
         { stageId, sceneId: legacy.sceneId, discussionId },
         store,
@@ -223,19 +260,18 @@ export async function loadConsumedDiscussions(
   const store = deps.store ?? getRuntimeStore();
   const learnerKey = deps.learnerKey ?? (await getLearnerKey());
   await migrateLegacyPlaybackState(stageId, { ...deps, store, learnerKey });
-  const session = await findPlaybackSession(store, stageId, learnerKey);
-  if (!session) return new Set();
-  const records = await store.listRecords(session.id);
-  return new Set(
-    records.map(asDiscussionConsumed).flatMap((payload) => payload?.discussionId ?? []),
-  );
+  return foldConsumedDiscussions(store, stageId, learnerKey);
 }
 
-/** Append one fact without allowing background persistence failures into UI flow. */
+/**
+ * Append one fact without allowing background persistence failures into UI
+ * flow. Returns whether the fact is durable so callers can retry a transient
+ * failure on a later progress tick (at-least-once).
+ */
 export async function recordConsumedDiscussion(
   input: RecordConsumedDiscussionInput,
   deps: PlaybackRuntimeDeps = {},
-): Promise<void> {
+): Promise<boolean> {
   try {
     const store = deps.store ?? getRuntimeStore();
     const learnerKey = deps.learnerKey ?? (await getLearnerKey());
@@ -246,10 +282,12 @@ export async function recordConsumedDiscussion(
       deps.now ?? (() => new Date().toISOString()),
       deps.mintRecordId ?? mintId,
     );
+    return true;
   } catch (error) {
     console.warn(
       `Failed to record consumed playback discussion for stage ${input.stageId}:`,
       error,
     );
+    return false;
   }
 }

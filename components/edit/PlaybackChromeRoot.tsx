@@ -701,6 +701,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
                   stageId: playbackStageId,
                   sceneId: snapshot.sceneId,
                   discussionId,
+                }).then((durable) => {
+                  // A transient failure must not suppress the fact for the rest
+                  // of the mount — drop it so a later progress tick retries.
+                  if (!durable) observed.delete(discussionId);
                 });
               }
             }
