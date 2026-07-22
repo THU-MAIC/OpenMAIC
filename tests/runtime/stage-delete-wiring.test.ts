@@ -29,9 +29,6 @@ vi.mock('@/lib/utils/chat-storage', () => ({
   loadChatSessions: vi.fn(),
   deleteChatSessions: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/lib/utils/playback-storage', () => ({
-  clearPlaybackState: vi.fn().mockResolvedValue(undefined),
-}));
 vi.mock('@/lib/quiz/persistence', () => ({
   clearAllForScene: vi.fn(),
 }));
