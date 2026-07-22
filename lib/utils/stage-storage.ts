@@ -14,7 +14,7 @@ import {
   deleteChatSessions,
   type ChatStorageSnapshot,
 } from './chat-storage';
-import { clearPlaybackState } from './playback-storage';
+import { clearCursor } from '@/lib/playback/cursor';
 import { clearAllForScene } from '@/lib/quiz/persistence';
 import { beginStageRuntimeDeletionSafely } from '@/lib/runtime/store';
 import { clearStageDrainWatermarks } from '@/lib/pbl/v2/runtime/drain';
@@ -169,10 +169,16 @@ export async function deleteStageData(stageId: string): Promise<void> {
       // Delete scenes
       await db.scenes.where('stageId').equals(stageId).delete();
 
-      // Clear legacy chat rows and the still-Dexie playback state. Runtime chat
-      // rows are removed by the all-kind cascade below.
+      // Clear legacy chat rows and the device-scoped playback cursor. Runtime
+      // rows of every kind are removed by the all-kind cascade below.
       await deleteChatSessions(stageId);
-      await clearPlaybackState(stageId);
+      // An unmigrated legacy playback row must not outlive its stage.
+      await db.playbackState.delete(stageId);
+      try {
+        await clearCursor(stageId);
+      } catch (error) {
+        log.warn(`Failed to clear playback cursor for stage ${stageId}:`, error);
+      }
 
       // Sweep quiz persistence keys for each deleted scene.
       for (const sceneId of sceneIds) {

@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main, feat/maic-editor-v0, feat/maic-editor-v1, runtime-server-backend]
+    branches: [main, feat/maic-editor-v0, feat/maic-editor-v1, runtime-server-backend, integration/runtime-data-cutover]
 
 concurrency:
   group: ci-${{ github.ref }}

@@ -6,7 +6,13 @@ import type {
   RuntimeSession,
   RuntimeSessionStatus,
 } from '@openmaic/dsl';
-import type { RuntimeSessionInit, RuntimeStore } from './types.js';
+import type {
+  RuntimeAppendOptions,
+  RuntimeSessionInit,
+  RuntimeStore,
+  RuntimeTailOptions,
+} from './types.js';
+import { RuntimeAppendConflictError } from './types.js';
 import { assertJsonValue } from './json-value.js';
 
 export interface HttpRuntimeHeadersContext {
@@ -31,7 +37,14 @@ interface ErrorResponseBody {
   error?: {
     code?: unknown;
     message?: unknown;
+    details?: unknown;
   };
+}
+
+interface RuntimeAppendConflictDetails {
+  sessionId?: unknown;
+  expectedLastSeq?: unknown;
+  actualLastSeq?: unknown;
 }
 
 /** A server-side RuntimeStore failure, retaining its machine-readable HTTP identity. */
@@ -170,6 +183,26 @@ export class HttpRuntimeStore implements RuntimeStore {
         typeof errorBody?.error?.message === 'string'
           ? errorBody.error.message
           : `@openmaic/storage: RuntimeStore HTTP request failed with status ${response.status}`;
+      if (code === 'RUNTIME_APPEND_CONFLICT') {
+        const details = errorBody?.error?.details as RuntimeAppendConflictDetails | undefined;
+        if (
+          typeof details?.sessionId === 'string' &&
+          (details.expectedLastSeq === null ||
+            (typeof details.expectedLastSeq === 'number' &&
+              Number.isSafeInteger(details.expectedLastSeq) &&
+              details.expectedLastSeq >= 0)) &&
+          (details.actualLastSeq === null ||
+            (typeof details.actualLastSeq === 'number' &&
+              Number.isSafeInteger(details.actualLastSeq) &&
+              details.actualLastSeq >= 0))
+        ) {
+          throw new RuntimeAppendConflictError(
+            details.sessionId,
+            details.expectedLastSeq,
+            details.actualLastSeq,
+          );
+        }
+      }
       throw new HttpRuntimeStoreError(response.status, code, message);
     }
     if (response.status === 204) return { body: undefined as T, status: response.status };
@@ -238,11 +271,17 @@ export class HttpRuntimeStore implements RuntimeStore {
     sessionId: string,
     status: RuntimeSessionStatus,
     updatedAt: string,
+    options: RuntimeTailOptions = {},
   ): Promise<void> {
-    await this.request<void>('PATCH', `/runtime/sessions/${segment(sessionId)}/status`, {
+    const body = {
       status,
       updatedAt,
-    });
+      ...(options.expectedLastSeq === undefined
+        ? {}
+        : { expectedLastSeq: options.expectedLastSeq }),
+    };
+    assertJsonValue(body, `runtime session ${JSON.stringify(sessionId)} status update`);
+    await this.request<void>('PATCH', `/runtime/sessions/${segment(sessionId)}/status`, body);
   }
 
   async deleteSession(sessionId: string): Promise<void> {
@@ -251,14 +290,25 @@ export class HttpRuntimeStore implements RuntimeStore {
 
   async appendRecord<TPayload extends RuntimePayload>(
     init: RuntimeRecordInit<TPayload>,
+    options: RuntimeAppendOptions = {},
   ): Promise<RuntimeRecord<TPayload>> {
     assertJsonValue(init.payload, `runtime record ${JSON.stringify(init.id)} payload`);
     const normalizedInit = withoutUndefinedAnchors(init);
     assertJsonValue(normalizedInit, `runtime record ${JSON.stringify(init.id)}`);
+    const body = {
+      ...normalizedInit,
+      ...(options.expectedLastSeq === undefined
+        ? {}
+        : { expectedLastSeq: options.expectedLastSeq }),
+      ...(options.sessionTransition === undefined
+        ? {}
+        : { sessionTransition: options.sessionTransition }),
+    };
+    assertJsonValue(body, `runtime record ${JSON.stringify(init.id)} append request`);
     const record = await this.request<RuntimeRecord<TPayload>>(
       'POST',
       `/runtime/sessions/${segment(init.sessionId)}/records`,
-      normalizedInit,
+      body,
     );
     return assertValidRecord(record);
   }

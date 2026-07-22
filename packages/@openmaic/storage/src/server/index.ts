@@ -1,7 +1,9 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import {
   isChatMessageSkeleton,
+  isIsoTimestamp,
   isQuizAttemptSkeleton,
+  isRuntimeSessionStatus,
   needsRuntimeMigration,
   RUNTIME_DSL_VERSION,
   runtimeDslVersionOf,
@@ -16,10 +18,13 @@ import type {
 } from '@openmaic/dsl';
 import { assertJsonValue } from '../runtime/json-value.js';
 import type {
+  RuntimeAppendOptions,
   RuntimePayloadValidator,
   RuntimeSessionInit,
   RuntimeStore,
+  RuntimeTailOptions,
 } from '../runtime/types.js';
+import { RuntimeAppendConflictError } from '../runtime/types.js';
 
 export interface RuntimeHttpPrincipal {
   learnerKey?: string;
@@ -262,6 +267,7 @@ async function rethrowClassifiedSessionWriteFailure(
   sessionId: string,
   error: unknown,
 ): Promise<never> {
+  if (error instanceof RuntimeAppendConflictError) throw error;
   let current: RuntimeSession | undefined;
   try {
     current = await existingSessionOwnedByPrincipal(store, principal, sessionId);
@@ -329,6 +335,22 @@ function parsePath(req: IncomingMessage): { parts: string[]; url: URL } {
 }
 
 function mappedError(error: unknown): { status: number; body: ErrorBody } {
+  if (error instanceof RuntimeAppendConflictError) {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: 'RUNTIME_APPEND_CONFLICT',
+          message: error.message,
+          details: {
+            sessionId: error.sessionId,
+            expectedLastSeq: error.expectedLastSeq,
+            actualLastSeq: error.actualLastSeq,
+          },
+        },
+      },
+    };
+  }
   if (error instanceof RuntimeHttpError && error.status < 500) {
     return {
       status: error.status,
@@ -433,14 +455,18 @@ async function route(
       return;
     }
     if (method === 'PATCH' && parts.length === 4 && parts[3] === 'status') {
-      const body = await readJson<{ status: RuntimeSessionStatus; updatedAt: string }>(req);
+      const body = await readJson<
+        { status: RuntimeSessionStatus; updatedAt: string } & RuntimeTailOptions
+      >(req);
       const session = await writableSession(store, principal, sessionId);
       validationError(
         validateRuntimeSession({ ...session, status: body.status, updatedAt: body.updatedAt }),
         `@openmaic/storage: invalid runtime session ${JSON.stringify(sessionId)}`,
       );
       try {
-        await store.setSessionStatus(sessionId, body.status, body.updatedAt);
+        await store.setSessionStatus(sessionId, body.status, body.updatedAt, {
+          ...(body.expectedLastSeq === undefined ? {} : { expectedLastSeq: body.expectedLastSeq }),
+        });
       } catch (error) {
         await rethrowClassifiedSessionWriteFailure(store, principal, sessionId, error);
       }
@@ -465,11 +491,29 @@ async function route(
       return;
     }
     if (method === 'POST' && parts.length === 4 && parts[3] === 'records') {
-      const init = await readJson<RuntimeRecordInit & { seq?: unknown }>(req);
+      const body = await readJson<RuntimeRecordInit & RuntimeAppendOptions & { seq?: unknown }>(
+        req,
+      );
+      const { expectedLastSeq, sessionTransition, ...init } = body;
       if (init.sessionId !== sessionId) {
         throw validationFailure(
           'invalid runtime record: body sessionId does not match the request path',
         );
+      }
+      // Classify a malformed transition here: the store's own throw would
+      // surface as a 500, but a bad request body is the client's error.
+      if (sessionTransition !== undefined) {
+        if (
+          typeof sessionTransition !== 'object' ||
+          sessionTransition === null ||
+          !isRuntimeSessionStatus((sessionTransition as { status?: unknown }).status) ||
+          typeof (sessionTransition as { updatedAt?: unknown }).updatedAt !== 'string' ||
+          !isIsoTimestamp((sessionTransition as { updatedAt: string }).updatedAt)
+        ) {
+          throw validationFailure(
+            'invalid runtime record: sessionTransition requires a valid session status and an ISO updatedAt string',
+          );
+        }
       }
       validationError(
         validateRuntimeRecord({ ...init, seq: 0 }),
@@ -494,7 +538,14 @@ async function route(
         );
       }
       try {
-        sendJson(res, 201, await store.appendRecord(init));
+        sendJson(
+          res,
+          201,
+          await store.appendRecord(init, {
+            ...(expectedLastSeq === undefined ? {} : { expectedLastSeq }),
+            ...(sessionTransition === undefined ? {} : { sessionTransition }),
+          }),
+        );
       } catch (error) {
         await rethrowClassifiedSessionWriteFailure(store, principal, sessionId, error);
       }
@@ -612,7 +663,10 @@ export function createRuntimeHttpHandler(
         res.destroy(error instanceof Error ? error : undefined);
         return;
       }
-      if (!(error instanceof RuntimeHttpError) || error.status >= 500) {
+      if (
+        (!(error instanceof RuntimeHttpError) || error.status >= 500) &&
+        !(error instanceof RuntimeAppendConflictError)
+      ) {
         console.error('@openmaic/storage: Runtime HTTP handler internal error', error);
       }
       const mapped = mappedError(error);

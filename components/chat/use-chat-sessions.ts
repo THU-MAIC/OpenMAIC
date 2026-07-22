@@ -29,7 +29,10 @@ import { StreamBuffer } from '@/lib/buffer/stream-buffer';
 import type { AgentStartItem, ActionItem } from '@/lib/buffer/stream-buffer';
 import { runAgentLoop, type AgentLoopStoreState } from '@/lib/chat/agent-loop';
 import { ActionEngine } from '@/lib/action/engine';
-import { readSubmittedState } from '@/lib/quiz/persistence';
+import {
+  buildQuizResultsForStoreState,
+  didActiveSceneRemainUnchanged,
+} from '@/lib/chat/quiz-results-for-store-state';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { isPiChatEnabled } from '@/lib/config/feature-flags';
@@ -116,41 +119,6 @@ export function consumePiSessionBoundaryContext(
   return contexts.delete(sessionId);
 }
 
-/**
- * Hydrate post-submit quiz state for the active scene from localStorage so the
- * agent receives the student's actual answers and grader feedback. Returns
- * `undefined` when the active scene is not a quiz, the student has not submitted
- * yet, or the persisted blob is unreadable — `state-context.ts` then falls back
- * to the bare question summary.
- */
-function buildQuizResultsForStoreState(
-  scenes: { id: string; type?: string }[],
-  currentSceneId: string | null,
-):
-  | {
-      sceneId: string;
-      answers: Record<string, string | string[]>;
-      results: Array<{
-        questionId: string;
-        correct: boolean | null;
-        status: 'correct' | 'incorrect';
-        earned: number;
-        aiComment?: string;
-      }>;
-    }
-  | undefined {
-  if (!currentSceneId) return undefined;
-  const scene = scenes.find((s) => s.id === currentSceneId);
-  if (!scene || scene.type !== 'quiz') return undefined;
-  const submitted = readSubmittedState(currentSceneId);
-  if (!submitted || submitted.kind !== 'reviewing') return undefined;
-  return {
-    sceneId: currentSceneId,
-    answers: submitted.answers,
-    results: submitted.results,
-  };
-}
-
 interface UseChatSessionsOptions {
   onLiveSpeech?: (text: string | null, agentId?: string | null) => void;
   onSpeechProgress?: (ratio: number | null) => void;
@@ -174,7 +142,6 @@ interface UseChatSessionsOptions {
 
 export type ChatRequestTemplate = {
   messages: UIMessage<ChatMessageMetadata>[];
-  storeState: Record<string, unknown>;
   config: {
     agentIds: string[];
     sessionType?: string;
@@ -192,9 +159,37 @@ export type ChatRequestTemplate = {
   piSessionBoundary?: PiSessionBoundaryContext;
 };
 
-export function withPiInclassWhiteboardTools(
-  requestTemplate: ChatRequestTemplate,
-): ChatRequestTemplate {
+/**
+ * One fresh store-state snapshot for an outgoing chat request. Quiz results
+ * come from the async RuntimeStore read; the before/after scene compare drops
+ * them when a scene transition raced the read (a stale scene's results must
+ * not leak into the next scene's request).
+ */
+async function buildFreshAgentLoopStoreState(): Promise<AgentLoopStoreState> {
+  const stateBeforeQuizRead = useStageStore.getState();
+  const quizResults = await buildQuizResultsForStoreState(
+    stateBeforeQuizRead.scenes,
+    stateBeforeQuizRead.currentSceneId,
+  );
+  const freshState = useStageStore.getState();
+  return {
+    stage: freshState.stage,
+    scenes: freshState.scenes,
+    currentSceneId: freshState.currentSceneId,
+    mode: freshState.mode,
+    whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
+    quizResults: didActiveSceneRemainUnchanged(
+      stateBeforeQuizRead.scenes,
+      stateBeforeQuizRead.currentSceneId,
+      freshState.scenes,
+      freshState.currentSceneId,
+    )
+      ? quizResults
+      : undefined,
+  };
+}
+
+export function withPiInclassWhiteboardTools<T extends ChatRequestTemplate>(requestTemplate: T): T {
   return {
     ...requestTemplate,
     config: {
@@ -326,7 +321,7 @@ export function getPiSingleRequestOutcome(
 
 export async function runPiSingleRequest(
   sessionId: string,
-  requestTemplate: ChatRequestTemplate,
+  requestTemplate: ChatRequestTemplate & { storeState: AgentLoopStoreState },
   controller: AbortController,
   sessionType: SessionType,
   createConsumer: StatelessStreamConsumerFactory,
@@ -1147,10 +1142,14 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       }
 
       if (isPiChatEnabled()) {
+        // Pi bypasses runAgentLoop's per-iteration getStoreState, so its single
+        // request needs the snapshot built here — /api/chat/pi rejects bodies
+        // without storeState.
+        const storeState = await buildFreshAgentLoopStoreState();
         const firstRequestContext = getFirstPiRequestContext(sessionId);
         const piRequestTemplate = firstRequestContext
-          ? { ...requestTemplate, piSessionBoundary: firstRequestContext }
-          : requestTemplate;
+          ? { ...requestTemplate, storeState, piSessionBoundary: firstRequestContext }
+          : { ...requestTemplate, storeState };
         await runPiSingleRequest(
           sessionId,
           withPiInclassWhiteboardTools(piRequestTemplate),
@@ -1189,20 +1188,7 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           thinkingConfig: requestTemplate.thinkingConfig,
         },
         {
-          getStoreState: (): AgentLoopStoreState => {
-            const freshState = useStageStore.getState();
-            return {
-              stage: freshState.stage,
-              scenes: freshState.scenes,
-              currentSceneId: freshState.currentSceneId,
-              mode: freshState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-              quizResults: buildQuizResultsForStoreState(
-                freshState.scenes,
-                freshState.currentSceneId,
-              ),
-            };
-          },
+          getStoreState: buildFreshAgentLoopStoreState,
 
           getMessages: () => {
             const currentSession = sessionsRef.current.find((s) => s.id === sessionId);
@@ -1563,8 +1549,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       streamingSessionIdRef.current = sessionId;
       setIsStreaming(true);
 
-      const currentState = useStageStore.getState();
-
       try {
         log.info(`[ChatArea] Resuming session: ${sessionId}`);
 
@@ -1580,17 +1564,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           sessionId,
           {
             messages: session.messages,
-            storeState: {
-              stage: currentState.stage,
-              scenes: currentState.scenes,
-              currentSceneId: currentState.currentSceneId,
-              mode: currentState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-              quizResults: buildQuizResultsForStoreState(
-                currentState.scenes,
-                currentState.currentSceneId,
-              ),
-            },
             config: {
               agentIds,
               sessionType: session.type,
@@ -1786,8 +1759,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
         }
       });
 
-      const currentState = useStageStore.getState();
-
       try {
         log.info(
           `[ChatArea] Sending message: "${content.slice(0, 50)}..." agents: ${agentIds.join(', ')}`,
@@ -1800,17 +1771,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           sessionId!,
           {
             messages: sessionMessages,
-            storeState: {
-              stage: currentState.stage,
-              scenes: currentState.scenes,
-              currentSceneId: currentState.currentSceneId,
-              mode: currentState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-              quizResults: buildQuizResultsForStoreState(
-                currentState.scenes,
-                currentState.currentSceneId,
-              ),
-            },
             config: {
               agentIds,
               sessionType,
@@ -1934,8 +1894,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
       streamingSessionIdRef.current = sessionId;
       setIsStreaming(true);
 
-      const currentState = useStageStore.getState();
-
       try {
         const userProfileState = useUserProfileStore.getState();
         const mc = getCurrentModelConfig();
@@ -1944,17 +1902,6 @@ export function useChatSessions(options: UseChatSessionsOptions = {}) {
           sessionId,
           {
             messages: [],
-            storeState: {
-              stage: currentState.stage,
-              scenes: currentState.scenes,
-              currentSceneId: currentState.currentSceneId,
-              mode: currentState.mode,
-              whiteboardOpen: useCanvasStore.getState().whiteboardOpen,
-              quizResults: buildQuizResultsForStoreState(
-                currentState.scenes,
-                currentState.currentSceneId,
-              ),
-            },
             config: {
               agentIds,
               sessionType: 'discussion',

@@ -13,6 +13,7 @@ vi.mock('@/lib/runtime/store', () => ({
 vi.mock('@/lib/utils/database', () => ({
   db: {
     stages: { delete: vi.fn().mockResolvedValue(undefined) },
+    playbackState: { delete: vi.fn().mockResolvedValue(undefined) },
     scenes: {
       where: () => ({
         equals: () => ({
@@ -27,9 +28,6 @@ vi.mock('@/lib/utils/chat-storage', () => ({
   saveChatSessions: vi.fn(),
   loadChatSessions: vi.fn(),
   deleteChatSessions: vi.fn().mockResolvedValue(undefined),
-}));
-vi.mock('@/lib/utils/playback-storage', () => ({
-  clearPlaybackState: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock('@/lib/quiz/persistence', () => ({
   clearAllForScene: vi.fn(),

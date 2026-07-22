@@ -17,7 +17,13 @@ import type {
 } from '@openmaic/dsl';
 import { BrowserRuntimeStore } from '../src/runtime/browser.js';
 import { assertJsonValue } from '../src/runtime/json-value.js';
-import type { RuntimeSessionInit, RuntimeStore } from '../src/runtime/types.js';
+import type {
+  RuntimeAppendOptions,
+  RuntimeSessionInit,
+  RuntimeStore,
+  RuntimeTailOptions,
+} from '../src/runtime/types.js';
+import { RuntimeAppendConflictError } from '../src/runtime/types.js';
 
 export interface HttpConformanceServer {
   baseUrl: string;
@@ -34,6 +40,7 @@ interface ErrorBody {
   error: {
     code: string;
     message: string;
+    details?: unknown;
   };
 }
 
@@ -80,6 +87,22 @@ async function readJson<T>(req: IncomingMessage): Promise<T> {
 
 function errorResponse(error: unknown): { status: number; body: ErrorBody } {
   const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof RuntimeAppendConflictError) {
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: 'RUNTIME_APPEND_CONFLICT',
+          message,
+          details: {
+            sessionId: error.sessionId,
+            expectedLastSeq: error.expectedLastSeq,
+            actualLastSeq: error.actualLastSeq,
+          },
+        },
+      },
+    };
+  }
   if (error instanceof SyntaxError) {
     return { status: 400, body: { error: { code: 'VALIDATION_FAILED', message } } };
   }
@@ -232,14 +255,18 @@ async function route(
       return;
     }
     if (method === 'PATCH' && parts.length === 4 && parts[3] === 'status') {
-      const body = await readJson<{ status: RuntimeSessionStatus; updatedAt: string }>(req);
+      const body = await readJson<
+        { status: RuntimeSessionStatus; updatedAt: string } & RuntimeTailOptions
+      >(req);
       const session = await requireSession(store, sessionId);
       assertNotFutureSession(session);
       validationError(
         validateRuntimeSession({ ...session, status: body.status, updatedAt: body.updatedAt }),
         `@openmaic/storage: invalid runtime session ${JSON.stringify(sessionId)}`,
       );
-      await store.setSessionStatus(sessionId, body.status, body.updatedAt);
+      await store.setSessionStatus(sessionId, body.status, body.updatedAt, {
+        ...(body.expectedLastSeq === undefined ? {} : { expectedLastSeq: body.expectedLastSeq }),
+      });
       sendNoContent(res);
       return;
     }
@@ -249,7 +276,10 @@ async function route(
       return;
     }
     if (method === 'POST' && parts.length === 4 && parts[3] === 'records') {
-      const init = await readJson<RuntimeRecordInit & { seq?: unknown }>(req);
+      const body = await readJson<RuntimeRecordInit & RuntimeAppendOptions & { seq?: unknown }>(
+        req,
+      );
+      const { expectedLastSeq, sessionTransition, ...init } = body;
       if (init.sessionId !== sessionId) {
         throw new ConformanceHttpError(
           400,
@@ -272,7 +302,14 @@ async function route(
             `status '${session.status}' — records may only be appended to an active session`,
         );
       }
-      sendJson(res, 201, await store.appendRecord(init));
+      sendJson(
+        res,
+        201,
+        await store.appendRecord(init, {
+          ...(expectedLastSeq === undefined ? {} : { expectedLastSeq }),
+          ...(sessionTransition === undefined ? {} : { sessionTransition }),
+        }),
+      );
       return;
     }
     if (method === 'GET' && parts.length === 4 && parts[3] === 'records') {
