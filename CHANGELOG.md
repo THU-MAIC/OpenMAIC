@@ -4,6 +4,50 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.1] - 2026-07-21
+
+### Features
+
+- **Video export (MP4)** — Export a lesson as a rendered video: a `VideoTimeline` IR with a pure compile pipeline [#913](https://github.com/THU-MAIC/OpenMAIC/pull/913), an L1 Hyperframes emitter with in-browser frame collection and ZIP export [#931](https://github.com/THU-MAIC/OpenMAIC/pull/931), and a service-backed MP4 render with in-app one-click export [#937](https://github.com/THU-MAIC/OpenMAIC/pull/937) (by @cosarah) — built on a shared orchestration spec in `lib/choreography` [#890](https://github.com/THU-MAIC/OpenMAIC/pull/890) (by @cosarah) and persisted TTS audio durations [#862](https://github.com/THU-MAIC/OpenMAIC/pull/862) (by @cosarah)
+- **Server-backed runtime storage** — A pluggable storage seam for classroom runtime state: `@openmaic/storage` KV + asset primitives [#858](https://github.com/THU-MAIC/OpenMAIC/pull/858), a normalized DocumentStore [#860](https://github.com/THU-MAIC/OpenMAIC/pull/860), RuntimeStore sessions with append-only records [#880](https://github.com/THU-MAIC/OpenMAIC/pull/880), a DSL runtime envelope [#870](https://github.com/THU-MAIC/OpenMAIC/pull/870), device-anonymous learner identity [#885](https://github.com/THU-MAIC/OpenMAIC/pull/885), a runtime-event outbox with dual-write [#893](https://github.com/THU-MAIC/OpenMAIC/pull/893), cutovers for PBL learner state [#902](https://github.com/THU-MAIC/OpenMAIC/pull/902) [#922](https://github.com/THU-MAIC/OpenMAIC/pull/922) and chat sessions [#926](https://github.com/THU-MAIC/OpenMAIC/pull/926), and an HTTP backend contract with a Postgres backend and reference server [#946](https://github.com/THU-MAIC/OpenMAIC/pull/946)
+- **Editor: direct manipulation** — Select and drag slide elements [#859](https://github.com/THU-MAIC/OpenMAIC/pull/859), 8-point resize + rotate handles [#881](https://github.com/THU-MAIC/OpenMAIC/pull/881), marquee multi-select with multi-element drag [#888](https://github.com/THU-MAIC/OpenMAIC/pull/888), and a draggable insert toolbar [#912](https://github.com/THU-MAIC/OpenMAIC/pull/912), scaffolded as the `@openmaic/renderer` v2 editing surface behind a machine-enforced import boundary [#853](https://github.com/THU-MAIC/OpenMAIC/pull/853) [#855](https://github.com/THU-MAIC/OpenMAIC/pull/855)
+- **Edit with AI upgrades** — Natural-language element edits through a typed EditIntent pipeline [#896](https://github.com/THU-MAIC/OpenMAIC/pull/896), validated JSON Patch element edits [#927](https://github.com/THU-MAIC/OpenMAIC/pull/927), and multi-session conversation history for the AI editor [#801](https://github.com/THU-MAIC/OpenMAIC/pull/801)
+- **DSL self-ownership** — `@openmaic/dsl` now owns the Action playback verbs [#787](https://github.com/THU-MAIC/OpenMAIC/pull/787), ships JSON Schema artifacts with pure validators [#817](https://github.com/THU-MAIC/OpenMAIC/pull/817), activates the migration registry and runner [#825](https://github.com/THU-MAIC/OpenMAIC/pull/825), and owns element-level normalization and defaults wired into the generator [#832](https://github.com/THU-MAIC/OpenMAIC/pull/832) and the importer output boundary [#845](https://github.com/THU-MAIC/OpenMAIC/pull/845)
+- **Document Parsing expansion** — Multi-format course-material upload [#741](https://github.com/THU-MAIC/OpenMAIC/pull/741) and document bundles [#844](https://github.com/THU-MAIC/OpenMAIC/pull/844) (by @jackefn), audio/video media extraction with an AliDocMind provider [#887](https://github.com/THU-MAIC/OpenMAIC/pull/887) (by @yanpgwang), and a renamed Document Parsing surface with visible supported formats and extended MinerU support (by @yanpgwang)
+- Add Azure OpenAI as an LLM provider [#916](https://github.com/THU-MAIC/OpenMAIC/pull/916) (by @hydraxman), SearXNG as a web-search provider [#842](https://github.com/THU-MAIC/OpenMAIC/pull/842) (by @PineSongCN), ComfyUI as an image provider [#850](https://github.com/THU-MAIC/OpenMAIC/pull/850) (by @PhillLittlewood), the GPT-5.6 model family [#907](https://github.com/THU-MAIC/OpenMAIC/pull/907), and an updated Doubao Seed model catalog [#827](https://github.com/THU-MAIC/OpenMAIC/pull/827)
+- Add one-click token-plan setup and a deployment usage dashboard [#784](https://github.com/THU-MAIC/OpenMAIC/pull/784) (by @yanpgwang)
+- Add action-level playback navigation [#843](https://github.com/THU-MAIC/OpenMAIC/pull/843) (by @danishsshaikh)
+- Redesign the narration timeline (action picker + inline insert) and enable it for interactive/PBL scenes [#834](https://github.com/THU-MAIC/OpenMAIC/pull/834)
+- Add in-editor authoring of classroom agents with a Stage-level roster [#816](https://github.com/THU-MAIC/OpenMAIC/pull/816)
+- Parallelize within-scene TTS generation [#696](https://github.com/THU-MAIC/OpenMAIC/pull/696) (by @ly-wang19)
+- Feed the real HTML element inventory into interactive-action prompts [#829](https://github.com/THU-MAIC/OpenMAIC/pull/829) and add a postMessage listener contract to diagram/game/code widgets [#872](https://github.com/THU-MAIC/OpenMAIC/pull/872) (by @yanpgwang)
+- Add an experimental Pi classroom runtime behind a flag [#914](https://github.com/THU-MAIC/OpenMAIC/pull/914)
+
+### Bug Fixes
+
+- Security: disable redirects in media connectivity probes [#930](https://github.com/THU-MAIC/OpenMAIC/pull/930) and harden provider redirect handling with ISATAP address detection [#928](https://github.com/THU-MAIC/OpenMAIC/pull/928) against SSRF (by @YizukiAme)
+- Generation: strip reasoning blocks before JSON parsing [#750](https://github.com/THU-MAIC/OpenMAIC/pull/750) (by @yipwingtim), localize scene-generation errors [#894](https://github.com/THU-MAIC/OpenMAIC/pull/894) (by @wsun1), tolerate malformed generated slide data (by @yipwingtim), and honor outline node constraints in diagrams [#911](https://github.com/THU-MAIC/OpenMAIC/pull/911)
+- Editor: keep emptied or zero-action scenes playable, bind the outline by stable id, and surface incomplete content [#814](https://github.com/THU-MAIC/OpenMAIC/pull/814); show per-line loading while the batch "regenerate all TTS" runs [#830](https://github.com/THU-MAIC/OpenMAIC/pull/830)
+- Export: fix the unresponsive resource pack for interactive-only decks [#933](https://github.com/THU-MAIC/OpenMAIC/pull/933) (by @2046731121CC), compute SVG path bounding boxes via `getBounds()` [#656](https://github.com/THU-MAIC/OpenMAIC/pull/656), keep sibling attributes when style is empty [#683](https://github.com/THU-MAIC/OpenMAIC/pull/683), and convert PPTX shadow offsets from px to pt [#679](https://github.com/THU-MAIC/OpenMAIC/pull/679) (by @ly-wang19)
+- Quiz: render formulas in quiz text [#833](https://github.com/THU-MAIC/OpenMAIC/pull/833) (by @dpersek); stop leaking questions on entry and pass results to the chat agent [#823](https://github.com/THU-MAIC/OpenMAIC/pull/823) (by @yanpgwang)
+- Storage: store image files as array buffers [#923](https://github.com/THU-MAIC/OpenMAIC/pull/923) (by @YizukiAme) and accept image storage IDs containing underscores [#918](https://github.com/THU-MAIC/OpenMAIC/pull/918)
+- Chat: preserve message line breaks [#908](https://github.com/THU-MAIC/OpenMAIC/pull/908), and cap the roundtable non-presentation input height [#917](https://github.com/THU-MAIC/OpenMAIC/pull/917) (by @YizukiAme)
+- TTS: respect string context when splitting the Doubao stream [#677](https://github.com/THU-MAIC/OpenMAIC/pull/677); web search: match Brave's current result-title markup [#688](https://github.com/THU-MAIC/OpenMAIC/pull/688) (by @ly-wang19)
+- Stage: centralize the deck completion predicate [#883](https://github.com/THU-MAIC/OpenMAIC/pull/883) (by @dpersek)
+- AI: close PROVIDERS/THINKING_CAPABILITIES metadata drift with a guard [#809](https://github.com/THU-MAIC/OpenMAIC/pull/809) (by @mvanhorn)
+- Home: clarify the Interactive Mode selected state [#901](https://github.com/THU-MAIC/OpenMAIC/pull/901); lecture notes: render interactive-webpage widget actions [#810](https://github.com/THU-MAIC/OpenMAIC/pull/810)
+- Docker: fix the postinstall script failure in Docker builds [#835](https://github.com/THU-MAIC/OpenMAIC/pull/835) (by @Lee-Flier)
+- mathml2omml: call `includes()` instead of indexing it [#681](https://github.com/THU-MAIC/OpenMAIC/pull/681) (by @ly-wang19)
+
+### Other Changes
+
+- Performance: dedupe editor alignment snap-lines in O(n) [#692](https://github.com/THU-MAIC/OpenMAIC/pull/692), diff code lines in O(n) via a prev-line map [#706](https://github.com/THU-MAIC/OpenMAIC/pull/706), and index assigned images by id in `fixElementDefaults` [#701](https://github.com/THU-MAIC/OpenMAIC/pull/701) (by @ly-wang19)
+- Tests: cover `splitLongSpeechText` / `splitLongSpeechActions` [#694](https://github.com/THU-MAIC/OpenMAIC/pull/694) (by @ly-wang19); settle dynamic imports [#899](https://github.com/THU-MAIC/OpenMAIC/pull/899) and drain debounced saves [#897](https://github.com/THU-MAIC/OpenMAIC/pull/897) before store-test teardown
+- Media providers: share the submit-poll task driver [#900](https://github.com/THU-MAIC/OpenMAIC/pull/900) and the auth probe across matching adapters [#903](https://github.com/THU-MAIC/OpenMAIC/pull/903), and remove the dead legacy pipeline chain [#905](https://github.com/THU-MAIC/OpenMAIC/pull/905) (by @YizukiAme)
+- Packages: add repository metadata [#813](https://github.com/THU-MAIC/OpenMAIC/pull/813) and set `@openmaic/*` package versions to 0.0.2 [#812](https://github.com/THU-MAIC/OpenMAIC/pull/812) (by @xuyuanwei678)
+- Docs: document the dev-server OOM workaround for large generations [#808](https://github.com/THU-MAIC/OpenMAIC/pull/808) (by @mvanhorn)
+- Tighten GitHub issue intake [#921](https://github.com/THU-MAIC/OpenMAIC/pull/921)
+
 ## [0.3.0] - 2026-06-28
 
 ### License
