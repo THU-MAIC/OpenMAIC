@@ -116,12 +116,18 @@ async function migrateLegacyCursor(
       await store.delete(stageId);
       return;
     }
+    // A corrupt legacy timestamp must not wedge migration: throwing here
+    // would leave the row in place and re-throw on every load, silently
+    // disabling resume for the stage. Fall back to "now" and move on.
+    const migratedAt = Number.isFinite(new Date(legacy.updatedAt).getTime())
+      ? new Date(legacy.updatedAt).toISOString()
+      : new Date().toISOString();
     await saveCursorValue(
       stageId,
       {
         sceneId: legacy.sceneId,
         actionIndex: legacy.actionIndex,
-        updatedAt: new Date(legacy.updatedAt).toISOString(),
+        updatedAt: migratedAt,
       },
       kv,
     );

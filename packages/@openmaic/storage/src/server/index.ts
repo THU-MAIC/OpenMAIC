@@ -1,6 +1,7 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import {
   isChatMessageSkeleton,
+  isIsoTimestamp,
   isQuizAttemptSkeleton,
   isRuntimeSessionStatus,
   needsRuntimeMigration,
@@ -506,7 +507,8 @@ async function route(
           typeof sessionTransition !== 'object' ||
           sessionTransition === null ||
           !isRuntimeSessionStatus((sessionTransition as { status?: unknown }).status) ||
-          typeof (sessionTransition as { updatedAt?: unknown }).updatedAt !== 'string'
+          typeof (sessionTransition as { updatedAt?: unknown }).updatedAt !== 'string' ||
+          !isIsoTimestamp((sessionTransition as { updatedAt: string }).updatedAt)
         ) {
           throw validationFailure(
             'invalid runtime record: sessionTransition requires a valid session status and an ISO updatedAt string',
