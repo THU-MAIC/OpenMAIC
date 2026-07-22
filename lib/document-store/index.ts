@@ -19,11 +19,13 @@ export {
   mutateDocument,
   withDocumentLock,
   DocumentLockUnavailableError,
+  DocumentStorageGenerationChangedError,
   type DocumentAccessResult,
   type DocumentMigrationDeps,
   type LegacyDocumentSnapshot,
   type LegacyDocumentStore,
 } from './migration';
+export { bumpGeneration, readGeneration } from './storage-generation';
 export {
   clearCurrentScene,
   loadCurrentScene,

@@ -23,6 +23,7 @@ import {
   type CurrentSceneValue,
 } from './current-scene';
 import type { AppDocument, AppDocumentOutline, AppStage } from './persistence-types';
+import { readGeneration } from './storage-generation';
 import { getDocumentStore } from './store';
 import { validateAppScene, validateAppStage } from './validators';
 
@@ -42,6 +43,8 @@ export interface DocumentMigrationDeps {
   kv?: KVStore;
   legacyStore?: LegacyDocumentStore;
   lockManager?: LockManager | null;
+  /** The mutation callback acquires the runtime shared epoch before writing. */
+  storageSharedLockHeld?: boolean;
 }
 
 export interface DocumentAccessResult {
@@ -57,6 +60,15 @@ interface MigrationMarker {
 }
 
 export class DocumentLockUnavailableError extends Error {}
+
+export class DocumentStorageGenerationChangedError extends Error {
+  constructor(stageId: string) {
+    super(
+      `Document ${JSON.stringify(stageId)} was not saved because storage was cleared during the mutation`,
+    );
+    this.name = 'DocumentStorageGenerationChangedError';
+  }
+}
 
 const MARKER_PREFIX = 'document-migration:';
 let defaultKv: KVStore | undefined;
@@ -213,6 +225,7 @@ async function finishMigrationMetadata(
 async function migrateLocked(
   stageId: string,
   deps: DocumentMigrationDeps,
+  expectedGeneration: number,
 ): Promise<DocumentAccessResult> {
   // Lock order: the per-stage document lock is acquired by the caller before
   // this global shared epoch. This matches the established per-stage -> global
@@ -245,6 +258,9 @@ async function migrateLocked(
     const snapshot = await getLegacyDocumentStore(deps).read(stageId);
     if (!snapshot) return { document: null, readOnlyLegacy: false };
     const expected = canonicalize(snapshot);
+    if ((await readGeneration(deps.kv)) !== expectedGeneration) {
+      throw new DocumentStorageGenerationChangedError(stageId);
+    }
     await store.saveDocument(expected);
     const actual = await store.loadDocument(stageId);
     if (!actual) throw new Error(`Legacy migration lost document ${JSON.stringify(stageId)}`);
@@ -255,13 +271,42 @@ async function migrateLocked(
   });
 }
 
+function generationGuardedStore(
+  stageId: string,
+  expectedGeneration: number,
+  deps: DocumentMigrationDeps,
+): DocumentStore<AppScene, AppStage> {
+  const store = resolveStore(deps);
+  return new Proxy(store, {
+    get(target, property) {
+      if (property === 'saveDocument') {
+        const save = async (document: AppDocument): Promise<void> => {
+          if ((await readGeneration(deps.kv)) !== expectedGeneration) {
+            throw new DocumentStorageGenerationChangedError(stageId);
+          }
+          await target.saveDocument(document);
+        };
+        return deps.storageSharedLockHeld
+          ? save
+          : (document: AppDocument) => withRuntimeStorageSharedLock(() => save(document));
+      }
+      const value = Reflect.get(target, property, target) as unknown;
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  });
+}
+
 /** Load the authoritative destination, lazily migrating one coherent legacy snapshot. */
 export async function accessDocument(
   stageId: string,
   deps: DocumentMigrationDeps = {},
 ): Promise<DocumentAccessResult> {
   try {
-    return await withDocumentLock(stageId, () => migrateLocked(stageId, deps), deps);
+    return await withDocumentLock(
+      stageId,
+      async () => migrateLocked(stageId, deps, await readGeneration(deps.kv)),
+      deps,
+    );
   } catch (error) {
     if (!(error instanceof DocumentLockUnavailableError)) throw error;
     const destination = await resolveStore(deps).loadDocument(stageId);
@@ -285,9 +330,11 @@ export function mutateDocument<T>(
   work: (document: AppDocument | null, store: DocumentStore<AppScene, AppStage>) => Promise<T>,
   deps: DocumentMigrationDeps = {},
 ): Promise<T> {
+  const entryGeneration = readGeneration(deps.kv);
   const mutateLocked = async (): Promise<T> => {
-    const access = await migrateLocked(stageId, deps);
-    return work(access.document, resolveStore(deps));
+    const expectedGeneration = await entryGeneration;
+    const access = await migrateLocked(stageId, deps, expectedGeneration);
+    return work(access.document, generationGuardedStore(stageId, expectedGeneration, deps));
   };
   return withDocumentLock(stageId, mutateLocked, deps).catch(async (error: unknown) => {
     if (!(error instanceof DocumentLockUnavailableError)) throw error;
@@ -300,10 +347,12 @@ export function mutateDocument<T>(
     const destination = await store.loadDocument(stageId);
     if (destination) {
       assertValidDestination(stageId, destination);
-      return work(destination, store);
+      const expectedGeneration = await entryGeneration;
+      return work(destination, generationGuardedStore(stageId, expectedGeneration, deps));
     }
     if (await getLegacyDocumentStore(deps).read(stageId)) throw error;
-    return work(null, store);
+    const expectedGeneration = await entryGeneration;
+    return work(null, generationGuardedStore(stageId, expectedGeneration, deps));
   });
 }
 
