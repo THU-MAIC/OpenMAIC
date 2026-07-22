@@ -18,10 +18,15 @@ export function didActiveSceneRemainUnchanged(
   scenesAfter: readonly { id: string }[],
   currentSceneIdAfter: string | null,
 ): boolean {
+  // Identity comparison would be stricter than the intent (don't leak a stale
+  // scene's results into the NEXT scene's request): a store update may
+  // reallocate the scene object during the async quiz read while the learner
+  // never left the scene, and dropping their graded answers for that turn
+  // degrades the reply for no safety gain. The scene id is the boundary.
   if (!currentSceneIdBefore || currentSceneIdAfter !== currentSceneIdBefore) return false;
-  const sceneBefore = scenesBefore.find((scene) => scene.id === currentSceneIdBefore);
   return (
-    !!sceneBefore && scenesAfter.find((scene) => scene.id === currentSceneIdAfter) === sceneBefore
+    scenesBefore.some((scene) => scene.id === currentSceneIdBefore) &&
+    scenesAfter.some((scene) => scene.id === currentSceneIdAfter)
   );
 }
 

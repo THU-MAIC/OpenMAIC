@@ -2,6 +2,7 @@ import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http
 import {
   isChatMessageSkeleton,
   isQuizAttemptSkeleton,
+  isRuntimeSessionStatus,
   needsRuntimeMigration,
   RUNTIME_DSL_VERSION,
   runtimeDslVersionOf,
@@ -497,6 +498,20 @@ async function route(
         throw validationFailure(
           'invalid runtime record: body sessionId does not match the request path',
         );
+      }
+      // Classify a malformed transition here: the store's own throw would
+      // surface as a 500, but a bad request body is the client's error.
+      if (sessionTransition !== undefined) {
+        if (
+          typeof sessionTransition !== 'object' ||
+          sessionTransition === null ||
+          !isRuntimeSessionStatus((sessionTransition as { status?: unknown }).status) ||
+          typeof (sessionTransition as { updatedAt?: unknown }).updatedAt !== 'string'
+        ) {
+          throw validationFailure(
+            'invalid runtime record: sessionTransition requires a valid session status and an ISO updatedAt string',
+          );
+        }
       }
       validationError(
         validateRuntimeRecord({ ...init, seq: 0 }),
