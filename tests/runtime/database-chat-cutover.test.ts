@@ -1491,9 +1491,24 @@ describe('database runtime chat integration', () => {
     };
     await db.stages.put(stage);
     await db.scenes.put(scene);
+    // Chat history lives on the RuntimeStore seam, independent of document
+    // migration — a legacy-only document's chats must still reach the backup.
+    // Write it while locks exist, then export from the no-locks environment.
+    vi.stubGlobal('navigator', { locks: serialLockManager() });
+    const { saveChatSessions } = await import('@/lib/utils/chat-storage');
+    await saveChatSessions(stage.id, [{ ...chatSession(), id: 'legacy-only-chat' }], {
+      store: runtimeStore,
+      learnerKey,
+    });
+    vi.stubGlobal('navigator', {});
 
     const backup = await exportDatabase({ store: runtimeStore, learnerKey });
     const exportedDocument = backup.documents.find((document) => document.stage.id === stage.id);
+    expect(
+      backup.chatSessions.filter(
+        (session) => session.stageId === stage.id && session.id === 'legacy-only-chat',
+      ),
+    ).toHaveLength(1);
 
     expect(exportedDocument).toMatchObject({
       dslVersion: '0.1.0',

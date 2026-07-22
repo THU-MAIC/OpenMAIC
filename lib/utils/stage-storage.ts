@@ -177,73 +177,79 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
  * Delete stage and all related data
  */
 export async function deleteStageData(stageId: string): Promise<void> {
-  return mutateDocument(stageId, async (document, store) =>
-    // Lock order: per-stage document lock, then the exclusive runtime epoch.
-    withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
-      try {
-        // Collect scene ids before deletion so we can sweep per-scene localStorage
-        // keys (quiz draft / submitted answers / graded results).
-        const legacyScenes = await db.scenes.where('stageId').equals(stageId).toArray();
-        const sceneIds = [
-          ...new Set([
-            ...(document?.scenes.map((s) => s.id) ?? []),
-            ...legacyScenes.map((s) => s.id),
-          ]),
-        ];
-
-        await store.deleteDocument(stageId);
-
-        // Clear legacy chat rows and the device-scoped playback cursor. Runtime
-        // rows of every kind are removed by the all-kind cascade below.
-        await deleteChatSessions(stageId);
-        // An unmigrated legacy playback row must not outlive its stage.
-        await db.playbackState.delete(stageId);
+  // storageSharedLockHeld: the cascade below holds the EXCLUSIVE epoch, which
+  // subsumes the shared one — the generation-guarded store must not re-acquire
+  // shared inside it (self-deadlock against our own exclusive hold).
+  return mutateDocument(
+    stageId,
+    async (document, store) =>
+      // Lock order: per-stage document lock, then the exclusive runtime epoch.
+      withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
         try {
-          await clearCursor(stageId);
+          // Collect scene ids before deletion so we can sweep per-scene localStorage
+          // keys (quiz draft / submitted answers / graded results).
+          const legacyScenes = await db.scenes.where('stageId').equals(stageId).toArray();
+          const sceneIds = [
+            ...new Set([
+              ...(document?.scenes.map((s) => s.id) ?? []),
+              ...legacyScenes.map((s) => s.id),
+            ]),
+          ];
+
+          await store.deleteDocument(stageId);
+
+          // Clear legacy chat rows and the device-scoped playback cursor. Runtime
+          // rows of every kind are removed by the all-kind cascade below.
+          await deleteChatSessions(stageId);
+          // An unmigrated legacy playback row must not outlive its stage.
+          await db.playbackState.delete(stageId);
+          try {
+            await clearCursor(stageId);
+          } catch (error) {
+            log.warn(`Failed to clear playback cursor for stage ${stageId}:`, error);
+          }
+          try {
+            await clearCurrentScene(stageId);
+          } catch (error) {
+            log.warn(`Failed to clear editor current scene for stage ${stageId}:`, error);
+          }
+
+          // Sweep quiz persistence keys for each deleted scene.
+          for (const sceneId of sceneIds) {
+            clearAllForScene(sceneId);
+          }
+
+          // Migration retains legacy rows, but an explicit whole-stage deletion does not.
+          await db.transaction('rw', [db.stages, db.scenes, db.stageOutlines], async () => {
+            await db.stages.delete(stageId);
+            await db.scenes.where('stageId').equals(stageId).delete();
+            await db.stageOutlines.delete(stageId);
+          });
+
+          // Learner-runtime data lives in a separate IndexedDB database, so it is
+          // cascaded after the Dexie work: it cannot join those transactions, and a
+          // runtime failure must not abort them (the helper warns instead of
+          // throwing).
+          const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
+          await runtimeDeletion.completion;
+          try {
+            await clearStageDrainWatermarks(stageId);
+          } catch (error) {
+            log.warn(`Failed to clear PBL drain watermarks for stage ${stageId}:`, error);
+          }
+
+          log.info(`Deleted stage: ${stageId}`);
+          releaseCaller(undefined);
+          // The public deletion remains bounded, but this callback deliberately
+          // retains the exclusive lock until a late runtime cascade can no longer
+          // delete data written after the caller was released.
+          await runtimeDeletion.settlement;
         } catch (error) {
-          log.warn(`Failed to clear playback cursor for stage ${stageId}:`, error);
+          log.error('Failed to delete stage:', error);
+          throw error;
         }
-        try {
-          await clearCurrentScene(stageId);
-        } catch (error) {
-          log.warn(`Failed to clear editor current scene for stage ${stageId}:`, error);
-        }
-
-        // Sweep quiz persistence keys for each deleted scene.
-        for (const sceneId of sceneIds) {
-          clearAllForScene(sceneId);
-        }
-
-        // Migration retains legacy rows, but an explicit whole-stage deletion does not.
-        await db.transaction('rw', [db.stages, db.scenes, db.stageOutlines], async () => {
-          await db.stages.delete(stageId);
-          await db.scenes.where('stageId').equals(stageId).delete();
-          await db.stageOutlines.delete(stageId);
-        });
-
-        // Learner-runtime data lives in a separate IndexedDB database, so it is
-        // cascaded after the Dexie work: it cannot join those transactions, and a
-        // runtime failure must not abort them (the helper warns instead of
-        // throwing).
-        const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
-        await runtimeDeletion.completion;
-        try {
-          await clearStageDrainWatermarks(stageId);
-        } catch (error) {
-          log.warn(`Failed to clear PBL drain watermarks for stage ${stageId}:`, error);
-        }
-
-        log.info(`Deleted stage: ${stageId}`);
-        releaseCaller(undefined);
-        // The public deletion remains bounded, but this callback deliberately
-        // retains the exclusive lock until a late runtime cascade can no longer
-        // delete data written after the caller was released.
-        await runtimeDeletion.settlement;
-      } catch (error) {
-        log.error('Failed to delete stage:', error);
-        throw error;
-      }
-    }),
+      }),
+    { storageSharedLockHeld: true },
   );
 }
 

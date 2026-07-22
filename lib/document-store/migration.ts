@@ -277,18 +277,32 @@ function generationGuardedStore(
   deps: DocumentMigrationDeps,
 ): DocumentStore<AppScene, AppStage> {
   const store = resolveStore(deps);
+  // Every mutating method takes the fence, not just saveDocument: the others
+  // are not currently exploitable after a clear (puts throw on the missing
+  // parent, deletes are idempotent), but that safety is incidental — a future
+  // store method or semantic change must not silently bypass the fence.
+  const MUTATING_METHODS = new Set([
+    'saveDocument',
+    'putStage',
+    'putScene',
+    'deleteScene',
+    'deleteDocument',
+  ]);
   return new Proxy(store, {
     get(target, property) {
-      if (property === 'saveDocument') {
-        const save = async (document: AppDocument): Promise<void> => {
+      if (typeof property === 'string' && MUTATING_METHODS.has(property)) {
+        const method = Reflect.get(target, property, target) as (
+          ...args: unknown[]
+        ) => Promise<unknown>;
+        const guarded = async (...args: unknown[]): Promise<unknown> => {
           if ((await readGeneration(deps.kv)) !== expectedGeneration) {
             throw new DocumentStorageGenerationChangedError(stageId);
           }
-          await target.saveDocument(document);
+          return method.apply(target, args);
         };
         return deps.storageSharedLockHeld
-          ? save
-          : (document: AppDocument) => withRuntimeStorageSharedLock(() => save(document));
+          ? guarded
+          : (...args: unknown[]) => withRuntimeStorageSharedLock(() => guarded(...args));
       }
       const value = Reflect.get(target, property, target) as unknown;
       return typeof value === 'function' ? value.bind(target) : value;

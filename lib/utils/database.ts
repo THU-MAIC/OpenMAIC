@@ -615,11 +615,19 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   }
   const legacyChats = [...legacyChatMap.values()];
   const { loadChatSessions } = await import('./chat-storage');
+  // Chat sessions live on the learner RuntimeStore — an independent seam from
+  // document migration — so legacy-only documents can still own runtime chat
+  // history. Enumerate chats for EVERY exported document, not just stored ones.
+  // The legacy chat rows are collected separately above by direct table reads,
+  // so the runtime read gets an empty legacy store: it never needs the
+  // cross-realm migration lock and therefore also works without Web Locks
+  // (where the document seam already exports legacy-only courses read-only).
   const runtimeChats = (
     await Promise.all(
-      storedDocuments.map(async ({ stage }) =>
+      documents.map(async ({ stage }) =>
         (
           await loadChatSessions(stage.id, {
+            legacyStore: { load: async () => [], clear: async () => {} },
             ...chatOptions,
             fallbackToLegacyOnError: false,
             observe: false,
@@ -825,42 +833,48 @@ export async function getScenesByStageId(stageId: string): Promise<Scene[]> {
  */
 export async function deleteStageWithRelatedData(stageId: string): Promise<void> {
   const { mutateDocument } = await import('@/lib/document-store');
-  await mutateDocument(stageId, async (_document, store) =>
-    withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
-      await store.deleteDocument(stageId);
-      await db.transaction(
-        'rw',
-        [
-          db.stages,
-          db.scenes,
-          db.chatSessions,
-          db.chatRestoreStaging,
-          db.playbackState,
-          db.stageOutlines,
-          db.mediaFiles,
-          db.generatedAgents,
-          db.agentEditSessions,
-        ],
-        async () => {
-          await db.stages.delete(stageId);
-          await db.scenes.where('stageId').equals(stageId).delete();
-          await db.chatSessions.where('stageId').equals(stageId).delete();
-          await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
-          await db.playbackState.delete(stageId);
-          await db.stageOutlines.delete(stageId);
-          await db.mediaFiles.where('stageId').equals(stageId).delete();
-          await db.generatedAgents.where('stageId').equals(stageId).delete();
-          await db.agentEditSessions.where('stageId').equals(stageId).delete();
-        },
-      );
-      // Learner-runtime data lives in a separate IndexedDB database, so it is
-      // cascaded after the Dexie transaction: it cannot join it, and a runtime
-      // failure must not abort it (the helper warns instead of throwing).
-      const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
-      await runtimeDeletion.completion;
-      releaseCaller(undefined);
-      await runtimeDeletion.settlement;
-    }),
+  // storageSharedLockHeld: the cascade holds the EXCLUSIVE epoch, which
+  // subsumes shared — the generation-guarded store must not re-acquire shared
+  // inside it (self-deadlock against our own exclusive hold).
+  await mutateDocument(
+    stageId,
+    async (_document, store) =>
+      withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
+        await store.deleteDocument(stageId);
+        await db.transaction(
+          'rw',
+          [
+            db.stages,
+            db.scenes,
+            db.chatSessions,
+            db.chatRestoreStaging,
+            db.playbackState,
+            db.stageOutlines,
+            db.mediaFiles,
+            db.generatedAgents,
+            db.agentEditSessions,
+          ],
+          async () => {
+            await db.stages.delete(stageId);
+            await db.scenes.where('stageId').equals(stageId).delete();
+            await db.chatSessions.where('stageId').equals(stageId).delete();
+            await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+            await db.playbackState.delete(stageId);
+            await db.stageOutlines.delete(stageId);
+            await db.mediaFiles.where('stageId').equals(stageId).delete();
+            await db.generatedAgents.where('stageId').equals(stageId).delete();
+            await db.agentEditSessions.where('stageId').equals(stageId).delete();
+          },
+        );
+        // Learner-runtime data lives in a separate IndexedDB database, so it is
+        // cascaded after the Dexie transaction: it cannot join it, and a runtime
+        // failure must not abort it (the helper warns instead of throwing).
+        const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
+        await runtimeDeletion.completion;
+        releaseCaller(undefined);
+        await runtimeDeletion.settlement;
+      }),
+    { storageSharedLockHeld: true },
   );
 }
 
