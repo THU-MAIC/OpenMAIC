@@ -65,55 +65,60 @@ export interface StageListItem {
 export async function saveStageData(stageId: string, data: StageStoreData): Promise<void> {
   try {
     const now = Date.now();
-    await mutateDocument(stageId, async (existing, store) => {
-      // Lock order: per-stage document lock, then the global runtime epoch.
-      // Maintenance may wait for this save, but this save never waits on a
-      // document lock while already occupying the shared epoch.
-      await withRuntimeStorageSharedLock(async () => {
-        const existingOutline = existing?.outline as AppDocumentOutline | undefined;
-        const outline = data.outline ??
-          existingOutline ?? {
-            outlines: [],
-            createdAt: now,
-            updatedAt: now,
-          };
-        await store.saveDocument({
-          stage: {
-            ...data.stage,
-            id: stageId,
-            name: data.stage.name || 'Untitled Stage',
-            createdAt: data.stage.createdAt || now,
-            updatedAt: now,
-          },
-          scenes: data.scenes.map((scene, index) => ({
-            ...scene,
-            stageId,
-            order: scene.order ?? index,
-            createdAt: scene.createdAt || now,
-            updatedAt: scene.updatedAt || now,
-          })),
-          outline: {
-            ...outline,
-            createdAt: existingOutline?.createdAt ?? outline.createdAt,
-          },
-        });
-        await saveCurrentScene(stageId, data.currentSceneId);
+    await mutateDocument(
+      stageId,
+      async (existing, store) => {
+        // Lock order: per-stage document lock, then the global runtime epoch.
+        // Maintenance may wait for this save, but this save never waits on a
+        // document lock while already occupying the shared epoch.
+        await withRuntimeStorageSharedLock(async () => {
+          const existingOutline = existing?.outline as AppDocumentOutline | undefined;
+          const outline = data.outline ??
+            existingOutline ?? {
+              outlines: [],
+              createdAt: now,
+              updatedAt: now,
+            };
+          await store.saveDocument({
+            stage: {
+              ...data.stage,
+              id: stageId,
+              name: data.stage.name || 'Untitled Stage',
+              createdAt: data.stage.createdAt || now,
+              updatedAt: now,
+            },
+            scenes: data.scenes.map((scene, index) => ({
+              ...scene,
+              stageId,
+              order: scene.order ?? index,
+              createdAt: scene.createdAt || now,
+              updatedAt: scene.updatedAt || now,
+            })),
+            outline: {
+              ...outline,
+              createdAt: existingOutline?.createdAt ?? outline.createdAt,
+            },
+          });
+          await saveCurrentScene(stageId, data.currentSceneId);
 
-        // Chat sessions live in the learner RuntimeStore, outside the document DB.
-        if (data.chats) {
-          try {
-            await saveChatSessions(stageId, data.chats, {
-              globalLockHeld: true,
-              snapshot: data.chatSnapshot,
-            });
-          } catch (error) {
-            const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
-            if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot) throw error;
-            log.warn(`Document saved but chat sessions failed for stage ${stageId}:`, error);
+          // Chat sessions live in the learner RuntimeStore, outside the document DB.
+          if (data.chats) {
+            try {
+              await saveChatSessions(stageId, data.chats, {
+                globalLockHeld: true,
+                snapshot: data.chatSnapshot,
+              });
+            } catch (error) {
+              const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
+              if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot)
+                throw error;
+              log.warn(`Document saved but chat sessions failed for stage ${stageId}:`, error);
+            }
           }
-        }
-      });
-    });
+        });
+      },
+      { storageSharedLockHeld: true },
+    );
     log.info(`Saved stage: ${stageId}`);
   } catch (error) {
     log.error('Failed to save stage:', error);

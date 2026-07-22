@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
+import { DSL_VERSION } from '@openmaic/dsl';
 import type {
   Scene,
   SceneType,
@@ -514,6 +515,8 @@ export async function clearDatabase(runtimeStore?: RuntimeStore): Promise<void> 
   // earlier best-effort stage deletion. This user-requested destructive action
   // must fail loud: reporting success while runtime data remains is misleading.
   await withRuntimeStorageExclusiveLock(async () => {
+    const { bumpGeneration } = await import('@/lib/document-store/storage-generation');
+    await bumpGeneration();
     await (runtimeStore ?? getRuntimeStore()).deleteAllRuntime();
     await deleteAllDocuments();
     await clearDocumentStoreKeys();
@@ -566,17 +569,43 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   chatSessions: ChatSessionRecord[];
   playbackState: PlaybackStateRecord[];
 }> {
-  const { accessDocument, getDocumentStore, getLegacyDocumentStore } =
-    await import('@/lib/document-store');
+  const {
+    accessDocument,
+    canonicalizeLegacyOutline,
+    canonicalizeLegacyScene,
+    canonicalizeLegacyStage,
+    getDocumentStore,
+    getLegacyDocumentStore,
+  } = await import('@/lib/document-store');
   const documentStore = getDocumentStore();
   // Backups must not strand courses that have not yet been opened since cutover.
   // Route them through the normal lazy-migration seam before enumerating aggregates.
   const legacyStages = await getLegacyDocumentStore().listStages();
   await Promise.all(legacyStages.map((stage) => accessDocument(stage.id)));
   const summaries = await documentStore.listDocuments();
-  const documents = (
+  const storedDocuments = (
     await Promise.all(summaries.map((summary) => documentStore.loadDocument(summary.id)))
   ).filter((document): document is AppDocument => document !== null);
+  const storedIds = new Set(summaries.map((summary) => summary.id));
+  const legacyOnlyDocuments = (
+    await Promise.all(
+      legacyStages
+        .filter((stage) => !storedIds.has(stage.id))
+        .map(async (stage): Promise<AppDocument | null> => {
+          const snapshot = await getLegacyDocumentStore().read(stage.id);
+          if (!snapshot) return null;
+          const { stage: canonicalStage } = canonicalizeLegacyStage(snapshot.stage);
+          const document: AppDocument = {
+            stage: canonicalStage,
+            scenes: snapshot.scenes.map(canonicalizeLegacyScene).sort((a, b) => a.order - b.order),
+            dslVersion: DSL_VERSION,
+          };
+          if (snapshot.outline) document.outline = canonicalizeLegacyOutline(snapshot.outline);
+          return document;
+        }),
+    )
+  ).filter((document): document is AppDocument => document !== null);
+  const documents = [...storedDocuments, ...legacyOnlyDocuments];
   const legacyChatMap = new Map<string, ChatSessionRecord>();
   for (const session of [
     ...(await db.chatSessions.toArray()),
@@ -588,7 +617,7 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   const { loadChatSessions } = await import('./chat-storage');
   const runtimeChats = (
     await Promise.all(
-      documents.map(async ({ stage }) =>
+      storedDocuments.map(async ({ stage }) =>
         (
           await loadChatSessions(stage.id, {
             ...chatOptions,
