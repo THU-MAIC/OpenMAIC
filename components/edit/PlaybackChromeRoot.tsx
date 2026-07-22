@@ -428,9 +428,16 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
         const sceneId = engine.getCurrentSceneId();
         if (!sceneId || !chatAreaRef.current) return;
 
-        // startLecture is async — re-check the engine is still idle afterwards so
-        // we never override a live session the user started during the await.
+        // startLecture is async — re-check the engine is still idle AND still
+        // the installed engine afterwards. A scene switch during the await
+        // stops the captured engine (leaving it idle, so the mode check alone
+        // passes) and installs a new one; resuming the orphan would emit
+        // progress snapshots for the old scene over the new scene's cursor.
         const sessionId = await chatAreaRef.current.startLecture(sceneId);
+        if (engineRef.current !== engine) {
+          await chatAreaRef.current.endSession(sessionId);
+          return;
+        }
         if (engine.getMode() !== 'idle') {
           // The engine left idle during the async startLecture (e.g. a new live
           // session began) — tear down the lecture session we just
@@ -671,6 +678,10 @@ export const PlaybackChromeRoot = forwardRef<PlaybackChromeRootHandle, PlaybackC
             setEngineMode(mode);
           },
           onProgress: (snapshot) => {
+            // Identity guard: a superseded engine (scene switch during an
+            // async resume) must not publish its old scene's position over
+            // the installed engine's cursor.
+            if (engineRef.current !== null && engineRef.current !== engine) return;
             updateCurrentPlaybackActionIndex(snapshot.actionIndex);
             saveSceneResumePosition(snapshot.sceneId, snapshot.actionIndex);
             if (playbackStageId && snapshot.sceneId) {
