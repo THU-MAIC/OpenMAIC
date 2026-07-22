@@ -79,7 +79,10 @@ describe('quiz results for chat store state', () => {
     await expect(reading).resolves.toBeUndefined();
   });
 
-  it('rejects quiz results when the active scene content changed during the read', () => {
+  it('retains quiz results when the active scene object was reallocated in place', () => {
+    // A store update may replace the scene object (same id) during the async
+    // quiz read; the learner never left the scene, so their graded answers
+    // must still reach the outgoing request. The scene ID is the boundary.
     const before = {
       id: 'quiz-1',
       type: 'quiz',
@@ -88,7 +91,13 @@ describe('quiz results for chat store state', () => {
     };
     const after = { ...before, content: { questions: ['new'] } };
 
-    expect(didActiveSceneRemainUnchanged([before], 'quiz-1', [after], 'quiz-1')).toBe(false);
+    expect(didActiveSceneRemainUnchanged([before], 'quiz-1', [after], 'quiz-1')).toBe(true);
+  });
+
+  it('rejects quiz results when the active scene left the deck during the read', () => {
+    const before = { id: 'quiz-1', type: 'quiz', stageId: 'stage-1', content: {} };
+
+    expect(didActiveSceneRemainUnchanged([before], 'quiz-1', [], 'quiz-1')).toBe(false);
   });
 
   it('retains quiz results when unrelated scenes changed during the read', () => {

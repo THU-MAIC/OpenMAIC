@@ -108,6 +108,14 @@ async function migrateLegacyCursor(
   const legacy = await store.get(stageId);
   if (!legacy) return;
   if (!(await loadCursorValue(stageId, kv)) && legacy.sceneId) {
+    // Re-check at the last moment: a concurrent tab may have saved a newer
+    // cursor between the read above and this write, and the legacy row is
+    // deleted below, so an overwrite here would be unrecoverable. The
+    // remaining sub-millisecond window is acceptable for LWW device state.
+    if (await loadCursorValue(stageId, kv)) {
+      await store.delete(stageId);
+      return;
+    }
     await saveCursorValue(
       stageId,
       {
