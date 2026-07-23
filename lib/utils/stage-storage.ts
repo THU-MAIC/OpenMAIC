@@ -112,16 +112,18 @@ async function saveStageChats(
   stageId: string,
   data: StageStoreData,
   globalLockHeld = false,
-): Promise<void> {
+): Promise<boolean> {
   try {
     await saveChatSessions(stageId, data.chats, {
       ...(globalLockHeld ? { globalLockHeld: true } : {}),
       snapshot: data.chatSnapshot,
     });
+    return true;
   } catch (error) {
     const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
     if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot) throw error;
     log.warn(`Chat sessions failed to save for stage ${stageId}:`, error);
+    return false;
   }
 }
 
@@ -166,13 +168,23 @@ export async function saveStageDataIncremental(
   stageId: string,
   dirty: readonly PendingChange[],
   data: StageStoreData,
-): Promise<void> {
+): Promise<{ failedChanges: PendingChange[] }> {
   const has = (kind: PendingChange['kind']) => dirty.some((change) => change.kind === kind);
   const dirtySceneIds = new Set(
     dirty.flatMap((change) => (change.kind === 'scene' ? [change.sceneId] : [])),
   );
   const needsDocumentWrite =
     dirtySceneIds.size > 0 || has('structure') || has('stage') || has('outline');
+  const documentCategories = new Set(
+    dirty.flatMap((change) =>
+      change.kind === 'scene' ||
+      change.kind === 'structure' ||
+      change.kind === 'stage' ||
+      change.kind === 'outline'
+        ? [change.kind]
+        : [],
+    ),
+  );
 
   if (needsDocumentWrite) {
     await mutateDocument(
@@ -195,9 +207,12 @@ export async function saveStageDataIncremental(
             );
           };
 
-          // A missing destination needs its parent aggregate created. Outline
-          // dirt also forces this path until DocumentStore grows putOutline.
-          if (!existing || has('structure') || has('outline')) {
+          // The incremental fast path is deliberately homogeneous. Combining
+          // scene and stage writes would span separate requests/transactions,
+          // exposing a torn document to concurrent readers. Structure and
+          // outline already require the aggregate contract, and any batch with
+          // more than one document category follows that same atomic path.
+          if (!existing || has('structure') || has('outline') || documentCategories.size > 1) {
             await fullSave();
             return;
           }
@@ -245,7 +260,11 @@ export async function saveStageDataIncremental(
   }
 
   if (has('currentScene')) await saveCurrentScene(stageId, data.currentSceneId);
-  if (has('chats')) await saveStageChats(stageId, data);
+  const failedChanges: PendingChange[] = [];
+  if (has('chats') && !(await saveStageChats(stageId, data))) {
+    failedChanges.push({ kind: 'chats' });
+  }
+  return { failedChanges };
 }
 
 /**
@@ -279,11 +298,16 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 
     log.info(`Loaded stage: ${stageId}, scenes: ${document.scenes.length}, chats: ${chats.length}`);
 
+    const storedCursor = currentScene?.sceneId ?? access.legacyCurrentSceneId;
+    const currentSceneId =
+      storedCursor && document.scenes.some((scene) => scene.id === storedCursor)
+        ? storedCursor
+        : (document.scenes[0]?.id ?? null);
+
     return {
       stage: document.stage,
       scenes: document.scenes,
-      currentSceneId:
-        currentScene?.sceneId ?? access.legacyCurrentSceneId ?? document.scenes[0]?.id ?? null,
+      currentSceneId,
       chats,
       chatSnapshot,
       outline: document.outline as AppDocumentOutline | undefined,

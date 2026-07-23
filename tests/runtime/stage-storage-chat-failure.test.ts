@@ -21,7 +21,7 @@ vi.mock('@/lib/document-store', () => ({
     },
     readOnlyLegacy: false,
   }),
-  loadCurrentScene: vi.fn().mockResolvedValue(null),
+  loadCurrentScene: vi.fn().mockResolvedValue({ sceneId: 'deleted-scene' }),
 }));
 
 vi.mock('@/lib/utils/database', () => ({
@@ -69,7 +69,7 @@ vi.mock('@/lib/pbl/v2/runtime/drain', () => ({
 import { loadStageData } from '@/lib/utils/stage-storage';
 
 describe('loadStageData chat failure isolation', () => {
-  it('keeps persisted stage and scene data available when chat storage fails', async () => {
+  it('keeps document data and falls back from a stale persisted cursor', async () => {
     await expect(loadStageData('stage-1')).resolves.toMatchObject({
       stage: { id: 'stage-1', name: 'Persisted stage' },
       scenes: [{ id: 'scene-1', type: 'slide', title: 'Persisted scene' }],

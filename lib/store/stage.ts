@@ -35,7 +35,8 @@ let pendingStageId: string | null = null;
 let pendingRevision = 0;
 const pendingChanges = new Map<string, PendingEntry>();
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let flushInFlight: Promise<void> | null = null;
+let flushInFlight: Promise<Set<string>> | null = null;
+let stageStorageModulePromise: Promise<typeof import('@/lib/utils/stage-storage')> | null = null;
 
 function pendingChangeKey(change: PendingChange): string {
   return change.kind === 'scene' ? `scene:${change.sceneId}` : change.kind;
@@ -70,6 +71,14 @@ function markPendingChanges(stageId: string | undefined, ...changes: PendingChan
     pendingChanges.set(pendingChangeKey(change), { change, revision: pendingRevision });
   }
   schedulePendingSave();
+}
+
+/**
+ * Persistence seam for production code that must use the raw Zustand
+ * setState API. Normal store actions mark their own logical changes.
+ */
+export function markStagePersistenceDirty(changes: PendingChange[]): void {
+  markPendingChanges(useStageStore.getState().stage?.id, ...changes);
 }
 
 export function claimStageSceneLoadToken(): StageSceneLoadToken {
@@ -203,6 +212,51 @@ function isDeckComplete({
   );
 }
 
+type StagePersistenceSnapshot = Pick<
+  StageState,
+  | 'stage'
+  | 'scenes'
+  | 'currentSceneId'
+  | 'chats'
+  | 'chatSnapshot'
+  | 'outlines'
+  | 'generationComplete'
+>;
+
+function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
+  const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
+    state;
+  return { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete };
+}
+
+async function persistDirtySnapshot(
+  stageId: string,
+  dirtySnapshot: ReadonlyMap<string, PendingEntry>,
+  snapshot: StagePersistenceSnapshot,
+): Promise<Set<string>> {
+  if (!snapshot.stage) return new Set();
+  stageStorageModulePromise ??= import('@/lib/utils/stage-storage');
+  const { saveStageDataIncremental } = await stageStorageModulePromise;
+  const result = await saveStageDataIncremental(
+    stageId,
+    [...dirtySnapshot.values()].map(({ change }) => change),
+    {
+      stage: snapshot.stage,
+      scenes: snapshot.scenes,
+      currentSceneId: snapshot.currentSceneId,
+      chats: snapshot.chats,
+      chatSnapshot: snapshot.chatSnapshot,
+      outline: {
+        outlines: snapshot.outlines,
+        generationComplete: snapshot.generationComplete,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    },
+  );
+  return new Set((result?.failedChanges ?? []).map(pendingChangeKey));
+}
+
 const useStageStoreBase = create<StageState>()((set, get) => ({
   // Initial state
   stage: null,
@@ -223,8 +277,33 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   // Actions
   setStage: (stage) => {
     claimStageSceneLoadToken();
-    // A stage switch is a hard persistence boundary: stale dirt must never be
-    // replayed using the new document id.
+    const departingState = get();
+    if (
+      departingState.stage?.id &&
+      pendingStageId === departingState.stage.id &&
+      pendingChanges.size > 0
+    ) {
+      const departingStageId = departingState.stage.id;
+      const departingDirty = new Map(pendingChanges);
+      // Hand the old document an immutable persistence snapshot immediately.
+      // Navigation is not blocked by its I/O, and the write can never be
+      // rebound to the incoming stage id.
+      void persistDirtySnapshot(
+        departingStageId,
+        departingDirty,
+        persistenceSnapshot(departingState),
+      )
+        .then((failedKeys) => {
+          if (failedKeys.size > 0) {
+            log.warn(
+              `Departing stage ${departingStageId} retained failed changes: ${[...failedKeys].join(', ')}`,
+            );
+          }
+        })
+        .catch((error) => {
+          log.error(`Failed to flush departing stage ${departingStageId}:`, error);
+        });
+    }
     resetPendingChanges(stage.id);
     set((s) => ({
       stage,
@@ -243,12 +322,17 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     // a schemaVersion (API / snapshot / legacy) is normalized once at
     // the store boundary.
     const migrated = scenes.map(migrateScene);
-    set({ scenes: migrated });
-    // Auto-select first scene if no current scene
-    if (!get().currentSceneId && migrated.length > 0) {
-      set({ currentSceneId: migrated[0].id });
-    }
-    markPendingChanges(get().stage?.id, { kind: 'structure' });
+    const previousCurrentSceneId = get().currentSceneId;
+    const currentSceneId =
+      !previousCurrentSceneId && migrated.length > 0 ? migrated[0].id : previousCurrentSceneId;
+    set({ scenes: migrated, currentSceneId });
+    markPendingChanges(
+      get().stage?.id,
+      { kind: 'structure' },
+      ...(currentSceneId !== previousCurrentSceneId
+        ? ([{ kind: 'currentScene' }] as PendingChange[])
+        : []),
+    );
   },
 
   addScene: (scene) => {
@@ -270,7 +354,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       generatingOutlines,
       ...(shouldSwitch ? { currentSceneId: scene.id } : {}),
     });
-    markPendingChanges(currentStage.id, { kind: 'structure' });
+    markPendingChanges(
+      currentStage.id,
+      { kind: 'structure' },
+      ...(shouldSwitch ? ([{ kind: 'currentScene' }] as PendingChange[]) : []),
+    );
   },
 
   insertSceneAfter: (anchorSceneId, scene) => {
@@ -335,7 +423,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
     if (wasComplete) get().setGenerationComplete(true);
 
-    markPendingChanges(get().stage?.id, { kind: 'structure' });
+    markPendingChanges(
+      get().stage?.id,
+      { kind: 'structure' },
+      ...(currentSceneId === sceneId ? ([{ kind: 'currentScene' }] as PendingChange[]) : []),
+    );
   },
 
   setCurrentSceneId: (sceneId) => {
@@ -591,78 +683,73 @@ export const useStageStore = createSelectors(useStageStoreBase);
 
 // ==================== Debounced Save ====================
 
-/**
- * Drain the pending debounce and persist its current dirty snapshot. Entries
- * are revisioned so a mutation that lands during the write is not accidentally
- * cleared. Concurrent callers share the same in-flight write.
- */
-export function flushStageSave(): Promise<void> {
-  cancelScheduledSave();
+const MAX_FLUSH_DRAIN_ROUNDS = 20;
+
+function startFlushRound(): Promise<Set<string>> {
   if (flushInFlight) return flushInFlight;
-  if (!pendingStageId || pendingChanges.size === 0) return Promise.resolve();
+  if (!pendingStageId || pendingChanges.size === 0) return Promise.resolve(new Set());
 
   const stageId = pendingStageId;
   const dirtySnapshot = new Map(pendingChanges);
   const state = useStageStore.getState();
   if (state.stage?.id !== stageId) {
     resetPendingChanges(state.stage?.id ?? null);
-    return Promise.resolve();
+    return Promise.resolve(new Set());
   }
-  const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
-    state;
+  const snapshot = persistenceSnapshot(state);
 
   const run = (async () => {
-    let succeeded = false;
     try {
-      const { saveStageDataIncremental } = await import('@/lib/utils/stage-storage');
-      await saveStageDataIncremental(
-        stageId,
-        [...dirtySnapshot.values()].map(({ change }) => change),
-        {
-          stage,
-          scenes,
-          currentSceneId,
-          chats,
-          chatSnapshot,
-          outline: {
-            outlines,
-            generationComplete,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          },
-        },
-      );
-
+      const failedKeys = await persistDirtySnapshot(stageId, dirtySnapshot, snapshot);
       if (pendingStageId === stageId) {
         for (const [key, entry] of dirtySnapshot) {
-          if (pendingChanges.get(key)?.revision === entry.revision) pendingChanges.delete(key);
+          if (!failedKeys.has(key) && pendingChanges.get(key)?.revision === entry.revision) {
+            pendingChanges.delete(key);
+          }
         }
       }
       if (
         dirtySnapshot.has('chats') &&
+        !failedKeys.has('chats') &&
         useStageStore.getState().stage?.id === stageId &&
-        useStageStore.getState().chats === chats
+        useStageStore.getState().chats === snapshot.chats
       ) {
         useStageStore.setState({
           chatSnapshot: {
-            sessions: structuredClone(chats),
-            restoreMarker: chatSnapshot.restoreMarker,
+            sessions: structuredClone(snapshot.chats),
+            restoreMarker: snapshot.chatSnapshot.restoreMarker,
           },
         });
       }
-      succeeded = true;
+      return failedKeys;
     } catch (error) {
       log.error(`Failed to flush pending stage changes for ${stageId}:`, error);
       throw error;
     } finally {
       flushInFlight = null;
-      // A failed write stays dirty but does not spin a retry loop. The next
-      // mutation, explicit flush, or lifecycle kick retries it.
-      if (succeeded && pendingChanges.size > 0 && pendingStageId) schedulePendingSave();
+      // Successive mutations and failed writes both leave durable work queued.
+      // Always restore the retry timer so dirt is never stranded.
+      if (pendingChanges.size > 0 && pendingStageId) schedulePendingSave();
     }
   })();
   flushInFlight = run;
   return run;
+}
+
+/**
+ * Drain every mutation visible to the caller, including one that lands after
+ * an in-flight round captured its snapshot. Chat-store failures are reported
+ * as retained dirt and retried by the debounce without rolling back a
+ * successful document commit.
+ */
+export async function flushStageSave(): Promise<void> {
+  for (let round = 0; round < MAX_FLUSH_DRAIN_ROUNDS; round += 1) {
+    cancelScheduledSave();
+    if (!pendingStageId || pendingChanges.size === 0) return;
+    const failedKeys = await startFlushRound();
+    if (failedKeys.size > 0) return;
+  }
+  throw new Error(`Stage persistence did not quiesce after ${MAX_FLUSH_DRAIN_ROUNDS} flush rounds`);
 }
 
 if (typeof window !== 'undefined') {

@@ -11,6 +11,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
 }));
 
 import { flushStageSave, useStageStore } from '@/lib/store/stage';
+import type { ChatSession } from '@/lib/types/chat';
 import type { Scene, Stage } from '@/lib/types/stage';
 
 const stage = (id = 'stage-1'): Stage => ({
@@ -79,6 +80,23 @@ describe('incremental stage flush', () => {
     expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'structure' }]);
   });
 
+  it('marks cursor dirt when a structural mutation changes the selection', async () => {
+    useStageStore.setState({ currentSceneId: null });
+    useStageStore.getState().setScenes([scene('scene-1'), scene('scene-2')]);
+    await flushStageSave();
+    expect(incrementalSave.mock.calls[0]![1]).toEqual([
+      { kind: 'structure' },
+      { kind: 'currentScene' },
+    ]);
+
+    useStageStore.getState().deleteScene('scene-1');
+    await flushStageSave();
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([
+      { kind: 'structure' },
+      { kind: 'currentScene' },
+    ]);
+  });
+
   it('persists current-scene state without marking document data', async () => {
     useStageStore.getState().setCurrentSceneId('scene-2');
     await flushStageSave();
@@ -97,23 +115,60 @@ describe('incremental stage flush', () => {
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
   });
 
-  it('shares one in-flight write between concurrent flush callers', async () => {
+  it('drains a mutation that lands between concurrent flush calls', async () => {
+    let releaseFirst!: () => void;
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releaseFirst = resolve;
+        }),
+    );
     useStageStore.getState().updateScene('scene-1', { title: 'pending' });
 
     const first = flushStageSave();
+    await vi.waitFor(() => expect(incrementalSave).toHaveBeenCalledOnce());
+    useStageStore.getState().updateScene('scene-2', { title: 'landed during write' });
     const second = flushStageSave();
-    expect(second).toBe(first);
+    releaseFirst();
     await Promise.all([first, second]);
-    expect(incrementalSave).toHaveBeenCalledOnce();
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
   });
 
-  it('drops old-document dirt when setStage switches documents', async () => {
+  it('flushes old-document dirt when setStage switches documents', async () => {
     useStageStore.getState().updateScene('scene-1', { title: 'stale' });
     useStageStore.getState().setStage(stage('stage-2'));
 
     await flushStageSave();
-    expect(incrementalSave).toHaveBeenCalledOnce();
-    expect(incrementalSave.mock.calls[0]![0]).toBe('stage-2');
-    expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'structure' }, { kind: 'stage' }]);
+    await vi.waitFor(() => expect(incrementalSave).toHaveBeenCalledTimes(2));
+    expect(incrementalSave.mock.calls[0]![0]).toBe('stage-1');
+    expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
+    expect(incrementalSave.mock.calls[1]![0]).toBe('stage-2');
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'structure' }, { kind: 'stage' }]);
+  });
+
+  it('retains chat dirt when chat persistence reports an isolated failure', async () => {
+    incrementalSave
+      .mockResolvedValueOnce({ failedChanges: [{ kind: 'chats' }] })
+      .mockResolvedValueOnce({ failedChanges: [] });
+    useStageStore.getState().setChats([
+      {
+        id: 'chat-1',
+        type: 'qa',
+        title: 'Chat',
+        status: 'idle',
+        messages: [],
+        config: { agentIds: [] },
+        toolCalls: [],
+        pendingToolCalls: [],
+        createdAt: 1,
+        updatedAt: 1,
+      } satisfies ChatSession,
+    ]);
+
+    await flushStageSave();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'chats' }]);
   });
 });

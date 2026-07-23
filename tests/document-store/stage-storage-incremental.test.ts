@@ -8,6 +8,7 @@ const {
   putScene,
   putStage,
   saveCurrentScene,
+  saveChatSessions,
   saveDocument,
 } = vi.hoisted(() => {
   const store = {
@@ -27,6 +28,7 @@ const {
     putScene: store.putScene,
     putStage: store.putStage,
     saveCurrentScene: vi.fn().mockResolvedValue(undefined),
+    saveChatSessions: vi.fn().mockResolvedValue(undefined),
     saveDocument: store.saveDocument,
   };
 });
@@ -44,7 +46,7 @@ vi.mock('@/lib/utils/chat-storage-lock', () => ({
 }));
 vi.mock('@/lib/utils/chat-storage', () => ({
   ChatStorageLockUnavailableError: class extends Error {},
-  saveChatSessions: vi.fn().mockResolvedValue(undefined),
+  saveChatSessions,
   loadChatSessions: vi.fn().mockResolvedValue([]),
   deleteChatSessions: vi.fn().mockResolvedValue(undefined),
 }));
@@ -121,6 +123,7 @@ beforeEach(() => {
   putStage.mockReset().mockResolvedValue(undefined);
   saveDocument.mockReset().mockResolvedValue(undefined);
   saveCurrentScene.mockReset().mockResolvedValue(undefined);
+  saveChatSessions.mockReset().mockResolvedValue(undefined);
 });
 
 describe('saveStageDataIncremental', () => {
@@ -154,5 +157,25 @@ describe('saveStageDataIncremental', () => {
     await saveStageDataIncremental('stage-1', [{ kind: 'scene', sceneId: 'scene-1' }], data);
     expect(saveDocument).toHaveBeenCalledOnce();
     expect(prepareScenes).toHaveBeenLastCalledWith('stage-1', scenes);
+  });
+
+  it('uses one aggregate write for a mixed scene-and-stage batch', async () => {
+    await saveStageDataIncremental(
+      'stage-1',
+      [{ kind: 'scene', sceneId: 'scene-1' }, { kind: 'stage' }],
+      data,
+    );
+
+    expect(saveDocument).toHaveBeenCalledOnce();
+    expect(putScene).not.toHaveBeenCalled();
+    expect(putStage).not.toHaveBeenCalled();
+  });
+
+  it('reports an isolated chat failure without failing the document flush', async () => {
+    saveChatSessions.mockRejectedValueOnce(new Error('runtime unavailable'));
+
+    await expect(saveStageDataIncremental('stage-1', [{ kind: 'chats' }], data)).resolves.toEqual({
+      failedChanges: [{ kind: 'chats' }],
+    });
   });
 });
