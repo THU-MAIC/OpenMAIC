@@ -56,5 +56,20 @@ describe.skipIf(!contractUrl)('PgDocumentStore with PostgreSQL 16', () => {
     await pool.end();
   });
 
-  runDocumentStoreContract('PostgreSQL 16 (node-postgres)', () => store);
+  runDocumentStoreContract('PostgreSQL 16 (node-postgres)', () => ({
+    store,
+    seedStoredVersion: async (stageId, version) => {
+      const result = await pool.query<{ data: unknown }>(
+        'SELECT data FROM document_stages WHERE id = $1',
+        [stageId],
+      );
+      const data = result.rows[0]!.data as Record<string, unknown>;
+      if (version === undefined) delete data.dslVersion;
+      else data.dslVersion = version;
+      await pool.query('UPDATE document_stages SET data = $2::jsonb WHERE id = $1', [
+        stageId,
+        JSON.stringify(data),
+      ]);
+    },
+  }));
 });

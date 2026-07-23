@@ -51,12 +51,14 @@ interface RuntimeAppendConflictDetails {
 export class HttpRuntimeStoreError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details: unknown;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, details?: unknown) {
     super(message);
     this.name = 'HttpRuntimeStoreError';
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -203,7 +205,7 @@ export class HttpRuntimeStore implements RuntimeStore {
           );
         }
       }
-      throw new HttpRuntimeStoreError(response.status, code, message);
+      throw new HttpRuntimeStoreError(response.status, code, message, errorBody?.error?.details);
     }
     if (response.status === 204) return { body: undefined as T, status: response.status };
     return { body: (await response.json()) as T, status: response.status };

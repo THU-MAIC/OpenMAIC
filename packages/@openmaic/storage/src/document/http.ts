@@ -42,6 +42,7 @@ export class HttpDocumentStoreError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    readonly details?: unknown,
   ) {
     super(message);
     this.name = 'HttpDocumentStoreError';
@@ -159,7 +160,7 @@ export class HttpDocumentStore<
         typeof errorBody?.error?.message === 'string'
           ? errorBody.error.message
           : `@openmaic/storage: DocumentStore HTTP request failed with status ${response.status}`;
-      throw new HttpDocumentStoreError(response.status, code, message);
+      throw new HttpDocumentStoreError(response.status, code, message, errorBody?.error?.details);
     }
     if (response.status === 204) return undefined as T;
     return (await response.json()) as T;

@@ -28,6 +28,7 @@ import { RuntimeAppendConflictError } from '../runtime/types.js';
 import type { Scene, Stage } from '@openmaic/dsl';
 import type { DocumentStore, SceneLike } from '../document/types.js';
 import { createDocumentHttpHandler, type DocumentHttpHandlerOptions } from './document.js';
+import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
 
 export {
   createDocumentHttpHandler,
@@ -64,6 +65,8 @@ export interface RuntimeHttpHandlerOptions {
    * pass the same table configured on the injected store.
    */
   payloadValidators?: Record<string, RuntimePayloadValidator>;
+  /** Maximum JSON request-body size in bytes. Defaults to 32 MiB. */
+  maxBodyBytes?: number;
 }
 
 interface ErrorBody {
@@ -95,30 +98,19 @@ function sendNoContent(res: ServerResponse): void {
   res.end();
 }
 
-async function readJson<T>(req: IncomingMessage): Promise<T> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-  }
-  if (chunks.length === 0) {
-    throw validationFailure('request body must be a JSON object');
-  }
-  let body: unknown;
-  try {
-    body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
-  } catch (error) {
-    throw validationFailure(error instanceof Error ? error.message : String(error));
-  }
-  if (!isObject(body)) throw validationFailure('request body must be a JSON object');
-  return body as T;
-}
-
-function isObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 function validationFailure(message: string, details?: unknown): RuntimeHttpError {
   return new RuntimeHttpError(400, 'VALIDATION_FAILED', message, details);
+}
+
+function payloadTooLarge(message: string): RuntimeHttpError {
+  return new RuntimeHttpError(413, 'PAYLOAD_TOO_LARGE', message);
+}
+
+function readJson<T>(req: IncomingMessage, maxBodyBytes: number): Promise<T> {
+  return readJsonObject(req, maxBodyBytes, {
+    invalid: validationFailure,
+    payloadTooLarge,
+  });
 }
 
 function validationError(result: ValidationResult, label: string): void {
@@ -417,7 +409,10 @@ async function route(
   }
 
   if (method === 'POST' && parts.length === 2 && parts[1] === 'sessions') {
-    const init = await readJson<RuntimeSessionInit & { runtimeDslVersion?: unknown }>(req);
+    const init = await readJson<RuntimeSessionInit & { runtimeDslVersion?: unknown }>(
+      req,
+      options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    );
     assertAddressableSegment(init.id);
     assertAddressableSegment(init.stageId);
     assertAddressableSegment(init.learnerKey, 'learnerKey');
@@ -468,7 +463,7 @@ async function route(
     if (method === 'PATCH' && parts.length === 4 && parts[3] === 'status') {
       const body = await readJson<
         { status: RuntimeSessionStatus; updatedAt: string } & RuntimeTailOptions
-      >(req);
+      >(req, options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
       const session = await writableSession(store, principal, sessionId);
       validationError(
         validateRuntimeSession({ ...session, status: body.status, updatedAt: body.updatedAt }),
@@ -504,6 +499,7 @@ async function route(
     if (method === 'POST' && parts.length === 4 && parts[3] === 'records') {
       const body = await readJson<RuntimeRecordInit & RuntimeAppendOptions & { seq?: unknown }>(
         req,
+        options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
       );
       const { expectedLastSeq, sessionTransition, ...init } = body;
       if (init.sessionId !== sessionId) {
@@ -599,7 +595,10 @@ async function route(
   }
 
   if (method === 'POST' && parts.length === 3 && parts[1] === 'learners' && parts[2] === 'merge') {
-    const body = await readJson<{ fromLearnerKey?: unknown; toLearnerKey?: unknown }>(req);
+    const body = await readJson<{ fromLearnerKey?: unknown; toLearnerKey?: unknown }>(
+      req,
+      options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES,
+    );
     if (
       typeof body.fromLearnerKey !== 'string' ||
       body.fromLearnerKey === '' ||
@@ -668,6 +667,7 @@ export function createRuntimeHttpHandler(
   if (typeof options?.authenticate !== 'function') {
     throw new Error('@openmaic/storage: createRuntimeHttpHandler requires authenticate');
   }
+  assertMaxBodyBytes(options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
   return (req, res) => {
     void route(req, res, store, options).catch((error: unknown) => {
       if (res.headersSent) {
@@ -712,6 +712,7 @@ export function createStorageHttpHandler<
       : { authorizeDocuments: options.authorizeDocuments }),
     ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
     ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
+    ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
   });
   return (req, res) => {
     let pathname: string;

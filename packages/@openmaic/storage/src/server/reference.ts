@@ -49,6 +49,8 @@ export interface ReferenceRuntimeServerOptions<
   /** Pass the same validators configured on documentStore. */
   validateScene?: SceneValidator;
   validateStage?: StageValidator;
+  /** Maximum JSON request-body size in bytes. Defaults to 32 MiB. */
+  maxBodyBytes?: number;
 }
 
 /**
@@ -116,6 +118,7 @@ export async function createReferenceRuntimeServer<
       : { authorizeDocuments: options.authorizeDocuments }),
     ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
     ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
+    ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
   };
   return createServer(
     options.documentStore === undefined
