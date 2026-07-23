@@ -249,6 +249,42 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
+### Server-backed persistence (PostgreSQL)
+
+The `server-persistence` profile runs exactly two containers: the OpenMAIC app
+and PostgreSQL. The persistence HTTP server is embedded in the app at
+`/api/persistence`; there is no standalone persistence service.
+
+```bash
+cp .env.example .env.local
+printf '\nDATABASE_URL=postgres://openmaic:openmaic-dev@postgres:5432/openmaic\nPERSISTENCE_DEV_TOKEN=openmaic-local-dev\n' >> .env.local
+NEXT_PUBLIC_PERSISTENCE=1 NEXT_PUBLIC_PERSISTENCE_TOKEN=openmaic-local-dev docker compose --profile server-persistence up --build
+```
+
+Add your provider API keys to `.env.local` as usual. Runtime sessions and course
+documents become server-backed; device-scoped KV data (including the anonymous
+device learner key and playback position) remains in the browser. Existing
+browser course data is copied into the configured server store lazily, one
+course at a time when it is first accessed, using the same verified migration
+path as browser persistence.
+
+`PERSISTENCE_DEV_TOKEN` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are deliberately
+development-grade shared-secret authentication. The client also asserts its own
+`x-learner-key`; this is suitable only for a local or otherwise trusted
+deployment. Before production exposure, replace
+[`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) with real
+authentication that derives the learner partition from server-controlled
+identity, and change the document/merge/admin authorization policies as
+appropriate. Also replace the default PostgreSQL password (set
+`PERSISTENCE_POSTGRES_PASSWORD` and update `DATABASE_URL` to match).
+
+The embedded endpoint implements the package's
+[RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
+and
+[DocumentStore HTTP contract](packages/@openmaic/storage/docs/document-http-contract.md).
+Leave `NEXT_PUBLIC_PERSISTENCE` unset to retain the existing browser-only
+behavior.
+
 ### Optional: MP4 Video Export (Render Service)
 
 The "Export Video" menu builds a self-contained [Hyperframes](https://www.npmjs.com/package/@hyperframes/producer) project entirely in the browser. Turning that into an MP4 needs Chromium + FFmpeg on Node 22, so it runs in an isolated `render-service` container rather than the app.
