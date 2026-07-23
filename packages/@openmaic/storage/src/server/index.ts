@@ -25,6 +25,17 @@ import type {
   RuntimeTailOptions,
 } from '../runtime/types.js';
 import { RuntimeAppendConflictError } from '../runtime/types.js';
+import type { Scene, Stage } from '@openmaic/dsl';
+import type { DocumentStore, SceneLike } from '../document/types.js';
+import { createDocumentHttpHandler, type DocumentHttpHandlerOptions } from './document.js';
+
+export {
+  createDocumentHttpHandler,
+  type DocumentHttpAuthenticate,
+  type DocumentHttpAuthorize,
+  type DocumentHttpHandlerOptions,
+  type DocumentHttpPrincipal,
+} from './document.js';
 
 export interface RuntimeHttpPrincipal {
   learnerKey?: string;
@@ -672,5 +683,45 @@ export function createRuntimeHttpHandler(
       const mapped = mappedError(error);
       sendJson(res, mapped.status, mapped.body);
     });
+  };
+}
+
+export interface StorageHttpHandlerOptions
+  extends
+    RuntimeHttpHandlerOptions,
+    Pick<DocumentHttpHandlerOptions, 'authorizeDocuments' | 'validateScene' | 'validateStage'> {}
+
+/**
+ * Compose the runtime and author-document contracts into one request handler.
+ * Existing runtime routing is delegated unchanged; `/documents` is dispatched
+ * to the document handler and shares the same authentication hook.
+ */
+export function createStorageHttpHandler<
+  TScene extends SceneLike = Scene,
+  TStage extends Stage = Stage,
+>(
+  runtimeStore: RuntimeStore,
+  documentStore: DocumentStore<TScene, TStage>,
+  options: StorageHttpHandlerOptions,
+): RequestListener {
+  const runtime = createRuntimeHttpHandler(runtimeStore, options);
+  const documents = createDocumentHttpHandler(documentStore, {
+    authenticate: options.authenticate,
+    ...(options.authorizeDocuments === undefined
+      ? {}
+      : { authorizeDocuments: options.authorizeDocuments }),
+    ...(options.validateScene === undefined ? {} : { validateScene: options.validateScene }),
+    ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
+  });
+  return (req, res) => {
+    let pathname: string;
+    try {
+      pathname = new URL(req.url ?? '/', 'http://storage.invalid').pathname;
+    } catch {
+      runtime(req, res);
+      return;
+    }
+    if (pathname === '/documents' || pathname.startsWith('/documents/')) documents(req, res);
+    else runtime(req, res);
   };
 }

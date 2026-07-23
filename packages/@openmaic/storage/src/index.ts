@@ -33,6 +33,13 @@ export type {
   StageValidator,
 } from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
+export {
+  HttpDocumentStore,
+  HttpDocumentStoreError,
+  type HttpDocumentHeadersContext,
+  type HttpDocumentHeadersHook,
+  type HttpDocumentStoreOptions,
+} from './document/http.js';
 
 export type {
   RuntimeStore,

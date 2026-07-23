@@ -13,7 +13,7 @@ DATABASE_URL=postgres://user:password@host/database PORT=3000 \
   node packages/@openmaic/storage/dist/server/reference.js
 ```
 
-The executable `main()` binds to `127.0.0.1`; `createReferenceRuntimeServer()` only creates and returns an unbound Node `Server`. The default bearer token payload is used directly as the demo `learnerKey`, self-merge is the only allowed merge, and admin operations are denied. The factory accepts optional `authenticate`, `authorizeMerge`, `authorizeAdmin`, and `payloadValidators` overrides. Replace the three policy hooks before exposing a deployment:
+The executable `main()` binds to `127.0.0.1`; `createReferenceRuntimeServer()` only creates and returns an unbound Node `Server`. The default bearer token payload is used directly as the demo `learnerKey`, self-merge is the only allowed merge, and admin operations are denied. Supplying `documentStore` adds the DocumentStore routes to that same server; any authenticated principal is allowed by default, or `authorizeDocuments` can enforce deployment policy. The factory also accepts `authenticate`, `authorizeMerge`, `authorizeAdmin`, and validator overrides. Replace the policy hooks before exposing a deployment:
 
 - `authenticate(req)` must validate a real credential and derive the canonical learner partition from server-controlled identity state.
 - `authorizeMerge(principal, fromKey, toKey)` must explicitly establish that the principal may migrate the complete source partition into the destination identity. Default denial is intentional.
