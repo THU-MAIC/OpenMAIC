@@ -40,6 +40,17 @@ let resolutionStarted = false;
  * ```
  */
 export function configureRuntimeStorage(next: RuntimeStorageOptions): void {
+  assertRuntimeStorageConfigurable();
+  // Snapshot: a caller mutating its options object after configuring must not
+  // be able to swap the backend or identity behind the sealed configuration.
+  options = { store: next.store, learnerKey: next.learnerKey };
+}
+
+/**
+ * @internal Synchronous bootstrap preflight used to make multi-seam
+ * configuration atomic.
+ */
+export function assertRuntimeStorageConfigurable(): void {
   if (resolutionStarted) {
     throw new Error(
       'configureRuntimeStorage must be called at module-level bootstrap, before any runtime consumer runs — a component effect is too late. Runtime storage resolution has already started; configuration remains sealed even if resolution failed. Retry the runtime consumer to retry resolution.',
@@ -48,9 +59,6 @@ export function configureRuntimeStorage(next: RuntimeStorageOptions): void {
   if (options) {
     throw new Error('Runtime storage has already been configured');
   }
-  // Snapshot: a caller mutating its options object after configuring must not
-  // be able to swap the backend or identity behind the sealed configuration.
-  options = { store: next.store, learnerKey: next.learnerKey };
 }
 
 /** Whether client bootstrap has supplied runtime storage configuration. */

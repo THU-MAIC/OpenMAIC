@@ -1,7 +1,5 @@
 'use client';
 
-import '@/lib/persistence/bootstrap';
-
 import { useEffect } from 'react';
 import { useSettingsStore } from '@/lib/store/settings';
 

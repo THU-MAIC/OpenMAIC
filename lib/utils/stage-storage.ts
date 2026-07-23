@@ -286,7 +286,7 @@ export async function listStages(): Promise<StageListItem[]> {
     ].sort((a, b) => b.updatedAt - a.updatedAt);
   } catch (error) {
     log.error('Failed to list stages:', error);
-    return [];
+    throw error;
   }
 }
 

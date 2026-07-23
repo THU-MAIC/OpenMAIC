@@ -17,14 +17,28 @@ export const runtime = 'nodejs';
 
 const ROUTE_PREFIX = '/api/persistence';
 
-let handlerPromise: Promise<RequestListener> | undefined;
+type PoolFactory = (connectionString: string) => Pool;
+
+interface PersistenceHandlerState {
+  connectionString?: string;
+  handlerPromise?: Promise<RequestListener>;
+}
+
+const HANDLER_STATE_KEY = Symbol.for('openmaic.persistence-route.handler');
+const globalState = globalThis as typeof globalThis & {
+  [key: symbol]: PersistenceHandlerState | undefined;
+};
+const handlerState = (globalState[HANDLER_STATE_KEY] ??= {});
 
 function jsonError(status: number, code: string, message: string): Response {
   return Response.json({ error: { code, message } }, { status });
 }
 
-async function createPersistenceHandler(connectionString: string): Promise<RequestListener> {
-  const pool = new Pool({ connectionString });
+async function createPersistenceHandler(
+  connectionString: string,
+  poolFactory: PoolFactory,
+): Promise<RequestListener> {
+  const pool = poolFactory(connectionString);
   const queryable = pool as unknown as ConnectableQueryable;
   try {
     await ensureSchema(queryable);
@@ -50,8 +64,26 @@ async function createPersistenceHandler(connectionString: string): Promise<Reque
   }
 }
 
-function getPersistenceHandler(connectionString: string): Promise<RequestListener> {
-  return (handlerPromise ??= createPersistenceHandler(connectionString));
+function getPersistenceHandler(
+  connectionString: string,
+  poolFactory: PoolFactory,
+): Promise<RequestListener> {
+  if (handlerState.handlerPromise && handlerState.connectionString === connectionString) {
+    return handlerState.handlerPromise;
+  }
+
+  handlerState.connectionString = connectionString;
+  const initialization = createPersistenceHandler(connectionString, poolFactory).catch((error) => {
+    // Do not poison the singleton with a rejected promise. createPersistenceHandler
+    // has already closed its failed pool, and the next request gets a clean retry.
+    if (handlerState.handlerPromise === initialization) {
+      handlerState.handlerPromise = undefined;
+      handlerState.connectionString = undefined;
+    }
+    throw error;
+  });
+  handlerState.handlerPromise = initialization;
+  return initialization;
 }
 
 function nodeRequest(request: Request): IncomingMessage {
@@ -134,7 +166,14 @@ function runNodeHandler(handler: RequestListener, request: Request): Promise<Res
   });
 }
 
-async function handle(request: Request): Promise<Response> {
+interface PersistenceRequestDeps {
+  poolFactory?: PoolFactory;
+}
+
+export async function handlePersistenceRequest(
+  request: Request,
+  deps: PersistenceRequestDeps = {},
+): Promise<Response> {
   const connectionString = process.env.DATABASE_URL;
   if (!connectionString) {
     return jsonError(404, 'PERSISTENCE_NOT_CONFIGURED', 'server persistence not configured');
@@ -148,15 +187,19 @@ async function handle(request: Request): Promise<Response> {
   }
 
   try {
-    return await runNodeHandler(await getPersistenceHandler(connectionString), request);
+    const poolFactory = deps.poolFactory ?? ((value) => new Pool({ connectionString: value }));
+    return await runNodeHandler(
+      await getPersistenceHandler(connectionString, poolFactory),
+      request,
+    );
   } catch (error) {
     console.error('Embedded persistence route initialization failed', error);
     return jsonError(500, 'PERSISTENCE_INIT_FAILED', 'server persistence initialization failed');
   }
 }
 
-export const GET = handle;
-export const POST = handle;
-export const PUT = handle;
-export const PATCH = handle;
-export const DELETE = handle;
+export const GET = (request: Request) => handlePersistenceRequest(request);
+export const POST = (request: Request) => handlePersistenceRequest(request);
+export const PUT = (request: Request) => handlePersistenceRequest(request);
+export const PATCH = (request: Request) => handlePersistenceRequest(request);
+export const DELETE = (request: Request) => handlePersistenceRequest(request);

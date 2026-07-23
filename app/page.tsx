@@ -204,6 +204,7 @@ function HomePage() {
       }
     } catch (err) {
       log.error('Failed to load classrooms:', err);
+      toast.error('Persistence is unavailable. Saved classrooms could not be loaded.');
     }
   };
 

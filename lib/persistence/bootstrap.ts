@@ -1,11 +1,15 @@
 import { BrowserKVStore, HttpDocumentStore, type HttpDocumentHeadersHook } from '@openmaic/storage';
 import { HttpRuntimeStore, type HttpRuntimeHeadersHook } from '@openmaic/storage/runtime/http';
 
-import { configureDocumentStorage } from '@/lib/document-store';
-import { configureRuntimeStorage } from '@/lib/runtime/store';
+import {
+  assertDocumentStorageConfigurable,
+  configureDocumentStorage,
+  type DocumentStorageOptions,
+} from '@/lib/document-store/config';
+import { assertRuntimeStorageConfigurable, configureRuntimeStorage } from '@/lib/runtime/config';
 import { getLearnerKey } from '@/lib/runtime/learner-key';
 
-if (process.env.NEXT_PUBLIC_PERSISTENCE === '1') {
+if (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_PERSISTENCE === '1') {
   const deviceKv = new BrowserKVStore();
   let learnerKeyPromise: Promise<string> | undefined;
   const learnerKey = (): Promise<string> =>
@@ -23,15 +27,15 @@ if (process.env.NEXT_PUBLIC_PERSISTENCE === '1') {
     };
   };
 
-  configureRuntimeStorage({
+  const runtimeOptions = {
     store: () =>
       new HttpRuntimeStore({
         baseUrl: '/api/persistence',
         headers: headers satisfies HttpRuntimeHeadersHook,
       }),
     learnerKey,
-  });
-  configureDocumentStorage({
+  };
+  const documentOptions: DocumentStorageOptions = {
     store: ({ validateScene, validateStage }) =>
       new HttpDocumentStore({
         baseUrl: '/api/persistence',
@@ -39,5 +43,19 @@ if (process.env.NEXT_PUBLIC_PERSISTENCE === '1') {
         validateScene,
         validateStage,
       }),
-  });
+  };
+
+  try {
+    // Both checks are mutation-free. Once both pass, the synchronous configure
+    // calls cannot leave only one seam configured.
+    assertRuntimeStorageConfigurable();
+    assertDocumentStorageConfigurable();
+    configureRuntimeStorage(runtimeOptions);
+    configureDocumentStorage(documentOptions);
+  } catch (error) {
+    console.error(
+      'FATAL: server-backed persistence bootstrap failed; no storage seam changes were applied',
+      error,
+    );
+  }
 }

@@ -36,4 +36,69 @@ describe('embedded persistence route', () => {
       },
     });
   });
+
+  it('retries initialization on the next request after a failed pool initialization', async () => {
+    const ensureSchema = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('postgres is still starting'))
+      .mockResolvedValue(undefined);
+    const ensureDocumentSchema = vi.fn().mockResolvedValue(undefined);
+    const failedPool = { end: vi.fn().mockResolvedValue(undefined) };
+    const workingPool = { end: vi.fn().mockResolvedValue(undefined) };
+
+    vi.doMock('@openmaic/storage/runtime/pg', () => ({
+      ensureSchema,
+      PgRuntimeStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/document/pg', () => ({
+      ensureDocumentSchema,
+      PgDocumentStore: class {},
+    }));
+    vi.doMock('@openmaic/storage/server/reference', () => ({
+      nodePostgresTransaction: vi.fn(() => vi.fn()),
+    }));
+    vi.doMock('@openmaic/storage/server', () => ({
+      createStorageHttpHandler: vi.fn(
+        () =>
+          (
+            _request: unknown,
+            response: { writeHead: (status: number) => void; end: () => void },
+          ) => {
+            response.writeHead(204);
+            response.end();
+          },
+      ),
+    }));
+    vi.stubEnv('DATABASE_URL', 'postgres://retry-test');
+    vi.stubEnv('PERSISTENCE_DEV_TOKEN', 'test-token');
+    const { handlePersistenceRequest } = await import('@/app/api/persistence/[...path]/route');
+    const request = () =>
+      new Request('http://localhost/api/persistence/runtime/sessions', {
+        headers: { authorization: 'Bearer test-token' },
+      });
+
+    const first = await handlePersistenceRequest(request(), {
+      poolFactory: () => failedPool as never,
+    });
+    const second = await handlePersistenceRequest(request(), {
+      poolFactory: () => workingPool as never,
+    });
+
+    expect(first.status).toBe(500);
+    expect(second.status).toBe(204);
+    expect(ensureSchema).toHaveBeenCalledTimes(2);
+    expect(failedPool.end).toHaveBeenCalledOnce();
+    expect(workingPool.end).not.toHaveBeenCalled();
+
+    // Next dev HMR reloads module code but retains globalThis. The initialized
+    // handler must be reused rather than opening another pool.
+    vi.resetModules();
+    const reloaded = await import('@/app/api/persistence/[...path]/route');
+    const hmrPoolFactory = vi.fn();
+    const afterReload = await reloaded.handlePersistenceRequest(request(), {
+      poolFactory: hmrPoolFactory,
+    });
+    expect(afterReload.status).toBe(204);
+    expect(hmrPoolFactory).not.toHaveBeenCalled();
+  });
 });

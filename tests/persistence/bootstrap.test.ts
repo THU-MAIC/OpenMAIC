@@ -24,7 +24,6 @@ describe('persistence client bootstrap', () => {
   it('leaves both sealed storage seams untouched when the flag is unset', async () => {
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '');
 
-    await import('@/lib/persistence/bootstrap');
     const runtime = await import('@/lib/runtime/store');
     const documents = await import('@/lib/document-store');
 
@@ -35,11 +34,13 @@ describe('persistence client bootstrap', () => {
   it('configures both HTTP stores and passes app validators through', async () => {
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
     vi.stubEnv('NEXT_PUBLIC_PERSISTENCE_TOKEN', 'test-dev-token');
+    vi.stubGlobal('window', {});
     vi.stubGlobal('localStorage', memoryStorage());
 
     const { HttpDocumentStore } = await import('@openmaic/storage');
     const { HttpRuntimeStore } = await import('@openmaic/storage/runtime/http');
-    await import('@/lib/persistence/bootstrap');
+    // Importing either seam must structurally run bootstrap before the seam can
+    // resolve its default store.
     const runtime = await import('@/lib/runtime/store');
     const documents = await import('@/lib/document-store');
 
@@ -70,5 +71,30 @@ describe('persistence client bootstrap', () => {
     documents.resetDocumentStorageForTests();
     expect(runtime.isRuntimeStorageConfigured()).toBe(false);
     expect(documents.isDocumentStorageConfigured()).toBe(false);
+  });
+
+  it('does not run client configuration during server module evaluation', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
+
+    const runtime = await import('@/lib/runtime/store');
+    const documents = await import('@/lib/document-store');
+
+    expect(runtime.isRuntimeStorageConfigured()).toBe(false);
+    expect(documents.isDocumentStorageConfigured()).toBe(false);
+  });
+
+  it('preflights both seams so a failure cannot partially configure bootstrap', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PERSISTENCE', '1');
+    vi.stubGlobal('window', {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const documents = await import('@/lib/document-store/config');
+    documents.configureDocumentStorage({});
+
+    const runtime = await import('@/lib/runtime/store');
+
+    expect(runtime.isRuntimeStorageConfigured()).toBe(false);
+    expect(documents.isDocumentStorageConfigured()).toBe(true);
+    expect(errorSpy).toHaveBeenCalledOnce();
+    expect(errorSpy.mock.calls[0]?.[0]).toContain('FATAL');
   });
 });

@@ -268,15 +268,38 @@ browser course data is copied into the configured server store lazily, one
 course at a time when it is first accessed, using the same verified migration
 path as browser persistence.
 
+`NEXT_PUBLIC_PERSISTENCE` is a **build-time switch** compiled into the browser
+bundle. A build with it enabled must be deployed with a working runtime
+`DATABASE_URL` and `PERSISTENCE_DEV_TOKEN`, while
+`NEXT_PUBLIC_PERSISTENCE_TOKEN` must match that server token at build time.
+Otherwise the browser selects HTTP persistence but the embedded endpoint
+returns configuration/authentication/initialization errors; the home page shows
+a persistence-unavailable toast and keeps the prior course list instead of
+misleadingly displaying an empty library.
+
 `PERSISTENCE_DEV_TOKEN` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are deliberately
-development-grade shared-secret authentication. The client also asserts its own
-`x-learner-key`; this is suitable only for a local or otherwise trusted
-deployment. Before production exposure, replace
+development-grade shared-secret authentication. The `NEXT_PUBLIC_` token ships
+in the public JavaScript bundle: every visitor can extract it and impersonate
+**any** learner partition by choosing an `x-learner-key`. This is suitable only
+for localhost or trusted-network, single-user deployments. Before production,
+replace
 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) with real
-authentication that derives the learner partition from server-controlled
+session verification that derives the learner partition from server-controlled
 identity, and change the document/merge/admin authorization policies as
-appropriate. Also replace the default PostgreSQL password (set
-`PERSISTENCE_POSTGRES_PASSWORD` and update `DATABASE_URL` to match).
+appropriate.
+
+`PERSISTENCE_POSTGRES_PASSWORD` initializes the PostgreSQL role only when the
+data directory is empty; changing it later does not rotate an existing
+`openmaic-postgres` volume. For a disposable local database, run
+`docker compose --profile server-persistence down -v`, set the new password and
+matching `DATABASE_URL`, then start the profile again. To preserve data, connect
+as an administrator and run `ALTER ROLE openmaic WITH PASSWORD 'new-password';`,
+then update `DATABASE_URL`.
+
+Compose cannot attach `depends_on` to `openmaic` only when this optional profile
+is active without also affecting the default deployment. Startup therefore
+relies on the embedded route's retry-on-next-request behavior while PostgreSQL
+becomes healthy.
 
 The embedded endpoint implements the package's
 [RuntimeStore HTTP contract](packages/@openmaic/storage/docs/runtime-http-contract.md)
