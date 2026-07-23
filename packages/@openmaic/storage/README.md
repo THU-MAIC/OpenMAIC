@@ -6,9 +6,9 @@ persisting app state, depending only on [`@openmaic/dsl`](../dsl).
 The DSL owns _what_ persists (document / runtime shape + validation + migration +
 the asset `StorageProvider` interface). This package owns _where / how_ it
 persists — the primitives and their backends. The pluggable seam is the
-**backend**, not the database driver: a browser backend (zero server, the
-`clone-and-run` default) and, later, an HTTP backend whose server owns a
-database.
+**backend**, not the database driver: browser backends (the zero-server
+`clone-and-run` default), HTTP clients plus a reference server, and PostgreSQL
+server backends.
 
 ## Dependency arrow (acyclic)
 
@@ -76,8 +76,9 @@ a browser.
 Each primitive has one implementation-agnostic contract suite
 (`test/kv-contract.ts`, `test/asset-contract.ts`, `test/document-contract.ts`,
 `test/runtime-contract.ts`).
-Every backend is proven by running the same suite against it, so a new backend
-(the coming HTTP one) cannot silently diverge from the primitive's semantics.
+Every backend is proven by running the same suite against it, so browser, HTTP,
+and PostgreSQL implementations cannot silently diverge from a primitive's
+semantics.
 
 ## Roadmap
 
@@ -89,7 +90,10 @@ Every backend is proven by running the same suite against it, so a new backend
 - [x] `RuntimeStore` (sessions + append-only records, runtime version line,
       per-kind payload gate) + browser backend
 - [ ] wire the app's zustand stores + ad-hoc `localStorage` through `KVStore`
-- [ ] HTTP backend + reference server + one HTTP contract
+- [x] RuntimeStore HTTP backend + reference server + HTTP contract
+- [x] RuntimeStore PostgreSQL backend
+- [x] DocumentStore HTTP backend + reference-server routes + HTTP contract
+- [x] DocumentStore PostgreSQL backend
 
 ## License
 
