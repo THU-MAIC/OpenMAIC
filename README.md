@@ -277,11 +277,14 @@ returns configuration/authentication/initialization errors; the home page shows
 a persistence-unavailable toast and keeps the prior course list instead of
 misleadingly displaying an empty library.
 
-`PERSISTENCE_DEV_TOKEN` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are deliberately
-development-grade shared-secret authentication. The `NEXT_PUBLIC_` token ships
-in the public JavaScript bundle: every visitor can extract it and impersonate
-**any** learner partition by choosing an `x-learner-key`. This is suitable only
-for localhost or trusted-network, single-user deployments. Before production,
+`PERSISTENCE_DEV_TOKEN` and `NEXT_PUBLIC_PERSISTENCE_TOKEN` are **not a
+secret in any meaningful sense**: the `NEXT_PUBLIC_` token is compiled into
+the public JavaScript bundle, fully visible to every visitor, and therefore
+provides **no confidentiality and no user isolation whatsoever** — anyone who
+can load the page can extract it and read or write **every** learner partition
+and **all** documents by choosing an `x-learner-key`. Its only purpose is to
+keep unrelated network scanners out of an endpoint on a trusted network. This
+is suitable only for localhost or trusted-network, single-user deployments. Before production,
 replace
 [`lib/persistence/server-auth.ts`](lib/persistence/server-auth.ts) with real
 session verification that derives the learner partition from server-controlled
