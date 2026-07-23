@@ -41,6 +41,32 @@ export type StageValidator = (
   stage: unknown,
 ) => { valid: true } | { valid: false; errors: { path: string; message: string }[] };
 
+/** A document write was rejected because its persisted DSL version is incompatible. */
+export class DocumentVersionError extends Error {
+  override readonly name = 'DocumentVersionError';
+
+  constructor(
+    readonly stageId: string,
+    readonly kind: 'future' | 'not-current',
+    readonly storedVersion: string | undefined,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/** An incremental document write requires a parent document that does not exist. */
+export class DocumentNotFoundError extends Error {
+  override readonly name = 'DocumentNotFoundError';
+
+  constructor(
+    readonly stageId: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
 /**
  * The portable, embedded form of a persisted course. Storage normalizes it into
  * per-entity rows on write and reassembles it on read.

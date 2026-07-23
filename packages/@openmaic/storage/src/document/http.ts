@@ -9,6 +9,7 @@ import type {
   SceneValidator,
   StageValidator,
 } from './types.js';
+import { DocumentVersionError } from './types.js';
 
 export interface HttpDocumentHeadersContext {
   method: string;
@@ -34,6 +35,10 @@ export interface HttpDocumentStoreOptions {
 
 interface ErrorResponseBody {
   error?: { code?: unknown; message?: unknown; details?: unknown };
+}
+
+interface DocumentVersionErrorDetails {
+  storedVersion?: unknown;
 }
 
 /** A server-side DocumentStore failure, retaining its machine-readable HTTP identity. */
@@ -118,8 +123,8 @@ export class HttpDocumentStore<
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof globalThis.fetch;
   private readonly headersHook: HttpDocumentHeadersHook | undefined;
-  private readonly sceneValidator: SceneValidator;
-  private readonly stageValidator: StageValidator;
+  private readonly validateSceneFn: SceneValidator;
+  private readonly validateStageFn: StageValidator;
 
   constructor(options: HttpDocumentStoreOptions) {
     if (options.baseUrl === '') {
@@ -132,11 +137,16 @@ export class HttpDocumentStore<
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.fetchImpl = fetchImpl;
     this.headersHook = options.headers;
-    this.sceneValidator = options.validateScene ?? validateScene;
-    this.stageValidator = options.validateStage ?? validateStage;
+    this.validateSceneFn = options.validateScene ?? validateScene;
+    this.validateStageFn = options.validateStage ?? validateStage;
   }
 
-  private async request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  private async request<T>(
+    method: string,
+    path: string,
+    body?: unknown,
+    versionErrorStageId?: string,
+  ): Promise<T> {
     const headers = normalizeHeaders(await this.headersHook?.({ method, path }));
     let serializedBody: string | undefined;
     if (body !== undefined) {
@@ -160,6 +170,16 @@ export class HttpDocumentStore<
         typeof errorBody?.error?.message === 'string'
           ? errorBody.error.message
           : `@openmaic/storage: DocumentStore HTTP request failed with status ${response.status}`;
+      if (
+        response.status === 409 &&
+        code === 'FUTURE_VERSION' &&
+        versionErrorStageId !== undefined
+      ) {
+        const details = errorBody?.error?.details as DocumentVersionErrorDetails | undefined;
+        const storedVersion =
+          typeof details?.storedVersion === 'string' ? details.storedVersion : undefined;
+        throw new DocumentVersionError(versionErrorStageId, 'future', storedVersion, message);
+      }
       throw new HttpDocumentStoreError(response.status, code, message, errorBody?.error?.details);
     }
     if (response.status === 204) return undefined as T;
@@ -167,7 +187,7 @@ export class HttpDocumentStore<
   }
 
   private validateSceneForWrite(stageId: string, scene: TScene): void {
-    assertValid(this.sceneValidator(scene), `scene ${scene.id}`);
+    assertValid(this.validateSceneFn(scene), `scene ${scene.id}`);
     assertStorableScene(scene, stageId);
   }
 
@@ -175,7 +195,7 @@ export class HttpDocumentStore<
     // The server repeats these checks. Running the injected gates here matches
     // BrowserDocumentStore's fail-fast boundary and avoids avoidable wire calls.
     const normalized = migrateDocument(document);
-    assertValid(this.stageValidator(normalized.stage), `stage ${normalized.stage.id}`);
+    assertValid(this.validateStageFn(normalized.stage), `stage ${normalized.stage.id}`);
     const seen = new Set<string>();
     for (const scene of normalized.scenes) {
       this.validateSceneForWrite(normalized.stage.id, scene);
@@ -188,7 +208,12 @@ export class HttpDocumentStore<
       seen.add(scene.id);
     }
     assertJsonValue(document, `document ${JSON.stringify(document.stage.id)}`);
-    await this.request<void>('PUT', `/documents/${segment(document.stage.id)}`, document);
+    await this.request<void>(
+      'PUT',
+      `/documents/${segment(document.stage.id)}`,
+      document,
+      document.stage.id,
+    );
   }
 
   async loadDocument(stageId: string): Promise<MaicDocument<TScene, TStage> | null> {
@@ -223,9 +248,9 @@ export class HttpDocumentStore<
   }
 
   async putStage(stageId: string, stage: TStage): Promise<void> {
-    assertValid(this.stageValidator(stage), `stage ${stage.id}`);
+    assertValid(this.validateStageFn(stage), `stage ${stage.id}`);
     assertJsonValue(stage, `stage ${JSON.stringify(stage.id)}`);
-    await this.request<void>('PUT', `/documents/${segment(stageId)}/stage`, stage);
+    await this.request<void>('PUT', `/documents/${segment(stageId)}/stage`, stage, stageId);
   }
 
   async putScene(stageId: string, scene: TScene): Promise<void> {
@@ -235,6 +260,7 @@ export class HttpDocumentStore<
       'PUT',
       `/documents/${segment(stageId)}/scenes/${segment(scene.id)}`,
       scene,
+      stageId,
     );
   }
 
@@ -256,6 +282,11 @@ export class HttpDocumentStore<
   }
 
   async deleteScene(stageId: string, sceneId: string): Promise<void> {
-    await this.request<void>('DELETE', `/documents/${segment(stageId)}/scenes/${segment(sceneId)}`);
+    await this.request<void>(
+      'DELETE',
+      `/documents/${segment(stageId)}/scenes/${segment(sceneId)}`,
+      undefined,
+      stageId,
+    );
   }
 }
