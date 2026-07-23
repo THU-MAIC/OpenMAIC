@@ -230,6 +230,9 @@ importers:
       partial-json:
         specifier: ^0.1.7
         version: 0.1.7
+      pg:
+        specifier: ^8.16.3
+        version: 8.22.0
       pptxgenjs:
         specifier: workspace:*
         version: link:packages/pptxgenjs
@@ -366,6 +369,9 @@ importers:
       '@types/node':
         specifier: ^20
         version: 20.19.37
+      '@types/pg':
+        specifier: ^8.15.5
+        version: 8.20.0
       '@types/react':
         specifier: ^19
         version: 19.2.14

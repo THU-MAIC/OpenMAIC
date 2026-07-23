@@ -56,6 +56,17 @@ let resolutionStarted = false;
  * ```
  */
 export function configureDocumentStorage(next: DocumentStorageOptions): void {
+  assertDocumentStorageConfigurable();
+  // Snapshot: a caller mutating its options object after configuring must not
+  // be able to swap the backend behind the sealed configuration.
+  options = { store: next.store };
+}
+
+/**
+ * @internal Synchronous bootstrap preflight used to make multi-seam
+ * configuration atomic.
+ */
+export function assertDocumentStorageConfigurable(): void {
   if (resolutionStarted) {
     throw new Error(
       'configureDocumentStorage must be called at module-level bootstrap, before any document consumer runs — a component effect is too late. Document storage resolution has already started; configuration remains sealed even if resolution failed. Retry the document consumer to retry resolution.',
@@ -64,9 +75,6 @@ export function configureDocumentStorage(next: DocumentStorageOptions): void {
   if (options) {
     throw new Error('Document storage has already been configured');
   }
-  // Snapshot: a caller mutating its options object after configuring must not
-  // be able to swap the backend behind the sealed configuration.
-  options = { store: next.store };
 }
 
 /** Whether client bootstrap has supplied document storage configuration. */

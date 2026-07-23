@@ -2,6 +2,11 @@
 
 The `@openmaic/storage/server` subpath exports a Node-only HTTP request handler implementing the [RuntimeStore HTTP contract](./runtime-http-contract.md) and, when a document store is supplied, the [DocumentStore HTTP contract](./document-http-contract.md). It accepts injected `RuntimeStore` and `DocumentStore` implementations; the runnable `@openmaic/storage/server/reference` composition creates and initializes `PgRuntimeStore`, accepts an optional host-created document store, and demonstrates the required node-postgres checkout/transaction/release pattern.
 
+The OpenMAIC application also mounts these same composed handlers as an
+app-integrated Next.js route at `/api/persistence`. That embedded route is the
+deployment form used by the repository's `server-persistence` Compose profile;
+it changes the Fetch/Node request boundary only, not either HTTP contract.
+
 This module is a reference, not a production authentication service. **The example bearer authentication is fully impersonatable.** A production host must supply its own authenticated identity and authorization policy. It must also terminate TLS, bound request sizes and timeouts, rate-limit abusive clients, keep database credentials outside the process image, and expose the service only through an appropriate application gateway.
 
 ## Deployment
