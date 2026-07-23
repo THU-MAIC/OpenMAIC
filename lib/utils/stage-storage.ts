@@ -35,6 +35,8 @@ import {
   withRuntimeStorageExclusiveLockUntilSettled,
   withRuntimeStorageSharedLock,
 } from './chat-storage-lock';
+import { DocumentVersionError } from '@openmaic/storage';
+import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 
 const log = createLogger('StageStorage');
 
@@ -48,6 +50,19 @@ export interface StageStoreData {
   outline?: AppDocumentOutline;
 }
 
+/**
+ * A logical editor change waiting for persistence. Call sites intentionally
+ * describe what changed, not how it is stored, so a future operation-log
+ * backend can replace the flush implementation without changing mutations.
+ */
+export type PendingChange =
+  | { kind: 'scene'; sceneId: string }
+  | { kind: 'structure' }
+  | { kind: 'stage' }
+  | { kind: 'outline' }
+  | { kind: 'currentScene' }
+  | { kind: 'chats' };
+
 export interface StageListItem {
   id: string;
   name: string;
@@ -57,6 +72,57 @@ export interface StageListItem {
   updatedAt: number;
   interactiveMode?: boolean;
   taskEngineMode?: boolean;
+}
+
+function documentSnapshot(
+  stageId: string,
+  data: StageStoreData,
+  existingOutline: AppDocumentOutline | undefined,
+  now: number,
+) {
+  const outline = data.outline ??
+    existingOutline ?? {
+      outlines: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+  return {
+    stage: {
+      ...data.stage,
+      id: stageId,
+      name: data.stage.name || 'Untitled Stage',
+      createdAt: data.stage.createdAt || now,
+      updatedAt: now,
+    },
+    scenes: data.scenes.map((scene, index) => ({
+      ...scene,
+      stageId,
+      order: scene.order ?? index,
+      createdAt: scene.createdAt || now,
+      updatedAt: scene.updatedAt || now,
+    })),
+    outline: {
+      ...outline,
+      createdAt: existingOutline?.createdAt ?? outline.createdAt,
+    },
+  };
+}
+
+async function saveStageChats(
+  stageId: string,
+  data: StageStoreData,
+  globalLockHeld = false,
+): Promise<void> {
+  try {
+    await saveChatSessions(stageId, data.chats, {
+      ...(globalLockHeld ? { globalLockHeld: true } : {}),
+      snapshot: data.chatSnapshot,
+    });
+  } catch (error) {
+    const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
+    if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot) throw error;
+    log.warn(`Chat sessions failed to save for stage ${stageId}:`, error);
+  }
 }
 
 /**
@@ -73,47 +139,12 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
         // document lock while already occupying the shared epoch.
         await withRuntimeStorageSharedLock(async () => {
           const existingOutline = existing?.outline as AppDocumentOutline | undefined;
-          const outline = data.outline ??
-            existingOutline ?? {
-              outlines: [],
-              createdAt: now,
-              updatedAt: now,
-            };
-          await store.saveDocument({
-            stage: {
-              ...data.stage,
-              id: stageId,
-              name: data.stage.name || 'Untitled Stage',
-              createdAt: data.stage.createdAt || now,
-              updatedAt: now,
-            },
-            scenes: data.scenes.map((scene, index) => ({
-              ...scene,
-              stageId,
-              order: scene.order ?? index,
-              createdAt: scene.createdAt || now,
-              updatedAt: scene.updatedAt || now,
-            })),
-            outline: {
-              ...outline,
-              createdAt: existingOutline?.createdAt ?? outline.createdAt,
-            },
-          });
+          await store.saveDocument(documentSnapshot(stageId, data, existingOutline, now));
           await saveCurrentScene(stageId, data.currentSceneId);
 
           // Chat sessions live in the learner RuntimeStore, outside the document DB.
           if (data.chats) {
-            try {
-              await saveChatSessions(stageId, data.chats, {
-                globalLockHeld: true,
-                snapshot: data.chatSnapshot,
-              });
-            } catch (error) {
-              const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
-              if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot)
-                throw error;
-              log.warn(`Document saved but chat sessions failed for stage ${stageId}:`, error);
-            }
+            await saveStageChats(stageId, data, true);
           }
         });
       },
@@ -124,6 +155,97 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
     log.error('Failed to save stage:', error);
     throw error;
   }
+}
+
+/**
+ * Persist only the logical units dirtied by the editor. Structural and outline
+ * changes still use the aggregate contract: structure must reconcile scene
+ * membership/order, while DocumentStore does not yet expose putOutline.
+ */
+export async function saveStageDataIncremental(
+  stageId: string,
+  dirty: readonly PendingChange[],
+  data: StageStoreData,
+): Promise<void> {
+  const has = (kind: PendingChange['kind']) => dirty.some((change) => change.kind === kind);
+  const dirtySceneIds = new Set(
+    dirty.flatMap((change) => (change.kind === 'scene' ? [change.sceneId] : [])),
+  );
+  const needsDocumentWrite =
+    dirtySceneIds.size > 0 || has('structure') || has('stage') || has('outline');
+
+  if (needsDocumentWrite) {
+    await mutateDocument(
+      stageId,
+      async (existing, store) => {
+        await withRuntimeStorageSharedLock(async () => {
+          const now = Date.now();
+          const fullSave = async () => {
+            const persistedScenes = await preparePBLScenesForDocumentPersistence(
+              stageId,
+              data.scenes,
+            );
+            await store.saveDocument(
+              documentSnapshot(
+                stageId,
+                { ...data, scenes: persistedScenes },
+                existing?.outline as AppDocumentOutline | undefined,
+                now,
+              ),
+            );
+          };
+
+          // A missing destination needs its parent aggregate created. Outline
+          // dirt also forces this path until DocumentStore grows putOutline.
+          if (!existing || has('structure') || has('outline')) {
+            await fullSave();
+            return;
+          }
+
+          try {
+            if (dirtySceneIds.size > 0) {
+              const dirtyScenes = data.scenes.filter((scene) => dirtySceneIds.has(scene.id));
+              // Preparation synchronizes and strips each PBL scene independently;
+              // it has no sibling-scene dependency, so the hot path stays local.
+              const persistedScenes = await preparePBLScenesForDocumentPersistence(
+                stageId,
+                dirtyScenes,
+              );
+              for (const scene of persistedScenes) {
+                await store.putScene(stageId, {
+                  ...scene,
+                  stageId,
+                  createdAt: scene.createdAt || now,
+                  updatedAt: now,
+                });
+              }
+            }
+            if (has('stage')) {
+              await store.putStage(stageId, {
+                ...data.stage,
+                id: stageId,
+                name: data.stage.name || 'Untitled Stage',
+                createdAt: data.stage.createdAt || now,
+                updatedAt: now,
+              });
+            }
+          } catch (error) {
+            // Incremental APIs reject pre-versioned destinations. The aggregate
+            // save migrates/stamps the whole document coherently.
+            if (error instanceof DocumentVersionError && error.kind === 'not-current') {
+              await fullSave();
+              return;
+            }
+            throw error;
+          }
+        });
+      },
+      { storageSharedLockHeld: true },
+    );
+  }
+
+  if (has('currentScene')) await saveCurrentScene(stageId, data.currentSceneId);
+  if (has('chats')) await saveStageChats(stageId, data);
 }
 
 /**

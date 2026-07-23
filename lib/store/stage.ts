@@ -18,6 +18,7 @@ import { migrateScene } from '@/lib/edit/slide-schema';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
+import type { PendingChange } from '@/lib/utils/stage-storage';
 
 const log = createLogger('StageStore');
 
@@ -27,6 +28,49 @@ export const PENDING_SCENE_ID = '__pending__';
 export type StageSceneLoadToken = number;
 
 let latestStageSceneLoadToken = 0;
+
+type PendingEntry = { change: PendingChange; revision: number };
+
+let pendingStageId: string | null = null;
+let pendingRevision = 0;
+const pendingChanges = new Map<string, PendingEntry>();
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let flushInFlight: Promise<void> | null = null;
+
+function pendingChangeKey(change: PendingChange): string {
+  return change.kind === 'scene' ? `scene:${change.sceneId}` : change.kind;
+}
+
+function cancelScheduledSave(): void {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = null;
+}
+
+function resetPendingChanges(stageId: string | null = null): void {
+  cancelScheduledSave();
+  pendingChanges.clear();
+  pendingStageId = stageId;
+}
+
+function schedulePendingSave(): void {
+  cancelScheduledSave();
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void flushStageSave().catch(() => {
+      // flushStageSave logs once and retains the pending entries for retry.
+    });
+  }, 500);
+}
+
+function markPendingChanges(stageId: string | undefined, ...changes: PendingChange[]): void {
+  if (!stageId) return;
+  if (pendingStageId !== stageId) resetPendingChanges(stageId);
+  for (const change of changes) {
+    pendingRevision += 1;
+    pendingChanges.set(pendingChangeKey(change), { change, revision: pendingRevision });
+  }
+  schedulePendingSave();
+}
 
 export function claimStageSceneLoadToken(): StageSceneLoadToken {
   latestStageSceneLoadToken += 1;
@@ -179,6 +223,9 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   // Actions
   setStage: (stage) => {
     claimStageSceneLoadToken();
+    // A stage switch is a hard persistence boundary: stale dirt must never be
+    // replayed using the new document id.
+    resetPendingChanges(stage.id);
     set((s) => ({
       stage,
       scenes: [],
@@ -188,7 +235,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       generationComplete: false,
       generationEpoch: s.generationEpoch + 1,
     }));
-    debouncedSave();
+    markPendingChanges(stage.id, { kind: 'structure' }, { kind: 'stage' });
   },
 
   setScenes: (scenes) => {
@@ -201,7 +248,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     if (!get().currentSceneId && migrated.length > 0) {
       set({ currentSceneId: migrated[0].id });
     }
-    debouncedSave();
+    markPendingChanges(get().stage?.id, { kind: 'structure' });
   },
 
   addScene: (scene) => {
@@ -223,7 +270,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       generatingOutlines,
       ...(shouldSwitch ? { currentSceneId: scene.id } : {}),
     });
-    debouncedSave();
+    markPendingChanges(currentStage.id, { kind: 'structure' });
   },
 
   insertSceneAfter: (anchorSceneId, scene) => {
@@ -245,7 +292,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     const next = [...current.slice(0, insertIndex), migrated, ...current.slice(insertIndex)];
     const rebalanced = next.map((s, i) => (s.order === i + 1 ? s : { ...s, order: i + 1 }));
     set({ scenes: rebalanced });
-    debouncedSave();
+    markPendingChanges(currentStage.id, { kind: 'structure' });
   },
 
   updateScene: (sceneId, updates) => {
@@ -257,7 +304,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       return makeScene({ ...scene, ...updates }, content);
     });
     set({ scenes });
-    debouncedSave();
+    markPendingChanges(get().stage?.id, { kind: 'scene', sceneId });
   },
 
   deleteScene: (sceneId) => {
@@ -288,17 +335,17 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
     if (wasComplete) get().setGenerationComplete(true);
 
-    debouncedSave();
+    markPendingChanges(get().stage?.id, { kind: 'structure' });
   },
 
   setCurrentSceneId: (sceneId) => {
     set({ currentSceneId: sceneId });
-    debouncedSave();
+    markPendingChanges(get().stage?.id, { kind: 'currentScene' });
   },
 
   setChats: (chats) => {
     set({ chats });
-    debouncedSave();
+    markPendingChanges(get().stage?.id, { kind: 'chats' });
   },
 
   setMode: (mode) => {
@@ -316,7 +363,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     const stage = get().stage;
     if (!stage) return;
     set({ stage: { ...stage, generatedAgentConfigs: configs } });
-    debouncedSave();
+    markPendingChanges(stage.id, { kind: 'stage' });
     debouncedSaveAgents();
   },
 
@@ -324,12 +371,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   setOutlines: (outlines) => {
     set({ outlines });
-    // The outline is part of the document aggregate; keep one authority.
-    void get().saveToStorage();
+    markPendingChanges(get().stage?.id, { kind: 'outline' });
   },
 
   setGenerationComplete: (generationComplete) => {
     set({ generationComplete });
+    markPendingChanges(get().stage?.id, { kind: 'outline' });
     // Final scenes and the completion barrier commit in the same aggregate write.
     void get().saveToStorage();
   },
@@ -386,6 +433,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       return false;
     }
 
+    const pendingAtStart = new Map(pendingChanges);
     try {
       const persistedScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
       const { saveStageData } = await import('@/lib/utils/stage-storage');
@@ -413,6 +461,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             restoreMarker: chatSnapshot.restoreMarker,
           },
         });
+      }
+      if (pendingStageId === stage.id) {
+        for (const [key, entry] of pendingAtStart) {
+          if (pendingChanges.get(key)?.revision === entry.revision) pendingChanges.delete(key);
+        }
+        if (pendingChanges.size === 0) cancelScheduledSave();
       }
 
       return true;
@@ -500,6 +554,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           // this normalises the SPA path to match.
           mode: 'playback',
         });
+        resetPendingChanges(stageId);
         if (generationComplete && !persistedComplete) void get().saveToStorage();
         log.info('Loaded from storage:', stageId);
       } else {
@@ -513,6 +568,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   clearStore: () => {
     claimStageSceneLoadToken();
+    resetPendingChanges();
     set((s) => ({
       stage: null,
       scenes: [],
@@ -536,12 +592,90 @@ export const useStageStore = createSelectors(useStageStoreBase);
 // ==================== Debounced Save ====================
 
 /**
- * Debounced version of saveToStorage to prevent excessive writes
- * Waits 500ms after the last change before saving
+ * Drain the pending debounce and persist its current dirty snapshot. Entries
+ * are revisioned so a mutation that lands during the write is not accidentally
+ * cleared. Concurrent callers share the same in-flight write.
  */
-const debouncedSave = debounce(() => {
-  useStageStore.getState().saveToStorage();
-}, 500);
+export function flushStageSave(): Promise<void> {
+  cancelScheduledSave();
+  if (flushInFlight) return flushInFlight;
+  if (!pendingStageId || pendingChanges.size === 0) return Promise.resolve();
+
+  const stageId = pendingStageId;
+  const dirtySnapshot = new Map(pendingChanges);
+  const state = useStageStore.getState();
+  if (state.stage?.id !== stageId) {
+    resetPendingChanges(state.stage?.id ?? null);
+    return Promise.resolve();
+  }
+  const { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete } =
+    state;
+
+  const run = (async () => {
+    let succeeded = false;
+    try {
+      const { saveStageDataIncremental } = await import('@/lib/utils/stage-storage');
+      await saveStageDataIncremental(
+        stageId,
+        [...dirtySnapshot.values()].map(({ change }) => change),
+        {
+          stage,
+          scenes,
+          currentSceneId,
+          chats,
+          chatSnapshot,
+          outline: {
+            outlines,
+            generationComplete,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          },
+        },
+      );
+
+      if (pendingStageId === stageId) {
+        for (const [key, entry] of dirtySnapshot) {
+          if (pendingChanges.get(key)?.revision === entry.revision) pendingChanges.delete(key);
+        }
+      }
+      if (
+        dirtySnapshot.has('chats') &&
+        useStageStore.getState().stage?.id === stageId &&
+        useStageStore.getState().chats === chats
+      ) {
+        useStageStore.setState({
+          chatSnapshot: {
+            sessions: structuredClone(chats),
+            restoreMarker: chatSnapshot.restoreMarker,
+          },
+        });
+      }
+      succeeded = true;
+    } catch (error) {
+      log.error(`Failed to flush pending stage changes for ${stageId}:`, error);
+      throw error;
+    } finally {
+      flushInFlight = null;
+      // A failed write stays dirty but does not spin a retry loop. The next
+      // mutation, explicit flush, or lifecycle kick retries it.
+      if (succeeded && pendingChanges.size > 0 && pendingStageId) schedulePendingSave();
+    }
+  })();
+  flushInFlight = run;
+  return run;
+}
+
+if (typeof window !== 'undefined') {
+  const kickPendingSave = () => {
+    void flushStageSave().catch(() => {
+      // Best effort during page shutdown; pending dirt remains for a live retry.
+    });
+  };
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') kickPendingSave();
+  });
+  window.addEventListener('beforeunload', kickPendingSave);
+}
 
 /**
  * Debounced registry sync — fires ONLY when the agent roster is edited.

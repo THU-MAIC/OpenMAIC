@@ -9,6 +9,7 @@ const { setSelectedAgentIds } = vi.hoisted(() => ({
 // to talk to a real (or jsdom) IndexedDB in the test environment.
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: vi.fn().mockResolvedValue(undefined),
+  saveStageDataIncremental: vi.fn().mockResolvedValue(undefined),
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
 vi.mock('@/lib/utils/database', () => ({
@@ -24,7 +25,7 @@ vi.mock('@/lib/store/settings', () => ({
 }));
 
 import { useStageStore } from '@/lib/store/stage';
-import { saveStageData } from '@/lib/utils/stage-storage';
+import { saveStageData, saveStageDataIncremental } from '@/lib/utils/stage-storage';
 import { saveGeneratedAgents } from '@/lib/orchestration/registry/store';
 import type { Stage } from '@/lib/types/stage';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
@@ -107,6 +108,7 @@ describe('setStageAgents', () => {
 describe('setStageAgents persistence (debounced save)', () => {
   beforeEach(() => {
     vi.mocked(saveStageData).mockClear();
+    vi.mocked(saveStageDataIncremental).mockClear();
     vi.mocked(saveGeneratedAgents).mockClear();
     setSelectedAgentIds.mockClear();
   });
@@ -118,8 +120,8 @@ describe('setStageAgents persistence (debounced save)', () => {
     // Flush the 500 ms debounce
     await vi.runAllTimersAsync();
 
-    expect(saveStageData).toHaveBeenCalledOnce();
-    const [, storeData] = vi.mocked(saveStageData).mock.calls[0];
+    expect(saveStageDataIncremental).toHaveBeenCalledOnce();
+    const [, , storeData] = vi.mocked(saveStageDataIncremental).mock.calls[0];
     expect(storeData.stage.generatedAgentConfigs).toEqual(configs);
   });
 
@@ -163,8 +165,9 @@ describe('setStageAgents persistence (debounced save)', () => {
 
     await vi.runAllTimersAsync();
 
-    // saveStageData fires (the snapshot write is fine), but saveGeneratedAgents must not.
-    expect(saveStageData).toHaveBeenCalledOnce();
+    // Only the device-scoped incremental path fires; the document is untouched.
+    expect(saveStageDataIncremental).toHaveBeenCalledOnce();
+    expect(saveStageData).not.toHaveBeenCalled();
     expect(saveGeneratedAgents).not.toHaveBeenCalled();
   });
 
