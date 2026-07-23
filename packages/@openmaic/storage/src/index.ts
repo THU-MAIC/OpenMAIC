@@ -40,6 +40,12 @@ export {
   type HttpDocumentHeadersHook,
   type HttpDocumentStoreOptions,
 } from './document/http.js';
+export {
+  PgDocumentStore,
+  DOCUMENT_PG_SCHEMA,
+  ensureDocumentSchema,
+  type PgDocumentStoreOptions,
+} from './document/pg.js';
 
 export type {
   RuntimeStore,
