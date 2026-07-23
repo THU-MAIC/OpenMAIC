@@ -51,7 +51,11 @@ vi.mock('@/lib/utils/chat-storage', () => ({
   deleteChatSessions: vi.fn().mockResolvedValue(undefined),
 }));
 
-import { saveStageDataIncremental, type StageStoreData } from '@/lib/utils/stage-storage';
+import {
+  saveStageData,
+  saveStageDataIncremental,
+  type StageStoreData,
+} from '@/lib/utils/stage-storage';
 import type { Scene, Stage } from '@/lib/types/stage';
 
 const stage: Stage = { id: 'stage-1', name: 'Stage', createdAt: 1, updatedAt: 1 };
@@ -137,6 +141,16 @@ describe('saveStageDataIncremental', () => {
     expect(putStage).not.toHaveBeenCalled();
   });
 
+  it('normalizes an undefined scene order to its document index', async () => {
+    const unorderedScenes = [scenes[0], { ...scenes[1], order: undefined }] as Scene[];
+    await saveStageDataIncremental('stage-1', [{ kind: 'scene', sceneId: 'scene-2' }], {
+      ...data,
+      scenes: unorderedScenes,
+    });
+
+    expect(putScene.mock.calls[0]![1]).toEqual(expect.objectContaining({ order: 1 }));
+  });
+
   it('uses the aggregate save for structural changes', async () => {
     await saveStageDataIncremental('stage-1', [{ kind: 'structure' }], data);
     expect(prepareScenes).toHaveBeenCalledWith('stage-1', scenes);
@@ -177,5 +191,17 @@ describe('saveStageDataIncremental', () => {
     await expect(saveStageDataIncremental('stage-1', [{ kind: 'chats' }], data)).resolves.toEqual({
       failedChanges: [{ kind: 'chats' }],
     });
+  });
+});
+
+describe('saveStageData', () => {
+  it('reports a split chat failure after the document save succeeds', async () => {
+    saveChatSessions.mockRejectedValueOnce(new Error('runtime unavailable'));
+
+    await expect(saveStageData('stage-1', data)).resolves.toEqual({
+      failedChanges: [{ kind: 'chats' }],
+    });
+    expect(saveDocument).toHaveBeenCalledOnce();
+    expect(saveCurrentScene).toHaveBeenCalledWith('stage-1', 'scene-1');
   });
 });

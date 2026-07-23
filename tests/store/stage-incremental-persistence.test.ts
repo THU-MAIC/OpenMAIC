@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { incrementalSave } = vi.hoisted(() => ({
+const { fullSave, incrementalSave } = vi.hoisted(() => ({
+  fullSave: vi.fn().mockResolvedValue(undefined),
   incrementalSave: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/lib/utils/stage-storage', () => ({
-  saveStageData: vi.fn().mockResolvedValue(undefined),
+  saveStageData: (...args: unknown[]) => fullSave(...args),
   saveStageDataIncremental: (...args: unknown[]) => incrementalSave(...args),
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
@@ -46,6 +47,7 @@ const scene = (id: string, stageId = 'stage-1'): Scene => ({
 
 beforeEach(() => {
   vi.useFakeTimers();
+  fullSave.mockReset().mockResolvedValue(undefined);
   incrementalSave.mockReset().mockResolvedValue(undefined);
   useStageStore.getState().clearStore();
   useStageStore.setState({
@@ -135,6 +137,44 @@ describe('incremental stage flush', () => {
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-2' }]);
   });
 
+  it('starts a covering round when an older in-flight round reports a failure', async () => {
+    let releaseFirst!: (result: { failedChanges: [{ kind: 'chats' }] }) => void;
+    incrementalSave.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseFirst = resolve;
+        }),
+    );
+    useStageStore.getState().setChats([
+      {
+        id: 'chat-1',
+        type: 'qa',
+        title: 'Chat',
+        status: 'idle',
+        messages: [],
+        config: { agentIds: [] },
+        toolCalls: [],
+        pendingToolCalls: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+
+    const staleFlush = flushStageSave();
+    await vi.waitFor(() => expect(incrementalSave).toHaveBeenCalledOnce());
+    useStageStore.getState().updateScene('scene-2', { title: 'must become durable' });
+    const coveringFlush = flushStageSave();
+
+    releaseFirst({ failedChanges: [{ kind: 'chats' }] });
+    await coveringFlush;
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([
+      { kind: 'chats' },
+      { kind: 'scene', sceneId: 'scene-2' },
+    ]);
+    await staleFlush;
+  });
+
   it('flushes old-document dirt when setStage switches documents', async () => {
     useStageStore.getState().updateScene('scene-1', { title: 'stale' });
     useStageStore.getState().setStage(stage('stage-2'));
@@ -145,6 +185,23 @@ describe('incremental stage flush', () => {
     expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
     expect(incrementalSave.mock.calls[1]![0]).toBe('stage-2');
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'structure' }, { kind: 'stage' }]);
+  });
+
+  it('retries a failed departing-stage snapshot once without blocking navigation', async () => {
+    incrementalSave
+      .mockResolvedValueOnce({ failedChanges: [{ kind: 'scene', sceneId: 'scene-1' }] })
+      .mockResolvedValueOnce({ failedChanges: [] });
+    useStageStore.getState().updateScene('scene-1', { title: 'departing' });
+
+    useStageStore.getState().setStage(stage('stage-2'));
+    expect(useStageStore.getState().stage?.id).toBe('stage-2');
+    await vi.waitFor(() => expect(incrementalSave).toHaveBeenCalledOnce());
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(incrementalSave).toHaveBeenCalledTimes(2);
+    expect(incrementalSave.mock.calls[0]![0]).toBe('stage-1');
+    expect(incrementalSave.mock.calls[1]![0]).toBe('stage-1');
+    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'scene', sceneId: 'scene-1' }]);
   });
 
   it('retains chat dirt when chat persistence reports an isolated failure', async () => {
@@ -170,5 +227,31 @@ describe('incremental stage flush', () => {
     await vi.advanceTimersByTimeAsync(500);
     expect(incrementalSave).toHaveBeenCalledTimes(2);
     expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'chats' }]);
+  });
+
+  it('clears document dirt but retains and retries chat dirt after a split full save', async () => {
+    fullSave.mockResolvedValueOnce({ failedChanges: [{ kind: 'chats' }] });
+    useStageStore.getState().updateScene('scene-1', { title: 'document succeeds' });
+    useStageStore.getState().setChats([
+      {
+        id: 'chat-1',
+        type: 'qa',
+        title: 'Retry chat',
+        status: 'idle',
+        messages: [],
+        config: { agentIds: [] },
+        toolCalls: [],
+        pendingToolCalls: [],
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ]);
+
+    await expect(useStageStore.getState().saveToStorage()).resolves.toBe(true);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(fullSave).toHaveBeenCalledOnce();
+    expect(incrementalSave).toHaveBeenCalledOnce();
+    expect(incrementalSave.mock.calls[0]![1]).toEqual([{ kind: 'chats' }]);
   });
 });

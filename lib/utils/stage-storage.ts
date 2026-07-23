@@ -74,6 +74,26 @@ export interface StageListItem {
   taskEngineMode?: boolean;
 }
 
+function stampStage(stageId: string, stage: Stage, now: number): Stage {
+  return {
+    ...stage,
+    id: stageId,
+    name: stage.name || 'Untitled Stage',
+    createdAt: stage.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+function stampScene(stageId: string, scene: Scene, index: number, now: number): Scene {
+  return {
+    ...scene,
+    stageId,
+    order: scene.order ?? index,
+    createdAt: scene.createdAt || now,
+    updatedAt: scene.updatedAt || now,
+  };
+}
+
 function documentSnapshot(
   stageId: string,
   data: StageStoreData,
@@ -87,20 +107,8 @@ function documentSnapshot(
       updatedAt: now,
     };
   return {
-    stage: {
-      ...data.stage,
-      id: stageId,
-      name: data.stage.name || 'Untitled Stage',
-      createdAt: data.stage.createdAt || now,
-      updatedAt: now,
-    },
-    scenes: data.scenes.map((scene, index) => ({
-      ...scene,
-      stageId,
-      order: scene.order ?? index,
-      createdAt: scene.createdAt || now,
-      updatedAt: scene.updatedAt || now,
-    })),
+    stage: stampStage(stageId, data.stage, now),
+    scenes: data.scenes.map((scene, index) => stampScene(stageId, scene, index, now)),
     outline: {
       ...outline,
       createdAt: existingOutline?.createdAt ?? outline.createdAt,
@@ -130,9 +138,13 @@ async function saveStageChats(
 /**
  * Save stage data to IndexedDB
  */
-export async function saveStageData(stageId: string, data: StageStoreData): Promise<void> {
+export async function saveStageData(
+  stageId: string,
+  data: StageStoreData,
+): Promise<{ failedChanges: PendingChange[] } | undefined> {
   try {
     const now = Date.now();
+    const failedChanges: PendingChange[] = [];
     await mutateDocument(
       stageId,
       async (existing, store) => {
@@ -145,14 +157,15 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
           await saveCurrentScene(stageId, data.currentSceneId);
 
           // Chat sessions live in the learner RuntimeStore, outside the document DB.
-          if (data.chats) {
-            await saveStageChats(stageId, data, true);
+          if (data.chats && !(await saveStageChats(stageId, data, true))) {
+            failedChanges.push({ kind: 'chats' });
           }
         });
       },
       { storageSharedLockHeld: true },
     );
     log.info(`Saved stage: ${stageId}`);
+    return failedChanges.length > 0 ? { failedChanges } : undefined;
   } catch (error) {
     log.error('Failed to save stage:', error);
     throw error;
@@ -227,22 +240,12 @@ export async function saveStageDataIncremental(
                 dirtyScenes,
               );
               for (const scene of persistedScenes) {
-                await store.putScene(stageId, {
-                  ...scene,
-                  stageId,
-                  createdAt: scene.createdAt || now,
-                  updatedAt: now,
-                });
+                const index = data.scenes.findIndex((candidate) => candidate.id === scene.id);
+                await store.putScene(stageId, stampScene(stageId, scene, index, now));
               }
             }
             if (has('stage')) {
-              await store.putStage(stageId, {
-                ...data.stage,
-                id: stageId,
-                name: data.stage.name || 'Untitled Stage',
-                createdAt: data.stage.createdAt || now,
-                updatedAt: now,
-              });
+              await store.putStage(stageId, stampStage(stageId, data.stage, now));
             }
           } catch (error) {
             // Incremental APIs reject pre-versioned destinations. The aggregate
@@ -298,6 +301,8 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 
     log.info(`Loaded stage: ${stageId}, scenes: ${document.scenes.length}, chats: ${chats.length}`);
 
+    // Deliberate defense-in-depth: persisted cursors can outlive scene deletion
+    // or come from legacy storage, so never expose one absent from the document.
     const storedCursor = currentScene?.sceneId ?? access.legacyCurrentSceneId;
     const currentSceneId =
       storedCursor && document.scenes.some((scene) => scene.id === storedCursor)

@@ -35,8 +35,14 @@ let pendingStageId: string | null = null;
 let pendingRevision = 0;
 const pendingChanges = new Map<string, PendingEntry>();
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
-let flushInFlight: Promise<Set<string>> | null = null;
+type FlushRound = {
+  dirtySnapshot: ReadonlyMap<string, PendingEntry>;
+  promise: Promise<Set<string>>;
+};
+let flushInFlight: FlushRound | null = null;
 let stageStorageModulePromise: Promise<typeof import('@/lib/utils/stage-storage')> | null = null;
+
+const DEPARTING_STAGE_RETRY_DELAY_MS = 100;
 
 function pendingChangeKey(change: PendingChange): string {
   return change.kind === 'scene' ? `scene:${change.sceneId}` : change.kind;
@@ -229,6 +235,10 @@ function persistenceSnapshot(state: StageState): StagePersistenceSnapshot {
   return { stage, scenes, currentSceneId, chats, chatSnapshot, outlines, generationComplete };
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function persistDirtySnapshot(
   stageId: string,
   dirtySnapshot: ReadonlyMap<string, PendingEntry>,
@@ -285,24 +295,37 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     ) {
       const departingStageId = departingState.stage.id;
       const departingDirty = new Map(pendingChanges);
-      // Hand the old document an immutable persistence snapshot immediately.
-      // Navigation is not blocked by its I/O, and the write can never be
-      // rebound to the incoming stage id.
-      void persistDirtySnapshot(
-        departingStageId,
-        departingDirty,
-        persistenceSnapshot(departingState),
-      )
-        .then((failedKeys) => {
-          if (failedKeys.size > 0) {
-            log.warn(
-              `Departing stage ${departingStageId} retained failed changes: ${[...failedKeys].join(', ')}`,
+      const departingSnapshot = persistenceSnapshot(departingState);
+      /**
+       * Navigation is intentionally not a durability barrier. The immutable
+       * departing snapshot is attempted immediately, retried once after a
+       * short delay, then logged and dropped so it cannot leak into the next
+       * document or block navigation indefinitely.
+       */
+      void (async () => {
+        let lastFailedKeys = new Set<string>();
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+          try {
+            lastFailedKeys = await persistDirtySnapshot(
+              departingStageId,
+              departingDirty,
+              departingSnapshot,
             );
+            if (lastFailedKeys.size === 0) return;
+          } catch (error) {
+            if (attempt === 1) throw error;
           }
-        })
-        .catch((error) => {
-          log.error(`Failed to flush departing stage ${departingStageId}:`, error);
-        });
+          await delay(DEPARTING_STAGE_RETRY_DELAY_MS);
+        }
+        log.warn(
+          `Departing stage ${departingStageId} dropped failed changes after one retry: ${[...lastFailedKeys].join(', ')}`,
+        );
+      })().catch((error) => {
+        log.error(
+          `Failed to flush departing stage ${departingStageId} after one retry; changes were dropped:`,
+          error,
+        );
+      });
     }
     resetPendingChanges(stage.id);
     set((s) => ({
@@ -468,7 +491,6 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   setGenerationComplete: (generationComplete) => {
     set({ generationComplete });
-    markPendingChanges(get().stage?.id, { kind: 'outline' });
     // Final scenes and the completion barrier commit in the same aggregate write.
     void get().saveToStorage();
   },
@@ -529,7 +551,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     try {
       const persistedScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
       const { saveStageData } = await import('@/lib/utils/stage-storage');
-      await saveStageData(stage.id, {
+      const result = await saveStageData(stage.id, {
         stage,
         scenes: persistedScenes,
         currentSceneId,
@@ -543,10 +565,20 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         },
       });
 
+      const failedKeys = new Set((result?.failedChanges ?? []).map(pendingChangeKey));
+      if (
+        failedKeys.has('chats') &&
+        pendingStageId === stage.id &&
+        !pendingChanges.has('chats') &&
+        get().stage?.id === stage.id &&
+        get().chats === chats
+      ) {
+        markPendingChanges(stage.id, { kind: 'chats' });
+      }
       // Bind future saves to the exact chat snapshot this successful write
       // represented. Keep the restore marker unchanged: a stale no-op after a
       // restore must remain stale until the editor reloads.
-      if (get().stage?.id === stage.id && get().chats === chats) {
+      if (!failedKeys.has('chats') && get().stage?.id === stage.id && get().chats === chats) {
         set({
           chatSnapshot: {
             sessions: structuredClone(chats),
@@ -556,9 +588,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       }
       if (pendingStageId === stage.id) {
         for (const [key, entry] of pendingAtStart) {
-          if (pendingChanges.get(key)?.revision === entry.revision) pendingChanges.delete(key);
+          if (!failedKeys.has(key) && pendingChanges.get(key)?.revision === entry.revision) {
+            pendingChanges.delete(key);
+          }
         }
         if (pendingChanges.size === 0) cancelScheduledSave();
+        else schedulePendingSave();
       }
 
       return true;
@@ -685,16 +720,16 @@ export const useStageStore = createSelectors(useStageStoreBase);
 
 const MAX_FLUSH_DRAIN_ROUNDS = 20;
 
-function startFlushRound(): Promise<Set<string>> {
+function startFlushRound(): FlushRound | null {
   if (flushInFlight) return flushInFlight;
-  if (!pendingStageId || pendingChanges.size === 0) return Promise.resolve(new Set());
+  if (!pendingStageId || pendingChanges.size === 0) return null;
 
   const stageId = pendingStageId;
   const dirtySnapshot = new Map(pendingChanges);
   const state = useStageStore.getState();
   if (state.stage?.id !== stageId) {
     resetPendingChanges(state.stage?.id ?? null);
-    return Promise.resolve(new Set());
+    return null;
   }
   const snapshot = persistenceSnapshot(state);
 
@@ -732,8 +767,22 @@ function startFlushRound(): Promise<Set<string>> {
       if (pendingChanges.size > 0 && pendingStageId) schedulePendingSave();
     }
   })();
-  flushInFlight = run;
-  return run;
+  const round = { dirtySnapshot, promise: run };
+  flushInFlight = round;
+  return round;
+}
+
+function roundCoversEntry(
+  round: FlushRound,
+  entrySnapshot: ReadonlyMap<string, PendingEntry>,
+): boolean {
+  for (const [key, entry] of entrySnapshot) {
+    const pending = pendingChanges.get(key);
+    if (!pending || pending.revision < entry.revision) continue;
+    const attempted = round.dirtySnapshot.get(key);
+    if (!attempted || attempted.revision < entry.revision) return false;
+  }
+  return true;
 }
 
 /**
@@ -743,11 +792,33 @@ function startFlushRound(): Promise<Set<string>> {
  * successful document commit.
  */
 export async function flushStageSave(): Promise<void> {
+  const entryStageId = pendingStageId;
+  const entryRevision = pendingRevision;
+  const entrySnapshot = new Map(
+    [...pendingChanges].filter(([, entry]) => entry.revision <= entryRevision),
+  );
+
   for (let round = 0; round < MAX_FLUSH_DRAIN_ROUNDS; round += 1) {
     cancelScheduledSave();
-    if (!pendingStageId || pendingChanges.size === 0) return;
-    const failedKeys = await startFlushRound();
-    if (failedKeys.size > 0) return;
+    const stillPendingAtEntry = [...entrySnapshot].some(([key, entry]) => {
+      const pending = pendingChanges.get(key);
+      return (
+        pendingStageId === entryStageId &&
+        pending !== undefined &&
+        pending.revision >= entry.revision
+      );
+    });
+    if (!entryStageId || entrySnapshot.size === 0 || !stillPendingAtEntry) return;
+
+    const flushRound = startFlushRound();
+    if (!flushRound) return;
+    const coversEntry = roundCoversEntry(flushRound, entrySnapshot);
+    try {
+      const failedKeys = await flushRound.promise;
+      if (coversEntry && failedKeys.size > 0) return;
+    } catch (error) {
+      if (coversEntry) throw error;
+    }
   }
   throw new Error(`Stage persistence did not quiesce after ${MAX_FLUSH_DRAIN_ROUNDS} flush rounds`);
 }
