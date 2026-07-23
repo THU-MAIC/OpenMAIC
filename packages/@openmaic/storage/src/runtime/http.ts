@@ -147,7 +147,11 @@ export class HttpRuntimeStore implements RuntimeStore {
     if (options.baseUrl === '') {
       throw new Error('@openmaic/storage: HttpRuntimeStore baseUrl must be non-empty');
     }
-    const fetchImpl = options.fetch ?? globalThis.fetch;
+    // Bind explicitly: browsers require fetch to be invoked with `this === globalThis`
+    // (calling a stored reference as `this.fetchImpl(...)` throws "Illegal
+    // invocation"), while node's undici does not care — which is exactly why
+    // node-only test suites cannot catch the unbound form.
+    const fetchImpl = (options.fetch ?? globalThis.fetch)?.bind(globalThis);
     if (typeof fetchImpl !== 'function') {
       throw new Error('@openmaic/storage: HttpRuntimeStore requires a fetch implementation');
     }
