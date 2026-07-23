@@ -20,7 +20,7 @@ The executable `main()` binds to `127.0.0.1`; `createReferenceRuntimeServer()` o
 - `authorizeMerge(principal, fromKey, toKey)` must explicitly establish that the principal may migrate the complete source partition into the destination identity. Default denial is intentional.
 - `authorizeAdmin(principal)` must require a separately protected administrative role. Default denial is intentional.
 
-The handler's `payloadValidators` option has the same whole-table replacement semantics as the `BrowserRuntimeStore` and `PgRuntimeStore` constructor option, and defaults to the DSL `chat` / `quizAttempt` skeleton table. Whatever you pass to the store, pass the same thing to the handler. `createReferenceRuntimeServer()` applies its `payloadValidators` override to both automatically.
+The handler's `payloadValidators` option has the same whole-table replacement semantics as the `BrowserRuntimeStore` and `PgRuntimeStore` constructor option, and defaults to the DSL `chat` / `quizAttempt` skeleton table. Whatever you pass to the store, pass the same thing to the handler. `createReferenceRuntimeServer()` applies its `payloadValidators` override to both automatically. Its `maxBodyBytes` option applies to runtime and document routes and defaults to 32 MiB; oversized bodies receive `413 PAYLOAD_TOO_LARGE`.
 
 The package has no PostgreSQL driver runtime dependency. A host injects its `Pool` (or another compatible `Queryable`) and owns driver lifecycle. Every transactional operation must check out a fresh connection, issue `BEGIN`, run all callback queries on that same connection, issue `COMMIT` or `ROLLBACK`, and release it in `finally`.
 

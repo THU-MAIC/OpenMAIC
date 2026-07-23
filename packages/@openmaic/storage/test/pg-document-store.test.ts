@@ -46,7 +46,10 @@ describe('PgDocumentStore with PGlite', () => {
     await db.close();
   });
 
-  runDocumentStoreContract('Postgres (PGlite)', () => store);
+  runDocumentStoreContract('Postgres (PGlite)', () => ({
+    store,
+    seedStoredVersion: (stageId, version) => restamp(db, stageId, version),
+  }));
 });
 
 describe('PgDocumentStore Postgres behavior', () => {

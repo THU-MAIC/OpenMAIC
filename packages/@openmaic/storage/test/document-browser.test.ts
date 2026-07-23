@@ -4,47 +4,47 @@ import { DSL_VERSION, DSL_VERSION_KEY, validateScene, validateStage } from '@ope
 import { BrowserDocumentStore, type MaicDocument } from '../src/index.js';
 import { runDocumentStoreContract, makeDocument, slideScene } from './document-contract.js';
 
-// Each store gets its own in-memory IndexedDB factory so contract cases stay
-// isolated without leaning on an ambient global.
-function makeStore(): BrowserDocumentStore {
-  return new BrowserDocumentStore({ indexedDB: new IDBFactory() });
+// Open the raw DB the store uses and overwrite the stage row's version stamp,
+// simulating a document written by an older client.
+async function reStampStage(
+  idb: IDBFactory,
+  dbName: string,
+  stageId: string,
+  version: string | undefined,
+): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const req = idb.open(dbName);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const tx = db.transaction('stages', 'readwrite');
+    const store = tx.objectStore('stages');
+    const get = store.get(stageId);
+    get.onsuccess = () => {
+      const row = get.result as Record<string, unknown>;
+      if (version === undefined) delete row[DSL_VERSION_KEY];
+      else row[DSL_VERSION_KEY] = version;
+      store.put(row);
+    };
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
+  db.close();
 }
 
-runDocumentStoreContract('BrowserDocumentStore', makeStore);
+let contractDb = 0;
+runDocumentStoreContract('BrowserDocumentStore', () => {
+  const idb = new IDBFactory();
+  const dbName = `maic-documents-contract-${contractDb++}`;
+  return {
+    store: new BrowserDocumentStore({ indexedDB: idb, dbName }),
+    seedStoredVersion: (stageId, version) => reStampStage(idb, dbName, stageId, version),
+  };
+});
 
-// --- backend-specific: migrate-on-read needs to seed a raw row at an old
-// version, which the public API (which always stamps the current version) can't
-// express. ---
+// --- backend-specific migrate-on-read and raw IndexedDB behavior. ---
 describe('BrowserDocumentStore migrate-on-read', () => {
-  // Open the raw DB the store uses and overwrite the stage row's version stamp,
-  // simulating a document written by an older client.
-  async function reStampStage(
-    idb: IDBFactory,
-    dbName: string,
-    stageId: string,
-    version: string | undefined,
-  ): Promise<void> {
-    const db = await new Promise<IDBDatabase>((resolve, reject) => {
-      const req = idb.open(dbName);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-    await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction('stages', 'readwrite');
-      const store = tx.objectStore('stages');
-      const get = store.get(stageId);
-      get.onsuccess = () => {
-        const row = get.result as Record<string, unknown>;
-        if (version === undefined) delete row[DSL_VERSION_KEY];
-        else row[DSL_VERSION_KEY] = version;
-        store.put(row);
-      };
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-    db.close();
-  }
-
   test('stamps a legacy (unversioned) document forward on load', async () => {
     const idb = new IDBFactory();
     const dbName = 'maic-documents-legacy';
@@ -112,25 +112,6 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     expect(await store.getScene('stage-1', 'new2')).toBeNull();
   });
 
-  test('putStage rejects when the stored document is not current', async () => {
-    const idb = new IDBFactory();
-    const dbName = 'maic-documents-putstage-noncurrent';
-    const store = new BrowserDocumentStore({ indexedDB: idb, dbName });
-    const doc = makeDocument();
-    await store.saveDocument(doc);
-
-    await reStampStage(idb, dbName, 'stage-1', undefined);
-    await expect(store.putStage('stage-1', { ...doc.stage, name: 'Stale Rename' })).rejects.toThrow(
-      /cannot putStage/,
-    );
-
-    await reStampStage(idb, dbName, 'stage-1', '99.0.0');
-    await expect(
-      store.putStage('stage-1', { ...doc.stage, name: 'Future Rename' }),
-    ).rejects.toThrow(/cannot putStage/);
-    expect((await store.loadDocument('stage-1'))!.stage.name).toBe('Intro Course');
-  });
-
   test('refuses to overwrite a stored document written by a newer client', async () => {
     const idb = new IDBFactory();
     const dbName = 'maic-documents-overwrite-future';
@@ -183,22 +164,6 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     // saveDocument reads the stored stamp inside its future-overwrite guard, so a
     // corrupt stored stamp also fails loud (recoverable via deleteDocument).
     await expect(store.saveDocument(makeDocument())).rejects.toThrow();
-  });
-
-  test('listDocuments tolerates a malformed version stamp', async () => {
-    const idb = new IDBFactory();
-    const dbName = 'maic-documents-list-malformed';
-    const store = new BrowserDocumentStore({ indexedDB: idb, dbName });
-    await store.saveDocument(makeDocument());
-    await reStampStage(idb, dbName, 'stage-1', 'not-a-version');
-
-    // listDocuments returns only version-independent summary fields and never
-    // migrates or reads content, so a corrupt stamp does not break the whole list
-    // (one bad row must not make the picker unusable) — content reads still fail loud.
-    const list = await store.listDocuments();
-    expect(list.map((d) => d.id)).toEqual(['stage-1']);
-    expect(list[0]).toMatchObject({ name: 'Intro Course', sceneCount: 2 });
-    await expect(store.loadDocument('stage-1')).rejects.toThrow();
   });
 });
 

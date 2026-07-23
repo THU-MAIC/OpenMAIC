@@ -1,11 +1,13 @@
 import type { IncomingMessage, RequestListener, ServerResponse } from 'node:http';
 import { IDBFactory } from 'fake-indexeddb';
+import { DSL_VERSION_KEY } from '@openmaic/dsl';
 import { describe, expect, test } from 'vitest';
 import { BrowserDocumentStore } from '../src/document/browser.js';
 import { HttpDocumentStore, HttpDocumentStoreError } from '../src/document/http.js';
+import type { StageValidator } from '../src/document/types.js';
 import { BrowserRuntimeStore } from '../src/runtime/browser.js';
 import { createStorageHttpHandler } from '../src/server/index.js';
-import { makeDocument, runDocumentStoreContract } from './document-contract.js';
+import { makeDocument, runDocumentStoreContract, slideScene } from './document-contract.js';
 
 const BASE_URL = 'http://storage-reference.invalid';
 
@@ -60,8 +62,41 @@ function handlerFetch(handler: RequestListener): typeof globalThis.fetch {
   };
 }
 
-function makeHarness(authorizeDocuments: () => boolean = () => true) {
-  const documents = new BrowserDocumentStore({ indexedDB: new IDBFactory() });
+async function reStampStage(
+  idb: IDBFactory,
+  dbName: string,
+  stageId: string,
+  version: string | undefined,
+): Promise<void> {
+  const db = await new Promise<IDBDatabase>((resolve, reject) => {
+    const request = idb.open(dbName);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  await new Promise<void>((resolve, reject) => {
+    const transaction = db.transaction('stages', 'readwrite');
+    const stages = transaction.objectStore('stages');
+    const request = stages.get(stageId);
+    request.onsuccess = () => {
+      const row = request.result as Record<string, unknown>;
+      if (version === undefined) delete row[DSL_VERSION_KEY];
+      else row[DSL_VERSION_KEY] = version;
+      stages.put(row);
+    };
+    transaction.oncomplete = () => resolve();
+    transaction.onerror = () => reject(transaction.error);
+  });
+  db.close();
+}
+
+let harnessDb = 0;
+function makeHarness(
+  authorizeDocuments: () => boolean = () => true,
+  options: { maxBodyBytes?: number; validateStage?: StageValidator } = {},
+) {
+  const idb = new IDBFactory();
+  const dbName = `http-document-contract-${harnessDb++}`;
+  const documents = new BrowserDocumentStore({ indexedDB: idb, dbName });
   const runtime = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
   const handler = createStorageHttpHandler(runtime, documents, {
     authenticate: async (req) => {
@@ -71,16 +106,26 @@ function makeHarness(authorizeDocuments: () => boolean = () => true) {
         : undefined;
     },
     authorizeDocuments: async () => authorizeDocuments(),
+    ...(options.maxBodyBytes === undefined ? {} : { maxBodyBytes: options.maxBodyBytes }),
+    ...(options.validateStage === undefined ? {} : { validateStage: options.validateStage }),
   });
   const fetch = handlerFetch(handler);
   return {
     documents,
     fetch,
     client: new HttpDocumentStore({ baseUrl: BASE_URL, fetch }),
+    seedStoredVersion: (stageId: string, version: string | undefined) =>
+      reStampStage(idb, dbName, stageId, version),
   };
 }
 
-runDocumentStoreContract('reference HTTP', () => makeHarness().client);
+runDocumentStoreContract('reference HTTP', () => {
+  const harness = makeHarness();
+  return {
+    store: harness.client,
+    seedStoredVersion: harness.seedStoredVersion,
+  };
+});
 
 describe('HttpDocumentStore contract mapping', () => {
   test('uses injected request headers and the reference server requires authentication', async () => {
@@ -125,6 +170,47 @@ describe('HttpDocumentStore contract mapping', () => {
     });
   });
 
+  test('rejects oversized bodies with 413 while allowing an under-limit request', async () => {
+    const { fetch } = makeHarness(() => true, { maxBodyBytes: 256 });
+    const overLimit = await fetch(`${BASE_URL}/documents/stage-1`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ padding: 'x'.repeat(300) }),
+    });
+    expect(overLimit.status).toBe(413);
+    await expect(overLimit.json()).resolves.toMatchObject({
+      error: { code: 'PAYLOAD_TOO_LARGE' },
+    });
+
+    const underLimit = await fetch(`${BASE_URL}/documents/stage-1/stage`, {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        id: 'stage-1',
+        name: 'Missing parent',
+        createdAt: 1,
+        updatedAt: 2,
+      }),
+    });
+    expect(underLimit.status).toBe(404);
+  });
+
+  test('fails loud when a structured-clone document is not JSON-safe on read', async () => {
+    const { documents, fetch } = makeHarness();
+    const document = makeDocument();
+    document.outline = { generatedAt: new Date('2026-01-01T00:00:00.000Z') };
+    await documents.saveDocument(document);
+
+    const response = await fetch(`${BASE_URL}/documents/stage-1`);
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toMatchObject({
+      error: {
+        code: 'NOT_JSON_SAFE',
+        message: expect.stringMatching(/document response.*outline.*Date/i),
+      },
+    });
+  });
+
   test('maps missing required parents to typed 404 errors with browser wording', async () => {
     const { client } = makeHarness();
     const failure = client.putStage('ghost', {
@@ -136,6 +222,34 @@ describe('HttpDocumentStore contract mapping', () => {
     await expect(failure).rejects.toBeInstanceOf(HttpDocumentStoreError);
     await expect(failure).rejects.toMatchObject({ status: 404, code: 'DOCUMENT_NOT_FOUND' });
     await expect(failure).rejects.toThrow(/missing document/);
+  });
+
+  test.each([
+    [
+      'putStage',
+      (client: HttpDocumentStore) =>
+        client.putStage('stage-1', {
+          id: 'stage-1',
+          name: 'Stale update',
+          createdAt: 1,
+          updatedAt: 2,
+        }),
+    ],
+    [
+      'putScene',
+      (client: HttpDocumentStore) =>
+        client.putScene('stage-1', slideScene('stage-1', 'scene-c', 2)),
+    ],
+    ['deleteScene', (client: HttpDocumentStore) => client.deleteScene('stage-1', 'scene-a')],
+  ])('maps unversioned %s to 400 VALIDATION_FAILED', async (_operation, write) => {
+    const { client, seedStoredVersion } = makeHarness();
+    await client.saveDocument(makeDocument());
+    await seedStoredVersion('stage-1', undefined);
+
+    await expect(write(client)).rejects.toMatchObject({
+      status: 400,
+      code: 'VALIDATION_FAILED',
+    });
   });
 
   test('maps a future-version save to FUTURE_VERSION without overwriting current data', async () => {
@@ -165,5 +279,28 @@ describe('HttpDocumentStore contract mapping', () => {
     delete (bad.stage as { name?: string }).name;
     await expect(client.saveDocument(bad)).rejects.toThrow(/invalid stage/);
     expect(calls).toBe(0);
+  });
+
+  test('retains structured validator details on HttpDocumentStoreError', async () => {
+    const details = [
+      { path: '/name', message: 'name is invalid' },
+      { path: '/updatedAt', message: 'updatedAt is invalid' },
+    ];
+    const { client } = makeHarness(() => true, {
+      validateStage: () => ({ valid: false, errors: details }),
+    });
+
+    await expect(
+      client.putStage('stage-1', {
+        id: 'stage-1',
+        name: 'Rejected by server validator',
+        createdAt: 1,
+        updatedAt: 2,
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      code: 'VALIDATION_FAILED',
+      details,
+    });
   });
 });

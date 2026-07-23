@@ -16,6 +16,7 @@ import type {
   SceneValidator,
   StageValidator,
 } from '../document/types.js';
+import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
 
 export interface DocumentHttpPrincipal {
   learnerKey?: string;
@@ -38,6 +39,8 @@ export interface DocumentHttpHandlerOptions {
   validateScene?: SceneValidator;
   /** Whole-validator replacement; pass the same validator configured on the store. */
   validateStage?: StageValidator;
+  /** Maximum JSON request-body size in bytes. Defaults to 32 MiB. */
+  maxBodyBytes?: number;
 }
 
 interface ErrorBody {
@@ -69,21 +72,15 @@ function validationFailure(message: string, details?: unknown): DocumentHttpErro
   return new DocumentHttpError(400, 'VALIDATION_FAILED', message, details);
 }
 
-async function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req)
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
-  if (chunks.length === 0) throw validationFailure('request body must be a JSON object');
-  let body: unknown;
-  try {
-    body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
-  } catch (error) {
-    throw validationFailure(error instanceof Error ? error.message : String(error));
-  }
-  if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-    throw validationFailure('request body must be a JSON object');
-  }
-  return body as Record<string, unknown>;
+function payloadTooLarge(message: string): DocumentHttpError {
+  return new DocumentHttpError(413, 'PAYLOAD_TOO_LARGE', message);
+}
+
+function readJson(req: IncomingMessage, maxBodyBytes: number): Promise<Record<string, unknown>> {
+  return readJsonObject(req, maxBodyBytes, {
+    invalid: validationFailure,
+    payloadTooLarge,
+  });
 }
 
 function validationError(result: ValidationResult, label: string): void {
@@ -106,6 +103,18 @@ function assertJsonRequestValue(value: unknown, label: string): void {
     assertJsonValue(value, label);
   } catch (error) {
     throw validationFailure(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function assertJsonResponseValue(value: unknown, label: string): void {
+  try {
+    assertJsonValue(value, label);
+  } catch (error) {
+    throw new DocumentHttpError(
+      500,
+      'NOT_JSON_SAFE',
+      error instanceof Error ? error.message : String(error),
+    );
   }
 }
 
@@ -244,9 +253,10 @@ function classifyStoreError(error: unknown): never {
       message || missingDocument(stageId).message,
     );
   }
-  const versionMatch = /at DSL version ("(?:[^"\\]|\\.)*")/.exec(message);
+  const versionMatch = /at DSL version (undefined|"(?:[^"\\]|\\.)*")/.exec(message);
   if (/newer than this client's/.test(message)) throw futureVersion(message);
   if (versionMatch?.[1]) {
+    if (versionMatch[1] === 'undefined') throw validationFailure(message);
     try {
       const version = JSON.parse(versionMatch[1]) as unknown;
       if (typeof version === 'string' && isFutureVersioned({ dslVersion: version })) {
@@ -261,7 +271,7 @@ function classifyStoreError(error: unknown): never {
 }
 
 function mappedError(error: unknown): { status: number; body: ErrorBody } {
-  if (error instanceof DocumentHttpError && error.status < 500) {
+  if (error instanceof DocumentHttpError) {
     return {
       status: error.status,
       body: {
@@ -308,6 +318,7 @@ async function route<TScene extends SceneLike, TStage extends Stage>(
   }
 
   const method = req.method ?? 'GET';
+  const maxBodyBytes = options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES;
   const sceneValidator = options.validateScene ?? validateScene;
   const stageValidator = options.validateStage ?? validateStage;
   if (parts.length === 1 && method === 'GET') {
@@ -320,7 +331,7 @@ async function route<TScene extends SceneLike, TStage extends Stage>(
 
   if (parts.length === 2 && method === 'PUT') {
     const document = validateDocument<TScene, TStage>(
-      await readJson(req),
+      await readJson(req, maxBodyBytes),
       stageId,
       sceneValidator,
       stageValidator,
@@ -336,6 +347,7 @@ async function route<TScene extends SceneLike, TStage extends Stage>(
   if (parts.length === 2 && method === 'GET') {
     const document = await store.loadDocument(stageId);
     if (document === null) throw missingDocument(stageId);
+    assertJsonResponseValue(document, `document response ${JSON.stringify(stageId)}`);
     sendJson(res, 200, document);
     return;
   }
@@ -345,7 +357,7 @@ async function route<TScene extends SceneLike, TStage extends Stage>(
     return;
   }
   if (parts.length === 3 && parts[2] === 'stage' && method === 'PUT') {
-    const stage = (await readJson(req)) as unknown as TStage;
+    const stage = (await readJson(req, maxBodyBytes)) as unknown as TStage;
     validationError(stageValidator(stage), `stage ${(stage as { id?: unknown }).id}`);
     if (stage.id !== stageId) {
       throw validationFailure(
@@ -366,7 +378,7 @@ async function route<TScene extends SceneLike, TStage extends Stage>(
     const sceneId = parts[3]!;
     assertAddressableSegment(sceneId);
     if (method === 'PUT') {
-      const scene = (await readJson(req)) as unknown as TScene;
+      const scene = (await readJson(req, maxBodyBytes)) as unknown as TScene;
       validationError(sceneValidator(scene), `scene ${(scene as { id?: unknown }).id}`);
       assertStorableScene(scene, stageId);
       if (scene.id !== sceneId) {
@@ -384,6 +396,10 @@ async function route<TScene extends SceneLike, TStage extends Stage>(
     if (method === 'GET') {
       const scene = await store.getScene(stageId, sceneId);
       if (scene === null) throw missingScene(stageId, sceneId);
+      assertJsonResponseValue(
+        scene,
+        `scene response ${JSON.stringify(sceneId)} in document ${JSON.stringify(stageId)}`,
+      );
       sendJson(res, 200, scene);
       return;
     }
@@ -408,6 +424,7 @@ export function createDocumentHttpHandler<
   if (typeof options?.authenticate !== 'function') {
     throw new Error('@openmaic/storage: createDocumentHttpHandler requires authenticate');
   }
+  assertMaxBodyBytes(options.maxBodyBytes ?? DEFAULT_MAX_BODY_BYTES);
   return (req, res) => {
     void route(req, res, store, options).catch((error: unknown) => {
       if (res.headersSent) {

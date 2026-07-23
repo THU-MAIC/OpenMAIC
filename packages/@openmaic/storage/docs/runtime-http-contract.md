@@ -50,6 +50,8 @@ An append may also include a top-level `sessionTransition` object with `{ "statu
 
 HTTP implementations carry record payloads through JSON and therefore MUST accept only plain JSON values that survive serialization without changing meaning. They MUST fail loud before sending values such as `Map`, `Set`, `Date`, non-finite numbers, negative zero, nested `undefined`, `bigint`, sparse arrays, symbol-keyed properties, non-enumerable properties, arrays with non-index own properties, strings containing U+0000, class instances, and circular references. U+2028 and U+2029 are valid JSON string contents and MUST be accepted. This is intentionally narrower than `BrowserRuntimeStore`, whose structured-clone persistence can preserve values such as `Map`, `Set`, and `Date` that JSON cannot.
 
+The reference handler streams request bodies into a bounded buffer. `maxBodyBytes` configures the bound on the runtime, composed-storage, and reference-server factories; it defaults to 32 MiB. A body that crosses the bound is rejected immediately with `413 PAYLOAD_TOO_LARGE`.
+
 ## learnerKey security model
 
 `learnerKey` appears in paths, query parameters, and request bodies, but the server MUST derive or verify `learnerKey` from the authenticated session and MUST NOT blindly trust the client-submitted value. `learnerKey` is an opaque partition key, not proof of identity or authorization; trusting it verbatim creates a lateral-authorization vulnerability that lets one learner read, merge, or delete another learner's runtime data. The same rule applies to both keys in `mergeLearner`; authorization policy must explicitly permit the authenticated principal to migrate the source partition into the destination partition.
@@ -75,6 +77,7 @@ Every non-2xx response has this machine-readable JSON shape:
 | Condition | HTTP status | Error code | Client behavior |
 | --- | --- | --- | --- |
 | Malformed JSON, an invalid envelope or payload, invalid learner keys, a body/path mismatch, or append to a non-active session | `400` | `VALIDATION_FAILED` | Throw `HttpRuntimeStoreError` (an `Error`) with the server message |
+| Request body exceeds `maxBodyBytes` | `413` | `PAYLOAD_TOO_LARGE` | Throw `HttpRuntimeStoreError` |
 | Session does not exist | `404` | `SESSION_NOT_FOUND` | `getSession` returns `undefined`; operations that require the session throw `HttpRuntimeStoreError` with the browser store's `no session` semantics |
 | Route does not exist | `404` | `ROUTE_NOT_FOUND` | Throw `HttpRuntimeStoreError` |
 | A stored session has a future runtime DSL version | `409` | `FUTURE_VERSION` | Throw `HttpRuntimeStoreError` with the browser store's fail-loud `newer than this client's` semantics |

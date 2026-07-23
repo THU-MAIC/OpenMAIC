@@ -2,8 +2,8 @@
 // today, HTTP later) is proven equivalent by running this same suite against it,
 // so a new backend cannot silently diverge from the store's semantics.
 //
-// Backend-specific behaviours that need to seed raw rows (migrate-on-read,
-// forward-compat) live in the backend's own test file, not here.
+// The harness exposes a narrow raw-version seeding seam so version-guard and
+// corrupt-stamp behavior is proven identically by every backend.
 import { describe, expect, test } from 'vitest';
 import { DSL_VERSION } from '@openmaic/dsl';
 import type { Scene } from '@openmaic/dsl';
@@ -53,8 +53,17 @@ export function makeDocument(stageId = 'stage-1'): MaicDocument {
 
 // --- contract ---------------------------------------------------------------
 
-export function runDocumentStoreContract(name: string, makeStore: () => DocumentStore): void {
+export interface DocumentStoreContractHarness {
+  store: DocumentStore;
+  seedStoredVersion(stageId: string, version: string | undefined): Promise<void>;
+}
+
+export function runDocumentStoreContract(
+  name: string,
+  makeContractHarness: () => DocumentStoreContractHarness,
+): void {
   describe(`DocumentStore contract: ${name}`, () => {
+    const makeStore = (): DocumentStore => makeContractHarness().store;
     test('round-trips a full document (stage + scenes + outline)', async () => {
       const store = makeStore();
       const doc = makeDocument();
@@ -145,6 +154,41 @@ export function runDocumentStoreContract(name: string, makeStore: () => Document
           updatedAt: 2,
         }),
       ).rejects.toThrow(/missing document/);
+    });
+
+    test('putStage rejects a stale stored document', async () => {
+      const { store, seedStoredVersion } = makeContractHarness();
+      const doc = makeDocument();
+      await store.saveDocument(doc);
+      await seedStoredVersion('stage-1', undefined);
+
+      await expect(
+        store.putStage('stage-1', { ...doc.stage, name: 'Stale Rename' }),
+      ).rejects.toThrow();
+      expect((await store.loadDocument('stage-1'))!.stage.name).toBe('Intro Course');
+    });
+
+    test('putStage rejects a future-versioned stored document', async () => {
+      const { store, seedStoredVersion } = makeContractHarness();
+      const doc = makeDocument();
+      await store.saveDocument(doc);
+      await seedStoredVersion('stage-1', '99.0.0');
+
+      await expect(
+        store.putStage('stage-1', { ...doc.stage, name: 'Future Rename' }),
+      ).rejects.toThrow();
+      expect((await store.loadDocument('stage-1'))!.stage.name).toBe('Intro Course');
+    });
+
+    test('listDocuments tolerates a corrupt stored version stamp', async () => {
+      const { store, seedStoredVersion } = makeContractHarness();
+      await store.saveDocument(makeDocument());
+      await seedStoredVersion('stage-1', 'not-a-version');
+
+      await expect(store.listDocuments()).resolves.toEqual([
+        expect.objectContaining({ id: 'stage-1', name: 'Intro Course', sceneCount: 2 }),
+      ]);
+      await expect(store.loadDocument('stage-1')).rejects.toThrow();
     });
 
     // --- validation gate ---
