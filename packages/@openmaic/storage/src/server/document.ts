@@ -16,6 +16,7 @@ import type {
   SceneValidator,
   StageValidator,
 } from '../document/types.js';
+import { DocumentNotFoundError, DocumentVersionError } from '../document/types.js';
 import { assertMaxBodyBytes, DEFAULT_MAX_BODY_BYTES, readJsonObject } from './read-json.js';
 
 export interface DocumentHttpPrincipal {
@@ -150,8 +151,8 @@ function isFutureVersioned(value: unknown): boolean {
   return !needsMigration(value) && dslVersionOf(value) !== DSL_VERSION;
 }
 
-function futureVersion(message: string): DocumentHttpError {
-  return new DocumentHttpError(409, 'FUTURE_VERSION', message);
+function futureVersion(message: string, details?: unknown): DocumentHttpError {
+  return new DocumentHttpError(409, 'FUTURE_VERSION', message, details);
 }
 
 function migrateDocument<TScene extends SceneLike, TStage extends Stage>(
@@ -206,6 +207,7 @@ function validateDocument<TScene extends SceneLike, TStage extends Stage>(
       `@openmaic/storage: refusing to save document ${JSON.stringify(pathStageId)} — it was ` +
         `written at DSL version ${JSON.stringify(dslVersionOf(document))}, newer than this ` +
         `client's ${DSL_VERSION}`,
+      { stageId: pathStageId, storedVersion: document.dslVersion },
     );
   }
   const normalized = migrateDocument(document);
@@ -235,6 +237,16 @@ function validateDocument<TScene extends SceneLike, TStage extends Stage>(
 }
 
 function classifyStoreError(error: unknown): never {
+  if (error instanceof DocumentNotFoundError) {
+    throw new DocumentHttpError(404, 'DOCUMENT_NOT_FOUND', error.message);
+  }
+  if (error instanceof DocumentVersionError) {
+    const details = { stageId: error.stageId, storedVersion: error.storedVersion };
+    if (error.kind === 'future') throw futureVersion(error.message, details);
+    throw validationFailure(error.message, details);
+  }
+
+  // Fallback for third-party DocumentStore implementations that throw plain Errors.
   const message = error instanceof Error ? error.message : String(error);
   if (/missing document/.test(message)) {
     const match = /missing document ("(?:[^"\\]|\\.)*")/.exec(message);

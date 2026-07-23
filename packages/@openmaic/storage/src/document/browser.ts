@@ -26,6 +26,7 @@ import type {
   SceneValidator,
   StageValidator,
 } from './types.js';
+import { DocumentNotFoundError, DocumentVersionError } from './types.js';
 import { reassembleDocument, splitDocument, type OutlineRow, type StageRow } from './adapter.js';
 
 const STAGES = 'stages';
@@ -219,7 +220,10 @@ export class BrowserDocumentStore<
     // written by a newer client. `loadDocument` returns such documents untouched;
     // saving one back would relabel its newer-shaped rows as this older version.
     if (isFutureVersioned(doc)) {
-      throw new Error(
+      throw new DocumentVersionError(
+        doc.stage.id,
+        'future',
+        doc.dslVersion,
         `@openmaic/storage: refusing to save document ${JSON.stringify(doc.stage.id)} — it was ` +
           `written at DSL version ${JSON.stringify(dslVersionOf(doc))}, newer than this ` +
           `client's ${DSL_VERSION}`,
@@ -265,7 +269,10 @@ export class BrowserDocumentStore<
       // guard above does not catch a blind overwrite of newer stored data.
       const existingStage = await reqP<StageRow<TStage> | undefined>(stages.get(stageId));
       if (existingStage && isFutureVersioned(existingStage)) {
-        throw new Error(
+        throw new DocumentVersionError(
+          stageId,
+          'future',
+          existingStage[DSL_VERSION_KEY],
           `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
             `stored copy is at DSL version ${JSON.stringify(dslVersionOf(existingStage))}, newer ` +
             `than this client's ${DSL_VERSION}`,
@@ -371,12 +378,16 @@ export class BrowserDocumentStore<
       const stages = tx.objectStore(STAGES);
       const stageRow = await reqP<StageRow<TStage> | undefined>(stages.get(stageId));
       if (!stageRow) {
-        throw new Error(
+        throw new DocumentNotFoundError(
+          stageId,
           `@openmaic/storage: cannot putStage into missing document ${JSON.stringify(stageId)}`,
         );
       }
       if (dslVersionOf(stageRow) !== DSL_VERSION) {
-        throw new Error(
+        throw new DocumentVersionError(
+          stageId,
+          'not-current',
+          stageRow[DSL_VERSION_KEY],
           `@openmaic/storage: cannot putStage into document ${JSON.stringify(stageId)} at DSL ` +
             `version ${JSON.stringify(dslVersionOf(stageRow))} — load and save it to bring it ` +
             `to ${DSL_VERSION} first`,
@@ -393,7 +404,8 @@ export class BrowserDocumentStore<
       const stages = tx.objectStore(STAGES);
       const stageRow = await reqP<StageRow<TStage> | undefined>(stages.get(stageId));
       if (!stageRow) {
-        throw new Error(
+        throw new DocumentNotFoundError(
+          stageId,
           `@openmaic/storage: cannot putScene into missing document ${JSON.stringify(stageId)}`,
         );
       }
@@ -403,7 +415,10 @@ export class BrowserDocumentStore<
       // below the migrate-on-read line; if it is newer, this client must not
       // downgrade it. Either way, require a full load + save to normalize first.
       if (dslVersionOf(stageRow) !== DSL_VERSION) {
-        throw new Error(
+        throw new DocumentVersionError(
+          stageId,
+          'not-current',
+          stageRow[DSL_VERSION_KEY],
           `@openmaic/storage: cannot putScene into document ${JSON.stringify(stageId)} at DSL ` +
             `version ${JSON.stringify(dslVersionOf(stageRow))} — load and save it to bring it ` +
             `to ${DSL_VERSION} first`,
@@ -447,7 +462,10 @@ export class BrowserDocumentStore<
       // A whole-document removal (deleteDocument) is a deliberate coarse action
       // and is intentionally NOT version-guarded.
       if (dslVersionOf(stageRow) !== DSL_VERSION) {
-        throw new Error(
+        throw new DocumentVersionError(
+          stageId,
+          'not-current',
+          stageRow[DSL_VERSION_KEY],
           `@openmaic/storage: cannot deleteScene from document ${JSON.stringify(stageId)} at DSL ` +
             `version ${JSON.stringify(dslVersionOf(stageRow))} — load and save it to bring it ` +
             `to ${DSL_VERSION} first`,

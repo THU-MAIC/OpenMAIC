@@ -1,7 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import { IDBFactory } from 'fake-indexeddb';
 import { DSL_VERSION, DSL_VERSION_KEY, validateScene, validateStage } from '@openmaic/dsl';
-import { BrowserDocumentStore, type MaicDocument } from '../src/index.js';
+import {
+  BrowserDocumentStore,
+  DocumentNotFoundError,
+  DocumentVersionError,
+  type MaicDocument,
+} from '../src/index.js';
 import { runDocumentStoreContract, makeDocument, slideScene } from './document-contract.js';
 
 // Open the raw DB the store uses and overwrite the stage row's version stamp,
@@ -102,13 +107,25 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     // stamping the whole document current off one incremental write would
     // corrupt them — reject and require a full load + save first.
     await reStampStage(idb, dbName, 'stage-1', undefined);
-    await expect(store.putScene('stage-1', slideScene('stage-1', 'new', 2))).rejects.toThrow();
+    const staleFailure = store.putScene('stage-1', slideScene('stage-1', 'new', 2));
+    await expect(staleFailure).rejects.toBeInstanceOf(DocumentVersionError);
+    await expect(staleFailure).rejects.toMatchObject({
+      stageId: 'stage-1',
+      kind: 'not-current',
+      storedVersion: undefined,
+    });
     // rejected write left nothing behind (a legacy doc still migrates on read)
     expect(await store.getScene('stage-1', 'new')).toBeNull();
 
     // Future stored document: an old client must not downgrade it.
     await reStampStage(idb, dbName, 'stage-1', '99.0.0');
-    await expect(store.putScene('stage-1', slideScene('stage-1', 'new2', 3))).rejects.toThrow();
+    const futureFailure = store.putScene('stage-1', slideScene('stage-1', 'new2', 3));
+    await expect(futureFailure).rejects.toBeInstanceOf(DocumentVersionError);
+    await expect(futureFailure).rejects.toMatchObject({
+      stageId: 'stage-1',
+      kind: 'not-current',
+      storedVersion: '99.0.0',
+    });
     expect(await store.getScene('stage-1', 'new2')).toBeNull();
   });
 
@@ -124,7 +141,7 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     // stored document — the store checks the stored row inside the write tx.
     const fresh = makeDocument();
     fresh.stage.name = 'Old Client Overwrite';
-    await expect(store.saveDocument(fresh)).rejects.toThrow();
+    await expect(store.saveDocument(fresh)).rejects.toBeInstanceOf(DocumentVersionError);
 
     const loaded = await store.loadDocument('stage-1');
     expect(loaded!.dslVersion).toBe('99.0.0');
@@ -140,7 +157,9 @@ describe('BrowserDocumentStore migrate-on-read', () => {
     // Future stored document: an old client must not mutate newer-versioned data
     // (mirrors the putScene guard — deleting a scene is an incremental mutation).
     await reStampStage(idb, dbName, 'stage-1', '99.0.0');
-    await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toThrow();
+    await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toBeInstanceOf(
+      DocumentVersionError,
+    );
     expect((await store.loadDocument('stage-1'))!.scenes.map((s) => s.id)).toEqual([
       'scene-a',
       'scene-b',
@@ -148,7 +167,29 @@ describe('BrowserDocumentStore migrate-on-read', () => {
 
     // Stale stored document must be normalized (load + save) before incremental ops.
     await reStampStage(idb, dbName, 'stage-1', undefined);
-    await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toThrow();
+    await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toBeInstanceOf(
+      DocumentVersionError,
+    );
+  });
+
+  test('missing incremental-write parents use DocumentNotFoundError', async () => {
+    const store = new BrowserDocumentStore({
+      indexedDB: new IDBFactory(),
+      dbName: 'maic-documents-missing-parent-error',
+    });
+
+    const putStageFailure = store.putStage('ghost', {
+      id: 'ghost',
+      name: 'Ghost',
+      createdAt: 1,
+      updatedAt: 2,
+    });
+    await expect(putStageFailure).rejects.toBeInstanceOf(DocumentNotFoundError);
+    await expect(putStageFailure).rejects.toMatchObject({ stageId: 'ghost' });
+
+    await expect(store.putScene('ghost', slideScene('ghost', 'scene', 0))).rejects.toBeInstanceOf(
+      DocumentNotFoundError,
+    );
   });
 
   test('fails loud on a malformed stored version stamp', async () => {

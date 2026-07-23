@@ -32,6 +32,7 @@ export type {
   SceneValidator,
   StageValidator,
 } from './document/types.js';
+export { DocumentNotFoundError, DocumentVersionError } from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
 export {
   HttpDocumentStore,

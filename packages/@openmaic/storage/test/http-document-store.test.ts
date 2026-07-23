@@ -3,6 +3,7 @@ import { IDBFactory } from 'fake-indexeddb';
 import { DSL_VERSION_KEY } from '@openmaic/dsl';
 import { describe, expect, test } from 'vitest';
 import { BrowserDocumentStore } from '../src/document/browser.js';
+import { DocumentVersionError } from '../src/document/types.js';
 import { HttpDocumentStore, HttpDocumentStoreError } from '../src/document/http.js';
 import type { StageValidator } from '../src/document/types.js';
 import { BrowserRuntimeStore } from '../src/runtime/browser.js';
@@ -259,11 +260,35 @@ describe('HttpDocumentStore contract mapping', () => {
     future.dslVersion = '99.0.0';
     future.stage.name = 'Future';
 
-    await expect(client.saveDocument(future)).rejects.toMatchObject({
-      status: 409,
-      code: 'FUTURE_VERSION',
+    const failure = client.saveDocument(future);
+    await expect(failure).rejects.toBeInstanceOf(DocumentVersionError);
+    await expect(failure).rejects.toMatchObject({
+      stageId: 'stage-1',
+      kind: 'future',
+      storedVersion: '99.0.0',
     });
+    await expect(failure).rejects.toThrow(
+      `@openmaic/storage: refusing to save document "stage-1" — it was written at DSL version ` +
+        `"99.0.0", newer than this client's`,
+    );
     expect((await client.loadDocument('stage-1'))!.stage.name).toBe('Intro Course');
+  });
+
+  test('rematerializes a typed future-version error classified from the backing store', async () => {
+    const { client, seedStoredVersion } = makeHarness();
+    await client.saveDocument(makeDocument());
+    await seedStoredVersion('stage-1', '99.0.0');
+    const replacement = makeDocument();
+    replacement.stage.name = 'Old Client Overwrite';
+
+    const failure = client.saveDocument(replacement);
+    await expect(failure).rejects.toBeInstanceOf(DocumentVersionError);
+    await expect(failure).rejects.toMatchObject({
+      stageId: 'stage-1',
+      kind: 'future',
+      storedVersion: '99.0.0',
+    });
+    await expect(failure).rejects.toThrow(/refusing to overwrite document/);
   });
 
   test('client-side validators fail before fetch', async () => {

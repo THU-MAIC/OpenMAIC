@@ -30,6 +30,7 @@ import type {
   SceneValidator,
   StageValidator,
 } from './types.js';
+import { DocumentNotFoundError, DocumentVersionError } from './types.js';
 import { assertJsonValue, isLosslessJsonString } from '../runtime/json-value.js';
 import type { Queryable, WithTransaction } from '../runtime/pg.js';
 
@@ -266,8 +267,11 @@ export class PgDocumentStore<
     operation: string,
     stageId: string,
     stageRow: StageRow<TStage>,
-  ): Error {
-    return new Error(
+  ): DocumentVersionError {
+    return new DocumentVersionError(
+      stageId,
+      'not-current',
+      stageRow[DSL_VERSION_KEY],
       `@openmaic/storage: cannot ${operation} document ${JSON.stringify(stageId)} at DSL ` +
         `version ${JSON.stringify(dslVersionOf(stageRow))} — load and save it to bring it ` +
         `to ${DSL_VERSION} first`,
@@ -330,7 +334,10 @@ export class PgDocumentStore<
 
   async saveDocument(doc: MaicDocument<TScene, TStage>): Promise<void> {
     if (isFutureVersioned(doc)) {
-      throw new Error(
+      throw new DocumentVersionError(
+        doc.stage.id,
+        'future',
+        doc.dslVersion,
         `@openmaic/storage: refusing to save document ${JSON.stringify(doc.stage.id)} — it was ` +
           `written at DSL version ${JSON.stringify(dslVersionOf(doc))}, newer than this ` +
           `client's ${DSL_VERSION}`,
@@ -343,7 +350,10 @@ export class PgDocumentStore<
     await this.transaction(async (queryable) => {
       const existingStage = await this.loadStage(queryable, stageId, 'update');
       if (existingStage && isFutureVersioned(existingStage)) {
-        throw new Error(
+        throw new DocumentVersionError(
+          stageId,
+          'future',
+          existingStage[DSL_VERSION_KEY],
           `@openmaic/storage: refusing to overwrite document ${JSON.stringify(stageId)} — the ` +
             `stored copy is at DSL version ${JSON.stringify(dslVersionOf(existingStage))}, newer ` +
             `than this client's ${DSL_VERSION}`,
@@ -448,7 +458,8 @@ export class PgDocumentStore<
     await this.transaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) {
-        throw new Error(
+        throw new DocumentNotFoundError(
+          stageId,
           `@openmaic/storage: cannot putStage into missing document ${JSON.stringify(stageId)}`,
         );
       }
@@ -466,7 +477,8 @@ export class PgDocumentStore<
     await this.transaction(async (queryable) => {
       const stored = await this.loadStage(queryable, stageId, 'update');
       if (!stored) {
-        throw new Error(
+        throw new DocumentNotFoundError(
+          stageId,
           `@openmaic/storage: cannot putScene into missing document ${JSON.stringify(stageId)}`,
         );
       }

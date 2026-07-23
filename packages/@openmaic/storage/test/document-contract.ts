@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'vitest';
 import { DSL_VERSION } from '@openmaic/dsl';
 import type { Scene } from '@openmaic/dsl';
-import type { DocumentStore, MaicDocument } from '../src/index.js';
+import { DocumentVersionError, type DocumentStore, type MaicDocument } from '../src/index.js';
 
 // --- fixtures ---------------------------------------------------------------
 
@@ -287,7 +287,13 @@ export function runDocumentStoreContract(
       future.dslVersion = '99.0.0';
       future.stage.name = 'Should Not Persist';
       // an old client must not overwrite (and downgrade) a newer-versioned document
-      await expect(store.saveDocument(future)).rejects.toThrow();
+      const failure = store.saveDocument(future);
+      await expect(failure).rejects.toBeInstanceOf(DocumentVersionError);
+      await expect(failure).rejects.toMatchObject({
+        stageId: 'stage-1',
+        kind: 'future',
+        storedVersion: '99.0.0',
+      });
 
       const loaded = await store.loadDocument('stage-1');
       expect(loaded!.stage.name).toBe('Intro Course');

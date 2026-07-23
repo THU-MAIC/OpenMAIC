@@ -8,7 +8,11 @@ import {
   type QueryResult,
   type Queryable,
 } from '../src/document/pg.js';
-import type { DocumentStore } from '../src/document/types.js';
+import {
+  DocumentNotFoundError,
+  DocumentVersionError,
+  type DocumentStore,
+} from '../src/document/types.js';
 import { makeDocument, runDocumentStoreContract, slideScene } from './document-contract.js';
 
 function transactionOptions(db: PGlite): PgDocumentStoreOptions {
@@ -128,9 +132,13 @@ describe('PgDocumentStore Postgres behavior', () => {
     await store.saveDocument(makeDocument());
 
     await restamp(db, 'stage-1', undefined);
-    await expect(store.putScene('stage-1', slideScene('stage-1', 'stale', 2))).rejects.toThrow(
-      /load and save/,
-    );
+    const staleFailure = store.putScene('stage-1', slideScene('stage-1', 'stale', 2));
+    await expect(staleFailure).rejects.toBeInstanceOf(DocumentVersionError);
+    await expect(staleFailure).rejects.toMatchObject({
+      kind: 'not-current',
+      storedVersion: undefined,
+    });
+    await expect(staleFailure).rejects.toThrow(/load and save/);
     await expect(
       store.putStage('stage-1', {
         id: 'stage-1',
@@ -142,10 +150,20 @@ describe('PgDocumentStore Postgres behavior', () => {
     await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toThrow(/load and save/);
 
     await restamp(db, 'stage-1', '99.0.0');
-    await expect(store.putScene('stage-1', slideScene('stage-1', 'future', 2))).rejects.toThrow(
-      /load and save/,
-    );
+    const futureFailure = store.putScene('stage-1', slideScene('stage-1', 'future', 2));
+    await expect(futureFailure).rejects.toBeInstanceOf(DocumentVersionError);
+    await expect(futureFailure).rejects.toMatchObject({
+      kind: 'not-current',
+      storedVersion: '99.0.0',
+    });
+    await expect(futureFailure).rejects.toThrow(/load and save/);
     await expect(store.deleteScene('stage-1', 'scene-a')).rejects.toThrow(/load and save/);
+  });
+
+  test('missing incremental-write parents use DocumentNotFoundError', async () => {
+    const failure = store.putScene('ghost', slideScene('ghost', 'scene', 0));
+    await expect(failure).rejects.toBeInstanceOf(DocumentNotFoundError);
+    await expect(failure).rejects.toMatchObject({ stageId: 'ghost' });
   });
 
   test('loadDocument migrates legacy data without writing the new stamp back', async () => {
