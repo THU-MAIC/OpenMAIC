@@ -1,6 +1,6 @@
-# RuntimeStore reference server
+# RuntimeStore and DocumentStore reference server
 
-The `@openmaic/storage/server` subpath exports a Node-only HTTP request handler implementing the [RuntimeStore HTTP contract](./runtime-http-contract.md). It accepts any injected `RuntimeStore`; the runnable `@openmaic/storage/server/reference` composition uses `PgRuntimeStore`, initializes its schema, and demonstrates the required node-postgres checkout/transaction/release pattern.
+The `@openmaic/storage/server` subpath exports a Node-only HTTP request handler implementing the [RuntimeStore HTTP contract](./runtime-http-contract.md) and, when a document store is supplied, the [DocumentStore HTTP contract](./document-http-contract.md). It accepts injected `RuntimeStore` and `DocumentStore` implementations; the runnable `@openmaic/storage/server/reference` composition creates and initializes `PgRuntimeStore`, accepts an optional host-created document store, and demonstrates the required node-postgres checkout/transaction/release pattern.
 
 This module is a reference, not a production authentication service. **The example bearer authentication is fully impersonatable.** A production host must supply its own authenticated identity and authorization policy. It must also terminate TLS, bound request sizes and timeouts, rate-limit abusive clients, keep database credentials outside the process image, and expose the service only through an appropriate application gateway.
 
@@ -16,12 +16,37 @@ DATABASE_URL=postgres://user:password@host/database PORT=3000 \
 The executable `main()` binds to `127.0.0.1`; `createReferenceRuntimeServer()` only creates and returns an unbound Node `Server`. The default bearer token payload is used directly as the demo `learnerKey`, self-merge is the only allowed merge, and admin operations are denied. Supplying `documentStore` adds the DocumentStore routes to that same server; any authenticated principal is allowed by default, or `authorizeDocuments` can enforce deployment policy. The factory also accepts `authenticate`, `authorizeMerge`, `authorizeAdmin`, and validator overrides. Replace the policy hooks before exposing a deployment:
 
 - `authenticate(req)` must validate a real credential and derive the canonical learner partition from server-controlled identity state.
+- `authorizeDocuments(principal, req)` must establish that the principal may access the requested author document operation. The default permits every authenticated principal.
 - `authorizeMerge(principal, fromKey, toKey)` must explicitly establish that the principal may migrate the complete source partition into the destination identity. Default denial is intentional.
 - `authorizeAdmin(principal)` must require a separately protected administrative role. Default denial is intentional.
 
 The handler's `payloadValidators` option has the same whole-table replacement semantics as the `BrowserRuntimeStore` and `PgRuntimeStore` constructor option, and defaults to the DSL `chat` / `quizAttempt` skeleton table. Whatever you pass to the store, pass the same thing to the handler. `createReferenceRuntimeServer()` applies its `payloadValidators` override to both automatically.
 
 The package has no PostgreSQL driver runtime dependency. A host injects its `Pool` (or another compatible `Queryable`) and owns driver lifecycle. Every transactional operation must check out a fresh connection, issue `BEGIN`, run all callback queries on that same connection, issue `COMMIT` or `ROLLBACK`, and release it in `finally`.
+
+## Document endpoints
+
+Every document route requires an authenticated principal. By default,
+`authorizeDocuments` allows any authenticated principal; production deployments
+must replace that policy when documents are tenant-, role-, or author-scoped.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `PUT` | `/documents/{stageId}` | Save a complete document |
+| `GET` | `/documents/{stageId}` | Load a complete document |
+| `GET` | `/documents` | List document summaries |
+| `DELETE` | `/documents/{stageId}` | Delete a document and its children |
+| `PUT` | `/documents/{stageId}/stage` | Replace stage metadata |
+| `PUT` | `/documents/{stageId}/scenes/{sceneId}` | Upsert one scene |
+| `GET` | `/documents/{stageId}/scenes/{sceneId}` | Read one scene |
+| `DELETE` | `/documents/{stageId}/scenes/{sceneId}` | Delete one scene |
+
+The reference composition applies its `validateScene` and `validateStage`
+overrides to the HTTP handler; the host must configure the injected document
+store with the same validators. Keep those validators in sync when composing
+the lower-level handler yourself. Full response, validation, version, and retry
+semantics are specified in the
+[DocumentStore HTTP contract](./document-http-contract.md).
 
 ## Endpoint authorization matrix
 

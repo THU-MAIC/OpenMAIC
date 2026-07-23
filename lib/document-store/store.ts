@@ -2,8 +2,20 @@ import { BrowserDocumentStore, type DocumentStore } from '@openmaic/storage';
 
 import type { AppScene } from '@/lib/types/stage';
 
+import { registerDocumentStorageResetHook, resolveConfiguredDocumentStore } from './config';
 import type { AppStage } from './persistence-types';
 import { validateAppScene, validateAppStage } from './validators';
+
+export {
+  configureDocumentStorage,
+  isDocumentStorageConfigured,
+  resetDocumentStorageForTests,
+} from './config';
+export type {
+  DocumentStorageOptions,
+  DocumentStorageValidators,
+  DocumentStoreFactory,
+} from './config';
 
 const DOCUMENT_DB_NAME = 'maic-documents';
 
@@ -17,6 +29,10 @@ export interface DocumentStoreDeps {
 }
 
 let defaultStore: DocumentStore<AppScene, AppStage> | undefined;
+
+registerDocumentStorageResetHook(() => {
+  defaultStore = undefined;
+});
 
 function createBrowserStore(
   deps: Omit<DocumentStoreDeps, 'store'>,
@@ -38,5 +54,7 @@ function createBrowserStore(
 export function getDocumentStore(deps: DocumentStoreDeps = {}): DocumentStore<AppScene, AppStage> {
   if (deps.store) return deps.store;
   if (deps.indexedDB || deps.dbName) return createBrowserStore(deps);
-  return (defaultStore ??= createBrowserStore({}));
+  // `??=` assigns only after resolution succeeds: if a configured factory
+  // throws, the next call retries it rather than caching the failure.
+  return (defaultStore ??= resolveConfiguredDocumentStore() ?? createBrowserStore({}));
 }

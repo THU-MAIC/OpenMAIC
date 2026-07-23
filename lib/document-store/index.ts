@@ -11,7 +11,16 @@ export {
   canonicalizeLegacyScene,
   canonicalizeLegacyStage,
 } from './canonicalize';
-export { getDocumentStore, type DocumentStoreDeps } from './store';
+export {
+  configureDocumentStorage,
+  getDocumentStore,
+  isDocumentStorageConfigured,
+  resetDocumentStorageForTests,
+  type DocumentStorageOptions,
+  type DocumentStorageValidators,
+  type DocumentStoreDeps,
+  type DocumentStoreFactory,
+} from './store';
 export {
   accessDocument,
   documentLockName,
