@@ -62,3 +62,14 @@ describe('HTTP store fetch binding', () => {
     await expect(store.listSessions('stage-1', 'learner-1')).resolves.toEqual([]);
   });
 });
+
+describe('HTTP store fetch validation order', () => {
+  it('reports the documented error for a non-function fetch option instead of a native bind TypeError', () => {
+    expect(() => new HttpDocumentStore({ baseUrl: 'http://x', fetch: {} as never })).toThrowError(
+      /requires a fetch implementation/,
+    );
+    expect(() => new HttpRuntimeStore({ baseUrl: 'http://x', fetch: {} as never })).toThrowError(
+      /requires a fetch implementation/,
+    );
+  });
+});

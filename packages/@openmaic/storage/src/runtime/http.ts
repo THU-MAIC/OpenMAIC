@@ -151,10 +151,13 @@ export class HttpRuntimeStore implements RuntimeStore {
     // (calling a stored reference as `this.fetchImpl(...)` throws "Illegal
     // invocation"), while node's undici does not care — which is exactly why
     // node-only test suites cannot catch the unbound form.
-    const fetchImpl = (options.fetch ?? globalThis.fetch)?.bind(globalThis);
-    if (typeof fetchImpl !== 'function') {
+    // Validate BEFORE binding: .bind on a non-function throws a native
+    // TypeError that would preempt the documented error below.
+    const selectedFetch = options.fetch ?? globalThis.fetch;
+    if (typeof selectedFetch !== 'function') {
       throw new Error('@openmaic/storage: HttpRuntimeStore requires a fetch implementation');
     }
+    const fetchImpl = selectedFetch.bind(globalThis);
     this.baseUrl = options.baseUrl.replace(/\/+$/, '');
     this.fetchImpl = fetchImpl;
     this.headersHook = options.headers;
