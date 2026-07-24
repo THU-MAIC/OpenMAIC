@@ -41,9 +41,14 @@ function requireGeometry(ref: GeometryRef, geometry: Partial<Record<GeometryRef,
 function resolveValue(
   value: AnimatableValue,
   geometry: Partial<Record<GeometryRef, number>>,
+  params: Params,
+  descriptorId: string,
 ): MotionValue {
-  if (typeof value === 'number' || typeof value === 'string') {
+  if (typeof value === 'number') {
     return value;
+  }
+  if (typeof value === 'string') {
+    return resolveParameterizedValue(value, params, descriptorId);
   }
 
   if ('ref' in value) {
@@ -86,7 +91,7 @@ function resolveTransition(track: Track): Transition {
   return transition as Transition;
 }
 
-function resolveStaticValue(value: string | number, params: Params, descriptorId: string) {
+function resolveParameterizedValue(value: string | number, params: Params, descriptorId: string) {
   if (typeof value === 'number') return value;
 
   const exactMatch = /^\{([^{}]+)\}$/.exec(value);
@@ -140,8 +145,8 @@ export function resolveMotionLayer(
   for (const track of layer.tracks) {
     const units = options?.units;
     const unit = units && hasOwn(units, track.property) ? units[track.property] : undefined;
-    const from = applyUnit(resolveValue(track.from, geometry), unit);
-    const to = applyUnit(resolveValue(track.to, geometry), unit);
+    const from = applyUnit(resolveValue(track.from, geometry, params, descriptor.id), unit);
+    const to = applyUnit(resolveValue(track.to, geometry, params, descriptor.id), unit);
     const propertyTransition = resolveTransition(track);
 
     if ((track.phase ?? 'enter') === 'exit') {
@@ -161,7 +166,7 @@ export function resolveMotionLayer(
 
   const staticProps: Record<string, string | number> = {};
   for (const [property, value] of Object.entries(layer.staticProps ?? {})) {
-    setOwn(staticProps, property, resolveStaticValue(value, params, descriptor.id));
+    setOwn(staticProps, property, resolveParameterizedValue(value, params, descriptor.id));
   }
 
   return {

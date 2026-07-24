@@ -124,6 +124,95 @@ describe('resolveMotionLayer', () => {
     });
   });
 
+  it('substitutes exact and embedded parameters in animated endpoints before applying units', () => {
+    const descriptor: AnimationDescriptor = {
+      id: 'animated-params.v1',
+      version: 1,
+      effect: 'laser',
+      params: { distance: 12, color: '#ff0000', label: 'default' },
+      zIndex: 1,
+      layers: [
+        {
+          id: 'motion',
+          tracks: [
+            { property: 'x', from: '{distance}', to: '{distance}' },
+            {
+              property: 'paint',
+              from: 'start:{color}',
+              to: 'end:{color}:{label}',
+            },
+          ],
+        },
+      ],
+    };
+
+    const layer = resolveMotionLayer(descriptor, 'motion', {
+      params: { distance: 0, color: '#12ab34', label: undefined },
+      units: { x: 'px' },
+    });
+
+    expect(layer.initial).toEqual({ x: '0px', paint: 'start:#12ab34' });
+    expect(layer.animate).toEqual({ x: '0px', paint: 'end:#12ab34:default' });
+  });
+
+  it('rejects missing and inherited parameters in animated endpoints', () => {
+    const missingDescriptor: AnimationDescriptor = {
+      id: 'missing-animated-param.v1',
+      version: 1,
+      effect: 'laser',
+      zIndex: 1,
+      layers: [
+        {
+          id: 'motion',
+          tracks: [{ property: 'color', from: '{required}', to: 'end:{required}' }],
+        },
+      ],
+    };
+    const inheritedDescriptor: AnimationDescriptor = {
+      id: 'inherited-animated-param.v1',
+      version: 1,
+      effect: 'laser',
+      zIndex: 1,
+      layers: [
+        {
+          id: 'motion',
+          tracks: [{ property: 'color', from: '{constructor}', to: 'black' }],
+        },
+      ],
+    };
+
+    expect(() => resolveMotionLayer(missingDescriptor, 'motion')).toThrow(
+      /required.*missing-animated-param\.v1/i,
+    );
+    expect(() => resolveMotionLayer(inheritedDescriptor, 'motion')).toThrow(
+      /constructor.*inherited-animated-param\.v1/i,
+    );
+  });
+
+  it('preserves an own __proto__ parameter in animated endpoints', () => {
+    const descriptor: AnimationDescriptor = {
+      id: 'special-animated-param.v1',
+      version: 1,
+      effect: 'laser',
+      zIndex: 1,
+      layers: [
+        {
+          id: 'motion',
+          tracks: [{ property: 'color', from: '{__proto__}', to: 'tone:{__proto__}' }],
+        },
+      ],
+    };
+    const params = JSON.parse('{"__proto__":"violet"}') as Record<
+      string,
+      string | number | undefined
+    >;
+
+    const layer = resolveMotionLayer(descriptor, 'motion', { params });
+
+    expect(layer.initial).toEqual({ color: 'violet' });
+    expect(layer.animate).toEqual({ color: 'tone:violet' });
+  });
+
   it('converts finite repeats and spring settings without inventing defaults', () => {
     const descriptor: AnimationDescriptor = {
       id: 'synthetic.v1',
