@@ -15,6 +15,14 @@
       "types": "./dist/runtime/http.d.ts",
       "import": "./dist/runtime/http.js"
     },
+    "./document/http": {
+      "types": "./dist/document/http.d.ts",
+      "import": "./dist/document/http.js"
+    },
+    "./document/pg": {
+      "types": "./dist/document/pg.d.ts",
+      "import": "./dist/document/pg.js"
+    },
     "./runtime/pg": {
       "types": "./dist/runtime/pg.d.ts",
       "import": "./dist/runtime/pg.js"

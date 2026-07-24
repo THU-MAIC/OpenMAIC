@@ -16,7 +16,7 @@
  */
 import { compileVideoTimeline, emitHyperframes } from '@/lib/video-export';
 import { useStageStore } from '@/lib/store';
-import { db } from '@/lib/utils/database';
+import { accessDocument } from '@/lib/document-store';
 import { createVideoTimelineDeps } from './timeline-deps';
 import { collectVideoAssets } from './collect';
 import { packageVideoZip } from './package-zip';
@@ -61,8 +61,8 @@ export async function buildExportZip(resolution: VideoResolution): Promise<Build
 
   const { width, height } = VIDEO_RESOLUTIONS[resolution];
 
-  const latest = await db.stages.get(stage.id).catch(() => undefined);
-  const stageName = latest?.name || stage.name || 'classroom';
+  const latest = await accessDocument(stage.id).catch(() => undefined);
+  const stageName = latest?.document?.stage.name || stage.name || 'classroom';
 
   // 1. DI deps (Dexie durations + asset presence) → 2. pure compile to IR.
   const deps = await createVideoTimelineDeps({ stage: { id: stage.id }, scenes });

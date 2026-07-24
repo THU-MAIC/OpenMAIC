@@ -30,8 +30,23 @@ export type {
   DocumentSummary,
   SceneLike,
   SceneValidator,
+  StageValidator,
 } from './document/types.js';
+export { DocumentNotFoundError, DocumentVersionError } from './document/types.js';
 export { BrowserDocumentStore, type BrowserDocumentStoreOptions } from './document/browser.js';
+export {
+  HttpDocumentStore,
+  HttpDocumentStoreError,
+  type HttpDocumentHeadersContext,
+  type HttpDocumentHeadersHook,
+  type HttpDocumentStoreOptions,
+} from './document/http.js';
+export {
+  PgDocumentStore,
+  DOCUMENT_PG_SCHEMA,
+  ensureDocumentSchema,
+  type PgDocumentStoreOptions,
+} from './document/pg.js';
 
 export type {
   RuntimeStore,

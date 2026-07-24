@@ -157,6 +157,7 @@ describe('database runtime chat integration', () => {
     vi.resetModules();
     vi.stubGlobal('indexedDB', new IDBFactory());
     vi.stubGlobal('navigator', { locks: serialLockManager() });
+    stubMemoryLocalStorage();
   });
 
   afterEach(() => {
@@ -442,6 +443,8 @@ describe('database runtime chat integration', () => {
   it('rolls back imported Dexie rows when restore-marker creation fails', async () => {
     const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
     const { db, importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore, loadCurrentScene, saveCurrentScene } =
+      await import('@/lib/document-store');
     const { loadChatSessions, saveChatSessions } = await import('@/lib/utils/chat-storage');
     await db.stages.put({
       id: 'stage-marker-failure',
@@ -449,6 +452,18 @@ describe('database runtime chat integration', () => {
       createdAt: 1_000,
       updatedAt: 2_000,
     });
+    const documentStore = getDocumentStore();
+    await documentStore.saveDocument({
+      stage: {
+        id: 'stage-marker-failure',
+        name: 'Original destination document',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      },
+      scenes: [],
+    });
+    await saveCurrentScene('stage-marker-failure', 'original-current-scene');
+    const originalCurrentScene = await loadCurrentScene('stage-marker-failure');
     await saveChatSessions(
       'stage-marker-failure',
       [{ ...chatSession(), title: 'Original runtime chat' }],
@@ -478,6 +493,14 @@ describe('database runtime chat integration', () => {
               name: 'Imported stage',
               createdAt: 1_000,
               updatedAt: 3_000,
+              currentSceneId: 'imported-current-scene',
+            },
+            {
+              id: 'stage-created-by-import',
+              name: 'Created by import',
+              createdAt: 1_000,
+              updatedAt: 3_000,
+              currentSceneId: 'created-current-scene',
             },
           ],
           chatSessions: [
@@ -491,14 +514,170 @@ describe('database runtime chat integration', () => {
     await expect(db.stages.get('stage-marker-failure')).resolves.toMatchObject({
       name: 'Original stage',
     });
+    await expect(documentStore.loadDocument('stage-marker-failure')).resolves.toMatchObject({
+      stage: { name: 'Original destination document' },
+    });
+    await expect(documentStore.loadDocument('stage-created-by-import')).resolves.toBeNull();
+    await expect(loadCurrentScene('stage-marker-failure')).resolves.toEqual(originalCurrentScene);
+    await expect(loadCurrentScene('stage-created-by-import')).resolves.toBeNull();
     await expect(
       loadChatSessions('stage-marker-failure', { store: backing, learnerKey }),
     ).resolves.toMatchObject([{ title: 'Original runtime chat' }]);
   });
 
+  it('blocks lazy migration behind a runtime-wide clear and observes the deleted source', async () => {
+    vi.stubGlobal('navigator', { locks: fairLockManager() });
+    const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
+    const { clearDatabase, db } = await import('@/lib/utils/database');
+    const { loadStageData } = await import('@/lib/utils/stage-storage');
+    await db.stages.put({
+      id: 'stage-clear-migration-race',
+      name: 'Legacy source',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    });
+
+    let releaseDeleteAll!: () => void;
+    const deleteAllGate = new Promise<void>((resolve) => {
+      releaseDeleteAll = resolve;
+    });
+    let clearAcquired!: () => void;
+    const clearHasLock = new Promise<void>((resolve) => {
+      clearAcquired = resolve;
+    });
+    const gatedStore = new Proxy(backing, {
+      get(target, property) {
+        if (property === 'deleteAllRuntime') {
+          return async () => {
+            clearAcquired();
+            await deleteAllGate;
+            return target.deleteAllRuntime();
+          };
+        }
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+
+    const clearing = clearDatabase(gatedStore);
+    await clearHasLock;
+    let migrationSettled = false;
+    const migrating = loadStageData('stage-clear-migration-race').finally(() => {
+      migrationSettled = true;
+    });
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(migrationSettled).toBe(false);
+
+    releaseDeleteAll();
+    await clearing;
+    await expect(migrating).resolves.toBeNull();
+  });
+
+  it('rejects a stage save that resumes after a database clear and allows a fresh save', async () => {
+    vi.stubGlobal('navigator', { locks: fairLockManager() });
+    const runtimeStore = new BrowserRuntimeStore({
+      indexedDB: globalThis.indexedDB,
+      dbName: 'clear-document-save-race',
+    });
+    const { clearDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const { saveStageData } = await import('@/lib/utils/stage-storage');
+    const documentStore = getDocumentStore();
+    const stage = {
+      id: 'stage-clear-save-race',
+      name: 'Before clear',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    };
+    await documentStore.saveDocument({ stage, scenes: [] });
+
+    let releaseMigrationLoad!: () => void;
+    const migrationLoadGate = new Promise<void>((resolve) => {
+      releaseMigrationLoad = resolve;
+    });
+    let migrationLoadEntered!: () => void;
+    const migrationLoadStarted = new Promise<void>((resolve) => {
+      migrationLoadEntered = resolve;
+    });
+    const originalLoad = documentStore.loadDocument.bind(documentStore);
+    let gateNextLoad = true;
+    vi.spyOn(documentStore, 'loadDocument').mockImplementation(async (stageId) => {
+      const document = await originalLoad(stageId);
+      if (stageId === stage.id && gateNextLoad) {
+        gateNextLoad = false;
+        migrationLoadEntered();
+        await migrationLoadGate;
+      }
+      return document;
+    });
+
+    const staleSave = saveStageData(stage.id, {
+      stage: { ...stage, name: 'Stale save' },
+      scenes: [],
+      currentSceneId: null,
+      chats: [],
+    });
+    await migrationLoadStarted;
+    const clearing = clearDatabase(runtimeStore);
+    releaseMigrationLoad();
+
+    await expect(clearing).resolves.toBeUndefined();
+    await expect(staleSave).rejects.toThrow('storage was cleared during the mutation');
+    await expect(documentStore.loadDocument(stage.id)).resolves.toBeNull();
+
+    await expect(
+      saveStageData(stage.id, {
+        stage: { ...stage, name: 'Fresh save' },
+        scenes: [],
+        currentSceneId: null,
+        chats: [],
+      }),
+    ).resolves.toBeUndefined();
+    await expect(documentStore.loadDocument(stage.id)).resolves.toMatchObject({
+      stage: { name: 'Fresh save' },
+    });
+  });
+
+  it('loads a divergent destination without marking or deleting its legacy source', async () => {
+    const { db } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const { loadStageData } = await import('@/lib/utils/stage-storage');
+    const kv = new (await import('@openmaic/storage')).BrowserKVStore();
+    await getDocumentStore().saveDocument({
+      stage: {
+        id: 'stage-divergent-snapshot',
+        name: 'Destination V1',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      },
+      scenes: [],
+    });
+    await db.stages.put({
+      id: 'stage-divergent-snapshot',
+      name: 'Legacy V2',
+      createdAt: 1_000,
+      updatedAt: 3_000,
+    });
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+    await expect(loadStageData('stage-divergent-snapshot')).resolves.toMatchObject({
+      stage: { name: 'Destination V1' },
+    });
+    await expect(
+      kv.get('document-migration:stage-divergent-snapshot', 'device'),
+    ).resolves.toBeNull();
+    await expect(db.stages.get('stage-divergent-snapshot')).resolves.toMatchObject({
+      name: 'Legacy V2',
+    });
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('stage stage-divergent-snapshot'));
+    warn.mockRestore();
+  });
+
   it('finishes an interrupted runtime clear from the durable restore marker', async () => {
     const backing = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
-    const { db, importDatabase } = await import('@/lib/utils/database');
+    const { importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
     const { loadChatSessions, saveChatSessions } = await import('@/lib/utils/chat-storage');
     await saveChatSessions(
       'stage-interrupted-restore',
@@ -543,9 +722,7 @@ describe('database runtime chat integration', () => {
         { store: failingDeleteStore, learnerKey },
       ),
     ).rejects.toThrow('restore delete failed');
-    await expect(db.stages.get('stage-interrupted-restore')).resolves.toMatchObject({
-      name: 'Imported stage',
-    });
+    await expect(getDocumentStore().loadDocument('stage-interrupted-restore')).resolves.toBeNull();
 
     await expect(
       loadChatSessions('stage-interrupted-restore', { store: backing, learnerKey }),
@@ -718,7 +895,7 @@ describe('database runtime chat integration', () => {
     });
     vi.spyOn(db, 'transaction').mockImplementation(((...args: unknown[]) =>
       originalTransaction(...args).then(async (result) => {
-        if (!Array.isArray(args[1])) return result;
+        if (args[0] !== 'rw' || !Array.isArray(args[1])) return result;
         transactionCommitted();
         await importMayContinue;
         return result;
@@ -802,10 +979,11 @@ describe('database runtime chat integration', () => {
 
   it('enrolls a stage save before document writes so maintenance cannot overtake it', async () => {
     stubMemoryLocalStorage();
-    const { db } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
     const { saveStageData } = await import('@/lib/utils/stage-storage');
     const { withRuntimeStorageExclusiveLock } = await import('@/lib/utils/chat-storage-lock');
-    const originalPut = db.stages.put.bind(db.stages);
+    const documentStore = getDocumentStore();
+    const originalSave = documentStore.saveDocument.bind(documentStore);
     let documentWriteStarted!: () => void;
     const didStartDocumentWrite = new Promise<void>((resolve) => {
       documentWriteStarted = resolve;
@@ -814,11 +992,11 @@ describe('database runtime chat integration', () => {
     const documentWriteMayContinue = new Promise<void>((resolve) => {
       releaseDocumentWrite = resolve;
     });
-    vi.spyOn(db.stages, 'put').mockImplementation((async (record, key) => {
+    vi.spyOn(documentStore, 'saveDocument').mockImplementation(async (document) => {
       documentWriteStarted();
       await documentWriteMayContinue;
-      return originalPut(record, key);
-    }) as typeof db.stages.put);
+      return originalSave(document);
+    });
 
     const saving = saveStageData('stage-save-enrollment', {
       stage: {
@@ -846,11 +1024,12 @@ describe('database runtime chat integration', () => {
   it('does not wait inside a shared epoch for a partition read queued after maintenance', async () => {
     vi.stubGlobal('navigator', { locks: fairLockManager() });
     stubMemoryLocalStorage();
-    const { db } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
     const { loadChatSessions } = await import('@/lib/utils/chat-storage');
     const { withRuntimeStorageExclusiveLock } = await import('@/lib/utils/chat-storage-lock');
     const { saveStageData } = await import('@/lib/utils/stage-storage');
-    const originalPut = db.stages.put.bind(db.stages);
+    const documentStore = getDocumentStore();
+    const originalSave = documentStore.saveDocument.bind(documentStore);
     let documentWriteStarted!: () => void;
     const didStartDocumentWrite = new Promise<void>((resolve) => {
       documentWriteStarted = resolve;
@@ -859,11 +1038,11 @@ describe('database runtime chat integration', () => {
     const documentWriteMayContinue = new Promise<void>((resolve) => {
       releaseDocumentWrite = resolve;
     });
-    vi.spyOn(db.stages, 'put').mockImplementation((async (record, key) => {
+    vi.spyOn(documentStore, 'saveDocument').mockImplementation(async (document) => {
       documentWriteStarted();
       await documentWriteMayContinue;
-      return originalPut(record, key);
-    }) as typeof db.stages.put);
+      return originalSave(document);
+    });
 
     const saving = saveStageData('stage-epoch-order', {
       stage: {
@@ -1245,8 +1424,7 @@ describe('database runtime chat integration', () => {
   it('keeps empty-chat document saves available without Web Locks', async () => {
     vi.stubGlobal('navigator', {});
     stubMemoryLocalStorage();
-    const { db } = await import('@/lib/utils/database');
-    const { saveStageData } = await import('@/lib/utils/stage-storage');
+    const { loadStageData, saveStageData } = await import('@/lib/utils/stage-storage');
 
     await expect(
       saveStageData('stage-no-chat', {
@@ -1261,8 +1439,8 @@ describe('database runtime chat integration', () => {
         chats: [],
       }),
     ).resolves.toBeUndefined();
-    await expect(db.stages.get('stage-no-chat')).resolves.toMatchObject({
-      name: 'No chat stage',
+    await expect(loadStageData('stage-no-chat')).resolves.toMatchObject({
+      stage: { name: 'No chat stage' },
     });
   });
 
@@ -1284,17 +1462,85 @@ describe('database runtime chat integration', () => {
     ).resolves.toBe(1);
   });
 
+  it('exports a canonical legacy-only document without Web Locks and leaves legacy data untouched', async () => {
+    vi.stubGlobal('navigator', {});
+    stubMemoryLocalStorage();
+    const runtimeStore = new BrowserRuntimeStore({
+      indexedDB: globalThis.indexedDB,
+      dbName: 'legacy-only-export-no-locks',
+    });
+    const { db, exportDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const stage = {
+      id: 'stage-legacy-only-export',
+      name: 'Legacy-only export',
+      createdAt: 1_000,
+      updatedAt: 2_000,
+      currentSceneId: 'scene-legacy-only-export',
+    };
+    const scene = {
+      id: 'scene-legacy-only-export',
+      stageId: stage.id,
+      type: 'quiz' as const,
+      title: 'Legacy scene',
+      order: 0,
+      content: { type: 'slide' as const, canvas: { id: 'canvas-legacy', elements: [] } as never },
+      whiteboard: [{ id: 'whiteboard-legacy', elements: [] } as never],
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    };
+    await db.stages.put(stage);
+    await db.scenes.put(scene);
+    // Chat history lives on the RuntimeStore seam, independent of document
+    // migration — a legacy-only document's chats must still reach the backup.
+    // Write it while locks exist, then export from the no-locks environment.
+    vi.stubGlobal('navigator', { locks: serialLockManager() });
+    const { saveChatSessions } = await import('@/lib/utils/chat-storage');
+    await saveChatSessions(stage.id, [{ ...chatSession(), id: 'legacy-only-chat' }], {
+      store: runtimeStore,
+      learnerKey,
+    });
+    vi.stubGlobal('navigator', {});
+
+    const backup = await exportDatabase({ store: runtimeStore, learnerKey });
+    const exportedDocument = backup.documents.find((document) => document.stage.id === stage.id);
+    expect(
+      backup.chatSessions.filter(
+        (session) => session.stageId === stage.id && session.id === 'legacy-only-chat',
+      ),
+    ).toHaveLength(1);
+
+    expect(exportedDocument).toMatchObject({
+      dslVersion: '0.1.0',
+      stage: { id: stage.id, name: 'Legacy-only export' },
+      scenes: [
+        {
+          id: scene.id,
+          type: 'slide',
+          whiteboards: [{ id: 'whiteboard-legacy' }],
+        },
+      ],
+    });
+    expect(exportedDocument!.stage).not.toHaveProperty('currentSceneId');
+    await expect(getDocumentStore().loadDocument(stage.id)).resolves.toBeNull();
+    await expect(db.stages.get(stage.id)).resolves.toEqual(stage);
+    await expect(db.scenes.get(scene.id)).resolves.toEqual(scene);
+  });
+
   it('keeps unrelated document saves available for an unchanged read-only legacy snapshot', async () => {
     vi.stubGlobal('navigator', {});
     stubMemoryLocalStorage();
+    const { getDocumentStore } = await import('@/lib/document-store');
     const { db } = await import('@/lib/utils/database');
     const { loadStageData, saveStageData } = await import('@/lib/utils/stage-storage');
-    await db.stages.put({
+    const legacyStage = {
       id: 'stage-legacy-autosave',
       name: 'Existing stage',
       createdAt: 1_000,
       updatedAt: 2_000,
-    });
+    };
+    await db.stages.put(legacyStage);
+    await getDocumentStore().saveDocument({ stage: legacyStage, scenes: [] });
     await db.chatSessions.put({
       ...chatSession(),
       stageId: 'stage-legacy-autosave',
@@ -1307,8 +1553,11 @@ describe('database runtime chat integration', () => {
         stage: { ...loaded!.stage, name: 'Updated stage' },
       }),
     ).resolves.toBeUndefined();
+    await expect(loadStageData('stage-legacy-autosave')).resolves.toMatchObject({
+      stage: { name: 'Updated stage' },
+    });
     await expect(db.stages.get('stage-legacy-autosave')).resolves.toMatchObject({
-      name: 'Updated stage',
+      name: 'Existing stage',
     });
     await expect(
       db.chatSessions.where('stageId').equals('stage-legacy-autosave').count(),
@@ -1397,6 +1646,7 @@ describe('database runtime chat integration', () => {
       dbName: 'clear-without-web-locks',
     });
     const { clearDatabase, db } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
     await db.stages.put({
       id: 'stage-clear-no-lock',
       name: 'Clear without locks',
@@ -1412,11 +1662,103 @@ describe('database runtime chat integration', () => {
       createdAt: new Date(1_000).toISOString(),
       updatedAt: new Date(2_000).toISOString(),
     });
+    await getDocumentStore().saveDocument({
+      stage: {
+        id: 'stage-clear-document',
+        name: 'Document to clear',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      },
+      scenes: [],
+    });
+    localStorage.setItem('maic:device:document-migration:stage-clear-document', '{}');
+    localStorage.setItem('maic:device:editor-current-scene:stage-clear-document', '{}');
 
     await expect(clearDatabase(runtimeStore)).resolves.toBeUndefined();
     await expect(runtimeStore.listSessions('stage-clear-no-lock', learnerKey)).resolves.toEqual([]);
     await db.open();
     await expect(db.stages.count()).resolves.toBe(0);
+    await expect(getDocumentStore().loadDocument('stage-clear-document')).resolves.toBeNull();
+    expect(localStorage.getItem('maic:device:document-migration:stage-clear-document')).toBeNull();
+    expect(
+      localStorage.getItem('maic:device:editor-current-scene:stage-clear-document'),
+    ).toBeNull();
+  });
+
+  it('round-trips versioned document backups including outline envelopes', async () => {
+    const runtimeStore = new BrowserRuntimeStore({ indexedDB: globalThis.indexedDB });
+    const { exportDatabase, importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore } = await import('@/lib/document-store');
+    const documentStore = getDocumentStore();
+    await documentStore.saveDocument({
+      stage: {
+        id: 'stage-document-backup',
+        name: 'Aggregate backup',
+        createdAt: 1_000,
+        updatedAt: 2_000,
+      },
+      scenes: [],
+      outline: { outlines: [], generationComplete: true, createdAt: 1_000, updatedAt: 2_000 },
+    });
+
+    const backup = await exportDatabase({ store: runtimeStore, learnerKey });
+    expect(backup).not.toHaveProperty('stages');
+    expect(backup).not.toHaveProperty('scenes');
+    expect(backup.documents).toMatchObject([
+      {
+        stage: { id: 'stage-document-backup', name: 'Aggregate backup' },
+        outline: { generationComplete: true },
+        dslVersion: '0.1.0',
+      },
+    ]);
+
+    await documentStore.deleteDocument('stage-document-backup');
+    await importDatabase(backup, { store: runtimeStore, learnerKey });
+    await expect(documentStore.loadDocument('stage-document-backup')).resolves.toMatchObject({
+      stage: { name: 'Aggregate backup' },
+      outline: { generationComplete: true },
+      dslVersion: '0.1.0',
+    });
+  });
+
+  it('accepts legacy stage/scene backups and canonicalizes whiteboards', async () => {
+    const { importDatabase } = await import('@/lib/utils/database');
+    const { getDocumentStore, loadCurrentScene } = await import('@/lib/document-store');
+    await importDatabase({
+      stages: [
+        {
+          id: 'stage-legacy-backup',
+          name: 'Legacy backup',
+          currentSceneId: 'scene-legacy-backup',
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+      ],
+      scenes: [
+        {
+          id: 'scene-legacy-backup',
+          stageId: 'stage-legacy-backup',
+          type: 'quiz',
+          title: 'Legacy scene',
+          order: 0,
+          content: {
+            type: 'quiz',
+            questions: [],
+          },
+          whiteboard: [],
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+      ],
+    });
+
+    const restored = await getDocumentStore().loadDocument('stage-legacy-backup');
+    expect(restored?.stage).not.toHaveProperty('currentSceneId');
+    expect(restored?.scenes[0]).toHaveProperty('whiteboards');
+    expect(restored?.scenes[0]).not.toHaveProperty('whiteboard');
+    await expect(loadCurrentScene('stage-legacy-backup')).resolves.toMatchObject({
+      sceneId: 'scene-legacy-backup',
+    });
   });
 
   it('fails loud without deleting documents when the runtime-wide clear fails', async () => {

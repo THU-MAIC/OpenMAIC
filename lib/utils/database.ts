@@ -1,4 +1,5 @@
 import Dexie, { type EntityTable, type Table } from 'dexie';
+import { DSL_VERSION } from '@openmaic/dsl';
 import type {
   Scene,
   SceneType,
@@ -29,6 +30,8 @@ import {
   withRuntimeStorageSharedLock,
 } from './chat-storage-lock';
 import type { ChatStorageOptions } from './chat-storage';
+import type { AppDocument } from '@/lib/document-store';
+import { BrowserKVStore } from '@openmaic/storage';
 
 const log = createLogger('Database');
 
@@ -512,10 +515,32 @@ export async function clearDatabase(runtimeStore?: RuntimeStore): Promise<void> 
   // earlier best-effort stage deletion. This user-requested destructive action
   // must fail loud: reporting success while runtime data remains is misleading.
   await withRuntimeStorageExclusiveLock(async () => {
+    const { bumpGeneration } = await import('@/lib/document-store/storage-generation');
+    await bumpGeneration();
     await (runtimeStore ?? getRuntimeStore()).deleteAllRuntime();
+    await deleteAllDocuments();
+    await clearDocumentStoreKeys();
     await db.delete();
   });
   log.info('Database cleared');
+}
+
+/** Delete every aggregate without bypassing the document store's open connection. */
+export async function deleteAllDocuments(): Promise<void> {
+  const { getDocumentStore } = await import('@/lib/document-store');
+  const store = getDocumentStore();
+  const documents = await store.listDocuments();
+  await Promise.all(documents.map((document) => store.deleteDocument(document.id)));
+}
+
+/** Remove device-local metadata owned by the document cutover. */
+export async function clearDocumentStoreKeys(): Promise<void> {
+  if (typeof localStorage === 'undefined') return;
+  const kv = new BrowserKVStore();
+  for (const prefix of ['document-migration:', 'editor-current-scene:']) {
+    const keys = await kv.keys(prefix, 'device');
+    await Promise.all(keys.map((key) => kv.remove(key, 'device')));
+  }
 }
 
 function toChatSessionRecord(stageId: string, session: ChatSession): ChatSessionRecord {
@@ -540,12 +565,47 @@ function toChatSessionRecord(stageId: string, session: ChatSession): ChatSession
  * Export database contents (for backup)
  */
 export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Promise<{
-  stages: StageRecord[];
-  scenes: SceneRecord[];
+  documents: AppDocument[];
   chatSessions: ChatSessionRecord[];
   playbackState: PlaybackStateRecord[];
 }> {
-  const stages = await db.stages.toArray();
+  const {
+    accessDocument,
+    canonicalizeLegacyOutline,
+    canonicalizeLegacyScene,
+    canonicalizeLegacyStage,
+    getDocumentStore,
+    getLegacyDocumentStore,
+  } = await import('@/lib/document-store');
+  const documentStore = getDocumentStore();
+  // Backups must not strand courses that have not yet been opened since cutover.
+  // Route them through the normal lazy-migration seam before enumerating aggregates.
+  const legacyStages = await getLegacyDocumentStore().listStages();
+  await Promise.all(legacyStages.map((stage) => accessDocument(stage.id)));
+  const summaries = await documentStore.listDocuments();
+  const storedDocuments = (
+    await Promise.all(summaries.map((summary) => documentStore.loadDocument(summary.id)))
+  ).filter((document): document is AppDocument => document !== null);
+  const storedIds = new Set(summaries.map((summary) => summary.id));
+  const legacyOnlyDocuments = (
+    await Promise.all(
+      legacyStages
+        .filter((stage) => !storedIds.has(stage.id))
+        .map(async (stage): Promise<AppDocument | null> => {
+          const snapshot = await getLegacyDocumentStore().read(stage.id);
+          if (!snapshot) return null;
+          const { stage: canonicalStage } = canonicalizeLegacyStage(snapshot.stage);
+          const document: AppDocument = {
+            stage: canonicalStage,
+            scenes: snapshot.scenes.map(canonicalizeLegacyScene).sort((a, b) => a.order - b.order),
+            dslVersion: DSL_VERSION,
+          };
+          if (snapshot.outline) document.outline = canonicalizeLegacyOutline(snapshot.outline);
+          return document;
+        }),
+    )
+  ).filter((document): document is AppDocument => document !== null);
+  const documents = [...storedDocuments, ...legacyOnlyDocuments];
   const legacyChatMap = new Map<string, ChatSessionRecord>();
   for (const session of [
     ...(await db.chatSessions.toArray()),
@@ -555,11 +615,19 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   }
   const legacyChats = [...legacyChatMap.values()];
   const { loadChatSessions } = await import('./chat-storage');
+  // Chat sessions live on the learner RuntimeStore — an independent seam from
+  // document migration — so legacy-only documents can still own runtime chat
+  // history. Enumerate chats for EVERY exported document, not just stored ones.
+  // The legacy chat rows are collected separately above by direct table reads,
+  // so the runtime read gets an empty legacy store: it never needs the
+  // cross-realm migration lock and therefore also works without Web Locks
+  // (where the document seam already exports legacy-only courses read-only).
   const runtimeChats = (
     await Promise.all(
-      stages.map(async (stage) =>
+      documents.map(async ({ stage }) =>
         (
           await loadChatSessions(stage.id, {
+            legacyStore: { load: async () => [], clear: async () => {} },
             ...chatOptions,
             fallbackToLegacyOnError: false,
             observe: false,
@@ -573,8 +641,7 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   );
 
   return {
-    stages,
-    scenes: await db.scenes.toArray(),
+    documents,
     chatSessions: [
       ...runtimeChats,
       ...legacyChats.filter(
@@ -590,6 +657,7 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
  */
 export async function importDatabase(
   data: {
+    documents?: AppDocument[];
     stages?: StageRecord[];
     scenes?: SceneRecord[];
     chatSessions?: ChatSessionRecord[];
@@ -597,101 +665,154 @@ export async function importDatabase(
   },
   chatOptions: ChatStorageOptions = {},
 ): Promise<void> {
-  return withRuntimeStorageSharedLock(async () => {
-    const restoredChatStageIds =
-      data.chatSessions === undefined
-        ? []
-        : [
-            ...new Set([
-              ...(data.stages ?? []).map((stage) => stage.id),
-              ...data.chatSessions.map((session) => session.stageId),
-            ]),
-          ];
-    const restoreRows = () =>
-      db.transaction(
-        'rw',
-        [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
-        async () => {
-          if (data.stages) await db.stages.bulkPut(data.stages);
-          if (data.scenes) await db.scenes.bulkPut(data.scenes);
-          if (data.chatSessions) {
-            for (const stageId of restoredChatStageIds) {
-              await db.chatSessions.where('stageId').equals(stageId).delete();
-              await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
-            }
-            await db.chatRestoreStaging.bulkPut(data.chatSessions);
-          }
-          if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
-        },
-      );
-    if (data.chatSessions !== undefined) {
-      // RuntimeStore cannot join Dexie's transaction. Keep a rollback image
-      // until durable restore markers have been created for every affected
-      // runtime partition; marker creation failure must not commit half an
-      // imported backup.
-      const rollbackImage = await db.transaction(
-        'r',
-        [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
-        async () => ({
-          stages: (await db.stages.bulkGet((data.stages ?? []).map((stage) => stage.id))).filter(
-            (stage): stage is StageRecord => stage !== undefined,
-          ),
-          scenes: (await db.scenes.bulkGet((data.scenes ?? []).map((scene) => scene.id))).filter(
-            (scene): scene is SceneRecord => scene !== undefined,
-          ),
-          chatSessions: (
-            await Promise.all(
-              restoredChatStageIds.map((stageId) =>
-                db.chatSessions.where('stageId').equals(stageId).toArray(),
-              ),
-            )
-          ).flat(),
-          chatRestoreStaging: (
-            await Promise.all(
-              restoredChatStageIds.map((stageId) =>
-                db.chatRestoreStaging.where('stageId').equals(stageId).toArray(),
-              ),
-            )
-          ).flat(),
-          playbackState: (
-            await db.playbackState.bulkGet(
-              (data.playbackState ?? []).map((playback) => playback.stageId),
-            )
-          ).filter((playback): playback is PlaybackStateRecord => playback !== undefined),
-        }),
-      );
-      const rollbackRows = () =>
+  const { canonicalizeLegacyScene, canonicalizeLegacyStage, mutateDocument } =
+    await import('@/lib/document-store');
+  const legacyScenesByStage = new Map<string, SceneRecord[]>();
+  for (const scene of data.scenes ?? []) {
+    const scenes = legacyScenesByStage.get(scene.stageId) ?? [];
+    scenes.push(scene);
+    legacyScenesByStage.set(scene.stageId, scenes);
+  }
+  const documents =
+    data.documents ??
+    (data.stages ?? []).map((legacyStage): AppDocument => {
+      const { stage } = canonicalizeLegacyStage(legacyStage);
+      return {
+        stage,
+        scenes: (legacyScenesByStage.get(legacyStage.id) ?? [])
+          .map(canonicalizeLegacyScene)
+          .sort((a, b) => a.order - b.order),
+      };
+    });
+  const importedDocuments: Array<{ id: string; preImage: AppDocument | null }> = [];
+  const importedCurrentScenes: Array<{ key: string; preImage: unknown | null }> = [];
+  const kv = new BrowserKVStore();
+
+  try {
+    for (const document of documents) {
+      await mutateDocument(document.stage.id, async (_existing, store) => {
+        const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
+        await store.saveDocument(document);
+        importedDocuments.push({ id: document.stage.id, preImage });
+      });
+    }
+    for (const legacyStage of data.stages ?? []) {
+      if (legacyStage.currentSceneId !== undefined) {
+        const key = `editor-current-scene:${legacyStage.id}`;
+        const preImage = await kv.get<unknown>(key, 'device');
+        await kv.set(
+          key,
+          { sceneId: legacyStage.currentSceneId, updatedAt: new Date().toISOString() },
+          'device',
+        );
+        importedCurrentScenes.push({ key, preImage });
+      }
+    }
+
+    await withRuntimeStorageSharedLock(async () => {
+      const restoredChatStageIds =
+        data.chatSessions === undefined
+          ? []
+          : [
+              ...new Set([
+                ...documents.map((document) => document.stage.id),
+                ...data.chatSessions.map((session) => session.stageId),
+              ]),
+            ];
+      const restoreRows = () =>
         db.transaction(
           'rw',
           [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
           async () => {
-            await db.stages.bulkDelete((data.stages ?? []).map((stage) => stage.id));
-            await db.scenes.bulkDelete((data.scenes ?? []).map((scene) => scene.id));
-            for (const stageId of restoredChatStageIds) {
-              await db.chatSessions.where('stageId').equals(stageId).delete();
-              await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+            if (data.chatSessions) {
+              for (const stageId of restoredChatStageIds) {
+                await db.chatSessions.where('stageId').equals(stageId).delete();
+                await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+              }
+              await db.chatRestoreStaging.bulkPut(data.chatSessions);
             }
-            await db.playbackState.bulkDelete(
-              (data.playbackState ?? []).map((playback) => playback.stageId),
-            );
-            await db.stages.bulkPut(rollbackImage.stages);
-            await db.scenes.bulkPut(rollbackImage.scenes);
-            await db.chatSessions.bulkPut(rollbackImage.chatSessions);
-            await db.chatRestoreStaging.bulkPut(rollbackImage.chatRestoreStaging);
-            await db.playbackState.bulkPut(rollbackImage.playbackState);
+            if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
           },
         );
-      const { restoreChatSessionsFromBackup } = await import('./chat-storage');
-      await restoreChatSessionsFromBackup(restoredChatStageIds, restoreRows, {
-        ...chatOptions,
-        globalLockHeld: true,
-        rollbackLegacyRows: rollbackRows,
-      });
-    } else {
-      await restoreRows();
+      if (data.chatSessions !== undefined) {
+        // RuntimeStore cannot join Dexie's transaction. Keep a rollback image
+        // until durable restore markers have been created for every affected
+        // runtime partition; marker creation failure must not commit half an
+        // imported backup.
+        const rollbackImage = await db.transaction(
+          'r',
+          [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
+          async () => ({
+            chatSessions: (
+              await Promise.all(
+                restoredChatStageIds.map((stageId) =>
+                  db.chatSessions.where('stageId').equals(stageId).toArray(),
+                ),
+              )
+            ).flat(),
+            chatRestoreStaging: (
+              await Promise.all(
+                restoredChatStageIds.map((stageId) =>
+                  db.chatRestoreStaging.where('stageId').equals(stageId).toArray(),
+                ),
+              )
+            ).flat(),
+            playbackState: (
+              await db.playbackState.bulkGet(
+                (data.playbackState ?? []).map((playback) => playback.stageId),
+              )
+            ).filter((playback): playback is PlaybackStateRecord => playback !== undefined),
+          }),
+        );
+        const rollbackRows = () =>
+          db.transaction(
+            'rw',
+            [db.stages, db.scenes, db.chatSessions, db.chatRestoreStaging, db.playbackState],
+            async () => {
+              for (const stageId of restoredChatStageIds) {
+                await db.chatSessions.where('stageId').equals(stageId).delete();
+                await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+              }
+              await db.playbackState.bulkDelete(
+                (data.playbackState ?? []).map((playback) => playback.stageId),
+              );
+              await db.chatSessions.bulkPut(rollbackImage.chatSessions);
+              await db.chatRestoreStaging.bulkPut(rollbackImage.chatRestoreStaging);
+              await db.playbackState.bulkPut(rollbackImage.playbackState);
+            },
+          );
+        const { restoreChatSessionsFromBackup } = await import('./chat-storage');
+        await restoreChatSessionsFromBackup(restoredChatStageIds, restoreRows, {
+          ...chatOptions,
+          globalLockHeld: true,
+          rollbackLegacyRows: rollbackRows,
+        });
+      } else {
+        await restoreRows();
+      }
+      log.info('Database imported successfully');
+    });
+  } catch (error) {
+    for (const { key, preImage } of importedCurrentScenes.reverse()) {
+      try {
+        if (preImage === null) await kv.remove(key, 'device');
+        else await kv.set(key, preImage, 'device');
+      } catch (rollbackError) {
+        log.error(`Failed to roll back imported current-scene key ${key}:`, rollbackError);
+      }
     }
-    log.info('Database imported successfully');
-  });
+    for (const { id, preImage } of importedDocuments.reverse()) {
+      try {
+        await mutateDocument(id, async (_document, store) => {
+          if (preImage) await store.saveDocument(preImage);
+          else await store.deleteDocument(id);
+        });
+      } catch (rollbackError) {
+        log.error(`Failed to roll back imported document ${id}:`, rollbackError);
+      }
+    }
+    throw error;
+  }
 }
 
 // ==================== Convenience Query Functions ====================
@@ -699,48 +820,62 @@ export async function importDatabase(
 /**
  * Get all scenes for a course
  */
-export async function getScenesByStageId(stageId: string): Promise<SceneRecord[]> {
-  return db.scenes.where('stageId').equals(stageId).sortBy('order');
+export async function getScenesByStageId(stageId: string): Promise<Scene[]> {
+  const { accessDocument } = await import('@/lib/document-store');
+  return (await accessDocument(stageId)).document?.scenes ?? [];
 }
 
 /**
  * Delete a course and all its related data
+ *
+ * @deprecated No production caller remains. `deleteStageData` is the primary
+ * stage-deletion path; this compatibility helper retains its broader author-side cascade.
  */
 export async function deleteStageWithRelatedData(stageId: string): Promise<void> {
-  await withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
-    await db.transaction(
-      'rw',
-      [
-        db.stages,
-        db.scenes,
-        db.chatSessions,
-        db.chatRestoreStaging,
-        db.playbackState,
-        db.stageOutlines,
-        db.mediaFiles,
-        db.generatedAgents,
-        db.agentEditSessions,
-      ],
-      async () => {
-        await db.stages.delete(stageId);
-        await db.scenes.where('stageId').equals(stageId).delete();
-        await db.chatSessions.where('stageId').equals(stageId).delete();
-        await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
-        await db.playbackState.delete(stageId);
-        await db.stageOutlines.delete(stageId);
-        await db.mediaFiles.where('stageId').equals(stageId).delete();
-        await db.generatedAgents.where('stageId').equals(stageId).delete();
-        await db.agentEditSessions.where('stageId').equals(stageId).delete();
-      },
-    );
-    // Learner-runtime data lives in a separate IndexedDB database, so it is
-    // cascaded after the Dexie transaction: it cannot join it, and a runtime
-    // failure must not abort it (the helper warns instead of throwing).
-    const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
-    await runtimeDeletion.completion;
-    releaseCaller(undefined);
-    await runtimeDeletion.settlement;
-  });
+  const { mutateDocument } = await import('@/lib/document-store');
+  // storageSharedLockHeld: the cascade holds the EXCLUSIVE epoch, which
+  // subsumes shared — the generation-guarded store must not re-acquire shared
+  // inside it (self-deadlock against our own exclusive hold).
+  await mutateDocument(
+    stageId,
+    async (_document, store) =>
+      withRuntimeStorageExclusiveLockUntilSettled(async (releaseCaller) => {
+        await store.deleteDocument(stageId);
+        await db.transaction(
+          'rw',
+          [
+            db.stages,
+            db.scenes,
+            db.chatSessions,
+            db.chatRestoreStaging,
+            db.playbackState,
+            db.stageOutlines,
+            db.mediaFiles,
+            db.generatedAgents,
+            db.agentEditSessions,
+          ],
+          async () => {
+            await db.stages.delete(stageId);
+            await db.scenes.where('stageId').equals(stageId).delete();
+            await db.chatSessions.where('stageId').equals(stageId).delete();
+            await db.chatRestoreStaging.where('stageId').equals(stageId).delete();
+            await db.playbackState.delete(stageId);
+            await db.stageOutlines.delete(stageId);
+            await db.mediaFiles.where('stageId').equals(stageId).delete();
+            await db.generatedAgents.where('stageId').equals(stageId).delete();
+            await db.agentEditSessions.where('stageId').equals(stageId).delete();
+          },
+        );
+        // Learner-runtime data lives in a separate IndexedDB database, so it is
+        // cascaded after the Dexie transaction: it cannot join it, and a runtime
+        // failure must not abort it (the helper warns instead of throwing).
+        const runtimeDeletion = beginStageRuntimeDeletionSafely(stageId);
+        await runtimeDeletion.completion;
+        releaseCaller(undefined);
+        await runtimeDeletion.settlement;
+      }),
+    { storageSharedLockHeld: true },
+  );
 }
 
 /**
@@ -756,9 +891,13 @@ export async function getGeneratedAgentsByStageId(
  * Get database statistics
  */
 export async function getDatabaseStats() {
+  const { getDocumentStore } = await import('@/lib/document-store');
+  const documents = await getDocumentStore().listDocuments();
   return {
-    stages: await db.stages.count(),
-    scenes: await db.scenes.count(),
+    documents: documents.length,
+    documentScenes: documents.reduce((total, document) => total + document.sceneCount, 0),
+    legacyStages: await db.stages.count(),
+    legacyScenes: await db.scenes.count(),
     audioFiles: await db.audioFiles.count(),
     imageFiles: await db.imageFiles.count(),
     snapshots: await db.snapshots.count(),

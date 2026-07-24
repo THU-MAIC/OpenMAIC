@@ -239,6 +239,7 @@ describe('reference HTTP handler principal capabilities', () => {
       authorizeAdmin: async () => true,
       authorizeMerge: async () => true,
       payloadValidators: {},
+      maxBodyBytes: 64,
     });
     const handler = server.listeners('request')[0] as RequestListener;
 
@@ -249,6 +250,15 @@ describe('reference HTTP handler principal capabilities', () => {
     );
     expect(response.status).toBe(204);
     expect(statements).toContain('DELETE FROM runtime_sessions');
+
+    const oversized = await handlerFetch(handler, async () => 'Bearer capability-only')(
+      `${BASE_URL}/runtime/learners/merge`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ padding: 'x'.repeat(100) }),
+      },
+    );
+    expect(oversized.status).toBe(413);
   });
 
   test('returns 403 FORBIDDEN_LEARNER on learner routes without learnerKey', async () => {
@@ -267,6 +277,30 @@ describe('reference HTTP handler principal capabilities', () => {
 });
 
 describe('reference HTTP handler validation boundary', () => {
+  test('rejects an oversized request body with 413 and accepts an under-limit body', async () => {
+    const store = new BrowserRuntimeStore({ indexedDB: new IDBFactory() });
+    const handler = createRuntimeHttpHandler(store, {
+      authenticate: async () => ({ learnerKey: 'anon:device-1' }),
+      maxBodyBytes: 256,
+    });
+    const request = handlerFetch(handler, async () => 'Bearer anon:device-1');
+
+    const oversized = await request(`${BASE_URL}/runtime/sessions`, {
+      method: 'POST',
+      body: JSON.stringify({ padding: 'x'.repeat(300) }),
+    });
+    expect(oversized.status).toBe(413);
+    await expect(oversized.json()).resolves.toMatchObject({
+      error: { code: 'PAYLOAD_TOO_LARGE' },
+    });
+
+    const accepted = await request(`${BASE_URL}/runtime/sessions`, {
+      method: 'POST',
+      body: JSON.stringify(makeSession({ id: 'under-limit' })),
+    });
+    expect(accepted.status).toBe(201);
+  });
+
   test.each([
     ['session id with NUL', makeSession({ id: 'bad\u0000session' })],
     ['session stageId with a lone surrogate', makeSession({ stageId: 'bad\ud800stage' })],
