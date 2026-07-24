@@ -35,6 +35,8 @@ import {
   withRuntimeStorageExclusiveLockUntilSettled,
   withRuntimeStorageSharedLock,
 } from './chat-storage-lock';
+import { DocumentVersionError } from '@openmaic/storage';
+import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 
 const log = createLogger('StageStorage');
 
@@ -48,6 +50,19 @@ export interface StageStoreData {
   outline?: AppDocumentOutline;
 }
 
+/**
+ * A logical editor change waiting for persistence. Call sites intentionally
+ * describe what changed, not how it is stored, so a future operation-log
+ * backend can replace the flush implementation without changing mutations.
+ */
+export type PendingChange =
+  | { kind: 'scene'; sceneId: string }
+  | { kind: 'structure' }
+  | { kind: 'stage' }
+  | { kind: 'outline' }
+  | { kind: 'currentScene' }
+  | { kind: 'chats' };
+
 export interface StageListItem {
   id: string;
   name: string;
@@ -59,12 +74,77 @@ export interface StageListItem {
   taskEngineMode?: boolean;
 }
 
+function stampStage(stageId: string, stage: Stage, now: number): Stage {
+  return {
+    ...stage,
+    id: stageId,
+    name: stage.name || 'Untitled Stage',
+    createdAt: stage.createdAt || now,
+    updatedAt: now,
+  };
+}
+
+function stampScene(stageId: string, scene: Scene, index: number, now: number): Scene {
+  return {
+    ...scene,
+    stageId,
+    order: scene.order ?? index,
+    createdAt: scene.createdAt || now,
+    updatedAt: scene.updatedAt || now,
+  };
+}
+
+function documentSnapshot(
+  stageId: string,
+  data: StageStoreData,
+  existingOutline: AppDocumentOutline | undefined,
+  now: number,
+) {
+  const outline = data.outline ??
+    existingOutline ?? {
+      outlines: [],
+      createdAt: now,
+      updatedAt: now,
+    };
+  return {
+    stage: stampStage(stageId, data.stage, now),
+    scenes: data.scenes.map((scene, index) => stampScene(stageId, scene, index, now)),
+    outline: {
+      ...outline,
+      createdAt: existingOutline?.createdAt ?? outline.createdAt,
+    },
+  };
+}
+
+async function saveStageChats(
+  stageId: string,
+  data: StageStoreData,
+  globalLockHeld = false,
+): Promise<boolean> {
+  try {
+    await saveChatSessions(stageId, data.chats, {
+      ...(globalLockHeld ? { globalLockHeld: true } : {}),
+      snapshot: data.chatSnapshot,
+    });
+    return true;
+  } catch (error) {
+    const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
+    if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot) throw error;
+    log.warn(`Chat sessions failed to save for stage ${stageId}:`, error);
+    return false;
+  }
+}
+
 /**
  * Save stage data to IndexedDB
  */
-export async function saveStageData(stageId: string, data: StageStoreData): Promise<void> {
+export async function saveStageData(
+  stageId: string,
+  data: StageStoreData,
+): Promise<{ failedChanges: PendingChange[] } | undefined> {
   try {
     const now = Date.now();
+    const failedChanges: PendingChange[] = [];
     await mutateDocument(
       stageId,
       async (existing, store) => {
@@ -73,57 +153,121 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
         // document lock while already occupying the shared epoch.
         await withRuntimeStorageSharedLock(async () => {
           const existingOutline = existing?.outline as AppDocumentOutline | undefined;
-          const outline = data.outline ??
-            existingOutline ?? {
-              outlines: [],
-              createdAt: now,
-              updatedAt: now,
-            };
-          await store.saveDocument({
-            stage: {
-              ...data.stage,
-              id: stageId,
-              name: data.stage.name || 'Untitled Stage',
-              createdAt: data.stage.createdAt || now,
-              updatedAt: now,
-            },
-            scenes: data.scenes.map((scene, index) => ({
-              ...scene,
-              stageId,
-              order: scene.order ?? index,
-              createdAt: scene.createdAt || now,
-              updatedAt: scene.updatedAt || now,
-            })),
-            outline: {
-              ...outline,
-              createdAt: existingOutline?.createdAt ?? outline.createdAt,
-            },
-          });
+          await store.saveDocument(documentSnapshot(stageId, data, existingOutline, now));
           await saveCurrentScene(stageId, data.currentSceneId);
 
           // Chat sessions live in the learner RuntimeStore, outside the document DB.
-          if (data.chats) {
-            try {
-              await saveChatSessions(stageId, data.chats, {
-                globalLockHeld: true,
-                snapshot: data.chatSnapshot,
-              });
-            } catch (error) {
-              const unchangedSnapshot = isEqual(data.chatSnapshot?.sessions ?? [], data.chats);
-              if (error instanceof ChatStorageLockUnavailableError && !unchangedSnapshot)
-                throw error;
-              log.warn(`Document saved but chat sessions failed for stage ${stageId}:`, error);
-            }
+          if (data.chats && !(await saveStageChats(stageId, data, true))) {
+            failedChanges.push({ kind: 'chats' });
           }
         });
       },
       { storageSharedLockHeld: true },
     );
     log.info(`Saved stage: ${stageId}`);
+    return failedChanges.length > 0 ? { failedChanges } : undefined;
   } catch (error) {
     log.error('Failed to save stage:', error);
     throw error;
   }
+}
+
+/**
+ * Persist only the logical units dirtied by the editor. Structural and outline
+ * changes still use the aggregate contract: structure must reconcile scene
+ * membership/order, while DocumentStore does not yet expose putOutline.
+ */
+export async function saveStageDataIncremental(
+  stageId: string,
+  dirty: readonly PendingChange[],
+  data: StageStoreData,
+): Promise<{ failedChanges: PendingChange[] }> {
+  const has = (kind: PendingChange['kind']) => dirty.some((change) => change.kind === kind);
+  const dirtySceneIds = new Set(
+    dirty.flatMap((change) => (change.kind === 'scene' ? [change.sceneId] : [])),
+  );
+  const needsDocumentWrite =
+    dirtySceneIds.size > 0 || has('structure') || has('stage') || has('outline');
+  const documentCategories = new Set(
+    dirty.flatMap((change) =>
+      change.kind === 'scene' ||
+      change.kind === 'structure' ||
+      change.kind === 'stage' ||
+      change.kind === 'outline'
+        ? [change.kind]
+        : [],
+    ),
+  );
+
+  if (needsDocumentWrite) {
+    await mutateDocument(
+      stageId,
+      async (existing, store) => {
+        await withRuntimeStorageSharedLock(async () => {
+          const now = Date.now();
+          const fullSave = async () => {
+            const persistedScenes = await preparePBLScenesForDocumentPersistence(
+              stageId,
+              data.scenes,
+            );
+            await store.saveDocument(
+              documentSnapshot(
+                stageId,
+                { ...data, scenes: persistedScenes },
+                existing?.outline as AppDocumentOutline | undefined,
+                now,
+              ),
+            );
+          };
+
+          // The incremental fast path is deliberately homogeneous. Combining
+          // scene and stage writes would span separate requests/transactions,
+          // exposing a torn document to concurrent readers. Structure and
+          // outline already require the aggregate contract, and any batch with
+          // more than one document category follows that same atomic path.
+          if (!existing || has('structure') || has('outline') || documentCategories.size > 1) {
+            await fullSave();
+            return;
+          }
+
+          try {
+            if (dirtySceneIds.size > 0) {
+              const dirtyScenes = data.scenes.filter((scene) => dirtySceneIds.has(scene.id));
+              // Preparation synchronizes and strips each PBL scene independently;
+              // it has no sibling-scene dependency, so the hot path stays local.
+              const persistedScenes = await preparePBLScenesForDocumentPersistence(
+                stageId,
+                dirtyScenes,
+              );
+              for (const scene of persistedScenes) {
+                const index = data.scenes.findIndex((candidate) => candidate.id === scene.id);
+                await store.putScene(stageId, stampScene(stageId, scene, index, now));
+              }
+            }
+            if (has('stage')) {
+              await store.putStage(stageId, stampStage(stageId, data.stage, now));
+            }
+          } catch (error) {
+            // Incremental APIs reject pre-versioned destinations. The aggregate
+            // save migrates/stamps the whole document coherently.
+            if (error instanceof DocumentVersionError && error.kind === 'not-current') {
+              await fullSave();
+              return;
+            }
+            throw error;
+          }
+        });
+      },
+      { storageSharedLockHeld: true },
+    );
+  }
+
+  if (has('currentScene')) await saveCurrentScene(stageId, data.currentSceneId);
+  const failedChanges: PendingChange[] = [];
+  if (has('chats') && !(await saveStageChats(stageId, data))) {
+    failedChanges.push({ kind: 'chats' });
+  }
+  return { failedChanges };
 }
 
 /**
@@ -157,11 +301,18 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 
     log.info(`Loaded stage: ${stageId}, scenes: ${document.scenes.length}, chats: ${chats.length}`);
 
+    // Deliberate defense-in-depth: persisted cursors can outlive scene deletion
+    // or come from legacy storage, so never expose one absent from the document.
+    const storedCursor = currentScene?.sceneId ?? access.legacyCurrentSceneId;
+    const currentSceneId =
+      storedCursor && document.scenes.some((scene) => scene.id === storedCursor)
+        ? storedCursor
+        : (document.scenes[0]?.id ?? null);
+
     return {
       stage: document.stage,
       scenes: document.scenes,
-      currentSceneId:
-        currentScene?.sceneId ?? access.legacyCurrentSceneId ?? document.scenes[0]?.id ?? null,
+      currentSceneId,
       chats,
       chatSnapshot,
       outline: document.outline as AppDocumentOutline | undefined,

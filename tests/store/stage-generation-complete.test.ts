@@ -26,6 +26,7 @@ vi.mock('@/lib/utils/stage-storage', () => ({
     const data = args[1] as { outline?: unknown };
     if (data.outline) await stageOutlinesPut(data.outline);
   },
+  saveStageDataIncremental: vi.fn().mockResolvedValue(undefined),
   loadStageData: async (...args: unknown[]) => {
     const data = await loadStageDataMock(...args);
     if (!data) return data;
