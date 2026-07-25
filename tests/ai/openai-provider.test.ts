@@ -272,6 +272,11 @@ describe('OpenAI provider defaults', () => {
             },
             finish_reason: 'stop',
           },
+          {
+            index: 1,
+            delta: { content: 'ignored secondary choice' },
+            finish_reason: 'length',
+          },
         ],
         usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
       },

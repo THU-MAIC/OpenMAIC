@@ -1605,6 +1605,7 @@ async function fetchCustomOpenAIChat(
       for (const rawChoice of choices) {
         if (!rawChoice || typeof rawChoice !== 'object') continue;
         const choice = rawChoice as Record<string, unknown>;
+        if (typeof choice.index === 'number' && choice.index !== 0) continue;
         if (choice.finish_reason) finishReason = choice.finish_reason;
         if (!choice.delta || typeof choice.delta !== 'object') continue;
         const delta = choice.delta as Record<string, unknown>;
