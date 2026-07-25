@@ -204,14 +204,18 @@ describe('OpenAI provider defaults', () => {
     expect(openAiMock.responses).not.toHaveBeenCalled();
   });
 
-  it('does not enable compatibility for the official OpenAI base URL', () => {
+  it.each([
+    'https://api.openai.com/v1/',
+    ' https://API.openai.com/v1 ',
+    'https://api.openai.com/v1?api-version=latest',
+  ])('does not enable compatibility for the official OpenAI base URL: %s', (baseUrl) => {
     vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
 
     getModel({
       providerId: 'openai',
       modelId: 'gpt-5.6-sol',
       apiKey: 'sk-test',
-      baseUrl: 'https://api.openai.com/v1/',
+      baseUrl,
     });
 
     const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
@@ -325,6 +329,51 @@ describe('OpenAI provider defaults', () => {
       expect(body.usage.total_tokens).toBe(12);
       expect(response?.headers.get('content-type')).toBe('application/json');
       expect(response?.headers.get('content-length')).toBeNull();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it('buffers SSE after preamble fields and preserves a missing finish reason', async () => {
+    vi.stubEnv('OPENAI_COMPAT_USE_STREAMING_CHAT', 'true');
+    const originalFetch = globalThis.fetch;
+    const chunk = {
+      id: 'chatcmpl_preamble',
+      object: 'chat.completion.chunk',
+      created: 123,
+      model: 'gpt-5.6-sol',
+      choices: [{ index: 0, delta: { role: 'assistant', content: 'ok' } }],
+    };
+    const fetchMock = vi.fn(async () => {
+      const body = `: ping\n\nevent: message\ndata: ${JSON.stringify(chunk)}\n\ndata: [DONE]\n\n`;
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+
+    try {
+      globalThis.fetch = fetchMock as typeof fetch;
+      getModel({
+        providerId: 'openai',
+        modelId: 'gpt-5.6-sol',
+        apiKey: 'sk-test',
+        baseUrl: 'https://relay.example/v1',
+      });
+
+      const options = openAiMock.createOpenAI.mock.calls.at(-1)?.[0] as
+        | { fetch?: typeof fetch }
+        | undefined;
+      const response = await options?.fetch?.('https://relay.example/v1/chat/completions', {
+        method: 'POST',
+        body: JSON.stringify({ model: 'gpt-5.6-sol', messages: [], stream: false }),
+      });
+      const body = await response?.json();
+
+      expect(body.choices[0]).toMatchObject({
+        message: { role: 'assistant', content: 'ok' },
+        finish_reason: null,
+      });
     } finally {
       globalThis.fetch = originalFetch;
     }

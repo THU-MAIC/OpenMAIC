@@ -1492,7 +1492,16 @@ function shouldUseOpenAIResponsesApi(providerId: ProviderId, modelId: string): b
 
 function usesCustomOpenAIBaseUrl(baseUrl?: string): boolean {
   if (!baseUrl) return false;
-  return baseUrl.replace(/\/+$/, '') !== 'https://api.openai.com/v1';
+  const trimmed = baseUrl.trim();
+  if (!trimmed) return false;
+
+  try {
+    const url = new URL(trimmed);
+    const pathname = url.pathname.replace(/\/+$/, '');
+    return url.origin !== 'https://api.openai.com' || pathname !== '/v1';
+  } catch {
+    return true;
+  }
 }
 
 function shouldUseOpenAIStreamingChatCompat(providerId: ProviderId, baseUrl?: string): boolean {
@@ -1557,7 +1566,8 @@ async function fetchCustomOpenAIChat(
   if (!response.ok) return response;
 
   const rawStream = await response.text();
-  if (!rawStream.trimStart().startsWith('data:')) {
+  const streamLines = rawStream.split(/\r?\n/);
+  if (!streamLines.some((line) => line.startsWith('data:'))) {
     const headers = new Headers(response.headers);
     headers.delete('content-length');
     headers.delete('content-encoding');
@@ -1572,14 +1582,14 @@ async function fetchCustomOpenAIChat(
   let created = 0;
   let model = typeof requestBody.model === 'string' ? requestBody.model : '';
   let content = '';
-  let finishReason: unknown = 'stop';
+  let finishReason: unknown = null;
   let usage: unknown;
   const toolCalls = new Map<
     number,
     { id: string; type: string; function: { name: string; arguments: string } }
   >();
 
-  for (const line of rawStream.split(/\r?\n/)) {
+  for (const line of streamLines) {
     if (!line.startsWith('data:')) continue;
     const data = line.slice(5).trim();
     if (!data || data === '[DONE]') continue;
