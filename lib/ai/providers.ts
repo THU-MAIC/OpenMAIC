@@ -1539,12 +1539,19 @@ async function fetchCustomOpenAIChat(
 
   if (requestBody.stream === true) return globalThis.fetch(input, init);
 
+  const streamOptions =
+    requestBody.stream_options &&
+    typeof requestBody.stream_options === 'object' &&
+    !Array.isArray(requestBody.stream_options)
+      ? (requestBody.stream_options as Record<string, unknown>)
+      : {};
+
   const response = await globalThis.fetch(input, {
     ...init,
     body: JSON.stringify({
       ...requestBody,
       stream: true,
-      stream_options: { include_usage: true },
+      stream_options: { ...streamOptions, include_usage: true },
     }),
   });
   if (!response.ok) return response;
@@ -1607,7 +1614,7 @@ async function fetchCustomOpenAIChat(
           if (typeof toolCall.type === 'string') current.type = toolCall.type;
           if (toolCall.function && typeof toolCall.function === 'object') {
             const fn = toolCall.function as Record<string, unknown>;
-            if (typeof fn.name === 'string') current.function.name += fn.name;
+            if (typeof fn.name === 'string' && fn.name) current.function.name = fn.name;
             if (typeof fn.arguments === 'string') current.function.arguments += fn.arguments;
           }
           toolCalls.set(index, current);

@@ -231,14 +231,44 @@ describe('OpenAI provider defaults', () => {
         object: 'chat.completion.chunk',
         created: 123,
         model: 'gpt-5.6-sol',
-        choices: [{ index: 0, delta: { role: 'assistant', content: '{"elements":' } }],
+        choices: [
+          {
+            index: 0,
+            delta: {
+              role: 'assistant',
+              content: '{"elements":',
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_test',
+                  type: 'function',
+                  function: { name: 'buildSlide', arguments: '{"title":' },
+                },
+              ],
+            },
+          },
+        ],
       },
       {
         id: 'chatcmpl_test',
         object: 'chat.completion.chunk',
         created: 123,
         model: 'gpt-5.6-sol',
-        choices: [{ index: 0, delta: { content: '[]}' }, finish_reason: 'stop' }],
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: '[]}',
+              tool_calls: [
+                {
+                  index: 0,
+                  function: { name: 'buildSlide', arguments: '"Demo"}' },
+                },
+              ],
+            },
+            finish_reason: 'stop',
+          },
+        ],
         usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
       },
     ];
@@ -264,14 +294,32 @@ describe('OpenAI provider defaults', () => {
       const options = lastCall?.[0] as { fetch?: typeof fetch } | undefined;
       const response = await options?.fetch?.('https://relay.example/v1/chat/completions', {
         method: 'POST',
-        body: JSON.stringify({ model: 'gpt-5.6-sol', messages: [], stream: false }),
+        body: JSON.stringify({
+          model: 'gpt-5.6-sol',
+          messages: [],
+          stream: false,
+          stream_options: { include_usage: false, relay_option: 'preserve' },
+        }),
       });
       const request = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string);
       const body = await response?.json();
 
-      expect(request).toMatchObject({ stream: true, stream_options: { include_usage: true } });
+      expect(request).toMatchObject({
+        stream: true,
+        stream_options: { include_usage: true, relay_option: 'preserve' },
+      });
       expect(body.choices[0]).toMatchObject({
-        message: { role: 'assistant', content: '{"elements":[]}' },
+        message: {
+          role: 'assistant',
+          content: '{"elements":[]}',
+          tool_calls: [
+            {
+              id: 'call_test',
+              type: 'function',
+              function: { name: 'buildSlide', arguments: '{"title":"Demo"}' },
+            },
+          ],
+        },
         finish_reason: 'stop',
       });
       expect(body.usage.total_tokens).toBe(12);
