@@ -47,4 +47,12 @@ describe('legacy stage listing', () => {
     await expect(listStages()).resolves.toEqual([]);
     expect(readLegacyStage).toHaveBeenCalledExactlyOnceWith('ghost-stage');
   });
+
+  it('surfaces document backend failures instead of presenting an empty list', async () => {
+    const unavailable = new Error('persistence unavailable');
+    listDocuments.mockRejectedValueOnce(unavailable);
+
+    await expect(listStages()).rejects.toBe(unavailable);
+    expect(listLegacyStages).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,13 @@
 services:
   openmaic:
-    build: .
+    build:
+      context: .
+      args:
+        # NEXT_PUBLIC_* values are compiled into the browser bundle. Leave both
+        # empty for today's browser-only persistence; the persistence quickstart
+        # in README supplies them on the compose command line.
+        - NEXT_PUBLIC_PERSISTENCE=${NEXT_PUBLIC_PERSISTENCE:-}
+        - NEXT_PUBLIC_PERSISTENCE_TOKEN=${NEXT_PUBLIC_PERSISTENCE_TOKEN:-}
     ports:
       - "3000:3000"
     env_file:
@@ -20,6 +27,29 @@ services:
       # Optional: mount server-providers.yml for provider config
       # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
+    restart: unless-stopped
+
+  # Optional PostgreSQL backing for the app-embedded persistence API.
+  # The app reads DATABASE_URL and PERSISTENCE_DEV_TOKEN from .env.local; keeping
+  # those values there avoids changing the default browser-only deployment.
+  postgres:
+    image: postgres:16
+    profiles:
+      - server-persistence
+    environment:
+      - POSTGRES_DB=openmaic
+      - POSTGRES_USER=openmaic
+      # Development default only. Override this and the matching DATABASE_URL
+      # before using the stack outside a local trusted environment.
+      - POSTGRES_PASSWORD=${PERSISTENCE_POSTGRES_PASSWORD:-openmaic-dev}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openmaic -d openmaic"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+    volumes:
+      - openmaic-postgres:/var/lib/postgresql/data
     restart: unless-stopped
 
   # Isolated MP4 render service (Node 22 + Chromium + FFmpeg) for classroom video
@@ -76,3 +106,4 @@ networks:
 
 volumes:
   openmaic-data:
+  openmaic-postgres:

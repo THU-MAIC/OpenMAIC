@@ -1,3 +1,5 @@
+import '@/lib/persistence/bootstrap';
+
 /**
  * Lazy app-wide RuntimeStore singleton (#869). One `maic-runtime` IndexedDB
  * per origin, shared by every runtime kind (pbl, chat, quizAttempt, playback)
