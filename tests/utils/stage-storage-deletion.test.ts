@@ -643,6 +643,88 @@ describe('deleteStageData wiring', () => {
     expect(mutateDocument).toHaveBeenCalledTimes(2);
   });
 
+  it('re-runs a fresh cascade for a joined delete when a same-id restore lands during the first cascade', async () => {
+    // The join is keyed on stage id, not document generation. When a restore
+    // recreates the document mid-cascade, the first cascade's success
+    // describes the PRE-restore document — a joined caller told "deleted"
+    // would watch the restored stage survive. The joined intent must run a
+    // fresh cascade against the restored document instead.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mutateDocument.mockImplementationOnce(
+      async (
+        _id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        await gate;
+        return callback(undefined, fakeStore);
+      },
+    );
+
+    const first = deleteStageData(stageId);
+    const second = deleteStageData(stageId);
+    await vi.waitFor(() => expect(mutateDocument).toHaveBeenCalledOnce());
+
+    // A server restore recreates the document and lifts the flag mid-cascade.
+    unmarkStageDeleted(stageId);
+    release();
+    await first;
+    await second;
+
+    // The joined caller ran (and reported) a second, full cascade.
+    expect(mutateDocument).toHaveBeenCalledTimes(2);
+    expect(fakeStore.deleteDocument).toHaveBeenCalledTimes(2);
+    expect(snapshotPendingStageChangesForDeletion).toHaveBeenCalledTimes(2);
+    expect(isStageDeleted(stageId)).toBe(true);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+  });
+
+  it('re-checks a joined delete exactly once: a restore during the re-run is reported as-is', async () => {
+    // The re-run must not recurse: a restore landing inside the re-run's own
+    // window is reported truthfully (stage no longer marked deleted) instead
+    // of spawning a third cascade — any later delete is a NEW call with its
+    // own single re-check, so repeated restore/delete races converge there.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mutateDocument
+      .mockImplementationOnce(
+        async (
+          _id: string,
+          callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+        ) => {
+          await gate;
+          return callback(undefined, fakeStore);
+        },
+      )
+      .mockImplementationOnce(
+        async (
+          id: string,
+          callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+        ) => {
+          // A second restore lands inside the re-run cascade's window.
+          unmarkStageDeleted(id);
+          return callback(undefined, fakeStore);
+        },
+      );
+
+    const first = deleteStageData(stageId);
+    const second = deleteStageData(stageId);
+    await vi.waitFor(() => expect(mutateDocument).toHaveBeenCalledOnce());
+    // The first restore triggers the joined caller's single re-run.
+    unmarkStageDeleted(stageId);
+    release();
+    await first;
+    await second;
+
+    expect(mutateDocument).toHaveBeenCalledTimes(2); // no third cascade
+    expect(isStageDeleted(stageId)).toBe(false); // the second restore stands
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+  });
+
   it('joined concurrent deletions share the first cascade failure', async () => {
     fakeStore.deleteDocument.mockRejectedValueOnce(new Error('locked'));
     let release!: () => void;

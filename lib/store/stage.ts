@@ -371,8 +371,12 @@ async function persistDirtySnapshot(
     capturedEpoch,
   );
   // A stale drop persisted nothing, and also leaves nothing to retry: the
-  // deletion path owns the discard (and, on a failed delete, the restore) of
-  // this stage's pending dirt. The status is PROPAGATED, not folded into an
+  // fence is permanent for this capture (the deletion epoch outlives any
+  // restore). What a failed delete restores is scoped to what the deletion
+  // path snapshotted — the pending map plus an in-flight flush round's dirt;
+  // a departing-stage snapshot is outside that capture and is dropped by
+  // design (navigation is not a durability barrier — see setStage).
+  // The status is PROPAGATED, not folded into an
   // empty failure set, because callers must be able to tell "verified write"
   // from "fenced drop": success bookkeeping (the chatSnapshot rebind in
   // startFlushRound) after a drop would bind the baseline to chats that never
@@ -432,9 +436,14 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
               departingSnapshot,
               departingEpoch,
             );
-            // A fenced drop has nothing to retry and nothing to report as
-            // failed: the deletion path owns the discard (and, on a failed
-            // delete, the restore) of this stage's dirt.
+            // A fenced drop has nothing to retry: the deletion epoch outlives
+            // any restore, so the retry would be dropped identically. This
+            // departing snapshot is NOT covered by the deletion path's
+            // failed-delete restore (that restore is scoped to the pending
+            // map and an in-flight flush round, which this dirt already
+            // left) — on a failed delete it is fenced and dropped, an
+            // accepted consequence of navigation not being a durability
+            // barrier.
             if (result === 'stale-dropped') return;
             lastFailedKeys = result;
             if (lastFailedKeys.size === 0) return;
@@ -826,8 +835,20 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
             // The deletion failed before removing the document and lifted the
             // flag: the warm state IS the live classroom again (the failure
             // path re-queued the discarded dirt before settling) — keep it.
-            log.info('Deletion failed; keeping warm stage state:', stageId);
-            return;
+            // Mirror of the success-path identity guard below: a tokenless
+            // store writer (applyClassroomStageAndScenes via a database
+            // import) can replace the stage during the park without claiming
+            // the load token, and then there is no warm state of THIS stage
+            // left to keep — fall through to the cold load instead of
+            // reporting a classroom the store no longer holds as live.
+            if (get().stage?.id === stageId) {
+              log.info('Deletion failed; keeping warm stage state:', stageId);
+              return;
+            }
+            log.info(
+              'Deletion failed but the store no longer holds the parked stage; reloading:',
+              stageId,
+            );
           }
           // Deletion succeeded: the settlement eviction has cleared the warm
           // ghost (it runs synchronously before this microtask resumes).
@@ -843,11 +864,15 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // silently dropped. Discard the ghost (without claiming a new load
         // token — the caller's token must stay current) and fall through to a
         // full load, which finds no local data and lets the server-restore
-        // path run and lift the deletion.
-        log.info('Warm stage is deleted; discarding ghost and reloading:', stageId);
-        if (get().stage?.id === stageId) {
-          resetPendingChanges();
-          set((s) => clearedStageState(s));
+        // path run and lift the deletion. (Skipped when a failed deletion
+        // lifted the flag above: the document still exists, so the cold load
+        // below simply re-reads it.)
+        if (isStageDeleted(stageId)) {
+          log.info('Warm stage is deleted; discarding ghost and reloading:', stageId);
+          if (get().stage?.id === stageId) {
+            resetPendingChanges();
+            set((s) => clearedStageState(s));
+          }
         }
       }
 

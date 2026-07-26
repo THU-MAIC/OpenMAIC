@@ -423,6 +423,60 @@ describe('runClassroomLoad', () => {
     }
   });
 
+  it('cold-loads after a failed delete when the store was replaced during the park (no false keep-warm)', async () => {
+    // Back parks on stage A's deletion settlement; while parked, a tokenless
+    // store writer (a database import applying another classroom through
+    // applyClassroomStageAndScenes) replaces the store contents WITHOUT
+    // claiming the load token. When the deletion then FAILS, there is no warm
+    // state of A left to keep — the keep-warm branch must re-verify store
+    // identity (mirroring the success path) and fall through to the cold
+    // load, instead of reporting the imported classroom as A's live state.
+    useStageStore.getState().clearStore();
+    vi.mocked(loadStageData).mockClear();
+    const localStage = makeStage('stage-park-replaced');
+    const localScene = makeScene('scene-p', 'stage-park-replaced');
+    applyClassroomStageAndScenes(localStage, [localScene], { persist: false });
+    markStageDeleted('stage-park-replaced');
+    beginStageDeletionCascade('stage-park-replaced');
+    try {
+      // The failed delete leaves A's document in place: the cold path re-reads it.
+      vi.mocked(loadStageData).mockResolvedValueOnce({
+        stage: localStage,
+        scenes: [localScene],
+        currentSceneId: localScene.id,
+        chats: [],
+      });
+      const token = claimStageSceneLoadToken();
+      const loading = useStageStore.getState().loadFromStorage('stage-park-replaced', token);
+      await Promise.resolve();
+      await Promise.resolve();
+      // Parked: no IndexedDB read yet.
+      expect(loadStageData).not.toHaveBeenCalled();
+
+      // An import applies ANOTHER stage mid-park, leaving the token untouched.
+      applyClassroomStageAndScenes(
+        makeStage('stage-imported'),
+        [makeScene('scene-i', 'stage-imported')],
+        { persist: false },
+      );
+
+      // The deletion fails before removing the document: flag lifted, settled.
+      unmarkStageDeleted('stage-park-replaced');
+      settleStageDeletionCascade('stage-park-replaced');
+      await loading;
+
+      // Not a false keep-warm of the imported stage: the parked load fell
+      // through to the cold path and handed the route back to A.
+      expect(loadStageData).toHaveBeenCalledExactlyOnceWith('stage-park-replaced');
+      expect(useStageStore.getState().stage?.id).toBe('stage-park-replaced');
+      expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-p']);
+    } finally {
+      settleStageDeletionCascade('stage-park-replaced');
+      unmarkStageDeleted('stage-park-replaced');
+      useStageStore.getState().clearStore();
+    }
+  });
+
   it('does not evict a classroom restored (and unmarked) during the cascade tail', () => {
     // Cascade-tail race: deleteStageData succeeded, and before its synchronous
     // continuation ran the eviction, a same-id restore completed and unmarked

@@ -39,6 +39,7 @@ import { DocumentVersionError } from '@openmaic/storage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import {
   beginStageDeletionCascade,
+  isStageDeleted,
   isStageWriteStale,
   markStageDeleted,
   settleStageDeletionCascade,
@@ -461,8 +462,38 @@ const inFlightStageDeletions = new Map<string, Promise<void>>();
 /**
  * Delete stage and all related data. Single-flight per stage: concurrent
  * calls for the same id share one cascade (and its outcome).
+ *
+ * A joined call carries its own deletion intent, not just an interest in the
+ * first cascade's outcome. If a same-id restore (server copy, backup import)
+ * recreates the document while the first cascade runs, that cascade's success
+ * describes the PRE-restore document — reporting it as-is would tell the
+ * joined caller "deleted" while the restored document survives. So when the
+ * first cascade fulfills but the stage is no longer marked deleted at join
+ * resolution, one fresh cascade runs for the restored document and the joined
+ * caller reports THAT outcome. Exactly one re-check per call, not a loop: if
+ * yet another restore lands inside the re-run's own window, the re-run's
+ * outcome is returned as-is — every later delete is a new `deleteStageData`
+ * call with its own re-check, so repeated restore/delete races converge on
+ * fresh calls instead of recursing here. A REJECTED first cascade propagates
+ * unchanged to every joined caller even though failure also leaves the stage
+ * unmarked: failure already reports "nothing was deleted" truthfully (and the
+ * pending-dirt restore has run), and re-running would turn an error report
+ * into a hidden retry.
  */
 export function deleteStageData(stageId: string): Promise<void> {
+  const existing = inFlightStageDeletions.get(stageId);
+  if (!existing) return runSingleFlightStageDeletion(stageId);
+  return existing.then(() => {
+    if (isStageDeleted(stageId)) return;
+    // Restored mid-cascade: the joined intent targets the restored document.
+    // If several joined callers re-check in the same resolution turn, the
+    // first re-run's map entry is already visible to the rest, so they join
+    // it below rather than fanning out into parallel cascades.
+    return runSingleFlightStageDeletion(stageId);
+  });
+}
+
+function runSingleFlightStageDeletion(stageId: string): Promise<void> {
   const existing = inFlightStageDeletions.get(stageId);
   if (existing) return existing;
   const run = performStageDeletion(stageId).finally(() => {
