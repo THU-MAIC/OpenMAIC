@@ -57,9 +57,42 @@ export interface VideoManifestEntry {
 export type VideoManifest = Record<string, VideoManifestEntry>;
 
 /**
- * Server-generated agent configuration. Embedded in persisted classroom JSON
- * so clients can hydrate the agent registry without relying on IndexedDB
- * pre-population. Only present for API-generated classrooms.
+ * Provider-neutral vocal identity for an agent, described as a 3-layer recipe.
+ * Consumed by any TTS integration: as an inline voice prompt where supported,
+ * or as the seed for a registered/cloned voice. Part of the contract so an
+ * agent's voice travels with the document (export/import, device switches)
+ * instead of living in device-local storage.
+ */
+export interface VoiceDesign {
+  /** gender / age / role */
+  identity: string;
+  /** pitch / vocal quality */
+  texture: string;
+  /** emotion / pace */
+  delivery: string;
+}
+
+/**
+ * A concrete TTS voice binding for an agent. `providerId` is an open string at
+ * the contract level — the set of available TTS providers is app-defined.
+ */
+export interface AgentVoiceConfig {
+  providerId: string;
+  modelId?: string;
+  voiceId: string;
+}
+
+/**
+ * Generated agent configuration. Embedded in the persisted stage document
+ * (`stage.generatedAgentConfigs`) so clients can hydrate the agent registry
+ * without relying on IndexedDB pre-population. Present for generated-roster
+ * classrooms; preset classrooms carry `agentIds` instead.
+ *
+ * The voice fields are optional and additive: documents written before they
+ * existed simply lack them, and readers treat an absent voice as "no bound
+ * voice" (the TTS path falls back at call time). Adding them did not change
+ * the meaning of any existing field, so it is not a breaking change to the
+ * serialized shape and does not bump `DSL_VERSION` (see `version.ts`).
  */
 export interface GeneratedAgentConfig {
   id: string;
@@ -69,6 +102,10 @@ export interface GeneratedAgentConfig {
   avatar: string;
   color: string;
   priority: number;
+  /** Bound TTS voice, when the generation pipeline selected one. */
+  voiceConfig?: AgentVoiceConfig;
+  /** 3-layer vocal descriptor for automatic voice synthesis/registration. */
+  voiceDesign?: VoiceDesign;
 }
 
 /**

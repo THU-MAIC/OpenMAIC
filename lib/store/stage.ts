@@ -14,6 +14,8 @@ import type { ChatSession } from '@/lib/types/chat';
 import type { SceneOutline } from '@/lib/types/generation';
 import { createLogger } from '@/lib/logger';
 import { useCanvasStore } from '@/lib/store/canvas';
+import { useSettingsStore } from '@/lib/store/settings';
+import { applyGeneratedAgentsToRegistry } from '@/lib/orchestration/registry/store';
 import { migrateScene } from '@/lib/edit/slide-schema';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
@@ -87,6 +89,15 @@ export function markStagePersistenceDirty(changes: PendingChange[]): void {
   markPendingChanges(useStageStore.getState().stage?.id, ...changes);
 }
 
+/**
+ * Drop any pending persistence work for a deleted stage. Called by the stage
+ * deletion path so a mutation still sitting in the debounce window cannot
+ * flush after the delete and resurrect the removed document.
+ */
+export function discardPendingStageChanges(stageId: string): void {
+  if (pendingStageId === stageId) resetPendingChanges();
+}
+
 export function claimStageSceneLoadToken(): StageSceneLoadToken {
   latestStageSceneLoadToken += 1;
   return latestStageSceneLoadToken;
@@ -94,30 +105,6 @@ export function claimStageSceneLoadToken(): StageSceneLoadToken {
 
 export function isCurrentStageSceneLoadToken(token: StageSceneLoadToken): boolean {
   return token === latestStageSceneLoadToken;
-}
-
-// ==================== Debounce Helper ====================
-
-/**
- * Debounce function to limit how often a function is called
- * @param func Function to debounce
- * @param delay Delay in milliseconds
- */
-function debounce<T extends (...args: Parameters<T>) => ReturnType<T>>(
-  func: T,
-  delay: number,
-): (...args: Parameters<T>) => void {
-  let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-  return (...args: Parameters<T>) => {
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-    }
-    timeoutId = setTimeout(() => {
-      func(...args);
-      timeoutId = null;
-    }, delay);
-  };
 }
 
 type ToolbarState = 'design' | 'ai';
@@ -478,8 +465,12 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     const stage = get().stage;
     if (!stage) return;
     set({ stage: { ...stage, generatedAgentConfigs: configs } });
+    // The roster is part of the stage document — persistence rides the shared
+    // pending-change scheduler like every other stage mutation. The registry
+    // and selection updates below are synchronous in-memory mirrors only.
     markPendingChanges(stage.id, { kind: 'stage' });
-    debouncedSaveAgents();
+    applyGeneratedAgentsToRegistry(stage.id, configs);
+    useSettingsStore.getState().setSelectedAgentIds(configs.map((a) => a.id));
   },
 
   setGeneratingOutlines: (generatingOutlines) => set({ generatingOutlines }),
@@ -834,17 +825,3 @@ if (typeof window !== 'undefined') {
   });
   window.addEventListener('beforeunload', kickPendingSave);
 }
-
-/**
- * Debounced registry sync — fires ONLY when the agent roster is edited.
- * Keeps db.generatedAgents writes off the broad saveToStorage path so scene
- * advances (setCurrentSceneId etc.) never churn the registry mid-playback.
- */
-const debouncedSaveAgents = debounce(async () => {
-  const { stage } = useStageStore.getState();
-  if (!stage?.id || !stage.generatedAgentConfigs) return;
-  const { saveGeneratedAgents } = await import('@/lib/orchestration/registry/store');
-  await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
-  const { useSettingsStore } = await import('@/lib/store/settings');
-  useSettingsStore.getState().setSelectedAgentIds(stage.generatedAgentConfigs.map((a) => a.id));
-}, 500);

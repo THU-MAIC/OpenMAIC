@@ -2,9 +2,12 @@ import { describe, test, expect } from 'vitest';
 import { rewriteAudioRefsToIds, actionsToManifest } from '@/lib/export/classroom-zip-utils';
 import {
   CLASSROOM_ZIP_FORMAT_VERSION,
+  agentConfigFromManifest,
+  manifestAgentFromConfig,
   type ClassroomManifest,
 } from '@/lib/export/classroom-zip-types';
 import type { DiscussionAction, SpeechAction, SpotlightAction } from '@/lib/types/action';
+import type { GeneratedAgentConfig } from '@/lib/types/stage';
 
 // ─── rewriteAudioRefsToIds ────────────────────────────────────
 
@@ -239,5 +242,42 @@ describe('manifest round-trip', () => {
       type: 'audio',
       duration: 5.2,
     });
+  });
+
+  test('agent voice fields survive an export/import round trip (up to id renaming)', () => {
+    const config: GeneratedAgentConfig = {
+      id: 'gen-original',
+      name: 'Narrator',
+      role: 'teacher',
+      persona: 'Explains carefully',
+      avatar: '/avatars/teacher.png',
+      color: '#3b82f6',
+      priority: 10,
+      voiceConfig: { providerId: 'some-tts', voiceId: 'voice-1' },
+      voiceDesign: { identity: 'adult narrator', texture: 'low and clear', delivery: 'measured' },
+    };
+
+    const manifestAgent = JSON.parse(JSON.stringify(manifestAgentFromConfig(config)));
+    const imported = agentConfigFromManifest(manifestAgent, 'gen-new');
+
+    expect(imported).toEqual({ ...config, id: 'gen-new' });
+  });
+
+  test('agents without voice fields round-trip without inventing them', () => {
+    const config: GeneratedAgentConfig = {
+      id: 'gen-a',
+      name: 'Student',
+      role: 'student',
+      persona: 'Curious',
+      avatar: '/avatars/curious.png',
+      color: '#ec4899',
+      priority: 5,
+    };
+
+    const imported = agentConfigFromManifest(manifestAgentFromConfig(config), 'gen-b');
+
+    expect(imported).toEqual({ ...config, id: 'gen-b' });
+    expect('voiceConfig' in imported).toBe(false);
+    expect('voiceDesign' in imported).toBe(false);
   });
 });

@@ -16,7 +16,10 @@ vi.mock('@/lib/server/resolve-model', () => ({
   resolveModel: mocks.resolveModel,
 }));
 
-vi.mock('@/lib/ai/providers', () => ({
+vi.mock('@/lib/ai/providers', async (importOriginal) => ({
+  // The module graph now reaches the settings store (stage store -> settings),
+  // whose init reads PROVIDERS - keep the real exports and stub only the probe.
+  ...(await importOriginal<typeof import('@/lib/ai/providers')>()),
   isProviderKeyRequired: mocks.isProviderKeyRequired,
 }));
 

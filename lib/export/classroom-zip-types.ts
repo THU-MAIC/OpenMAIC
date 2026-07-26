@@ -1,7 +1,7 @@
 // lib/export/classroom-zip-types.ts
-import type { SceneType, SceneContent } from '@/lib/types/stage';
+import type { GeneratedAgentConfig, SceneType, SceneContent } from '@/lib/types/stage';
 import type { Action } from '@/lib/types/action';
-import type { Slide } from '@openmaic/dsl';
+import type { AgentVoiceConfig, Slide, VoiceDesign } from '@openmaic/dsl';
 
 export const CLASSROOM_ZIP_FORMAT_VERSION = 1;
 export const CLASSROOM_ZIP_EXTENSION = '.maic.zip';
@@ -34,8 +34,47 @@ export interface ManifestAgent {
   avatar: string;
   color: string;
   priority: number;
-  /** Reserved for forward-compat. Not currently persisted in GeneratedAgentRecord DB schema. */
-  voiceConfig?: { providerId: string; voiceId: string };
+  /** Bound TTS voice carried over from the stage roster, when present. */
+  voiceConfig?: AgentVoiceConfig;
+  /** 3-layer vocal descriptor carried over from the stage roster, when present. */
+  voiceDesign?: VoiceDesign;
+}
+
+/**
+ * Map a stage roster config to its portable manifest shape. Agent identity is
+ * positional in the manifest (index into `manifest.agents`), so the id is
+ * dropped; the voice fields travel verbatim.
+ */
+export function manifestAgentFromConfig(config: GeneratedAgentConfig): ManifestAgent {
+  return {
+    name: config.name,
+    role: config.role,
+    persona: config.persona,
+    avatar: config.avatar,
+    color: config.color,
+    priority: config.priority,
+    ...(config.voiceConfig ? { voiceConfig: config.voiceConfig } : {}),
+    ...(config.voiceDesign ? { voiceDesign: config.voiceDesign } : {}),
+  };
+}
+
+/**
+ * Rebuild a stage roster config from a manifest agent under a freshly minted
+ * id — the inverse of {@link manifestAgentFromConfig}, so an export/import
+ * round trip preserves the roster (voice included) up to id renaming.
+ */
+export function agentConfigFromManifest(agent: ManifestAgent, id: string): GeneratedAgentConfig {
+  return {
+    id,
+    name: agent.name,
+    role: agent.role,
+    persona: agent.persona,
+    avatar: agent.avatar,
+    color: agent.color,
+    priority: agent.priority,
+    ...(agent.voiceConfig ? { voiceConfig: agent.voiceConfig } : {}),
+    ...(agent.voiceDesign ? { voiceDesign: agent.voiceDesign } : {}),
+  };
 }
 
 export interface ManifestScene {

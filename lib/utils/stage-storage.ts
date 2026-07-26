@@ -328,6 +328,11 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
  * Delete stage and all related data
  */
 export async function deleteStageData(stageId: string): Promise<void> {
+  // Drop any queued persistence work for this stage first: a mutation still in
+  // the debounce window must not flush after the delete and resurrect the
+  // document. Dynamic import avoids a static module cycle with the store.
+  const { discardPendingStageChanges } = await import('@/lib/store/stage');
+  discardPendingStageChanges(stageId);
   // storageSharedLockHeld: the cascade below holds the EXCLUSIVE epoch, which
   // subsumes the shared one — the generation-guarded store must not re-acquire
   // shared inside it (self-deadlock against our own exclusive hold).

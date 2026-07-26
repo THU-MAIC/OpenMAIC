@@ -80,15 +80,18 @@ export function useAgentRoster(): AgentRosterController {
     () => histState.present[0]?.id ?? null,
   );
 
-  // Guard: only persist after a real user edit, not on initial materialization.
+  // Guard: only commit after a real user edit, not on initial materialization.
   // Set to true inside every mutation path (applyOp, add, undo, redo) so the
   // effect below is a no-op until the user actually touches the roster.
   const isDirtyRef = useRef(false);
 
-  // Persist roster edits to the store. Depends only on `histState.present`.
-  // `stage` is intentionally excluded: setStageAgents mutates `stage`, so
-  // depending on it would re-trigger this effect in an infinite loop (React #185).
-  // setStageAgents already no-ops when there is no stage (lib/store/stage.ts:287).
+  // Commit roster edits to the stage store. setStageAgents updates the stage
+  // document (persisted through the shared pending-change scheduler) and
+  // synchronously mirrors the roster into the agent registry + selection.
+  // Depends only on `histState.present`; `stage` is intentionally excluded:
+  // setStageAgents replaces `stage`, so depending on it would re-trigger this
+  // effect in an infinite loop (React #185). setStageAgents already no-ops
+  // when there is no stage.
   useEffect(() => {
     if (!isDirtyRef.current) return;
     setStageAgents(histState.present);

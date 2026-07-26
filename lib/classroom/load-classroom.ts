@@ -1,6 +1,5 @@
 import { restoreAgentSelection } from '@/lib/orchestration/registry/agent-selection';
-import { useAgentRegistry } from '@/lib/orchestration/registry/store';
-import { getActionsForRole } from '@/lib/orchestration/registry/types';
+import { applyGeneratedAgentsToRegistry } from '@/lib/orchestration/registry/store';
 import {
   applyHydratedClassroomFallbackScenes,
   hydrateClassroomFallbackChats,
@@ -8,12 +7,14 @@ import {
 } from '@/lib/classroom/pbl-fallback-hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 import type { ChatSession } from '@/lib/types/chat';
-import type { TTSProviderId } from '@/lib/audio/types';
-import type { VoiceDesign } from '@/lib/audio/voice-design';
 import { useMediaGenerationStore, type MediaTask } from '@/lib/store/media-generation';
-import { useStageStore, type StageSceneLoadToken } from '@/lib/store/stage';
-import type { GeneratedAgentRecord, MediaFileRecord } from '@/lib/utils/database';
-import type { Scene, Stage } from '@/lib/types/stage';
+import {
+  markStagePersistenceDirty,
+  useStageStore,
+  type StageSceneLoadToken,
+} from '@/lib/store/stage';
+import type { MediaFileRecord } from '@/lib/utils/database';
+import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 
 export interface ClassroomPayload {
   stage: Stage;
@@ -39,7 +40,7 @@ interface AgentLookupResult {
   isGenerated?: boolean;
 }
 
-export interface RunClassroomLoadArgs<TMediaTasks = unknown, TGeneratedAgentRecord = unknown> {
+export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
   classroomId: string;
   loadToken: StageSceneLoadToken;
   isCurrent: () => boolean;
@@ -51,15 +52,19 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown, TGeneratedAgentReco
     stage: Stage;
     scenes: readonly Scene[];
   }) => Promise<boolean>;
-  saveGeneratedAgents: (
-    stageId: string,
-    agents: NonNullable<Stage['generatedAgentConfigs']>,
-  ) => Promise<unknown>;
   loadRestoredMediaTasks: (stageId: string) => Promise<TMediaTasks>;
   applyRestoredMediaTasks: (tasks: TMediaTasks) => void;
   discardRestoredMediaTasks: (tasks: TMediaTasks) => void;
-  loadGeneratedAgentRecords: (stageId: string) => Promise<TGeneratedAgentRecord[]>;
-  applyGeneratedAgentRecords: (records: TGeneratedAgentRecord[]) => string[];
+  /**
+   * Read the legacy per-stage roster mirror (read-only migration source) as
+   * contract-shaped configs. Used only to backfill a document whose configs
+   * predate the single-source model (missing roster or missing voice fields).
+   */
+  loadLegacyAgentFallbacks: (stageId: string) => Promise<GeneratedAgentConfig[]>;
+  /** Commit lazily migrated configs onto the in-memory stage + mark it dirty. */
+  commitMigratedAgentConfigs: (stageId: string, configs: GeneratedAgentConfig[]) => void;
+  /** Synchronously mirror the roster into the in-memory agent registry. */
+  applyGeneratedAgents: (stageId: string, configs: readonly GeneratedAgentConfig[]) => string[];
   getSettings: () => ClassroomLoadSettings;
   getAgent: (agentId: string) => AgentLookupResult | undefined;
   restoreAgentSelection: typeof restoreAgentSelection;
@@ -68,7 +73,7 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown, TGeneratedAgentReco
   log: Logger;
 }
 
-export async function runClassroomLoad<TMediaTasks = unknown, TGeneratedAgentRecord = unknown>({
+export async function runClassroomLoad<TMediaTasks = unknown>({
   classroomId,
   loadToken,
   isCurrent,
@@ -76,19 +81,19 @@ export async function runClassroomLoad<TMediaTasks = unknown, TGeneratedAgentRec
   getCurrentStage,
   fetchClassroom,
   applyFallbackScenes,
-  saveGeneratedAgents,
   loadRestoredMediaTasks,
   applyRestoredMediaTasks,
   discardRestoredMediaTasks,
-  loadGeneratedAgentRecords,
-  applyGeneratedAgentRecords,
+  loadLegacyAgentFallbacks,
+  commitMigratedAgentConfigs,
+  applyGeneratedAgents,
   getSettings,
   getAgent,
   restoreAgentSelection: restoreSelection,
   setError,
   setLoading,
   log,
-}: RunClassroomLoadArgs<TMediaTasks, TGeneratedAgentRecord>): Promise<void> {
+}: RunClassroomLoadArgs<TMediaTasks>): Promise<void> {
   try {
     await loadFromStorage(classroomId, loadToken);
     if (!isCurrent()) return;
@@ -110,13 +115,6 @@ export async function runClassroomLoad<TMediaTasks = unknown, TGeneratedAgentRec
           return;
         }
         log.info('Loaded from server-side storage:', classroomId);
-
-        if (stage.generatedAgentConfigs?.length) {
-          if (!isCurrent()) return;
-          await saveGeneratedAgents(stage.id, stage.generatedAgentConfigs);
-          if (!isCurrent()) return;
-          log.info('Hydrated server-generated agents for stage:', stage.id);
-        }
       }
     }
 
@@ -128,10 +126,31 @@ export async function runClassroomLoad<TMediaTasks = unknown, TGeneratedAgentRec
     }
     applyRestoredMediaTasks(mediaTasks);
 
+    // ── Roster hydration: the stage document is the source of truth ──
+    // The legacy IndexedDB mirror is consulted only as a one-time, read-only
+    // migration source: it backfills a roster (or its voice fields) written
+    // before the roster was persisted on the document. The merged result is
+    // committed back onto the stage so the next flush makes it durable, after
+    // which subsequent loads find nothing to merge (idempotent).
     if (!isCurrent()) return;
-    const generatedAgentRecords = await loadGeneratedAgentRecords(classroomId);
+    const stageForRoster = getCurrentStage();
+    const documentConfigs =
+      stageForRoster?.id === classroomId ? (stageForRoster.generatedAgentConfigs ?? []) : [];
+    let effectiveConfigs = documentConfigs;
+    if (stageForRoster?.id === classroomId && rosterNeedsLegacyFallback(documentConfigs)) {
+      const fallbacks = await loadLegacyAgentFallbacks(classroomId);
+      // The registry is a global singleton: after any await, re-check that this
+      // load is still current before letting the merged roster land anywhere.
+      if (!isCurrent()) return;
+      const merged = mergeLegacyAgentFallbacks(documentConfigs, fallbacks);
+      if (merged.changed) {
+        effectiveConfigs = merged.configs;
+        commitMigratedAgentConfigs(classroomId, merged.configs);
+      }
+    }
+
     if (!isCurrent()) return;
-    const generatedAgentIds = applyGeneratedAgentRecords(generatedAgentRecords);
+    const generatedAgentIds = applyGeneratedAgents(classroomId, effectiveConfigs);
 
     if (!isCurrent()) return;
     const settings = getSettings();
@@ -269,91 +288,101 @@ export function discardRestoredMediaTasks(tasks: Record<string, MediaTask>): voi
   }
 }
 
-export async function loadGeneratedAgentRecordsFromDB(
-  stageId: string,
-): Promise<GeneratedAgentRecord[]> {
-  const { getGeneratedAgentsByStageId } = await import('@/lib/utils/database');
-  return getGeneratedAgentsByStageId(stageId);
+/**
+ * True when the persisted roster still needs the legacy mirror consulted:
+ * either the document carries no roster at all (it may predate roster
+ * persistence on the document), or some agent is missing its voice fields
+ * (voice historically lived only in the mirror).
+ */
+export function rosterNeedsLegacyFallback(configs: readonly GeneratedAgentConfig[]): boolean {
+  if (configs.length === 0) return true;
+  return configs.some((config) => !config.voiceDesign && !config.voiceConfig);
 }
 
-export async function saveGeneratedAgentsForCurrentLoad(
-  stageId: string,
-  agents: NonNullable<Stage['generatedAgentConfigs']>,
-  isCurrent: () => boolean,
-): Promise<string[]> {
-  if (!isCurrent()) return [];
-  const { db } = await import('@/lib/utils/database');
-  if (!isCurrent()) return [];
-
-  const records = agents.map((agent) => ({ ...agent, stageId, createdAt: Date.now() }));
-  await db.transaction('rw', db.generatedAgents, async () => {
-    await db.generatedAgents.where('stageId').equals(stageId).delete();
-    await db.generatedAgents.bulkPut(records);
-  });
-  if (!isCurrent()) return [];
-
-  const registry = useAgentRegistry.getState();
-  for (const agent of registry.listAgents()) {
-    if (agent.isGenerated) registry.deleteAgent(agent.id);
+/**
+ * Merge the legacy mirror's roster into the document's configs. Pure.
+ *
+ * - Document configs empty + mirror has agents → lift the full mirror roster
+ *   (sorted by priority desc for a stable, teacher-first order).
+ * - Document configs present → only backfill missing voice fields, matched by
+ *   agent id. Document fields always win; the mirror never overwrites.
+ *
+ * Idempotent: once the merged result is persisted, a rerun finds nothing to
+ * change and reports `changed: false`.
+ */
+export function mergeLegacyAgentFallbacks(
+  configs: readonly GeneratedAgentConfig[],
+  fallbacks: readonly GeneratedAgentConfig[],
+): { configs: GeneratedAgentConfig[]; changed: boolean } {
+  if (configs.length === 0) {
+    if (fallbacks.length === 0) return { configs: [], changed: false };
+    const lifted = [...fallbacks].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+    return { configs: lifted, changed: true };
   }
 
-  for (const record of records) {
-    const { voiceConfig, ...rest } = record as (typeof records)[number] & {
-      voiceConfig?: { providerId: string; voiceId: string };
-      voiceDesign?: VoiceDesign;
+  const byId = new Map(fallbacks.map((fallback) => [fallback.id, fallback]));
+  let changed = false;
+  const merged = configs.map((config) => {
+    if (config.voiceDesign || config.voiceConfig) return config;
+    const fallback = byId.get(config.id);
+    if (!fallback || (!fallback.voiceDesign && !fallback.voiceConfig)) return config;
+    changed = true;
+    return {
+      ...config,
+      ...(fallback.voiceConfig ? { voiceConfig: fallback.voiceConfig } : {}),
+      ...(fallback.voiceDesign ? { voiceDesign: fallback.voiceDesign } : {}),
     };
-    registry.addAgent({
-      ...rest,
-      allowedActions: getActionsForRole(record.role),
-      isDefault: false,
-      isGenerated: true,
-      boundStageId: stageId,
-      createdAt: new Date(record.createdAt),
-      updatedAt: new Date(record.createdAt),
-      ...(voiceConfig
-        ? {
-            voiceConfig: {
-              providerId: voiceConfig.providerId as TTSProviderId,
-              voiceId: voiceConfig.voiceId,
-            },
-          }
-        : {}),
-    });
-  }
-
-  void import('@/lib/audio/agent-voice')
-    .then((module) =>
-      module.warmUpAgentVoices(registry.listAgents().filter((agent) => agent.isGenerated)),
-    )
-    .catch(() => undefined);
-
-  return records.map((record) => record.id);
+  });
+  return { configs: merged, changed };
 }
 
-export function applyGeneratedAgentRecordsToRegistry(
-  records: readonly GeneratedAgentRecord[],
-): string[] {
-  const registry = useAgentRegistry.getState();
-  for (const agent of registry.listAgents()) {
-    if (agent.isGenerated) {
-      registry.deleteAgent(agent.id);
-    }
-  }
-
-  const ids: string[] = [];
-  for (const record of records) {
-    registry.addAgent({
-      ...record,
-      allowedActions: getActionsForRole(record.role),
-      isDefault: false,
-      isGenerated: true,
-      boundStageId: record.stageId,
-      createdAt: new Date(record.createdAt),
-      updatedAt: new Date(record.createdAt),
+/**
+ * Read the legacy roster mirror for a stage as contract-shaped configs.
+ * Read-only: the mirror table has no remaining writers and serves purely as a
+ * migration source for pre-single-source classrooms.
+ */
+export async function loadLegacyAgentFallbacksFromDB(
+  stageId: string,
+): Promise<GeneratedAgentConfig[]> {
+  try {
+    const { getGeneratedAgentsByStageId } = await import('@/lib/utils/database');
+    const records = await getGeneratedAgentsByStageId(stageId);
+    return records.map((record) => {
+      // Historical mirror rows spread the whole generated profile, so rows may
+      // carry a voiceConfig that never made it into the declared record type.
+      const voiceConfig = (record as { voiceConfig?: GeneratedAgentConfig['voiceConfig'] })
+        .voiceConfig;
+      return {
+        id: record.id,
+        name: record.name,
+        role: record.role,
+        persona: record.persona,
+        avatar: record.avatar,
+        color: record.color,
+        priority: record.priority,
+        ...(voiceConfig ? { voiceConfig } : {}),
+        ...(record.voiceDesign ? { voiceDesign: record.voiceDesign } : {}),
+      };
     });
-    ids.push(record.id);
+  } catch {
+    return [];
   }
-  return ids;
+}
+
+/**
+ * Commit lazily migrated roster configs onto the in-memory stage and mark the
+ * stage dirty so the merge becomes durable on the next scheduled flush.
+ * Guarded by a stage-id re-check: a classroom switch racing this commit must
+ * not write another stage's roster into the current one.
+ */
+export function commitMigratedAgentConfigsToStore(
+  stageId: string,
+  configs: GeneratedAgentConfig[],
+): void {
+  const state = useStageStore.getState();
+  if (state.stage?.id !== stageId) return;
+  useStageStore.setState({ stage: { ...state.stage, generatedAgentConfigs: configs } });
+  markStagePersistenceDirty([{ kind: 'stage' }]);
 }
 
 export const defaultClassroomLoadDeps = {
@@ -366,7 +395,8 @@ export const defaultClassroomLoadDeps = {
   loadRestoredMediaTasks: loadRestoredMediaTasksFromDB,
   applyRestoredMediaTasks,
   discardRestoredMediaTasks,
-  loadGeneratedAgentRecords: loadGeneratedAgentRecordsFromDB,
-  applyGeneratedAgentRecords: applyGeneratedAgentRecordsToRegistry,
+  loadLegacyAgentFallbacks: loadLegacyAgentFallbacksFromDB,
+  commitMigratedAgentConfigs: commitMigratedAgentConfigsToStore,
+  applyGeneratedAgents: applyGeneratedAgentsToRegistry,
   restoreAgentSelection,
 };

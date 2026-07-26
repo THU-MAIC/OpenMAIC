@@ -1,31 +1,26 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyClassroomStageAndScenes,
+  commitMigratedAgentConfigsToStore,
   discardRestoredMediaTasks,
+  mergeLegacyAgentFallbacks,
+  rosterNeedsLegacyFallback,
   runClassroomLoad,
-  saveGeneratedAgentsForCurrentLoad,
 } from '@/lib/classroom/load-classroom';
 import {
   claimStageSceneLoadToken,
   isCurrentStageSceneLoadToken,
   useStageStore,
 } from '@/lib/store/stage';
-import type { Scene, Stage } from '@/lib/types/stage';
+import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 
-const databaseMocks = vi.hoisted(() => ({
-  deleteGeneratedAgents: vi.fn(),
-  bulkPutGeneratedAgents: vi.fn(),
-  transaction: vi.fn(async (_mode: string, _table: unknown, work: () => Promise<void>) => work()),
-}));
-
-vi.mock('@/lib/utils/database', () => ({
-  db: {
-    generatedAgents: {
-      where: () => ({ equals: () => ({ delete: databaseMocks.deleteGeneratedAgents }) }),
-      bulkPut: databaseMocks.bulkPutGeneratedAgents,
-    },
-    transaction: databaseMocks.transaction,
-  },
+// The store flush path imports stage-storage dynamically; mock it so a pending
+// mark scheduled by commitMigratedAgentConfigsToStore can never reach a real
+// (or jsdom) IndexedDB.
+vi.mock('@/lib/utils/stage-storage', () => ({
+  saveStageData: vi.fn().mockResolvedValue(undefined),
+  saveStageDataIncremental: vi.fn().mockResolvedValue({ failedChanges: [] }),
+  loadStageData: vi.fn().mockResolvedValue(null),
 }));
 
 function makeStage(id: string, generatedAgentConfigs: Stage['generatedAgentConfigs'] = []): Stage {
@@ -36,6 +31,19 @@ function makeStage(id: string, generatedAgentConfigs: Stage['generatedAgentConfi
     updatedAt: 1,
     generatedAgentConfigs,
   };
+}
+
+function makeAgentConfig(id: string, extra: Partial<GeneratedAgentConfig> = {}) {
+  return {
+    id,
+    name: `Agent ${id}`,
+    role: 'teacher',
+    persona: 'Teach',
+    avatar: 'A',
+    color: '#000',
+    priority: 1,
+    ...extra,
+  } satisfies GeneratedAgentConfig;
 }
 
 function makeScene(id: string, stageId: string): Scene {
@@ -92,12 +100,12 @@ function makeDeps(overrides: Partial<Parameters<typeof runClassroomLoad>[0]> = {
     getCurrentStage: () => stage,
     fetchClassroom: vi.fn().mockResolvedValue(null),
     applyFallbackScenes: vi.fn().mockResolvedValue(false),
-    saveGeneratedAgents: vi.fn().mockResolvedValue([]),
     loadRestoredMediaTasks: vi.fn().mockResolvedValue({}),
     applyRestoredMediaTasks: vi.fn(),
     discardRestoredMediaTasks: vi.fn(),
-    loadGeneratedAgentRecords: vi.fn().mockResolvedValue([]),
-    applyGeneratedAgentRecords: vi.fn().mockReturnValue([]),
+    loadLegacyAgentFallbacks: vi.fn().mockResolvedValue([]),
+    commitMigratedAgentConfigs: vi.fn(),
+    applyGeneratedAgents: vi.fn().mockReturnValue([]),
     getSettings: () => settings,
     getAgent: vi.fn().mockReturnValue(undefined),
     restoreAgentSelection: vi.fn().mockReturnValue({
@@ -200,7 +208,7 @@ describe('runClassroomLoad', () => {
     expect(deps.fetchClassroom).not.toHaveBeenCalled();
     expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
     expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
-    expect(deps.loadGeneratedAgentRecords).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
     expect(deps.setLoading).not.toHaveBeenCalled();
   });
 
@@ -219,7 +227,7 @@ describe('runClassroomLoad', () => {
 
     expect(deps.applyFallbackScenes).not.toHaveBeenCalled();
     expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
-    expect(deps.loadGeneratedAgentRecords).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
     expect(deps.setLoading).not.toHaveBeenCalled();
   });
 
@@ -227,17 +235,7 @@ describe('runClassroomLoad', () => {
     const applied = deferred<boolean>();
     const { deps, setCurrent } = makeDeps({
       fetchClassroom: vi.fn().mockResolvedValue({
-        stage: makeStage('stage-a', [
-          {
-            id: 'agent-a',
-            name: 'Agent A',
-            role: 'teacher',
-            persona: 'Teach',
-            avatar: 'A',
-            color: '#000',
-            priority: 1,
-          },
-        ]),
+        stage: makeStage('stage-a', [makeAgentConfig('agent-a')]),
         scenes: [makeScene('scene-a', 'stage-a')],
       }),
       applyFallbackScenes: vi.fn().mockReturnValue(applied.promise),
@@ -250,9 +248,8 @@ describe('runClassroomLoad', () => {
     applied.resolve(true);
     await loading;
 
-    expect(deps.saveGeneratedAgents).not.toHaveBeenCalled();
     expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
-    expect(deps.loadGeneratedAgentRecords).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
     expect(deps.setLoading).not.toHaveBeenCalled();
   });
 
@@ -274,68 +271,123 @@ describe('runClassroomLoad', () => {
     expect(deps.discardRestoredMediaTasks).toHaveBeenCalledWith({
       image: { elementId: 'image' },
     });
-    expect(deps.loadGeneratedAgentRecords).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
     expect(deps.setLoading).not.toHaveBeenCalled();
   });
 
-  it('does not apply generated agents when superseded after the agent record read', async () => {
-    const agentRead = deferred<unknown[]>();
-    const { deps, settings, setCurrent, setStage } = makeDeps({
-      loadGeneratedAgentRecords: vi.fn().mockReturnValue(agentRead.promise),
-    });
-    setStage(makeStage('stage-a'));
-
-    const loading = runClassroomLoad(deps);
-    await vi.waitFor(() => expect(deps.loadGeneratedAgentRecords).toHaveBeenCalled());
-
-    setCurrent(false);
-    agentRead.resolve([{ id: 'agent-a' }]);
-    await loading;
-
-    expect(deps.applyGeneratedAgentRecords).not.toHaveBeenCalled();
-    expect(settings.setAgentMode).not.toHaveBeenCalled();
-    expect(settings.setSelectedAgentIds).not.toHaveBeenCalled();
-    expect(settings.setAgentSelectionIsUserSet).not.toHaveBeenCalled();
-    expect(deps.setLoading).not.toHaveBeenCalled();
-  });
-
-  it('runs all phases and clears loading for the current navigation', async () => {
-    const stage = makeStage('stage-a', [
-      {
-        id: 'agent-a',
-        name: 'Agent A',
-        role: 'teacher',
-        persona: 'Teach',
-        avatar: 'A',
-        color: '#000',
-        priority: 1,
-      },
-    ]);
-    const scene = makeScene('scene-a', 'stage-a');
-    const mediaTasks = { image: { elementId: 'image' } };
-    const { deps, settings } = makeDeps({
-      fetchClassroom: vi.fn().mockResolvedValue({ stage, scenes: [scene] }),
-      applyFallbackScenes: vi.fn().mockResolvedValue(true),
-      loadRestoredMediaTasks: vi.fn().mockResolvedValue(mediaTasks),
-      loadGeneratedAgentRecords: vi.fn().mockResolvedValue([{ id: 'agent-a' }]),
-      applyGeneratedAgentRecords: vi.fn().mockReturnValue(['agent-a']),
+  it('hydrates the registry from document configs without consulting the mirror', async () => {
+    const configs = [
+      makeAgentConfig('agent-a', {
+        voiceDesign: { identity: 'warm mentor', texture: 'low', delivery: 'calm' },
+      }),
+    ];
+    const { deps, settings, setStage } = makeDeps({
+      applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
       restoreAgentSelection: vi.fn().mockReturnValue({
         selection: { mode: 'auto', selectedAgentIds: ['agent-a'] },
         isUserSet: false,
       }),
     });
+    setStage(makeStage('stage-a', configs));
+
+    await runClassroomLoad(deps);
+
+    expect(deps.loadLegacyAgentFallbacks).not.toHaveBeenCalled();
+    expect(deps.commitMigratedAgentConfigs).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).toHaveBeenCalledExactlyOnceWith('stage-a', configs);
+    expect(settings.setSelectedAgentIds).toHaveBeenCalledWith(['agent-a']);
+    expect(deps.setLoading).toHaveBeenCalledWith(false);
+  });
+
+  it('backfills missing voice fields from the legacy mirror and commits the merge', async () => {
+    const configs = [makeAgentConfig('agent-a')];
+    const voiceDesign = { identity: 'bright', texture: 'clear', delivery: 'lively' };
+    const { deps, setStage } = makeDeps({
+      loadLegacyAgentFallbacks: vi
+        .fn()
+        .mockResolvedValue([makeAgentConfig('agent-a', { voiceDesign })]),
+      applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
+    });
+    setStage(makeStage('stage-a', configs));
+
+    await runClassroomLoad(deps);
+
+    const merged = [makeAgentConfig('agent-a', { voiceDesign })];
+    expect(deps.commitMigratedAgentConfigs).toHaveBeenCalledExactlyOnceWith('stage-a', merged);
+    expect(deps.applyGeneratedAgents).toHaveBeenCalledExactlyOnceWith('stage-a', merged);
+  });
+
+  it('lifts a roster missing from the document entirely from the legacy mirror', async () => {
+    const fallbacks = [
+      makeAgentConfig('gen-student', { role: 'student', priority: 5 }),
+      makeAgentConfig('gen-teacher', { role: 'teacher', priority: 10 }),
+    ];
+    const { deps, setStage } = makeDeps({
+      loadLegacyAgentFallbacks: vi.fn().mockResolvedValue(fallbacks),
+      applyGeneratedAgents: vi.fn().mockReturnValue(['gen-teacher', 'gen-student']),
+    });
+    setStage(makeStage('stage-a', []));
+
+    await runClassroomLoad(deps);
+
+    const lifted = [fallbacks[1], fallbacks[0]]; // priority-desc, teacher first
+    expect(deps.commitMigratedAgentConfigs).toHaveBeenCalledExactlyOnceWith('stage-a', lifted);
+    expect(deps.applyGeneratedAgents).toHaveBeenCalledExactlyOnceWith('stage-a', lifted);
+  });
+
+  it('does not commit or apply a merged roster when superseded during the mirror read', async () => {
+    const fallbackRead = deferred<GeneratedAgentConfig[]>();
+    const { deps, setCurrent, setStage } = makeDeps({
+      loadLegacyAgentFallbacks: vi.fn().mockReturnValue(fallbackRead.promise),
+    });
+    setStage(makeStage('stage-a', [makeAgentConfig('agent-a')]));
+
+    const loading = runClassroomLoad(deps);
+    await vi.waitFor(() => expect(deps.loadLegacyAgentFallbacks).toHaveBeenCalled());
+
+    setCurrent(false);
+    fallbackRead.resolve([
+      makeAgentConfig('agent-a', {
+        voiceDesign: { identity: 'x', texture: 'y', delivery: 'z' },
+      }),
+    ]);
+    await loading;
+
+    expect(deps.commitMigratedAgentConfigs).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
+    expect(deps.setLoading).not.toHaveBeenCalled();
+  });
+
+  it('runs all phases and clears loading for the current navigation', async () => {
+    const stage = makeStage('stage-a', [makeAgentConfig('agent-a')]);
+    const scene = makeScene('scene-a', 'stage-a');
+    const mediaTasks = { image: { elementId: 'image' } };
+    const { deps, settings, setStage } = makeDeps({
+      fetchClassroom: vi.fn().mockResolvedValue({ stage, scenes: [scene] }),
+      loadRestoredMediaTasks: vi.fn().mockResolvedValue(mediaTasks),
+      applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
+      restoreAgentSelection: vi.fn().mockReturnValue({
+        selection: { mode: 'auto', selectedAgentIds: ['agent-a'] },
+        isUserSet: false,
+      }),
+    });
+    const applyFallbackScenes = vi.fn().mockImplementation(async () => {
+      // A committed fallback puts the fetched stage into the store.
+      setStage(stage);
+      return true;
+    });
+    deps.applyFallbackScenes = applyFallbackScenes;
 
     await runClassroomLoad(deps);
 
     expect(deps.loadFromStorage).toHaveBeenCalledWith('stage-a', 1);
-    expect(deps.applyFallbackScenes).toHaveBeenCalledWith({
+    expect(applyFallbackScenes).toHaveBeenCalledWith({
       loadToken: 1,
       stage,
       scenes: [scene],
     });
-    expect(deps.saveGeneratedAgents).toHaveBeenCalledWith('stage-a', stage.generatedAgentConfigs);
     expect(deps.applyRestoredMediaTasks).toHaveBeenCalledWith(mediaTasks);
-    expect(deps.applyGeneratedAgentRecords).toHaveBeenCalledWith([{ id: 'agent-a' }]);
+    expect(deps.applyGeneratedAgents).toHaveBeenCalledWith('stage-a', stage.generatedAgentConfigs);
     expect(settings.setSelectedAgentIds).toHaveBeenCalledWith(['agent-a']);
     expect(deps.setLoading).toHaveBeenCalledWith(false);
   });
@@ -354,45 +406,100 @@ describe('runClassroomLoad', () => {
     await loading;
 
     expect(deps.loadRestoredMediaTasks).not.toHaveBeenCalled();
-    expect(deps.loadGeneratedAgentRecords).not.toHaveBeenCalled();
+    expect(deps.applyGeneratedAgents).not.toHaveBeenCalled();
     expect(deps.setError).not.toHaveBeenCalled();
     expect(deps.setLoading).not.toHaveBeenCalled();
   });
 });
 
-describe('saveGeneratedAgentsForCurrentLoad', () => {
-  it('finishes the generated-agent replacement when the load becomes stale during deletion', async () => {
-    const deletion = deferred<void>();
-    let current = true;
-    databaseMocks.deleteGeneratedAgents.mockReturnValueOnce(deletion.promise);
-    databaseMocks.bulkPutGeneratedAgents.mockResolvedValueOnce(undefined);
-    const agents = [
-      {
-        id: 'agent-a',
-        name: 'Agent A',
-        role: 'teacher',
-        persona: 'Teach',
-        avatar: 'A',
-        color: '#000',
-        priority: 1,
-      },
-    ];
+describe('rosterNeedsLegacyFallback', () => {
+  it('is true for an empty roster (the document may predate roster persistence)', () => {
+    expect(rosterNeedsLegacyFallback([])).toBe(true);
+  });
 
-    const saving = saveGeneratedAgentsForCurrentLoad('stage-a', agents, () => current);
-    await vi.waitFor(() => expect(databaseMocks.deleteGeneratedAgents).toHaveBeenCalled());
+  it('is true when any agent lacks both voice fields', () => {
+    expect(
+      rosterNeedsLegacyFallback([
+        makeAgentConfig('a', { voiceConfig: { providerId: 'p', voiceId: 'v' } }),
+        makeAgentConfig('b'),
+      ]),
+    ).toBe(true);
+  });
 
-    current = false;
-    deletion.resolve();
-    await saving;
+  it('is false once every agent carries a voice field', () => {
+    expect(
+      rosterNeedsLegacyFallback([
+        makeAgentConfig('a', { voiceConfig: { providerId: 'p', voiceId: 'v' } }),
+        makeAgentConfig('b', {
+          voiceDesign: { identity: 'i', texture: 't', delivery: 'd' },
+        }),
+      ]),
+    ).toBe(false);
+  });
+});
 
-    expect(databaseMocks.transaction).toHaveBeenCalledWith(
-      'rw',
-      expect.anything(),
-      expect.any(Function),
+describe('mergeLegacyAgentFallbacks', () => {
+  const voiceDesign = { identity: 'i', texture: 't', delivery: 'd' };
+  const voiceConfig = { providerId: 'p', voiceId: 'v' };
+
+  it('backfills voice fields by id and reports the change', () => {
+    const { configs, changed } = mergeLegacyAgentFallbacks(
+      [makeAgentConfig('a'), makeAgentConfig('b')],
+      [makeAgentConfig('a', { voiceDesign, voiceConfig })],
     );
-    expect(databaseMocks.bulkPutGeneratedAgents).toHaveBeenCalledWith([
-      expect.objectContaining({ id: 'agent-a', stageId: 'stage-a' }),
-    ]);
+    expect(changed).toBe(true);
+    expect(configs[0]).toEqual(makeAgentConfig('a', { voiceDesign, voiceConfig }));
+    expect(configs[1]).toEqual(makeAgentConfig('b'));
+  });
+
+  it('never overwrites document-held voice fields', () => {
+    const docConfig = makeAgentConfig('a', { voiceDesign });
+    const { configs, changed } = mergeLegacyAgentFallbacks(
+      [docConfig],
+      [makeAgentConfig('a', { voiceDesign: { identity: 'x', texture: 'y', delivery: 'z' } })],
+    );
+    expect(changed).toBe(false);
+    expect(configs[0]).toBe(docConfig);
+  });
+
+  it('is idempotent: a second merge over the committed result changes nothing', () => {
+    const fallbacks = [makeAgentConfig('a', { voiceDesign })];
+    const first = mergeLegacyAgentFallbacks([makeAgentConfig('a')], fallbacks);
+    expect(first.changed).toBe(true);
+    const second = mergeLegacyAgentFallbacks(first.configs, fallbacks);
+    expect(second.changed).toBe(false);
+    expect(second.configs).toEqual(first.configs);
+  });
+
+  it('lifts a full roster when the document has none, priority-descending', () => {
+    const { configs, changed } = mergeLegacyAgentFallbacks(
+      [],
+      [makeAgentConfig('low', { priority: 3 }), makeAgentConfig('high', { priority: 9 })],
+    );
+    expect(changed).toBe(true);
+    expect(configs.map((c) => c.id)).toEqual(['high', 'low']);
+  });
+
+  it('reports no change when both sides are empty', () => {
+    expect(mergeLegacyAgentFallbacks([], [])).toEqual({ configs: [], changed: false });
+  });
+});
+
+describe('commitMigratedAgentConfigsToStore', () => {
+  it('commits onto the matching stage and leaves a different stage untouched', () => {
+    const configs = [makeAgentConfig('agent-a')];
+    useStageStore.setState({ stage: makeStage('stage-a') });
+
+    commitMigratedAgentConfigsToStore('stage-a', configs);
+    expect(useStageStore.getState().stage?.generatedAgentConfigs).toEqual(configs);
+
+    // Simulate a classroom switch racing the commit: the stale commit no-ops.
+    useStageStore.setState({ stage: makeStage('stage-b') });
+    commitMigratedAgentConfigsToStore('stage-a', [makeAgentConfig('stale')]);
+    expect(useStageStore.getState().stage?.id).toBe('stage-b');
+    expect(useStageStore.getState().stage?.generatedAgentConfigs).toEqual([]);
+
+    useStageStore.getState().clearStore();
   });
 });
 

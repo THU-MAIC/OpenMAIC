@@ -1,22 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { setSelectedAgentIds } = vi.hoisted(() => ({
+const { setSelectedAgentIds, applyGeneratedAgentsToRegistry } = vi.hoisted(() => ({
   setSelectedAgentIds: vi.fn(),
+  applyGeneratedAgentsToRegistry: vi.fn(
+    (_stageId: string, configs: ReadonlyArray<{ id: string }>) => configs.map((c) => c.id),
+  ),
 }));
 
-// IndexedDB / stage-storage modules are imported dynamically inside the
-// store's save/load actions. Mock them so the debounced save doesn't try
-// to talk to a real (or jsdom) IndexedDB in the test environment.
+// Stage-storage modules are imported dynamically inside the store's save/load
+// actions. Mock them so the scheduled flush doesn't try to talk to a real (or
+// jsdom) IndexedDB in the test environment.
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: vi.fn().mockResolvedValue(undefined),
   saveStageDataIncremental: vi.fn().mockResolvedValue(undefined),
   loadStageData: vi.fn().mockResolvedValue(null),
 }));
-vi.mock('@/lib/utils/database', () => ({
-  db: { stageOutlines: { put: vi.fn(), get: vi.fn() } },
-}));
 vi.mock('@/lib/orchestration/registry/store', () => ({
-  saveGeneratedAgents: vi.fn().mockResolvedValue([]),
+  applyGeneratedAgentsToRegistry,
 }));
 vi.mock('@/lib/store/settings', () => ({
   useSettingsStore: {
@@ -24,9 +24,8 @@ vi.mock('@/lib/store/settings', () => ({
   },
 }));
 
-import { useStageStore } from '@/lib/store/stage';
+import { discardPendingStageChanges, useStageStore } from '@/lib/store/stage';
 import { saveStageData, saveStageDataIncremental } from '@/lib/utils/stage-storage';
-import { saveGeneratedAgents } from '@/lib/orchestration/registry/store';
 import type { Stage } from '@/lib/types/stage';
 import type { GeneratedAgentConfig } from '@/lib/types/stage';
 
@@ -53,6 +52,8 @@ function makeAgentConfig(id: string): GeneratedAgentConfig {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  applyGeneratedAgentsToRegistry.mockClear();
+  setSelectedAgentIds.mockClear();
   useStageStore.setState({
     stage: makeStage(),
     scenes: [],
@@ -60,15 +61,10 @@ beforeEach(() => {
   });
 });
 
-afterEach(async () => {
-  try {
-    await vi.runOnlyPendingTimersAsync();
-    await vi.dynamicImportSettled();
-    expect(vi.getTimerCount()).toBe(0);
-  } finally {
-    useStageStore.getState().clearStore();
-    vi.useRealTimers();
-  }
+afterEach(() => {
+  // clearStore cancels any scheduled flush timer along with pending changes.
+  useStageStore.getState().clearStore();
+  vi.useRealTimers();
 });
 
 describe('setStageAgents', () => {
@@ -103,59 +99,50 @@ describe('setStageAgents', () => {
     expect(stage?.id).toBe('stage-1');
     expect(stage?.name).toBe('Test stage');
   });
+
+  it('synchronously mirrors the roster into the registry and selection', () => {
+    const configs = [makeAgentConfig('a1'), makeAgentConfig('a2')];
+    useStageStore.getState().setStageAgents(configs);
+
+    // No timers involved: the registry/selection mirrors are in-memory side
+    // effects, not persistence.
+    expect(applyGeneratedAgentsToRegistry).toHaveBeenCalledExactlyOnceWith('stage-1', configs);
+    expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['a1', 'a2']);
+  });
 });
 
-describe('setStageAgents persistence (debounced save)', () => {
+describe('setStageAgents persistence (document scheduler)', () => {
   beforeEach(() => {
     vi.mocked(saveStageData).mockClear();
     vi.mocked(saveStageDataIncremental).mockClear();
-    vi.mocked(saveGeneratedAgents).mockClear();
+    applyGeneratedAgentsToRegistry.mockClear();
     setSelectedAgentIds.mockClear();
   });
 
-  it('includes generatedAgentConfigs in saveStageData after debounce', async () => {
-    const configs = [makeAgentConfig('x1'), makeAgentConfig('x2')];
+  it('persists generatedAgentConfigs (voice included) via the stage document flush', async () => {
+    const configs: GeneratedAgentConfig[] = [
+      {
+        ...makeAgentConfig('x1'),
+        voiceDesign: { identity: 'warm mentor', texture: 'low and clear', delivery: 'calm' },
+        voiceConfig: { providerId: 'tts-provider', voiceId: 'voice-1' },
+      },
+      makeAgentConfig('x2'),
+    ];
     useStageStore.getState().setStageAgents(configs);
 
-    // Flush the 500 ms debounce
-    await vi.runAllTimersAsync();
+    // Drain the scheduler's 500 ms debounce window.
+    await vi.advanceTimersByTimeAsync(500);
 
     expect(saveStageDataIncremental).toHaveBeenCalledOnce();
-    const [, , storeData] = vi.mocked(saveStageDataIncremental).mock.calls[0];
+    const [stageId, dirty, storeData] = vi.mocked(saveStageDataIncremental).mock.calls[0];
+    expect(stageId).toBe('stage-1');
+    expect(dirty).toEqual(expect.arrayContaining([{ kind: 'stage' }]));
     expect(storeData.stage.generatedAgentConfigs).toEqual(configs);
   });
 
-  it('calls saveGeneratedAgents with the new configs after debounce', async () => {
-    const configs = [makeAgentConfig('y1')];
-    useStageStore.getState().setStageAgents(configs);
-
-    await vi.runAllTimersAsync();
-
-    expect(saveGeneratedAgents).toHaveBeenCalledOnce();
-    const [stageId, savedConfigs] = vi.mocked(saveGeneratedAgents).mock.calls[0];
-    expect(stageId).toBe('stage-1');
-    expect(savedConfigs).toEqual(configs);
-  });
-
-  it('calls saveGeneratedAgents with empty array when roster cleared', async () => {
-    const stageWithAgents: Stage = {
-      ...makeStage(),
-      generatedAgentConfigs: [makeAgentConfig('old')],
-    };
-    useStageStore.setState({ stage: stageWithAgents });
-    useStageStore.getState().setStageAgents([]);
-
-    await vi.runAllTimersAsync();
-
-    // setStageAgents([]) → generatedAgentConfigs is [], empty array is truthy
-    expect(saveGeneratedAgents).toHaveBeenCalledOnce();
-    const [, savedConfigs] = vi.mocked(saveGeneratedAgents).mock.calls[0];
-    expect(savedConfigs).toEqual([]);
-  });
-
-  it('does NOT call saveGeneratedAgents on setCurrentSceneId (scene advance)', async () => {
-    // Regression guard for the P1 bug: scene advances during playback must
-    // never churn db.generatedAgents via the shared saveToStorage path.
+  it('does NOT touch the registry on setCurrentSceneId (scene advance)', async () => {
+    // Regression guard: scene advances during playback must never churn the
+    // agent registry through a broad save path.
     const stageWithAgents: Stage = {
       ...makeStage(),
       generatedAgentConfigs: [makeAgentConfig('a1')],
@@ -163,15 +150,37 @@ describe('setStageAgents persistence (debounced save)', () => {
     useStageStore.setState({ stage: stageWithAgents, scenes: [] });
     useStageStore.getState().setCurrentSceneId('scene-42');
 
-    await vi.runAllTimersAsync();
+    await vi.advanceTimersByTimeAsync(500);
 
-    // Only the device-scoped incremental path fires; the document is untouched.
+    // Only the device-scoped incremental path fires; the roster mirrors stay put.
     expect(saveStageDataIncremental).toHaveBeenCalledOnce();
     expect(saveStageData).not.toHaveBeenCalled();
-    expect(saveGeneratedAgents).not.toHaveBeenCalled();
+    expect(applyGeneratedAgentsToRegistry).not.toHaveBeenCalled();
+    expect(setSelectedAgentIds).not.toHaveBeenCalled();
   });
 
-  it('does NOT call saveGeneratedAgents on plain saveToStorage without a roster edit', async () => {
+  it('drops a pending roster edit when its stage is discarded (deletion path)', async () => {
+    useStageStore.getState().setStageAgents([makeAgentConfig('doomed')]);
+    discardPendingStageChanges('stage-1');
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    // The queued flush was cancelled with the pending state: a deleted stage
+    // cannot be resurrected by a write still sitting in the debounce window.
+    expect(saveStageDataIncremental).not.toHaveBeenCalled();
+    expect(saveStageData).not.toHaveBeenCalled();
+  });
+
+  it('keeps pending work for other stages when discarding a different stage id', async () => {
+    useStageStore.getState().setStageAgents([makeAgentConfig('kept')]);
+    discardPendingStageChanges('some-other-stage');
+
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(saveStageDataIncremental).toHaveBeenCalledOnce();
+  });
+
+  it('does NOT touch the registry on plain saveToStorage without a roster edit', async () => {
     const stageWithAgents: Stage = {
       ...makeStage(),
       generatedAgentConfigs: [makeAgentConfig('b1')],
@@ -180,6 +189,6 @@ describe('setStageAgents persistence (debounced save)', () => {
     await useStageStore.getState().saveToStorage();
 
     expect(saveStageData).toHaveBeenCalledOnce();
-    expect(saveGeneratedAgents).not.toHaveBeenCalled();
+    expect(applyGeneratedAgentsToRegistry).not.toHaveBeenCalled();
   });
 });

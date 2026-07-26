@@ -5,8 +5,13 @@ import { nanoid } from 'nanoid';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { db, mediaFileKey } from '@/lib/utils/database';
-import type { AudioFileRecord, MediaFileRecord, GeneratedAgentRecord } from '@/lib/utils/database';
-import type { ClassroomManifest, ManifestScene } from '@/lib/export/classroom-zip-types';
+import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
+import type { GeneratedAgentConfig } from '@/lib/types/stage';
+import {
+  agentConfigFromManifest,
+  type ClassroomManifest,
+  type ManifestScene,
+} from '@/lib/export/classroom-zip-types';
 import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
 import { canonicalizeLegacyScene, mutateDocument, type AppDocument } from '@/lib/document-store';
@@ -171,6 +176,13 @@ export function useImportClassroom(onSuccess?: () => void) {
         setPhase('writingCourse');
         toast.loading(t('import.writingCourse'), { id: toastId });
 
+        // Rebuild the roster as stage-embedded configs: the stage document is
+        // the single source of truth for generated agents (voice included), so
+        // an import round-trips the roster without any side-table writes.
+        const importedAgentConfigs: GeneratedAgentConfig[] = (manifest.agents ?? []).map((a, i) =>
+          agentConfigFromManifest(a, newAgentIds[i]),
+        );
+
         const document: AppDocument = {
           stage: {
             id: newStageId,
@@ -181,6 +193,9 @@ export function useImportClassroom(onSuccess?: () => void) {
             createdAt: manifest.stage.createdAt || now,
             updatedAt: now,
             agentIds: newAgentIds.length > 0 ? newAgentIds : undefined,
+            ...(importedAgentConfigs.length > 0
+              ? { generatedAgentConfigs: importedAgentConfigs }
+              : {}),
           },
           scenes: manifest.scenes.map((mScene: ManifestScene, index: number) => {
             const newSceneId = nanoid();
@@ -215,22 +230,6 @@ export function useImportClassroom(onSuccess?: () => void) {
           }),
         };
 
-        // Write agents
-        if (manifest.agents?.length) {
-          const agentRecords: GeneratedAgentRecord[] = manifest.agents.map((a, i) => ({
-            id: newAgentIds[i],
-            stageId: newStageId,
-            name: a.name,
-            role: a.role,
-            persona: a.persona,
-            avatar: a.avatar,
-            color: a.color,
-            priority: a.priority,
-            createdAt: now,
-          }));
-          await db.generatedAgents.bulkPut(agentRecords);
-        }
-
         // The document is the commit point: one aggregate write under its per-stage lock.
         await mutateDocument(newStageId, async (_existing, store) => store.saveDocument(document));
 
@@ -240,7 +239,7 @@ export function useImportClassroom(onSuccess?: () => void) {
         onSuccess?.();
       } catch (error) {
         log.error('Classroom ZIP import failed:', error);
-        // Media/agents are separate legacy domains and cannot join the document transaction.
+        // Media files are a separate legacy domain and cannot join the document transaction.
         // Compensate every row this import could have created, logging individual failures.
         const cleanup = async (label: string, operation: () => Promise<unknown>) => {
           try {
@@ -256,9 +255,6 @@ export function useImportClassroom(onSuccess?: () => void) {
               store.deleteDocument(stageId),
             );
           });
-          await cleanup('generated agents', () =>
-            db.generatedAgents.where('stageId').equals(stageId).delete(),
-          );
           await cleanup('generated media', () =>
             db.mediaFiles.where('stageId').equals(stageId).delete(),
           );
