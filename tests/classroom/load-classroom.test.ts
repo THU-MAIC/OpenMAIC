@@ -255,11 +255,13 @@ describe('runClassroomLoad', () => {
     }
   });
 
-  it('keeps the warm classroom while its deletion cascade is unsettled, so a failed delete can restore pending edits', async () => {
+  it('parks a mid-cascade Back until the deletion settles; a failed delete keeps the warm classroom editable', async () => {
     // Browser Back lands while the home-page delete is still mid-cascade. The
     // warm state (plus the deletion path's dirt snapshot) is the only copy of
-    // the pre-delete edits; discarding it before the cascade settles would
-    // lose them if the delete then fails before removing the document.
+    // the pre-delete edits — but completing the load before the outcome is
+    // known would expose a classroom whose edits are refused and unrecorded.
+    // The load must WAIT for settlement, then keep the warm state when the
+    // delete failed (flag lifted, dirt restored).
     useStageStore.getState().clearStore();
     vi.mocked(saveStageDataIncremental).mockClear();
     vi.mocked(loadStageData).mockClear();
@@ -278,8 +280,19 @@ describe('runClassroomLoad', () => {
       beginStageDeletionCascade('stage-mid-delete');
       discardPendingStageChanges('stage-mid-delete');
 
-      // Back lands mid-cascade: warm state survives, no IndexedDB read.
-      await useStageStore.getState().loadFromStorage('stage-mid-delete');
+      // Back lands mid-cascade: the load parks on settlement instead of
+      // completing (no resolution, warm state untouched, no IndexedDB read).
+      const token = claimStageSceneLoadToken();
+      let loadSettled = false;
+      const loading = useStageStore
+        .getState()
+        .loadFromStorage('stage-mid-delete', token)
+        .then(() => {
+          loadSettled = true;
+        });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(loadSettled).toBe(false);
       expect(useStageStore.getState().stage?.id).toBe('stage-mid-delete');
       expect(loadStageData).not.toHaveBeenCalled();
 
@@ -288,6 +301,11 @@ describe('runClassroomLoad', () => {
       unmarkStageDeleted('stage-mid-delete');
       restorePendingStageChanges('stage-mid-delete', discarded);
       settleStageDeletionCascade('stage-mid-delete');
+
+      // The parked load resumes and keeps the warm (live again) classroom.
+      await loading;
+      expect(useStageStore.getState().stage?.id).toBe('stage-mid-delete');
+      expect(loadStageData).not.toHaveBeenCalled();
 
       // The pre-delete edit reaches durability again through the scheduler.
       await flushStageSave();
@@ -304,7 +322,11 @@ describe('runClassroomLoad', () => {
     }
   });
 
-  it('evicts the warm ghost only after a successful deletion settles (Back during delete → success)', async () => {
+  it('completes a mid-cascade Back with a cold server restore when the deletion succeeds', async () => {
+    // Back during delete → the deletion succeeds. The parked load must
+    // observe the settled outcome, let the settlement eviction stand, and run
+    // the full cold load so the server-restore path recovers the route —
+    // instead of leaving the user on a blanked classroom nothing reloads.
     useStageStore.getState().clearStore();
     vi.mocked(loadStageData).mockClear();
     applyClassroomStageAndScenes(
@@ -315,18 +337,88 @@ describe('runClassroomLoad', () => {
     markStageDeleted('stage-del-success');
     beginStageDeletionCascade('stage-del-success');
     try {
-      // Mid-cascade Back keeps the warm state (no discard, no reload).
-      await useStageStore.getState().loadFromStorage('stage-del-success');
-      expect(useStageStore.getState().stage?.id).toBe('stage-del-success');
-      expect(loadStageData).not.toHaveBeenCalled();
+      const serverStage = makeStage('stage-del-success');
+      const serverScene = makeScene('scene-server', 'stage-del-success');
+      const token = claimStageSceneLoadToken();
+      const { deps } = makeDeps({
+        classroomId: 'stage-del-success',
+        loadToken: token,
+        loadFromStorage: (id, t) => useStageStore.getState().loadFromStorage(id, t),
+        getCurrentStage: () => useStageStore.getState().stage,
+        fetchClassroom: vi.fn().mockResolvedValue({ stage: serverStage, scenes: [serverScene] }),
+        applyFallbackScenes: vi.fn().mockImplementation(async ({ stage, scenes }) => {
+          applyClassroomStageAndScenes(stage, scenes, { persist: false });
+          return true;
+        }),
+      });
 
-      // The cascade completes: deleteStageData settles, then evicts.
+      const loading = runClassroomLoad(deps);
+      await Promise.resolve();
+      await Promise.resolve();
+      // Parked: the classroom is not handed over mid-window.
+      expect(deps.fetchClassroom).not.toHaveBeenCalled();
+      expect(useStageStore.getState().stage?.id).toBe('stage-del-success');
+
+      // The cascade completes: deleteStageData settles, then evicts — same
+      // synchronous ordering as its finally + success tail.
       settleStageDeletionCascade('stage-del-success');
       clearStoreForDeletedStage('stage-del-success');
       expect(useStageStore.getState().stage).toBeNull();
+
+      await loading;
+
+      // The parked load fell through to a cold load (finding no local data)
+      // and the server fallback restored the classroom, lifting the deletion.
+      expect(loadStageData).toHaveBeenCalledWith('stage-del-success');
+      expect(deps.fetchClassroom).toHaveBeenCalledExactlyOnceWith('stage-del-success');
+      expect(useStageStore.getState().stage?.id).toBe('stage-del-success');
+      expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-server']);
+      expect(isStageDeleted('stage-del-success')).toBe(false);
+      expect(deps.setLoading).toHaveBeenCalledWith(false);
     } finally {
       settleStageDeletionCascade('stage-del-success');
       unmarkStageDeleted('stage-del-success');
+      useStageStore.getState().clearStore();
+    }
+  });
+
+  it('does not land the parked load when navigation moves on during deletion settlement', async () => {
+    // The user hits Back mid-cascade (load parks on settlement), then
+    // navigates to another classroom before the deletion settles. When the
+    // settlement releases the parked load, the token guard must keep it from
+    // touching the store the newer navigation now owns.
+    useStageStore.getState().clearStore();
+    vi.mocked(loadStageData).mockClear();
+    applyClassroomStageAndScenes(
+      makeStage('stage-await-nav'),
+      [makeScene('scene-n', 'stage-await-nav')],
+      { persist: false },
+    );
+    markStageDeleted('stage-await-nav');
+    beginStageDeletionCascade('stage-await-nav');
+    try {
+      const token = claimStageSceneLoadToken();
+      const loading = useStageStore.getState().loadFromStorage('stage-await-nav', token);
+
+      // A newer navigation claims the token and owns the store.
+      claimStageSceneLoadToken();
+      applyClassroomStageAndScenes(
+        makeStage('stage-other'),
+        [makeScene('scene-o', 'stage-other')],
+        { persist: false },
+      );
+
+      // The deletion settles successfully (flag kept) — releasing the parked
+      // load, which must now be a no-op.
+      settleStageDeletionCascade('stage-await-nav');
+      await loading;
+
+      expect(useStageStore.getState().stage?.id).toBe('stage-other');
+      expect(useStageStore.getState().scenes.map((s) => s.id)).toEqual(['scene-o']);
+      expect(loadStageData).not.toHaveBeenCalled();
+    } finally {
+      settleStageDeletionCascade('stage-await-nav');
+      unmarkStageDeleted('stage-await-nav');
       useStageStore.getState().clearStore();
     }
   });

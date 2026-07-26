@@ -119,6 +119,7 @@ import {
   markStageDeleted,
   settleStageDeletionCascade,
   stageDeletionEpoch,
+  stageDeletionSettled,
   unmarkStageDeleted,
 } from '@/lib/utils/deleted-stages';
 import { saveCurrentScene } from '@/lib/document-store';
@@ -414,6 +415,45 @@ describe('deletion epochs (delete → restore straddles)', () => {
     expect(isStageDeleted(stageId)).toBe(true);
   });
 
+  it('keeps the cascade in flight until the LAST overlapping cascade settles (counter, not a bit)', () => {
+    markStageDeleted(stageId);
+    beginStageDeletionCascade(stageId);
+    beginStageDeletionCascade(stageId);
+    // The first settle must not expose the second, still-undecided cascade
+    // as settled — that would let the read side discard the warm state
+    // inside the second cascade's keep-window.
+    settleStageDeletionCascade(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(true);
+    settleStageDeletionCascade(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+    // Extra settles never underflow into a phantom cascade.
+    settleStageDeletionCascade(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+    beginStageDeletionCascade(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(true);
+    settleStageDeletionCascade(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+  });
+
+  it('resolves the settlement promise only when the last cascade settles', async () => {
+    // Settled world: an awaiter is released immediately.
+    await expect(stageDeletionSettled(stageId)).resolves.toBeUndefined();
+
+    markStageDeleted(stageId);
+    beginStageDeletionCascade(stageId);
+    beginStageDeletionCascade(stageId);
+    let settled = false;
+    const waiter = stageDeletionSettled(stageId).then(() => {
+      settled = true;
+    });
+    settleStageDeletionCascade(stageId);
+    await Promise.resolve();
+    expect(settled).toBe(false);
+    settleStageDeletionCascade(stageId);
+    await waiter;
+    expect(settled).toBe(true);
+  });
+
   it('never rewinds the epoch: mark → unmark → mark keeps strictly increasing', () => {
     expect(stageDeletionEpoch(stageId)).toBe(0);
     markStageDeleted(stageId);
@@ -564,6 +604,116 @@ describe('deleteStageData wiring', () => {
     await expect(deleteStageData(stageId)).rejects.toThrow('partial cascade');
     // The document is gone; dropping later writes is what prevents resurrection.
     expect(isStageDeleted(stageId)).toBe(true);
+  });
+
+  it('single-flights concurrent deletions: a second call joins the first cascade', async () => {
+    // Overlapping cascades for the same stage would let the first settle
+    // clear the keep-window while the second is still undecided. The guard
+    // makes the second call share the first cascade (and its outcome).
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mutateDocument.mockImplementationOnce(
+      async (
+        _id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        await gate;
+        return callback(undefined, fakeStore);
+      },
+    );
+
+    const first = deleteStageData(stageId);
+    const second = deleteStageData(stageId);
+    await vi.waitFor(() => expect(mutateDocument).toHaveBeenCalledOnce());
+    expect(isStageDeletionInFlight(stageId)).toBe(true);
+
+    release();
+    await Promise.all([first, second]);
+
+    expect(mutateDocument).toHaveBeenCalledOnce();
+    expect(fakeStore.deleteDocument).toHaveBeenCalledExactlyOnceWith(stageId);
+    expect(snapshotPendingStageChangesForDeletion).toHaveBeenCalledOnce();
+    expect(clearStoreForDeletedStage).toHaveBeenCalledExactlyOnceWith(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+
+    // The single-flight entry is released: a LATER delete runs its own cascade.
+    await deleteStageData(stageId);
+    expect(mutateDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it('joined concurrent deletions share the first cascade failure', async () => {
+    fakeStore.deleteDocument.mockRejectedValueOnce(new Error('locked'));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mutateDocument.mockImplementationOnce(
+      async (
+        _id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        await gate;
+        return callback(undefined, fakeStore);
+      },
+    );
+
+    const first = deleteStageData(stageId);
+    const second = deleteStageData(stageId);
+    release();
+    await expect(first).rejects.toThrow('locked');
+    await expect(second).rejects.toThrow('locked');
+    // One cascade, one failure handling: the discarded dirt was restored
+    // exactly once (not once per caller).
+    expect(restorePendingStageChanges).toHaveBeenCalledExactlyOnceWith(stageId, []);
+    expect(isStageDeleted(stageId)).toBe(false);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+  });
+
+  it('holds the settlement promise open across the cascade and resolves it on success', async () => {
+    let midCascadeSettled: boolean | undefined;
+    let waiter: Promise<void> | undefined;
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        let resolved = false;
+        waiter = stageDeletionSettled(id).then(() => {
+          resolved = true;
+        });
+        await Promise.resolve();
+        midCascadeSettled = resolved;
+        return callback(undefined, fakeStore);
+      },
+    );
+
+    await deleteStageData(stageId);
+    await waiter;
+
+    expect(midCascadeSettled).toBe(false);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+  });
+
+  it('resolves the settlement promise when the deletion fails before removing the document', async () => {
+    let waiter: Promise<void> | undefined;
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        waiter = stageDeletionSettled(id);
+        return callback(undefined, fakeStore);
+      },
+    );
+    fakeStore.deleteDocument.mockRejectedValueOnce(new Error('locked'));
+
+    await expect(deleteStageData(stageId)).rejects.toThrow('locked');
+
+    // A failed cascade still settles (never rejects), releasing read-side
+    // waiters into the post-outcome flag state.
+    await expect(waiter).resolves.toBeUndefined();
   });
 
   it('snapshots the pending dirt BEFORE the tombstone exists', async () => {

@@ -61,16 +61,30 @@ interface StageDeletionState {
   /** True while a deletion is in effect (until an explicit restore lifts it). */
   deleted: boolean;
   /**
-   * True while a deletion cascade is running whose outcome is not yet known.
-   * While it holds, the deleted flag alone must not be read as "the document
-   * is gone": the cascade can still fail before removing the document, in
-   * which case the flag is lifted and the warm store state (plus restored
-   * pending dirt) is the user's only copy of the pre-delete edits.
+   * Number of deletion cascades currently running whose outcome is not yet
+   * known. While it is positive, the deleted flag alone must not be read as
+   * "the document is gone": a cascade can still fail before removing the
+   * document, in which case the flag is lifted and the warm store state (plus
+   * restored pending dirt) is the user's only copy of the pre-delete edits.
+   *
+   * A counter, not a boolean: `deleteStageData` single-flights concurrent
+   * deletions of the same stage, but this module must not depend on that —
+   * with overlapping begin/settle pairs the stage stays in flight until the
+   * LAST cascade settles, instead of the first settle clearing a bit while
+   * another cascade is still undecided.
    */
-  cascadeInFlight: boolean;
+  unsettledCascades: number;
 }
 
 const stageDeletionStates = new Map<string, StageDeletionState>();
+
+/**
+ * Per-stage settlement promise for the currently in-flight cascade(s).
+ * Created when the first cascade begins, resolved (and dropped) when the last
+ * one settles, so read-side waiters can `await` the outcome instead of
+ * polling `isStageDeletionInFlight`.
+ */
+const cascadeSettlements = new Map<string, { promise: Promise<void>; resolve: () => void }>();
 
 /**
  * Register a stage as deleted. Call before the deletion cascade starts.
@@ -83,8 +97,8 @@ export function markStageDeleted(stageId: string): void {
     epoch: (state?.epoch ?? 0) + 1,
     deleted: true,
     // Not a settlement event: an import-rollback re-mark records a document
-    // whose absence is already a settled fact, so it must not flip this bit.
-    cascadeInFlight: state?.cascadeInFlight ?? false,
+    // whose absence is already a settled fact, so it must not touch the count.
+    unsettledCascades: state?.unsettledCascades ?? 0,
   });
 }
 
@@ -96,28 +110,58 @@ export function markStageDeleted(stageId: string): void {
  */
 export function beginStageDeletionCascade(stageId: string): void {
   const state = stageDeletionStates.get(stageId);
-  if (state) state.cascadeInFlight = true;
+  if (!state) return;
+  state.unsettledCascades += 1;
+  if (!cascadeSettlements.has(stageId)) {
+    let resolve!: () => void;
+    const promise = new Promise<void>((res) => {
+      resolve = res;
+    });
+    cascadeSettlements.set(stageId, { promise, resolve });
+  }
 }
 
 /**
- * The cascade's outcome is now known: either the document was confirmed
+ * A cascade's outcome is now known: either the document was confirmed
  * removed (deleted flag kept) or the deletion failed before removing it
- * (flag lifted). Read-side consumers may act on the deleted flag again.
+ * (flag lifted). Once the LAST overlapping cascade settles, read-side
+ * consumers may act on the deleted flag again and every settlement waiter is
+ * released. Extra settles (no matching begin) are no-ops — the count never
+ * underflows into a phantom cascade.
  */
 export function settleStageDeletionCascade(stageId: string): void {
   const state = stageDeletionStates.get(stageId);
-  if (state) state.cascadeInFlight = false;
+  if (!state || state.unsettledCascades === 0) return;
+  state.unsettledCascades -= 1;
+  if (state.unsettledCascades === 0) {
+    const settlement = cascadeSettlements.get(stageId);
+    cascadeSettlements.delete(stageId);
+    settlement?.resolve();
+  }
 }
 
 /**
  * True while a deletion cascade for `stageId` is running and unsettled. The
- * warm-ghost discard in `loadFromStorage` must keep warm state (and any
+ * deleted-warm branch in `loadFromStorage` must keep the warm state (and any
  * restorable pending dirt) until the deletion settles — discarding early
  * would lose the only copy of pre-delete edits if the cascade then fails
  * before removing the document.
  */
 export function isStageDeletionInFlight(stageId: string): boolean {
-  return stageDeletionStates.get(stageId)?.cascadeInFlight ?? false;
+  return (stageDeletionStates.get(stageId)?.unsettledCascades ?? 0) > 0;
+}
+
+/**
+ * Resolves when every currently in-flight deletion cascade for `stageId` has
+ * settled (already-resolved when none is in flight). Read-side consumers that
+ * cannot proceed until the outcome is known — the deleted-warm branch in
+ * `loadFromStorage` — await this instead of completing early. Never rejects:
+ * a failed cascade still settles (its `finally` runs after the failure path
+ * lifted the flag / restored dirt), so waiters observe the post-outcome flag
+ * state, not the error.
+ */
+export function stageDeletionSettled(stageId: string): Promise<void> {
+  return cascadeSettlements.get(stageId)?.promise ?? Promise.resolve();
 }
 
 /**

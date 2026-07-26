@@ -20,12 +20,13 @@ import { migrateScene } from '@/lib/edit/slide-schema';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
-import type { PendingChange } from '@/lib/utils/stage-storage';
+import type { PendingChange, StaleDroppedSave } from '@/lib/utils/stage-storage';
 import {
   isStageDeleted,
   isStageDeletionInFlight,
   isStageWriteStale,
   stageDeletionEpoch,
+  stageDeletionSettled,
 } from '@/lib/utils/deleted-stages';
 
 const log = createLogger('StageStore');
@@ -162,6 +163,24 @@ export function restorePendingStageChanges(
   markPendingChanges(stageId, ...changes);
 }
 
+/** The empty store shape shared by every reset path (epoch bump included). */
+function clearedStageState(state: Pick<StageState, 'generationEpoch'>) {
+  return {
+    stage: null,
+    scenes: [],
+    currentSceneId: null,
+    chats: [],
+    chatSnapshot: { sessions: [], restoreMarker: null },
+    outlines: [],
+    generationComplete: false,
+    generationEpoch: state.generationEpoch + 1,
+    generationStatus: 'idle' as const,
+    currentGeneratingOrder: -1,
+    failedOutlines: [],
+    generatingOutlines: [],
+  };
+}
+
 /**
  * Evict a deleted stage from the in-memory store. Called by the deletion path
  * after the cascade succeeds: a warm store would otherwise keep rendering the
@@ -177,7 +196,16 @@ export function clearStoreForDeletedStage(stageId: string): void {
   // the warm state is the RESTORED classroom, not the deleted ghost —
   // clearing it would discard the restore and its post-restore edits.
   if (!isStageDeleted(stageId)) return;
-  useStageStore.getState().clearStore();
+  // Evict WITHOUT claiming a new load token (unlike clearStore): a load that
+  // is parked on this very cascade's settlement — the mid-deletion warm
+  // branch in `loadFromStorage` — must remain the current load so it can run
+  // the cold reload that hands the emptied route to the server-restore path.
+  // Ghost re-materialization by an in-flight load is prevented by the
+  // read-side isStageDeleted re-checks before its store writes, not by token
+  // invalidation.
+  resetPendingChanges();
+  useStageStore.setState((state) => clearedStageState(state));
+  log.info('Evicted deleted stage from the store:', stageId);
 }
 
 export function claimStageSceneLoadToken(): StageSceneLoadToken {
@@ -313,7 +341,7 @@ async function persistDirtySnapshot(
   dirtySnapshot: ReadonlyMap<string, PendingEntry>,
   snapshot: StagePersistenceSnapshot,
   capturedEpoch: number,
-): Promise<Set<string>> {
+): Promise<Set<string> | StaleDroppedSave> {
   if (!snapshot.stage) return new Set();
   // A stale capture is dropped, not retried: this covers snapshots that
   // escaped `discardPendingStageChanges` because they already left the
@@ -321,7 +349,7 @@ async function persistDirtySnapshot(
   // setStage). `capturedEpoch` is the deletion epoch recorded when `snapshot`
   // was taken; a deletion after that moment permanently invalidates this
   // write, even if a same-id restore has since lifted the deleted flag.
-  if (isStageWriteStale(stageId, capturedEpoch)) return new Set();
+  if (isStageWriteStale(stageId, capturedEpoch)) return 'stale-dropped';
   stageStorageModulePromise ??= import('@/lib/utils/stage-storage');
   const { saveStageDataIncremental } = await stageStorageModulePromise;
   const result = await saveStageDataIncremental(
@@ -342,12 +370,16 @@ async function persistDirtySnapshot(
     },
     capturedEpoch,
   );
-  // A stale drop persisted nothing, but also leaves nothing to retry: the
+  // A stale drop persisted nothing, and also leaves nothing to retry: the
   // deletion path owns the discard (and, on a failed delete, the restore) of
-  // this stage's pending dirt. Reporting no failures is deliberate — the
-  // revision guards keep any restored (re-queued) descriptors, since
+  // this stage's pending dirt. The status is PROPAGATED, not folded into an
+  // empty failure set, because callers must be able to tell "verified write"
+  // from "fenced drop": success bookkeeping (the chatSnapshot rebind in
+  // startFlushRound) after a drop would bind the baseline to chats that never
+  // landed. Pending-map handling may still treat a drop as "no failures" —
+  // the revision guards keep any restored (re-queued) descriptors, since
   // restores mint fresh revisions.
-  if (result === 'stale-dropped') return new Set();
+  if (result === 'stale-dropped') return 'stale-dropped';
   return new Set((result?.failedChanges ?? []).map(pendingChangeKey));
 }
 
@@ -394,12 +426,17 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         let lastFailedKeys = new Set<string>();
         for (let attempt = 0; attempt < 2; attempt += 1) {
           try {
-            lastFailedKeys = await persistDirtySnapshot(
+            const result = await persistDirtySnapshot(
               departingStageId,
               departingDirty,
               departingSnapshot,
               departingEpoch,
             );
+            // A fenced drop has nothing to retry and nothing to report as
+            // failed: the deletion path owns the discard (and, on a failed
+            // delete, the restore) of this stage's dirt.
+            if (result === 'stale-dropped') return;
+            lastFailedKeys = result;
             if (lastFailedKeys.size === 0) return;
           } catch (error) {
             if (attempt === 1) throw error;
@@ -761,16 +798,41 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           log.info('Stage already loaded in memory, skipping IndexedDB load:', stageId);
           return;
         }
-        // While the deletion cascade is still unsettled the ghost must be
-        // KEPT: the cascade can still fail before removing the document, in
-        // which case the deleted flag is lifted and the warm state (plus the
-        // pending dirt the failure path restores) is the only copy of the
-        // pre-delete edits. On success, `clearStoreForDeletedStage` evicts
-        // the warm copy at settlement and a later load takes the settled
-        // branch below.
+        // While the deletion cascade is still unsettled, neither branch can
+        // be taken yet: on failure the warm state (plus the pending dirt the
+        // failure path restores) is the only copy of the pre-delete edits and
+        // must be KEPT, while on success the ghost must be discarded for a
+        // cold reload. Completing the load NOW would expose the classroom
+        // inside that window — edits would be refused by markPendingChanges
+        // without being in the deletion's pre-start snapshot (silently lost
+        // if the delete then fails), and on success the settlement eviction
+        // would blank an already-completed route with nothing left to
+        // trigger a reload. So park until the outcome is known, then branch.
+        // No deadlock: this load holds no document lock while parked, and
+        // the cascade never waits on a load to settle.
         if (isStageDeletionInFlight(stageId)) {
-          log.info('Warm stage is mid-deletion; keeping state until it settles:', stageId);
-          return;
+          log.info('Warm stage is mid-deletion; waiting for the cascade to settle:', stageId);
+          await stageDeletionSettled(stageId);
+          // Settlement can resolve long after the user navigated elsewhere;
+          // the usual token discipline keeps this parked load from touching
+          // the store the newer navigation now owns. (The success-path
+          // eviction deliberately does NOT claim a token, so it cannot trip
+          // this guard — see clearStoreForDeletedStage.)
+          if (!isCurrentStageSceneLoadToken(token)) {
+            log.info('Newer stage load started during deletion settlement, skipping:', stageId);
+            return;
+          }
+          if (!isStageDeleted(stageId)) {
+            // The deletion failed before removing the document and lifted the
+            // flag: the warm state IS the live classroom again (the failure
+            // path re-queued the discarded dirt before settling) — keep it.
+            log.info('Deletion failed; keeping warm stage state:', stageId);
+            return;
+          }
+          // Deletion succeeded: the settlement eviction has cleared the warm
+          // ghost (it runs synchronously before this microtask resumes).
+          // Fall through to the settled-deleted handling below and run the
+          // full cold load so the server-restore path can recover the route.
         }
         // The warm copy is a ghost of a DELETED classroom whose deletion has
         // SETTLED with the document removed (deletion evicts the store, but a
@@ -783,21 +845,10 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         // full load, which finds no local data and lets the server-restore
         // path run and lift the deletion.
         log.info('Warm stage is deleted; discarding ghost and reloading:', stageId);
-        resetPendingChanges();
-        set((s) => ({
-          stage: null,
-          scenes: [],
-          currentSceneId: null,
-          chats: [],
-          chatSnapshot: { sessions: [], restoreMarker: null },
-          outlines: [],
-          generationComplete: false,
-          generationEpoch: s.generationEpoch + 1,
-          generationStatus: 'idle' as const,
-          currentGeneratingOrder: -1,
-          failedOutlines: [],
-          generatingOutlines: [],
-        }));
+        if (get().stage?.id === stageId) {
+          resetPendingChanges();
+          set((s) => clearedStageState(s));
+        }
       }
 
       const { loadStageData } = await import('@/lib/utils/stage-storage');
@@ -891,20 +942,7 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
   clearStore: () => {
     claimStageSceneLoadToken();
     resetPendingChanges();
-    set((s) => ({
-      stage: null,
-      scenes: [],
-      currentSceneId: null,
-      chats: [],
-      chatSnapshot: { sessions: [], restoreMarker: null },
-      outlines: [],
-      generationComplete: false,
-      generationEpoch: s.generationEpoch + 1,
-      generationStatus: 'idle' as const,
-      currentGeneratingOrder: -1,
-      failedOutlines: [],
-      generatingOutlines: [],
-    }));
+    set((s) => clearedStageState(s));
     log.info('Store cleared');
   },
 }));
@@ -933,12 +971,17 @@ function startFlushRound(): FlushRound | null {
 
   const run = (async () => {
     try {
-      const failedKeys = await persistDirtySnapshot(
-        stageId,
-        dirtySnapshot,
-        snapshot,
-        capturedEpoch,
-      );
+      const result = await persistDirtySnapshot(stageId, dirtySnapshot, snapshot, capturedEpoch);
+      // A fenced drop persisted nothing. For the pending map that is
+      // equivalent to "no failures" (nothing to retry; the deletion path owns
+      // the discard/restore, and restored descriptors survive the clearing
+      // loop below via their fresh revisions). The chat success bookkeeping
+      // below is NOT equivalent: rebinding chatSnapshot to chats that never
+      // landed would make the next saveChatSessions no-op-skip them as
+      // already durable and corrupt the cross-tab conflict baseline — mirror
+      // of the stale-dropped handling in saveToStorage.
+      const staleDropped = result === 'stale-dropped';
+      const failedKeys = result === 'stale-dropped' ? new Set<string>() : result;
       if (pendingStageId === stageId) {
         for (const [key, entry] of dirtySnapshot) {
           if (!failedKeys.has(key) && pendingChanges.get(key)?.revision === entry.revision) {
@@ -947,6 +990,7 @@ function startFlushRound(): FlushRound | null {
         }
       }
       if (
+        !staleDropped &&
         dirtySnapshot.has('chats') &&
         !failedKeys.has('chats') &&
         useStageStore.getState().stage?.id === stageId &&

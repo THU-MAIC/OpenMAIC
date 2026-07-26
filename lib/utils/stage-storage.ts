@@ -144,10 +144,14 @@ async function saveStageChats(
 
 /**
  * A save that was dropped by the deletion-epoch fence. Distinguishable from
- * every success shape on purpose: nothing (or at most a prefix of the writes,
- * which the deletion cascade removes) was persisted, so callers must not
- * perform success bookkeeping — no snapshot rebinding, no pending clearing,
- * no durability claims.
+ * every success shape on purpose: nothing durable survives — at most some of
+ * the writes landed before the fence tripped, and those are removed by the
+ * deletion cascade or ignored by the load path (a tail `saveCurrentScene` can
+ * land after the cascade's `clearCurrentScene`, but the orphaned cursor row
+ * is never exposed: `loadStageData` bails before reading it while the
+ * document is missing, and validates it against the document's scenes once
+ * one exists again). Callers must not perform success bookkeeping — no
+ * snapshot rebinding, no pending clearing, no durability claims.
  */
 export type StaleDroppedSave = 'stale-dropped';
 
@@ -446,9 +450,29 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 }
 
 /**
- * Delete stage and all related data
+ * In-flight deletions, keyed by stage id. `deleteStageData` is single-flight
+ * per stage: a concurrent second call joins the first cascade instead of
+ * starting an overlapping one, so begin/settle pairs for one stage never
+ * interleave and a settling cascade cannot expose another one's keep-window
+ * (the warm-ghost retention in `loadFromStorage`) as already settled.
  */
-export async function deleteStageData(stageId: string): Promise<void> {
+const inFlightStageDeletions = new Map<string, Promise<void>>();
+
+/**
+ * Delete stage and all related data. Single-flight per stage: concurrent
+ * calls for the same id share one cascade (and its outcome).
+ */
+export function deleteStageData(stageId: string): Promise<void> {
+  const existing = inFlightStageDeletions.get(stageId);
+  if (existing) return existing;
+  const run = performStageDeletion(stageId).finally(() => {
+    inFlightStageDeletions.delete(stageId);
+  });
+  inFlightStageDeletions.set(stageId, run);
+  return run;
+}
+
+async function performStageDeletion(stageId: string): Promise<void> {
   // Dynamic import avoids a static module cycle with the store.
   const {
     clearStoreForDeletedStage,
@@ -472,9 +496,12 @@ export async function deleteStageData(stageId: string): Promise<void> {
   // deleted flag.
   markStageDeleted(stageId);
   // The cascade's outcome is unknown until it settles. Read-side consumers
-  // (the warm-ghost discard in loadFromStorage) must not treat the deleted
+  // (the deleted-warm branch in loadFromStorage) must not treat the deleted
   // flag as "document gone" while this holds — a failure before document
-  // removal lifts the flag and hands the pending dirt back.
+  // removal lifts the flag and hands the pending dirt back — so they await
+  // stageDeletionSettled instead. That wait cannot deadlock against this
+  // cascade: the cascade never waits on a load, and a parked load holds no
+  // document lock while awaiting settlement.
   beginStageDeletionCascade(stageId);
   // Then drop any still-queued persistence work for this stage: a mutation
   // sitting in the debounce window must not even start a flush after the
@@ -595,6 +622,13 @@ export async function deleteStageData(stageId: string): Promise<void> {
   // because this module already owns the deletion cascade's store-side
   // bookkeeping through the same dynamic-import seam, so every caller of
   // deleteStageData gets the invariant, not just the home page.
+  //
+  // Ordering with settlement waiters: the settle above releases any load
+  // parked in loadFromStorage's mid-deletion branch, but that waiter resumes
+  // as a microtask — this synchronous eviction runs first. The eviction
+  // deliberately keeps the current load token (see clearStoreForDeletedStage)
+  // so that resumed load stays current and performs the cold reload that
+  // hands the emptied route to the server-restore path.
   clearStoreForDeletedStage(stageId);
 }
 
