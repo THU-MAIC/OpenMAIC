@@ -60,6 +60,14 @@ interface StageDeletionState {
   epoch: number;
   /** True while a deletion is in effect (until an explicit restore lifts it). */
   deleted: boolean;
+  /**
+   * True while a deletion cascade is running whose outcome is not yet known.
+   * While it holds, the deleted flag alone must not be read as "the document
+   * is gone": the cascade can still fail before removing the document, in
+   * which case the flag is lifted and the warm store state (plus restored
+   * pending dirt) is the user's only copy of the pre-delete edits.
+   */
+  cascadeInFlight: boolean;
 }
 
 const stageDeletionStates = new Map<string, StageDeletionState>();
@@ -71,7 +79,45 @@ const stageDeletionStates = new Map<string, StageDeletionState>();
  */
 export function markStageDeleted(stageId: string): void {
   const state = stageDeletionStates.get(stageId);
-  stageDeletionStates.set(stageId, { epoch: (state?.epoch ?? 0) + 1, deleted: true });
+  stageDeletionStates.set(stageId, {
+    epoch: (state?.epoch ?? 0) + 1,
+    deleted: true,
+    // Not a settlement event: an import-rollback re-mark records a document
+    // whose absence is already a settled fact, so it must not flip this bit.
+    cascadeInFlight: state?.cascadeInFlight ?? false,
+  });
+}
+
+/**
+ * Record that a deletion cascade for `stageId` has started and its outcome —
+ * document removed, or deletion failed before removal — is not yet known.
+ * Called by `deleteStageData` immediately after `markStageDeleted`; no other
+ * mark point starts a cascade.
+ */
+export function beginStageDeletionCascade(stageId: string): void {
+  const state = stageDeletionStates.get(stageId);
+  if (state) state.cascadeInFlight = true;
+}
+
+/**
+ * The cascade's outcome is now known: either the document was confirmed
+ * removed (deleted flag kept) or the deletion failed before removing it
+ * (flag lifted). Read-side consumers may act on the deleted flag again.
+ */
+export function settleStageDeletionCascade(stageId: string): void {
+  const state = stageDeletionStates.get(stageId);
+  if (state) state.cascadeInFlight = false;
+}
+
+/**
+ * True while a deletion cascade for `stageId` is running and unsettled. The
+ * warm-ghost discard in `loadFromStorage` must keep warm state (and any
+ * restorable pending dirt) until the deletion settles — discarding early
+ * would lose the only copy of pre-delete edits if the cascade then fails
+ * before removing the document.
+ */
+export function isStageDeletionInFlight(stageId: string): boolean {
+  return stageDeletionStates.get(stageId)?.cascadeInFlight ?? false;
 }
 
 /**

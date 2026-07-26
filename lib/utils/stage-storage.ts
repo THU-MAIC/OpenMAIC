@@ -38,9 +38,10 @@ import {
 import { DocumentVersionError } from '@openmaic/storage';
 import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 import {
+  beginStageDeletionCascade,
   isStageWriteStale,
   markStageDeleted,
-  stageDeletionEpoch,
+  settleStageDeletionCascade,
   unmarkStageDeleted,
 } from './deleted-stages';
 
@@ -142,27 +143,39 @@ async function saveStageChats(
 }
 
 /**
+ * A save that was dropped by the deletion-epoch fence. Distinguishable from
+ * every success shape on purpose: nothing (or at most a prefix of the writes,
+ * which the deletion cascade removes) was persisted, so callers must not
+ * perform success bookkeeping — no snapshot rebinding, no pending clearing,
+ * no durability claims.
+ */
+export type StaleDroppedSave = 'stale-dropped';
+
+/**
  * Save stage data to IndexedDB.
  *
  * `capturedEpoch` is the stage's deletion epoch at the moment `data` was
- * captured (defaults to entry time for callers whose data is current at call
- * time). Every write below is fenced by `isStageWriteStale`: it drops when a
- * deletion is in effect OR a deletion happened after the capture — a
- * pre-delete snapshot stays fenced even after a same-id restore lifts the
- * deleted flag, because the restore never rewinds the epoch.
+ * captured — required, so the type system enforces that the capture point and
+ * the validation point stay paired. Every write below is fenced by
+ * `isStageWriteStale`: it drops when a deletion is in effect OR a deletion
+ * happened after the capture — a pre-delete snapshot stays fenced even after
+ * a same-id restore lifts the deleted flag, because the restore never rewinds
+ * the epoch. A fenced write returns `'stale-dropped'` instead of a success
+ * shape.
  */
 export async function saveStageData(
   stageId: string,
   data: StageStoreData,
-  capturedEpoch: number = stageDeletionEpoch(stageId),
-): Promise<{ failedChanges: PendingChange[] } | undefined> {
+  capturedEpoch: number,
+): Promise<{ failedChanges: PendingChange[] } | StaleDroppedSave | undefined> {
   if (isStageWriteStale(stageId, capturedEpoch)) {
     log.info(`Dropping save for deleted/stale stage: ${stageId}`);
-    return undefined;
+    return 'stale-dropped';
   }
   try {
     const now = Date.now();
     const failedChanges: PendingChange[] = [];
+    let dropped = false;
     await mutateDocument(
       stageId,
       async (existing, store) => {
@@ -171,19 +184,31 @@ export async function saveStageData(
         // per-stage document lock; without them the callback is lock-free
         // best-effort LWW, so additional re-checks sit immediately before
         // each write below to shrink the check-then-act window.
-        if (isStageWriteStale(stageId, capturedEpoch)) return;
+        if (isStageWriteStale(stageId, capturedEpoch)) {
+          dropped = true;
+          return;
+        }
         // Lock order: per-stage document lock, then the global runtime epoch.
         // Maintenance may wait for this save, but this save never waits on a
         // document lock while already occupying the shared epoch.
         await withRuntimeStorageSharedLock(async () => {
           const existingOutline = existing?.outline as AppDocumentOutline | undefined;
-          if (isStageWriteStale(stageId, capturedEpoch)) return;
+          if (isStageWriteStale(stageId, capturedEpoch)) {
+            dropped = true;
+            return;
+          }
           await store.saveDocument(documentSnapshot(stageId, data, existingOutline, now));
-          if (isStageWriteStale(stageId, capturedEpoch)) return;
+          if (isStageWriteStale(stageId, capturedEpoch)) {
+            dropped = true;
+            return;
+          }
           await saveCurrentScene(stageId, data.currentSceneId);
 
           // Chat sessions live in the learner RuntimeStore, outside the document DB.
-          if (isStageWriteStale(stageId, capturedEpoch)) return;
+          if (isStageWriteStale(stageId, capturedEpoch)) {
+            dropped = true;
+            return;
+          }
           if (data.chats && !(await saveStageChats(stageId, data, true))) {
             failedChanges.push({ kind: 'chats' });
           }
@@ -191,6 +216,10 @@ export async function saveStageData(
       },
       { storageSharedLockHeld: true },
     );
+    if (dropped) {
+      log.info(`Dropped save mid-write for deleted/stale stage: ${stageId}`);
+      return 'stale-dropped';
+    }
     log.info(`Saved stage: ${stageId}`);
     return failedChanges.length > 0 ? { failedChanges } : undefined;
   } catch (error) {
@@ -208,14 +237,16 @@ export async function saveStageDataIncremental(
   stageId: string,
   dirty: readonly PendingChange[],
   data: StageStoreData,
-  capturedEpoch: number = stageDeletionEpoch(stageId),
-): Promise<{ failedChanges: PendingChange[] }> {
+  capturedEpoch: number,
+): Promise<{ failedChanges: PendingChange[] } | StaleDroppedSave> {
   // `capturedEpoch` = the deletion epoch when `data` was captured (the flush
-  // round / departing-stage snapshot). See saveStageData for the fencing
-  // contract; a stale capture is dropped even after a same-id restore.
+  // round / departing-stage snapshot); required so the capture point and the
+  // validation point stay paired. See saveStageData for the fencing contract;
+  // a stale capture is dropped even after a same-id restore, and a dropped
+  // write reports `'stale-dropped'` instead of a success shape.
   if (isStageWriteStale(stageId, capturedEpoch)) {
     log.info(`Dropping incremental save for deleted/stale stage: ${stageId}`);
-    return { failedChanges: [] };
+    return 'stale-dropped';
   }
   const has = (kind: PendingChange['kind']) => dirty.some((change) => change.kind === kind);
   const dirtySceneIds = new Set(
@@ -234,6 +265,7 @@ export async function saveStageDataIncremental(
     ),
   );
 
+  let dropped = false;
   if (needsDocumentWrite) {
     await mutateDocument(
       stageId,
@@ -246,17 +278,26 @@ export async function saveStageDataIncremental(
         // LWW, so each write below re-checks immediately before landing.
         // Epoch staleness also covers the delete→restore straddle: a round
         // captured pre-delete stays fenced after the restore lifts the flag.
-        if (isStageWriteStale(stageId, capturedEpoch)) return;
+        if (isStageWriteStale(stageId, capturedEpoch)) {
+          dropped = true;
+          return;
+        }
         await withRuntimeStorageSharedLock(async () => {
           const now = Date.now();
           const fullSave = async () => {
-            if (isStageWriteStale(stageId, capturedEpoch)) return;
+            if (isStageWriteStale(stageId, capturedEpoch)) {
+              dropped = true;
+              return;
+            }
             const persistedScenes = await preparePBLScenesForDocumentPersistence(
               stageId,
               data.scenes,
             );
             // Preparation awaited: last re-check immediately before the write.
-            if (isStageWriteStale(stageId, capturedEpoch)) return;
+            if (isStageWriteStale(stageId, capturedEpoch)) {
+              dropped = true;
+              return;
+            }
             await store.saveDocument(
               documentSnapshot(
                 stageId,
@@ -290,12 +331,18 @@ export async function saveStageDataIncremental(
                 const index = data.scenes.findIndex((candidate) => candidate.id === scene.id);
                 // Preparation and prior iterations awaited: re-check before
                 // each row write (lock-free environments have no lock to win).
-                if (isStageWriteStale(stageId, capturedEpoch)) return;
+                if (isStageWriteStale(stageId, capturedEpoch)) {
+                  dropped = true;
+                  return;
+                }
                 await store.putScene(stageId, stampScene(stageId, scene, index, now));
               }
             }
             if (has('stage')) {
-              if (isStageWriteStale(stageId, capturedEpoch)) return;
+              if (isStageWriteStale(stageId, capturedEpoch)) {
+                dropped = true;
+                return;
+              }
               await store.putStage(stageId, stampStage(stageId, data.stage, now));
             }
           } catch (error) {
@@ -313,6 +360,13 @@ export async function saveStageDataIncremental(
     );
   }
 
+  // A document-write drop fences the whole flush: once a deletion turned this
+  // capture stale, staleness is permanent (the epoch never rewinds), so the
+  // tail must not even be attempted.
+  if (dropped) {
+    log.info(`Dropped incremental save mid-write for deleted/stale stage: ${stageId}`);
+    return 'stale-dropped';
+  }
   // Tail writes live outside the document mutation. A delete that won the
   // race above (dropping the document write) must also fence the
   // currentScene KV row and the chat sessions, or this same flush would
@@ -322,13 +376,13 @@ export async function saveStageDataIncremental(
   // write is awaiting (there is no lock spanning the tail).
   if (isStageWriteStale(stageId, capturedEpoch)) {
     log.info(`Dropping incremental save tail for deleted/stale stage: ${stageId}`);
-    return { failedChanges: [] };
+    return 'stale-dropped';
   }
   if (has('currentScene')) await saveCurrentScene(stageId, data.currentSceneId);
   // `saveCurrentScene` awaited: re-check immediately before the chat write.
   if (isStageWriteStale(stageId, capturedEpoch)) {
     log.info(`Dropping incremental chat tail for deleted/stale stage: ${stageId}`);
-    return { failedChanges: [] };
+    return 'stale-dropped';
   }
   const failedChanges: PendingChange[] = [];
   if (has('chats') && !(await saveStageChats(stageId, data))) {
@@ -417,6 +471,11 @@ export async function deleteStageData(stageId: string): Promise<void> {
   // departing-stage retry), and even if a same-id restore later lifts the
   // deleted flag.
   markStageDeleted(stageId);
+  // The cascade's outcome is unknown until it settles. Read-side consumers
+  // (the warm-ghost discard in loadFromStorage) must not treat the deleted
+  // flag as "document gone" while this holds — a failure before document
+  // removal lifts the flag and hands the pending dirt back.
+  beginStageDeletionCascade(stageId);
   // Then drop any still-queued persistence work for this stage: a mutation
   // sitting in the debounce window must not even start a flush after the
   // delete.
@@ -523,6 +582,11 @@ export async function deleteStageData(stageId: string): Promise<void> {
       restorePendingStageChanges(stageId, discardedChanges);
     }
     throw error;
+  } finally {
+    // Settlement: whichever way the cascade ended, its outcome is now
+    // recorded — document removed (deleted flag kept) or deletion failed
+    // before removal (flag lifted above). The read side may act on the flag.
+    settleStageDeletionCascade(stageId);
   }
   // Success: evict the deleted classroom from the in-memory store. A warm
   // store would otherwise keep rendering the deleted classroom from memory —

@@ -693,12 +693,16 @@ describe('database runtime chat integration', () => {
       return document;
     });
 
-    const staleSave = saveStageData(stage.id, {
-      stage: { ...stage, name: 'Stale save' },
-      scenes: [],
-      currentSceneId: null,
-      chats: [],
-    });
+    const staleSave = saveStageData(
+      stage.id,
+      {
+        stage: { ...stage, name: 'Stale save' },
+        scenes: [],
+        currentSceneId: null,
+        chats: [],
+      },
+      0,
+    );
     await migrationLoadStarted;
     const clearing = clearDatabase(runtimeStore);
     releaseMigrationLoad();
@@ -708,12 +712,16 @@ describe('database runtime chat integration', () => {
     await expect(documentStore.loadDocument(stage.id)).resolves.toBeNull();
 
     await expect(
-      saveStageData(stage.id, {
-        stage: { ...stage, name: 'Fresh save' },
-        scenes: [],
-        currentSceneId: null,
-        chats: [],
-      }),
+      saveStageData(
+        stage.id,
+        {
+          stage: { ...stage, name: 'Fresh save' },
+          scenes: [],
+          currentSceneId: null,
+          chats: [],
+        },
+        0,
+      ),
     ).resolves.toBeUndefined();
     await expect(documentStore.loadDocument(stage.id)).resolves.toMatchObject({
       stage: { name: 'Fresh save' },
@@ -1079,17 +1087,21 @@ describe('database runtime chat integration', () => {
       return originalSave(document);
     });
 
-    const saving = saveStageData('stage-save-enrollment', {
-      stage: {
-        id: 'stage-save-enrollment',
-        name: 'Enrolled save',
-        createdAt: 1_000,
-        updatedAt: 2_000,
+    const saving = saveStageData(
+      'stage-save-enrollment',
+      {
+        stage: {
+          id: 'stage-save-enrollment',
+          name: 'Enrolled save',
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+        scenes: [],
+        currentSceneId: null,
+        chats: [chatSession()],
       },
-      scenes: [],
-      currentSceneId: null,
-      chats: [chatSession()],
-    });
+      0,
+    );
     await didStartDocumentWrite;
     let maintenanceStarted = false;
     const maintenance = withRuntimeStorageExclusiveLock(async () => {
@@ -1125,17 +1137,21 @@ describe('database runtime chat integration', () => {
       return originalSave(document);
     });
 
-    const saving = saveStageData('stage-epoch-order', {
-      stage: {
-        id: 'stage-epoch-order',
-        name: 'Epoch ordering',
-        createdAt: 1_000,
-        updatedAt: 2_000,
+    const saving = saveStageData(
+      'stage-epoch-order',
+      {
+        stage: {
+          id: 'stage-epoch-order',
+          name: 'Epoch ordering',
+          createdAt: 1_000,
+          updatedAt: 2_000,
+        },
+        scenes: [],
+        currentSceneId: null,
+        chats: [chatSession()],
       },
-      scenes: [],
-      currentSceneId: null,
-      chats: [chatSession()],
-    });
+      0,
+    );
     await didStartDocumentWrite;
     const boundedExclusive = withRuntimeStorageExclusiveLock as <T>(
       work: () => Promise<T>,
@@ -1508,17 +1524,21 @@ describe('database runtime chat integration', () => {
     const { loadStageData, saveStageData } = await import('@/lib/utils/stage-storage');
 
     await expect(
-      saveStageData('stage-no-chat', {
-        stage: {
-          id: 'stage-no-chat',
-          name: 'No chat stage',
-          createdAt: 1_000,
-          updatedAt: 2_000,
+      saveStageData(
+        'stage-no-chat',
+        {
+          stage: {
+            id: 'stage-no-chat',
+            name: 'No chat stage',
+            createdAt: 1_000,
+            updatedAt: 2_000,
+          },
+          scenes: [],
+          currentSceneId: null,
+          chats: [],
         },
-        scenes: [],
-        currentSceneId: null,
-        chats: [],
-      }),
+        0,
+      ),
     ).resolves.toBeUndefined();
     await expect(loadStageData('stage-no-chat')).resolves.toMatchObject({
       stage: { name: 'No chat stage' },
@@ -1629,10 +1649,14 @@ describe('database runtime chat integration', () => {
     const loaded = await loadStageData('stage-legacy-autosave');
 
     await expect(
-      saveStageData('stage-legacy-autosave', {
-        ...loaded!,
-        stage: { ...loaded!.stage, name: 'Updated stage' },
-      }),
+      saveStageData(
+        'stage-legacy-autosave',
+        {
+          ...loaded!,
+          stage: { ...loaded!.stage, name: 'Updated stage' },
+        },
+        0,
+      ),
     ).resolves.toBeUndefined();
     await expect(loadStageData('stage-legacy-autosave')).resolves.toMatchObject({
       stage: { name: 'Updated stage' },
@@ -1671,10 +1695,14 @@ describe('database runtime chat integration', () => {
     const loaded = await loadStageData('stage-legacy-edit');
 
     await expect(
-      saveStageData('stage-legacy-edit', {
-        ...loaded!,
-        chats: [{ ...loaded!.chats[0]!, title: 'Unsaved edit', updatedAt: 3_000 }],
-      }),
+      saveStageData(
+        'stage-legacy-edit',
+        {
+          ...loaded!,
+          chats: [{ ...loaded!.chats[0]!, title: 'Unsaved edit', updatedAt: 3_000 }],
+        },
+        0,
+      ),
     ).rejects.toThrow(/Web Locks/);
   });
 
@@ -1695,9 +1723,9 @@ describe('database runtime chat integration', () => {
     });
     const loaded = await loadStageData('stage-legacy-delete');
 
-    await expect(saveStageData('stage-legacy-delete', { ...loaded!, chats: [] })).rejects.toThrow(
-      /Web Locks/,
-    );
+    await expect(
+      saveStageData('stage-legacy-delete', { ...loaded!, chats: [] }, 0),
+    ).rejects.toThrow(/Web Locks/);
   });
 
   it('still fails non-empty chat document saves without Web Locks', async () => {
@@ -1706,17 +1734,21 @@ describe('database runtime chat integration', () => {
     const { saveStageData } = await import('@/lib/utils/stage-storage');
 
     await expect(
-      saveStageData('stage-with-chat', {
-        stage: {
-          id: 'stage-with-chat',
-          name: 'Chat stage',
-          createdAt: 1_000,
-          updatedAt: 2_000,
+      saveStageData(
+        'stage-with-chat',
+        {
+          stage: {
+            id: 'stage-with-chat',
+            name: 'Chat stage',
+            createdAt: 1_000,
+            updatedAt: 2_000,
+          },
+          scenes: [],
+          currentSceneId: null,
+          chats: [chatSession()],
         },
-        scenes: [],
-        currentSceneId: null,
-        chats: [chatSession()],
-      }),
+        0,
+      ),
     ).rejects.toThrow(/Web Locks/);
   });
 

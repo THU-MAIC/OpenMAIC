@@ -10,12 +10,22 @@ import {
 } from '@/lib/classroom/load-classroom';
 import {
   claimStageSceneLoadToken,
+  clearStoreForDeletedStage,
+  discardPendingStageChanges,
   flushStageSave,
   isCurrentStageSceneLoadToken,
+  restorePendingStageChanges,
+  snapshotPendingStageChangesForDeletion,
   useStageStore,
 } from '@/lib/store/stage';
-import { isStageDeleted, markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
-import { saveStageDataIncremental } from '@/lib/utils/stage-storage';
+import {
+  beginStageDeletionCascade,
+  isStageDeleted,
+  markStageDeleted,
+  settleStageDeletionCascade,
+  unmarkStageDeleted,
+} from '@/lib/utils/deleted-stages';
+import { loadStageData, saveStageDataIncremental } from '@/lib/utils/stage-storage';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 
 // The store flush path imports stage-storage dynamically; mock it so a pending
@@ -241,6 +251,106 @@ describe('runClassroomLoad', () => {
       );
     } finally {
       unmarkStageDeleted('stage-warm-ghost');
+      useStageStore.getState().clearStore();
+    }
+  });
+
+  it('keeps the warm classroom while its deletion cascade is unsettled, so a failed delete can restore pending edits', async () => {
+    // Browser Back lands while the home-page delete is still mid-cascade. The
+    // warm state (plus the deletion path's dirt snapshot) is the only copy of
+    // the pre-delete edits; discarding it before the cascade settles would
+    // lose them if the delete then fails before removing the document.
+    useStageStore.getState().clearStore();
+    vi.mocked(saveStageDataIncremental).mockClear();
+    vi.mocked(loadStageData).mockClear();
+    applyClassroomStageAndScenes(
+      makeStage('stage-mid-delete'),
+      [makeScene('scene-m', 'stage-mid-delete')],
+      { persist: false },
+    );
+    // A pre-delete edit sitting in the debounce window.
+    useStageStore.getState().setCurrentSceneId('scene-m');
+    try {
+      // Same ordering as deleteStageData: snapshot → mark → begin → discard.
+      const discarded = snapshotPendingStageChangesForDeletion('stage-mid-delete');
+      expect(discarded).toEqual([{ kind: 'currentScene' }]);
+      markStageDeleted('stage-mid-delete');
+      beginStageDeletionCascade('stage-mid-delete');
+      discardPendingStageChanges('stage-mid-delete');
+
+      // Back lands mid-cascade: warm state survives, no IndexedDB read.
+      await useStageStore.getState().loadFromStorage('stage-mid-delete');
+      expect(useStageStore.getState().stage?.id).toBe('stage-mid-delete');
+      expect(loadStageData).not.toHaveBeenCalled();
+
+      // The cascade fails before removing the document — deleteStageData's
+      // failure path lifts the flag, restores the dirt, then settles.
+      unmarkStageDeleted('stage-mid-delete');
+      restorePendingStageChanges('stage-mid-delete', discarded);
+      settleStageDeletionCascade('stage-mid-delete');
+
+      // The pre-delete edit reaches durability again through the scheduler.
+      await flushStageSave();
+      expect(saveStageDataIncremental).toHaveBeenCalledWith(
+        'stage-mid-delete',
+        expect.arrayContaining([{ kind: 'currentScene' }]),
+        expect.anything(),
+        expect.any(Number),
+      );
+    } finally {
+      settleStageDeletionCascade('stage-mid-delete');
+      unmarkStageDeleted('stage-mid-delete');
+      useStageStore.getState().clearStore();
+    }
+  });
+
+  it('evicts the warm ghost only after a successful deletion settles (Back during delete → success)', async () => {
+    useStageStore.getState().clearStore();
+    vi.mocked(loadStageData).mockClear();
+    applyClassroomStageAndScenes(
+      makeStage('stage-del-success'),
+      [makeScene('scene-s', 'stage-del-success')],
+      { persist: false },
+    );
+    markStageDeleted('stage-del-success');
+    beginStageDeletionCascade('stage-del-success');
+    try {
+      // Mid-cascade Back keeps the warm state (no discard, no reload).
+      await useStageStore.getState().loadFromStorage('stage-del-success');
+      expect(useStageStore.getState().stage?.id).toBe('stage-del-success');
+      expect(loadStageData).not.toHaveBeenCalled();
+
+      // The cascade completes: deleteStageData settles, then evicts.
+      settleStageDeletionCascade('stage-del-success');
+      clearStoreForDeletedStage('stage-del-success');
+      expect(useStageStore.getState().stage).toBeNull();
+    } finally {
+      settleStageDeletionCascade('stage-del-success');
+      unmarkStageDeleted('stage-del-success');
+      useStageStore.getState().clearStore();
+    }
+  });
+
+  it('does not evict a classroom restored (and unmarked) during the cascade tail', () => {
+    // Cascade-tail race: deleteStageData succeeded, and before its synchronous
+    // continuation ran the eviction, a same-id restore completed and unmarked
+    // the deletion. The eviction must recognize the warm state as the RESTORED
+    // classroom, not the deleted ghost.
+    useStageStore.getState().clearStore();
+    markStageDeleted('stage-tail-restore');
+    try {
+      applyClassroomStageAndScenes(
+        makeStage('stage-tail-restore'),
+        [makeScene('scene-t', 'stage-tail-restore')],
+        { persist: false },
+      );
+      expect(isStageDeleted('stage-tail-restore')).toBe(false);
+
+      clearStoreForDeletedStage('stage-tail-restore');
+
+      expect(useStageStore.getState().stage?.id).toBe('stage-tail-restore');
+    } finally {
+      unmarkStageDeleted('stage-tail-restore');
       useStageStore.getState().clearStore();
     }
   });

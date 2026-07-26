@@ -112,9 +112,12 @@ import {
   type StageStoreData,
 } from '@/lib/utils/stage-storage';
 import {
+  beginStageDeletionCascade,
   isStageDeleted,
+  isStageDeletionInFlight,
   isStageWriteStale,
   markStageDeleted,
+  settleStageDeletionCascade,
   stageDeletionEpoch,
   unmarkStageDeleted,
 } from '@/lib/utils/deleted-stages';
@@ -167,14 +170,24 @@ afterEach(() => {
 
 describe('saveStageDataIncremental vs deletion', () => {
   it('full-saves when the destination is missing and the stage is NOT deleted (pinned)', async () => {
-    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'stage' }],
+      makeData(stageId),
+      stageDeletionEpoch(stageId),
+    );
     expect(fakeStore.saveDocument).toHaveBeenCalledOnce();
   });
 
-  it('drops the write instead of rebuilding a deleted document', async () => {
+  it('drops the write instead of rebuilding a deleted document, reporting the drop', async () => {
     markStageDeleted(stageId);
-    const result = await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
-    expect(result).toEqual({ failedChanges: [] });
+    const result = await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'stage' }],
+      makeData(stageId),
+      stageDeletionEpoch(stageId),
+    );
+    expect(result).toBe('stale-dropped');
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
     expect(mutateDocument).not.toHaveBeenCalled();
   });
@@ -192,7 +205,12 @@ describe('saveStageDataIncremental vs deletion', () => {
         return callback(undefined, fakeStore);
       },
     );
-    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'stage' }],
+      makeData(stageId),
+      stageDeletionEpoch(stageId),
+    );
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
     expect(fakeStore.putStage).not.toHaveBeenCalled();
   });
@@ -207,7 +225,12 @@ describe('saveStageDataIncremental vs deletion', () => {
         return [...scenes];
       },
     );
-    await saveStageDataIncremental(stageId, [{ kind: 'structure' }], makeData(stageId));
+    await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'structure' }],
+      makeData(stageId),
+      stageDeletionEpoch(stageId),
+    );
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
   });
 
@@ -227,7 +250,12 @@ describe('saveStageDataIncremental vs deletion', () => {
       },
     );
     const data = { ...makeData(stageId), scenes: [makeScene('scene-1', stageId)] };
-    await saveStageDataIncremental(stageId, [{ kind: 'scene', sceneId: 'scene-1' }], data);
+    await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'scene', sceneId: 'scene-1' }],
+      data,
+      stageDeletionEpoch(stageId),
+    );
     expect(fakeStore.putScene).not.toHaveBeenCalled();
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
   });
@@ -249,8 +277,9 @@ describe('saveStageDataIncremental vs deletion', () => {
       stageId,
       [{ kind: 'stage' }, { kind: 'currentScene' }, { kind: 'chats' }],
       makeData(stageId),
+      stageDeletionEpoch(stageId),
     );
-    expect(result).toEqual({ failedChanges: [] });
+    expect(result).toBe('stale-dropped');
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
     expect(vi.mocked(saveCurrentScene)).not.toHaveBeenCalled();
     expect(vi.mocked(saveChatSessions)).not.toHaveBeenCalled();
@@ -273,7 +302,12 @@ describe('deletion epochs (delete → restore straddles)', () => {
         return callback(undefined, fakeStore);
       },
     );
-    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'stage' }],
+      makeData(stageId),
+      stageDeletionEpoch(stageId),
+    );
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
     expect(fakeStore.putStage).not.toHaveBeenCalled();
   });
@@ -289,7 +323,7 @@ describe('deletion epochs (delete → restore straddles)', () => {
         return callback(undefined, fakeStore);
       },
     );
-    await saveStageData(stageId, makeData(stageId));
+    await saveStageData(stageId, makeData(stageId), stageDeletionEpoch(stageId));
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
   });
 
@@ -308,8 +342,9 @@ describe('deletion epochs (delete → restore straddles)', () => {
       stageId,
       [{ kind: 'stage' }, { kind: 'currentScene' }, { kind: 'chats' }],
       makeData(stageId),
+      stageDeletionEpoch(stageId),
     );
-    expect(result).toEqual({ failedChanges: [] });
+    expect(result).toBe('stale-dropped');
     expect(vi.mocked(saveCurrentScene)).not.toHaveBeenCalled();
     expect(vi.mocked(saveChatSessions)).not.toHaveBeenCalled();
   });
@@ -326,8 +361,9 @@ describe('deletion epochs (delete → restore straddles)', () => {
       stageId,
       [{ kind: 'currentScene' }, { kind: 'chats' }],
       makeData(stageId),
+      stageDeletionEpoch(stageId),
     );
-    expect(result).toEqual({ failedChanges: [] });
+    expect(result).toBe('stale-dropped');
     expect(vi.mocked(saveCurrentScene)).toHaveBeenCalledOnce();
     expect(vi.mocked(saveChatSessions)).not.toHaveBeenCalled();
   });
@@ -338,7 +374,12 @@ describe('deletion epochs (delete → restore straddles)', () => {
     markStageDeleted(stageId);
     unmarkStageDeleted(stageId);
     expect(stageDeletionEpoch(stageId)).toBe(1);
-    await saveStageDataIncremental(stageId, [{ kind: 'stage' }], makeData(stageId));
+    await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'stage' }],
+      makeData(stageId),
+      stageDeletionEpoch(stageId),
+    );
     expect(fakeStore.saveDocument).toHaveBeenCalledOnce();
   });
 
@@ -355,6 +396,22 @@ describe('deletion epochs (delete → restore straddles)', () => {
 
     await saveStageData(stageId, makeData(stageId), staleEpoch);
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it('tracks cascade in-flight separately from the deleted flag (re-marks preserve it)', () => {
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+    // Only deleteStageData begins a cascade; begin without a mark is a no-op.
+    beginStageDeletionCascade(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+    markStageDeleted(stageId);
+    beginStageDeletionCascade(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(true);
+    // An import-rollback re-mark neither starts nor settles a cascade.
+    markStageDeleted(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(true);
+    settleStageDeletionCascade(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+    expect(isStageDeleted(stageId)).toBe(true);
   });
 
   it('never rewinds the epoch: mark → unmark → mark keeps strictly increasing', () => {
@@ -374,10 +431,10 @@ describe('deletion epochs (delete → restore straddles)', () => {
 });
 
 describe('saveStageData vs deletion', () => {
-  it('drops the aggregate save for a deleted stage', async () => {
+  it('drops the aggregate save for a deleted stage, reporting the drop', async () => {
     markStageDeleted(stageId);
-    const result = await saveStageData(stageId, makeData(stageId));
-    expect(result).toBeUndefined();
+    const result = await saveStageData(stageId, makeData(stageId), stageDeletionEpoch(stageId));
+    expect(result).toBe('stale-dropped');
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
     expect(mutateDocument).not.toHaveBeenCalled();
   });
@@ -392,7 +449,7 @@ describe('saveStageData vs deletion', () => {
         return callback(undefined, fakeStore);
       },
     );
-    await saveStageData(stageId, makeData(stageId));
+    await saveStageData(stageId, makeData(stageId), stageDeletionEpoch(stageId));
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
   });
 
@@ -403,7 +460,7 @@ describe('saveStageData vs deletion', () => {
         return fn();
       },
     );
-    await saveStageData(stageId, makeData(stageId));
+    await saveStageData(stageId, makeData(stageId), stageDeletionEpoch(stageId));
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
     expect(vi.mocked(saveCurrentScene)).not.toHaveBeenCalled();
   });
@@ -448,6 +505,46 @@ describe('deleteStageData wiring', () => {
     await expect(deleteStageData(stageId)).rejects.toThrow('locked');
     // The stage survives — the warm copy is still the live document.
     expect(clearStoreForDeletedStage).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cascade in flight during the delete and settles before evicting', async () => {
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        // Mid-cascade the outcome is unknown: the read side must keep warm
+        // state instead of trusting the deleted flag as "document gone".
+        expect(isStageDeletionInFlight(id)).toBe(true);
+        return callback(undefined, fakeStore);
+      },
+    );
+    clearStoreForDeletedStage.mockImplementationOnce((id: string) => {
+      // Eviction runs against a settled, still-deleted world — exactly the
+      // state its own isStageDeleted guard expects.
+      expect(isStageDeletionInFlight(id)).toBe(false);
+      expect(isStageDeleted(id)).toBe(true);
+    });
+
+    await deleteStageData(stageId);
+
+    expect(clearStoreForDeletedStage).toHaveBeenCalledExactlyOnceWith(stageId);
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+  });
+
+  it('settles the cascade when the deletion fails before the document was removed', async () => {
+    fakeStore.deleteDocument.mockRejectedValueOnce(new Error('locked'));
+    await expect(deleteStageData(stageId)).rejects.toThrow('locked');
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+    expect(isStageDeleted(stageId)).toBe(false);
+  });
+
+  it('settles the cascade when it fails after the document was removed', async () => {
+    dbMock.stageOutlines.delete.mockRejectedValueOnce(new Error('partial cascade'));
+    await expect(deleteStageData(stageId)).rejects.toThrow('partial cascade');
+    // Settled + still-deleted = the ghost may now be discarded by readers.
+    expect(isStageDeletionInFlight(stageId)).toBe(false);
+    expect(isStageDeleted(stageId)).toBe(true);
   });
 
   it('lifts the deleted flag when the deletion fails before the document was removed, keeping the epoch bumped', async () => {

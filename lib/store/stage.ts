@@ -21,7 +21,12 @@ import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/doc
 import { hydratePBLScenesFromRuntime } from '@/lib/pbl/v2/runtime/hydration';
 import type { ChatStorageSnapshot } from '@/lib/utils/chat-storage';
 import type { PendingChange } from '@/lib/utils/stage-storage';
-import { isStageDeleted, isStageWriteStale, stageDeletionEpoch } from '@/lib/utils/deleted-stages';
+import {
+  isStageDeleted,
+  isStageDeletionInFlight,
+  isStageWriteStale,
+  stageDeletionEpoch,
+} from '@/lib/utils/deleted-stages';
 
 const log = createLogger('StageStore');
 
@@ -167,6 +172,11 @@ export function restorePendingStageChanges(
  */
 export function clearStoreForDeletedStage(stageId: string): void {
   if (useStageStore.getState().stage?.id !== stageId) return;
+  // Re-check the deleted flag at eviction time: if a same-id restore
+  // completed (and unmarked the deletion) inside the cascade-tail window,
+  // the warm state is the RESTORED classroom, not the deleted ghost —
+  // clearing it would discard the restore and its post-restore edits.
+  if (!isStageDeleted(stageId)) return;
   useStageStore.getState().clearStore();
 }
 
@@ -332,6 +342,12 @@ async function persistDirtySnapshot(
     },
     capturedEpoch,
   );
+  // A stale drop persisted nothing, but also leaves nothing to retry: the
+  // deletion path owns the discard (and, on a failed delete, the restore) of
+  // this stage's pending dirt. Reporting no failures is deliberate — the
+  // revision guards keep any restored (re-queued) descriptors, since
+  // restores mint fresh revisions.
+  if (result === 'stale-dropped') return new Set();
   return new Set((result?.failedChanges ?? []).map(pendingChangeKey));
 }
 
@@ -687,6 +703,15 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         capturedEpoch,
       );
 
+      // An epoch-stale drop persisted nothing: skip every piece of success
+      // bookkeeping. The chatSnapshot must not rebind to a snapshot that
+      // never landed, and the pending map must keep its dirt (the deletion
+      // path owns its discard/restore). Report the write as not durable.
+      if (result === 'stale-dropped') {
+        log.info(`Save dropped by deletion fence for stage ${stage.id}; nothing persisted`);
+        return false;
+      }
+
       const failedKeys = new Set((result?.failedChanges ?? []).map(pendingChangeKey));
       if (
         failedKeys.has('chats') &&
@@ -736,15 +761,27 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           log.info('Stage already loaded in memory, skipping IndexedDB load:', stageId);
           return;
         }
-        // The warm copy is a ghost of a DELETED classroom (deletion evicts
-        // the store, but a partially failed cascade — or any future caller —
-        // can leave one). Short-circuiting here would starve the restore
-        // path: the classroom loader's server-fallback gate checks
-        // `getCurrentStage()`, so a warm ghost renders a fully editable
-        // classroom whose every edit is silently dropped. Discard the ghost
-        // (without claiming a new load token — the caller's token must stay
-        // current) and fall through to a full load, which finds no local
-        // data and lets the server-restore path run and lift the deletion.
+        // While the deletion cascade is still unsettled the ghost must be
+        // KEPT: the cascade can still fail before removing the document, in
+        // which case the deleted flag is lifted and the warm state (plus the
+        // pending dirt the failure path restores) is the only copy of the
+        // pre-delete edits. On success, `clearStoreForDeletedStage` evicts
+        // the warm copy at settlement and a later load takes the settled
+        // branch below.
+        if (isStageDeletionInFlight(stageId)) {
+          log.info('Warm stage is mid-deletion; keeping state until it settles:', stageId);
+          return;
+        }
+        // The warm copy is a ghost of a DELETED classroom whose deletion has
+        // SETTLED with the document removed (deletion evicts the store, but a
+        // partially failed cascade — or any future caller — can leave one).
+        // Short-circuiting here would starve the restore path: the classroom
+        // loader's server-fallback gate checks `getCurrentStage()`, so a warm
+        // ghost renders a fully editable classroom whose every edit is
+        // silently dropped. Discard the ghost (without claiming a new load
+        // token — the caller's token must stay current) and fall through to a
+        // full load, which finds no local data and lets the server-restore
+        // path run and lift the deletion.
         log.info('Warm stage is deleted; discarding ghost and reloading:', stageId);
         resetPendingChanges();
         set((s) => ({
@@ -782,6 +819,15 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
         const latestState = get();
         if (latestState.stage?.id === stageId && latestState.scenes.length > 0) {
           log.info('Stage appeared in memory during IndexedDB hydration, skipping load:', stageId);
+          return;
+        }
+        // Read-side mirror of the write fence's "re-check immediately before
+        // landing": in lock-free environments `loadStageData` can read the
+        // document mid-cascade, before `deleteDocument` lands. Landing that
+        // read would re-materialize a ghost of the deleted classroom (whose
+        // edits `markPendingChanges` refuses) until the eviction blanks it.
+        if (isStageDeleted(stageId)) {
+          log.info('Stage was deleted during hydration, skipping load:', stageId);
           return;
         }
 
