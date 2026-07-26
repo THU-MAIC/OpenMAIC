@@ -76,7 +76,7 @@ let defaultKv: KVStore | undefined;
 const log = createLogger('DocumentMigration');
 
 function resolveStore(deps: DocumentMigrationDeps): DocumentStore<AppScene, AppStage> {
-  return deps.store ?? getDocumentStore();
+  return deps.store ? getDocumentStore({ store: deps.store }) : getDocumentStore();
 }
 
 function resolveKv(deps: DocumentMigrationDeps): KVStore {

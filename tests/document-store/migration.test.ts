@@ -1,6 +1,7 @@
 import { DSL_VERSION } from '@openmaic/dsl';
 import {
   BrowserDocumentStore,
+  HttpDocumentStore,
   type DocumentStore,
   type KVScope,
   type KVStore,
@@ -13,9 +14,9 @@ import {
   type LegacyDocumentSnapshot,
   type LegacyDocumentStore,
 } from '@/lib/document-store/migration';
-import { withPlainJsonDocumentWrites } from '@/lib/document-store/plain-json-store';
 import type { AppDocument } from '@/lib/document-store/persistence-types';
 import type { AppScene } from '@/lib/types/stage';
+import { validateAppScene, validateAppStage } from '@/lib/document-store/validators';
 
 class MemoryKv implements KVStore {
   readonly values = new Map<string, unknown>();
@@ -193,19 +194,51 @@ describe('legacy document migration', () => {
     });
   });
 
-  test('verifies a migration after persistence omits optional undefined members', async () => {
+  test('normalizes optional undefined members for an injected HTTP store', async () => {
     const source = snapshot();
     source.stage.description = undefined;
+    source.scenes[0]!.content = {
+      type: 'pbl',
+      projectConfig: {},
+      projectV2: {
+        milestones: [{ microtasks: [{ internalAssessment: undefined }] }],
+      },
+    } as never;
     const kv = new MemoryKv();
+    let persisted: AppDocument | null = null;
+    const fetch = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === 'PUT') {
+        persisted = JSON.parse(init.body as string) as AppDocument;
+        return new Response(null, { status: 204 });
+      }
+      if (persisted) return Response.json(persisted);
+      return Response.json(
+        { error: { code: 'DOCUMENT_NOT_FOUND', message: 'missing' } },
+        { status: 404 },
+      );
+    }) as typeof globalThis.fetch;
+    const documentStore = new HttpDocumentStore<AppScene>({
+      baseUrl: 'https://documents.test',
+      fetch,
+      validateScene: validateAppScene,
+      validateStage: validateAppStage,
+    });
 
     const result = await accessDocument('stage-1', {
-      store: withPlainJsonDocumentWrites(store()),
+      store: documentStore,
       kv,
       legacyStore: legacy(source),
       lockManager: lockManager(),
     });
 
     expect(result.document?.stage).not.toHaveProperty('description');
+    expect(
+      (
+        persisted!.scenes[0]!.content as unknown as {
+          projectV2: { milestones: Array<{ microtasks: Array<Record<string, unknown>> }> };
+        }
+      ).projectV2.milestones[0]!.microtasks[0],
+    ).not.toHaveProperty('internalAssessment');
     expect(await kv.get('document-migration:stage-1', 'device')).toMatchObject({
       sourceUpdatedAt: 200,
     });
