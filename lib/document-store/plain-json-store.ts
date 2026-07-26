@@ -42,12 +42,14 @@ export function withPlainJsonDocumentWrites(
       return store.deleteScene(stageId, sceneId);
     },
   };
-  const wrapper = new Proxy(store, {
-    get(target, property) {
-      if (Object.hasOwn(methods, property)) {
-        return Reflect.get(methods, property, methods) as unknown;
+  const facade = Object.create(Object.getPrototypeOf(store)) as DocumentStore<AppScene, AppStage>;
+  Object.defineProperties(facade, Object.getOwnPropertyDescriptors(methods));
+  const wrapper = new Proxy(facade, {
+    get(target, property, receiver) {
+      if (Reflect.has(target, property)) {
+        return Reflect.get(target, property, receiver) as unknown;
       }
-      return Reflect.get(target, property, target) as unknown;
+      return Reflect.get(store, property, store) as unknown;
     },
   });
   wrappers.set(store, wrapper);

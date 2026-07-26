@@ -54,7 +54,30 @@ describe('configureDocumentStorage', () => {
     const { configureDocumentStorage, getDocumentStore } = await import('@/lib/document-store');
     configureDocumentStorage({ store: injected });
 
-    await expect(getDocumentStore().loadDocument('stage-1')).resolves.toBe('receiver-ok');
+    const resolved = getDocumentStore();
+    await expect(resolved.loadDocument('stage-1')).resolves.toBe('receiver-ok');
+
+    const override = vi.spyOn(resolved, 'loadDocument').mockResolvedValue(null);
+    await expect(resolved.loadDocument('stage-1')).resolves.toBeNull();
+    expect(override).toHaveBeenCalledWith('stage-1');
+  });
+
+  it('wraps a frozen configured store without violating Proxy invariants', async () => {
+    const noOp = async () => undefined;
+    const injected = Object.freeze({
+      saveDocument: noOp,
+      loadDocument: async () => null,
+      listDocuments: async () => [],
+      deleteDocument: noOp,
+      putStage: noOp,
+      putScene: noOp,
+      getScene: async () => null,
+      deleteScene: noOp,
+    }) as unknown as DocumentStore<AppScene, AppStage>;
+    const { configureDocumentStorage, getDocumentStore } = await import('@/lib/document-store');
+    configureDocumentStorage({ store: injected });
+
+    await expect(getDocumentStore().loadDocument('stage-1')).resolves.toBeNull();
   });
 
   it('resetDocumentStorageForTests clears configuration and the latched store', async () => {
