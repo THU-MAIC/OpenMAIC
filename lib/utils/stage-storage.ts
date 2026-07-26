@@ -514,11 +514,12 @@ async function performStageDeletion(stageId: string): Promise<void> {
   // Snapshot the dirt this deletion is about to discard (queued + in-flight)
   // BEFORE the deletion is marked, so a deletion that fails while the
   // document still exists can put those PRE-DELETE edits back on the retry
-  // path instead of leaving them silently non-durable in memory. Scope: only
-  // dirt captured before this point is restorable — edits attempted DURING
-  // the deletion window are refused by markPendingChanges and are not in the
-  // snapshot (deletion is driven from the home page, where the deleted stage
-  // is not being edited).
+  // path instead of leaving them silently non-durable in memory. The
+  // snapshot covers scheduler-tracked dirt only; content that never had a
+  // descriptor — a direct aggregate save (`saveToStorage`) the epoch fence
+  // drops mid-flight, or edits refused during the deletion window — is
+  // recovered by the restore's full-aggregate re-mark instead (see
+  // restorePendingStageChanges).
   const discardedChanges = snapshotPendingStageChangesForDeletion(stageId);
   // Mark the deletion next: this bumps the stage's deletion epoch, so every
   // persistence landing point drops writes captured before this moment —
@@ -628,7 +629,11 @@ async function performStageDeletion(stageId: string): Promise<void> {
     // If the deletion failed before the document was removed, the stage still
     // exists — lift the deleted flag so subsequent edits persist normally,
     // and put the discarded dirt back on the retry path (it was only dropped
-    // to prevent a resurrection that now cannot happen). The deletion epoch
+    // to prevent a resurrection that now cannot happen). The restore also
+    // re-marks the FULL aggregate: an in-flight direct aggregate save this
+    // deletion fenced has no descriptor in the snapshot, and only a flush
+    // that recaptures the whole current store state can carry its content to
+    // disk. The deletion epoch
     // stays bumped, which is safe for the restored dirt: restore re-QUEUES
     // change descriptors, so the eventual flush captures a fresh snapshot of
     // the CURRENT store state under the CURRENT epoch — it does not replay

@@ -219,7 +219,11 @@ describe('incremental stage flush', () => {
     await flushStageSave();
 
     expect(incrementalSave).toHaveBeenCalledTimes(2);
-    expect(incrementalSave.mock.calls[1]![1]).toEqual([{ kind: 'chats' }]);
+    // The restore carries the chat descriptor plus the full-aggregate re-mark
+    // (untracked aggregate-save content has no descriptor of its own).
+    expect(incrementalSave.mock.calls[1]![1]).toEqual(
+      expect.arrayContaining([{ kind: 'chats' }, { kind: 'structure' }]),
+    );
     // The retry carried the honest baseline (the pre-fence snapshot), not the
     // never-persisted chats…
     expect(incrementalSave.mock.calls[1]![2]).toEqual(

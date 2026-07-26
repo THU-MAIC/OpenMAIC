@@ -118,6 +118,11 @@ export function discardPendingStageChanges(stageId: string): void {
  * deletion is marked, so a deletion that fails while the document still
  * exists can hand the snapshot back to `restorePendingStageChanges` — without
  * it, the pre-delete edits would silently live only in memory.
+ *
+ * A direct aggregate save (`saveToStorage`) in flight at this moment is
+ * invisible here — it runs outside the pending map and the flush round.
+ * `restorePendingStageChanges` closes that gap by re-marking the full
+ * aggregate on top of this snapshot.
  */
 export function snapshotPendingStageChangesForDeletion(stageId: string): PendingChange[] {
   const byKey = new Map<string, PendingChange>();
@@ -135,17 +140,26 @@ export function snapshotPendingStageChangesForDeletion(stageId: string): Pending
 }
 
 /**
- * Re-mark the changes a failed deletion discarded, so they reach durability
- * again through the normal scheduler. Only meaningful after the deleted flag
- * was lifted; no-ops when the store has since moved to another stage (the
- * departing-stage snapshot owns that world).
+ * Recovery path for a deletion that failed before removing the document:
+ * put the discarded persistence work back on the retry path so it reaches
+ * durability again through the normal scheduler. Only meaningful after the
+ * deleted flag was lifted; no-ops when the store has since moved to another
+ * stage (the departing-stage snapshot owns that world).
  *
- * Scope: this restores the dirt captured BEFORE the deletion started (queued
- * + in-flight). Edits attempted DURING the deletion window were refused by
- * `markPendingChanges` while the deletion was in effect and are not part of
- * the snapshot — they stay memory-only until the same key is edited again
- * (deletion is driven from the home page, so such edits are not reachable in
- * the normal flow).
+ * The recovery set is the snapshot descriptors UNION a full re-mark of the
+ * aggregate. The snapshot only sees scheduler-tracked dirt — the pending map
+ * plus an in-flight flush round's descriptors. Direct aggregate saves
+ * (`saveToStorage`: generation completion, server-restore hydration) are
+ * tracked in neither: when the deletion epoch fences one mid-flight, its
+ * content survives only in memory with no descriptor anywhere to restore,
+ * and without a re-mark a later reload would lose it. Re-marking every
+ * logical unit of the aggregate is the one recovery that cannot miss such
+ * content: the next flush recaptures the CURRENT store state under the
+ * CURRENT epoch, and that state necessarily contains whatever the fenced
+ * aggregate save carried. The same recapture also covers edits attempted
+ * DURING the deletion window (refused by `markPendingChanges`, hence in no
+ * snapshot) — they, too, live in the current store state. Cost: one full
+ * re-persist after a failed deletion, a rare path priced for correctness.
  *
  * Epoch note: the failed delete bumped the stage's deletion epoch, so every
  * write captured before it is permanently stale. Restoring here is still
@@ -158,9 +172,17 @@ export function restorePendingStageChanges(
   stageId: string,
   changes: readonly PendingChange[],
 ): void {
-  if (changes.length === 0) return;
-  if (useStageStore.getState().stage?.id !== stageId) return;
-  markPendingChanges(stageId, ...changes);
+  const state = useStageStore.getState();
+  if (state.stage?.id !== stageId) return;
+  const fullAggregateRemark: PendingChange[] = [
+    { kind: 'structure' },
+    { kind: 'stage' },
+    { kind: 'outline' },
+    { kind: 'currentScene' },
+    { kind: 'chats' },
+    ...state.scenes.map((scene): PendingChange => ({ kind: 'scene', sceneId: scene.id })),
+  ];
+  markPendingChanges(stageId, ...changes, ...fullAggregateRemark);
 }
 
 /** The empty store shape shared by every reset path (epoch bump included). */
@@ -825,10 +847,11 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           // must be KEPT, while on success the ghost must be discarded for a
           // cold reload. Completing the load NOW would expose the classroom
           // inside that window — edits would be refused by markPendingChanges
-          // without being in the deletion's pre-start snapshot (silently lost
-          // if the delete then fails), and on success the settlement eviction
-          // would blank an already-completed route with nothing left to
-          // trigger a reload. So park until the outcome is known, then branch.
+          // (recovered only via the failure path's full-aggregate re-mark; on
+          // success they are wiped with the eviction), and on success the
+          // settlement eviction would blank an already-completed route with
+          // nothing left to trigger a reload. So park until the outcome is
+          // known, then branch.
           // No deadlock: this load holds no document lock while parked, and
           // the cascade never waits on a load to settle.
           if (isStageDeletionInFlight(stageId)) {
