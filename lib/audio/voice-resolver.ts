@@ -305,7 +305,11 @@ export function findVoiceDisplayName(
     const voice = customVoices?.find((v) => v.id === voiceId);
     return voice?.name ?? voiceId;
   }
-  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
+  // Object.hasOwn, not a bare index: a prototype-chain key ('toString', …)
+  // would resolve to a function and crash the `.voices` access below.
+  const provider = Object.hasOwn(TTS_PROVIDERS, providerId)
+    ? TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS]
+    : undefined;
   if (!provider) return voiceId;
   const voice = provider.voices.find((v) => v.id === voiceId);
   return voice?.name ?? voiceId;

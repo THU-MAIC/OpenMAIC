@@ -11,7 +11,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
  * deleted document from the in-memory snapshot.
  */
 
-const { discardPendingStageChanges, mutateDocument, fakeStore, dbMock } = vi.hoisted(() => {
+const {
+  discardPendingStageChanges,
+  snapshotPendingStageChangesForDeletion,
+  restorePendingStageChanges,
+  mutateDocument,
+  fakeStore,
+  dbMock,
+} = vi.hoisted(() => {
   const fakeStore = {
     saveDocument: vi.fn().mockResolvedValue(undefined),
     putScene: vi.fn().mockResolvedValue(undefined),
@@ -42,6 +49,8 @@ const { discardPendingStageChanges, mutateDocument, fakeStore, dbMock } = vi.hoi
   };
   return {
     discardPendingStageChanges: vi.fn(),
+    snapshotPendingStageChangesForDeletion: vi.fn().mockReturnValue([]),
+    restorePendingStageChanges: vi.fn(),
     mutateDocument: vi.fn(),
     fakeStore,
     dbMock,
@@ -86,15 +95,25 @@ vi.mock('@/lib/pbl/v2/runtime/document-persistence', () => ({
     async (_stageId: string, scenes: unknown[]) => scenes,
   ),
 }));
-vi.mock('@/lib/store/stage', () => ({ discardPendingStageChanges }));
+vi.mock('@/lib/store/stage', () => ({
+  discardPendingStageChanges,
+  snapshotPendingStageChangesForDeletion,
+  restorePendingStageChanges,
+}));
 
 import {
   deleteStageData,
   saveStageData,
   saveStageDataIncremental,
+  type PendingChange,
   type StageStoreData,
 } from '@/lib/utils/stage-storage';
 import { isStageDeleted, markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
+import { saveCurrentScene } from '@/lib/document-store';
+import { saveChatSessions } from '@/lib/utils/chat-storage';
+import { withRuntimeStorageSharedLock } from '@/lib/utils/chat-storage-lock';
+import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
+import type { Scene } from '@/lib/types/stage';
 
 let stageCounter = 0;
 let stageId: string;
@@ -106,6 +125,17 @@ function makeData(id: string): StageStoreData {
     currentSceneId: null,
     chats: [],
   };
+}
+
+function makeScene(id: string, stageId: string): Scene {
+  return {
+    id,
+    stageId,
+    type: 'text',
+    title: id,
+    order: 1,
+    content: { type: 'text', markdown: id },
+  } as unknown as Scene;
 }
 
 beforeEach(() => {
@@ -157,6 +187,65 @@ describe('saveStageDataIncremental vs deletion', () => {
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
     expect(fakeStore.putStage).not.toHaveBeenCalled();
   });
+
+  it('re-checks immediately before the full-save write (lock-free fallback: delete lands during scene preparation)', async () => {
+    // Without Web Locks, mutateDocument degrades to running this callback
+    // lock-free: nothing serializes a delete against the awaits between the
+    // callback-entry check and the write. The write itself must re-check.
+    vi.mocked(preparePBLScenesForDocumentPersistence).mockImplementationOnce(
+      async (id: string, scenes: readonly Scene[]) => {
+        markStageDeleted(id);
+        return [...scenes];
+      },
+    );
+    await saveStageDataIncremental(stageId, [{ kind: 'structure' }], makeData(stageId));
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it('re-checks immediately before each putScene on the incremental fast path', async () => {
+    // Lock-free existing is stale-non-null: the fast path stays incremental
+    // while a delete completes during preparation. No row may land.
+    mutateDocument.mockImplementationOnce(
+      async (
+        _stageId: string,
+        callback: (existing: unknown, store: typeof fakeStore) => Promise<unknown>,
+      ) => callback({ stage: makeData(stageId).stage, scenes: [], outline: undefined }, fakeStore),
+    );
+    vi.mocked(preparePBLScenesForDocumentPersistence).mockImplementationOnce(
+      async (id: string, scenes: readonly Scene[]) => {
+        markStageDeleted(id);
+        return [...scenes];
+      },
+    );
+    const data = { ...makeData(stageId), scenes: [makeScene('scene-1', stageId)] };
+    await saveStageDataIncremental(stageId, [{ kind: 'scene', sceneId: 'scene-1' }], data);
+    expect(fakeStore.putScene).not.toHaveBeenCalled();
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it('drops the currentScene/chats tail when the delete wins during the document mutation', async () => {
+    // The tail writes run after mutateDocument returns; a delete that fenced
+    // the document write must also fence them, or the flush would resurrect
+    // the currentScene KV row and chat sessions the cascade just cleared.
+    mutateDocument.mockImplementationOnce(
+      async (
+        id: string,
+        callback: (existing: undefined, store: typeof fakeStore) => Promise<unknown>,
+      ) => {
+        markStageDeleted(id);
+        return callback(undefined, fakeStore);
+      },
+    );
+    const result = await saveStageDataIncremental(
+      stageId,
+      [{ kind: 'stage' }, { kind: 'currentScene' }, { kind: 'chats' }],
+      makeData(stageId),
+    );
+    expect(result).toEqual({ failedChanges: [] });
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+    expect(vi.mocked(saveCurrentScene)).not.toHaveBeenCalled();
+    expect(vi.mocked(saveChatSessions)).not.toHaveBeenCalled();
+  });
 });
 
 describe('saveStageData vs deletion', () => {
@@ -180,6 +269,18 @@ describe('saveStageData vs deletion', () => {
     );
     await saveStageData(stageId, makeData(stageId));
     expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+  });
+
+  it('re-checks immediately before the aggregate write (delete lands inside the runtime-lock window)', async () => {
+    vi.mocked(withRuntimeStorageSharedLock).mockImplementationOnce(
+      async (fn: () => Promise<unknown>) => {
+        markStageDeleted(stageId);
+        return fn();
+      },
+    );
+    await saveStageData(stageId, makeData(stageId));
+    expect(fakeStore.saveDocument).not.toHaveBeenCalled();
+    expect(vi.mocked(saveCurrentScene)).not.toHaveBeenCalled();
   });
 });
 
@@ -220,6 +321,46 @@ describe('deleteStageData wiring', () => {
     dbMock.stageOutlines.delete.mockRejectedValueOnce(new Error('partial cascade'));
     await expect(deleteStageData(stageId)).rejects.toThrow('partial cascade');
     // The document is gone; dropping later writes is what prevents resurrection.
+    expect(isStageDeleted(stageId)).toBe(true);
+  });
+
+  it('snapshots the pending dirt BEFORE the tombstone exists', async () => {
+    snapshotPendingStageChangesForDeletion.mockImplementationOnce((id: string) => {
+      // The snapshot must see the pre-delete world: dirt queued now would be
+      // refused after the tombstone, so ordering is load-bearing.
+      expect(isStageDeleted(id)).toBe(false);
+      return [];
+    });
+    await deleteStageData(stageId);
+    expect(snapshotPendingStageChangesForDeletion).toHaveBeenCalledExactlyOnceWith(stageId);
+  });
+
+  it('restores the discarded dirt when the deletion fails before the document was removed', async () => {
+    const discarded: PendingChange[] = [{ kind: 'stage' }, { kind: 'scene', sceneId: 'scene-1' }];
+    snapshotPendingStageChangesForDeletion.mockReturnValueOnce(discarded);
+    restorePendingStageChanges.mockImplementationOnce((id: string) => {
+      // Ordering: the tombstone must already be lifted when the dirt is
+      // re-marked, or the restore itself would be refused.
+      expect(isStageDeleted(id)).toBe(false);
+    });
+    fakeStore.deleteDocument.mockRejectedValueOnce(new Error('locked'));
+
+    await expect(deleteStageData(stageId)).rejects.toThrow('locked');
+
+    // The edits the delete attempt discarded must reach durability again.
+    expect(restorePendingStageChanges).toHaveBeenCalledExactlyOnceWith(stageId, discarded);
+    expect(isStageDeleted(stageId)).toBe(false);
+  });
+
+  it('does not restore discarded dirt once the document is gone (tombstone stays)', async () => {
+    snapshotPendingStageChangesForDeletion.mockReturnValueOnce([
+      { kind: 'stage' },
+    ] satisfies PendingChange[]);
+    dbMock.stageOutlines.delete.mockRejectedValueOnce(new Error('partial cascade'));
+
+    await expect(deleteStageData(stageId)).rejects.toThrow('partial cascade');
+
+    expect(restorePendingStageChanges).not.toHaveBeenCalled();
     expect(isStageDeleted(stageId)).toBe(true);
   });
 });

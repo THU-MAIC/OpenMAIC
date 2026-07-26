@@ -1,14 +1,22 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { settingsState, setSelectedAgentIds, applyGeneratedAgentsToRegistry } = vi.hoisted(() => {
+const {
+  settingsState,
+  setSelectedAgentIds,
+  setAgentSelectionIsUserSet,
+  applyGeneratedAgentsToRegistry,
+} = vi.hoisted(() => {
   const setSelectedAgentIds = vi.fn();
+  const setAgentSelectionIsUserSet = vi.fn();
   return {
     setSelectedAgentIds,
+    setAgentSelectionIsUserSet,
     settingsState: {
       agentMode: 'auto' as 'preset' | 'auto',
       selectedAgentIds: [] as string[],
       agentSelectionIsUserSet: false,
       setSelectedAgentIds,
+      setAgentSelectionIsUserSet,
     },
     applyGeneratedAgentsToRegistry: vi.fn(
       (_stageId: string, configs: ReadonlyArray<{ id: string }>) => configs.map((c) => c.id),
@@ -33,7 +41,12 @@ vi.mock('@/lib/store/settings', () => ({
   },
 }));
 
-import { discardPendingStageChanges, useStageStore } from '@/lib/store/stage';
+import {
+  discardPendingStageChanges,
+  restorePendingStageChanges,
+  snapshotPendingStageChangesForDeletion,
+  useStageStore,
+} from '@/lib/store/stage';
 import { markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import { saveStageData, saveStageDataIncremental } from '@/lib/utils/stage-storage';
 import type { Stage } from '@/lib/types/stage';
@@ -64,6 +77,7 @@ beforeEach(() => {
   vi.useFakeTimers();
   applyGeneratedAgentsToRegistry.mockClear();
   setSelectedAgentIds.mockClear();
+  setAgentSelectionIsUserSet.mockClear();
   settingsState.agentMode = 'auto';
   settingsState.selectedAgentIds = [];
   settingsState.agentSelectionIsUserSet = false;
@@ -167,6 +181,75 @@ describe('setStageAgents selection provenance', () => {
     useStageStore.getState().setStageAgents([makeAgentConfig('a1')]);
 
     expect(setSelectedAgentIds).not.toHaveBeenCalled();
+  });
+
+  it('falls back to the full roster and clears the user-set flag when the intersection is empty', () => {
+    // Mirrors restoreAgentSelection's `length > 0` gate: an empty user-set
+    // selection is invalid there, so it must not be written here either —
+    // otherwise the classroom runs with zero agents until a reload heals it.
+    useStageStore.setState({
+      stage: {
+        ...makeStage(),
+        generatedAgentConfigs: [
+          makeAgentConfig('old-1'),
+          makeAgentConfig('old-2'),
+          makeAgentConfig('old-3'),
+        ],
+      },
+    });
+    settingsState.agentSelectionIsUserSet = true;
+    settingsState.agentMode = 'auto';
+    // A genuine subset (not the full roster), all of whose members leave.
+    settingsState.selectedAgentIds = ['old-1', 'old-2'];
+
+    useStageStore
+      .getState()
+      .setStageAgents([makeAgentConfig('fresh-1'), makeAgentConfig('fresh-2')]);
+
+    expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['fresh-1', 'fresh-2']);
+    expect(setAgentSelectionIsUserSet).toHaveBeenCalledExactlyOnceWith(false);
+  });
+
+  it('keeps tracking the whole roster when the user-set selection WAS the full roster (auto-toggle intent)', () => {
+    // The AgentBar auto toggle snapshots the entire roster as a "user-set"
+    // selection. That intent is "everyone", so a roster addition must include
+    // the newcomer instead of freezing the old snapshot forever.
+    useStageStore.setState({
+      stage: {
+        ...makeStage(),
+        generatedAgentConfigs: [makeAgentConfig('a1'), makeAgentConfig('a2')],
+      },
+    });
+    settingsState.agentSelectionIsUserSet = true;
+    settingsState.agentMode = 'auto';
+    settingsState.selectedAgentIds = ['a1', 'a2'];
+
+    useStageStore
+      .getState()
+      .setStageAgents([makeAgentConfig('a1'), makeAgentConfig('a2'), makeAgentConfig('a3')]);
+
+    expect(setSelectedAgentIds).toHaveBeenCalledExactlyOnceWith(['a1', 'a2', 'a3']);
+    // Still the user's choice ("everyone") — provenance is not downgraded.
+    expect(setAgentSelectionIsUserSet).not.toHaveBeenCalled();
+  });
+
+  it('does not auto-select newcomers when the user-set selection was a genuine subset of the roster', () => {
+    useStageStore.setState({
+      stage: {
+        ...makeStage(),
+        generatedAgentConfigs: [makeAgentConfig('a1'), makeAgentConfig('a2')],
+      },
+    });
+    settingsState.agentSelectionIsUserSet = true;
+    settingsState.agentMode = 'auto';
+    settingsState.selectedAgentIds = ['a1'];
+
+    useStageStore
+      .getState()
+      .setStageAgents([makeAgentConfig('a1'), makeAgentConfig('a2'), makeAgentConfig('a3')]);
+
+    expect(setSelectedAgentIds).not.toHaveBeenCalled();
+    expect(setAgentSelectionIsUserSet).not.toHaveBeenCalled();
   });
 });
 
@@ -281,6 +364,56 @@ describe('setStageAgents persistence (document scheduler)', () => {
 
     // The retry was dropped instead of recreating the deleted document.
     expect(stage1Attempts()).toHaveLength(1);
+  });
+
+  it('restores dirt discarded by a failed deletion so the edits still reach storage', async () => {
+    // The edit sits in the debounce window when the delete starts; the delete
+    // snapshots + discards it, then fails before the document was removed.
+    useStageStore.getState().setStageAgents([makeAgentConfig('edited')]);
+    const discarded = snapshotPendingStageChangesForDeletion('stage-1');
+    expect(discarded).toEqual(expect.arrayContaining([{ kind: 'stage' }]));
+
+    markStageDeleted('stage-1');
+    discardPendingStageChanges('stage-1');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(saveStageDataIncremental).not.toHaveBeenCalled();
+
+    // Failure path: deleteStageData lifts the tombstone and restores the dirt.
+    unmarkStageDeleted('stage-1');
+    restorePendingStageChanges('stage-1', discarded);
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(saveStageDataIncremental).toHaveBeenCalledOnce();
+    const [stageId, dirty] = vi.mocked(saveStageDataIncremental).mock.calls[0];
+    expect(stageId).toBe('stage-1');
+    expect(dirty).toEqual(expect.arrayContaining([{ kind: 'stage' }]));
+  });
+
+  it('includes the in-flight flush round dirt in the deletion snapshot', async () => {
+    // A round already outside the pending map (mid-await in storage) is
+    // exactly the dirt the tombstone will drop; a failed delete must be able
+    // to restore it too.
+    let release!: (value: { failedChanges: [] }) => void;
+    vi.mocked(saveStageDataIncremental).mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    useStageStore.getState().setStageAgents([makeAgentConfig('in-flight')]);
+    await vi.advanceTimersByTimeAsync(500); // round starts, awaiting storage
+    discardPendingStageChanges('stage-1'); // deletion wipes the pending map
+
+    expect(snapshotPendingStageChangesForDeletion('stage-1')).toEqual([{ kind: 'stage' }]);
+    expect(snapshotPendingStageChangesForDeletion('some-other-stage')).toEqual([]);
+
+    release({ failedChanges: [] });
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  it('restore no-ops when the store has since moved to another stage', async () => {
+    restorePendingStageChanges('stage-2', [{ kind: 'stage' }]);
+    await vi.advanceTimersByTimeAsync(500);
+    expect(saveStageDataIncremental).not.toHaveBeenCalled();
   });
 
   it('does NOT touch the registry on plain saveToStorage without a roster edit', async () => {

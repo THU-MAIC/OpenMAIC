@@ -14,6 +14,7 @@ import {
   type StageSceneLoadToken,
 } from '@/lib/store/stage';
 import type { MediaFileRecord } from '@/lib/utils/database';
+import { unmarkStageDeleted } from '@/lib/utils/deleted-stages';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 
 export interface ClassroomPayload {
@@ -59,8 +60,10 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
    * Read the legacy per-stage roster mirror (read-only migration source) as
    * contract-shaped configs. Used only to backfill a document whose configs
    * predate the single-source model (missing roster or missing voice fields).
+   * Returns `null` when the read FAILED (as opposed to an empty mirror), so
+   * the caller can retry on a later load instead of memoizing the failure.
    */
-  loadLegacyAgentFallbacks: (stageId: string) => Promise<GeneratedAgentConfig[]>;
+  loadLegacyAgentFallbacks: (stageId: string) => Promise<GeneratedAgentConfig[] | null>;
   /** Commit lazily migrated configs onto the in-memory stage + mark it dirty. */
   commitMigratedAgentConfigs: (stageId: string, configs: GeneratedAgentConfig[]) => void;
   /** Synchronously mirror the roster into the in-memory agent registry. */
@@ -74,12 +77,14 @@ export interface RunClassroomLoadArgs<TMediaTasks = unknown> {
 }
 
 /**
- * Stages whose legacy-mirror probe came back with nothing to merge this
- * session. `rosterNeedsLegacyFallback` cannot distinguish "predates voice
- * persistence" from "the producer never bound a voice" (server-generated
- * classrooms emit voiceless rosters by design), so without this memo such
- * classrooms would re-query the mirror on every load forever. Session-scoped
- * on purpose: no persistent marker is introduced for a pure read optimization.
+ * Stages whose legacy-mirror probe SUCCEEDED and came back with nothing to
+ * merge this session. `rosterNeedsLegacyFallback` cannot distinguish
+ * "predates voice persistence" from "the producer never bound a voice"
+ * (server-generated classrooms emit voiceless rosters by design), so without
+ * this memo such classrooms would re-query the mirror on every load forever.
+ * A FAILED mirror read is never memoized — the next load retries the probe.
+ * Session-scoped on purpose: no persistent marker is introduced for a pure
+ * read optimization.
  */
 const fruitlessLegacyProbeStageIds = new Set<string>();
 
@@ -150,7 +155,8 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
     // mirror rows, or nothing mergeable — e.g. server-generated rosters whose
     // producer never bound a voice) is remembered for the session so the
     // mirror is not re-queried on every load of a classroom that has nothing
-    // to migrate.
+    // to migrate. A FAILED mirror read is neither merged nor remembered — the
+    // next load retries the probe.
     if (!isCurrent()) return;
     const stageForRoster = getCurrentStage();
     const documentConfigs =
@@ -165,15 +171,22 @@ export async function runClassroomLoad<TMediaTasks = unknown>({
       // The registry is a global singleton: after any await, re-check that this
       // load is still current before letting the merged roster land anywhere.
       if (!isCurrent()) return;
-      const merged = mergeLegacyAgentFallbacks(documentConfigs, fallbacks);
-      if (merged.changed) {
-        effectiveConfigs = merged.configs;
-        commitMigratedAgentConfigs(classroomId, merged.configs);
-      } else {
-        // Nothing to migrate for this stage; don't probe again this session.
-        // (A successful merge is NOT memoized: if its flush fails, the next
-        // load must retry the merge until the document carries the voices.)
-        fruitlessLegacyProbeStageIds.add(classroomId);
+      // `null` = the mirror read FAILED (not "mirror is empty"). Skip both
+      // the merge and the memo so the next load retries the probe once
+      // storage recovers — a transient IndexedDB error must not become a
+      // session-long migration skip.
+      if (fallbacks !== null) {
+        const merged = mergeLegacyAgentFallbacks(documentConfigs, fallbacks);
+        if (merged.changed) {
+          effectiveConfigs = merged.configs;
+          commitMigratedAgentConfigs(classroomId, merged.configs);
+        } else {
+          // The read SUCCEEDED and confirmed nothing to migrate for this
+          // stage; don't probe again this session. (A successful merge is NOT
+          // memoized: if its flush fails, the next load must retry the merge
+          // until the document carries the voices.)
+          fruitlessLegacyProbeStageIds.add(classroomId);
+        }
       }
     }
 
@@ -234,6 +247,13 @@ export function applyClassroomStageAndScenes(
     chatSnapshot?: ChatStorageSnapshot;
   } = {},
 ): void {
+  // Explicit document (re)creation point: deletion only removes client-side
+  // data, so revisiting the classroom URL restores the server copy under the
+  // SAME id. Lift any same-session tombstone before the store write, or every
+  // subsequent edit of the restored classroom would be silently dropped until
+  // a reload. This is a deliberate restore, not an in-flight flush — exactly
+  // the distinction `deleted-stages.ts` requires.
+  unmarkStageDeleted(stage.id);
   const nextScenes = [...scenes];
   useStageStore.setState((state) => ({
     stage,
@@ -371,11 +391,13 @@ export function mergeLegacyAgentFallbacks(
  * Read the legacy roster mirror for a stage as contract-shaped configs.
  * Read-only: production code only reads this table as a migration source for
  * pre-single-source classrooms (plus deletion hygiene when a stage is
- * removed); nothing writes new rows.
+ * removed); nothing writes new rows. Returns `null` when the read fails so
+ * the caller can distinguish "empty mirror" (memoizable) from "read failed"
+ * (retry on the next load).
  */
 export async function loadLegacyAgentFallbacksFromDB(
   stageId: string,
-): Promise<GeneratedAgentConfig[]> {
+): Promise<GeneratedAgentConfig[] | null> {
   try {
     const { getGeneratedAgentsByStageId } = await import('@/lib/utils/database');
     const records = await getGeneratedAgentsByStageId(stageId);
@@ -397,7 +419,9 @@ export async function loadLegacyAgentFallbacksFromDB(
       };
     });
   } catch {
-    return [];
+    // Signal failure (vs. an empty mirror): the probe memo must not treat a
+    // transient IndexedDB error as "nothing to migrate".
+    return null;
   }
 }
 

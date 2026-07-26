@@ -1318,7 +1318,9 @@ export function getAllTTSProviders(
  * custom-provider namespace. Anything else must be treated as "no voice".
  */
 export function isKnownTTSProviderId(id: string): id is TTSProviderId {
-  return id in TTS_PROVIDERS || isCustomTTSProvider(id);
+  // Object.hasOwn, not `in`: prototype-chain keys ('toString', 'constructor',
+  // …) must not pass a whitelist built from an object literal.
+  return Object.hasOwn(TTS_PROVIDERS, id) || isCustomTTSProvider(id);
 }
 
 /**
@@ -1328,7 +1330,7 @@ export function getTTSProvider(
   providerId: TTSProviderId,
   customProviders?: Record<string, TTSProviderConfig>,
 ): TTSProviderConfig | undefined {
-  if (providerId in TTS_PROVIDERS) {
+  if (Object.hasOwn(TTS_PROVIDERS, providerId)) {
     return TTS_PROVIDERS[providerId as BuiltInTTSProviderId];
   }
   return customProviders?.[providerId];
@@ -1362,7 +1364,7 @@ export function getASRProvider(
   providerId: ASRProviderId,
   customProviders?: Record<string, ASRProviderConfig>,
 ): ASRProviderConfig | undefined {
-  if (providerId in ASR_PROVIDERS) {
+  if (Object.hasOwn(ASR_PROVIDERS, providerId)) {
     return ASR_PROVIDERS[providerId as BuiltInASRProviderId];
   }
   return customProviders?.[providerId];

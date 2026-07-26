@@ -126,6 +126,18 @@ describe('applyGeneratedAgentsToRegistry', () => {
     expect(agent?.voiceDesign).toEqual(voiceDesign);
   });
 
+  it('drops a voice binding whose provider id is a prototype-chain key', () => {
+    // `'toString' in TTS_PROVIDERS` is true via Object.prototype; the guard
+    // must use own-property semantics or crafted zip manifests keep exactly
+    // the junk the whitelist was built to stop.
+    for (const junk of ['toString', 'constructor']) {
+      applyGeneratedAgentsToRegistry('stage-1', [
+        makeConfig('gen-a', { voiceConfig: { providerId: junk, voiceId: 'v1' } }),
+      ]);
+      expect(useAgentRegistry.getState().getAgent('gen-a')?.voiceConfig).toBeUndefined();
+    }
+  });
+
   it('replaces previously applied generated agents while keeping defaults', () => {
     applyGeneratedAgentsToRegistry('stage-1', [makeConfig('gen-old')]);
     applyGeneratedAgentsToRegistry('stage-2', [makeConfig('gen-new')]);

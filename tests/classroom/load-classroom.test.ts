@@ -10,9 +10,12 @@ import {
 } from '@/lib/classroom/load-classroom';
 import {
   claimStageSceneLoadToken,
+  flushStageSave,
   isCurrentStageSceneLoadToken,
   useStageStore,
 } from '@/lib/store/stage';
+import { isStageDeleted, markStageDeleted, unmarkStageDeleted } from '@/lib/utils/deleted-stages';
+import { saveStageDataIncremental } from '@/lib/utils/stage-storage';
 import type { GeneratedAgentConfig, Scene, Stage } from '@/lib/types/stage';
 
 // The store flush path imports stage-storage dynamically; mock it so a pending
@@ -153,6 +156,57 @@ describe('runClassroomLoad', () => {
     expect(useStageStore.getState().scenes).toEqual([scene]);
     expect(useStageStore.getState().currentSceneId).toBe('scene-a');
     useStageStore.getState().clearStore();
+  });
+
+  it('lifts a same-session deletion tombstone on explicit server-copy restore, and edits persist again', async () => {
+    // Deletion only removes client-side data; revisiting the classroom URL
+    // restores the server copy under the SAME id. Without lifting the
+    // tombstone, every edit of the restored classroom would be silently
+    // dropped until a reload.
+    useStageStore.getState().clearStore();
+    vi.mocked(saveStageDataIncremental).mockClear();
+    markStageDeleted('stage-revived');
+    try {
+      applyClassroomStageAndScenes(
+        makeStage('stage-revived'),
+        [makeScene('scene-r', 'stage-revived')],
+        { persist: false },
+      );
+      expect(isStageDeleted('stage-revived')).toBe(false);
+
+      // An edit after the restore reaches storage again.
+      useStageStore.getState().setCurrentSceneId('scene-r');
+      await flushStageSave();
+      expect(saveStageDataIncremental).toHaveBeenCalledWith(
+        'stage-revived',
+        expect.arrayContaining([{ kind: 'currentScene' }]),
+        expect.anything(),
+      );
+    } finally {
+      unmarkStageDeleted('stage-revived');
+      useStageStore.getState().clearStore();
+    }
+  });
+
+  it('keeps dropping in-flight writes for a deleted classroom that was NOT restored', async () => {
+    useStageStore.getState().clearStore();
+    vi.mocked(saveStageDataIncremental).mockClear();
+    applyClassroomStageAndScenes(
+      makeStage('stage-doomed'),
+      [makeScene('scene-d', 'stage-doomed')],
+      {
+        persist: false,
+      },
+    );
+    try {
+      markStageDeleted('stage-doomed');
+      useStageStore.getState().setCurrentSceneId('scene-d');
+      await flushStageSave();
+      expect(saveStageDataIncremental).not.toHaveBeenCalled();
+    } finally {
+      unmarkStageDeleted('stage-doomed');
+      useStageStore.getState().clearStore();
+    }
   });
 
   it('resets caller-bound chat authority when fallback replaces the classroom', () => {
@@ -359,6 +413,46 @@ describe('runClassroomLoad', () => {
     expect(deps.commitMigratedAgentConfigs).not.toHaveBeenCalled();
     // The roster itself still hydrates the registry on every load.
     expect(deps.applyGeneratedAgents).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not memoize a FAILED mirror read: the next load retries the probe', async () => {
+    // `null` = the read failed (vs. `[]` = mirror confirmed empty). A transient
+    // IndexedDB error must not become a session-long migration skip.
+    const { deps, setStage } = makeDeps({
+      loadLegacyAgentFallbacks: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue([] as GeneratedAgentConfig[]),
+      applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
+    });
+    setStage(makeStage('stage-a', [makeAgentConfig('agent-a')]));
+
+    // First load: the read fails — nothing merged, nothing memoized.
+    await runClassroomLoad(deps);
+    expect(deps.loadLegacyAgentFallbacks).toHaveBeenCalledTimes(1);
+    expect(deps.commitMigratedAgentConfigs).not.toHaveBeenCalled();
+
+    // Second load: retried; the read now succeeds empty — memoized.
+    await runClassroomLoad(deps);
+    expect(deps.loadLegacyAgentFallbacks).toHaveBeenCalledTimes(2);
+
+    // Third load: the successful empty probe is remembered.
+    await runClassroomLoad(deps);
+    expect(deps.loadLegacyAgentFallbacks).toHaveBeenCalledTimes(2);
+  });
+
+  it('still hydrates the registry from document configs when the mirror read fails', async () => {
+    const configs = [makeAgentConfig('agent-a')];
+    const { deps, setStage } = makeDeps({
+      loadLegacyAgentFallbacks: vi.fn().mockResolvedValue(null),
+      applyGeneratedAgents: vi.fn().mockReturnValue(['agent-a']),
+    });
+    setStage(makeStage('stage-a', configs));
+
+    await runClassroomLoad(deps);
+
+    expect(deps.applyGeneratedAgents).toHaveBeenCalledExactlyOnceWith('stage-a', configs);
+    expect(deps.setLoading).toHaveBeenCalledWith(false);
   });
 
   it('scopes the fruitless-probe memo per classroom', async () => {

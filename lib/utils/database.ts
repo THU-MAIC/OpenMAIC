@@ -703,6 +703,11 @@ export async function importDatabase(
         await store.saveDocument(document);
         importedDocuments.push({ id: document.stage.id, preImage });
       });
+      // Explicit document (re)creation: a backup may restore a stage deleted
+      // earlier this session under the same id. Lift the deletion tombstone so
+      // later edits of the restored document persist instead of being dropped.
+      const { unmarkStageDeleted } = await import('./deleted-stages');
+      unmarkStageDeleted(document.stage.id);
     }
     for (const legacyStage of data.stages ?? []) {
       if (legacyStage.currentSceneId !== undefined) {

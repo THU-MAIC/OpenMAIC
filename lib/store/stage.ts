@@ -39,6 +39,7 @@ let pendingRevision = 0;
 const pendingChanges = new Map<string, PendingEntry>();
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 type FlushRound = {
+  stageId: string;
   dirtySnapshot: ReadonlyMap<string, PendingEntry>;
   promise: Promise<Set<string>>;
 };
@@ -101,6 +102,44 @@ export function markStagePersistenceDirty(changes: PendingChange[]): void {
  */
 export function discardPendingStageChanges(stageId: string): void {
   if (pendingStageId === stageId) resetPendingChanges();
+}
+
+/**
+ * Snapshot the logical changes a deletion is about to throw away: everything
+ * still queued for the stage plus the in-flight flush round's dirt (whose
+ * write the tombstone will drop). Taken by the deletion path BEFORE the
+ * tombstone is registered, so a deletion that fails while the document still
+ * exists can hand the snapshot back to `restorePendingStageChanges` — without
+ * it, the pre-delete edits would silently live only in memory.
+ */
+export function snapshotPendingStageChangesForDeletion(stageId: string): PendingChange[] {
+  const byKey = new Map<string, PendingChange>();
+  if (flushInFlight?.stageId === stageId) {
+    for (const { change } of flushInFlight.dirtySnapshot.values()) {
+      byKey.set(pendingChangeKey(change), change);
+    }
+  }
+  if (pendingStageId === stageId) {
+    for (const { change } of pendingChanges.values()) {
+      byKey.set(pendingChangeKey(change), change);
+    }
+  }
+  return [...byKey.values()];
+}
+
+/**
+ * Re-mark the changes a failed deletion discarded, so they reach durability
+ * again through the normal scheduler. Only meaningful after the tombstone was
+ * lifted; no-ops when the store has since moved to another stage (the
+ * departing-stage snapshot owns that world).
+ */
+export function restorePendingStageChanges(
+  stageId: string,
+  changes: readonly PendingChange[],
+): void {
+  if (changes.length === 0) return;
+  if (useStageStore.getState().stage?.id !== stageId) return;
+  markPendingChanges(stageId, ...changes);
 }
 
 export function claimStageSceneLoadToken(): StageSceneLoadToken {
@@ -481,18 +520,40 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
     applyGeneratedAgentsToRegistry(stage.id, configs);
     // Selection mirror honors provenance (same semantics as
     // restoreAgentSelection): a stage-derived selection tracks the roster
-    // wholesale, but a user's explicit choice is only narrowed — agents that
-    // left the roster are dropped, newcomers are never auto-selected, and
-    // `agentSelectionIsUserSet` is left untouched either way. A user-set
-    // preset selection references non-generated agents only, so a roster edit
-    // does not concern it.
+    // wholesale; a user's explicit auto choice is handled by cases below. A
+    // user-set preset selection references non-generated agents only, so a
+    // roster edit does not concern it.
     const settings = useSettingsStore.getState();
+    const nextRosterIds = configs.map((a) => a.id);
     if (!settings.agentSelectionIsUserSet) {
-      settings.setSelectedAgentIds(configs.map((a) => a.id));
+      settings.setSelectedAgentIds(nextRosterIds);
     } else if (settings.agentMode === 'auto') {
-      const rosterIds = new Set(configs.map((a) => a.id));
-      const retained = settings.selectedAgentIds.filter((id) => rosterIds.has(id));
-      if (retained.length !== settings.selectedAgentIds.length) {
+      // The AgentBar's auto toggle snapshots the whole roster as the user's
+      // selection, so "selection === pre-edit full roster" means the intent
+      // was "everyone", not "this exact subset" — keep tracking the roster
+      // wholesale (newcomers included). A genuine subset is only narrowed:
+      // departed agents are dropped, newcomers are never auto-selected.
+      const previousRosterIds = new Set((stage.generatedAgentConfigs ?? []).map((a) => a.id));
+      const selectionWasFullRoster =
+        settings.selectedAgentIds.length > 0 &&
+        settings.selectedAgentIds.length === previousRosterIds.size &&
+        settings.selectedAgentIds.every((id) => previousRosterIds.has(id));
+      const rosterIds = new Set(nextRosterIds);
+      const retained = selectionWasFullRoster
+        ? nextRosterIds
+        : settings.selectedAgentIds.filter((id) => rosterIds.has(id));
+      if (retained.length === 0) {
+        // Narrowed to nothing (every pick left the roster, or the roster was
+        // rebuilt). `restoreAgentSelection` refuses an empty user-set
+        // selection (`length > 0` gate) and falls back to the stage-derived
+        // full roster — mirror that here instead of running the classroom
+        // with zero agents until reload.
+        settings.setSelectedAgentIds(nextRosterIds);
+        settings.setAgentSelectionIsUserSet(false);
+      } else if (
+        retained.length !== settings.selectedAgentIds.length ||
+        retained.some((id, index) => id !== settings.selectedAgentIds[index])
+      ) {
         settings.setSelectedAgentIds(retained);
       }
     }
@@ -783,7 +844,7 @@ function startFlushRound(): FlushRound | null {
       if (pendingChanges.size > 0 && pendingStageId) schedulePendingSave();
     }
   })();
-  const round = { dirtySnapshot, promise: run };
+  const round = { stageId, dirtySnapshot, promise: run };
   flushInFlight = round;
   return round;
 }
